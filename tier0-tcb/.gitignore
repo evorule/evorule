@@ -1,0 +1,15 @@
+# Build artifacts
+/target/
+
+# Kani verification artifacts
+/kani-results/
+*.kani
+
+# Proptest regression files (FileFailurePersistence default, masks assertion bugs)
+*.proptest-regressions
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

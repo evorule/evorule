@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+    "tier0-tcb",
+    "tier1-reactor",
+    "tier2-governance",
+]
+
+[workspace.package]
+version = "6.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["TheEquation Project"]
+repository = "https://github.com/evorule/evorule"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+# 注意：不设置 panic = "abort"。
+# tier0-tcb 原 release profile 含 panic = "abort"（no_std 内核优化），
+# 但 workspace 中 panic 为全局设置，而 tier1/tier2 依赖 tokio 需 unwinding，
+# 故移除。tier0-tcb 的安全性由 #![forbid(unsafe_code)] + build.rs 门禁保证。

@@ -1,0 +1,56 @@
+[package]
+name = "tier2-governance"
+version = "6.0.0"
+edition = "2021"
+description = "TheEquation 治理层 - I/O 订阅者、审计链、HTTP API"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# 本地依赖
+tier0-tcb = { path = "../tier0-tcb" }
+tier1-reactor = { path = "../tier1-reactor" }
+
+# 异步运行时
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "fs",
+    "time",
+    "signal",
+] }
+async-stream = "0.3"
+futures-core = "0.3"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# I/O Handler SDK
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] } # SQLite
+reqwest = { version = "0.12", features = ["json"] }                # HTTP 客户端（LLM + HTTP GET）
+
+# 审计组件
+blake3 = "1" # 哈希
+
+# HTTP API
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+
+# 热重载
+notify = "7"
+
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 错误处理
+thiserror = "2"
+
+# CLI 参数解析（仅 bin 使用）
+clap = { version = "4", features = ["derive", "env"] }
+
+[[bin]]
+name = "evorule-server"
+path = "src/bin/evorule_server.rs"

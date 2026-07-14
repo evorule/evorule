@@ -1,0 +1,73 @@
+# Rust 构建产物
+target/
+**/target/
+
+# 环境变量（可能含密钥）
+.env
+.env.*
+!.env.example
+
+# 数据文件
+data/
+*.db
+*.sqlite
+*.db-journal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.log
+*.bak
+*~
+
+# Trae 临时文件
+.trae/
+
+# === 2026-07-14 首次 git init 补充 ===
+
+# Windows 构建产物 (probe.exe / probe.pdb 等)
+*.exe
+*.pdb
+
+# 构建/安装日志 (tier0-tcb/install_log.txt 等)
+install_log.txt
+install_llvm_cov_log.txt
+
+# Proptest 失败持久化文件 (掩盖 assertion bug 的元凶)
+*.proptest-regressions
+
+# Kani 形式化验证产物
+kani-results/
+*.kani
+
+# 文档目录 (暂不提交, 待整理)
+文档/
+
+# === SDK 构建产物 (Python / TypeScript) ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+node_modules/
+dist/
+.tsbuildinfo
+*.tsbuildinfo
+
+# Python 临时测试脚本
+sse_test_client.py

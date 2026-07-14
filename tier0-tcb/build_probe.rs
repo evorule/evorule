@@ -1,0 +1,1 @@
+fn main() { eprintln!("SKIP_ENV={:?}", std::env::var("EVORULE_SKIP_GATE")); eprintln!("MANIFEST={:?}", std::env::var("CARGO_MANIFEST_DIR")); }

@@ -1,0 +1,34 @@
+# 构建产物
+target/
+**/target/
+
+# Git
+.git/
+.gitignore
+
+# 文档（非运行时依赖）
+文档/
+*.md
+!tier0-tcb/README.md
+!tier1-reactor/README.md
+!tier2-governance/README.md
+
+# 临时文件
+*.tmp
+*.log
+*.bak
+*~
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 数据文件（避免打包进镜像）
+data/
+*.db
+*.sqlite
