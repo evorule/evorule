@@ -13,8 +13,16 @@
 //! 丢弃 command_tx 触发反应器优雅退出。
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use tier0_tcb::JsonValue;
 use tier1_reactor::{EventSender, FactSender, FactsLog, Reactor, ReactorHandle};
+
+/// 默认最大会话数
+const DEFAULT_MAX_SESSIONS: usize = 1000;
+/// 默认会话 TTL（30 分钟无活动自动过期）
+const DEFAULT_SESSION_TTL: Duration = Duration::from_secs(30 * 60);
+/// 后台 reaper 清理间隔（5 分钟）
+const REAPER_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// 会话 ID
 pub type SessionId = u64;
@@ -29,6 +37,8 @@ pub struct Session {
     pub event_tx: EventSender,
     /// 反应器任务句柄
     pub handle: ReactorHandle,
+    /// 最后活动时间（用于 TTL 过期判定）
+    pub last_activity: Instant,
 }
 
 impl Session {
@@ -56,20 +66,47 @@ pub struct SessionManager {
     sessions: HashMap<SessionId, Session>,
     /// 下一个会话 ID
     next_session_id: SessionId,
+    /// 最大会话数
+    max_sessions: usize,
+    /// 会话 TTL（无活动超时）
+    session_ttl: Duration,
 }
 
 impl SessionManager {
-    /// 创建会话管理器
+    /// 创建会话管理器（使用默认限制：最多 1000 会话，TTL 30 分钟）
     ///
     /// # 参数
     /// - `core_eval`：transform 规则列表（用于创建每个会话的反应器）
     /// - `max_rounds`：每个反应器的最大指令执行步数
     pub fn new(core_eval: Vec<JsonValue>, max_rounds: usize) -> Self {
+        Self::with_limits(
+            core_eval,
+            max_rounds,
+            DEFAULT_MAX_SESSIONS,
+            DEFAULT_SESSION_TTL,
+        )
+    }
+
+    /// 创建会话管理器并指定资源限制
+    ///
+    /// # 参数
+    /// - `core_eval`：transform 规则列表
+    /// - `max_rounds`：每个反应器的最大指令执行步数
+    /// - `max_sessions`：最大并发会话数
+    /// - `session_ttl`：会话无活动超时时间
+    pub fn with_limits(
+        core_eval: Vec<JsonValue>,
+        max_rounds: usize,
+        max_sessions: usize,
+        session_ttl: Duration,
+    ) -> Self {
         Self {
             core_eval,
             max_rounds,
             sessions: HashMap::new(),
             next_session_id: 1,
+            max_sessions,
+            session_ttl,
         }
     }
 
@@ -78,8 +115,21 @@ impl SessionManager {
     /// spawn 一个新的长驻反应器实例，分配唯一 SessionId。
     ///
     /// # 返回
-    /// 新会话的 SessionId
-    pub fn create_session(&mut self) -> SessionId {
+    /// - `Ok(SessionId)`：新会话的 SessionId
+    /// - `Err(SessionError::LimitExceeded)`：超过最大会话数限制
+    pub fn create_session(&mut self) -> Result<SessionId, SessionError> {
+        if self.sessions.len() >= self.max_sessions {
+            tracing::warn!(
+                current = self.sessions.len(),
+                max = self.max_sessions,
+                "Session creation rejected: limit exceeded"
+            );
+            return Err(SessionError::LimitExceeded {
+                current: self.sessions.len(),
+                max: self.max_sessions,
+            });
+        }
+
         let reactor = Reactor::builder(self.core_eval.clone())
             .max_rounds(self.max_rounds)
             .build();
@@ -89,8 +139,10 @@ impl SessionManager {
         self.next_session_id += 1;
 
         tracing::info!(
-            "Session {} created (long-running reactor spawned)",
-            session_id
+            session_id,
+            active = self.sessions.len() + 1,
+            max = self.max_sessions,
+            "Session created (long-running reactor spawned)"
         );
 
         self.sessions.insert(
@@ -100,10 +152,18 @@ impl SessionManager {
                 facts_log,
                 event_tx,
                 handle,
+                last_activity: Instant::now(),
             },
         );
 
-        session_id
+        Ok(session_id)
+    }
+
+    /// 更新会话的最后活动时间（每次访问会话时调用）
+    pub fn touch_session(&mut self, id: SessionId) {
+        if let Some(session) = self.sessions.get_mut(&id) {
+            session.last_activity = Instant::now();
+        }
     }
 
     /// 获取会话引用
@@ -150,6 +210,37 @@ impl SessionManager {
         before - self.sessions.len()
     }
 
+    /// 清理过期的会话（TTL 过期）
+    ///
+    /// 移除所有 `last_activity` 距今超过 `session_ttl` 的会话。
+    /// 返回被清理的会话数量。
+    pub fn reap_expired(&mut self) -> usize {
+        let now = Instant::now();
+        let before = self.sessions.len();
+        self.sessions.retain(|id, session| {
+            let elapsed = now.duration_since(session.last_activity);
+            if elapsed > self.session_ttl {
+                tracing::info!(
+                    session_id = id,
+                    elapsed_secs = elapsed.as_secs(),
+                    ttl_secs = self.session_ttl.as_secs(),
+                    "Session expired (TTL reached)"
+                );
+                false
+            } else {
+                true
+            }
+        });
+        before - self.sessions.len()
+    }
+
+    /// 清理所有可回收的会话（已结束 + 已过期）
+    pub fn reap_all(&mut self) -> usize {
+        let finished = self.reap_finished();
+        let expired = self.reap_expired();
+        finished + expired
+    }
+
     /// 活跃会话数
     pub fn len(&self) -> usize {
         self.sessions.len()
@@ -169,6 +260,14 @@ pub enum SessionError {
     NotFound {
         /// 不存在的会话 ID
         id: SessionId,
+    },
+    /// 超过最大会话数限制
+    #[error("Session limit exceeded: {current}/{max}")]
+    LimitExceeded {
+        /// 当前会话数
+        current: usize,
+        /// 最大会话数
+        max: usize,
     },
 }
 
@@ -195,8 +294,8 @@ mod tests {
         let core_eval = make_core_eval();
         let mut mgr = SessionManager::new(core_eval, 100);
 
-        let id1 = mgr.create_session();
-        let id2 = mgr.create_session();
+        let id1 = mgr.create_session().unwrap();
+        let id2 = mgr.create_session().unwrap();
         assert_ne!(id1, id2);
         assert_eq!(mgr.len(), 2);
 
@@ -210,7 +309,7 @@ mod tests {
         let core_eval = make_core_eval();
         let mut mgr = SessionManager::new(core_eval, 100);
 
-        let id = mgr.create_session();
+        let id = mgr.create_session().unwrap();
         assert_eq!(mgr.len(), 1);
 
         let handle = mgr.close_session(id).unwrap();
@@ -236,8 +335,8 @@ mod tests {
 
         assert!(mgr.list_sessions().is_empty());
 
-        let id1 = mgr.create_session();
-        let id2 = mgr.create_session();
+        let id1 = mgr.create_session().unwrap();
+        let id2 = mgr.create_session().unwrap();
 
         let mut list = mgr.list_sessions();
         list.sort();
@@ -249,7 +348,7 @@ mod tests {
         let core_eval = make_core_eval();
         let mut mgr = SessionManager::new(core_eval, 100);
 
-        let id = mgr.create_session();
+        let id = mgr.create_session().unwrap();
         let session = mgr.get_session(id).unwrap();
 
         // 提交命令
@@ -285,7 +384,7 @@ mod tests {
         let core_eval = make_core_eval();
         let mut mgr = SessionManager::new(core_eval, 100);
 
-        let id = mgr.create_session();
+        let id = mgr.create_session().unwrap();
         let handle = mgr.close_session(id).unwrap();
 
         // 反应器应优雅退出
@@ -301,8 +400,80 @@ mod tests {
         assert!(mgr.is_empty());
         assert_eq!(mgr.len(), 0);
 
-        mgr.create_session();
+        mgr.create_session().unwrap();
         assert!(!mgr.is_empty());
         assert_eq!(mgr.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_session_limit_exceeded() {
+        let core_eval = make_core_eval();
+        let mut mgr = SessionManager::with_limits(core_eval, 100, 2, Duration::from_secs(3600));
+
+        // 创建 2 个会话（达到上限）
+        let id1 = mgr.create_session().unwrap();
+        let id2 = mgr.create_session().unwrap();
+        assert_eq!(mgr.len(), 2);
+
+        // 第 3 个应该被拒绝
+        let result = mgr.create_session();
+        assert!(matches!(
+            result,
+            Err(SessionError::LimitExceeded { current: 2, max: 2 })
+        ));
+        assert_eq!(mgr.len(), 2); // 仍然是 2
+
+        // 关闭一个后可以再创建
+        let _handle = mgr.close_session(id1).unwrap();
+        let id3 = mgr.create_session().unwrap();
+        assert_eq!(mgr.len(), 2);
+        assert!(mgr.get_session(id3).is_some());
+
+        // 清理
+        let _ = mgr.close_session(id2);
+        let _ = mgr.close_session(id3);
+    }
+
+    #[tokio::test]
+    async fn test_reap_expired() {
+        let core_eval = make_core_eval();
+        // TTL = 100ms，快速过期
+        let mut mgr = SessionManager::with_limits(core_eval, 100, 100, Duration::from_millis(100));
+
+        let id1 = mgr.create_session().unwrap();
+        let id2 = mgr.create_session().unwrap();
+        assert_eq!(mgr.len(), 2);
+
+        // 等待超过 TTL
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        let reaped = mgr.reap_expired();
+        assert_eq!(reaped, 2);
+        assert_eq!(mgr.len(), 0);
+        assert!(mgr.get_session(id1).is_none());
+        assert!(mgr.get_session(id2).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_touch_session_prevents_expiry() {
+        let core_eval = make_core_eval();
+        let mut mgr = SessionManager::with_limits(core_eval, 100, 100, Duration::from_millis(100));
+
+        let id = mgr.create_session().unwrap();
+
+        // 在 TTL 内 touch，应保持活跃
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        mgr.touch_session(id);
+
+        // 再等 60ms（总 120ms，但 touch 后只过了 60ms）
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        let reaped = mgr.reap_expired();
+        assert_eq!(reaped, 0); // touch 后未过期
+        assert!(mgr.get_session(id).is_some());
+
+        // 等待超过 TTL（不再 touch）
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        let reaped = mgr.reap_expired();
+        assert_eq!(reaped, 1); // 现在过期了
     }
 }

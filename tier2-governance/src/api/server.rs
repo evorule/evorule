@@ -126,6 +126,30 @@ impl SessionApi {
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         )
     }
+
+    /// 启动后台 reaper 任务，定期清理过期和已结束的会话
+    ///
+    /// 应在服务器启动时调用一次。清理间隔为 5 分钟。
+    pub fn start_reaper(&self) {
+        let sessions = self.sessions.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5 * 60));
+            interval.tick().await; // 跳过第一次立即触发
+            loop {
+                interval.tick().await;
+                let reaped = {
+                    let mut mgr = sessions.lock().await;
+                    mgr.reap_all()
+                };
+                if reaped > 0 {
+                    tracing::info!(
+                        reaped_count = reaped,
+                        "Background reaper cleaned up expired/finished sessions"
+                    );
+                }
+            }
+        });
+    }
 }
 
 /// 应用全局状态（合并 GovernanceApi + SessionApi）
@@ -417,17 +441,24 @@ async fn get_audit(State(api): State<GovernanceApi>) -> Json<serde_json::Value> 
 /// 创建会话 handler
 ///
 /// `POST /api/sessions` → 创建新的长驻反应器实例，返回 session_id
+/// 超过最大会话数时返回 429 Too Many Requests
 async fn create_session(
     State(api): State<SessionApi>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let id = {
+    let result = {
         let mut sessions = api.sessions.lock().await;
         sessions.create_session()
     };
-    Ok(Json(serde_json::json!({
-        "session_id": id,
-        "message": "Session created"
-    })))
+    match result {
+        Ok(id) => Ok(Json(serde_json::json!({
+            "session_id": id,
+            "message": "Session created"
+        }))),
+        Err(crate::api::session::SessionError::LimitExceeded { current, max }) => {
+            Err(StatusCode::TOO_MANY_REQUESTS)
+        }
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
 /// 列出所有会话 handler
@@ -476,7 +507,8 @@ async fn session_command(
     let id = api.next_id();
     let instruction = serde_to_tcb(req.instruction);
 
-    let sessions = api.sessions.lock().await;
+    let mut sessions = api.sessions.lock().await;
+    sessions.touch_session(session_id);
     let session = sessions
         .get_session(session_id)
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -502,7 +534,8 @@ async fn session_state(
     State(api): State<SessionApi>,
     Path(session_id): Path<u64>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let sessions = api.sessions.lock().await;
+    let mut sessions = api.sessions.lock().await;
+    sessions.touch_session(session_id);
     let session = sessions
         .get_session(session_id)
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -531,7 +564,8 @@ async fn session_payload(
     let id = api.next_id();
     let value = serde_to_tcb(req.value);
 
-    let sessions = api.sessions.lock().await;
+    let mut sessions = api.sessions.lock().await;
+    sessions.touch_session(session_id);
     let session = sessions
         .get_session(session_id)
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -570,7 +604,8 @@ async fn session_events(
 ) -> Result<Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>>, StatusCode> {
     // 从 SessionManager 获取 event 通道接收端
     let mut event_rx = {
-        let sessions = api.sessions.lock().await;
+        let mut sessions = api.sessions.lock().await;
+        sessions.touch_session(session_id);
         let session = sessions
             .get_session(session_id)
             .ok_or(StatusCode::NOT_FOUND)?;
