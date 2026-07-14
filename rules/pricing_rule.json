@@ -1,0 +1,121 @@
+{
+  "rule_id": "business.pricing",
+  "version": "1.0.0",
+  "description": "电商定价规则示例 — 展示计算、条件折扣、税费和订单结算的指令序列",
+  "metadata": {
+    "author": "evorule-demo",
+    "scenario": "电商订单定价流程",
+    "rules": [
+      "calculate_price: 计算商品总价 (quantity × unit_price)",
+      "apply_discount: 满减折扣 (总价 > 100 打 9 折)",
+      "calculate_tax: 计算税费 (折后价 × tax_rate)",
+      "finalize_order: 结算订单 (折后价 + 税费)"
+    ]
+  },
+  "rules": [
+    {
+      "name": "calculate_price",
+      "description": "计算商品总价 = 数量 × 单价",
+      "instruction": {
+        "type": "sequence",
+        "params": {
+          "instructions": [
+            {
+              "type": "set",
+              "params": {
+                "attr": "subtotal",
+                "value": "__exec__.payload.quantity * __exec__.payload.unit_price"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "apply_discount",
+      "description": "满减折扣：总价 > 100 时打 9 折",
+      "instruction": {
+        "type": "conditional",
+        "params": {
+          "domain": { "type": "gt", "left": "__exec__.payload.subtotal", "right": 100 },
+          "then": {
+            "type": "set",
+            "params": {
+              "attr": "discounted_price",
+              "value": "__exec__.payload.subtotal * 0.9"
+            }
+          },
+          "else": {
+            "type": "set",
+            "params": {
+              "attr": "discounted_price",
+              "value": "__exec__.payload.subtotal"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "calculate_tax",
+      "description": "计算税费 = 折后价 × 税率",
+      "instruction": {
+        "type": "set",
+        "params": {
+          "attr": "tax_amount",
+          "value": "__exec__.payload.discounted_price * __exec__.payload.tax_rate"
+        }
+      }
+    },
+    {
+      "name": "finalize_order",
+      "description": "订单结算 = 折后价 + 税费",
+      "instruction": {
+        "type": "sequence",
+        "params": {
+          "instructions": [
+            {
+              "type": "set",
+              "params": {
+                "attr": "total",
+                "value": "__exec__.payload.discounted_price + __exec__.payload.tax_amount"
+              }
+            },
+            {
+              "type": "set",
+              "params": {
+                "attr": "status",
+                "value": "finalized"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "example_usage": {
+    "description": "完整定价流程示例（sequence 串联 4 条规则）",
+    "initial_payload": {
+      "quantity": 3,
+      "unit_price": 50,
+      "tax_rate": 0.08
+    },
+    "command": {
+      "type": "sequence",
+      "params": {
+        "instructions": [
+          { "type": "call_rule", "params": { "rule": "calculate_price" } },
+          { "type": "call_rule", "params": { "rule": "apply_discount" } },
+          { "type": "call_rule", "params": { "rule": "calculate_tax" } },
+          { "type": "call_rule", "params": { "rule": "finalize_order" } }
+        ]
+      }
+    },
+    "expected_result": {
+      "subtotal": 150,
+      "discounted_price": 135.0,
+      "tax_amount": 10.8,
+      "total": 145.8,
+      "status": "finalized"
+    }
+  }
+}

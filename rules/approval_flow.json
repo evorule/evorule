@@ -1,0 +1,178 @@
+{
+  "rule_id": "business.approval",
+  "version": "1.0.0",
+  "description": "审批流程规则示例 — 展示状态机驱动的多角色审批流转",
+  "metadata": {
+    "author": "evorule-demo",
+    "scenario": "多角色审批流程",
+    "rules": [
+      "submit_request: 提交审批请求（设置状态为 pending）",
+      "approve: 审批通过（设置状态为 approved，记录审批人）",
+      "reject: 审批拒绝（设置状态为 rejected，记录拒绝原因）"
+    ]
+  },
+  "rules": [
+    {
+      "name": "submit_request",
+      "description": "提交审批请求：初始化审批记录，状态设为 pending",
+      "instruction": {
+        "type": "sequence",
+        "params": {
+          "instructions": [
+            {
+              "type": "set",
+              "params": {
+                "attr": "status",
+                "value": "pending"
+              }
+            },
+            {
+              "type": "set",
+              "params": {
+                "attr": "submitted_at",
+                "value": "now()"
+              }
+            },
+            {
+              "type": "save_memory",
+              "params": {
+                "key": "approval_request",
+                "value": "__exec__.payload"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "approve",
+      "description": "审批通过：校验当前状态为 pending，更新为 approved",
+      "instruction": {
+        "type": "conditional",
+        "params": {
+          "domain": {
+            "type": "equals",
+            "left": "__exec__.payload.status",
+            "right": "pending"
+          },
+          "then": {
+            "type": "sequence",
+            "params": {
+              "instructions": [
+                {
+                  "type": "set",
+                  "params": {
+                    "attr": "status",
+                    "value": "approved"
+                  }
+                },
+                {
+                  "type": "set",
+                  "params": {
+                    "attr": "approved_by",
+                    "value": "__exec__.instruction.params.approver"
+                  }
+                },
+                {
+                  "type": "set",
+                  "params": {
+                    "attr": "approved_at",
+                    "value": "now()"
+                  }
+                }
+              ]
+            }
+          },
+          "else": {
+            "type": "set",
+            "params": {
+              "attr": "error",
+              "value": "Cannot approve: request is not in pending state"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "reject",
+      "description": "审批拒绝：校验当前状态为 pending，更新为 rejected",
+      "instruction": {
+        "type": "conditional",
+        "params": {
+          "domain": {
+            "type": "equals",
+            "left": "__exec__.payload.status",
+            "right": "pending"
+          },
+          "then": {
+            "type": "sequence",
+            "params": {
+              "instructions": [
+                {
+                  "type": "set",
+                  "params": {
+                    "attr": "status",
+                    "value": "rejected"
+                  }
+                },
+                {
+                  "type": "set",
+                  "params": {
+                    "attr": "rejected_by",
+                    "value": "__exec__.instruction.params.reviewer"
+                  }
+                },
+                {
+                  "type": "set",
+                  "params": {
+                    "attr": "rejection_reason",
+                    "value": "__exec__.instruction.params.reason"
+                  }
+                },
+                {
+                  "type": "set",
+                  "params": {
+                    "attr": "rejected_at",
+                    "value": "now()"
+                  }
+                }
+              ]
+            }
+          },
+          "else": {
+            "type": "set",
+            "params": {
+              "attr": "error",
+              "value": "Cannot reject: request is not in pending state"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "example_usage": {
+    "description": "审批流程示例",
+    "initial_payload": {
+      "request_id": "REQ-2026-001",
+      "amount": 5000,
+      "requester": "alice"
+    },
+    "commands": [
+      {
+        "type": "call_rule",
+        "params": { "rule": "submit_request" }
+      },
+      {
+        "type": "call_rule",
+        "params": { "rule": "approve", "approver": "bob" }
+      }
+    ],
+    "expected_result": {
+      "status": "approved",
+      "approved_by": "bob",
+      "request_id": "REQ-2026-001",
+      "amount": 5000,
+      "requester": "alice"
+    }
+  }
+}
