@@ -1,0 +1,108 @@
+# =============================================================================
+# GitHub Actions: Mutation Testing (cargo-mutants)
+#
+# 验证 tier0-tcb 测试**真的能抓 bug**. 单个 mutant 注入一个微小改动,
+# 跑测试看是否能检测到. "MISSED" mutants 是测试盲区.
+#
+# Schedule: 每周日 UTC 0:00 (夜间跑, 不阻塞 PR)
+# Manual: workflow_dispatch 可触发
+#
+# 单 mutant: ~30s - 2min (编译 + 227 tests)
+# 总量: ~1500 mutants × 1min ≈ 25h
+# =============================================================================
+
+name: mutants
+
+on:
+  schedule:
+    - cron: "0 0 * * 0"  # Weekly Sunday 00:00 UTC
+  workflow_dispatch:
+    inputs:
+      timeout_min:
+        description: "Timeout in minutes (default: 360 = 6h)"
+        required: false
+        default: "360"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mutation-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 720  # 12h per job (GitHub Actions max)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tier0-tcb/target
+          key: cargo-mutants-${{ runner.os }}-${{ hashFiles('tier0-tcb/Cargo.toml') }}
+          restore-keys: |
+            cargo-mutants-${{ runner.os }}-
+
+      - name: Install cargo-mutants
+        run: |
+          cargo install --locked cargo-mutants
+          cargo mutants --version
+
+      - name: Run mutation testing
+        working-directory: tier0-tcb
+        run: |
+          set -e
+          mkdir -p mutants.out
+          cargo mutants \
+            --timeout 120 \
+            --output mutants.out/ \
+            --jobs $(nproc)
+
+      - name: Upload mutation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-results
+          path: |
+            tier0-tcb/mutants.out/
+          retention-days: 90
+
+      - name: Parse summary
+        if: always()
+        working-directory: tier0-tcb
+        run: |
+          if [ -f mutants.out/mutants.json ]; then
+            echo "## Mutation Testing Summary" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            python3 -c "
+              import json, sys
+              try:
+                  with open('mutants.out/mutants.json') as f:
+                      data = json.load(f)
+                  total = len(data.get('outcomes', []))
+                  caught = sum(1 for o in data['outcomes'] if o.get('status') == 'caught')
+                  missed = sum(1 for o in data['outcomes'] if o.get('status') == 'missed')
+                  if total > 0:
+                      score = (caught / total) * 100
+                      print(f'**Total mutants**: {total}')
+                      print(f'**Caught**: {caught}')
+                      print(f'**Missed**: {missed}')
+                      print(f'**Score**: {score:.1f}%')
+                      if score < 60:
+                          print('⚠ Mutation score < 60%. Tests may have blind spots.')
+                          sys.exit(0)  # dont fail build, just warn
+              except Exception as e:
+                  print(f'Could not parse mutants.json: {e}')
+            " >> $GITHUB_STEP_SUMMARY 2>&1 || true
+          else
+            echo "No mutants.json produced" >> $GITHUB_STEP_SUMMARY
+          fi
+          cat $GITHUB_STEP_SUMMARY

@@ -13,3 +13,9 @@
 .idea/
 *.swp
 *.swo
+
+# cargo-mutants 输出 (大型, 不提交)
+mutants.out/
+
+# Kani 输出 (大型, 不提交)
+kani/
