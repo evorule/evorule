@@ -9,12 +9,16 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::time::Duration;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqliteQueryResult, SqliteRow};
 use sqlx::{Column, Row};
 use tier0_tcb::JsonValue;
 
 use crate::io_handler::{IoHandler, IoResult};
+
+/// 单次 DB 查询超时（P0-2：DB 5s）
+const DB_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// SQLite 处理器
 ///
@@ -86,15 +90,20 @@ impl IoHandler for DbHandler {
             .starts_with("SELECT");
 
         if is_query {
-            let rows: Vec<SqliteRow> = query
-                .fetch_all(&self.pool)
-                .await
-                .map_err(|e| e.to_string())?;
+            // P0-2：5s 超时，防止 DB 卡住导致会话僵死
+            let rows: Vec<SqliteRow> =
+                tokio::time::timeout(DB_TIMEOUT, query.fetch_all(&self.pool))
+                    .await
+                    .map_err(|_| format!("db query timed out after {}s", DB_TIMEOUT.as_secs()))?
+                    .map_err(|e| e.to_string())?;
             let arr: Vec<JsonValue> = rows.iter().map(row_to_json).collect();
             Ok(JsonValue::Array(arr))
         } else {
             let result: SqliteQueryResult =
-                query.execute(&self.pool).await.map_err(|e| e.to_string())?;
+                tokio::time::timeout(DB_TIMEOUT, query.execute(&self.pool))
+                    .await
+                    .map_err(|_| format!("db execute timed out after {}s", DB_TIMEOUT.as_secs()))?
+                    .map_err(|e| e.to_string())?;
             Ok(JsonValue::Integer(result.rows_affected() as i64))
         }
     }

@@ -16,13 +16,48 @@
 //! - `RecvError::Closed`：通道已关闭，正常退出循环
 //! - `SendError`：command 通道关闭（反应器已退出），返回 `IoSubscriberError::CommandClosed`
 
+use std::time::Duration;
+
 use tier0_tcb::JsonValue;
 use tier1_reactor::{EventReceiver, Fact, FactId, FactSender, IoType};
 
 use crate::io_dispatcher::IoDispatcher;
+use crate::metrics::SharedMetrics;
 
 /// ID 起始偏移量，避免与反应器自身的 FactId 冲突
 const ID_OFFSET: u64 = 10000;
+
+/// 最大重试次数（P0-2：瞬时错误指数退避重试，最多 3 次，即总计 4 次尝试）
+const MAX_RETRIES: u32 = 3;
+/// 初始退避时长（P0-2：指数退避 200ms → 400ms → 800ms）
+const INITIAL_BACKOFF: Duration = Duration::from_millis(200);
+
+/// 判断 I/O 错误是否可重试（P0-2）
+///
+/// 仅瞬时错误重试：超时、连接问题、HTTP 5xx 服务端错误。
+/// 客户端错误（4xx、参数缺失、工具未找到）不重试——重试不会改变结果。
+fn is_retryable_error(err: &str) -> bool {
+    let lower = err.to_lowercase();
+    // 超时（reqwest tokio timeout、db timeout 等）
+    if lower.contains("timeout") || lower.contains("timed out") {
+        return true;
+    }
+    // 连接问题（connection refused / reset / closed）
+    if lower.contains("connection") {
+        return true;
+    }
+    // 瞬时服务端错误
+    if lower.contains("temporarily") || lower.contains("temporary") {
+        return true;
+    }
+    // HTTP 5xx 服务端错误
+    for code in ["500", "502", "503", "504"] {
+        if lower.contains(code) {
+            return true;
+        }
+    }
+    false
+}
 
 /// I/O 订阅者错误
 #[derive(Debug, thiserror::Error)]
@@ -65,6 +100,8 @@ pub struct IoSubscriber {
     dispatcher: IoDispatcher,
     /// 下一个 FactId（独立计数器，从 10000 起）
     next_id: u64,
+    /// Prometheus 指标（可选，P2-7：记录 I/O 耗时和错误）
+    metrics: Option<SharedMetrics>,
 }
 
 impl IoSubscriber {
@@ -75,7 +112,16 @@ impl IoSubscriber {
         Self {
             dispatcher,
             next_id: ID_OFFSET,
+            metrics: None,
         }
+    }
+
+    /// 注入 Prometheus 指标引用（P2-7 builder 模式）
+    ///
+    /// 注入后，`dispatch_and_respond` 将记录每次 I/O 调用的耗时和错误次数。
+    pub fn with_metrics(mut self, metrics: SharedMetrics) -> Self {
+        self.metrics = Some(metrics);
+        self
     }
 
     /// 生成下一个 FactId 并推进计数器
@@ -164,6 +210,11 @@ impl IoSubscriber {
     ///
     /// - 成功：`result = JsonValue`，`error = None`
     /// - 失败：`result = JsonValue::Null`，`error = Some(msg)`
+    ///
+    /// # P0-2 重试策略
+    /// 对瞬时错误（超时/连接/5xx）执行指数退避重试，最多 `MAX_RETRIES` 次：
+    /// 200ms → 400ms → 800ms。客户端错误（参数缺失/4xx/工具未找到）不重试。
+    /// 重试耗尽后回写最终错误 `IoResponse`，让反应器恢复而非永久阻塞。
     async fn dispatch_and_respond(
         &mut self,
         request_id: FactId,
@@ -177,35 +228,74 @@ impl IoSubscriber {
             "处理 IoRequest"
         );
 
-        let dispatch_result = self.dispatcher.dispatch(&io_type, &params).await;
+        // P2-7：记录整体 I/O 耗时（包含重试）
+        let overall_start = std::time::Instant::now();
+        let mut final_error: Option<String> = None;
 
-        let response = match dispatch_result {
-            Ok(result) => {
-                tracing::info!(
-                    request_id = %request_id,
-                    "IoRequest 执行成功，回写 IoResponse"
-                );
-                Fact::IoResponse {
-                    id: self.next_fact_id(),
-                    request_id,
-                    result,
-                    error: None,
+        let mut attempt: u32 = 0;
+        let response = loop {
+            attempt += 1;
+            match self.dispatcher.dispatch(&io_type, &params).await {
+                Ok(result) => {
+                    if attempt > 1 {
+                        tracing::info!(
+                            request_id = %request_id,
+                            attempt,
+                            "IoRequest 在重试后执行成功"
+                        );
+                    } else {
+                        tracing::info!(
+                            request_id = %request_id,
+                            "IoRequest 执行成功，回写 IoResponse"
+                        );
+                    }
+                    break Fact::IoResponse {
+                        id: self.next_fact_id(),
+                        request_id,
+                        result,
+                        error: None,
+                    };
                 }
-            }
-            Err(err_msg) => {
-                tracing::warn!(
-                    request_id = %request_id,
-                    error = %err_msg,
-                    "IoRequest 执行失败，回写错误 IoResponse"
-                );
-                Fact::IoResponse {
-                    id: self.next_fact_id(),
-                    request_id,
-                    result: JsonValue::Null,
-                    error: Some(err_msg),
+                Err(err_msg) => {
+                    // P0-2：瞬时错误指数退避重试
+                    if attempt <= MAX_RETRIES && is_retryable_error(&err_msg) {
+                        let backoff =
+                            INITIAL_BACKOFF.saturating_mul(2u32.saturating_pow(attempt - 1));
+                        tracing::warn!(
+                            request_id = %request_id,
+                            attempt,
+                            max_attempts = MAX_RETRIES + 1,
+                            backoff_ms = backoff.as_millis() as u64,
+                            error = %err_msg,
+                            "IoRequest 瞬时错误，指数退避重试"
+                        );
+                        tokio::time::sleep(backoff).await;
+                        continue;
+                    }
+                    tracing::warn!(
+                        request_id = %request_id,
+                        attempt,
+                        error = %err_msg,
+                        "IoRequest 执行失败（最终），回写错误 IoResponse"
+                    );
+                    final_error = Some(err_msg.clone());
+                    break Fact::IoResponse {
+                        id: self.next_fact_id(),
+                        request_id,
+                        result: JsonValue::Null,
+                        error: Some(err_msg),
+                    };
                 }
             }
         };
+
+        // P2-7：记录指标（仅在 metrics 注入时）
+        if let Some(metrics) = &self.metrics {
+            metrics.observe_io_duration(&io_type, overall_start.elapsed());
+            if final_error.is_some() {
+                metrics.inc_io_errors(&io_type);
+            }
+        }
 
         command_tx
             .send(response)
@@ -245,5 +335,68 @@ mod tests {
         // 确保 IoType 在本模块内可见且可使用（防止 import 被意外删除）
         let t = IoType::CallLlm;
         assert_eq!(t.as_str(), "call_llm");
+    }
+
+    #[test]
+    fn test_is_retryable_error_timeout() {
+        assert!(is_retryable_error(
+            "http request failed: operation timed out"
+        ));
+        assert!(is_retryable_error("db query timed out after 5s"));
+        assert!(is_retryable_error("request timeout"));
+    }
+
+    #[test]
+    fn test_is_retryable_error_connection() {
+        assert!(is_retryable_error("connection refused"));
+        assert!(is_retryable_error("connection reset by peer"));
+        assert!(is_retryable_error("Connection closed"));
+    }
+
+    #[test]
+    fn test_is_retryable_error_http_5xx() {
+        assert!(is_retryable_error(
+            "LLM API returned 503: service unavailable"
+        ));
+        assert!(is_retryable_error("http request failed with status: 500"));
+        assert!(is_retryable_error("gateway 502 bad gateway"));
+    }
+
+    #[test]
+    fn test_is_retryable_error_temporary() {
+        assert!(is_retryable_error("service temporarily unavailable"));
+        assert!(is_retryable_error("Temporary failure in name resolution"));
+    }
+
+    #[test]
+    fn test_is_not_retryable_error_client_errors() {
+        // 参数缺失——bug，重试无意义
+        assert!(!is_retryable_error("missing required param: prompt"));
+        // 工具未找到——配置问题
+        assert!(!is_retryable_error("tool not found: foo"));
+        // HTTP 4xx 客户端错误
+        assert!(!is_retryable_error("LLM API returned 401: unauthorized"));
+        assert!(!is_retryable_error("http request failed with status: 404"));
+        assert!(!is_retryable_error("bad request 400"));
+    }
+
+    #[test]
+    fn test_retry_constants() {
+        // 验证 P0-2 重试配置
+        assert_eq!(MAX_RETRIES, 3);
+        assert_eq!(INITIAL_BACKOFF, Duration::from_millis(200));
+        // 退避序列：200ms, 400ms, 800ms
+        assert_eq!(
+            INITIAL_BACKOFF.saturating_mul(2u32.saturating_pow(0)),
+            Duration::from_millis(200)
+        );
+        assert_eq!(
+            INITIAL_BACKOFF.saturating_mul(2u32.saturating_pow(1)),
+            Duration::from_millis(400)
+        );
+        assert_eq!(
+            INITIAL_BACKOFF.saturating_mul(2u32.saturating_pow(2)),
+            Duration::from_millis(800)
+        );
     }
 }

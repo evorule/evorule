@@ -2,6 +2,7 @@
 
 use crate::fact::FactId;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::time::{Duration, Instant};
 use tier0_tcb::JsonValue;
 
 /// 反应器内部状态
@@ -33,6 +34,12 @@ pub(crate) struct ReactorState {
     /// - 恢复执行：走 on_true 分支，set 消费 __io_result__ 到业务字段
     pub pending_io_instructions: BTreeMap<FactId, JsonValue>,
 
+    /// I/O 请求发射时间戳（P3-11：用于超时检测）
+    ///
+    /// 每次 `register_io_request` 时记录当前时间，
+    /// 超时检测时扫描此映射判断是否超过 warn/error 阈值。
+    pub pending_io_timestamps: BTreeMap<FactId, Instant>,
+
     /// I/O 恢复执行标志
     ///
     /// IoResponse 到达后设为 true，重新执行原指令后（execute_transition 返回 State）
@@ -52,6 +59,7 @@ impl ReactorState {
             pending_io_count: 0,
             pending_requests: BTreeSet::new(),
             pending_io_instructions: BTreeMap::new(),
+            pending_io_timestamps: BTreeMap::new(),
             io_recovery: false,
         }
     }
@@ -94,20 +102,60 @@ impl ReactorState {
     /// 注册一个待处理的 I/O 请求
     ///
     /// 幂等：重复注册同一 id 不会增加计数（防止 count 与 set 大小不一致）。
+    /// P3-11：同时记录发射时间戳，用于超时检测。
     pub fn register_io_request(&mut self, id: FactId) {
         if self.pending_requests.insert(id) {
             self.pending_io_count += 1;
+            self.pending_io_timestamps.insert(id, Instant::now());
         }
     }
 
     /// 完成一个 I/O 请求，返回是否成功（即该请求是否在等待中）
+    ///
+    /// P3-11：同时移除时间戳。
     pub fn complete_io_request(&mut self, id: FactId) -> bool {
         if self.pending_requests.remove(&id) {
             self.pending_io_count = self.pending_io_count.saturating_sub(1);
+            self.pending_io_timestamps.remove(&id);
             true
         } else {
             false
         }
+    }
+
+    /// 扫描 pending I/O 超时（P3-11）
+    ///
+    /// 返回 `(warn_ids, error_ids)`：
+    /// - `warn_ids`：超过 `warn_timeout` 但未超过 `error_timeout` 的请求 ID
+    /// - `error_ids`：超过 `error_timeout` 的请求 ID（调用方应发射 Error 并恢复）
+    pub fn scan_io_timeouts(
+        &self,
+        warn_timeout: Duration,
+        error_timeout: Duration,
+    ) -> (Vec<FactId>, Vec<FactId>) {
+        let now = Instant::now();
+        let mut warn_ids = Vec::new();
+        let mut error_ids = Vec::new();
+        for (id, timestamp) in &self.pending_io_timestamps {
+            let elapsed = now.duration_since(*timestamp);
+            if elapsed >= error_timeout {
+                error_ids.push(*id);
+            } else if elapsed >= warn_timeout {
+                warn_ids.push(*id);
+            }
+        }
+        (warn_ids, error_ids)
+    }
+
+    /// 强制移除一个超时的 I/O 请求（P3-11：error 超时恢复用）
+    ///
+    /// 与 `complete_io_request` 不同，此方法不期望 IoResponse 到达，
+    /// 而是反应器主动清理超时请求。同时移除缓存的指令和时间戳。
+    pub fn force_remove_io_request(&mut self, id: FactId) {
+        self.pending_requests.remove(&id);
+        self.pending_io_count = self.pending_io_count.saturating_sub(1);
+        self.pending_io_instructions.remove(&id);
+        self.pending_io_timestamps.remove(&id);
     }
 
     /// 缓存触发 I/O 的原指令（IoRequest 产生时调用）
@@ -307,5 +355,126 @@ mod tests {
         assert!(state.is_stable());
         assert_eq!(state.version, 0);
         assert_eq!(state.queue_len(), 0);
+    }
+
+    // ===== P3-11 资源管理测试 =====
+
+    #[test]
+    fn test_register_io_request_records_timestamp() {
+        // P3-11: register_io_request 应同时记录时间戳
+        let mut state = ReactorState::new();
+        let id = FactId(1);
+        state.register_io_request(id);
+        assert!(state.pending_io_timestamps.contains_key(&id));
+    }
+
+    #[test]
+    fn test_complete_io_request_removes_timestamp() {
+        // P3-11: complete_io_request 应同时移除时间戳
+        let mut state = ReactorState::new();
+        let id = FactId(1);
+        state.register_io_request(id);
+        assert!(state.pending_io_timestamps.contains_key(&id));
+        assert!(state.complete_io_request(id));
+        assert!(!state.pending_io_timestamps.contains_key(&id));
+    }
+
+    #[test]
+    fn test_scan_io_timeouts_no_pending() {
+        // P3-11: 无 pending I/O 时 scan 返回空
+        let state = ReactorState::new();
+        let (warn_ids, error_ids) =
+            state.scan_io_timeouts(Duration::from_secs(30), Duration::from_secs(60));
+        assert!(warn_ids.is_empty());
+        assert!(error_ids.is_empty());
+    }
+
+    #[test]
+    fn test_scan_io_timeouts_warn_level() {
+        // P3-11: 超过 warn_timeout 但未超过 error_timeout
+        let mut state = ReactorState::new();
+        let id = FactId(1);
+        state.register_io_request(id);
+        // 模拟 35s 前注册的请求（超过 30s warn，未超过 60s error）
+        state
+            .pending_io_timestamps
+            .insert(id, Instant::now() - Duration::from_secs(35));
+        let (warn_ids, error_ids) =
+            state.scan_io_timeouts(Duration::from_secs(30), Duration::from_secs(60));
+        assert_eq!(warn_ids, vec![FactId(1)]);
+        assert!(error_ids.is_empty());
+    }
+
+    #[test]
+    fn test_scan_io_timeouts_error_level() {
+        // P3-11: 超过 error_timeout
+        let mut state = ReactorState::new();
+        let id = FactId(1);
+        state.register_io_request(id);
+        // 模拟 65s 前注册的请求（超过 60s error）
+        state
+            .pending_io_timestamps
+            .insert(id, Instant::now() - Duration::from_secs(65));
+        let (warn_ids, error_ids) =
+            state.scan_io_timeouts(Duration::from_secs(30), Duration::from_secs(60));
+        // 超过 error 阈值的不会同时出现在 warn 列表中
+        assert!(warn_ids.is_empty());
+        assert_eq!(error_ids, vec![FactId(1)]);
+    }
+
+    #[test]
+    fn test_scan_io_timeouts_mixed() {
+        // P3-11: 混合场景：一个 warn 级别，一个 error 级别，一个正常
+        let mut state = ReactorState::new();
+        let warn_id = FactId(1);
+        let error_id = FactId(2);
+        let normal_id = FactId(3);
+        state.register_io_request(warn_id);
+        state.register_io_request(error_id);
+        state.register_io_request(normal_id);
+        // 手动设置时间戳
+        state
+            .pending_io_timestamps
+            .insert(warn_id, Instant::now() - Duration::from_secs(40));
+        state
+            .pending_io_timestamps
+            .insert(error_id, Instant::now() - Duration::from_secs(70));
+        // normal_id 保持当前时间
+        let (warn_ids, error_ids) =
+            state.scan_io_timeouts(Duration::from_secs(30), Duration::from_secs(60));
+        assert_eq!(warn_ids, vec![FactId(1)]);
+        assert_eq!(error_ids, vec![FactId(2)]);
+    }
+
+    #[test]
+    fn test_force_remove_io_request() {
+        // P3-11: force_remove_io_request 应清除所有相关状态
+        let mut state = ReactorState::new();
+        let id = FactId(1);
+        state.register_io_request(id);
+        state.save_io_instruction(id, JsonValue::string("original_instruction"));
+
+        // 确认状态已设置
+        assert_eq!(state.pending_io_count, 1);
+        assert!(state.pending_requests.contains(&id));
+        assert!(state.pending_io_instructions.contains_key(&id));
+        assert!(state.pending_io_timestamps.contains_key(&id));
+
+        // 强制移除
+        state.force_remove_io_request(id);
+
+        // 确认所有相关状态已清除
+        assert_eq!(state.pending_io_count, 0);
+        assert!(!state.pending_requests.contains(&id));
+        assert!(!state.pending_io_instructions.contains_key(&id));
+        assert!(!state.pending_io_timestamps.contains_key(&id));
+    }
+
+    #[test]
+    fn test_force_remove_nonexistent_io_request() {
+        // P3-11: 强制移除不存在的请求不应 panic
+        let mut state = ReactorState::new();
+        state.force_remove_io_request(FactId(999));
+        assert_eq!(state.pending_io_count, 0);
     }
 }

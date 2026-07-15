@@ -33,6 +33,7 @@ pub mod io_dispatcher;
 pub mod io_handler;
 pub mod io_handlers;
 pub mod io_subscriber;
+pub mod metrics;
 
 // 公开 API 重导出
 pub use api::{
@@ -45,3 +46,4 @@ pub use hash::content_hash;
 pub use io_dispatcher::IoDispatcher;
 pub use io_handler::{IoHandler, IoResult};
 pub use io_subscriber::IoSubscriber;
+pub use metrics::{Metrics, SharedMetrics};

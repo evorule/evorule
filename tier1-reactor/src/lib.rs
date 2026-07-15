@@ -67,6 +67,7 @@ mod facts_log;
 mod reactor;
 mod stable_detector;
 mod state;
+mod wal;
 
 pub use channel::{ChannelPair, EventReceiver, EventSender, FactReceiver, FactSender};
 pub use error::ReactorError;
@@ -74,3 +75,6 @@ pub use fact::{Fact, FactId, FactIdGenerator, IoType};
 pub use facts_log::{FactsLog, FactsLogError};
 pub use reactor::{Reactor, ReactorBuilder, ReactorHandle};
 pub use stable_detector::StableDetector;
+pub use wal::{
+    fact_from_json, fact_to_json, read_wal, serde_to_tcb, tcb_to_serde, WalError, WalWriter,
+};

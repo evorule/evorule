@@ -18,11 +18,11 @@ use tier0_tcb::JsonValue;
 use tier1_reactor::{EventSender, FactSender, FactsLog, Reactor, ReactorHandle};
 
 /// 默认最大会话数
-const DEFAULT_MAX_SESSIONS: usize = 1000;
+pub const DEFAULT_MAX_SESSIONS: usize = 1000;
 /// 默认会话 TTL（30 分钟无活动自动过期）
-const DEFAULT_SESSION_TTL: Duration = Duration::from_secs(30 * 60);
+pub const DEFAULT_SESSION_TTL: Duration = Duration::from_secs(30 * 60);
 /// 后台 reaper 清理间隔（5 分钟）
-const REAPER_INTERVAL: Duration = Duration::from_secs(5 * 60);
+pub const REAPER_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// 会话 ID
 pub type SessionId = u64;

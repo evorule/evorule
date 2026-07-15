@@ -12,6 +12,8 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::Duration;
 use tier0_tcb::JsonValue;
 use tier1_reactor::Reactor;
@@ -24,6 +26,7 @@ use tier2_governance::{
         memory_handler::MemoryHandler, tool_handler::ToolHandler,
     },
     io_subscriber::IoSubscriber,
+    Metrics,
 };
 
 fn serde_to_tcb(v: serde_json::Value) -> JsonValue {
@@ -102,7 +105,9 @@ async fn main() {
     let auditor = Auditor::new(facts_log.clone());
     let api = GovernanceApi::new(tx.clone(), facts_log, auditor);
     let session_api = SessionApi::new(core_eval_for_sessions, 100);
-    let state = AppState::new(api, session_api);
+    let metrics = Arc::new(Metrics::new());
+    let readiness = Arc::new(AtomicBool::new(true));
+    let state = AppState::new(api, session_api, metrics, readiness);
 
     println!("[2] 审计器、GovernanceApi 和 SessionApi 已创建");
 

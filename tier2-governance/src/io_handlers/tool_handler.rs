@@ -8,10 +8,14 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Duration;
 
 use tier0_tcb::JsonValue;
 
 use crate::io_handler::{IoHandler, IoResult};
+
+/// 单次工具调用超时（P0-2：Tool 60s，工具可能较慢但不应永久卡住）
+const TOOL_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// 工具函数类型
 ///
@@ -89,9 +93,16 @@ impl IoHandler for ToolHandler {
             .get(tool_name)
             .ok_or_else(|| format!("tool not found: {tool_name}"))?;
 
-        // 调用工具函数并等待结果
+        // 调用工具函数并等待结果（P0-2：60s 超时，防止工具卡住导致会话僵死）
         let future = func(&args);
-        future.await
+        tokio::time::timeout(TOOL_TIMEOUT, future)
+            .await
+            .map_err(|_| {
+                format!(
+                    "tool '{tool_name}' timed out after {}s",
+                    TOOL_TIMEOUT.as_secs()
+                )
+            })?
     }
 }
 

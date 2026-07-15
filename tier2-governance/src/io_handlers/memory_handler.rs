@@ -7,10 +7,14 @@
 //! 通过文件系统实现简单的持久化记忆，适用于规则上下文、缓存等场景。
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use tier0_tcb::JsonValue;
 
 use crate::io_handler::{IoHandler, IoResult};
+
+/// 单次文件 I/O 超时（P0-2：Memory 5s，防止 NFS/网络文件系统卡住）
+const MEMORY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Memory 处理器
 ///
@@ -57,23 +61,28 @@ impl IoHandler for MemoryHandler {
                 .as_str()
                 .ok_or_else(|| "param 'value' must be a string".to_string())?;
 
-            // 确保父目录存在
+            // 确保父目录存在（P0-2：5s 超时）
             if let Some(parent) = path.parent() {
-                tokio::fs::create_dir_all(parent)
+                tokio::time::timeout(MEMORY_TIMEOUT, tokio::fs::create_dir_all(parent))
                     .await
+                    .map_err(|_| {
+                        format!("create dir timed out after {}s", MEMORY_TIMEOUT.as_secs())
+                    })?
                     .map_err(|e| format!("create dir failed: {e}"))?;
             }
 
-            // 写入文件
-            tokio::fs::write(&path, content)
+            // 写入文件（P0-2：5s 超时）
+            tokio::time::timeout(MEMORY_TIMEOUT, tokio::fs::write(&path, content))
                 .await
+                .map_err(|_| format!("write file timed out after {}s", MEMORY_TIMEOUT.as_secs()))?
                 .map_err(|e| format!("write file failed: {e}"))?;
 
             Ok(JsonValue::Bool(true))
         } else {
-            // 读模式
-            let content = tokio::fs::read_to_string(&path)
+            // 读模式（P0-2：5s 超时）
+            let content = tokio::time::timeout(MEMORY_TIMEOUT, tokio::fs::read_to_string(&path))
                 .await
+                .map_err(|_| format!("read file timed out after {}s", MEMORY_TIMEOUT.as_secs()))?
                 .map_err(|e| format!("read file failed: {e}"))?;
             Ok(JsonValue::String(content))
         }

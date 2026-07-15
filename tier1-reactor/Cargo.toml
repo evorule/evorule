@@ -8,9 +8,9 @@ repository = "https://github.com/evorule/tier1-reactor"
 
 [dependencies]
 tier0-tcb = { path = "../tier0-tcb" }
-tokio = { version = "1.0", features = ["sync", "rt"] }
+tokio = { version = "1.0", features = ["sync", "rt", "time"] }
 tracing = "0.1"
+serde_json = "1.0"                                             # P0-1: WAL 持久化序列化（Fact ↔ JSON）
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }
-serde_json = "1.0"

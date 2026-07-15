@@ -14,6 +14,8 @@
 //! - 读取者（审计器）可同步获取快照
 
 use crate::fact::Fact;
+use crate::wal::{read_wal, WalWriter};
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 use tier0_tcb::JsonValue;
 
@@ -22,12 +24,18 @@ use tier0_tcb::JsonValue;
 pub enum FactsLogError {
     /// 版本号溢出
     VersionOverflow,
+    /// WAL 写入或读取失败（P0-1）
+    ///
+    /// 携带错误描述字符串。WAL 写失败时内存状态尚未更新，调用方可决定
+    /// 是否终止反应器（避免内存与磁盘状态分叉）。
+    WalError(String),
 }
 
 impl core::fmt::Display for FactsLogError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             FactsLogError::VersionOverflow => write!(f, "facts log version overflow"),
+            FactsLogError::WalError(msg) => write!(f, "facts log WAL error: {msg}"),
         }
     }
 }
@@ -52,6 +60,14 @@ struct FactsLogInner {
 
     /// 最后稳定时的版本（Stable 事实时记录）
     last_stable_version: u64,
+
+    /// 可选的 WAL 写入器（P0-1）
+    ///
+    /// - `Some`：`append()` 时先 write-ahead 写磁盘再更新内存
+    /// - `None`：纯内存模式（兼容旧 API，如 `new()` / `with_initial_payload()`）
+    ///
+    /// `recover()` 重放期间临时为 `None`，重放完成后挂载为 `Some` 以继续追加。
+    wal: Option<WalWriter>,
 }
 
 /// Append-Only 事实审计链
@@ -64,7 +80,7 @@ pub struct FactsLog {
 }
 
 impl FactsLog {
-    /// 创建空的 FactsLog（初始版本为 0，payload 为空对象）
+    /// 创建空的 FactsLog（初始版本为 0，payload 为空对象，无 WAL）
     pub fn new() -> Self {
         Self {
             inner: Arc::new(RwLock::new(FactsLogInner {
@@ -73,6 +89,7 @@ impl FactsLog {
                 current_queue: Vec::new(),
                 version: 0,
                 last_stable_version: 0,
+                wal: None,
             })),
         }
     }
@@ -87,6 +104,80 @@ impl FactsLog {
         log
     }
 
+    /// 创建带 WAL 持久化的 FactsLog（P0-1）
+    ///
+    /// 全新启动场景：truncate 已有 WAL 文件，从空状态开始。
+    /// 后续所有 `append()` 调用都会先 write-ahead 写入 WAL 再更新内存。
+    ///
+    /// # 错误
+    /// - `WalError`：WAL 文件创建/打开失败
+    pub fn with_wal<P: AsRef<Path>>(path: P) -> Result<Self, FactsLogError> {
+        let wal = WalWriter::create(path).map_err(|e| FactsLogError::WalError(e.to_string()))?;
+        Ok(Self {
+            inner: Arc::new(RwLock::new(FactsLogInner {
+                history: Vec::new(),
+                current_snapshot: JsonValue::empty_object(),
+                current_queue: Vec::new(),
+                version: 0,
+                last_stable_version: 0,
+                wal: Some(wal),
+            })),
+        })
+    }
+
+    /// 从 WAL 恢复 FactsLog（P0-1）
+    ///
+    /// # 恢复流程
+    /// 1. 读取 WAL 文件所有 (version_before, Fact) 记录
+    /// 2. 重放事实到内存状态（重放期间 WAL 未挂载，不重复写入磁盘）
+    /// 3. 重放完成后以 `append` 模式挂载 WAL，继续追加新事实
+    ///
+    /// # 错误
+    /// - `WalError`：WAL 读取失败或重放完成后挂载失败
+    /// - `VersionOverflow`：重放过程中版本号溢出
+    pub fn recover<P: AsRef<Path>>(path: P) -> Result<Self, FactsLogError> {
+        let records = read_wal(&path).map_err(|e| FactsLogError::WalError(e.to_string()))?;
+        let log = Self::new();
+        {
+            let mut inner = log.inner.write().expect("FactsLog lock poisoned");
+            for (version_before, fact) in records {
+                inner.history.push((version_before, fact.clone()));
+                match &fact {
+                    Fact::StateTransition {
+                        new_payload,
+                        new_queue,
+                        ..
+                    } => {
+                        inner.current_snapshot = new_payload.clone();
+                        inner.current_queue = new_queue.clone();
+                        inner.version = inner
+                            .version
+                            .checked_add(1)
+                            .ok_or(FactsLogError::VersionOverflow)?;
+                    }
+                    Fact::IoResponse { .. } => {
+                        inner.version = inner
+                            .version
+                            .checked_add(1)
+                            .ok_or(FactsLogError::VersionOverflow)?;
+                    }
+                    Fact::Stable { .. } => {
+                        inner.last_stable_version = inner.version;
+                    }
+                    Fact::Command { .. }
+                    | Fact::PayloadUpdate { .. }
+                    | Fact::IoRequest { .. }
+                    | Fact::Error { .. } => {}
+                }
+            }
+            // 重放完成，挂载 WAL 继续追加
+            let wal =
+                WalWriter::append(path).map_err(|e| FactsLogError::WalError(e.to_string()))?;
+            inner.wal = Some(wal);
+        }
+        Ok(log)
+    }
+
     /// 追加事实，返回追加后的版本号
     ///
     /// # 版本规则
@@ -95,6 +186,11 @@ impl FactsLog {
     /// - `Command` / `PayloadUpdate` / `IoRequest`：版本不变（触发反应器计算）
     /// - `Stable`：记录 last_stable_version
     /// - `Error`：版本不变
+    ///
+    /// # WAL 持久化（P0-1）
+    /// 若挂载了 WAL，则先 write-ahead 写入磁盘并 flush，再更新内存状态。
+    /// WAL 写失败时内存尚未更新，返回 `WalError` 让调用方决定是否终止反应器，
+    /// 避免内存与磁盘状态分叉。
     pub fn append(&self, fact: Fact) -> Result<u64, FactsLogError> {
         let mut inner = self
             .inner
@@ -102,8 +198,14 @@ impl FactsLog {
             .map_err(|_| FactsLogError::VersionOverflow)?;
 
         let version_before = inner.version;
-        inner.history.push((version_before, fact.clone()));
 
+        // P0-1: WAL write-ahead —— 内存更新前先写磁盘 + flush
+        if let Some(wal) = inner.wal.as_mut() {
+            wal.append_record(version_before, &fact)
+                .map_err(|e| FactsLogError::WalError(e.to_string()))?;
+        }
+
+        // 更新内存状态
         match &fact {
             Fact::StateTransition {
                 new_payload,
@@ -133,6 +235,9 @@ impl FactsLog {
                 // 这些事实不直接修改快照，版本号不变
             }
         }
+
+        // 推入历史（fact 已 match 完，move 即可，无需 clone）
+        inner.history.push((version_before, fact));
 
         Ok(inner.version)
     }
@@ -541,5 +646,234 @@ mod tests {
         for (i, fact) in history.iter().enumerate() {
             assert_eq!(fact.id(), ids[i]);
         }
+    }
+
+    // === P0-1 WAL 持久化测试 ===
+
+    fn temp_wal_path(name: &str) -> std::path::PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "evorule_factslog_test_{name}_{}.jsonl",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&p);
+        p
+    }
+
+    #[test]
+    fn test_facts_log_error_wal_error_display() {
+        let e = FactsLogError::WalError("disk full".into());
+        assert!(format!("{e}").contains("disk full"));
+    }
+
+    #[test]
+    fn test_with_wal_creates_empty_log() {
+        let path = temp_wal_path("with_wal_empty");
+        let log = FactsLog::with_wal(&path).unwrap();
+        // 全新启动：版本 0、空历史
+        assert_eq!(log.version(), 0);
+        assert_eq!(log.history_len(), 0);
+
+        // 文件已创建（可能为空，因为尚未 append）
+        assert!(std::fs::metadata(&path).is_ok());
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_wal_persists_facts_across_drop() {
+        let path = temp_wal_path("persist_drop");
+
+        // 1. 创建带 WAL 的 FactsLog，写入若干事实
+        let log = FactsLog::with_wal(&path).unwrap();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::object_from_pairs(&[("type", JsonValue::string("increment"))]),
+        })
+        .unwrap();
+        log.append(Fact::StateTransition {
+            id: FactId(2),
+            cause: FactId(1),
+            new_payload: JsonValue::object_from_pairs(&[("x", JsonValue::Integer(42))]),
+            new_queue: vec![],
+        })
+        .unwrap();
+        log.append(Fact::Stable {
+            id: FactId(3),
+            final_snapshot: JsonValue::object_from_pairs(&[("x", JsonValue::Integer(42))]),
+        })
+        .unwrap();
+
+        let (snap_before, _, ver_before) = log.snapshot();
+        let hist_before = log.history();
+        assert_eq!(ver_before, 1);
+        assert_eq!(hist_before.len(), 3);
+
+        // 2. 模拟进程崩溃：丢弃 log
+        drop(log);
+
+        // 3. 从 WAL 恢复
+        let recovered = FactsLog::recover(&path).unwrap();
+
+        // 4. 验证状态一致
+        let (snap_after, _, ver_after) = recovered.snapshot();
+        let hist_after = recovered.history();
+        assert_eq!(ver_after, ver_before, "version should match after recovery");
+        assert_eq!(
+            snap_after, snap_before,
+            "snapshot should match after recovery"
+        );
+        assert_eq!(
+            hist_after.len(),
+            hist_before.len(),
+            "history length should match"
+        );
+        for (i, (a, b)) in hist_before.iter().zip(hist_after.iter()).enumerate() {
+            assert_eq!(a, b, "fact {i} should match after recovery");
+        }
+        assert_eq!(recovered.last_stable_version(), 1);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_recovered_log_can_continue_appending() {
+        let path = temp_wal_path("continue_append");
+
+        // 第一次生命周期：写 2 条事实
+        let log = FactsLog::with_wal(&path).unwrap();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::empty_object(),
+        })
+        .unwrap();
+        log.append(Fact::Stable {
+            id: FactId(2),
+            final_snapshot: JsonValue::empty_object(),
+        })
+        .unwrap();
+        drop(log);
+
+        // 第二次生命周期：恢复 + 继续写
+        let recovered = FactsLog::recover(&path).unwrap();
+        assert_eq!(recovered.history_len(), 2);
+        recovered
+            .append(Fact::Error {
+                id: FactId(3),
+                message: "post-recovery".into(),
+            })
+            .unwrap();
+        assert_eq!(recovered.history_len(), 3);
+        drop(recovered);
+
+        // 第三次生命周期：再次恢复，验证追加已持久化
+        let recovered2 = FactsLog::recover(&path).unwrap();
+        assert_eq!(recovered2.history_len(), 3);
+        let history = recovered2.history();
+        assert_eq!(history[2].id(), FactId(3));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_recover_nonexistent_wal_returns_error() {
+        let path = temp_wal_path("nonexistent");
+        let result = FactsLog::recover(&path);
+        match result {
+            Err(FactsLogError::WalError(msg)) => {
+                // OK，预期错误
+                assert!(!msg.is_empty());
+            }
+            Err(other) => panic!("expected WalError, got other error: {other:?}"),
+            Ok(_) => panic!("expected WalError, got Ok"),
+        }
+    }
+
+    #[test]
+    fn test_wal_disabled_when_using_new() {
+        // 通过 new() 创建的 FactsLog 不挂载 WAL，append 不应触发磁盘 I/O
+        let log = FactsLog::new();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::empty_object(),
+        })
+        .unwrap();
+        assert_eq!(log.history_len(), 1);
+        // 无需清理文件 —— 没有创建任何文件
+    }
+
+    #[test]
+    fn test_wal_recovery_preserves_all_seven_fact_variants() {
+        let path = temp_wal_path("all_variants");
+
+        let log = FactsLog::with_wal(&path).unwrap();
+        // 7 种 Fact 变体各写一条
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::object_from_pairs(&[("a", JsonValue::Integer(1))]),
+        })
+        .unwrap();
+        log.append(Fact::PayloadUpdate {
+            id: FactId(2),
+            path: "x.y".into(),
+            value: JsonValue::String("v".into()),
+        })
+        .unwrap();
+        log.append(Fact::StateTransition {
+            id: FactId(3),
+            cause: FactId(1),
+            new_payload: JsonValue::object_from_pairs(&[("x", JsonValue::Integer(5))]),
+            new_queue: vec![JsonValue::String("q1".into())],
+        })
+        .unwrap();
+        log.append(Fact::IoRequest {
+            id: FactId(4),
+            cause: FactId(3),
+            io_type: IoType::CallLlm,
+            params: JsonValue::object_from_pairs(&[("prompt", JsonValue::String("hi".into()))]),
+        })
+        .unwrap();
+        log.append(Fact::IoResponse {
+            id: FactId(5),
+            request_id: FactId(4),
+            result: JsonValue::String("resp".into()),
+            error: None,
+        })
+        .unwrap();
+        log.append(Fact::Stable {
+            id: FactId(6),
+            final_snapshot: JsonValue::object_from_pairs(&[("x", JsonValue::Integer(5))]),
+        })
+        .unwrap();
+        log.append(Fact::Error {
+            id: FactId(7),
+            message: "all variants tested".into(),
+        })
+        .unwrap();
+
+        let original_history = log.history();
+        let (original_snap, original_queue, original_ver) = log.snapshot();
+        let original_last_stable = log.last_stable_version();
+        drop(log);
+
+        let recovered = FactsLog::recover(&path).unwrap();
+        let recovered_history = recovered.history();
+        let (recovered_snap, recovered_queue, recovered_ver) = recovered.snapshot();
+        let recovered_last_stable = recovered.last_stable_version();
+
+        assert_eq!(recovered_history.len(), original_history.len());
+        for (i, (a, b)) in original_history
+            .iter()
+            .zip(recovered_history.iter())
+            .enumerate()
+        {
+            assert_eq!(a, b, "fact {i} mismatch after recovery");
+        }
+        assert_eq!(recovered_snap, original_snap);
+        assert_eq!(recovered_queue, original_queue);
+        assert_eq!(recovered_ver, original_ver);
+        assert_eq!(recovered_last_stable, original_last_stable);
+
+        let _ = std::fs::remove_file(&path);
     }
 }

@@ -8,6 +8,7 @@
 //! 通过 `base_url` 可兼容任意 OpenAI 兼容的 LLM 服务。
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use reqwest::Client;
 use tier0_tcb::JsonValue;
@@ -20,6 +21,8 @@ const DEFAULT_MODEL: &str = "gpt-4o-mini";
 const DEFAULT_TEMPERATURE: f32 = 0.7;
 /// 默认最大 token 数
 const DEFAULT_MAX_TOKENS: u32 = 1024;
+/// 单次 LLM 请求超时（P0-2：LLM 30s）
+const LLM_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// LLM 处理器
 ///
@@ -130,10 +133,11 @@ impl IoHandler for LlmHandler {
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
         tracing::debug!("LLM request to {} model={}", url, model);
 
-        // 发送请求
+        // 发送请求（P0-2：30s 超时，防止 LLM API 卡住导致会话僵死）
         let resp = self
             .client
             .post(&url)
+            .timeout(LLM_TIMEOUT)
             .bearer_auth(&self.api_key)
             .json(&body)
             .send()

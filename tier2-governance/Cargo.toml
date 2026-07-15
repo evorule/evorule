@@ -24,7 +24,10 @@ futures-core = "0.3"
 
 # 日志
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Metrics（P2-7：prometheus 指标暴露）
+prometheus = "0.13"
 
 # I/O Handler SDK
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] } # SQLite
@@ -35,8 +38,12 @@ blake3 = "1" # 哈希
 
 # HTTP API
 axum = "0.8"
-tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "cors"] }
+tower = { version = "0.5", features = ["limit"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "limit"] }
+tower_governor = "0.8"
+
+# 安全（P1-5：恒定时间比较，防时序攻击）
+subtle = "2"
 
 # 热重载
 notify = "7"
@@ -44,6 +51,7 @@ notify = "7"
 # 序列化
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"                                     # P2-9：TOML 配置文件
 
 # 错误处理
 thiserror = "2"

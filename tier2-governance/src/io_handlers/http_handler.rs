@@ -12,8 +12,8 @@ use tier0_tcb::JsonValue;
 
 use crate::io_handler::{IoHandler, IoResult};
 
-/// 默认请求超时（毫秒）
-const DEFAULT_TIMEOUT_MS: i64 = 30_000;
+/// 默认请求超时（毫秒）（P0-2：HTTP 10s）
+const DEFAULT_TIMEOUT_MS: i64 = 10_000;
 
 /// HTTP 处理器
 ///
@@ -114,6 +114,6 @@ mod tests {
     #[test]
     fn test_missing_url_returns_error() {
         // 同步校验逻辑：execute 是 async，这里仅验证常量
-        assert_eq!(DEFAULT_TIMEOUT_MS, 30_000);
+        assert_eq!(DEFAULT_TIMEOUT_MS, 10_000);
     }
 }

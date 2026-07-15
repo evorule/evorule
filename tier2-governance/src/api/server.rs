@@ -13,10 +13,15 @@
 use crate::api::auth::AuthConfig;
 use crate::api::session::SessionManager;
 use crate::auditor::Auditor;
+use crate::metrics::SharedMetrics;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tier0_tcb::JsonValue;
 use tier1_reactor::{Fact, FactId, FactSender, FactsLog};
 use tokio::sync::Mutex;
+
+/// 就绪标志（P2-8：优雅退出时设为 false，readiness 端点返回 503）
+pub type ReadinessFlag = Arc<AtomicBool>;
 
 /// Governance API 共享状态
 ///
@@ -94,6 +99,27 @@ impl GovernanceApi {
     }
 }
 
+/// 全局 SSE 连接数上限（P1-6：防止连接耗尽）
+const MAX_SSE_CONNECTIONS: u64 = 100;
+
+/// SSE 心跳间隔（P1-6：每 15s 发送 `: ping` 保持连接活跃）
+const SSE_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
+
+/// SSE 连接最大空闲时长（P1-6：10 分钟无事件自动关闭）
+const SSE_MAX_IDLE: Duration = Duration::from_secs(600);
+
+/// HTTP 请求体大小上限（P1-4：1MB，防止超大请求体攻击）
+const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
+
+/// HTTP 并发请求数上限（P1-4：1000 并发，防止连接耗尽）
+const MAX_CONCURRENCY: usize = 1000;
+
+/// 速率限制：每秒允许的请求数（令牌桶填充速率，P1-4）
+const RATE_LIMIT_PER_SECOND: u64 = 10;
+
+/// 速率限制：突发请求数上限（令牌桶容量，P1-4）
+const RATE_LIMIT_BURST_SIZE: u32 = 20;
+
 /// 会话管理 API 共享状态
 ///
 /// 持有 `SessionManager`（Arc<Mutex> 保护），管理多个独立反应器实例。
@@ -104,6 +130,8 @@ pub struct SessionApi {
     sessions: Arc<Mutex<SessionManager>>,
     /// API 层 FactId 计数器（从 30000 起，避免与反应器自身 ID 冲突）
     next_id: Arc<std::sync::atomic::AtomicU64>,
+    /// 当前活跃 SSE 连接数（P1-6：全局计数器，限制 MAX_SSE_CONNECTIONS）
+    sse_connections: Arc<AtomicU64>,
 }
 
 impl SessionApi {
@@ -116,6 +144,7 @@ impl SessionApi {
         Self {
             sessions: Arc::new(Mutex::new(SessionManager::new(core_eval, max_rounds))),
             next_id: Arc::new(std::sync::atomic::AtomicU64::new(30000)),
+            sse_connections: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -127,13 +156,53 @@ impl SessionApi {
         )
     }
 
+    /// 尝试获取一个 SSE 连接配额（P1-6）
+    ///
+    /// 成功返回 `SseConnectionGuard`，连接关闭时自动释放配额。
+    /// 超过 `MAX_SSE_CONNECTIONS` 上限返回 `None`。
+    fn try_acquire_sse(&self) -> Option<SseConnectionGuard> {
+        let current = self.sse_connections.load(Ordering::SeqCst);
+        if current >= MAX_SSE_CONNECTIONS {
+            tracing::warn!(
+                current,
+                max = MAX_SSE_CONNECTIONS,
+                "SSE 连接数已达上限，拒绝新连接"
+            );
+            return None;
+        }
+        let new_val = self.sse_connections.fetch_add(1, Ordering::SeqCst);
+        if new_val >= MAX_SSE_CONNECTIONS {
+            // 并发竞争回退
+            self.sse_connections.fetch_sub(1, Ordering::SeqCst);
+            tracing::warn!(
+                current = new_val,
+                max = MAX_SSE_CONNECTIONS,
+                "SSE 连接数已达上限（并发竞争回退）"
+            );
+            return None;
+        }
+        tracing::debug!(
+            active = new_val + 1,
+            max = MAX_SSE_CONNECTIONS,
+            "SSE 连接已建立"
+        );
+        Some(SseConnectionGuard {
+            counter: self.sse_connections.clone(),
+        })
+    }
+
+    /// 返回当前活跃 SSE 连接数（用于监控/测试）
+    pub fn sse_connection_count(&self) -> u64 {
+        self.sse_connections.load(Ordering::SeqCst)
+    }
+
     /// 启动后台 reaper 任务，定期清理过期和已结束的会话
     ///
     /// 应在服务器启动时调用一次。清理间隔为 5 分钟。
     pub fn start_reaper(&self) {
         let sessions = self.sessions.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5 * 60));
+            let mut interval = tokio::time::interval(crate::api::session::REAPER_INTERVAL);
             interval.tick().await; // 跳过第一次立即触发
             loop {
                 interval.tick().await;
@@ -152,25 +221,65 @@ impl SessionApi {
     }
 }
 
-/// 应用全局状态（合并 GovernanceApi + SessionApi）
+/// SSE 连接配额守卫（P1-6）
+///
+/// RAII 模式：Drop 时自动减少全局 SSE 连接计数器，
+/// 确保连接断开后配额被正确释放。
+pub struct SseConnectionGuard {
+    counter: Arc<AtomicU64>,
+}
+
+impl Drop for SseConnectionGuard {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::SeqCst);
+        tracing::debug!("SSE 连接配额已释放");
+    }
+}
+
+/// SSE 指标守卫（P2-7）
+///
+/// RAII 模式：Drop 时自动减少 SSE 连接指标。
+/// 在 `session_events` 的 `stream!` 内部持有，stream 结束时自动释放。
+struct SseMetricsGuard(SharedMetrics);
+
+impl Drop for SseMetricsGuard {
+    fn drop(&mut self) {
+        self.0.dec_sse_connections();
+    }
+}
+
+/// 应用全局状态（合并 GovernanceApi + SessionApi + Metrics + Readiness）
 ///
 /// 通过 axum `FromRef` 模式，handler 可按需提取子状态：
 /// - `State<GovernanceApi>` — 单反应器模式路由
 /// - `State<SessionApi>` — 多会话模式路由
+/// - `State<SharedMetrics>` — Prometheus 指标（P2-7）
+/// - `State<ReadinessFlag>` — 就绪标志（P2-8）
 #[derive(Clone)]
 pub struct AppState {
     /// 单反应器 API（向后兼容）
     governance: GovernanceApi,
     /// 多会话 API
     sessions: SessionApi,
+    /// Prometheus 指标（P2-7）
+    metrics: SharedMetrics,
+    /// 就绪标志（P2-8：优雅退出时设为 false）
+    readiness: ReadinessFlag,
 }
 
 impl AppState {
     /// 创建应用全局状态
-    pub fn new(governance: GovernanceApi, sessions: SessionApi) -> Self {
+    pub fn new(
+        governance: GovernanceApi,
+        sessions: SessionApi,
+        metrics: SharedMetrics,
+        readiness: ReadinessFlag,
+    ) -> Self {
         Self {
             governance,
             sessions,
+            metrics,
+            readiness,
         }
     }
 }
@@ -184,6 +293,18 @@ impl FromRef<AppState> for GovernanceApi {
 impl FromRef<AppState> for SessionApi {
     fn from_ref(state: &AppState) -> Self {
         state.sessions.clone()
+    }
+}
+
+impl FromRef<AppState> for SharedMetrics {
+    fn from_ref(state: &AppState) -> Self {
+        state.metrics.clone()
+    }
+}
+
+impl FromRef<AppState> for ReadinessFlag {
+    fn from_ref(state: &AppState) -> Self {
+        state.readiness.clone()
     }
 }
 
@@ -266,7 +387,11 @@ use axum::response::Json;
 use axum::routing::{delete, get, post};
 use axum::Router;
 use futures_core::Stream;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tokio::sync::broadcast;
+use tower_http::cors::CorsLayer;
+use tower_http::limit::RequestBodyLimitLayer;
 
 /// 将 Fact 序列化为 SSE 事件 data 字段（JSON 字符串）
 ///
@@ -355,7 +480,7 @@ fn fact_to_sse_data(fact: &Fact) -> String {
     serde_json::Value::Object(obj).to_string()
 }
 
-/// 健康检查 handler
+/// 健康检查 handler（向后兼容，等价于 liveness）
 async fn health() -> Json<ApiResponse> {
     Json(ApiResponse {
         success: true,
@@ -364,11 +489,56 @@ async fn health() -> Json<ApiResponse> {
     })
 }
 
+/// Liveness 探针（P2-8：进程存活检查）
+///
+/// `GET /api/health/liveness` → 始终返回 200，只要进程在运行就算存活。
+/// Kubernetes livenessProbe 用此端点判断是否需要重启容器。
+async fn liveness() -> Json<ApiResponse> {
+    Json(ApiResponse {
+        success: true,
+        message: "alive".to_string(),
+        fact_id: None,
+    })
+}
+
+/// Readiness 探针（P2-8：就绪检查）
+///
+/// `GET /api/health/readiness` → readiness flag 为 true 时返回 200，否则 503。
+/// 优雅退出时 flag 设为 false，负载均衡器将流量切走。
+async fn readiness(State(flag): State<ReadinessFlag>) -> Result<Json<ApiResponse>, StatusCode> {
+    if flag.load(std::sync::atomic::Ordering::SeqCst) {
+        Ok(Json(ApiResponse {
+            success: true,
+            message: "ready".to_string(),
+            fact_id: None,
+        }))
+    } else {
+        Err(StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
+
+/// Prometheus 指标端点（P2-7）
+///
+/// `GET /metrics` → 返回 Prometheus 文本格式指标数据。
+/// 此端点免认证（Prometheus scraper 通常不携带 token），但仍受速率限制和并发限制保护。
+async fn metrics_handler(State(metrics): State<SharedMetrics>) -> String {
+    metrics.render()
+}
+
 /// 提交命令 handler
 async fn submit_command(
     State(api): State<GovernanceApi>,
+    State(metrics): State<SharedMetrics>,
     Json(req): Json<CommandRequest>,
 ) -> Result<Json<ApiResponse>, StatusCode> {
+    // P2-7: 按指令类型计数
+    let cmd_type = req
+        .instruction
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    metrics.inc_commands(cmd_type);
+
     let instruction = serde_to_tcb(req.instruction);
     match api.send_command(instruction) {
         Ok(id) => Ok(Json(ApiResponse {
@@ -444,17 +614,22 @@ async fn get_audit(State(api): State<GovernanceApi>) -> Json<serde_json::Value> 
 /// 超过最大会话数时返回 429 Too Many Requests
 async fn create_session(
     State(api): State<SessionApi>,
+    State(metrics): State<SharedMetrics>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let result = {
         let mut sessions = api.sessions.lock().await;
         sessions.create_session()
     };
     match result {
-        Ok(id) => Ok(Json(serde_json::json!({
-            "session_id": id,
-            "message": "Session created"
-        }))),
+        Ok(id) => {
+            metrics.inc_sessions(); // P2-7: 会话数 +1
+            Ok(Json(serde_json::json!({
+                "session_id": id,
+                "message": "Session created"
+            })))
+        }
         Err(crate::api::session::SessionError::LimitExceeded { current, max }) => {
+            tracing::warn!(current, max, "Session creation rejected: limit exceeded");
             Err(StatusCode::TOO_MANY_REQUESTS)
         }
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
@@ -481,6 +656,7 @@ async fn list_sessions(
 /// `DELETE /api/sessions/:id` → 关闭指定会话，反应器优雅退出
 async fn close_session(
     State(api): State<SessionApi>,
+    State(metrics): State<SharedMetrics>,
     Path(session_id): Path<u64>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let result = {
@@ -488,10 +664,13 @@ async fn close_session(
         sessions.close_session(session_id)
     };
     match result {
-        Ok(_) => Ok(Json(serde_json::json!({
-            "session_id": session_id,
-            "message": "Session closed"
-        }))),
+        Ok(_) => {
+            metrics.dec_sessions(); // P2-7: 会话数 -1
+            Ok(Json(serde_json::json!({
+                "session_id": session_id,
+                "message": "Session closed"
+            })))
+        }
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }
@@ -501,9 +680,18 @@ async fn close_session(
 /// `POST /api/sessions/:id/command` → 提交命令到指定会话的反应器
 async fn session_command(
     State(api): State<SessionApi>,
+    State(metrics): State<SharedMetrics>,
     Path(session_id): Path<u64>,
     Json(req): Json<CommandRequest>,
 ) -> Result<Json<ApiResponse>, StatusCode> {
+    // P2-7: 按指令类型计数
+    let cmd_type = req
+        .instruction
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    metrics.inc_commands(cmd_type);
+
     let id = api.next_id();
     let instruction = serde_to_tcb(req.instruction);
 
@@ -532,6 +720,7 @@ async fn session_command(
 /// `GET /api/sessions/:id/state` → 返回指定会话的状态快照
 async fn session_state(
     State(api): State<SessionApi>,
+    State(metrics): State<SharedMetrics>,
     Path(session_id): Path<u64>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut sessions = api.sessions.lock().await;
@@ -541,6 +730,9 @@ async fn session_state(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let (payload, queue, version) = session.facts_log.snapshot();
+
+    // P2-7: 更新 FactsLog 版本号指标
+    metrics.set_facts_log_version(version);
 
     let mut obj = serde_json::Map::new();
     obj.insert("payload".into(), tcb_to_serde(&payload));
@@ -598,10 +790,25 @@ async fn session_payload(
 /// 连接保持直到：
 /// - 客户端断开连接
 /// - 会话被关闭（反应器退出，broadcast 通道关闭）
+/// - 空闲超时（10 分钟无事件，P1-6）
+///
+/// # P1-6 安全措施
+/// - 全局 SSE 连接数限制（`MAX_SSE_CONNECTIONS=100`），超限返回 503
+/// - 心跳（每 15s 发 `: ping`，防止代理/防火墙超时断开）
+/// - 空闲超时（10 分钟无实际事件自动关闭，心跳不计入）
 async fn session_events(
     State(api): State<SessionApi>,
+    State(metrics): State<SharedMetrics>,
     Path(session_id): Path<u64>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>>, StatusCode> {
+    // P1-6: 获取 SSE 连接配额，超限返回 503
+    let sse_guard = api
+        .try_acquire_sse()
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+
+    // P2-7: SSE 连接指标 +1（stream 结束时通过 SseMetricsGuard 自动 -1）
+    metrics.inc_sse_connections();
+
     // 从 SessionManager 获取 event 通道接收端
     let mut event_rx = {
         let mut sessions = api.sessions.lock().await;
@@ -613,22 +820,61 @@ async fn session_events(
     };
 
     // 创建异步流：从 broadcast 接收 Fact，转换为 SSE Event
+    // P1-6: 心跳 + 空闲超时
     let stream = stream! {
+        // 持有 SSE 连接配额守卫，stream 结束时自动释放
+        let _guard = sse_guard;
+        // P2-7: 持有 metrics 守卫，stream 结束时自动 dec_sse_connections
+        let _metrics_guard = SseMetricsGuard(metrics);
+
+        let mut heartbeat = tokio::time::interval(SSE_HEARTBEAT_INTERVAL);
+        heartbeat.tick().await; // 跳过第一次立即触发
+        let mut last_event_time = tokio::time::Instant::now();
+
         loop {
-            match event_rx.recv().await {
-                Ok(fact) => {
-                    let data = fact_to_sse_data(&fact);
+            let idle_deadline = last_event_time + SSE_MAX_IDLE;
+            tokio::select! {
+                // 心跳：定期发送 : ping 保持连接活跃
+                _ = heartbeat.tick() => {
                     yield Ok::<_, std::convert::Infallible>(
-                        Event::default().data(data)
+                        Event::default().comment("ping")
                     );
                 }
-                Err(broadcast::error::RecvError::Closed) => {
-                    tracing::debug!("SSE stream closed for session {}", session_id);
-                    break;
+                // 事件接收
+                recv_result = event_rx.recv() => {
+                    match recv_result {
+                        Ok(fact) => {
+                            last_event_time = tokio::time::Instant::now();
+                            let data = fact_to_sse_data(&fact);
+                            yield Ok::<_, std::convert::Infallible>(
+                                Event::default().data(data)
+                            );
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            tracing::debug!(
+                                session_id,
+                                "SSE stream closed: broadcast channel closed"
+                            );
+                            break;
+                        }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!(
+                                session_id,
+                                dropped = n,
+                                "SSE stream lagged, events dropped"
+                            );
+                            continue;
+                        }
+                    }
                 }
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!("SSE stream lagged for session {}: {} events dropped", session_id, n);
-                    continue;
+                // 空闲超时：10 分钟无实际事件自动关闭（心跳不重置计时）
+                _ = tokio::time::sleep_until(idle_deadline) => {
+                    tracing::info!(
+                        session_id,
+                        idle_secs = SSE_MAX_IDLE.as_secs(),
+                        "SSE 连接空闲超时，自动关闭"
+                    );
+                    break;
                 }
             }
         }
@@ -665,12 +911,37 @@ impl GovernanceServer {
     }
 
     /// 构建路由（公开，供 bin 自定义启动流程使用）
+    ///
+    /// # 安全层（P1-4，从内到外）
+    /// 1. `auth_middleware` — Bearer token 认证
+    /// 2. `RequestBodyLimitLayer` — 请求体大小限制（1MB）
+    /// 3. `ConcurrencyLimitLayer` — 并发连接数限制（1000）
+    /// 4. `CorsLayer` — CORS 预检处理
+    /// 5. `GovernorLayer` — 速率限制（每 IP 10 req/s，突发 20）
+    ///
+    /// # 注意
+    /// `GovernorLayer` 依赖 `ConnectInfo<SocketAddr>` 提取客户端 IP，
+    /// 因此 bin 启动时必须使用 `into_make_service_with_connect_info::<SocketAddr>()`。
     pub fn build_router(&self) -> Router {
         let auth = self.auth.clone();
 
-        Router::new()
-            // 单反应器模式路由（向后兼容）
+        // P1-4: 速率限制配置（令牌桶：每秒 10 令牌填充，桶容量 20）
+        let governor_config = tower_governor::governor::GovernorConfigBuilder::default()
+            .per_second(RATE_LIMIT_PER_SECOND)
+            .burst_size(RATE_LIMIT_BURST_SIZE)
+            .finish()
+            .expect("governor config build invariant failed");
+
+        // P2-7/P2-8: 公开路由（免认证）— health/liveness/readiness/metrics
+        let public_routes = Router::new()
             .route("/api/health", get(health))
+            .route("/api/health/liveness", get(liveness))
+            .route("/api/health/readiness", get(readiness))
+            .route("/metrics", get(metrics_handler));
+
+        // 受保护路由（需认证）
+        let protected_routes = Router::new()
+            // 单反应器模式路由（向后兼容）
             .route("/api/command", post(submit_command))
             .route("/api/payload", post(update_payload))
             .route("/api/state", get(get_state))
@@ -682,20 +953,35 @@ impl GovernanceServer {
             .route("/api/sessions/{id}/state", get(session_state))
             .route("/api/sessions/{id}/payload", post(session_payload))
             .route("/api/sessions/{id}/events", get(session_events))
-            // 认证中间件 + 全局状态
             .layer(axum::middleware::from_fn_with_state(
                 auth,
                 crate::api::auth::auth_middleware,
-            ))
+            ));
+
+        // 合并路由 + 全局安全层（从内到外：body limit → concurrency → cors → rate limit）
+        Router::new()
+            .merge(public_routes)
+            .merge(protected_routes)
+            .layer(RequestBodyLimitLayer::new(MAX_REQUEST_BODY_BYTES))
+            .layer(tower::limit::ConcurrencyLimitLayer::new(MAX_CONCURRENCY))
+            .layer(CorsLayer::permissive())
+            .layer(tower_governor::GovernorLayer::new(governor_config))
             .with_state(self.state.clone())
     }
 
     /// 启动 HTTP 服务器
+    ///
+    /// 使用 `into_make_service_with_connect_info::<SocketAddr>()` 注入客户端 IP，
+    /// 以支持 `GovernorLayer`（P1-4 速率限制）的按 IP 限流。
     pub async fn serve(self) -> Result<(), std::io::Error> {
         let router = self.build_router();
         let listener = tokio::net::TcpListener::bind(&self.addr).await?;
         tracing::info!("Governance HTTP server listening on {}", self.addr);
-        axum::serve(listener, router).await
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
     }
 }
 

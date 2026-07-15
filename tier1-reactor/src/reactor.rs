@@ -21,12 +21,27 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use std::collections::VecDeque;
+use std::time::Duration;
+
+/// 默认队列长度上限（P3-11：超过时 80% warn / 100% Error）
+const DEFAULT_MAX_QUEUE_LEN: usize = 1000;
+
+/// 默认 I/O 超时检查间隔（P3-11：阻塞等待时定期扫描超时）
+const IO_TIMEOUT_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
 /// 反应器配置构建器
 #[derive(Debug, Clone)]
 pub struct ReactorBuilder {
     core_eval: Vec<JsonValue>,
     max_rounds: usize,
+    /// P3-11：队列长度上限（默认 1000）
+    max_queue_len: usize,
+    /// P3-11：I/O 超时警告阈值（默认 30s）
+    io_warn_timeout: Duration,
+    /// P3-11：I/O 超时错误阈值（默认 60s，超过后发射 Error 恢复反应器）
+    io_error_timeout: Duration,
+    /// P3-11：I/O 超时检查间隔（默认 5s，测试可缩短）
+    io_timeout_check_interval: Duration,
 }
 
 impl ReactorBuilder {
@@ -35,6 +50,10 @@ impl ReactorBuilder {
         Self {
             core_eval,
             max_rounds: 10000,
+            max_queue_len: DEFAULT_MAX_QUEUE_LEN,
+            io_warn_timeout: Duration::from_secs(30),
+            io_error_timeout: Duration::from_secs(60),
+            io_timeout_check_interval: IO_TIMEOUT_CHECK_INTERVAL,
         }
     }
 
@@ -44,11 +63,48 @@ impl ReactorBuilder {
         self
     }
 
+    /// 设置队列长度上限（P3-11）
+    ///
+    /// 队列长度达到 80% 时发射 warn 日志，达到 100% 时发射 `Fact::Error` 并清空队列。
+    pub fn max_queue_len(mut self, max_queue_len: usize) -> Self {
+        self.max_queue_len = max_queue_len;
+        self
+    }
+
+    /// 设置 I/O 超时警告阈值（P3-11，默认 30s）
+    ///
+    /// pending I/O 超过此时长未响应时发射 warn 日志。
+    pub fn io_warn_timeout(mut self, timeout: Duration) -> Self {
+        self.io_warn_timeout = timeout;
+        self
+    }
+
+    /// 设置 I/O 超时错误阈值（P3-11，默认 60s）
+    ///
+    /// pending I/O 超过此时长未响应时发射 `Fact::Error`，移除该 I/O 请求，恢复反应器。
+    pub fn io_error_timeout(mut self, timeout: Duration) -> Self {
+        self.io_error_timeout = timeout;
+        self
+    }
+
+    /// 设置 I/O 超时检查间隔（P3-11，默认 5s，测试可缩短）
+    ///
+    /// 反应器在阻塞等待命令时，每隔此间隔扫描一次 pending I/O 超时。
+    /// 生产环境建议 5s，测试环境可设为 50ms 以加速测试。
+    pub fn io_timeout_check_interval(mut self, interval: Duration) -> Self {
+        self.io_timeout_check_interval = interval;
+        self
+    }
+
     /// 构建反应器
     pub fn build(self) -> Reactor {
         Reactor {
             core_eval: self.core_eval,
             max_rounds: self.max_rounds,
+            max_queue_len: self.max_queue_len,
+            io_warn_timeout: self.io_warn_timeout,
+            io_error_timeout: self.io_error_timeout,
+            io_timeout_check_interval: self.io_timeout_check_interval,
             facts_log: FactsLog::new(),
         }
     }
@@ -58,6 +114,14 @@ impl ReactorBuilder {
 pub struct Reactor {
     core_eval: Vec<JsonValue>,
     max_rounds: usize,
+    /// P3-11：队列长度上限
+    max_queue_len: usize,
+    /// P3-11：I/O 超时警告阈值
+    io_warn_timeout: Duration,
+    /// P3-11：I/O 超时错误阈值
+    io_error_timeout: Duration,
+    /// P3-11：I/O 超时检查间隔
+    io_timeout_check_interval: Duration,
     facts_log: FactsLog,
 }
 
@@ -175,12 +239,27 @@ impl Reactor {
             }
 
             // 3. 如果队列空或等待 I/O 且未 drain 到任何 Fact，阻塞等 Fact
+            //    P3-11：使用 timeout 定期扫描 pending I/O 超时（30s warn / 60s error）
             if (state.queue.is_empty() || state.pending_io_count > 0) && !drained_any {
-                let fact = match cmd_rx.recv().await {
-                    Some(f) => f,
-                    None => {
+                let fact = match tokio::time::timeout(self.io_timeout_check_interval, cmd_rx.recv())
+                    .await
+                {
+                    Ok(Some(f)) => f,
+                    Ok(None) => {
                         tracing::debug!("Reactor command channel closed, shutting down");
                         return Ok(());
+                    }
+                    Err(_) => {
+                        // P3-11: 超时，扫描 pending I/O 超时
+                        Self::check_io_timeouts(
+                            &mut state,
+                            &self.facts_log,
+                            &event_tx,
+                            &mut id_gen,
+                            self.io_warn_timeout,
+                            self.io_error_timeout,
+                        );
+                        continue 'main;
                     }
                 };
                 tracing::trace!("Processing fact: {} (id={})", fact.type_name(), fact.id());
@@ -191,6 +270,19 @@ impl Reactor {
 
             // 4. 持续执行队列指令（pending_io==0 时）
             while state.pending_io_count == 0 {
+                // P3-11: max_rounds 80% 警告（首次触发时记录，仅一次）
+                let warn_threshold = self.max_rounds * 4 / 5;
+                if warn_threshold > 0 && steps == warn_threshold {
+                    tracing::warn!(
+                        steps,
+                        max_rounds = self.max_rounds,
+                        threshold_pct = 80,
+                        "指令执行步数达到 max_rounds 的 80%（{} / {}），即将接近上限",
+                        steps,
+                        self.max_rounds
+                    );
+                }
+
                 // BUG-3 修复：先检查 max_rounds，再弹出指令，避免指令丢失
                 if steps >= self.max_rounds {
                     let id = id_gen.next_id();
@@ -238,6 +330,48 @@ impl Reactor {
                     }) => {
                         state.payload = new_payload;
                         state.queue = VecDeque::from(new_queue);
+
+                        // P3-11: 队列长度分级告警（80% warn / 100% Error+清空）
+                        let queue_len = state.queue.len();
+                        let queue_warn_threshold = self.max_queue_len * 4 / 5;
+                        if queue_len >= self.max_queue_len && self.max_queue_len > 0 {
+                            // 100%：硬限制，发射 Error 并清空队列
+                            tracing::error!(
+                                queue_len,
+                                max_queue_len = self.max_queue_len,
+                                "队列长度超过上限，发射 Error 并清空队列"
+                            );
+                            let err_id = id_gen.next_id();
+                            let err_fact = Fact::Error {
+                                id: err_id,
+                                message: format!(
+                                    "Queue length {} exceeds max {}",
+                                    queue_len, self.max_queue_len
+                                ),
+                            };
+                            Self::emit_fact(&self.facts_log, &event_tx, err_fact);
+                            state.queue.clear();
+                            // 发射 Stable 恢复
+                            let stable_id = id_gen.next_id();
+                            let stable_fact = Fact::Stable {
+                                id: stable_id,
+                                final_snapshot: state.payload.clone(),
+                            };
+                            Self::emit_fact(&self.facts_log, &event_tx, stable_fact);
+                            steps = 0;
+                            continue 'main;
+                        } else if queue_len >= queue_warn_threshold && queue_warn_threshold > 0 {
+                            // 80%：软限制警告
+                            tracing::warn!(
+                                queue_len,
+                                max_queue_len = self.max_queue_len,
+                                threshold_pct = 80,
+                                "队列长度接近上限（80%）：{} / {}",
+                                queue_len,
+                                self.max_queue_len
+                            );
+                        }
+
                         // I/O 恢复执行后清除 __io_result__，防止残留影响后续 I/O 指令。
                         // exists 域检查的是"路径存在"（Null 也算存在），若不清除，
                         // 后续不同的 I/O 指令会错误地走 on_true 分支消费旧结果。
@@ -301,6 +435,57 @@ impl Reactor {
         }
         if event_tx.send(fact).is_err() {
             tracing::warn!("Event broadcast channel has no receivers, fact not delivered");
+        }
+    }
+
+    /// P3-11: 扫描 pending I/O 超时（分级告警）
+    ///
+    /// - `warn_ids`：超过 `warn_timeout` 但未超过 `error_timeout`，记录 warn 日志
+    /// - `error_ids`：超过 `error_timeout`，发射 `Fact::Error`，强制移除请求，恢复反应器
+    ///
+    /// 此方法在主循环的 `tokio::time::timeout` 超时分支中调用，
+    /// 确保长时间未响应的 I/O 不会永久阻塞反应器。
+    fn check_io_timeouts(
+        state: &mut ReactorState,
+        facts_log: &FactsLog,
+        event_tx: &EventSender,
+        id_gen: &mut FactIdGenerator,
+        warn_timeout: Duration,
+        error_timeout: Duration,
+    ) {
+        if state.pending_io_count == 0 {
+            return;
+        }
+
+        let (warn_ids, error_ids) = state.scan_io_timeouts(warn_timeout, error_timeout);
+
+        for id in &warn_ids {
+            tracing::warn!(
+                io_request_id = %id,
+                warn_timeout_secs = warn_timeout.as_secs(),
+                "I/O 请求超时警告：pending I/O 超过 {}s 未响应",
+                warn_timeout.as_secs()
+            );
+        }
+
+        for id in error_ids {
+            tracing::error!(
+                io_request_id = %id,
+                error_timeout_secs = error_timeout.as_secs(),
+                "I/O 请求超时错误：pending I/O 超过 {}s 未响应，发射 Error 恢复反应器",
+                error_timeout.as_secs()
+            );
+            let err_fact_id = id_gen.next_id();
+            let err_fact = Fact::Error {
+                id: err_fact_id,
+                message: format!(
+                    "I/O request {} timed out after {}s",
+                    id,
+                    error_timeout.as_secs()
+                ),
+            };
+            Self::emit_fact(facts_log, event_tx, err_fact);
+            state.force_remove_io_request(id);
         }
     }
 
@@ -473,5 +658,71 @@ mod tests {
             state.payload.get("__io_result__").and_then(|v| v.as_str()),
             Some("llm_response")
         );
+    }
+
+    // ===== P3-11 资源管理 Builder 配置测试 =====
+
+    #[test]
+    fn test_builder_defaults() {
+        let builder = ReactorBuilder::new(vec![]);
+        assert_eq!(builder.max_rounds, 10000);
+        assert_eq!(builder.max_queue_len, DEFAULT_MAX_QUEUE_LEN);
+        assert_eq!(builder.io_warn_timeout, Duration::from_secs(30));
+        assert_eq!(builder.io_error_timeout, Duration::from_secs(60));
+        assert_eq!(builder.io_timeout_check_interval, IO_TIMEOUT_CHECK_INTERVAL);
+    }
+
+    #[test]
+    fn test_builder_max_queue_len() {
+        let builder = ReactorBuilder::new(vec![]).max_queue_len(500);
+        assert_eq!(builder.max_queue_len, 500);
+    }
+
+    #[test]
+    fn test_builder_io_timeouts() {
+        let builder = ReactorBuilder::new(vec![])
+            .io_warn_timeout(Duration::from_secs(10))
+            .io_error_timeout(Duration::from_secs(20));
+        assert_eq!(builder.io_warn_timeout, Duration::from_secs(10));
+        assert_eq!(builder.io_error_timeout, Duration::from_secs(20));
+    }
+
+    #[test]
+    fn test_builder_all_p3_11_options() {
+        // P3-11: 综合配置
+        let builder = ReactorBuilder::new(vec![])
+            .max_rounds(100)
+            .max_queue_len(200)
+            .io_warn_timeout(Duration::from_secs(15))
+            .io_error_timeout(Duration::from_secs(45));
+
+        assert_eq!(builder.max_rounds, 100);
+        assert_eq!(builder.max_queue_len, 200);
+        assert_eq!(builder.io_warn_timeout, Duration::from_secs(15));
+        assert_eq!(builder.io_error_timeout, Duration::from_secs(45));
+    }
+
+    #[test]
+    fn test_max_rounds_80_percent_threshold() {
+        // P3-11: 验证 80% 阈值计算
+        // max_rounds=100 → warn_threshold=80
+        assert_eq!(100usize * 4 / 5, 80);
+        // max_rounds=1000 → warn_threshold=800
+        assert_eq!(1000usize * 4 / 5, 800);
+        // max_rounds=5 → warn_threshold=4
+        assert_eq!(5usize * 4 / 5, 4);
+        // max_rounds=3 → warn_threshold=2
+        assert_eq!(3usize * 4 / 5, 2);
+    }
+
+    #[test]
+    fn test_queue_80_percent_threshold() {
+        // P3-11: 验证队列 80% 阈值计算
+        // max_queue_len=1000 → warn_threshold=800
+        assert_eq!(1000usize * 4 / 5, 800);
+        // max_queue_len=100 → warn_threshold=80
+        assert_eq!(100usize * 4 / 5, 80);
+        // max_queue_len=10 → warn_threshold=8
+        assert_eq!(10usize * 4 / 5, 8);
     }
 }
