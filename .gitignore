@@ -49,8 +49,10 @@ install_llvm_cov_log.txt
 kani-results/
 *.kani
 
-# 文档目录 (暂不提交, 待整理)
+# 文档目录 (暂不提交, 待整理) - USER 规则 2026-07-15: 内部文件, 永不 commit
 文档/
+**/文档/
+**/文档/**
 
 # === SDK 构建产物 (Python / TypeScript) ===
 __pycache__/
