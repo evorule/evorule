@@ -216,13 +216,20 @@ impl IoHandler for LlmHandler {
         body.insert("messages".to_string(), messages);
 
         // Phase A-1：可选 tools（function calling 工具描述数组，OpenAI 格式）
-        if let Some(tools) = tools_param {
-            body.insert("tools".to_string(), tcb_to_serde(tools));
-        }
-
-        // Phase A-1：可选 tool_choice（auto / none / {type:function, function:{name:xxx}}）
-        if let Some(tc) = params.get("tool_choice") {
-            body.insert("tool_choice".to_string(), tcb_to_serde(tc));
+        // 仅当 tools 为非空数组时才加入请求体：空 tools + tool_choice=auto 是矛盾的，
+        // 部分服务商（如 MiniMax）会因此返回空 content。
+        let has_tools = tools_param
+            .and_then(|t| t.as_array())
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false);
+        if has_tools {
+            if let Some(tools) = tools_param {
+                body.insert("tools".to_string(), tcb_to_serde(tools));
+            }
+            // tool_choice 仅在有 tools 时才有意义
+            if let Some(tc) = params.get("tool_choice") {
+                body.insert("tool_choice".to_string(), tcb_to_serde(tc));
+            }
         }
 
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));

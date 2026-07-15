@@ -47,6 +47,7 @@ use tier0_tcb::JsonValue;
 use tier1_reactor::{EventReceiver, Fact, FactIdGenerator, FactSender};
 use tokio::time::timeout;
 
+use crate::agent::memory::MemoryManager;
 use crate::agent::translator::{
     build_call_llm_instruction, build_call_tool_instruction, messages_to_json, parse_llm_response,
     tool_result_to_string, Message,
@@ -158,6 +159,8 @@ pub struct AgentRunner {
     fact_id_gen: FactIdGenerator,
     /// 外部停止标志（可选，由 AgentManager 设置）
     stop_flag: Option<Arc<AtomicBool>>,
+    /// 长期记忆管理器（可选，用于 system prompt 注入和结果保存）
+    memory: Option<MemoryManager>,
 }
 
 impl AgentRunner {
@@ -181,6 +184,7 @@ impl AgentRunner {
             tools,
             fact_id_gen: FactIdGenerator::new(),
             stop_flag: None,
+            memory: None,
         }
     }
 
@@ -193,6 +197,18 @@ impl AgentRunner {
         self
     }
 
+    /// 设置长期记忆管理器（builder 模式）
+    ///
+    /// 设置后，`run()` 会在启动前通过 `build_system_prompt()` 注入共享知识和
+    /// 会话上下文到 system prompt。Agent 成功完成后，最终结果会自动保存到
+    /// 会话记忆（`save_result()`）。
+    ///
+    /// 记忆保存失败不会影响 Agent 结果（仅记录 warning 日志）。
+    pub fn with_memory(mut self, memory: MemoryManager) -> Self {
+        self.memory = Some(memory);
+        self
+    }
+
     /// 启动 Agent 执行
     ///
     /// # 参数
@@ -202,11 +218,18 @@ impl AgentRunner {
     /// - `Ok(AgentResult)`: Agent 正常完成
     /// - `Err(AgentError)`: Agent 执行失败
     pub async fn run(&mut self, goal: &str) -> Result<AgentResult, AgentError> {
-        // 1. 初始化 messages
+        // 1. 构造 system prompt（注入记忆，如果有 MemoryManager）
+        let system_prompt = if let Some(ref memory) = self.memory {
+            memory.build_system_prompt(&self.config.system_prompt)
+        } else {
+            self.config.system_prompt.clone()
+        };
+
+        // 2. 初始化 messages
         let mut messages: Vec<Message> = Vec::new();
-        if !self.config.system_prompt.is_empty() {
+        if !system_prompt.is_empty() {
             messages.push(Message::System {
-                content: self.config.system_prompt.clone(),
+                content: system_prompt,
             });
         }
         messages.push(Message::User {
@@ -261,6 +284,15 @@ impl AgentRunner {
             if llm_response.is_finished() {
                 // LLM 认为任务完成
                 let final_answer = llm_response.content.unwrap_or_default();
+
+                // 保存结果到长期记忆（如果有 MemoryManager）
+                // 记忆保存失败不影响 Agent 结果，仅记录 warning
+                if let Some(ref memory) = self.memory {
+                    if let Err(e) = memory.save_result(&final_answer).await {
+                        tracing::warn!(error = %e, "保存 Agent 结果到记忆失败");
+                    }
+                }
+
                 return Ok(AgentResult {
                     final_answer,
                     steps: step_count + 1,

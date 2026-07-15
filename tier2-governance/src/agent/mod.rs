@@ -7,6 +7,7 @@
 //! - `tool_registry` — 工具描述 + 实现的统一注册（OpenAI function calling 格式）
 //! - `translator` — LLM 响应解析 + evorule 指令构造
 //! - `runner` — AgentRunner ReAct 执行循环
+//! - `memory` — 长期记忆管理（文件持久化 + system prompt 注入）
 //!
 //! # 设计原则
 //!
@@ -16,6 +17,7 @@
 //! - 工具描述使用 OpenAI function calling 格式，便于 LLM 直接理解
 
 pub mod definition;
+pub mod memory;
 pub mod runner;
 pub mod tool_registry;
 pub mod translator;
@@ -23,6 +25,7 @@ pub mod translator;
 pub use definition::{
     AgentDefinition, AgentDefinitionError, AgentDefinitionManager, MemoryConfig, OutputFormat,
 };
+pub use memory::{MemoryError, MemoryManager};
 pub use runner::{AgentConfig, AgentError, AgentResult, AgentRunner};
 pub use tool_registry::{ToolRegistry, ToolSpec};
 pub use translator::{LlmResponse, Message, ToolCall};

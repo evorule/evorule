@@ -476,7 +476,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cfg.max_rounds,
         dispatcher_factory,
         tools_json,
-    );
+    )
+    .with_memory_dir(cfg.memory_dir.clone());
 
     // P2-8: 创建 readiness flag（优雅退出时设为 false）
     let readiness: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));

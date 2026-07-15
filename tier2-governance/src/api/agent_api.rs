@@ -27,6 +27,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -37,7 +38,7 @@ use tier1_reactor::{EventReceiver, EventSender, FactsLog, Reactor};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
-use crate::agent::{AgentDefinitionManager, AgentError, AgentResult, AgentRunner};
+use crate::agent::{AgentDefinitionManager, AgentError, AgentResult, AgentRunner, MemoryManager};
 use crate::io_dispatcher::IoDispatcher;
 use crate::io_subscriber::IoSubscriber;
 use crate::metrics::SharedMetrics;
@@ -124,6 +125,8 @@ pub struct AgentManager {
     next_id: Arc<AtomicU64>,
     /// 当前活跃 SSE 连接数
     sse_connections: Arc<AtomicU64>,
+    /// 记忆系统根目录（可选，设置后 Agent 会启用长期记忆）
+    memory_dir: Option<Arc<PathBuf>>,
 }
 
 impl AgentManager {
@@ -151,7 +154,18 @@ impl AgentManager {
             running: Arc::new(Mutex::new(HashMap::new())),
             next_id: Arc::new(AtomicU64::new(AGENT_ID_OFFSET)),
             sse_connections: Arc::new(AtomicU64::new(0)),
+            memory_dir: None,
         }
+    }
+
+    /// 设置记忆系统根目录（builder 模式）
+    ///
+    /// 设置后，`start_agent()` 创建的 AgentRunner 会启用长期记忆：
+    /// - system prompt 自动注入共享知识和会话上下文
+    /// - Agent 完成后自动保存最终结果
+    pub fn with_memory_dir(mut self, memory_dir: PathBuf) -> Self {
+        self.memory_dir = Some(Arc::new(memory_dir));
+        self
     }
 
     /// 获取定义管理器引用
@@ -225,13 +239,23 @@ impl AgentManager {
             let _ = subscriber.run(sub_rx, sub_tx).await;
         });
 
-        // 4. 创建 stop_flag + AgentRunner
+        // 4. 分配 session_id（在创建 AgentRunner 之前，因为 MemoryManager 需要它）
+        let session_id = self.next_session_id();
+
+        // 5. 创建 stop_flag + MemoryManager + AgentRunner
         let stop_flag = Arc::new(AtomicBool::new(false));
+        let memory = self.memory_dir.as_ref().map(|dir| {
+            MemoryManager::new(config.agent_type.clone(), (**dir).clone()).with_session(session_id)
+        });
+
         let runner = AgentRunner::new(config, command_tx, event_rx, (*self.tools_json).clone())
             .with_stop_flag(stop_flag.clone());
+        let runner = if let Some(mem) = memory {
+            runner.with_memory(mem)
+        } else {
+            runner
+        };
 
-        // 5. 分配 session_id
-        let session_id = self.next_session_id();
         let goal_string = goal.to_string();
         let agent_type_string = agent_type.to_string();
 

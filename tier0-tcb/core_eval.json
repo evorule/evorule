@@ -191,8 +191,13 @@
                   "params": {
                     "io_type": "call_llm",
                     "prompt": "__exec__.instruction.params.prompt",
+                    "system": "__exec__.instruction.params.system",
+                    "messages": "__exec__.instruction.params.messages",
+                    "tools": "__exec__.instruction.params.tools",
+                    "model": "__exec__.instruction.params.model",
                     "temperature": "__exec__.instruction.params.temperature",
-                    "max_tokens": "__exec__.instruction.params.max_tokens"
+                    "max_tokens": "__exec__.instruction.params.max_tokens",
+                    "tool_choice": "__exec__.instruction.params.tool_choice"
                   }
                 }
               ]
