@@ -18,10 +18,31 @@ use alloc::vec::Vec;
 /// - 字段名中的 `.` 需用 `\.` 转义
 /// - 字段名中的 `[` 需用 `\[` 转义
 ///
-/// # 示例
+/// # 示例（路径语法）
+///
 /// - `__exec__.payload.items[0].value` → 访问数组第 0 个元素的 value 字段
 /// - `__exec__.queue[2]` → 访问队列第 2 个元素
 /// - `data\.version` → 字段名为 `data.version`
+///
+/// # 代码示例
+///
+/// ```
+/// use tier0_tcb::JsonValue;
+/// use tier0_tcb::path::resolve_path;
+/// use std::collections::BTreeMap;
+///
+/// // 构造嵌套状态
+/// let mut inner = BTreeMap::new();
+/// inner.insert("value".to_string(), JsonValue::Integer(42));
+/// let mut mid = BTreeMap::new();
+/// mid.insert("inner".to_string(), JsonValue::object(inner));
+/// let state = JsonValue::object(mid);
+///
+/// // 路径解析
+/// assert_eq!(resolve_path(&state, "inner.value").and_then(|v| v.as_i64()), Some(42));
+/// assert_eq!(resolve_path(&state, "missing"), None);
+/// assert_eq!(resolve_path(&state, ""), None);
+/// ```
 ///
 /// # 保证
 /// - 永不 panic

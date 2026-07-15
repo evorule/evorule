@@ -59,6 +59,9 @@ thiserror = "2"
 # CLI 参数解析（仅 bin 使用）
 clap = { version = "4", features = ["derive", "env"] }
 
+[dev-dependencies]
+tempfile = "3"
+
 [[bin]]
 name = "evorule-server"
 path = "src/bin/evorule_server.rs"

@@ -10,6 +10,24 @@
 //! - `execute_transition()`：执行一步状态转换
 //! - `JsonValue`：JSON 数据模型
 //! - `TcbError`：错误类型
+//!
+//! # 快速入门
+//!
+//! ```
+//! use tier0_tcb::JsonValue;
+//! use std::collections::BTreeMap;
+//!
+//! // 构造一个 JsonValue 对象
+//! let mut map = BTreeMap::new();
+//! map.insert("name".to_string(), JsonValue::string("Alice"));
+//! map.insert("age".to_string(), JsonValue::Integer(30));
+//! let value = JsonValue::object(map);
+//!
+//! // 类型检查与取值
+//! assert!(value.is_object());
+//! let age = value.get("age").and_then(|v| v.as_i64());
+//! assert_eq!(age, Some(30));
+//! ```
 
 #![no_std]
 #![forbid(unsafe_code)]

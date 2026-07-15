@@ -61,6 +61,47 @@ pub enum TransitionResult {
 /// - 纯函数（无副作用）
 /// - 永不 panic（所有错误返回 `TcbError`）
 /// - 确定性（相同输入 → 相同输出）
+///
+/// # 代码示例
+///
+/// `execute_transition` 根据 `core_eval` 规则表对 `payload` 做一步转换。
+/// 规则匹配当前 `instruction`，并对 `payload` 应用 `set` 元指令。
+///
+/// ```
+/// use tier0_tcb::{JsonValue, execute_transition, TransitionResult};
+/// use std::collections::BTreeMap;
+///
+/// // 业务 payload: { x: 10 }
+/// let mut p = BTreeMap::new();
+/// p.insert("x".to_string(), JsonValue::Integer(10));
+/// let payload = JsonValue::object(p);
+///
+/// // 当前指令: noop
+/// let mut instr = BTreeMap::new();
+/// instr.insert("type".to_string(), JsonValue::string("noop"));
+/// let instruction = JsonValue::object(instr);
+///
+/// // core_eval 规则: set(x, set, 42)
+/// let mut set_params = BTreeMap::new();
+/// set_params.insert("attr".to_string(), JsonValue::string("x"));
+/// set_params.insert("operation".to_string(), JsonValue::string("set"));
+/// set_params.insert("value".to_string(), JsonValue::Integer(42));
+/// let mut set_rule = BTreeMap::new();
+/// set_rule.insert("type".to_string(), JsonValue::string("set"));
+/// set_rule.insert("params".to_string(), JsonValue::object(set_params));
+/// let core_eval = vec![JsonValue::object(set_rule)];
+///
+/// // 执行
+/// let result = execute_transition(&core_eval, &instruction, &payload, &[]);
+/// match result {
+///     Ok(TransitionResult::State { new_payload, .. }) => {
+///         // x 应该被改成 42
+///         assert_eq!(new_payload.get("x").and_then(|v| v.as_i64()), Some(42));
+///     }
+///     Ok(_) => panic!("expected State result"),
+///     Err(e) => panic!("unexpected error: {:?}", e),
+/// }
+/// ```
 pub fn execute_transition(
     core_eval: &[JsonValue],
     instruction: &JsonValue,

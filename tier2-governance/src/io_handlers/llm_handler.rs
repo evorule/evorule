@@ -380,7 +380,7 @@ mod tests {
     #[test]
     fn test_serde_to_tcb_float_number() {
         // 浮点数：JsonValue 无浮点类型，应转为 String
-        let float_val = serde_json::json!(3.14);
+        let float_val = serde_json::json!(2.5);
         let tcb_val = serde_to_tcb(&float_val);
         // 浮点数无法转为 i64，应回退为 String
         assert!(tcb_val.is_string());

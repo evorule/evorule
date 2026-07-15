@@ -10,6 +10,7 @@
 //! - `POST /api/reload` — 手动触发配置热重载
 //! - `GET /api/health` — 健康检查
 
+use crate::api::agent_api::AgentManager;
 use crate::api::auth::AuthConfig;
 use crate::api::session::SessionManager;
 use crate::auditor::Auditor;
@@ -248,11 +249,12 @@ impl Drop for SseMetricsGuard {
     }
 }
 
-/// 应用全局状态（合并 GovernanceApi + SessionApi + Metrics + Readiness）
+/// 应用全局状态（合并 GovernanceApi + SessionApi + AgentManager + Metrics + Readiness）
 ///
 /// 通过 axum `FromRef` 模式，handler 可按需提取子状态：
 /// - `State<GovernanceApi>` — 单反应器模式路由
 /// - `State<SessionApi>` — 多会话模式路由
+/// - `State<AgentManager>` — Agent API 路由
 /// - `State<SharedMetrics>` — Prometheus 指标（P2-7）
 /// - `State<ReadinessFlag>` — 就绪标志（P2-8）
 #[derive(Clone)]
@@ -261,6 +263,8 @@ pub struct AppState {
     governance: GovernanceApi,
     /// 多会话 API
     sessions: SessionApi,
+    /// Agent API
+    agents: AgentManager,
     /// Prometheus 指标（P2-7）
     metrics: SharedMetrics,
     /// 就绪标志（P2-8：优雅退出时设为 false）
@@ -272,12 +276,14 @@ impl AppState {
     pub fn new(
         governance: GovernanceApi,
         sessions: SessionApi,
+        agents: AgentManager,
         metrics: SharedMetrics,
         readiness: ReadinessFlag,
     ) -> Self {
         Self {
             governance,
             sessions,
+            agents,
             metrics,
             readiness,
         }
@@ -293,6 +299,12 @@ impl FromRef<AppState> for GovernanceApi {
 impl FromRef<AppState> for SessionApi {
     fn from_ref(state: &AppState) -> Self {
         state.sessions.clone()
+    }
+}
+
+impl FromRef<AppState> for AgentManager {
+    fn from_ref(state: &AppState) -> Self {
+        state.agents.clone()
     }
 }
 
@@ -396,7 +408,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 /// 将 Fact 序列化为 SSE 事件 data 字段（JSON 字符串）
 ///
 /// 格式：`{"type":"Command","id":1,"instruction":{...}}`
-fn fact_to_sse_data(fact: &Fact) -> String {
+pub fn fact_to_sse_data(fact: &Fact) -> String {
     let mut obj = serde_json::Map::new();
     match fact {
         Fact::Command { id, instruction } => {
@@ -953,6 +965,32 @@ impl GovernanceServer {
             .route("/api/sessions/{id}/state", get(session_state))
             .route("/api/sessions/{id}/payload", post(session_payload))
             .route("/api/sessions/{id}/events", get(session_events))
+            // Agent API 路由（Phase A-4）
+            .route(
+                "/api/agents/types",
+                get(crate::api::agent_api::list_agent_types),
+            )
+            .route(
+                "/api/agents/types/{agent_type}",
+                get(crate::api::agent_api::get_agent_type),
+            )
+            .route("/api/agents/run", post(crate::api::agent_api::run_agent))
+            .route(
+                "/api/agents/{session_id}/status",
+                get(crate::api::agent_api::agent_status),
+            )
+            .route(
+                "/api/agents/{session_id}/events",
+                get(crate::api::agent_api::agent_events),
+            )
+            .route(
+                "/api/agents/{session_id}/stop",
+                post(crate::api::agent_api::stop_agent),
+            )
+            .route(
+                "/api/agents/{session_id}/result",
+                get(crate::api::agent_api::agent_result),
+            )
             .layer(axum::middleware::from_fn_with_state(
                 auth,
                 crate::api::auth::auth_middleware,

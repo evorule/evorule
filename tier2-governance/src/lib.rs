@@ -38,10 +38,14 @@ pub mod io_subscriber;
 pub mod metrics;
 
 // 公开 API 重导出
-pub use agent::{ToolRegistry, ToolSpec};
+pub use agent::{
+    AgentConfig, AgentDefinition, AgentDefinitionError, AgentDefinitionManager, AgentError,
+    AgentResult, AgentRunner, LlmResponse, MemoryConfig, Message, OutputFormat, ToolCall,
+    ToolRegistry, ToolSpec,
+};
 pub use api::{
-    AppState, GovernanceApi, GovernanceServer, Session, SessionApi, SessionError, SessionId,
-    SessionManager,
+    AgentManager, AgentRunStatus, AppState, DispatcherFactory, GovernanceApi, GovernanceServer,
+    Session, SessionApi, SessionError, SessionId, SessionManager,
 };
 pub use auditor::Auditor;
 pub use clock::LogicalClock;

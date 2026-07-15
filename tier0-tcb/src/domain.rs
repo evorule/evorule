@@ -22,6 +22,48 @@ const MAX_DOMAIN_DEPTH: usize = 64;
 /// - `le` = `not(gt)`
 /// - `ge` = `not(lt)`
 /// - `ne` = `not(eq)`
+///
+/// # 代码示例
+///
+/// 域条件通过 `path` 字段引用 `exec_state` 中的业务字段（如 `__exec__.payload.x`）。
+///
+/// ```
+/// use tier0_tcb::JsonValue;
+/// use tier0_tcb::domain::evaluate_domain;
+/// use std::collections::BTreeMap;
+///
+/// // 构造 exec_state: { __exec__: { payload: { x: 10 } } }
+/// let mut payload = BTreeMap::new();
+/// payload.insert("x".to_string(), JsonValue::Integer(10));
+/// let mut exec_inner = BTreeMap::new();
+/// exec_inner.insert("payload".to_string(), JsonValue::object(payload));
+/// let mut root = BTreeMap::new();
+/// root.insert("__exec__".to_string(), JsonValue::object(exec_inner));
+/// let state = JsonValue::object(root);
+///
+/// // eq: __exec__.payload.x == 10
+/// let eq = JsonValue::object_from_pairs(&[
+///     ("type", JsonValue::string("eq")),
+///     ("path", JsonValue::string("__exec__.payload.x")),
+///     ("value", JsonValue::Integer(10)),
+/// ]);
+/// assert!(evaluate_domain(&eq, &state));
+///
+/// // lt: __exec__.payload.x < 20
+/// let lt = JsonValue::object_from_pairs(&[
+///     ("type", JsonValue::string("lt")),
+///     ("path", JsonValue::string("__exec__.payload.x")),
+///     ("value", JsonValue::Integer(20)),
+/// ]);
+/// assert!(evaluate_domain(&lt, &state));
+///
+/// // all: 组合多个子域
+/// let combined = JsonValue::object_from_pairs(&[
+///     ("type", JsonValue::string("all")),
+///     ("children", JsonValue::array(vec![eq, lt])),
+/// ]);
+/// assert!(evaluate_domain(&combined, &state));
+/// ```
 pub fn evaluate_domain(domain: &JsonValue, exec_state: &JsonValue) -> bool {
     evaluate_domain_inner(domain, exec_state, 0)
 }
@@ -754,4 +796,96 @@ mod tests {
         ]);
         assert!(!evaluate_domain(&domain, &state));
     }
+
+    // ===== Branch coverage L73: depth > MAX_DOMAIN_DEPTH =====
+    /// 验证递归深度超过 MAX_DOMAIN_DEPTH (64) 时 evaluate_domain 返回 false (early return)
+    /// 构造 Not 包裹 65 层 → 每层 evaluate_not 都会 depth+1, 在第 65 层触发深度上限
+    #[test]
+    fn test_recursion_depth_limit_exceeded_returns_false() {
+        // 内层 exists("__exec__.payload.x") 对 state (x=10) 返回 true
+        // 65 层 Not 包裹:
+        //   - 无深度限制: 65 NOTs of true = 奇数 = false
+        //   - 有深度限制 (depth=65 > 64 触发): 65 NOTs of false (depth limit 返回值) = 奇数 = true
+        // 因此 evaluate_domain 返回 true 是深度限制被触发的证据
+        let state = make_exec_state("noop", make_payload(10));
+        let mut domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("exists")),
+            ("path", JsonValue::string("__exec__.payload.x")),
+        ]);
+        for _ in 0..65 {
+            domain = JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("not")),
+                ("inner", domain),
+            ]);
+        }
+        assert!(evaluate_domain(&domain, &state));
+    }
+
+    // ===== Branch coverage L95:12: evaluate_eq 缺 path 或 value =====
+    /// evaluate_eq: domain 缺 path 字段时返回 false (覆盖 L95:12 False)
+    #[test]
+    fn test_eq_without_path_field_returns_false() {
+        let state = make_exec_state("noop", make_payload(10));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("eq")),
+            ("value", JsonValue::Integer(10)),
+        ]);
+        assert!(!evaluate_domain(&domain, &state));
+    }
+
+    /// evaluate_eq: domain 缺 value 字段时返回 false (覆盖 L95:12 False 不同路径)
+    #[test]
+    fn test_eq_without_value_field_returns_false() {
+        let state = make_exec_state("noop", make_payload(10));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("eq")),
+            ("path", JsonValue::string("__exec__.payload.x")),
+        ]);
+        assert!(!evaluate_domain(&domain, &state));
+    }
+
+    /// evaluate_eq: domain 既无 path 也无 value 时返回 false
+    #[test]
+    fn test_eq_empty_domain_returns_false() {
+        let state = make_exec_state("noop", make_payload(10));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("eq")),
+        ]);
+        assert!(!evaluate_domain(&domain, &state));
+    }
+
+    // ===== Branch coverage L108:12: evaluate_lt 缺 path 或 value =====
+    /// evaluate_lt: domain 缺 path 字段时返回 false (覆盖 L108:12 False)
+    #[test]
+    fn test_lt_without_path_field_returns_false() {
+        let state = make_exec_state("noop", make_payload(10));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("lt")),
+            ("value", JsonValue::Integer(20)),
+        ]);
+        assert!(!evaluate_domain(&domain, &state));
+    }
+
+    /// evaluate_lt: domain 缺 value 字段时返回 false (覆盖 L108:12 False 不同路径)
+    #[test]
+    fn test_lt_without_value_field_returns_false() {
+        let state = make_exec_state("noop", make_payload(10));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("lt")),
+            ("path", JsonValue::string("__exec__.payload.x")),
+        ]);
+        assert!(!evaluate_domain(&domain, &state));
+    }
+
+    // ===== Branch coverage L121:12: evaluate_exists 缺 path =====
+    /// evaluate_exists: domain 缺 path 字段时返回 false (覆盖 L121:12 False)
+    #[test]
+    fn test_exists_without_path_field_returns_false() {
+        let state = make_exec_state("noop", make_payload(10));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("exists")),
+        ]);
+        assert!(!evaluate_domain(&domain, &state));
+    }
+
 }

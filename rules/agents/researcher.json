@@ -1,0 +1,23 @@
+{
+  "agent_type": "researcher",
+  "version": "1.0.0",
+  "description": "研究型 Agent - 擅长信息搜索、分析、总结",
+  "system_prompt": "你是一个研究型 Agent。你的任务是：\n1. 理解用户的研究目标\n2. 使用工具搜索和获取信息\n3. 分析信息并形成结论\n4. 以结构化方式输出结果\n\n你拥有以下工具：search_web, read_file, write_file",
+  "model": "gpt-4o-mini",
+  "temperature": 0.3,
+  "max_steps": 20,
+  "step_timeout_secs": 60,
+  "tools": ["search_web", "read_file", "write_file"],
+  "memory": {
+    "type": "file",
+    "namespace": "researcher"
+  },
+  "output_format": {
+    "type": "json",
+    "schema": {
+      "summary": "string",
+      "key_findings": "array",
+      "sources": "array"
+    }
+  }
+}

@@ -14,6 +14,31 @@ use core::fmt;
 ///
 /// # 不实现 `PartialEq` 的自动派生
 /// 手动实现以保证跨语言一致性
+///
+/// # 示例
+///
+/// ```
+/// use tier0_tcb::JsonValue;
+/// use std::collections::BTreeMap;
+///
+/// // 通过构造函数构造
+/// let name = JsonValue::string("Alice");
+/// let age = JsonValue::Integer(30);
+/// assert!(name.is_string());
+/// assert_eq!(age.as_i64(), Some(30));
+///
+/// // 通过 From trait 构造
+/// let from_str: JsonValue = "hello".into();
+/// let from_int: JsonValue = 42i64.into();
+/// assert_eq!(from_str.as_str(), Some("hello"));
+/// assert_eq!(from_int.as_i64(), Some(42));
+///
+/// // 构造嵌套对象
+/// let mut map = BTreeMap::new();
+/// map.insert("items".to_string(), JsonValue::array(vec![JsonValue::Integer(1), JsonValue::Integer(2)]));
+/// let v = JsonValue::object(map);
+/// assert!(v.is_object());
+/// ```
 #[derive(Debug, Clone)]
 pub enum JsonValue {
     /// JSON null
@@ -205,6 +230,24 @@ impl JsonValue {
     }
 
     /// 获取对象字段（若存在）
+    ///
+    /// # 示例
+    ///
+    /// ```
+    /// use tier0_tcb::JsonValue;
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut map = BTreeMap::new();
+    /// map.insert("a".to_string(), JsonValue::Integer(1));
+    /// let obj = JsonValue::object(map);
+    ///
+    /// assert_eq!(obj.get("a").and_then(|v| v.as_i64()), Some(1));
+    /// assert_eq!(obj.get("missing"), None);
+    ///
+    /// // 在非对象上调用总是返回 None（不会 panic）
+    /// let n = JsonValue::Null;
+    /// assert_eq!(n.get("anything"), None);
+    /// ```
     pub fn get(&self, key: &str) -> Option<&JsonValue> {
         match self {
             JsonValue::Object(map) => map.get(key),
@@ -221,6 +264,20 @@ impl JsonValue {
     }
 
     /// 插入或更新对象字段
+    ///
+    /// # 示例
+    ///
+    /// ```
+    /// use tier0_tcb::JsonValue;
+    ///
+    /// let mut obj = JsonValue::empty_object();
+    /// let old = obj.insert("k".to_string(), JsonValue::Integer(1));
+    /// assert_eq!(old, None);
+    ///
+    /// let old = obj.insert("k".to_string(), JsonValue::Integer(2));
+    /// assert_eq!(old.and_then(|v| v.as_i64()), Some(1));
+    /// assert_eq!(obj.get("k").and_then(|v| v.as_i64()), Some(2));
+    /// ```
     pub fn insert(&mut self, key: String, value: JsonValue) -> Option<JsonValue> {
         match self {
             JsonValue::Object(map) => map.insert(key, value),
@@ -317,21 +374,65 @@ impl JsonValue {
     }
 
     /// 构造字符串
+    ///
+    /// # 示例
+    ///
+    /// ```
+    /// use tier0_tcb::JsonValue;
+    ///
+    /// let v = JsonValue::string("hello");
+    /// assert_eq!(v.as_str(), Some("hello"));
+    /// ```
     pub fn string<S: Into<String>>(s: S) -> Self {
         JsonValue::String(s.into())
     }
 
     /// 构造数组
+    ///
+    /// # 示例
+    ///
+    /// ```
+    /// use tier0_tcb::JsonValue;
+    ///
+    /// let arr = JsonValue::array(vec![JsonValue::Integer(1), JsonValue::Integer(2)]);
+    /// assert!(arr.is_array());
+    /// assert_eq!(arr.as_array().map(|a| a.len()), Some(2));
+    /// ```
     pub fn array(v: Vec<JsonValue>) -> Self {
         JsonValue::Array(v)
     }
 
     /// 构造对象
+    ///
+    /// # 示例
+    ///
+    /// ```
+    /// use tier0_tcb::JsonValue;
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut map = BTreeMap::new();
+    /// map.insert("key".to_string(), JsonValue::Integer(42));
+    /// let obj = JsonValue::object(map);
+    /// assert!(obj.is_object());
+    /// assert_eq!(obj.get("key").and_then(|v| v.as_i64()), Some(42));
+    /// ```
     pub fn object(map: BTreeMap<String, JsonValue>) -> Self {
         JsonValue::Object(map)
     }
 
     /// 从键值对构造对象（宏辅助）
+    ///
+    /// # 示例
+    ///
+    /// ```
+    /// use tier0_tcb::JsonValue;
+    ///
+    /// let obj = JsonValue::object_from_pairs(&[
+    ///     ("a", JsonValue::Integer(1)),
+    ///     ("b", JsonValue::Integer(2)),
+    /// ]);
+    /// assert_eq!(obj.get("a").and_then(|v| v.as_i64()), Some(1));
+    /// ```
     pub fn object_from_pairs(pairs: &[(&str, JsonValue)]) -> Self {
         let mut map = BTreeMap::new();
         for (k, v) in pairs {
@@ -341,11 +442,31 @@ impl JsonValue {
     }
 
     /// 构造空对象
+    ///
+    /// # 示例
+    ///
+    /// ```
+    /// use tier0_tcb::JsonValue;
+    ///
+    /// let obj = JsonValue::empty_object();
+    /// assert!(obj.is_object());
+    /// assert_eq!(obj.as_object().map(|m| m.len()), Some(0));
+    /// ```
     pub fn empty_object() -> Self {
         JsonValue::Object(BTreeMap::new())
     }
 
     /// 构造空数组
+    ///
+    /// # 示例
+    ///
+    /// ```
+    /// use tier0_tcb::JsonValue;
+    ///
+    /// let arr = JsonValue::empty_array();
+    /// assert!(arr.is_array());
+    /// assert_eq!(arr.as_array().map(|a| a.len()), Some(0));
+    /// ```
     pub fn empty_array() -> Self {
         JsonValue::Array(Vec::new())
     }
@@ -366,6 +487,22 @@ impl From<Vec<JsonValue>> for JsonValue {
 }
 
 /// 从 &str 快捷构造字符串
+/// `&str` → `JsonValue::String`（注意：仅包装为字符串，不解析 JSON 语法）
+///
+/// # 示例
+///
+/// ```
+/// use tier0_tcb::JsonValue;
+///
+/// let v: JsonValue = "hello".into();
+/// assert_eq!(v.as_str(), Some("hello"));
+///
+/// // 整段被当作字符串原样保留，不解析 JSON
+/// let raw = "[1, 2, 3]";
+/// let v: JsonValue = raw.into();
+/// assert!(v.is_string());
+/// assert_eq!(v.as_str(), Some("[1, 2, 3]"));
+/// ```
 impl From<&str> for JsonValue {
     fn from(s: &str) -> Self {
         JsonValue::String(s.to_string())
@@ -380,6 +517,16 @@ impl From<String> for JsonValue {
 }
 
 /// 从 i64 快捷构造整数
+/// `i64` → `JsonValue::Integer`
+///
+/// # 示例
+///
+/// ```
+/// use tier0_tcb::JsonValue;
+///
+/// let v: JsonValue = 42i64.into();
+/// assert_eq!(v, JsonValue::Integer(42));
+/// ```
 impl From<i64> for JsonValue {
     fn from(i: i64) -> Self {
         JsonValue::Integer(i)

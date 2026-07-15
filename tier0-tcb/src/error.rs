@@ -8,6 +8,24 @@ use alloc::string::String;
 /// - 不包含 `IoPause`（I/O 由反应器处理）
 /// - 不包含 `MaxStepsExceeded`（由反应器控制）
 /// - 所有错误均不 panic
+///
+/// # 代码示例
+///
+/// `TcbError` 由 `execute_transition` 与 `execute_meta_instruction` 返回，
+/// 可通过 `match` 分支处理；所有变体均实现了 `Display`：
+///
+/// ```
+/// use tier0_tcb::TcbError;
+///
+/// let e = TcbError::MissingField("operation");
+/// assert_eq!(e.to_string(), "missing field: operation");
+///
+/// // 分支处理不同错误类型
+/// match e {
+///     TcbError::MissingField(f) => assert_eq!(f, "operation"),
+///     _ => panic!("unexpected variant"),
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TcbError {
     /// 指令中缺少必需字段

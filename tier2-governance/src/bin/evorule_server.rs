@@ -28,6 +28,8 @@ use std::time::Duration;
 use clap::Parser;
 use tier0_tcb::JsonValue;
 use tier1_reactor::Reactor;
+use tier2_governance::agent::AgentDefinitionManager;
+use tier2_governance::api::agent_api::{AgentManager, DispatcherFactory};
 use tier2_governance::api::auth::AuthConfig;
 use tier2_governance::api::server::{AppState, GovernanceApi, GovernanceServer, SessionApi};
 use tier2_governance::auditor::Auditor;
@@ -429,20 +431,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("[2/4] 反应器 + I/O 订阅者已启动");
 
-    // 7. 创建审计器 + GovernanceApi + SessionApi + AppState
+    // 7. 创建审计器 + GovernanceApi + SessionApi + AgentManager + AppState
     let auditor = Auditor::new(facts_log.clone());
     let api = GovernanceApi::new(tx.clone(), facts_log, auditor);
-    let session_api = SessionApi::new(core_eval, cfg.max_rounds);
+    let session_api = SessionApi::new(core_eval.clone(), cfg.max_rounds);
     // 启动后台 reaper 任务，定期清理过期和已结束的会话（P0-3）
     session_api.start_reaper();
+
+    // Phase A-4: 创建 AgentManager（dispatcher_factory + definitions + tools_json）
+    let llm_api_key = cfg
+        .llm_api_key
+        .clone()
+        .unwrap_or_else(|| "dummy_key".to_string());
+    let llm_base_url = cfg.llm_base_url.clone();
+    let llm_model = cfg.llm_model.clone();
+    let db_path = cfg.db_path.clone();
+    let memory_dir = cfg.memory_dir.clone();
+
+    let dispatcher_factory: DispatcherFactory = Arc::new(move || {
+        let api_key = llm_api_key.clone();
+        let base_url = llm_base_url.clone();
+        let model = llm_model.clone();
+        let db_path = db_path.clone();
+        let memory_dir = memory_dir.clone();
+        Box::pin(async move {
+            let llm = LlmHandler::with_model(api_key, base_url, model);
+            let db = DbHandler::connect_file(&db_path)
+                .await
+                .map_err(|e| format!("DB connect failed: {}", e))?;
+            let http = HttpHandler::new();
+            let memory = MemoryHandler::new(memory_dir);
+            let tool = ToolHandler::new();
+            Ok(IoDispatcher::new(llm, db, http, memory, tool))
+        })
+    });
+
+    // 预计算工具描述（当前为空数组，工具可在 ToolRegistry 中注册后传入）
+    let tools_json = JsonValue::Array(vec![]);
+
+    let definitions = AgentDefinitionManager::new(cfg.rules_dir.join("agents"));
+    let agent_manager = AgentManager::new(
+        definitions,
+        core_eval,
+        cfg.max_rounds,
+        dispatcher_factory,
+        tools_json,
+    );
 
     // P2-8: 创建 readiness flag（优雅退出时设为 false）
     let readiness: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
 
     // P2-7/P2-8: AppState 注入 metrics 和 readiness
-    let state = AppState::new(api, session_api, metrics.clone(), readiness.clone());
+    let state = AppState::new(
+        api,
+        session_api,
+        agent_manager,
+        metrics.clone(),
+        readiness.clone(),
+    );
 
-    info!("[3/4] 审计器 + GovernanceApi + SessionApi 已创建");
+    info!("[3/4] 审计器 + GovernanceApi + SessionApi + AgentManager 已创建");
 
     // 8. 构建服务器（带认证）
     let auth = match &cfg.auth_token {
@@ -472,6 +520,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cfg.addr
     );
     info!("  审计报告: GET  http://{}/api/audit", cfg.addr);
+    info!("  Agent 类型: GET  http://{}/api/agents/types", cfg.addr);
+    info!("  启动 Agent: POST http://{}/api/agents/run", cfg.addr);
+    info!(
+        "  Agent 状态: GET  http://{}/api/agents/{{id}}/status",
+        cfg.addr
+    );
+    info!(
+        "  Agent 结果: GET  http://{}/api/agents/{{id}}/result",
+        cfg.addr
+    );
     info!(
         "优雅退出：SIGTERM/SIGINT → readiness=false → 等待 {}s",
         GRACEFUL_SHUTDOWN_TIMEOUT.as_secs()

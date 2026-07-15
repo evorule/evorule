@@ -20,8 +20,15 @@ use std::time::Duration;
 use tier0_tcb::JsonValue;
 use tier1_reactor::Reactor;
 use tier2_governance::{
+    agent::AgentDefinitionManager,
+    api::agent_api::{AgentManager, DispatcherFactory},
     api::server::{AppState, GovernanceApi, GovernanceServer, SessionApi},
     auditor::Auditor,
+    io_dispatcher::IoDispatcher,
+    io_handlers::{
+        db_handler::DbHandler, http_handler::HttpHandler, llm_handler::LlmHandler,
+        memory_handler::MemoryHandler, tool_handler::ToolHandler,
+    },
     Metrics,
 };
 
@@ -101,10 +108,39 @@ async fn main() {
     let api = GovernanceApi::new(tx.clone(), facts_log, auditor);
 
     // 多会话 API（本示例核心）
-    let session_api = SessionApi::new(core_eval_for_sessions, 100);
+    let session_api = SessionApi::new(core_eval_for_sessions.clone(), 100);
+
+    // Phase A-4: 创建 AgentManager（DispatcherFactory + 空工具列表）
+    let temp_dir = std::env::temp_dir().join("evorule_sse_demo");
+    std::fs::create_dir_all(&temp_dir).ok();
+    let memory_dir_for_factory = temp_dir.clone();
+    let dispatcher_factory: DispatcherFactory = Arc::new(move || {
+        let memory_dir = memory_dir_for_factory.clone();
+        Box::pin(async move {
+            let llm = LlmHandler::new("dummy_key".to_string(), None);
+            let db = DbHandler::connect("sqlite::memory:")
+                .await
+                .map_err(|e| format!("DB connect failed: {}", e))?;
+            let http = HttpHandler::new();
+            let memory = MemoryHandler::new(memory_dir);
+            let tool = ToolHandler::new();
+            Ok(IoDispatcher::new(llm, db, http, memory, tool))
+        })
+    });
+    let tools_json = JsonValue::Array(vec![]);
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let definitions = AgentDefinitionManager::new(manifest_dir.join("../rules/agents"));
+    let agent_manager = AgentManager::new(
+        definitions,
+        core_eval_for_sessions,
+        100,
+        dispatcher_factory,
+        tools_json,
+    );
+
     let metrics = Arc::new(Metrics::new());
     let readiness = Arc::new(AtomicBool::new(true));
-    let state = AppState::new(api, session_api, metrics, readiness);
+    let state = AppState::new(api, session_api, agent_manager, metrics, readiness);
 
     let addr = "127.0.0.1:18090".to_string();
     let server = GovernanceServer::dev(state, addr.clone());
