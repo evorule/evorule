@@ -532,4 +532,63 @@ mod tests {
             Some(&JsonValue::Integer(10))
         );
     }
+
+    // ===== Index(field) 非 Object 分支 + 转义末尾检查 =====
+
+    /// 测试：当 current 不是 Object 而 segment 是 Index(Some(field), idx) 时返回 None
+    /// 覆盖 resolve_path_inner 中 PathSegment::Index 的 field 分支非 Object 情况 (path.rs L55)
+    #[test]
+    fn test_resolve_path_index_with_field_on_non_object_returns_none() {
+        // state 是 Array，但 path "a[0]" 要求先在 current 上访问字段 "a"
+        // → current 不是 Object，应返回 None
+        let state = JsonValue::array(vec![JsonValue::Integer(42)]);
+        assert_eq!(resolve_path(&state, "a[0]"), None);
+    }
+
+    /// 测试：mutable 版本在相同情况下也应返回 None
+    /// 覆盖 resolve_path_mut_inner 中 PathSegment::Index 的 field 分支 (path.rs L106-107)
+    #[test]
+    fn test_resolve_path_mut_index_with_field_on_non_object_returns_none() {
+        let mut state = JsonValue::array(vec![JsonValue::Integer(42)]);
+        assert_eq!(resolve_path_mut(&mut state, "a[0]"), None);
+    }
+
+    /// 测试：mutable 版本在 field 字段名缺失时也应返回 None
+    /// 补充覆盖 L107 的 get_mut 失败分支
+    #[test]
+    fn test_resolve_path_mut_index_with_missing_field_on_object_returns_none() {
+        // state 是 Object 但不含字段 "a"，因此 Index(Some("a"), 0) 的字段访问失败
+        let mut state = JsonValue::Object(BTreeMap::new());
+        assert_eq!(resolve_path_mut(&mut state, "a[0]"), None);
+    }
+
+    /// 测试：路径以反斜杠结尾（未结束的转义序列）应返回 None
+    /// 覆盖 parse_path_segments 中 escaped 末尾检查 (path.rs L204)
+    #[test]
+    fn test_resolve_path_trailing_backslash_returns_none() {
+        // path 字符串 "x\" 在 Rust 源中表示单字符 "x" + 单个 "\"（反斜杠）
+        // 反斜杠设置 escaped=true，循环结束 → L204 return None
+        let state = JsonValue::Object(BTreeMap::new());
+        assert_eq!(resolve_path(&state, "x\\"), None);
+    }
+
+    /// 测试：只有反斜杠的路径也应返回 None（escape immediately EOF）
+    /// 补充覆盖：与 trailing backslash 互补的边界情况
+    #[test]
+    fn test_resolve_path_only_backslash_returns_none() {
+        let state = JsonValue::Object(BTreeMap::new());
+        assert_eq!(resolve_path(&state, "\\"), None);
+    }
+
+
+    /// 测试：parse_path_segments("") 直接调用覆盖空路径防御检查 (path.rs L210-211)
+    /// 注：parse_path_segments 是私有 fn，正常通过 resolve_path 调用时已被前置空检查拦截
+    /// 此测试是为了打桩覆盖解析器内部的 defensive guard
+    #[test]
+    fn test_parse_path_segments_empty_returns_none() {
+        // 空字符串路径在 resolve_path 的前置检查中被拦截（返回 None）
+        // 但 parse_path_segments 本身应返回 None（segments 为空）
+        assert_eq!(parse_path_segments(""), None);
+    }
+
 }

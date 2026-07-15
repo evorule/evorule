@@ -703,4 +703,55 @@ mod tests {
         ]);
         assert!(!evaluate_domain(&domain, &state));
     }
+    // ===== evaluate_* fallthrough (L56-58, L71-73, L81-82, L96-97) =====
+    // 这些 fallthrough 只在 "path/value 存在但 resolve 失败 / 类型不匹配" 时触发
+
+    /// 验证 evaluate_eq: path 存在但 resolve 失败 → false
+    #[test]
+    fn test_eq_path_set_but_unresolvable_returns_false() {
+        // path 设置了但 state 中没有该路径 → 走 false fallthrough
+        let state = make_exec_state("noop", make_payload(10));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("eq")),
+            ("path", JsonValue::string("__exec__.payload.missing_field")),
+            ("value", JsonValue::Integer(42)),
+        ]);
+        assert!(!evaluate_domain(&domain, &state));
+    }
+
+    /// 验证 evaluate_lt: path 存在但 resolve 失败 → false
+    #[test]
+    fn test_lt_path_set_but_unresolvable_returns_false() {
+        let state = make_exec_state("noop", make_payload(10));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("lt")),
+            ("path", JsonValue::string("__exec__.payload.missing_field")),
+            ("value", JsonValue::Integer(42)),
+        ]);
+        assert!(!evaluate_domain(&domain, &state));
+    }
+
+    /// 验证 evaluate_exists: path 存在但 resolve 失败 → false
+    #[test]
+    fn test_exists_path_set_but_unresolvable_returns_false() {
+        let state = make_exec_state("noop", make_payload(10));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("exists")),
+            ("path", JsonValue::string("__exec__.payload.missing_field")),
+        ]);
+        assert!(!evaluate_domain(&domain, &state));
+    }
+
+    /// 验证 evaluate_instruction_eq: instruction_type 设置但 current 是 None → false
+    #[test]
+    fn test_instruction_eq_type_set_but_current_missing_returns_false() {
+        // state 不包含 __exec__.instruction.type
+        let mut root = BTreeMap::new();
+        let state = JsonValue::Object(root);
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("instruction")),
+            ("instruction_type", JsonValue::string("set")),
+        ]);
+        assert!(!evaluate_domain(&domain, &state));
+    }
 }

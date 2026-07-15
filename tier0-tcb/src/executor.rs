@@ -1561,4 +1561,76 @@ mod tests {
             _ => panic!("expected IoRequired"),
         }
     }
+
+    // ===== resolve_path_or_literal None 分支 + rsplit_once 空段分支 =====
+
+    /// 测试：set 缺少 value 字段应返回 MissingField("value")
+    /// 覆盖 resolve_path_or_literal 的 None 分支 (executor.rs L87)
+    #[test]
+    fn test_set_missing_value_field() {
+        let state = make_exec_state("set", make_payload(0), vec![]);
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("set")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("attr", JsonValue::string("x")),
+                    ("operation", JsonValue::string("set")),
+                    // 注意：params 故意省略 "value" 字段
+                ]),
+            ),
+        ]);
+
+        let result = exec_set(&instr, state);
+        assert!(matches!(result, Err(TcbError::MissingField("value"))));
+    }
+
+    /// 测试：set 的 attr 含空段（如 "x." 或 ".y"）应返回 PathResolutionFailed
+    /// 覆盖 exec_set 中 rsplit_once('.') 后空段的 fallthrough 分支 (executor.rs L117)
+    #[test]
+    fn test_set_attr_with_trailing_dot_returns_path_resolution_failed() {
+        let state = make_exec_state("set", make_payload(0), vec![]);
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("set")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("attr", JsonValue::string("x.")), // 尾随点号 → rsplit_once 产生空段
+                    ("operation", JsonValue::string("set")),
+                    ("value", JsonValue::Integer(1)),
+                ]),
+            ),
+        ]);
+
+        let result = exec_set(&instr, state);
+        match &result {
+            Err(TcbError::PathResolutionFailed(s)) if s == "x." => {}
+            _ => panic!("expected PathResolutionFailed(\"x.\"), got {:?}", result),
+        }
+    }
+
+    /// 测试：set 的 attr 为 ".y"（前导点号 + 空 parent 段）也应返回 PathResolutionFailed
+    /// 补充覆盖：与 trailing dot 互补的另一空段情况
+    #[test]
+    fn test_set_attr_with_leading_dot_returns_path_resolution_failed() {
+        let state = make_exec_state("set", make_payload(0), vec![]);
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("set")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("attr", JsonValue::string(".y")), // 前导点号 → rsplit_once 产生空 parent
+                    ("operation", JsonValue::string("set")),
+                    ("value", JsonValue::Integer(1)),
+                ]),
+            ),
+        ]);
+
+        let result = exec_set(&instr, state);
+        match &result {
+            Err(TcbError::PathResolutionFailed(s)) if s == ".y" => {}
+            _ => panic!("expected PathResolutionFailed(\".y\"), got {:?}", result),
+        }
+    }
+
 }

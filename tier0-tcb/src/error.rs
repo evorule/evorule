@@ -60,3 +60,71 @@ mod std_impls {
     use super::TcbError;
     impl std::error::Error for TcbError {}
 }
+
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    #![allow(clippy::expect_used)]
+    #![allow(clippy::panic)]
+    #![allow(clippy::indexing_slicing)]
+    use super::*;
+    use alloc::format;
+    use alloc::string::ToString;
+
+    /// 验证 Display 实现对 9 个 variant 各自输出正确字符串
+    #[test]
+    fn test_display_all_variants() {
+        assert_eq!(
+            format!("{}", TcbError::MissingField("value")),
+            "missing field: value"
+        );
+        assert_eq!(
+            format!("{}", TcbError::UnknownMetaInstruction("foo".to_string())),
+            "unknown meta instruction: foo"
+        );
+        assert_eq!(
+            format!("{}", TcbError::UnknownOperation("bar".to_string())),
+            "unknown operation: bar"
+        );
+        assert_eq!(
+            format!("{}", TcbError::InvalidState),
+            "invalid state structure"
+        );
+        assert_eq!(
+            format!("{}", TcbError::InvalidType),
+            "invalid type"
+        );
+        assert_eq!(
+            format!("{}", TcbError::PathResolutionFailed("x.y".to_string())),
+            "path resolution failed: x.y"
+        );
+        assert_eq!(
+            format!("{}", TcbError::NestingTooDeep),
+            "branch nesting depth exceeds limit (64)"
+        );
+        assert_eq!(
+            format!("{}", TcbError::EmptyInstructionList),
+            "empty instruction list"
+        );
+        assert_eq!(
+            format!("{}", TcbError::IntegerOverflow),
+            "integer arithmetic overflow"
+        );
+    }
+
+    /// Debug trait 派生自 PartialEq, 验证 PartialEq 行为
+    #[test]
+    fn test_partial_eq_same_variant() {
+        assert_eq!(TcbError::InvalidState, TcbError::InvalidState);
+        assert_ne!(TcbError::InvalidState, TcbError::InvalidType);
+        assert_eq!(
+            TcbError::MissingField("x"),
+            TcbError::MissingField("x")
+        );
+        assert_ne!(
+            TcbError::MissingField("x"),
+            TcbError::MissingField("y")
+        );
+    }
+}
