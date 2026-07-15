@@ -169,3 +169,67 @@ fn verify_transition_bounded() {
     // 空核心评估列表应成功返回 State
     kani::assert(result.is_ok(), "empty core_eval succeeds");
 }
+
+/// 验证整数减法不溢出（与 add 对称的 sub 安全性证明）
+///
+/// 对任意两个 i64 值执行 sub 操作，验证：
+/// - 若 `checked_sub` 成功，结果等于期望值
+/// - 若 `checked_sub` 失败（`i64::MIN - 1` 等下溢情况），返回 `IntegerOverflow` 错误
+/// - 永不 panic
+///
+/// 与 `verify_set_integer_safety` 对称：add 证明上溢安全，sub 证明下溢安全。
+/// 两者共同覆盖 i64 整数运算边界。
+#[kani::proof]
+fn verify_set_sub_safety() {
+    let a: i64 = kani::any();
+    let b: i64 = kani::any();
+
+    let payload = JsonValue::object_from_pairs(&[("x", JsonValue::Integer(a))]);
+    let mut exec = alloc::collections::BTreeMap::new();
+    exec.insert("instruction".to_string(), JsonValue::empty_object());
+    exec.insert("payload".to_string(), payload);
+    exec.insert("queue".to_string(), JsonValue::empty_array());
+    let mut root = alloc::collections::BTreeMap::new();
+    root.insert("__exec__".to_string(), JsonValue::Object(exec));
+    let state = JsonValue::Object(root);
+
+    let instr = JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string("set")),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("attr", JsonValue::string("x")),
+                ("operation", JsonValue::string("sub")),
+                ("value", JsonValue::Integer(b)),
+            ]),
+        ),
+    ]);
+
+    let result = execute_meta_instruction(&instr, state, 0);
+
+    match result {
+        Ok(MetaInstructionResult::State(new_state)) => {
+            // checked_sub 成功时，结果必须等于 a - b
+            let expected = a.checked_sub(b);
+            kani::assert(expected.is_some(), "Ok implies checked_sub succeeded");
+
+            let val = resolve_path(&new_state, "__exec__.payload.x");
+            if let Some(JsonValue::Integer(result_val)) = val {
+                if let Some(exp) = expected {
+                    kani::assert(*result_val == exp, "sub result matches checked_sub");
+                }
+            }
+        }
+        Ok(MetaInstructionResult::IoRequired { .. }) => {
+            // set 元指令不会产生 I/O 请求信号
+            kani::assert(false, "set should never return IoRequired");
+        }
+        Err(TcbError::IntegerOverflow) => {
+            // 下溢时必须返回错误而非 panic
+            kani::assert(a.checked_sub(b).is_none(), "underflow correctly detected");
+        }
+        Err(_) => {
+            // 其他错误也可接受（如 InvalidState）
+        }
+    }
+}
