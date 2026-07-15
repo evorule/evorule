@@ -13,6 +13,7 @@
 //! - **事实总线**：所有组件通过 Fact 通信，无直接函数调用
 //!
 //! # 模块结构
+//! - `agent` — Agent 编排层（工具注册表、执行循环、记忆管理）
 //! - `io_handler` — IoHandler trait + IoResult
 //! - `io_dispatcher` — Enum Dispatch（5 种 I/O 类型）
 //! - `io_subscriber` — 订阅 IoRequest → 执行 I/O → 回写 IoResponse
@@ -25,6 +26,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod agent;
 pub mod api;
 pub mod auditor;
 pub mod clock;
@@ -36,6 +38,7 @@ pub mod io_subscriber;
 pub mod metrics;
 
 // 公开 API 重导出
+pub use agent::{ToolRegistry, ToolSpec};
 pub use api::{
     AppState, GovernanceApi, GovernanceServer, Session, SessionApi, SessionError, SessionId,
     SessionManager,
