@@ -1386,3 +1386,79 @@ async fn test_io_response_with_null_result_clears_properly() {
         "__io_result__ should be cleared even when first result was Null"
     );
 }
+
+// ===== 阶段3-1.3：Executing 循环中快照更新测试 =====
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_snapshot_updates_during_executing_loop() {
+    // 验证 Executing 循环中每 SNAPSHOT_UPDATE_INTERVAL（=100）步更新快照。
+    //
+    // 构造 500 条 increment 指令的 sequence，max_rounds = 600。
+    // 反应器在 Executing 阶段连续执行时，每 100 步调用 update_snapshot。
+    // 测试 task 在另一个 worker thread 上定期轮询 handle.current_step()，
+    // 期望在执行过程中观察到 steps >= 100。
+    //
+    // 注意：必须用 multi_thread runtime，因为反应器在 Executing 循环中不 yield，
+    // single_thread runtime 下测试 task 不会被调度。
+    let core_eval = load_core_eval();
+    let reactor = Reactor::builder(core_eval).max_rounds(600).build();
+    let (tx, mut rx, _event_tx, handle, _facts_log) = reactor.spawn();
+
+    // 构造 500 条 increment 指令的 sequence
+    let increments: Vec<JsonValue> = (0..500)
+        .map(|_| make_instruction("increment", "x", 1))
+        .collect();
+    let mut gen = FactIdGenerator::new();
+    tx.send(Fact::Command {
+        id: gen.next_id(),
+        instruction: make_sequence_instruction(increments),
+    })
+    .unwrap();
+
+    // 在反应器执行过程中，定期检查快照
+    let mut max_step_seen = 0usize;
+    let mut saw_step_ge_100 = false;
+
+    let result = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            tokio::select! {
+                fact = rx.recv() => {
+                    match fact {
+                        Ok(Fact::Stable { .. }) => break,
+                        Ok(Fact::Error { message, .. }) => panic!("Error: {}", message),
+                        Ok(_) => {}
+                        Err(_) => break,
+                    }
+                }
+                _ = tokio::time::sleep(Duration::from_micros(200)) => {
+                    if let Some(step) = handle.current_step() {
+                        if step > max_step_seen {
+                            max_step_seen = step;
+                        }
+                        if step >= 100 {
+                            saw_step_ge_100 = true;
+                        }
+                    }
+                }
+            }
+        }
+    })
+    .await;
+
+    assert!(result.is_ok(), "测试超时（10s 内未收到 Stable）");
+    assert!(
+        saw_step_ge_100,
+        "期望在 Executing 循环中观察到 steps >= 100（SNAPSHOT_UPDATE_INTERVAL=100），\
+         实际观察到的最大 steps: {}。\
+         这表明 Executing 循环中的定期快照更新未生效。",
+        max_step_seen
+    );
+
+    // 验证最终结果：500 条 increment(x, 1) → x = 500
+    // 反应器已 Stable，快照中 steps 应为 0（长驻模式重置），finished=false
+    let snap = handle.snapshot().expect("snapshot should be readable");
+    assert!(
+        !snap.finished,
+        "反应器应仍在运行（长驻模式），finished 应为 false"
+    );
+}

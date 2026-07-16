@@ -11,6 +11,10 @@ use crate::channel::ChannelPair;
 use crate::error::ReactorError;
 use crate::fact::{Fact, FactId, FactIdGenerator, IoType};
 use crate::facts_log::FactsLog;
+use crate::io_timeout_policy::IoTimeoutPolicy;
+#[cfg(test)]
+use crate::io_timeout_policy::TimeoutThreshold;
+use crate::phase::ReactorPhase;
 use crate::stable_detector::StableDetector;
 use crate::state::ReactorState;
 use crate::{EventReceiver, EventSender, FactReceiver, FactSender};
@@ -21,13 +25,46 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use std::collections::VecDeque;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// 默认队列长度上限（P3-11：超过时 80% warn / 100% Error）
 const DEFAULT_MAX_QUEUE_LEN: usize = 1000;
 
 /// 默认 I/O 超时检查间隔（P3-11：阻塞等待时定期扫描超时）
 const IO_TIMEOUT_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+
+/// 阶段3-1.3：Executing 阶段快照更新间隔（每 N 步更新一次）
+///
+/// 反应器在 Executing 阶段的 `while` 循环中连续执行指令时，
+/// 每执行 N 步更新一次 `ReactorStateSnapshot`，让 tier2 能观察到执行进度。
+/// 选用 100 的原因：
+/// - 锁开销可忽略（纳秒级，相对 `execute_transition` 的微秒级可不计）
+/// - tier2 轮询 Prometheus 指标的典型间隔为 5-15s，
+///   100 步粒度足以反映宏观进度而不产生噪声
+const SNAPSHOT_UPDATE_INTERVAL: usize = 100;
+
+/// 反应器状态快照（阶段3-1.3：只读访问，供 tier2 查询）
+///
+/// 反应器主循环定期更新此快照，ReactorHandle 通过它暴露状态机语义。
+/// 所有字段都是机制（控制层状态），非业务语义。
+#[derive(Debug, Clone, Default)]
+pub struct ReactorStateSnapshot {
+    /// 当前执行阶段
+    pub phase: ReactorPhase,
+    /// 因果链深度（= version 号）
+    pub version: u64,
+    /// 不变式违规累计计数
+    pub invariant_violations: u64,
+    /// 待响应的 I/O 请求数量
+    pub pending_io_count: usize,
+    /// 当前已执行指令步数
+    pub steps: usize,
+    /// 当前队列长度
+    pub queue_len: usize,
+    /// 反应器是否已结束（true = 已退出）
+    pub finished: bool,
+}
 
 /// 反应器配置构建器
 #[derive(Debug, Clone)]
@@ -42,6 +79,10 @@ pub struct ReactorBuilder {
     io_error_timeout: Duration,
     /// P3-11：I/O 超时检查间隔（默认 5s，测试可缩短）
     io_timeout_check_interval: Duration,
+    /// 阶段3-1.4：按 io_type 配置的超时策略（若设置则覆盖全局阈值）
+    io_timeout_policy: Option<IoTimeoutPolicy>,
+    /// 阶段5：初始 payload（fork 时设置，正常启动为 None = 空对象）
+    initial_payload: Option<JsonValue>,
 }
 
 impl ReactorBuilder {
@@ -54,6 +95,8 @@ impl ReactorBuilder {
             io_warn_timeout: Duration::from_secs(30),
             io_error_timeout: Duration::from_secs(60),
             io_timeout_check_interval: IO_TIMEOUT_CHECK_INTERVAL,
+            io_timeout_policy: None,
+            initial_payload: None,
         }
     }
 
@@ -96,6 +139,37 @@ impl ReactorBuilder {
         self
     }
 
+    /// 设置按 io_type 配置的 I/O 超时策略（阶段3-1.4）
+    ///
+    /// 若设置此策略，反应器在扫描超时时按 `io_type` 查表获取专属阈值，
+    /// 覆盖全局的 `io_warn_timeout` / `io_error_timeout`。
+    /// 未在策略中配置的 io_type 使用策略的 default 阈值。
+    ///
+    /// # 规范合规
+    ///
+    /// - ✅ 查表是机制（dispatch 路由）
+    /// - ✅ 阈值数据来自 JSON（策略）
+    /// - ✅ 不影响 Kani（TCB 不知道这个表）
+    pub fn with_io_timeout_policy(mut self, policy: IoTimeoutPolicy) -> Self {
+        self.io_timeout_policy = Some(policy);
+        self
+    }
+
+    /// 设置初始 payload（阶段5：fork 时使用）
+    ///
+    /// 正常启动时 payload 为空对象（默认）。fork 场景下，通过 rewind 获取
+    /// 指定 version 的 payload 后，设置为新 reactor 的初始状态，使新分支
+    /// 从该状态开始独立发展。
+    ///
+    /// # 规范合规
+    ///
+    /// - ✅ 数据加载是机制（Rust 可写，见 §2.1）
+    /// - ✅ 不涉及业务语义判断
+    pub fn initial_payload(mut self, payload: JsonValue) -> Self {
+        self.initial_payload = Some(payload);
+        self
+    }
+
     /// 构建反应器
     pub fn build(self) -> Reactor {
         Reactor {
@@ -105,6 +179,8 @@ impl ReactorBuilder {
             io_warn_timeout: self.io_warn_timeout,
             io_error_timeout: self.io_error_timeout,
             io_timeout_check_interval: self.io_timeout_check_interval,
+            io_timeout_policy: self.io_timeout_policy,
+            initial_payload: self.initial_payload,
             facts_log: FactsLog::new(),
         }
     }
@@ -122,6 +198,10 @@ pub struct Reactor {
     io_error_timeout: Duration,
     /// P3-11：I/O 超时检查间隔
     io_timeout_check_interval: Duration,
+    /// 阶段3-1.4：按 io_type 配置的超时策略（若设置则覆盖全局阈值）
+    io_timeout_policy: Option<IoTimeoutPolicy>,
+    /// 阶段5：初始 payload（fork 时设置，正常启动为 None = 空对象）
+    initial_payload: Option<JsonValue>,
     facts_log: FactsLog,
 }
 
@@ -136,7 +216,7 @@ impl Reactor {
     /// - `command_tx`：用户通过它提交 Fact（Command/PayloadUpdate/IoResponse）
     /// - `event_rx`：用户通过它接收反应器产生的 Fact（StateTransition/IoRequest/Stable/Error）
     /// - `event_tx`：event 通道发送端克隆，tier2 可通过 `event_tx.subscribe()` 创建额外接收者
-    /// - `handle`：反应器任务句柄
+    /// - `handle`：反应器任务句柄（含状态快照，支持只读查询）
     /// - `facts_log`：审计链克隆（可用于审计重放）
     pub fn spawn(
         self,
@@ -150,12 +230,16 @@ impl Reactor {
         let channels = ChannelPair::new();
         let facts_log = self.facts_log.clone();
         let event_tx_clone = channels.event_tx.clone();
-        let handle = tokio::spawn(self.run(channels.command_rx, channels.event_tx));
+        // 阶段3-1.3：创建共享状态快照，reactor 主循环更新，ReactorHandle 读取
+        let snapshot = Arc::new(Mutex::new(ReactorStateSnapshot::default()));
+        let snapshot_for_run = Arc::clone(&snapshot);
+        let handle =
+            tokio::spawn(self.run(channels.command_rx, channels.event_tx, snapshot_for_run));
         (
             channels.command_tx,
             channels.event_rx,
             event_tx_clone,
-            ReactorHandle { handle },
+            ReactorHandle { handle, snapshot },
             facts_log,
         )
     }
@@ -183,8 +267,13 @@ impl Reactor {
         self,
         mut cmd_rx: FactReceiver,
         event_tx: EventSender,
+        snapshot: Arc<Mutex<ReactorStateSnapshot>>,
     ) -> Result<(), ReactorError> {
         let mut state = ReactorState::new();
+        // 阶段5：fork 场景下设置初始 payload
+        if let Some(payload) = self.initial_payload {
+            state.payload = payload;
+        }
         let mut id_gen = FactIdGenerator::new();
         let mut steps: usize = 0;
         // 当前触发源（cause）：追踪最后一个输入 Fact 的 ID
@@ -197,14 +286,26 @@ impl Reactor {
         );
 
         'main: loop {
+            // 阶段3-1.3：更新状态快照（供 tier2 只读查询）
+            Self::update_snapshot(&snapshot, &state, steps, false);
+            // 0. 不变式自检：检查上一轮是否引入结构性违规
+            //    违规用 tracing::error! 记录，不中断反应器（符合 F11）
+            Self::run_invariant_check(&mut state, steps);
+
             // 1. 非阻塞 drain command 通道中所有待处理 Fact
             //    ISSUE-1 修复：避免稳定检测前遗漏通道中已排队的 Fact
+            state.phase = ReactorPhase::Draining;
             let mut drained_any = false;
             loop {
                 match cmd_rx.try_recv() {
                     Ok(fact) => {
                         drained_any = true;
-                        tracing::trace!("Drained fact: {} (id={})", fact.type_name(), fact.id());
+                        tracing::trace!(
+                            phase = %state.phase.as_str(),
+                            "Drained fact: {} (id={})",
+                            fact.type_name(),
+                            fact.id()
+                        );
                         current_cause = fact.id();
                         Self::emit_fact(&self.facts_log, &event_tx, fact.clone());
                         Self::handle_fact(&mut state, fact)?;
@@ -214,6 +315,8 @@ impl Reactor {
                         tracing::debug!(
                             "Reactor command channel closed during drain, shutting down"
                         );
+                        // 阶段3-1.3：标记反应器已结束，让 tier2 只读 API 返回 None
+                        Self::update_snapshot(&snapshot, &state, steps, true);
                         return Ok(());
                     }
                 }
@@ -222,7 +325,9 @@ impl Reactor {
             // 2. 稳定检测：队列空 + 无 pending I/O + 已执行过
             //    ISSUE-2 修复：使用 StableDetector::is_stable 静态方法
             if StableDetector::is_stable(state.queue.len(), state.pending_io_count) && steps > 0 {
+                state.phase = ReactorPhase::Stable;
                 tracing::info!(
+                    phase = %state.phase.as_str(),
                     "Reactor stable after {} steps, version {}",
                     steps,
                     state.version
@@ -235,22 +340,26 @@ impl Reactor {
                 Self::emit_fact(&self.facts_log, &event_tx, fact);
                 // 长驻模式：重置步数，继续等待下一命令（不退出）
                 steps = 0;
+                state.phase = ReactorPhase::Idle;
                 continue 'main;
             }
 
             // 3. 如果队列空或等待 I/O 且未 drain 到任何 Fact，阻塞等 Fact
             //    P3-11：使用 timeout 定期扫描 pending I/O 超时（30s warn / 60s error）
             if (state.queue.is_empty() || state.pending_io_count > 0) && !drained_any {
+                state.phase = ReactorPhase::AwaitingIo;
                 let fact = match tokio::time::timeout(self.io_timeout_check_interval, cmd_rx.recv())
                     .await
                 {
                     Ok(Some(f)) => f,
                     Ok(None) => {
                         tracing::debug!("Reactor command channel closed, shutting down");
+                        // 阶段3-1.3：标记反应器已结束，让 tier2 只读 API 返回 None
+                        Self::update_snapshot(&snapshot, &state, steps, true);
                         return Ok(());
                     }
                     Err(_) => {
-                        // P3-11: 超时，扫描 pending I/O 超时
+                        // P3-11 + 阶段3-1.4: 超时，扫描 pending I/O 超时（按 io_type 查表）
                         Self::check_io_timeouts(
                             &mut state,
                             &self.facts_log,
@@ -258,6 +367,7 @@ impl Reactor {
                             &mut id_gen,
                             self.io_warn_timeout,
                             self.io_error_timeout,
+                            self.io_timeout_policy.as_ref(),
                         );
                         continue 'main;
                     }
@@ -269,11 +379,13 @@ impl Reactor {
             }
 
             // 4. 持续执行队列指令（pending_io==0 时）
+            state.phase = ReactorPhase::Executing;
             while state.pending_io_count == 0 {
                 // P3-11: max_rounds 80% 警告（首次触发时记录，仅一次）
                 let warn_threshold = self.max_rounds * 4 / 5;
                 if warn_threshold > 0 && steps == warn_threshold {
                     tracing::warn!(
+                        phase = %state.phase.as_str(),
                         steps,
                         max_rounds = self.max_rounds,
                         threshold_pct = 80,
@@ -285,12 +397,13 @@ impl Reactor {
 
                 // BUG-3 修复：先检查 max_rounds，再弹出指令，避免指令丢失
                 if steps >= self.max_rounds {
+                    state.phase = ReactorPhase::Error;
                     let id = id_gen.next_id();
                     let err = ReactorError::MaxRoundsExceeded {
                         rounds: steps,
                         max_rounds: self.max_rounds,
                     };
-                    tracing::error!("{}", err);
+                    tracing::error!(phase = %state.phase.as_str(), "{}", err);
                     let fact = Fact::Error {
                         id,
                         message: err.to_string(),
@@ -299,12 +412,14 @@ impl Reactor {
                     // 长驻模式：清空队列，重置步数，发射 Stable，继续等待下一命令
                     state.queue.clear();
                     steps = 0;
+                    state.phase = ReactorPhase::Stable;
                     let stable_id = id_gen.next_id();
                     let stable_fact = Fact::Stable {
                         id: stable_id,
                         final_snapshot: state.payload.clone(),
                     };
                     Self::emit_fact(&self.facts_log, &event_tx, stable_fact);
+                    state.phase = ReactorPhase::Idle;
                     continue 'main;
                 }
 
@@ -314,7 +429,18 @@ impl Reactor {
                 };
                 steps += 1;
 
-                tracing::trace!("Executing instruction (step {}): {:?}", steps, instruction);
+                // 阶段3-1.3：每 N 步更新快照，让 tier2 能观察到执行进度
+                // （'main 循环开头已更新一次，此处补充 Executing 热路径中的定期更新）
+                if steps.is_multiple_of(SNAPSHOT_UPDATE_INTERVAL) {
+                    Self::update_snapshot(&snapshot, &state, steps, false);
+                }
+
+                tracing::trace!(
+                    phase = %state.phase.as_str(),
+                    "Executing instruction (step {}): {:?}",
+                    steps,
+                    instruction
+                );
 
                 let result = execute_transition(
                     &self.core_eval,
@@ -336,7 +462,9 @@ impl Reactor {
                         let queue_warn_threshold = self.max_queue_len * 4 / 5;
                         if queue_len >= self.max_queue_len && self.max_queue_len > 0 {
                             // 100%：硬限制，发射 Error 并清空队列
+                            state.phase = ReactorPhase::Error;
                             tracing::error!(
+                                phase = %state.phase.as_str(),
                                 queue_len,
                                 max_queue_len = self.max_queue_len,
                                 "队列长度超过上限，发射 Error 并清空队列"
@@ -352,6 +480,7 @@ impl Reactor {
                             Self::emit_fact(&self.facts_log, &event_tx, err_fact);
                             state.queue.clear();
                             // 发射 Stable 恢复
+                            state.phase = ReactorPhase::Stable;
                             let stable_id = id_gen.next_id();
                             let stable_fact = Fact::Stable {
                                 id: stable_id,
@@ -359,10 +488,12 @@ impl Reactor {
                             };
                             Self::emit_fact(&self.facts_log, &event_tx, stable_fact);
                             steps = 0;
+                            state.phase = ReactorPhase::Idle;
                             continue 'main;
                         } else if queue_len >= queue_warn_threshold && queue_warn_threshold > 0 {
                             // 80%：软限制警告
                             tracing::warn!(
+                                phase = %state.phase.as_str(),
                                 queue_len,
                                 max_queue_len = self.max_queue_len,
                                 threshold_pct = 80,
@@ -379,7 +510,7 @@ impl Reactor {
                             state.clear_io_result();
                             state.io_recovery = false;
                         }
-                        state.version += 1;
+                        state.bump_version();
                         let id = id_gen.next_id();
                         let fact = Fact::StateTransition {
                             id,
@@ -395,12 +526,18 @@ impl Reactor {
                             IoType::parse(&io_type).ok_or(ReactorError::InvalidState {
                                 field: "unknown io_type",
                             })?;
-                        state.register_io_request(id);
+                        state.register_io_request(id, io_type);
                         // BUG 修复：缓存触发 I/O 的原指令，IoResponse 到达后重新推送回队列，
                         // 使 core_eval.json 中的 exists(__io_result__) 双路径生效：
                         // 首次执行走 on_false（io_request），恢复执行走 on_true（set 消费结果）。
                         state.save_io_instruction(id, instruction.clone());
-                        tracing::debug!("IoRequest {} (io_type={})", id, io_type);
+                        state.phase = ReactorPhase::AwaitingIo;
+                        tracing::debug!(
+                            phase = %state.phase.as_str(),
+                            "IoRequest {} (io_type={})",
+                            id,
+                            io_type
+                        );
                         let fact = Fact::IoRequest {
                             id,
                             cause: current_cause,
@@ -411,17 +548,49 @@ impl Reactor {
                         break; // 退出 while，等待 IoResponse
                     }
                     Err(err) => {
+                        state.phase = ReactorPhase::Error;
                         let id = id_gen.next_id();
                         let msg = format!("TCB error at step {}: {}", steps, err);
-                        tracing::error!("{}", msg);
+                        tracing::error!(phase = %state.phase.as_str(), "{}", msg);
                         let fact = Fact::Error { id, message: msg };
                         Self::emit_fact(&self.facts_log, &event_tx, fact);
                         // 长驻模式：不退出，继续执行队列中剩余指令。
                         // 若队列已空，外层循环的稳定检测会自动发射 Stable。
+                        state.phase = ReactorPhase::Idle;
                         continue 'main;
                     }
                 }
             }
+        }
+    }
+
+    /// 阶段3-1.3：更新共享状态快照（供 ReactorHandle 只读查询）
+    ///
+    /// 反应器主循环每次迭代开头调用，将 `ReactorState` 的关键字段
+    /// 复制到 `ReactorStateSnapshot`，使 tier2 无需访问反应器内部状态即可查询。
+    ///
+    /// # 规范合规
+    ///
+    /// - ✅ 只读访问（snapshot 由 Arc<Mutex> 共享，仅此处写入）
+    /// - ✅ 字段都是机制（控制层状态），非业务语义
+    /// - ✅ 锁持有时间极短（仅字段拷贝），不跨 await
+    /// - ✅ 锁中毒时不中断反应器（仅记录 warn）
+    fn update_snapshot(
+        snapshot: &Arc<Mutex<ReactorStateSnapshot>>,
+        state: &ReactorState,
+        steps: usize,
+        finished: bool,
+    ) {
+        if let Ok(mut snap) = snapshot.lock() {
+            snap.phase = state.phase;
+            snap.version = state.version;
+            snap.invariant_violations = state.invariant_violations;
+            snap.pending_io_count = state.pending_io_count;
+            snap.steps = steps;
+            snap.queue_len = state.queue.len();
+            snap.finished = finished;
+        } else {
+            tracing::warn!("ReactorStateSnapshot mutex poisoned, tier2 queries will be stale");
         }
     }
 
@@ -438,10 +607,37 @@ impl Reactor {
         }
     }
 
-    /// P3-11: 扫描 pending I/O 超时（分级告警）
+    /// 不变式自检（白盒化：5 条结构性约束）
     ///
-    /// - `warn_ids`：超过 `warn_timeout` 但未超过 `error_timeout`，记录 warn 日志
-    /// - `error_ids`：超过 `error_timeout`，发射 `Fact::Error`，强制移除请求，恢复反应器
+    /// 在主循环每次迭代开头调用，检查上一轮是否引入违规。
+    /// 违规用 `tracing::error!` 记录（符合 F11，不用 debug_assert!），
+    /// 累计计数到 `state.invariant_violations`，不中断反应器。
+    fn run_invariant_check(state: &mut ReactorState, steps: usize) {
+        let violations = crate::invariants::check_invariants(state, steps);
+        if violations.is_empty() {
+            return;
+        }
+        let count = violations.len() as u64;
+        state.invariant_violations = state.invariant_violations.saturating_add(count);
+        for v in &violations {
+            tracing::error!(
+                phase = %state.phase.as_str(),
+                violation = v.as_str(),
+                total_violations = state.invariant_violations,
+                "不变式违规: {}",
+                v
+            );
+        }
+    }
+
+    /// P3-11 + 阶段3-1.4: 扫描 pending I/O 超时（分级告警，按 io_type 查表）
+    ///
+    /// - `warn_ids`：超过 warn 阈值但未超过 error 阈值，记录 warn 日志
+    /// - `error_ids`：超过 error 阈值，发射 `Fact::Error`，强制移除请求，恢复反应器
+    ///
+    /// 阈值来源（优先级）：
+    /// 1. 若 `policy` 存在，按 io_type 查表（`policy.threshold_for(io_type)`）
+    /// 2. 否则使用全局 `warn_timeout` / `error_timeout`
     ///
     /// 此方法在主循环的 `tokio::time::timeout` 超时分支中调用，
     /// 确保长时间未响应的 I/O 不会永久阻塞反应器。
@@ -450,42 +646,98 @@ impl Reactor {
         facts_log: &FactsLog,
         event_tx: &EventSender,
         id_gen: &mut FactIdGenerator,
-        warn_timeout: Duration,
-        error_timeout: Duration,
+        default_warn: Duration,
+        default_error: Duration,
+        policy: Option<&IoTimeoutPolicy>,
     ) {
         if state.pending_io_count == 0 {
             return;
         }
 
-        let (warn_ids, error_ids) = state.scan_io_timeouts(warn_timeout, error_timeout);
+        let (warn_ids, error_ids) =
+            Self::scan_io_timeouts_by_policy(state, default_warn, default_error, policy);
 
-        for id in &warn_ids {
+        for (id, warn_secs) in &warn_ids {
             tracing::warn!(
                 io_request_id = %id,
-                warn_timeout_secs = warn_timeout.as_secs(),
+                warn_timeout_secs = warn_secs,
                 "I/O 请求超时警告：pending I/O 超过 {}s 未响应",
-                warn_timeout.as_secs()
+                warn_secs
             );
         }
 
-        for id in error_ids {
+        for (id, error_secs) in error_ids {
             tracing::error!(
                 io_request_id = %id,
-                error_timeout_secs = error_timeout.as_secs(),
+                error_timeout_secs = error_secs,
                 "I/O 请求超时错误：pending I/O 超过 {}s 未响应，发射 Error 恢复反应器",
-                error_timeout.as_secs()
+                error_secs
             );
             let err_fact_id = id_gen.next_id();
             let err_fact = Fact::Error {
                 id: err_fact_id,
-                message: format!(
-                    "I/O request {} timed out after {}s",
-                    id,
-                    error_timeout.as_secs()
-                ),
+                message: format!("I/O request {} timed out after {}s", id, error_secs),
             };
             Self::emit_fact(facts_log, event_tx, err_fact);
             state.force_remove_io_request(id);
+        }
+    }
+
+    /// 扫描 pending I/O 超时，按 io_type 查表获取阈值
+    ///
+    /// 返回 `(warn_ids, error_ids)`，每个元素为 `(FactId, 超时秒数)`。
+    /// 超时秒数用于日志输出，反映该请求实际使用的阈值。
+    #[allow(clippy::type_complexity)] // 元组嵌套层数有限，引入 type alias 反而降低可读性
+    fn scan_io_timeouts_by_policy(
+        state: &ReactorState,
+        default_warn: Duration,
+        default_error: Duration,
+        policy: Option<&IoTimeoutPolicy>,
+    ) -> (Vec<(FactId, u64)>, Vec<(FactId, u64)>) {
+        let now = Instant::now();
+        let mut warn_ids = Vec::new();
+        let mut error_ids = Vec::new();
+
+        for (id, timestamp) in &state.pending_io_timestamps {
+            let elapsed = now.duration_since(*timestamp);
+
+            // 按 io_type 查表获取阈值（机制：dispatch 路由）
+            let (warn, error) = Self::resolve_threshold(
+                state.pending_io_types.get(id),
+                default_warn,
+                default_error,
+                policy,
+            );
+
+            if elapsed >= error {
+                error_ids.push((*id, error.as_secs()));
+            } else if elapsed >= warn {
+                warn_ids.push((*id, warn.as_secs()));
+            }
+        }
+
+        (warn_ids, error_ids)
+    }
+
+    /// 解析单个 I/O 请求的超时阈值（查表是机制）
+    ///
+    /// 优先级：policy.threshold_for(io_type) > 全局 default
+    fn resolve_threshold(
+        io_type: Option<&IoType>,
+        default_warn: Duration,
+        default_error: Duration,
+        policy: Option<&IoTimeoutPolicy>,
+    ) -> (Duration, Duration) {
+        match (policy, io_type) {
+            (Some(p), Some(t)) => {
+                let t = p.threshold_for(*t);
+                (t.warn, t.error)
+            }
+            (Some(p), None) => {
+                let t = p.default_threshold();
+                (t.warn, t.error)
+            }
+            (None, _) => (default_warn, default_error),
         }
     }
 
@@ -500,7 +752,7 @@ impl Reactor {
             Fact::PayloadUpdate { id: _, path, value } => {
                 tracing::debug!("Received PayloadUpdate: {}", path);
                 Self::update_payload(state, &path, value)?;
-                state.version += 1;
+                state.bump_version();
             }
 
             Fact::IoResponse {
@@ -525,7 +777,7 @@ impl Reactor {
                         // 需清除 __io_result__，防止残留影响后续不同的 I/O 指令。
                         state.io_recovery = true;
                     }
-                    state.version += 1;
+                    state.bump_version();
                 } else {
                     tracing::warn!("Unknown IoResponse: {}, ignoring", request_id);
                 }
@@ -594,8 +846,25 @@ impl Reactor {
 /// 反应器在 Stable 后不退出，持续等待下一命令。终止方式：
 /// - **优雅退出**：丢弃所有 `command_tx` 发送端 → `join()` 返回 `Ok(())`
 /// - **强制中止**：调用 `abort()` → `join()` 返回 `Err(TaskJoinError)`
+///
+/// # 阶段3-1.3：只读状态机 API
+///
+/// `ReactorHandle` 内部持有 `Arc<Mutex<ReactorStateSnapshot>>`，
+/// 反应器主循环每次迭代时更新快照。tier2 可通过以下 5 个只读 API
+/// 查询反应器的控制层状态，无需访问反应器内部：
+///
+/// - [`current_phase`](Self::current_phase)：当前执行阶段
+/// - [`causal_depth`](Self::causal_depth)：因果链深度（= version 号）
+/// - [`invariant_violations`](Self::invariant_violations)：不变式违规累计计数
+/// - [`pending_io_count`](Self::pending_io_count)：待响应的 I/O 请求数量
+/// - [`current_step`](Self::current_step)：当前已执行指令步数
+///
+/// 反应器结束后，前 4 个 "当前状态" API 返回 `None`（`invariant_violations`
+/// 是累计计数，仍可读）。
 pub struct ReactorHandle {
     handle: JoinHandle<Result<(), ReactorError>>,
+    /// 共享状态快照（reactor 主循环更新，5 个只读 API 读取）
+    snapshot: Arc<Mutex<ReactorStateSnapshot>>,
 }
 
 impl ReactorHandle {
@@ -615,8 +884,80 @@ impl ReactorHandle {
     }
 
     /// 检查反应器是否已结束
+    ///
+    /// 综合 `tokio::task` 的结束状态与快照的 `finished` 标志：
+    /// - 任务句柄已结束 → `true`
+    /// - 快照标记 `finished=true`（reactor 主循环在退出前设置）→ `true`
+    /// - 否则 → `false`
     pub fn is_finished(&self) -> bool {
-        self.handle.is_finished()
+        if self.handle.is_finished() {
+            return true;
+        }
+        self.snapshot.lock().map(|s| s.finished).unwrap_or(false)
+    }
+
+    /// 当前执行阶段（阶段3-1.3）
+    ///
+    /// 返回 `None` 表示反应器已结束或快照锁中毒。
+    pub fn current_phase(&self) -> Option<ReactorPhase> {
+        let snap = self.snapshot.lock().ok()?;
+        if snap.finished {
+            return None;
+        }
+        Some(snap.phase)
+    }
+
+    /// 因果链深度（= version 号，阶段3-1.3）
+    ///
+    /// 返回 `None` 表示反应器已结束或快照锁中毒。
+    /// version 是 `u64`，转 `usize` 失败时也返回 `None`。
+    pub fn causal_depth(&self) -> Option<usize> {
+        let snap = self.snapshot.lock().ok()?;
+        if snap.finished {
+            return None;
+        }
+        usize::try_from(snap.version).ok()
+    }
+
+    /// 不变式违规累计计数（阶段3-1.3）
+    ///
+    /// 返回 `u64`：即使反应器已结束，累计计数仍可读（用于事后审计）。
+    /// 锁中毒时返回 0。
+    pub fn invariant_violations(&self) -> u64 {
+        self.snapshot
+            .lock()
+            .map(|s| s.invariant_violations)
+            .unwrap_or(0)
+    }
+
+    /// 待响应的 I/O 请求数量（阶段3-1.3）
+    ///
+    /// 返回 `None` 表示反应器已结束或快照锁中毒。
+    pub fn pending_io_count(&self) -> Option<usize> {
+        let snap = self.snapshot.lock().ok()?;
+        if snap.finished {
+            return None;
+        }
+        Some(snap.pending_io_count)
+    }
+
+    /// 当前已执行指令步数（阶段3-1.3）
+    ///
+    /// 返回 `None` 表示反应器已结束或快照锁中毒。
+    pub fn current_step(&self) -> Option<usize> {
+        let snap = self.snapshot.lock().ok()?;
+        if snap.finished {
+            return None;
+        }
+        Some(snap.steps)
+    }
+
+    /// 读取完整快照（阶段3-1.3 + 1.5）
+    ///
+    /// 返回 `ReactorStateSnapshot` 的克隆。tier2 可基于此构建 Prometheus 指标。
+    /// 反应器结束后仍可读取最后一次快照（含 `finished=true`）。
+    pub fn snapshot(&self) -> Option<ReactorStateSnapshot> {
+        self.snapshot.lock().ok().map(|s| s.clone())
     }
 }
 
@@ -724,5 +1065,349 @@ mod tests {
         assert_eq!(100usize * 4 / 5, 80);
         // max_queue_len=10 → warn_threshold=8
         assert_eq!(10usize * 4 / 5, 8);
+    }
+
+    // ===== 阶段3-1.4 I/O 超时策略测试 =====
+
+    #[test]
+    fn test_builder_default_no_policy() {
+        // 默认不设置 policy
+        let builder = ReactorBuilder::new(vec![]);
+        assert!(builder.io_timeout_policy.is_none());
+    }
+
+    #[test]
+    fn test_builder_with_io_timeout_policy() {
+        let policy = IoTimeoutPolicy::with_defaults()
+            .with_override(IoType::CallLlm, TimeoutThreshold::from_secs(60, 120));
+        let builder = ReactorBuilder::new(vec![]).with_io_timeout_policy(policy);
+        assert!(builder.io_timeout_policy.is_some());
+        let p = builder.io_timeout_policy.as_ref().expect("policy set");
+        let t = p.threshold_for(IoType::CallLlm);
+        assert_eq!(t.warn, Duration::from_secs(60));
+        assert_eq!(t.error, Duration::from_secs(120));
+    }
+
+    #[test]
+    fn test_resolve_threshold_no_policy_uses_default() {
+        // 无 policy 时使用全局 default
+        let (warn, error) = Reactor::resolve_threshold(
+            Some(&IoType::CallLlm),
+            Duration::from_secs(30),
+            Duration::from_secs(60),
+            None,
+        );
+        assert_eq!(warn, Duration::from_secs(30));
+        assert_eq!(error, Duration::from_secs(60));
+    }
+
+    #[test]
+    fn test_resolve_threshold_with_policy_uses_override() {
+        // 有 policy 且 io_type 有覆盖时，使用覆盖值
+        let policy = IoTimeoutPolicy::with_defaults()
+            .with_override(IoType::CallLlm, TimeoutThreshold::from_secs(90, 180));
+        let (warn, error) = Reactor::resolve_threshold(
+            Some(&IoType::CallLlm),
+            Duration::from_secs(30),
+            Duration::from_secs(60),
+            Some(&policy),
+        );
+        assert_eq!(warn, Duration::from_secs(90));
+        assert_eq!(error, Duration::from_secs(180));
+    }
+
+    #[test]
+    fn test_resolve_threshold_with_policy_no_override_uses_policy_default() {
+        // 有 policy 但 io_type 无覆盖时，使用 policy.default
+        let policy = IoTimeoutPolicy::new(TimeoutThreshold::from_secs(20, 40));
+        let (warn, error) = Reactor::resolve_threshold(
+            Some(&IoType::QueryDb),
+            Duration::from_secs(30),
+            Duration::from_secs(60),
+            Some(&policy),
+        );
+        // QueryDb 未覆盖，使用 policy.default (20, 40)
+        assert_eq!(warn, Duration::from_secs(20));
+        assert_eq!(error, Duration::from_secs(40));
+    }
+
+    #[test]
+    fn test_resolve_threshold_with_policy_no_io_type_uses_policy_default() {
+        // 有 policy 但 io_type 缺失时，使用 policy.default
+        let policy = IoTimeoutPolicy::new(TimeoutThreshold::from_secs(25, 50));
+        let (warn, error) = Reactor::resolve_threshold(
+            None,
+            Duration::from_secs(30),
+            Duration::from_secs(60),
+            Some(&policy),
+        );
+        assert_eq!(warn, Duration::from_secs(25));
+        assert_eq!(error, Duration::from_secs(50));
+    }
+
+    #[test]
+    fn test_scan_io_timeouts_by_policy_no_pending() {
+        // 无 pending I/O 时返回空
+        let state = ReactorState::new();
+        let (warn, error) = Reactor::scan_io_timeouts_by_policy(
+            &state,
+            Duration::from_secs(30),
+            Duration::from_secs(60),
+            None,
+        );
+        assert!(warn.is_empty());
+        assert!(error.is_empty());
+    }
+
+    #[test]
+    fn test_scan_io_timeouts_by_policy_global_threshold() {
+        // 无 policy 时使用全局阈值
+        let mut state = ReactorState::new();
+        let id = FactId(1);
+        state.register_io_request(id, IoType::CallLlm);
+        // 模拟 35s 前（超过 30s warn，未超过 60s error）
+        state
+            .pending_io_timestamps
+            .insert(id, Instant::now() - Duration::from_secs(35));
+
+        let (warn, error) = Reactor::scan_io_timeouts_by_policy(
+            &state,
+            Duration::from_secs(30),
+            Duration::from_secs(60),
+            None,
+        );
+        assert_eq!(warn.len(), 1);
+        assert_eq!(warn[0].0, FactId(1));
+        assert_eq!(warn[0].1, 30);
+        assert!(error.is_empty());
+    }
+
+    #[test]
+    fn test_scan_io_timeouts_by_policy_per_io_type() {
+        // 有 policy 时按 io_type 查表
+        let mut state = ReactorState::new();
+        // CallLlm：warn=60s, error=120s
+        let llm_id = FactId(1);
+        state.register_io_request(llm_id, IoType::CallLlm);
+        // QueryDb：warn=5s, error=15s
+        let db_id = FactId(2);
+        state.register_io_request(db_id, IoType::QueryDb);
+
+        // 模拟 10s 前：CallLlm 未超 warn(60s)，QueryDb 已超 error(15s)? 不，10s < 15s
+        // QueryDb: 10s > warn(5s) but 10s < error(15s) → warn
+        state
+            .pending_io_timestamps
+            .insert(llm_id, Instant::now() - Duration::from_secs(10));
+        state
+            .pending_io_timestamps
+            .insert(db_id, Instant::now() - Duration::from_secs(10));
+
+        let policy = IoTimeoutPolicy::with_defaults()
+            .with_override(IoType::CallLlm, TimeoutThreshold::from_secs(60, 120))
+            .with_override(IoType::QueryDb, TimeoutThreshold::from_secs(5, 15));
+
+        let (warn, error) = Reactor::scan_io_timeouts_by_policy(
+            &state,
+            Duration::from_secs(30),
+            Duration::from_secs(60),
+            Some(&policy),
+        );
+
+        // CallLlm (10s < 60s warn)：不触发
+        // QueryDb (10s > 5s warn, 10s < 15s error)：warn
+        assert_eq!(warn.len(), 1);
+        assert_eq!(warn[0].0, db_id);
+        assert_eq!(warn[0].1, 5);
+        assert!(error.is_empty());
+    }
+
+    #[test]
+    fn test_scan_io_timeouts_by_policy_error_level() {
+        // 有 policy 时按 io_type 查表，触发 error 级别
+        let mut state = ReactorState::new();
+        let db_id = FactId(1);
+        state.register_io_request(db_id, IoType::QueryDb);
+        // 模拟 20s 前（超过 QueryDb error=15s）
+        state
+            .pending_io_timestamps
+            .insert(db_id, Instant::now() - Duration::from_secs(20));
+
+        let policy = IoTimeoutPolicy::with_defaults()
+            .with_override(IoType::QueryDb, TimeoutThreshold::from_secs(5, 15));
+
+        let (warn, error) = Reactor::scan_io_timeouts_by_policy(
+            &state,
+            Duration::from_secs(30),
+            Duration::from_secs(60),
+            Some(&policy),
+        );
+
+        // 20s > error(15s) → error
+        assert!(warn.is_empty());
+        assert_eq!(error.len(), 1);
+        assert_eq!(error[0].0, db_id);
+        assert_eq!(error[0].1, 15);
+    }
+
+    #[test]
+    fn test_scan_io_timeouts_by_policy_mixed_thresholds() {
+        // 混合场景：两个不同 io_type 的请求，使用不同阈值
+        let mut state = ReactorState::new();
+        let llm_id = FactId(1);
+        let db_id = FactId(2);
+        state.register_io_request(llm_id, IoType::CallLlm);
+        state.register_io_request(db_id, IoType::QueryDb);
+
+        // CallLlm: warn=60, error=120 → 70s 时 warn
+        // QueryDb: warn=5, error=15 → 70s 时 error
+        state
+            .pending_io_timestamps
+            .insert(llm_id, Instant::now() - Duration::from_secs(70));
+        state
+            .pending_io_timestamps
+            .insert(db_id, Instant::now() - Duration::from_secs(70));
+
+        let policy = IoTimeoutPolicy::with_defaults()
+            .with_override(IoType::CallLlm, TimeoutThreshold::from_secs(60, 120))
+            .with_override(IoType::QueryDb, TimeoutThreshold::from_secs(5, 15));
+
+        let (warn, error) = Reactor::scan_io_timeouts_by_policy(
+            &state,
+            Duration::from_secs(30),
+            Duration::from_secs(60),
+            Some(&policy),
+        );
+
+        // CallLlm: 70s > 60s warn, 70s < 120s error → warn
+        assert_eq!(warn.len(), 1);
+        assert_eq!(warn[0].0, llm_id);
+        assert_eq!(warn[0].1, 60);
+
+        // QueryDb: 70s > 15s error → error
+        assert_eq!(error.len(), 1);
+        assert_eq!(error[0].0, db_id);
+        assert_eq!(error[0].1, 15);
+    }
+
+    // ===== 阶段3-1.3 ReactorHandle 只读 API 测试 =====
+
+    #[tokio::test]
+    async fn test_handle_snapshot_initial_state() {
+        // 反应器刚启动时，快照应反映初始状态
+        let reactor = Reactor::builder(vec![]).build();
+        let (cmd_tx, _event_rx, _event_tx, handle, _facts_log) = reactor.spawn();
+
+        // 等待反应器主循环更新快照（第一次 'main 迭代开头调用 update_snapshot）
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // 因果深度初始为 0
+        let depth = handle.causal_depth();
+        assert!(depth.is_some(), "causal_depth 应返回 Some");
+        assert_eq!(depth.unwrap(), 0);
+
+        // 不变式违规为 0
+        assert_eq!(handle.invariant_violations(), 0);
+
+        // pending_io_count 为 0
+        let pending = handle.pending_io_count();
+        assert!(pending.is_some(), "pending_io_count 应返回 Some");
+        assert_eq!(pending.unwrap(), 0);
+
+        // current_step 为 0
+        let step = handle.current_step();
+        assert!(step.is_some(), "current_step 应返回 Some");
+        assert_eq!(step.unwrap(), 0);
+
+        // current_phase 应是 Idle 或 Draining（反应器刚启动可能处于任一阶段）
+        let phase = handle.current_phase();
+        assert!(phase.is_some(), "current_phase 应返回 Some");
+        let p = phase.unwrap();
+        assert!(
+            p == ReactorPhase::Idle || p == ReactorPhase::Draining,
+            "初始阶段应为 Idle 或 Draining，实际: {:?}",
+            p
+        );
+
+        // snapshot() 应返回完整快照
+        let snap = handle.snapshot();
+        assert!(snap.is_some(), "snapshot 应返回 Some");
+        assert_eq!(snap.unwrap().version, 0);
+
+        // 优雅退出
+        drop(cmd_tx);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    #[tokio::test]
+    async fn test_handle_snapshot_returns_none_after_shutdown() {
+        // 反应器结束后，"当前状态" API 返回 None，但 invariant_violations 仍可读
+        let reactor = Reactor::builder(vec![]).build();
+        let (cmd_tx, _event_rx, _event_tx, handle, _facts_log) = reactor.spawn();
+
+        // 等待反应器启动
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // 优雅退出：丢弃所有 command_tx
+        drop(cmd_tx);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // 反应器应已结束
+        assert!(handle.is_finished(), "反应器应在 command_tx 丢弃后结束");
+
+        // "当前状态" API 应返回 None（finished=true）
+        assert_eq!(
+            handle.current_phase(),
+            None,
+            "结束后 current_phase 应返回 None"
+        );
+        assert_eq!(
+            handle.causal_depth(),
+            None,
+            "结束后 causal_depth 应返回 None"
+        );
+        assert_eq!(
+            handle.pending_io_count(),
+            None,
+            "结束后 pending_io_count 应返回 None"
+        );
+        assert_eq!(
+            handle.current_step(),
+            None,
+            "结束后 current_step 应返回 None"
+        );
+
+        // invariant_violations 是累计计数，仍可读
+        assert_eq!(
+            handle.invariant_violations(),
+            0,
+            "结束后 invariant_violations 仍可读（累计计数）"
+        );
+
+        // snapshot() 仍可读最后一次快照（含 finished=true）
+        let snap = handle.snapshot();
+        assert!(snap.is_some(), "结束后 snapshot 仍可读");
+        assert!(snap.unwrap().finished, "快照应标记 finished=true");
+    }
+
+    #[tokio::test]
+    async fn test_handle_snapshot_with_io_timeout_policy() {
+        // 配置 IoTimeoutPolicy 不影响只读 API 的语义
+        let policy = IoTimeoutPolicy::with_defaults()
+            .with_override(IoType::CallLlm, TimeoutThreshold::from_secs(60, 120));
+        let reactor = Reactor::builder(vec![])
+            .with_io_timeout_policy(policy)
+            .build();
+        let (cmd_tx, _event_rx, _event_tx, handle, _facts_log) = reactor.spawn();
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // API 仍正常工作
+        assert_eq!(handle.invariant_violations(), 0);
+        assert_eq!(handle.causal_depth().unwrap(), 0);
+        assert_eq!(handle.pending_io_count().unwrap(), 0);
+
+        drop(cmd_tx);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(handle.is_finished());
     }
 }

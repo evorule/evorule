@@ -159,7 +159,7 @@ async fn test_shared_knowledge_injected_into_prompt() {
     let memory_dir = make_temp_dir("shared_knowledge");
 
     // 1. 创建 MemoryManager 并写入共享知识
-    let memory = MemoryManager::new("researcher".to_string(), memory_dir.clone());
+    let mut memory = MemoryManager::new("researcher".to_string(), memory_dir.clone());
     memory
         .save_shared(
             "knowledge.json",
@@ -224,7 +224,7 @@ async fn test_session_context_injected_into_prompt() {
     let memory_dir = make_temp_dir("session_context");
 
     // 1. 创建 MemoryManager 并写入会话上下文
-    let memory =
+    let mut memory =
         MemoryManager::new("researcher".to_string(), memory_dir.clone()).with_session(50001);
     memory
         .save_context("本次讨论的主题是 Rust 编程语言及其安全特性。")
@@ -349,13 +349,15 @@ async fn test_cross_session_isolation() {
     let memory_dir = make_temp_dir("cross_session");
 
     // Session 1: 主题 Python
-    let mem1 = MemoryManager::new("researcher".to_string(), memory_dir.clone()).with_session(50010);
+    let mut mem1 =
+        MemoryManager::new("researcher".to_string(), memory_dir.clone()).with_session(50010);
     mem1.save_context("主题是 Python 编程语言")
         .await
         .expect("save context 1 failed");
 
     // Session 2: 主题 Rust
-    let mem2 = MemoryManager::new("researcher".to_string(), memory_dir.clone()).with_session(50011);
+    let mut mem2 =
+        MemoryManager::new("researcher".to_string(), memory_dir.clone()).with_session(50011);
     mem2.save_context("主题是 Rust 编程语言")
         .await
         .expect("save context 2 failed");
@@ -427,7 +429,7 @@ async fn test_combined_knowledge_and_context_injection() {
     let memory_dir = make_temp_dir("combined_injection");
 
     // 1. 写入共享知识 + 会话上下文
-    let memory =
+    let mut memory =
         MemoryManager::new("researcher".to_string(), memory_dir.clone()).with_session(50020);
     memory
         .save_shared(

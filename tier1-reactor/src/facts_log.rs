@@ -293,6 +293,17 @@ impl FactsLog {
         let inner = self.inner.read().expect("FactsLog lock poisoned");
         inner.history.iter().map(|(_, f)| f.clone()).collect()
     }
+
+    /// 返回带版本号的完整历史（阶段5：时间机器 rewind/diff/replay 使用）
+    ///
+    /// 每个元素为 `(version_before, Fact)`，其中 `version_before` 是该 Fact
+    /// 追加前的版本号。`StateTransition` / `IoResponse` 追加后 version = version_before + 1。
+    ///
+    /// 与 `history()` 的区别：保留版本号信息，供时间机器按版本范围过滤。
+    pub fn history_with_versions(&self) -> Vec<(u64, Fact)> {
+        let inner = self.inner.read().expect("FactsLog lock poisoned");
+        inner.history.iter().map(|(v, f)| (*v, f.clone())).collect()
+    }
 }
 
 impl Default for FactsLog {

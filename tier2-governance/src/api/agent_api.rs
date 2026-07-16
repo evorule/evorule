@@ -249,7 +249,8 @@ impl AgentManager {
         });
 
         let runner = AgentRunner::new(config, command_tx, event_rx, (*self.tools_json).clone())
-            .with_stop_flag(stop_flag.clone());
+            .with_stop_flag(stop_flag.clone())
+            .with_facts_log(facts_log.clone(), session_id);
         let runner = if let Some(mem) = memory {
             runner.with_memory(mem)
         } else {

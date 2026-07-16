@@ -3,10 +3,9 @@
 //!
 //! # 设计
 //!
-//! MemoryManager 基于文件系统实现 Agent 的长期记忆，独立于反应器
-//! （不通过 save_memory 指令，而是直接读写文件）。这使记忆检索可以在
-//! AgentRunner 启动前同步完成（如 build_system_prompt），避免额外的
-//! I/O 往返。
+//! MemoryManager 基于文件系统实现 Agent 的长期记忆。记忆操作同时
+//! 写入文件系统（持久化）和 FactsLog 审计链（可追溯），实现"事实流 + 缓存"
+//! 架构：FactsLog 是真相源，文件系统是缓存。
 //!
 //! # 命名空间隔离
 //!
@@ -22,13 +21,22 @@
 //! │       └── {key}           # 会话级记忆
 //! ```
 //!
+//! PayloadUpdate 路径使用 `__memory__` 前缀隔离：
+//!
+//! ```text
+//! __memory__.agent_{type}.shared.{key}              // 共享记忆
+//! __memory__.agent_{type}.session_{id}.{key}         // 会话记忆
+//! __memory__.cross_ref.session_{id}.read_at_startup  // 跨会话引用
+//! ```
+//!
 //! 不同 agent_type 的记忆目录完全隔离；同一 agent_type 下不同 session_id
 //! 的记忆也隔离。共享知识放在 `shared/` 子目录，供所有会话使用。
 //!
 //! # 与 save_memory 指令的关系
 //!
 //! - **MemoryManager**（本模块）：AgentRunner 在启动前/结束后直接操作文件，
-//!   用于注入 system prompt 和保存最终结果。
+//!   同时将记忆操作映射为 `Fact::PayloadUpdate` 写入 FactsLog，用于注入
+//!   system prompt 和保存最终结果。
 //! - **save_memory 指令**（core_eval.json）：Agent 在 ReAct 循环中自主调用，
 //!   经过反应器 I/O 通道，用于 Agent 运行时主动保存发现。
 //!
@@ -36,6 +44,9 @@
 //! `base_dir`，而 MemoryManager 写入 `base_dir/agent_{type}/` 子目录。
 
 use std::path::PathBuf;
+
+use tier0_tcb::JsonValue;
+use tier1_reactor::{Fact, FactIdGenerator, FactsLog};
 
 /// 记忆系统错误
 #[derive(Debug)]
@@ -75,10 +86,13 @@ const CONTEXT_FILE: &str = "context";
 /// 会话结果文件名
 const RESULT_FILE: &str = "result";
 
+/// 记忆命名空间前缀（与业务 payload 字段隔离）
+const MEMORY_NAMESPACE: &str = "__memory__";
+
 /// Agent 记忆管理器
 ///
 /// 管理 Agent 类型级共享知识和会话级记忆，支持 system prompt 注入。
-/// 通过文件系统持久化，不依赖反应器 I/O 通道。
+/// 通过文件系统持久化 + FactsLog 审计链追踪（事实流 + 缓存架构）。
 pub struct MemoryManager {
     /// Agent 类型标识（用于命名空间隔离）
     agent_type: String,
@@ -86,6 +100,10 @@ pub struct MemoryManager {
     session_id: Option<u64>,
     /// 记忆根目录
     base_dir: PathBuf,
+    /// 审计链（可选，挂载后记忆操作会同时写入审计链）
+    facts_log: Option<FactsLog>,
+    /// Fact ID 生成器（用于 PayloadUpdate）
+    id_gen: FactIdGenerator,
 }
 
 impl MemoryManager {
@@ -99,6 +117,8 @@ impl MemoryManager {
             agent_type,
             session_id: None,
             base_dir,
+            facts_log: None,
+            id_gen: FactIdGenerator::new(),
         }
     }
 
@@ -107,6 +127,18 @@ impl MemoryManager {
     /// 设置后可使用会话级操作（save_session / load_session / save_result）。
     pub fn with_session(mut self, session_id: u64) -> Self {
         self.session_id = Some(session_id);
+        self
+    }
+
+    /// 挂载审计链（builder 模式）
+    ///
+    /// 挂载后，所有记忆写入操作（save_shared / save_session / save_context /
+    /// save_result / build_system_prompt）会同时向审计链追加 `Fact::PayloadUpdate`，
+    /// 使记忆操作可追溯、可重放。
+    ///
+    /// 推荐从 `Reactor::spawn()` 返回的 FactsLog 克隆注入。
+    pub fn with_facts_log(mut self, facts_log: FactsLog) -> Self {
+        self.facts_log = Some(facts_log);
         self
     }
 
@@ -149,21 +181,71 @@ impl MemoryManager {
         Ok(sanitized)
     }
 
-    /// 构造增强的 system prompt（注入记忆）
+    /// 构造共享记忆的 PayloadUpdate 路径
+    ///
+    /// 返回 `__memory__.agent_{type}.shared.{key}`
+    fn shared_memory_path(&self, key: &str) -> String {
+        format!(
+            "{}.agent_{}.shared.{}",
+            MEMORY_NAMESPACE, self.agent_type, key
+        )
+    }
+
+    /// 构造会话记忆的 PayloadUpdate 路径
+    ///
+    /// 返回 `__memory__.agent_{type}.session_{id}.{key}`
+    fn session_memory_path(&self, key: &str) -> Result<String, MemoryError> {
+        let sid = self.session_id.ok_or(MemoryError::NoSession)?;
+        Ok(format!(
+            "{}.agent_{}.session_{}.{}",
+            MEMORY_NAMESPACE, self.agent_type, sid, key
+        ))
+    }
+
+    /// 向审计链追加记忆写入 Fact（如果已挂载）
+    ///
+    /// 将记忆操作映射为 `Fact::PayloadUpdate`，使记忆变更进入审计链。
+    /// 失败仅记录 warning，不影响记忆操作本身（审计是辅助功能）。
+    fn emit_memory_fact(&mut self, path: String, value: JsonValue) {
+        let Some(log) = &self.facts_log else {
+            return;
+        };
+        let id = self.id_gen.next_id();
+        let fact = Fact::PayloadUpdate { id, path, value };
+        if let Err(e) = log.append(fact) {
+            tracing::warn!(error = %e, "FactsLog append failed for memory update");
+        }
+    }
+
+    /// 计算内容的 blake3 哈希（内容寻址版本控制）
+    ///
+    /// 返回 `blake3:` 前缀 + 16 进制哈希字符串。
+    fn content_hash(content: &str) -> String {
+        let hash = blake3::hash(content.as_bytes());
+        format!("blake3:{}", hash.to_hex())
+    }
+
+    /// 构造增强的 system prompt（注入记忆 + 内容哈希追踪）
     ///
     /// 1. 读取 agent 类型共享知识（`shared/knowledge.json`）
     /// 2. 若设置了 session_id，读取会话级上下文（`session_{id}/context`）
     /// 3. 拼接到 base_prompt
+    /// 4. 记录每条读取记忆的内容哈希（blake3）
+    /// 5. 若已挂载审计链，发射 `PayloadUpdate` 到
+    ///    `__memory__.cross_ref.session_{id}.read_at_startup`
     ///
     /// 若无任何记忆文件，返回原始 base_prompt。
-    pub fn build_system_prompt(&self, base_prompt: &str) -> String {
+    pub fn build_system_prompt(&mut self, base_prompt: &str) -> String {
         let mut prompt = base_prompt.to_string();
+        let mut keys_read: Vec<String> = Vec::new();
+        let mut content_hashes: Vec<(String, String)> = Vec::new();
 
         // 1. 加载共享知识
         let knowledge_path = self.shared_dir().join(KNOWLEDGE_FILE);
-        let knowledge = std::fs::read_to_string(&knowledge_path).ok();
-        if let Some(k) = &knowledge {
+        if let Ok(k) = std::fs::read_to_string(&knowledge_path) {
             if !k.trim().is_empty() {
+                keys_read.push(KNOWLEDGE_FILE.to_string());
+                content_hashes.push((KNOWLEDGE_FILE.to_string(), Self::content_hash(&k)));
                 prompt.push_str("\n\n---\n## 共享知识\n");
                 prompt.push_str(k.trim());
             }
@@ -174,21 +256,60 @@ impl MemoryManager {
             let context_path = session_dir.join(CONTEXT_FILE);
             if let Ok(ctx) = std::fs::read_to_string(&context_path) {
                 if !ctx.trim().is_empty() {
+                    keys_read.push(CONTEXT_FILE.to_string());
+                    content_hashes.push((CONTEXT_FILE.to_string(), Self::content_hash(&ctx)));
                     prompt.push_str("\n\n## 会话上下文\n");
                     prompt.push_str(ctx.trim());
                 }
             }
         }
 
+        // 3. 发射跨会话因果记录（内容哈希追踪）
+        self.emit_cross_ref_fact(&keys_read, &content_hashes, &prompt);
+
         prompt
+    }
+
+    /// 发射跨会话引用记录到审计链
+    ///
+    /// 记录本次 build_system_prompt 读取了哪些记忆、各自的内容哈希、
+    /// 以及最终 system_prompt 的哈希。即使 knowledge 后来被修改，
+    /// 也能追溯 session 当时读到的是哪个版本。
+    fn emit_cross_ref_fact(
+        &mut self,
+        keys_read: &[String],
+        content_hashes: &[(String, String)],
+        system_prompt: &str,
+    ) {
+        if self.facts_log.is_none() || keys_read.is_empty() {
+            return;
+        }
+        let cross_ref = build_cross_ref_value(keys_read, content_hashes, system_prompt);
+        let path = self.cross_ref_path().unwrap_or_else(|_| {
+            // 无 session_id 时使用 "startup" 作为占位符
+            format!("{}.cross_ref.startup.read_at_startup", MEMORY_NAMESPACE)
+        });
+        self.emit_memory_fact(path, cross_ref);
+    }
+
+    /// 构造跨会话引用路径
+    fn cross_ref_path(&self) -> Result<String, MemoryError> {
+        let sid = self.session_id.ok_or(MemoryError::NoSession)?;
+        Ok(format!(
+            "{}.cross_ref.session_{}.read_at_startup",
+            MEMORY_NAMESPACE, sid
+        ))
     }
 
     /// 保存共享知识
     ///
-    /// 将 `{key}` 对应的值写入 `shared/{key}` 文件。
+    /// 将 `{key}` 对应的值写入 `shared/{key}` 文件，同时向审计链发射
+    /// `Fact::PayloadUpdate`（路径 `__memory__.agent_{type}.shared.{key}`）。
     /// 同名 key 会被覆盖。
-    pub async fn save_shared(&self, key: &str, value: &str) -> Result<(), MemoryError> {
+    pub async fn save_shared(&mut self, key: &str, value: &str) -> Result<(), MemoryError> {
         let safe_key = Self::sanitize_key(key)?;
+        let mem_path = self.shared_memory_path(&safe_key);
+        self.emit_memory_fact(mem_path, JsonValue::string(value.to_string()));
         let dir = self.shared_dir();
         tokio::fs::create_dir_all(&dir).await?;
         let path = dir.join(safe_key);
@@ -211,10 +332,13 @@ impl MemoryManager {
 
     /// 保存会话级记忆
     ///
-    /// 将 `{key}` 对应的值写入 `session_{id}/{key}` 文件。
+    /// 将 `{key}` 对应的值写入 `session_{id}/{key}` 文件，同时向审计链发射
+    /// `Fact::PayloadUpdate`（路径 `__memory__.agent_{type}.session_{id}.{key}`）。
     /// 需要先通过 `with_session()` 设置会话 ID。
-    pub async fn save_session(&self, key: &str, value: &str) -> Result<(), MemoryError> {
+    pub async fn save_session(&mut self, key: &str, value: &str) -> Result<(), MemoryError> {
         let safe_key = Self::sanitize_key(key)?;
+        let mem_path = self.session_memory_path(&safe_key)?;
+        self.emit_memory_fact(mem_path, JsonValue::string(value.to_string()));
         let dir = self.session_dir()?;
         tokio::fs::create_dir_all(&dir).await?;
         let path = dir.join(safe_key);
@@ -239,14 +363,14 @@ impl MemoryManager {
     ///
     /// 等价于 `save_session("context", value)`，使用固定文件名 `context`。
     /// build_system_prompt 会自动读取此文件。
-    pub async fn save_context(&self, value: &str) -> Result<(), MemoryError> {
+    pub async fn save_context(&mut self, value: &str) -> Result<(), MemoryError> {
         self.save_session(CONTEXT_FILE, value).await
     }
 
     /// 保存 Agent 最终结果
     ///
     /// 将结果写入 `session_{id}/result` 文件，供后续会话检索。
-    pub async fn save_result(&self, result: &str) -> Result<(), MemoryError> {
+    pub async fn save_result(&mut self, result: &str) -> Result<(), MemoryError> {
         self.save_session(RESULT_FILE, result).await
     }
 
@@ -270,6 +394,47 @@ impl MemoryManager {
     pub fn has_shared_knowledge(&self) -> bool {
         self.shared_dir().join(KNOWLEDGE_FILE).exists()
     }
+}
+
+/// 构造跨会话引用记录的 JsonValue
+///
+/// 记录本次 `build_system_prompt` 读取了哪些记忆文件、各自的内容哈希、
+/// 以及最终拼接后的 system_prompt 哈希。即使 knowledge 后来被修改，
+/// 也能通过审计链追溯 session 当时读到的是哪个版本（内容寻址版本控制）。
+///
+/// 返回结构：
+/// ```json
+/// {
+///   "shared_keys_read": ["knowledge.json", "context"],
+///   "content_hashes": {
+///     "knowledge.json": "blake3:abc123...",
+///     "context": "blake3:def456..."
+///   },
+///   "system_prompt_hash": "blake3:ghi789..."
+/// }
+/// ```
+fn build_cross_ref_value(
+    keys_read: &[String],
+    content_hashes: &[(String, String)],
+    system_prompt: &str,
+) -> JsonValue {
+    let keys_array = JsonValue::array(
+        keys_read
+            .iter()
+            .map(|k| JsonValue::string(k.clone()))
+            .collect(),
+    );
+    let hash_pairs: Vec<(&str, JsonValue)> = content_hashes
+        .iter()
+        .map(|(k, h)| (k.as_str(), JsonValue::string(h.clone())))
+        .collect();
+    let hashes_obj = JsonValue::object_from_pairs(&hash_pairs);
+    let prompt_hash = MemoryManager::content_hash(system_prompt);
+    JsonValue::object_from_pairs(&[
+        ("shared_keys_read", keys_array),
+        ("content_hashes", hashes_obj),
+        ("system_prompt_hash", JsonValue::string(prompt_hash)),
+    ])
 }
 
 #[cfg(test)]
@@ -304,7 +469,7 @@ mod tests {
     #[tokio::test]
     async fn test_save_and_load_shared() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
 
         // 初始加载返回 None
         let result = mgr.load_shared("fact1").await.unwrap();
@@ -321,7 +486,7 @@ mod tests {
     #[tokio::test]
     async fn test_save_and_load_session() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf())
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf())
             .with_session(40001);
 
         // 初始加载返回 None
@@ -339,7 +504,7 @@ mod tests {
     #[tokio::test]
     async fn test_session_operation_without_session_id() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
 
         // 未设置 session_id 时，会话级操作应返回 Err
         let result = mgr.save_session("key", "value").await;
@@ -354,8 +519,8 @@ mod tests {
         let dir = make_tmp_dir();
 
         // 两个不同 agent_type 的 MemoryManager
-        let mgr_a = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
-        let mgr_b = MemoryManager::new("writer".to_string(), dir.path().to_path_buf());
+        let mut mgr_a = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
+        let mut mgr_b = MemoryManager::new("writer".to_string(), dir.path().to_path_buf());
 
         // 各自保存同名 key
         mgr_a
@@ -377,8 +542,9 @@ mod tests {
         let base = dir.path().to_path_buf();
 
         // 同一 agent_type，不同 session_id
-        let mgr_s1 = MemoryManager::new("researcher".to_string(), base.clone()).with_session(40001);
-        let mgr_s2 = MemoryManager::new("researcher".to_string(), base).with_session(40002);
+        let mut mgr_s1 =
+            MemoryManager::new("researcher".to_string(), base.clone()).with_session(40001);
+        let mut mgr_s2 = MemoryManager::new("researcher".to_string(), base).with_session(40002);
 
         // 各自保存同名 key
         mgr_s1.save_session("note", "会话1的笔记").await.unwrap();
@@ -394,7 +560,7 @@ mod tests {
     #[tokio::test]
     async fn test_shared_and_session_isolation() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf())
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf())
             .with_session(40001);
 
         // 同名 key 分别写入 shared 和 session
@@ -411,7 +577,7 @@ mod tests {
     #[test]
     fn test_build_system_prompt_no_memory() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
 
         let prompt = mgr.build_system_prompt("你是一个研究助手");
         assert_eq!(prompt, "你是一个研究助手");
@@ -420,7 +586,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_system_prompt_with_knowledge() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
 
         // 写入共享知识
         mgr.save_shared(KNOWLEDGE_FILE, "evorule 是一个规则引擎")
@@ -436,7 +602,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_system_prompt_with_context() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf())
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf())
             .with_session(40001);
 
         // 写入会话上下文
@@ -451,7 +617,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_system_prompt_with_knowledge_and_context() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf())
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf())
             .with_session(40001);
 
         mgr.save_shared(KNOWLEDGE_FILE, "知识库内容").await.unwrap();
@@ -468,7 +634,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_system_prompt_empty_knowledge_ignored() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
 
         // 写入空知识
         mgr.save_shared(KNOWLEDGE_FILE, "  \n  ").await.unwrap();
@@ -481,7 +647,7 @@ mod tests {
     #[tokio::test]
     async fn test_save_and_load_result() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf())
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf())
             .with_session(40001);
 
         // 初始无结果
@@ -496,7 +662,7 @@ mod tests {
     #[tokio::test]
     async fn test_clear_session() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf())
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf())
             .with_session(40001);
 
         mgr.save_session("note", "some note").await.unwrap();
@@ -510,7 +676,7 @@ mod tests {
     #[tokio::test]
     async fn test_overwrite_shared() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
 
         mgr.save_shared("key", "value1").await.unwrap();
         mgr.save_shared("key", "value2").await.unwrap();
@@ -528,7 +694,7 @@ mod tests {
     #[tokio::test]
     async fn test_has_shared_knowledge_after_save() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
         mgr.save_shared(KNOWLEDGE_FILE, "knowledge").await.unwrap();
         assert!(mgr.has_shared_knowledge());
     }
@@ -536,7 +702,7 @@ mod tests {
     #[tokio::test]
     async fn test_invalid_key_rejected() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
 
         let result = mgr.save_shared("", "value").await;
         assert!(matches!(result, Err(MemoryError::InvalidKey(_))));
@@ -545,7 +711,7 @@ mod tests {
     #[tokio::test]
     async fn test_path_traversal_key_sanitized() {
         let dir = make_tmp_dir();
-        let mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
+        let mut mgr = MemoryManager::new("researcher".to_string(), dir.path().to_path_buf());
 
         // 路径遍历字符应被清理，不会逃逸出 shared 目录
         // "../escape" → replace ['/',\\']→"_" → ".._escape" → replace ".."→"_" → "__escape"
@@ -584,7 +750,7 @@ mod tests {
         let base = dir.path().to_path_buf();
 
         // agent A 保存记忆
-        let mgr_a = MemoryManager::new("agent_a".to_string(), base.clone()).with_session(1);
+        let mut mgr_a = MemoryManager::new("agent_a".to_string(), base.clone()).with_session(1);
         mgr_a.save_session("secret", "A的秘密").await.unwrap();
 
         // agent B 不应能读到 A 的会话记忆

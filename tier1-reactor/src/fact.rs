@@ -13,7 +13,10 @@ impl core::fmt::Display for FactId {
 }
 
 /// I/O 请求类型（与 core_eval.json 中的 io_type 对应）
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+///
+/// 阶段3-1.4：实现 `Copy`，使 `register_io_request(id, io_type)` 后 `io_type`
+/// 仍可在调用方使用（如 reactor 中需要在 register 后再用于 Fact::IoRequest）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum IoType {
     /// 调用 LLM
     CallLlm,

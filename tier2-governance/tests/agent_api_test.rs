@@ -177,6 +177,37 @@ async fn setup_server() -> (String, tokio::task::JoinHandle<()>) {
     (base_url, handle)
 }
 
+/// 轮询等待 Agent 完成（状态变为 completed 或 failed）
+///
+/// IoSubscriber 对连接拒绝错误重试 3 次（指数退避 200/400/800ms，
+/// 总退避 1.4s），加上 TCP 连接超时，单次 LLM 调用可能耗时 >2s。
+/// 固定 sleep 不足以覆盖所有环境，改用轮询（每 200ms 查一次，最多 10s）。
+///
+/// 返回最终状态字符串；超时则返回最后一次查询到的状态。
+async fn wait_for_agent_completion(
+    client: &reqwest::Client,
+    base_url: &str,
+    session_id: u64,
+) -> String {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let resp = client
+            .get(format!("{}/api/agents/{}/status", base_url, session_id))
+            .send()
+            .await
+            .expect("status request failed");
+        let body: serde_json::Value = resp.json().await.expect("parse json failed");
+        let status = body["status"].as_str().unwrap_or("").to_string();
+        if status == "completed" || status == "failed" {
+            return status;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return status;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
 // ===== 测试用例 =====
 
 #[tokio::test]
@@ -309,19 +340,8 @@ async fn test_run_agent_and_check_status() {
         status_str
     );
 
-    // 等待 Agent 完成（LLM 调用连接被拒绝，应快速完成）
-    tokio::time::sleep(Duration::from_secs(2)).await;
-
-    // 再次查询状态 → 应该不再是 running
-    let final_status_resp = client
-        .get(format!("{}/api/agents/{}/status", base_url, session_id))
-        .send()
-        .await
-        .expect("request failed");
-    assert_eq!(final_status_resp.status(), 200);
-    let final_status: serde_json::Value =
-        final_status_resp.json().await.expect("parse json failed");
-    let final_status_str = final_status["status"].as_str().unwrap();
+    // 轮询等待 Agent 完成（LLM 调用连接被拒绝，IoSubscriber 重试后快速失败）
+    let final_status_str = wait_for_agent_completion(&client, &base_url, session_id).await;
     assert!(
         final_status_str == "completed" || final_status_str == "failed",
         "Agent should be completed or failed after waiting, got: {}",
@@ -348,8 +368,8 @@ async fn test_get_result_after_completion() {
     let body: serde_json::Value = resp.json().await.expect("parse json failed");
     let session_id = body["session_id"].as_u64().unwrap();
 
-    // 等待完成
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // 轮询等待 Agent 完成
+    let _ = wait_for_agent_completion(&client, &base_url, session_id).await;
 
     // 获取结果
     let result_resp = client

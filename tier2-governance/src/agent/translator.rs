@@ -138,6 +138,73 @@ impl Message {
             }
         }
     }
+
+    /// 从 OpenAI messages JSON 反序列化为 `Message`（阶段4：用于 `restore_messages_from`）
+    ///
+    /// 与 `to_json` 互逆。识别 `role` 字段：
+    /// - `system` → `Message::System`
+    /// - `user` → `Message::User`
+    /// - `assistant` → `Message::Assistant`（content=null → None；tool_calls=null/缺失 → None）
+    /// - `tool` → `Message::Tool`
+    ///
+    /// 返回 `None` 的情况：
+    /// - 缺少 `role` 字段或 role 不识别
+    /// - 缺少必需字段（system/user 缺 content，tool 缺 tool_call_id/content）
+    /// - tool_calls 数组解析失败（视为无 tool_calls，返回 None 数组）
+    pub fn from_json(json: &JsonValue) -> Option<Message> {
+        let role = json.get("role").and_then(|v| v.as_str())?;
+        match role {
+            "system" => {
+                let content = json
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())?;
+                Some(Message::System { content })
+            }
+            "user" => {
+                let content = json
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())?;
+                Some(Message::User { content })
+            }
+            "assistant" => {
+                let content = json.get("content").and_then(|v| {
+                    if v.is_null() {
+                        None
+                    } else {
+                        v.as_str().map(|s| s.to_string())
+                    }
+                });
+                let tool_calls = json.get("tool_calls").and_then(|v| {
+                    if v.is_null() {
+                        None
+                    } else {
+                        parse_tool_calls(v).ok()
+                    }
+                });
+                Some(Message::Assistant {
+                    content,
+                    tool_calls,
+                })
+            }
+            "tool" => {
+                let tool_call_id = json
+                    .get("tool_call_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())?;
+                let content = json
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())?;
+                Some(Message::Tool {
+                    tool_call_id,
+                    content,
+                })
+            }
+            _ => None,
+        }
+    }
 }
 
 /// 将 ToolCall 转换为 OpenAI tool_calls JSON 格式
@@ -469,6 +536,194 @@ mod tests {
             json.get("content").and_then(|v| v.as_str()),
             Some("搜索结果")
         );
+    }
+
+    // ===== 阶段4：Message::from_json 测试 =====
+
+    #[test]
+    fn test_message_from_json_system() {
+        let msg = Message::System {
+            content: "你是助手".to_string(),
+        };
+        let json = msg.to_json();
+        let restored = Message::from_json(&json).unwrap();
+        match restored {
+            Message::System { content } => assert_eq!(content, "你是助手"),
+            other => panic!("expected System, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_message_from_json_user() {
+        let msg = Message::User {
+            content: "你好".to_string(),
+        };
+        let json = msg.to_json();
+        let restored = Message::from_json(&json).unwrap();
+        match restored {
+            Message::User { content } => assert_eq!(content, "你好"),
+            other => panic!("expected User, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_message_from_json_assistant_with_content() {
+        let msg = Message::Assistant {
+            content: Some("回答".to_string()),
+            tool_calls: None,
+        };
+        let json = msg.to_json();
+        let restored = Message::from_json(&json).unwrap();
+        match restored {
+            Message::Assistant {
+                content,
+                tool_calls,
+            } => {
+                assert_eq!(content, Some("回答".to_string()));
+                assert!(tool_calls.is_none());
+            }
+            other => panic!("expected Assistant, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_message_from_json_assistant_with_tool_calls() {
+        let msg = Message::Assistant {
+            content: None,
+            tool_calls: Some(vec![ToolCall {
+                id: "call_001".to_string(),
+                name: "search".to_string(),
+                arguments: "{\"q\":\"test\"}".to_string(),
+            }]),
+        };
+        let json = msg.to_json();
+        let restored = Message::from_json(&json).unwrap();
+        match restored {
+            Message::Assistant {
+                content,
+                tool_calls,
+            } => {
+                assert!(content.is_none());
+                let tcs = tool_calls.expect("tool_calls should be Some");
+                assert_eq!(tcs.len(), 1);
+                assert_eq!(tcs[0].id, "call_001");
+                assert_eq!(tcs[0].name, "search");
+                assert_eq!(tcs[0].arguments, "{\"q\":\"test\"}");
+            }
+            other => panic!("expected Assistant, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_message_from_json_tool() {
+        let msg = Message::Tool {
+            tool_call_id: "call_001".to_string(),
+            content: "搜索结果".to_string(),
+        };
+        let json = msg.to_json();
+        let restored = Message::from_json(&json).unwrap();
+        match restored {
+            Message::Tool {
+                tool_call_id,
+                content,
+            } => {
+                assert_eq!(tool_call_id, "call_001");
+                assert_eq!(content, "搜索结果");
+            }
+            other => panic!("expected Tool, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_message_from_json_roundtrip_all_variants() {
+        // 验证 to_json → from_json 的往返一致性
+        let originals = vec![
+            Message::System {
+                content: "sys".to_string(),
+            },
+            Message::User {
+                content: "user".to_string(),
+            },
+            Message::Assistant {
+                content: Some("text".to_string()),
+                tool_calls: None,
+            },
+            Message::Assistant {
+                content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "c1".to_string(),
+                    name: "t1".to_string(),
+                    arguments: "{}".to_string(),
+                }]),
+            },
+            Message::Tool {
+                tool_call_id: "c1".to_string(),
+                content: "result".to_string(),
+            },
+        ];
+        for original in originals {
+            let json = original.to_json();
+            let restored = Message::from_json(&json);
+            assert!(
+                restored.is_some(),
+                "from_json returned None for {:?}",
+                original
+            );
+        }
+    }
+
+    #[test]
+    fn test_message_from_json_missing_role() {
+        let json = JsonValue::Object(BTreeMap::new());
+        assert!(Message::from_json(&json).is_none());
+    }
+
+    #[test]
+    fn test_message_from_json_unknown_role() {
+        let mut m = BTreeMap::new();
+        m.insert("role".to_string(), JsonValue::String("unknown".to_string()));
+        let json = JsonValue::Object(m);
+        assert!(Message::from_json(&json).is_none());
+    }
+
+    #[test]
+    fn test_message_from_json_system_missing_content() {
+        let mut m = BTreeMap::new();
+        m.insert("role".to_string(), JsonValue::String("system".to_string()));
+        let json = JsonValue::Object(m);
+        assert!(Message::from_json(&json).is_none());
+    }
+
+    #[test]
+    fn test_message_from_json_tool_missing_tool_call_id() {
+        let mut m = BTreeMap::new();
+        m.insert("role".to_string(), JsonValue::String("tool".to_string()));
+        m.insert("content".to_string(), JsonValue::String("r".to_string()));
+        let json = JsonValue::Object(m);
+        assert!(Message::from_json(&json).is_none());
+    }
+
+    #[test]
+    fn test_message_from_json_assistant_null_content_no_tool_calls() {
+        // assistant with content=null and no tool_calls field → content=None, tool_calls=None
+        let mut m = BTreeMap::new();
+        m.insert(
+            "role".to_string(),
+            JsonValue::String("assistant".to_string()),
+        );
+        m.insert("content".to_string(), JsonValue::Null);
+        let json = JsonValue::Object(m);
+        let restored = Message::from_json(&json).unwrap();
+        match restored {
+            Message::Assistant {
+                content,
+                tool_calls,
+            } => {
+                assert!(content.is_none());
+                assert!(tool_calls.is_none());
+            }
+            other => panic!("expected Assistant, got {:?}", other),
+        }
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! 反应器内部状态
 
-use crate::fact::FactId;
+use crate::fact::{FactId, IoType};
+use crate::phase::ReactorPhase;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 use tier0_tcb::JsonValue;
@@ -17,6 +18,11 @@ pub(crate) struct ReactorState {
 
     /// 单调递增版本号（每次状态变更 +1）
     pub version: u64,
+
+    /// 上一次的版本号（用于不变式 #3：version 单调递增自检）
+    ///
+    /// 由 `bump_version` 维护：`prev_version = version; version += 1;`
+    pub prev_version: u64,
 
     /// 待响应的 I/O 请求数量
     pub pending_io_count: usize,
@@ -40,6 +46,12 @@ pub(crate) struct ReactorState {
     /// 超时检测时扫描此映射判断是否超过 warn/error 阈值。
     pub pending_io_timestamps: BTreeMap<FactId, Instant>,
 
+    /// I/O 请求类型记录（阶段3-1.4：用于按 io_type 查超时阈值）
+    ///
+    /// 每次 `register_io_request` 时记录 io_type，
+    /// `check_io_timeouts` 时按 io_type 查 `IoTimeoutPolicy` 获取专属阈值。
+    pub pending_io_types: BTreeMap<FactId, IoType>,
+
     /// I/O 恢复执行标志
     ///
     /// IoResponse 到达后设为 true，重新执行原指令后（execute_transition 返回 State）
@@ -47,6 +59,18 @@ pub(crate) struct ReactorState {
     /// 这是必要的，因为 `exists` 域检查的是"路径存在"，Null 值也算存在；
     /// 若不清除，后续不同的 I/O 指令会错误地走 on_true 分支（消费残留的旧结果）。
     pub io_recovery: bool,
+
+    /// 控制层阶段（白盒化：让执行状态机可观察）
+    ///
+    /// 由主循环每次迭代更新，用于 tracing 与调试。
+    /// 阶段转移函数是纯算法（见 [crate::phase::ReactorPhase::next]）。
+    pub phase: ReactorPhase,
+
+    /// 不变式违规累计计数（白盒化：结构性自检结果）
+    ///
+    /// 每次 phase 转移时调用 `check_invariants`，违规时累加。
+    /// 仅记录，不强制中断反应器（用 `tracing::error!` 而非 `debug_assert!`，符合 F11）。
+    pub invariant_violations: u64,
 }
 
 #[allow(dead_code)] // 部分队列操作方法供扩展使用
@@ -56,12 +80,25 @@ impl ReactorState {
             payload: JsonValue::empty_object(),
             queue: VecDeque::new(),
             version: 0,
+            prev_version: 0,
             pending_io_count: 0,
             pending_requests: BTreeSet::new(),
             pending_io_instructions: BTreeMap::new(),
             pending_io_timestamps: BTreeMap::new(),
+            pending_io_types: BTreeMap::new(),
             io_recovery: false,
+            phase: ReactorPhase::default(),
+            invariant_violations: 0,
         }
+    }
+
+    /// 安全递增版本号（同时更新 prev_version，支持不变式 #3 自检）
+    ///
+    /// 替代 `state.version += 1;`，确保 prev_version 同步更新。
+    /// 在 PayloadUpdate / IoResponse / StateTransition 处理时调用。
+    pub fn bump_version(&mut self) {
+        self.prev_version = self.version;
+        self.version += 1;
     }
 
     /// 稳定条件：队列空 + 无待处理 I/O
@@ -103,20 +140,24 @@ impl ReactorState {
     ///
     /// 幂等：重复注册同一 id 不会增加计数（防止 count 与 set 大小不一致）。
     /// P3-11：同时记录发射时间戳，用于超时检测。
-    pub fn register_io_request(&mut self, id: FactId) {
+    /// 阶段3-1.4：同时记录 io_type，用于按类型查超时阈值。
+    pub fn register_io_request(&mut self, id: FactId, io_type: IoType) {
         if self.pending_requests.insert(id) {
             self.pending_io_count += 1;
             self.pending_io_timestamps.insert(id, Instant::now());
+            self.pending_io_types.insert(id, io_type);
         }
     }
 
     /// 完成一个 I/O 请求，返回是否成功（即该请求是否在等待中）
     ///
     /// P3-11：同时移除时间戳。
+    /// 阶段3-1.4：同时移除 io_type 记录。
     pub fn complete_io_request(&mut self, id: FactId) -> bool {
         if self.pending_requests.remove(&id) {
             self.pending_io_count = self.pending_io_count.saturating_sub(1);
             self.pending_io_timestamps.remove(&id);
+            self.pending_io_types.remove(&id);
             true
         } else {
             false
@@ -150,12 +191,13 @@ impl ReactorState {
     /// 强制移除一个超时的 I/O 请求（P3-11：error 超时恢复用）
     ///
     /// 与 `complete_io_request` 不同，此方法不期望 IoResponse 到达，
-    /// 而是反应器主动清理超时请求。同时移除缓存的指令和时间戳。
+    /// 而是反应器主动清理超时请求。同时移除缓存的指令、时间戳和 io_type 记录。
     pub fn force_remove_io_request(&mut self, id: FactId) {
         self.pending_requests.remove(&id);
         self.pending_io_count = self.pending_io_count.saturating_sub(1);
         self.pending_io_instructions.remove(&id);
         self.pending_io_timestamps.remove(&id);
+        self.pending_io_types.remove(&id);
     }
 
     /// 缓存触发 I/O 的原指令（IoRequest 产生时调用）
@@ -212,11 +254,11 @@ mod tests {
         let id1 = FactId(1);
         let id2 = FactId(2);
 
-        state.register_io_request(id1);
+        state.register_io_request(id1, IoType::CallLlm);
         assert_eq!(state.pending_io_count, 1);
         assert!(state.pending_requests.contains(&id1));
 
-        state.register_io_request(id2);
+        state.register_io_request(id2, IoType::CallLlm);
         assert_eq!(state.pending_io_count, 2);
         assert!(state.pending_requests.contains(&id2));
 
@@ -301,12 +343,12 @@ mod tests {
         let mut state = ReactorState::new();
         let id = FactId(1);
 
-        state.register_io_request(id);
+        state.register_io_request(id, IoType::CallLlm);
         assert_eq!(state.pending_io_count, 1);
         assert_eq!(state.pending_requests.len(), 1);
 
         // 重复注册同一 id：count 不变（幂等）
-        state.register_io_request(id);
+        state.register_io_request(id, IoType::CallLlm);
         assert_eq!(state.pending_io_count, 1);
         assert_eq!(state.pending_requests.len(), 1);
 
@@ -364,7 +406,7 @@ mod tests {
         // P3-11: register_io_request 应同时记录时间戳
         let mut state = ReactorState::new();
         let id = FactId(1);
-        state.register_io_request(id);
+        state.register_io_request(id, IoType::CallLlm);
         assert!(state.pending_io_timestamps.contains_key(&id));
     }
 
@@ -373,7 +415,7 @@ mod tests {
         // P3-11: complete_io_request 应同时移除时间戳
         let mut state = ReactorState::new();
         let id = FactId(1);
-        state.register_io_request(id);
+        state.register_io_request(id, IoType::CallLlm);
         assert!(state.pending_io_timestamps.contains_key(&id));
         assert!(state.complete_io_request(id));
         assert!(!state.pending_io_timestamps.contains_key(&id));
@@ -394,7 +436,7 @@ mod tests {
         // P3-11: 超过 warn_timeout 但未超过 error_timeout
         let mut state = ReactorState::new();
         let id = FactId(1);
-        state.register_io_request(id);
+        state.register_io_request(id, IoType::CallLlm);
         // 模拟 35s 前注册的请求（超过 30s warn，未超过 60s error）
         state
             .pending_io_timestamps
@@ -410,7 +452,7 @@ mod tests {
         // P3-11: 超过 error_timeout
         let mut state = ReactorState::new();
         let id = FactId(1);
-        state.register_io_request(id);
+        state.register_io_request(id, IoType::CallLlm);
         // 模拟 65s 前注册的请求（超过 60s error）
         state
             .pending_io_timestamps
@@ -429,9 +471,9 @@ mod tests {
         let warn_id = FactId(1);
         let error_id = FactId(2);
         let normal_id = FactId(3);
-        state.register_io_request(warn_id);
-        state.register_io_request(error_id);
-        state.register_io_request(normal_id);
+        state.register_io_request(warn_id, IoType::CallLlm);
+        state.register_io_request(error_id, IoType::CallLlm);
+        state.register_io_request(normal_id, IoType::CallLlm);
         // 手动设置时间戳
         state
             .pending_io_timestamps
@@ -448,10 +490,10 @@ mod tests {
 
     #[test]
     fn test_force_remove_io_request() {
-        // P3-11: force_remove_io_request 应清除所有相关状态
+        // P3-11 + 阶段3-1.4: force_remove_io_request 应清除所有相关状态
         let mut state = ReactorState::new();
         let id = FactId(1);
-        state.register_io_request(id);
+        state.register_io_request(id, IoType::CallLlm);
         state.save_io_instruction(id, JsonValue::string("original_instruction"));
 
         // 确认状态已设置
@@ -459,6 +501,7 @@ mod tests {
         assert!(state.pending_requests.contains(&id));
         assert!(state.pending_io_instructions.contains_key(&id));
         assert!(state.pending_io_timestamps.contains_key(&id));
+        assert!(state.pending_io_types.contains_key(&id));
 
         // 强制移除
         state.force_remove_io_request(id);
@@ -468,6 +511,7 @@ mod tests {
         assert!(!state.pending_requests.contains(&id));
         assert!(!state.pending_io_instructions.contains_key(&id));
         assert!(!state.pending_io_timestamps.contains_key(&id));
+        assert!(!state.pending_io_types.contains_key(&id));
     }
 
     #[test]
@@ -476,5 +520,50 @@ mod tests {
         let mut state = ReactorState::new();
         state.force_remove_io_request(FactId(999));
         assert_eq!(state.pending_io_count, 0);
+    }
+
+    // ===== 阶段3-1.4 I/O 类型记录测试 =====
+
+    #[test]
+    fn test_register_io_request_records_io_type() {
+        // 阶段3-1.4: register_io_request 应同时记录 io_type
+        let mut state = ReactorState::new();
+        let id = FactId(1);
+        state.register_io_request(id, IoType::QueryDb);
+        assert_eq!(state.pending_io_types.get(&id), Some(&IoType::QueryDb));
+    }
+
+    #[test]
+    fn test_complete_io_request_removes_io_type() {
+        // 阶段3-1.4: complete_io_request 应同时移除 io_type 记录
+        let mut state = ReactorState::new();
+        let id = FactId(1);
+        state.register_io_request(id, IoType::CallLlm);
+        assert!(state.pending_io_types.contains_key(&id));
+        assert!(state.complete_io_request(id));
+        assert!(!state.pending_io_types.contains_key(&id));
+    }
+
+    #[test]
+    fn test_register_multiple_io_types() {
+        // 阶段3-1.4: 不同请求记录不同 io_type
+        let mut state = ReactorState::new();
+        state.register_io_request(FactId(1), IoType::CallLlm);
+        state.register_io_request(FactId(2), IoType::QueryDb);
+        state.register_io_request(FactId(3), IoType::HttpGet);
+
+        assert_eq!(state.pending_io_types.len(), 3);
+        assert_eq!(
+            state.pending_io_types.get(&FactId(1)),
+            Some(&IoType::CallLlm)
+        );
+        assert_eq!(
+            state.pending_io_types.get(&FactId(2)),
+            Some(&IoType::QueryDb)
+        );
+        assert_eq!(
+            state.pending_io_types.get(&FactId(3)),
+            Some(&IoType::HttpGet)
+        );
     }
 }

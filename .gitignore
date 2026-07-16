@@ -73,3 +73,10 @@ dist/
 
 # Python 临时测试脚本
 sse_test_client.py
+
+# === 2026-07-17 dev/wip WIP cleanup: 根目录 build/test output ===
+# 不应该 commit 进 git history; 已在 commit 35c971b 中误加, 此次 amend 移除
+/.a7_build.txt
+/.check-output.txt
+/.tier2_full.txt
+/.tier2_test_output.txt
