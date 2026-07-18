@@ -3,7 +3,7 @@
 //! ## 目的
 //!
 //! 补充单元测试的有限 case 覆盖, 用随机化输入验证 TCB 的核心不变量:
-//! - JsonValue 构造/访问 roundtrip 一致
+//! - `JsonValue` 构造/访问 roundtrip 一致
 //! - 路径解析确定性
 //! - 域比较对称性 (eq 自身对称, lt/gt 互逆)
 //! - 状态转换幂等性 (相同输入两次 → 相同输出)
@@ -18,7 +18,7 @@
 //! ## Hygiene
 //!
 //! - `ProptestConfig::with_cases(200)` 限制每属性 case 数
-//! - 不依赖 `*.proptest-regressions` 文件回放 (FileFailurePersistence
+//! - 不依赖 `*.proptest-regressions` 文件回放 (`FileFailurePersistence`
 //!   会永久重放旧反例, 掩盖真实 assertion bug -- 已 .gitignore)
 //! - 所有 proptest 用 fresh config, 不读取 .proptest-regressions
 
@@ -47,7 +47,7 @@ fn arb_delta() -> impl Strategy<Value = i64> {
     -10_000i64..10_000i64
 }
 
-/// 构造 increment 业务的 core_eval: branch(instruction_type=increment) -> set(add)
+/// 构造 increment 业务的 `core_eval`: `branch(instruction_type=increment)` -> set(add)
 fn build_increment_core_eval() -> Vec<JsonValue> {
     vec![JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("branch")),
@@ -133,8 +133,8 @@ proptest! {
         let x_back = obj.get("x");
         let y_back = obj.get("y");
         let z_back = obj.get("z");
-        prop_assert_eq!(x_back.and_then(|v| v.as_i64()), Some(x));
-        prop_assert_eq!(y_back.and_then(|v| v.as_i64()), Some(y));
+        prop_assert_eq!(x_back.and_then(tier0_tcb::JsonValue::as_i64), Some(x));
+        prop_assert_eq!(y_back.and_then(tier0_tcb::JsonValue::as_i64), Some(y));
         prop_assert!(z_back.is_none());
     }
 

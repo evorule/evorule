@@ -1,21 +1,21 @@
-//! P0 #5: 每个 TcbError 变体的执行路径触发测试
+//! P0 #5: 每个 `TcbError` 变体的执行路径触发测试
 //!
-//! error.rs mod tests 只验证 Display + PartialEq，本文件验证每个 TcbError 变体
+//! error.rs mod tests 只验证 Display + PartialEq，本文件验证每个 `TcbError` 变体
 //! 都能被真实执行路径触发（而非仅构造）。
 //!
 //! ## 覆盖矩阵 (9 variants, 13 tests)
 //!
 //! | # | Variant | Trigger path |
 //! |---|---|---|
-//! | 1 | MissingField("type") | execute_meta_instruction 入口 instr 无 "type" 字段 |
-//! | 2 | UnknownMetaInstruction | execute_meta_instruction 入口 instr.type = "nonexistent" |
-//! | 3 | UnknownOperation | exec_set 中 params.operation = "foo" |
-//! | 4 | InvalidState | exec_push 中 __exec__.queue 不是 array |
-//! | 5 | InvalidType | exec_set add 当前/值为非 integer |
-//! | 6 | PathResolutionFailed | exec_set value="__nonexistent__.x" 路径解析失败 |
-//! | 7 | NestingTooDeep | 65 层嵌套 branch |
-//! | 8 | EmptyInstructionList | exec_push params.instructions 为空 |
-//! | 9 | IntegerOverflow | exec_set add i64::MAX + 1 / sub i64::MIN - 1 |
+//! | 1 | MissingField("type") | `execute_meta_instruction` 入口 instr 无 "type" 字段 |
+//! | 2 | `UnknownMetaInstruction` | `execute_meta_instruction` 入口 instr.type = "nonexistent" |
+//! | 3 | `UnknownOperation` | `exec_set` 中 params.operation = "foo" |
+//! | 4 | `InvalidState` | `exec_push` 中 __exec__.queue 不是 array |
+//! | 5 | `InvalidType` | `exec_set` add 当前/值为非 integer |
+//! | 6 | `PathResolutionFailed` | `exec_set` value="__nonexistent__.x" 路径解析失败 |
+//! | 7 | `NestingTooDeep` | 65 层嵌套 branch |
+//! | 8 | `EmptyInstructionList` | `exec_push` params.instructions 为空 |
+//! | 9 | `IntegerOverflow` | `exec_set` add `i64::MAX` + 1 / sub `i64::MIN` - 1 |
 //!
 //! 所有测试通过公共入口 `execute_meta_instruction` 触发。
 
@@ -55,7 +55,7 @@ fn trigger_missing_field_type_when_instr_has_no_type_field() {
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::MissingField(field)) => assert_eq!(field, "type"),
-        other => panic!("expected MissingField(\"type\"), got {:?}", other),
+        other => panic!("expected MissingField(\"type\"), got {other:?}"),
     }
 }
 
@@ -66,7 +66,7 @@ fn trigger_missing_field_type_when_type_is_not_string() {
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::MissingField(field)) => assert_eq!(field, "type"),
-        other => panic!("expected MissingField(\"type\"), got {:?}", other),
+        other => panic!("expected MissingField(\"type\"), got {other:?}"),
     }
 }
 
@@ -84,7 +84,7 @@ fn trigger_unknown_meta_instruction() {
         Err(TcbError::UnknownMetaInstruction(s)) => {
             assert_eq!(s, "nonexistent_instruction_xyz");
         }
-        other => panic!("expected UnknownMetaInstruction, got {:?}", other),
+        other => panic!("expected UnknownMetaInstruction, got {other:?}"),
     }
 }
 
@@ -109,7 +109,7 @@ fn trigger_unknown_operation() {
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::UnknownOperation(s)) => assert_eq!(s, "bogus_op"),
-        other => panic!("expected UnknownOperation, got {:?}", other),
+        other => panic!("expected UnknownOperation, got {other:?}"),
     }
 }
 
@@ -149,7 +149,7 @@ fn trigger_invalid_state_when_queue_not_array() {
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::InvalidState) => {}
-        other => panic!("expected InvalidState, got {:?}", other),
+        other => panic!("expected InvalidState, got {other:?}"),
     }
 }
 
@@ -177,7 +177,7 @@ fn trigger_invalid_state_when_exec_missing() {
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::InvalidState) => {}
-        other => panic!("expected InvalidState, got {:?}", other),
+        other => panic!("expected InvalidState, got {other:?}"),
     }
 }
 
@@ -202,7 +202,7 @@ fn trigger_invalid_type_when_add_on_string_value() {
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::InvalidType) => {}
-        other => panic!("expected InvalidType, got {:?}", other),
+        other => panic!("expected InvalidType, got {other:?}"),
     }
 }
 
@@ -226,7 +226,7 @@ fn trigger_invalid_type_when_add_on_string_current() {
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::InvalidType) => {}
-        other => panic!("expected InvalidType, got {:?}", other),
+        other => panic!("expected InvalidType, got {other:?}"),
     }
 }
 
@@ -251,7 +251,7 @@ fn trigger_path_resolution_failed_when_path_unresolvable() {
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::PathResolutionFailed(s)) => assert_eq!(s, "__nonexistent__.x"),
-        other => panic!("expected PathResolutionFailed, got {:?}", other),
+        other => panic!("expected PathResolutionFailed, got {other:?}"),
     }
 }
 
@@ -296,7 +296,7 @@ fn trigger_nesting_too_deep() {
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::NestingTooDeep) => {}
-        other => panic!("expected NestingTooDeep, got {:?}", other),
+        other => panic!("expected NestingTooDeep, got {other:?}"),
     }
 }
 
@@ -317,7 +317,7 @@ fn trigger_empty_instruction_list() {
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::EmptyInstructionList) => {}
-        other => panic!("expected EmptyInstructionList, got {:?}", other),
+        other => panic!("expected EmptyInstructionList, got {other:?}"),
     }
 }
 
@@ -342,7 +342,7 @@ fn trigger_integer_overflow_on_add_max() {
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::IntegerOverflow) => {}
-        other => panic!("expected IntegerOverflow, got {:?}", other),
+        other => panic!("expected IntegerOverflow, got {other:?}"),
     }
 }
 
@@ -363,6 +363,6 @@ fn trigger_integer_overflow_on_sub_min() {
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::IntegerOverflow) => {}
-        other => panic!("expected IntegerOverflow, got {:?}", other),
+        other => panic!("expected IntegerOverflow, got {other:?}"),
     }
 }

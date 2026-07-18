@@ -49,13 +49,13 @@ impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParseError::UnexpectedChar(c, pos) => {
-                write!(f, "unexpected character {:?} at byte offset {}", c, pos)
+                write!(f, "unexpected character {c:?} at byte offset {pos}")
             }
             ParseError::UnexpectedEof => write!(f, "unexpected end of input"),
-            ParseError::InvalidNumber(s) => write!(f, "invalid number: {:?}", s),
+            ParseError::InvalidNumber(s) => write!(f, "invalid number: {s:?}"),
             ParseError::UnterminatedString => write!(f, "unterminated string"),
             ParseError::InvalidEscape(c, pos) => {
-                write!(f, "invalid escape sequence {:?} at byte offset {}", c, pos)
+                write!(f, "invalid escape sequence {c:?} at byte offset {pos}")
             }
         }
     }
@@ -103,7 +103,7 @@ impl Parser<'_> {
             Ok(())
         } else {
             Err(ParseError::UnexpectedChar(
-                self.peek().map(|b| b as char).unwrap_or('?'),
+                self.peek().map_or('?', |b| b as char),
                 self.pos,
             ))
         }
@@ -125,7 +125,6 @@ impl Parser<'_> {
 
     fn parse_object(&mut self) -> Result<JsonValue, ParseError> {
         self.expect(b'{')?;
-        use std::collections::BTreeMap;
         let mut map = BTreeMap::new();
         self.skip_ws();
         if self.peek() == Some(b'}') {
@@ -280,16 +279,16 @@ impl Parser<'_> {
 
 fn as_str(v: &JsonValue) -> &str {
     v.as_str()
-        .unwrap_or_else(|| panic!("expected String, got {:?}", v))
+        .unwrap_or_else(|| panic!("expected String, got {v:?}"))
 }
 
 fn as_int(v: &JsonValue) -> i64 {
     v.as_i64()
-        .unwrap_or_else(|| panic!("expected Integer, got {:?}", v))
+        .unwrap_or_else(|| panic!("expected Integer, got {v:?}"))
 }
 
 fn obj_get<'a>(v: &'a JsonValue, key: &str) -> &'a JsonValue {
-    v.get(key).unwrap_or_else(|| panic!("missing key: {}", key))
+    v.get(key).unwrap_or_else(|| panic!("missing key: {key}"))
 }
 
 // =============================================================================
@@ -298,7 +297,7 @@ fn obj_get<'a>(v: &'a JsonValue, key: &str) -> &'a JsonValue {
 
 /// Scenario 1: `increment` business instruction
 ///
-/// 验证: TCB 找到 domain=increment 的 branch, 取 on_true 里的 set(add) 元指令,
+/// 验证: TCB 找到 domain=increment 的 branch, 取 `on_true` 里的 set(add) 元指令,
 /// 路径 __exec__.instruction.params.delta 解析为实际参数 (5),
 /// 路径 __exec__.instruction.params.attr 解析为字段名 ("x"),
 /// 最终 payload.x = 10 + 5 = 15.
@@ -324,25 +323,22 @@ fn test_increment(core_eval: &[JsonValue]) {
             new_queue,
         } => {
             let x = as_int(obj_get(&new_payload, "x"));
-            assert_eq!(x, 15, "increment: expected x=15, got x={}", x);
+            assert_eq!(x, 15, "increment: expected x=15, got x={x}");
             assert!(new_queue.is_empty(), "increment should not push anything");
-            println!("    PASS  payload.x = {}", x);
+            println!("    PASS  payload.x = {x}");
         }
         TransitionResult::IoRequired { io_type, .. } => {
-            panic!(
-                "increment should NOT trigger I/O, got IoRequired({})",
-                io_type
-            );
+            panic!("increment should NOT trigger I/O, got IoRequired({io_type})");
         }
     }
 }
 
 /// Scenario 2: `while_loop` business instruction (recursive via push)
 ///
-/// 验证: while_loop 的递归 push 是否真的循环:
-///   初始: queue=[while_instr], payload={x:0}
-///   每轮: pop while_instr, condition 0<x<3, push [body, while_instr]
-///         -> body 跑 (increment x), 再 pop while_instr
+/// 验证: `while_loop` 的递归 push 是否真的循环:
+///   初始: queue=[`while_instr`], payload={x:0}
+///   每轮: pop `while_instr`, condition 0<x<3, push [body, `while_instr`]
+///         -> body 跑 (increment x), 再 pop `while_instr`
 ///   终止: condition 3<3=false, push noop, noop 让 queue=[]
 ///
 /// 模拟 tier1-reactor 缺失时的最小反应器 (本函数即 tier1 占位).
@@ -378,9 +374,10 @@ fn test_while_loop(core_eval: &[JsonValue]) {
 
     while !queue.is_empty() {
         iter += 1;
-        if iter > 50 {
-            panic!("while_loop did not terminate after {} iterations", iter);
-        }
+        assert!(
+            iter <= 50,
+            "while_loop did not terminate after {iter} iterations"
+        );
 
         let instr = &queue[0];
         let queue_arg: Vec<JsonValue> = queue[1..].to_vec();
@@ -396,20 +393,20 @@ fn test_while_loop(core_eval: &[JsonValue]) {
                 queue = new_queue;
             }
             TransitionResult::IoRequired { io_type, .. } => {
-                panic!("while_loop should NOT trigger I/O, got {}", io_type);
+                panic!("while_loop should NOT trigger I/O, got {io_type}");
             }
         }
     }
 
     let x = as_int(obj_get(&payload, "x"));
-    assert_eq!(x, 3, "while_loop: expected x=3, got x={}", x);
-    println!("    PASS  looped {} times, final payload.x = {}", iter, x);
+    assert_eq!(x, 3, "while_loop: expected x=3, got x={x}");
+    println!("    PASS  looped {iter} times, final payload.x = {x}");
 }
 
 /// Scenario 3: `call_external` triggers `io_request` signal
 ///
-/// 验证: call_external 不修改 payload, 而是返回 IoRequired { io_type: "call_external", params: {...} }.
-/// 反应器 (尚未实现) 会收到此信号 -> 调用外部服务 -> 注入 __io_result__ -> 再次调用 TCB.
+/// 验证: `call_external` 不修改 payload, 而是返回 `IoRequired` { `io_type`: "`call_external`", params: {...} }.
+/// 反应器 (尚未实现) 会收到此信号 -> 调用外部服务 -> 注入 __`io_result`__ -> 再次调用 TCB.
 fn test_call_external_io_request(core_eval: &[JsonValue]) {
     println!("\n[3] test_call_external_io_request: call_external 应产生 IoRequired, payload 不变");
 
@@ -448,8 +445,7 @@ fn test_call_external_io_request(core_eval: &[JsonValue]) {
         }
         TransitionResult::State { new_payload, .. } => {
             panic!(
-                "call_external should trigger I/O, NOT state change. Got payload={:?}",
-                new_payload
+                "call_external should trigger I/O, NOT state change. Got payload={new_payload:?}"
             );
         }
     }
@@ -457,7 +453,7 @@ fn test_call_external_io_request(core_eval: &[JsonValue]) {
 
 /// Bonus: catch-all `all([])` 兜底规则
 ///
-/// 验证: 未识别的指令走最后一条 all([]) 分支, on_true=[],
+/// 验证: 未识别的指令走最后一条 all([]) 分支, `on_true`=[],
 /// 返回 State { payload 不变, queue 不变 }.
 fn test_catch_all_noop(core_eval: &[JsonValue]) {
     println!("\n[4] test_catch_all_noop: 未知指令 'frobnicate' -> catch-all noop");
@@ -475,12 +471,12 @@ fn test_catch_all_noop(core_eval: &[JsonValue]) {
             new_queue,
         } => {
             let x = as_int(obj_get(&new_payload, "x"));
-            assert_eq!(x, 42, "catch-all should not modify payload, got x={}", x);
+            assert_eq!(x, 42, "catch-all should not modify payload, got x={x}");
             assert!(new_queue.is_empty(), "catch-all should not push anything");
-            println!("    PASS  payload.x = {} (unchanged), queue empty", x);
+            println!("    PASS  payload.x = {x} (unchanged), queue empty");
         }
         TransitionResult::IoRequired { io_type, .. } => {
-            panic!("catch-all should not trigger I/O, got {}", io_type);
+            panic!("catch-all should not trigger I/O, got {io_type}");
         }
     }
 }
@@ -489,6 +485,7 @@ fn test_catch_all_noop(core_eval: &[JsonValue]) {
 // Main
 // =============================================================================
 
+use std::collections::BTreeMap;
 fn main() {
     println!("================================================================");
     println!("tier0-tcb v6.0.0 -- End-to-End Demo");
@@ -501,24 +498,23 @@ fn main() {
     let doc = match parse(CORE_EVAL_JSON) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("FAIL  JSON parse error: {}", e);
+            eprintln!("FAIL  JSON parse error: {e}");
             std::process::exit(1);
         }
     };
     println!(
         "PASS  JSON parsed: top-level Object with {} keys",
-        doc.as_object().map(|o| o.len()).unwrap_or(0)
+        doc.as_object().map_or(0, std::collections::BTreeMap::len)
     );
     println!("      rule_id  = {:?}", as_str(obj_get(&doc, "rule_id")));
     println!("      version  = {:?}", as_str(obj_get(&doc, "version")));
 
     let transform_value = obj_get(&doc, "transform");
-    let transform: Vec<JsonValue> = match transform_value.as_array() {
-        Some(arr) => arr.to_vec(),
-        None => {
-            eprintln!("FAIL  'transform' is not an array");
-            std::process::exit(1);
-        }
+    let transform: Vec<JsonValue> = if let Some(arr) = transform_value.as_array() {
+        arr.to_vec()
+    } else {
+        eprintln!("FAIL  'transform' is not an array");
+        std::process::exit(1);
     };
     println!(
         "PASS  Extracted 'transform' array: {} branches",
@@ -538,7 +534,7 @@ fn main() {
             }
         }
     }
-    println!("      ({} business instruction mappings)", count);
+    println!("      ({count} business instruction mappings)");
 
     test_increment(&transform);
     test_while_loop(&transform);

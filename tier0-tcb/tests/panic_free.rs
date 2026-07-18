@@ -47,10 +47,7 @@ fn assert_no_panic<F: FnOnce()>(input_desc: &str, f: F) {
     let result = panic::catch_unwind(AssertUnwindSafe(f));
     if let Err(payload) = result {
         let msg = payload_to_string(&payload);
-        panic!(
-            "[panic-free violation] function panicked on input `{}`: {}",
-            input_desc, msg
-        );
+        panic!("[panic-free violation] function panicked on input `{input_desc}`: {msg}");
     }
 }
 
@@ -145,22 +142,22 @@ const ADVERSARIAL_STRINGS: &[&str] = &[
 fn panic_free_type_predicates_on_all_variants() {
     for v in all_jsonvalues() {
         let desc = describe_variant(&v);
-        assert_no_panic(&format!("is_object on {}", desc), || {
+        assert_no_panic(&format!("is_object on {desc}"), || {
             let _ = v.is_object();
         });
-        assert_no_panic(&format!("is_array on {}", desc), || {
+        assert_no_panic(&format!("is_array on {desc}"), || {
             let _ = v.is_array();
         });
-        assert_no_panic(&format!("is_integer on {}", desc), || {
+        assert_no_panic(&format!("is_integer on {desc}"), || {
             let _ = v.is_integer();
         });
-        assert_no_panic(&format!("is_string on {}", desc), || {
+        assert_no_panic(&format!("is_string on {desc}"), || {
             let _ = v.is_string();
         });
-        assert_no_panic(&format!("is_bool on {}", desc), || {
+        assert_no_panic(&format!("is_bool on {desc}"), || {
             let _ = v.is_bool();
         });
-        assert_no_panic(&format!("is_null on {}", desc), || {
+        assert_no_panic(&format!("is_null on {desc}"), || {
             let _ = v.is_null();
         });
     }
@@ -174,19 +171,19 @@ fn panic_free_type_predicates_on_all_variants() {
 fn panic_free_type_extractors_on_all_variants() {
     for v in all_jsonvalues() {
         let desc = describe_variant(&v);
-        assert_no_panic(&format!("as_i64 on {}", desc), || {
+        assert_no_panic(&format!("as_i64 on {desc}"), || {
             let _ = v.as_i64();
         });
-        assert_no_panic(&format!("as_str on {}", desc), || {
+        assert_no_panic(&format!("as_str on {desc}"), || {
             let _ = v.as_str();
         });
-        assert_no_panic(&format!("as_bool on {}", desc), || {
+        assert_no_panic(&format!("as_bool on {desc}"), || {
             let _ = v.as_bool();
         });
-        assert_no_panic(&format!("as_array on {}", desc), || {
+        assert_no_panic(&format!("as_array on {desc}"), || {
             let _ = v.as_array();
         });
-        assert_no_panic(&format!("as_object on {}", desc), || {
+        assert_no_panic(&format!("as_object on {desc}"), || {
             let _ = v.as_object();
         });
     }
@@ -196,10 +193,10 @@ fn panic_free_type_extractors_on_all_variants() {
 fn panic_free_mut_extractors_on_all_variants() {
     for mut v in all_jsonvalues() {
         let desc = describe_variant(&v);
-        assert_no_panic(&format!("as_array_mut on {}", desc), || {
+        assert_no_panic(&format!("as_array_mut on {desc}"), || {
             let _ = v.as_array_mut();
         });
-        assert_no_panic(&format!("as_object_mut on {}", desc), || {
+        assert_no_panic(&format!("as_object_mut on {desc}"), || {
             let _ = v.as_object_mut();
         });
     }
@@ -227,7 +224,7 @@ fn panic_free_object_get_with_adversarial_keys() {
 fn panic_free_object_get_mut_with_adversarial_keys() {
     for mut v in all_jsonvalues() {
         for &key in ADVERSARIAL_STRINGS {
-            assert_no_panic(&format!("get_mut({:?})", key), || {
+            assert_no_panic(&format!("get_mut({key:?})"), || {
                 let _ = v.get_mut(key);
             });
         }
@@ -239,7 +236,7 @@ fn panic_free_object_insert_with_adversarial_keys() {
     for mut v in all_jsonvalues() {
         for &key in ADVERSARIAL_STRINGS {
             let key_owned = key.to_string();
-            assert_no_panic(&format!("insert({:?})", key), || {
+            assert_no_panic(&format!("insert({key:?})"), || {
                 let _ = v.insert(key_owned, JsonValue::Null);
             });
         }
@@ -250,7 +247,7 @@ fn panic_free_object_insert_with_adversarial_keys() {
 fn panic_free_object_remove_with_adversarial_keys() {
     for mut v in all_jsonvalues() {
         for &key in ADVERSARIAL_STRINGS {
-            assert_no_panic(&format!("remove({:?})", key), || {
+            assert_no_panic(&format!("remove({key:?})"), || {
                 let _ = v.remove(key);
             });
         }
@@ -264,16 +261,16 @@ fn panic_free_object_remove_with_adversarial_keys() {
 #[test]
 fn panic_free_string_constructor_with_adversarial_inputs() {
     for &s in ADVERSARIAL_STRINGS {
-        assert_no_panic(&format!("string({:?})", s), || {
+        assert_no_panic(&format!("string({s:?})"), || {
             let _ = JsonValue::string(s);
         });
-        assert_no_panic(&format!("From<&str>({:?})", s), || {
+        assert_no_panic(&format!("From<&str>({s:?})"), || {
             let _: JsonValue = s.into();
         });
-        assert_no_panic(&format!("From<String>({:?})", s), || {
+        assert_no_panic(&format!("From<String>({s:?})"), || {
             let _: JsonValue = s.to_string().into();
         });
-        assert_no_panic(&format!("JsonValue::String({:?})", s), || {
+        assert_no_panic(&format!("JsonValue::String({s:?})"), || {
             let _ = JsonValue::String(s.to_string());
         });
     }
@@ -283,10 +280,10 @@ fn panic_free_string_constructor_with_adversarial_inputs() {
 fn panic_free_i64_constructor_with_boundary_values() {
     for &v in &[0i64, 1, -1, i64::MAX, i64::MIN, i64::MAX - 1, i64::MIN + 1] {
         let desc = v.to_string();
-        assert_no_panic(&format!("Integer({})", desc), || {
+        assert_no_panic(&format!("Integer({desc})"), || {
             let _ = JsonValue::Integer(v);
         });
-        assert_no_panic(&format!("From<i64>({})", desc), || {
+        assert_no_panic(&format!("From<i64>({desc})"), || {
             let _: JsonValue = v.into();
         });
     }
@@ -295,10 +292,10 @@ fn panic_free_i64_constructor_with_boundary_values() {
 #[test]
 fn panic_free_bool_constructor() {
     for &b in &[true, false] {
-        assert_no_panic(&format!("Bool({})", b), || {
+        assert_no_panic(&format!("Bool({b})"), || {
             let _ = JsonValue::Bool(b);
         });
-        assert_no_panic(&format!("From<bool>({})", b), || {
+        assert_no_panic(&format!("From<bool>({b})"), || {
             let _: JsonValue = b.into();
         });
     }
@@ -325,10 +322,10 @@ fn panic_free_array_constructor_with_edge_cases() {
         ],
     ];
     for (i, v) in cases.into_iter().enumerate() {
-        assert_no_panic(&format!("array case {}", i), || {
+        assert_no_panic(&format!("array case {i}"), || {
             let _ = JsonValue::array(v.clone());
         });
-        assert_no_panic(&format!("From<Vec<_>> case {}", i), || {
+        assert_no_panic(&format!("From<Vec<_>> case {i}"), || {
             let _: JsonValue = v.clone().into();
         });
     }
@@ -354,16 +351,16 @@ fn panic_free_object_constructor_with_edge_cases() {
             // 1000 keys
             let mut m = BTreeMap::new();
             for i in 0..1000 {
-                m.insert(format!("k_{}", i), JsonValue::Integer(i));
+                m.insert(format!("k_{i}"), JsonValue::Integer(i));
             }
             m
         },
     ];
     for (i, m) in cases.into_iter().enumerate() {
-        assert_no_panic(&format!("object case {}", i), || {
+        assert_no_panic(&format!("object case {i}"), || {
             let _ = JsonValue::object(m.clone());
         });
-        assert_no_panic(&format!("From<BTreeMap<_>> case {}", i), || {
+        assert_no_panic(&format!("From<BTreeMap<_>> case {i}"), || {
             let _: JsonValue = m.clone().into();
         });
     }
@@ -373,7 +370,7 @@ fn panic_free_object_constructor_with_edge_cases() {
 fn panic_free_object_from_pairs_with_adversarial_keys() {
     for &key in ADVERSARIAL_STRINGS {
         let pairs: &[(&str, JsonValue)] = &[(key, JsonValue::Null)];
-        assert_no_panic(&format!("object_from_pairs({:?})", key), || {
+        assert_no_panic(&format!("object_from_pairs({key:?})"), || {
             let _ = JsonValue::object_from_pairs(pairs);
         });
     }
@@ -402,19 +399,19 @@ fn panic_free_empty_constructors() {
 fn panic_free_display_all_variants() {
     for v in all_jsonvalues() {
         let desc = describe_variant(&v);
-        assert_no_panic(&format!("Display on {}", desc), || {
+        assert_no_panic(&format!("Display on {desc}"), || {
             let _ = v.to_string();
         });
-        assert_no_panic(&format!("Debug on {}", desc), || {
-            let _ = format!("{:?}", v);
+        assert_no_panic(&format!("Debug on {desc}"), || {
+            let _ = format!("{v:?}");
         });
-        assert_no_panic(&format!("Clone on {}", desc), || {
+        assert_no_panic(&format!("Clone on {desc}"), || {
             let _ = v.clone();
         });
-        assert_no_panic(&format!("PartialEq on {}", desc), || {
+        assert_no_panic(&format!("PartialEq on {desc}"), || {
             let _ = v == v;
         });
-        assert_no_panic(&format!("PartialOrd on {}", desc), || {
+        assert_no_panic(&format!("PartialOrd on {desc}"), || {
             let _ = v.partial_cmp(&v);
         });
     }
@@ -446,7 +443,7 @@ fn panic_free_resolve_path_on_all_states_and_paths() {
 fn panic_free_resolve_path_mut_on_all_states_and_paths() {
     for mut v in all_jsonvalues() {
         for &path in ADVERSARIAL_STRINGS {
-            assert_no_panic(&format!("resolve_path_mut(path={:?})", path), || {
+            assert_no_panic(&format!("resolve_path_mut(path={path:?})"), || {
                 let _ = resolve_path_mut(&mut v, path);
             });
         }
@@ -590,7 +587,7 @@ fn panic_free_tcb_error_traits_via_observed_errors() {
         let res = execute_transition(&[], &instr, &payload, &[]);
         if let Ok(meta) = res {
             // Some instructions succeed → also exercise MetaInstructionResult
-            let _ = format!("{:?}", meta);
+            let _ = format!("{meta:?}");
         }
         // We don't assert Ok or Err — both are valid outcomes.
         // We only care that no panic happened.
@@ -605,7 +602,7 @@ fn panic_free_tcb_error_traits_via_observed_errors() {
                     let _ = e.to_string();
                 });
                 assert_no_panic("TcbError::Debug", || {
-                    let _ = format!("{:?}", e);
+                    let _ = format!("{e:?}");
                 });
                 assert_no_panic("TcbError::Clone", || {
                     let _ = e.clone();
