@@ -80,3 +80,7 @@ sse_test_client.py
 /.check-output.txt
 /.tier2_full.txt
 /.tier2_test_output.txt
+
+# === 2026-07-17 dev/wip 第二轮 cleanup: 用户重新生成的 build/test output ===
+/build_out.txt
+/test_out.txt

@@ -406,15 +406,15 @@ fn test_while_loop(core_eval: &[JsonValue]) {
     println!("    PASS  looped {} times, final payload.x = {}", iter, x);
 }
 
-/// Scenario 3: `call_llm` triggers `io_request` signal
+/// Scenario 3: `call_external` triggers `io_request` signal
 ///
-/// 验证: call_llm 不修改 payload, 而是返回 IoRequired { io_type: "call_llm", params: {...} }.
-/// 反应器 (尚未实现) 会收到此信号 -> 调真实 LLM -> 注入 __io_result__ -> 再次调用 TCB.
-fn test_call_llm_io_request(core_eval: &[JsonValue]) {
-    println!("\n[3] test_call_llm_io_request: call_llm 应产生 IoRequired, payload 不变");
+/// 验证: call_external 不修改 payload, 而是返回 IoRequired { io_type: "call_external", params: {...} }.
+/// 反应器 (尚未实现) 会收到此信号 -> 调用外部服务 -> 注入 __io_result__ -> 再次调用 TCB.
+fn test_call_external_io_request(core_eval: &[JsonValue]) {
+    println!("\n[3] test_call_external_io_request: call_external 应产生 IoRequired, payload 不变");
 
     let instruction = JsonValue::object_from_pairs(&[
-        ("type", "call_llm".into()),
+        ("type", "call_external".into()),
         (
             "params",
             JsonValue::object_from_pairs(&[
@@ -431,7 +431,10 @@ fn test_call_llm_io_request(core_eval: &[JsonValue]) {
 
     match result {
         TransitionResult::IoRequired { io_type, params } => {
-            assert_eq!(io_type, "call_llm", "io_type should be 'call_llm'");
+            assert_eq!(
+                io_type, "call_external",
+                "io_type should be 'call_external'"
+            );
             let p = obj_get(&params, "prompt");
             assert_eq!(as_str(p), "Hello world", "prompt path resolution failed");
             let temp = obj_get(&params, "temperature");
@@ -445,7 +448,7 @@ fn test_call_llm_io_request(core_eval: &[JsonValue]) {
         }
         TransitionResult::State { new_payload, .. } => {
             panic!(
-                "call_llm should trigger I/O, NOT state change. Got payload={:?}",
+                "call_external should trigger I/O, NOT state change. Got payload={:?}",
                 new_payload
             );
         }
@@ -539,7 +542,7 @@ fn main() {
 
     test_increment(&transform);
     test_while_loop(&transform);
-    test_call_llm_io_request(&transform);
+    test_call_external_io_request(&transform);
     test_catch_all_noop(&transform);
 
     println!("\n================================================================");

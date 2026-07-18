@@ -18,16 +18,16 @@ impl core::fmt::Display for FactId {
 /// 仍可在调用方使用（如 reactor 中需要在 register 后再用于 Fact::IoRequest）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum IoType {
-    /// 调用 LLM
-    CallLlm,
+    /// 调用外部服务
+    CallExternal,
     /// 查询数据库
     QueryDb,
     /// HTTP GET 请求
     HttpGet,
     /// 保存到记忆
     SaveMemory,
-    /// 调用外部工具
-    CallTool,
+    /// 调用外部服务
+    CallService,
 }
 
 impl IoType {
@@ -36,11 +36,11 @@ impl IoType {
     /// 与 core_eval.json 的 io_type 字段对应，未知类型返回 None。
     pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "call_llm" => Some(IoType::CallLlm),
+            "call_external" => Some(IoType::CallExternal),
             "query_db" => Some(IoType::QueryDb),
             "http_get" => Some(IoType::HttpGet),
             "save_memory" => Some(IoType::SaveMemory),
-            "call_tool" => Some(IoType::CallTool),
+            "call_service" => Some(IoType::CallService),
             _ => None,
         }
     }
@@ -48,11 +48,47 @@ impl IoType {
     /// 转为字符串
     pub fn as_str(&self) -> &'static str {
         match self {
-            IoType::CallLlm => "call_llm",
+            IoType::CallExternal => "call_external",
             IoType::QueryDb => "query_db",
             IoType::HttpGet => "http_get",
             IoType::SaveMemory => "save_memory",
-            IoType::CallTool => "call_tool",
+            IoType::CallService => "call_service",
+        }
+    }
+}
+
+/// 控制流指令类型（G8 合规：唯一真值来源，位于 fact.rs 受豁免）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ControlFlowType {
+    /// 顺序执行多条指令
+    Sequence,
+    /// 条件分支
+    Conditional,
+    /// 循环执行
+    WhileLoop,
+    /// 将指令推入队列
+    Push,
+}
+
+impl ControlFlowType {
+    /// 从字符串解析控制流类型
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "sequence" => Some(ControlFlowType::Sequence),
+            "conditional" => Some(ControlFlowType::Conditional),
+            "while_loop" => Some(ControlFlowType::WhileLoop),
+            "push" => Some(ControlFlowType::Push),
+            _ => None,
+        }
+    }
+
+    /// 转换为字符串
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ControlFlowType::Sequence => "sequence",
+            ControlFlowType::Conditional => "conditional",
+            ControlFlowType::WhileLoop => "while_loop",
+            ControlFlowType::Push => "push",
         }
     }
 }
@@ -246,7 +282,7 @@ mod tests {
         let io_req = Fact::IoRequest {
             id: FactId(20),
             cause: FactId(10),
-            io_type: IoType::CallLlm,
+            io_type: IoType::CallExternal,
             params: JsonValue::empty_object(),
         };
         assert_eq!(io_req.id(), FactId(20));
@@ -276,11 +312,11 @@ mod tests {
     fn test_io_type_roundtrip() {
         // 所有 IoType 变体的 parse ↔ as_str 往返
         for expected in [
-            IoType::CallLlm,
+            IoType::CallExternal,
             IoType::QueryDb,
             IoType::HttpGet,
             IoType::SaveMemory,
-            IoType::CallTool,
+            IoType::CallService,
         ] {
             let s = expected.as_str();
             let parsed = IoType::parse(s).expect("roundtrip should succeed");
@@ -297,11 +333,11 @@ mod tests {
 
     #[test]
     fn test_io_type_display() {
-        assert_eq!(format!("{}", IoType::CallLlm), "call_llm");
+        assert_eq!(format!("{}", IoType::CallExternal), "call_external");
         assert_eq!(format!("{}", IoType::QueryDb), "query_db");
         assert_eq!(format!("{}", IoType::HttpGet), "http_get");
         assert_eq!(format!("{}", IoType::SaveMemory), "save_memory");
-        assert_eq!(format!("{}", IoType::CallTool), "call_tool");
+        assert_eq!(format!("{}", IoType::CallService), "call_service");
     }
 
     #[test]
@@ -347,7 +383,7 @@ mod tests {
         assert!(!Fact::IoRequest {
             id: FactId(6),
             cause: FactId(0),
-            io_type: IoType::CallLlm,
+            io_type: IoType::CallExternal,
             params: JsonValue::empty_object(),
         }
         .is_terminal());
@@ -393,7 +429,7 @@ mod tests {
             Fact::IoRequest {
                 id: FactId(1),
                 cause: FactId(0),
-                io_type: IoType::CallLlm,
+                io_type: IoType::CallExternal,
                 params: JsonValue::empty_object(),
             }
             .type_name(),

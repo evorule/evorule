@@ -19,9 +19,9 @@
 //!
 //! 所有测试通过公共入口 `execute_meta_instruction` 触发。
 
+use std::collections::BTreeMap;
 use tier0_tcb::executor::execute_meta_instruction;
 use tier0_tcb::{JsonValue, TcbError};
-use std::collections::BTreeMap;
 
 // =============================================================================
 // Test helpers (类似 executor.rs mod tests 中的 helper，独立于该模块)
@@ -51,9 +51,7 @@ fn payload_int(x: i64) -> JsonValue {
 #[test]
 fn trigger_missing_field_type_when_instr_has_no_type_field() {
     let state = state_with_queue(JsonValue::Null, vec![]);
-    let instr = JsonValue::object_from_pairs(&[
-        ("foo", JsonValue::string("bar")),
-    ]);
+    let instr = JsonValue::object_from_pairs(&[("foo", JsonValue::string("bar"))]);
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::MissingField(field)) => assert_eq!(field, "type"),
@@ -64,9 +62,7 @@ fn trigger_missing_field_type_when_instr_has_no_type_field() {
 #[test]
 fn trigger_missing_field_type_when_type_is_not_string() {
     let state = state_with_queue(JsonValue::Null, vec![]);
-    let instr = JsonValue::object_from_pairs(&[
-        ("type", JsonValue::Integer(42)),
-    ]);
+    let instr = JsonValue::object_from_pairs(&[("type", JsonValue::Integer(42))]);
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::MissingField(field)) => assert_eq!(field, "type"),
@@ -81,9 +77,8 @@ fn trigger_missing_field_type_when_type_is_not_string() {
 #[test]
 fn trigger_unknown_meta_instruction() {
     let state = state_with_queue(JsonValue::Null, vec![]);
-    let instr = JsonValue::object_from_pairs(&[
-        ("type", JsonValue::string("nonexistent_instruction_xyz")),
-    ]);
+    let instr =
+        JsonValue::object_from_pairs(&[("type", JsonValue::string("nonexistent_instruction_xyz"))]);
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
         Err(TcbError::UnknownMetaInstruction(s)) => {
@@ -102,11 +97,14 @@ fn trigger_unknown_operation() {
     let state = state_with_queue(payload_int(5), vec![]);
     let instr = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("set")),
-        ("params", JsonValue::object_from_pairs(&[
-            ("attr", JsonValue::string("x")),
-            ("operation", JsonValue::string("bogus_op")),
-            ("value", JsonValue::Integer(1)),
-        ])),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("attr", JsonValue::string("x")),
+                ("operation", JsonValue::string("bogus_op")),
+                ("value", JsonValue::Integer(1)),
+            ]),
+        ),
     ]);
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
@@ -132,17 +130,21 @@ fn trigger_invalid_state_when_queue_not_array() {
     // 用非空 instructions (一个空 set 元指令) 让 resolve_instructions_list 通过
     let inner = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("set")),
-        ("params", JsonValue::object_from_pairs(&[
-            ("attr", JsonValue::string("x")),
-            ("operation", JsonValue::string("set")),
-            ("value", JsonValue::Integer(0)),
-        ])),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("attr", JsonValue::string("x")),
+                ("operation", JsonValue::string("set")),
+                ("value", JsonValue::Integer(0)),
+            ]),
+        ),
     ]);
     let instr = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("push")),
-        ("params", JsonValue::object_from_pairs(&[
-            ("instructions", JsonValue::Array(vec![inner])),
-        ])),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[("instructions", JsonValue::Array(vec![inner]))]),
+        ),
     ]);
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
@@ -156,17 +158,21 @@ fn trigger_invalid_state_when_exec_missing() {
     let state = JsonValue::Object(BTreeMap::new());
     let inner = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("set")),
-        ("params", JsonValue::object_from_pairs(&[
-            ("attr", JsonValue::string("x")),
-            ("operation", JsonValue::string("set")),
-            ("value", JsonValue::Integer(0)),
-        ])),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("attr", JsonValue::string("x")),
+                ("operation", JsonValue::string("set")),
+                ("value", JsonValue::Integer(0)),
+            ]),
+        ),
     ]);
     let instr = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("push")),
-        ("params", JsonValue::object_from_pairs(&[
-            ("instructions", JsonValue::Array(vec![inner])),
-        ])),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[("instructions", JsonValue::Array(vec![inner]))]),
+        ),
     ]);
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
@@ -184,11 +190,14 @@ fn trigger_invalid_type_when_add_on_string_value() {
     let state = state_with_queue(payload_int(5), vec![]);
     let instr = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("set")),
-        ("params", JsonValue::object_from_pairs(&[
-            ("attr", JsonValue::string("x")),
-            ("operation", JsonValue::string("add")),
-            ("value", JsonValue::string("not a number")),
-        ])),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("attr", JsonValue::string("x")),
+                ("operation", JsonValue::string("add")),
+                ("value", JsonValue::string("not a number")),
+            ]),
+        ),
     ]);
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
@@ -205,11 +214,14 @@ fn trigger_invalid_type_when_add_on_string_current() {
 
     let instr = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("set")),
-        ("params", JsonValue::object_from_pairs(&[
-            ("attr", JsonValue::string("x")),
-            ("operation", JsonValue::string("add")),
-            ("value", JsonValue::Integer(1)),
-        ])),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("attr", JsonValue::string("x")),
+                ("operation", JsonValue::string("add")),
+                ("value", JsonValue::Integer(1)),
+            ]),
+        ),
     ]);
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
@@ -227,11 +239,14 @@ fn trigger_path_resolution_failed_when_path_unresolvable() {
     let state = state_with_queue(payload_int(0), vec![]);
     let instr = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("set")),
-        ("params", JsonValue::object_from_pairs(&[
-            ("attr", JsonValue::string("x")),
-            ("operation", JsonValue::string("set")),
-            ("value", JsonValue::string("__nonexistent__.x")),
-        ])),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("attr", JsonValue::string("x")),
+                ("operation", JsonValue::string("set")),
+                ("value", JsonValue::string("__nonexistent__.x")),
+            ]),
+        ),
     ]);
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
@@ -250,11 +265,14 @@ fn trigger_nesting_too_deep() {
 
     let mut instr = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("set")),
-        ("params", JsonValue::object_from_pairs(&[
-            ("attr", JsonValue::string("x")),
-            ("operation", JsonValue::string("set")),
-            ("value", JsonValue::Integer(0)),
-        ])),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("attr", JsonValue::string("x")),
+                ("operation", JsonValue::string("set")),
+                ("value", JsonValue::Integer(0)),
+            ]),
+        ),
     ]);
 
     for _ in 0..65 {
@@ -264,10 +282,13 @@ fn trigger_nesting_too_deep() {
         ]);
         let outer = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
-            ("params", JsonValue::object_from_pairs(&[
-                ("domain", domain),
-                ("on_true", JsonValue::Array(vec![instr])),
-            ])),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("domain", domain),
+                    ("on_true", JsonValue::Array(vec![instr])),
+                ]),
+            ),
         ]);
         instr = outer;
     }
@@ -288,9 +309,10 @@ fn trigger_empty_instruction_list() {
     let state = state_with_queue(JsonValue::Null, vec![]);
     let instr = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("push")),
-        ("params", JsonValue::object_from_pairs(&[
-            ("instructions", JsonValue::Array(vec![])),
-        ])),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[("instructions", JsonValue::Array(vec![]))]),
+        ),
     ]);
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
@@ -308,11 +330,14 @@ fn trigger_integer_overflow_on_add_max() {
     let state = state_with_queue(payload_int(i64::MAX), vec![]);
     let instr = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("set")),
-        ("params", JsonValue::object_from_pairs(&[
-            ("attr", JsonValue::string("x")),
-            ("operation", JsonValue::string("add")),
-            ("value", JsonValue::Integer(1)),
-        ])),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("attr", JsonValue::string("x")),
+                ("operation", JsonValue::string("add")),
+                ("value", JsonValue::Integer(1)),
+            ]),
+        ),
     ]);
     let result = execute_meta_instruction(&instr, state, 0);
     match result {
@@ -326,11 +351,14 @@ fn trigger_integer_overflow_on_sub_min() {
     let state = state_with_queue(payload_int(i64::MIN), vec![]);
     let instr = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("set")),
-        ("params", JsonValue::object_from_pairs(&[
-            ("attr", JsonValue::string("x")),
-            ("operation", JsonValue::string("sub")),
-            ("value", JsonValue::Integer(1)),
-        ])),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("attr", JsonValue::string("x")),
+                ("operation", JsonValue::string("sub")),
+                ("value", JsonValue::Integer(1)),
+            ]),
+        ),
     ]);
     let result = execute_meta_instruction(&instr, state, 0);
     match result {

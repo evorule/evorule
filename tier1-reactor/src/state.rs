@@ -1,4 +1,4 @@
-//! 反应器内部状态
+﻿//! 反应器内部状态
 
 use crate::fact::{FactId, IoType};
 use crate::phase::ReactorPhase;
@@ -254,11 +254,11 @@ mod tests {
         let id1 = FactId(1);
         let id2 = FactId(2);
 
-        state.register_io_request(id1, IoType::CallLlm);
+        state.register_io_request(id1, IoType::CallExternal);
         assert_eq!(state.pending_io_count, 1);
         assert!(state.pending_requests.contains(&id1));
 
-        state.register_io_request(id2, IoType::CallLlm);
+        state.register_io_request(id2, IoType::CallExternal);
         assert_eq!(state.pending_io_count, 2);
         assert!(state.pending_requests.contains(&id2));
 
@@ -343,12 +343,12 @@ mod tests {
         let mut state = ReactorState::new();
         let id = FactId(1);
 
-        state.register_io_request(id, IoType::CallLlm);
+        state.register_io_request(id, IoType::CallExternal);
         assert_eq!(state.pending_io_count, 1);
         assert_eq!(state.pending_requests.len(), 1);
 
         // 重复注册同一 id：count 不变（幂等）
-        state.register_io_request(id, IoType::CallLlm);
+        state.register_io_request(id, IoType::CallExternal);
         assert_eq!(state.pending_io_count, 1);
         assert_eq!(state.pending_requests.len(), 1);
 
@@ -406,7 +406,7 @@ mod tests {
         // P3-11: register_io_request 应同时记录时间戳
         let mut state = ReactorState::new();
         let id = FactId(1);
-        state.register_io_request(id, IoType::CallLlm);
+        state.register_io_request(id, IoType::CallExternal);
         assert!(state.pending_io_timestamps.contains_key(&id));
     }
 
@@ -415,7 +415,7 @@ mod tests {
         // P3-11: complete_io_request 应同时移除时间戳
         let mut state = ReactorState::new();
         let id = FactId(1);
-        state.register_io_request(id, IoType::CallLlm);
+        state.register_io_request(id, IoType::CallExternal);
         assert!(state.pending_io_timestamps.contains_key(&id));
         assert!(state.complete_io_request(id));
         assert!(!state.pending_io_timestamps.contains_key(&id));
@@ -436,7 +436,7 @@ mod tests {
         // P3-11: 超过 warn_timeout 但未超过 error_timeout
         let mut state = ReactorState::new();
         let id = FactId(1);
-        state.register_io_request(id, IoType::CallLlm);
+        state.register_io_request(id, IoType::CallExternal);
         // 模拟 35s 前注册的请求（超过 30s warn，未超过 60s error）
         state
             .pending_io_timestamps
@@ -452,7 +452,7 @@ mod tests {
         // P3-11: 超过 error_timeout
         let mut state = ReactorState::new();
         let id = FactId(1);
-        state.register_io_request(id, IoType::CallLlm);
+        state.register_io_request(id, IoType::CallExternal);
         // 模拟 65s 前注册的请求（超过 60s error）
         state
             .pending_io_timestamps
@@ -471,9 +471,9 @@ mod tests {
         let warn_id = FactId(1);
         let error_id = FactId(2);
         let normal_id = FactId(3);
-        state.register_io_request(warn_id, IoType::CallLlm);
-        state.register_io_request(error_id, IoType::CallLlm);
-        state.register_io_request(normal_id, IoType::CallLlm);
+        state.register_io_request(warn_id, IoType::CallExternal);
+        state.register_io_request(error_id, IoType::CallExternal);
+        state.register_io_request(normal_id, IoType::CallExternal);
         // 手动设置时间戳
         state
             .pending_io_timestamps
@@ -493,7 +493,7 @@ mod tests {
         // P3-11 + 阶段3-1.4: force_remove_io_request 应清除所有相关状态
         let mut state = ReactorState::new();
         let id = FactId(1);
-        state.register_io_request(id, IoType::CallLlm);
+        state.register_io_request(id, IoType::CallExternal);
         state.save_io_instruction(id, JsonValue::string("original_instruction"));
 
         // 确认状态已设置
@@ -538,7 +538,7 @@ mod tests {
         // 阶段3-1.4: complete_io_request 应同时移除 io_type 记录
         let mut state = ReactorState::new();
         let id = FactId(1);
-        state.register_io_request(id, IoType::CallLlm);
+        state.register_io_request(id, IoType::CallExternal);
         assert!(state.pending_io_types.contains_key(&id));
         assert!(state.complete_io_request(id));
         assert!(!state.pending_io_types.contains_key(&id));
@@ -548,14 +548,14 @@ mod tests {
     fn test_register_multiple_io_types() {
         // 阶段3-1.4: 不同请求记录不同 io_type
         let mut state = ReactorState::new();
-        state.register_io_request(FactId(1), IoType::CallLlm);
+        state.register_io_request(FactId(1), IoType::CallExternal);
         state.register_io_request(FactId(2), IoType::QueryDb);
         state.register_io_request(FactId(3), IoType::HttpGet);
 
         assert_eq!(state.pending_io_types.len(), 3);
         assert_eq!(
             state.pending_io_types.get(&FactId(1)),
-            Some(&IoType::CallLlm)
+            Some(&IoType::CallExternal)
         );
         assert_eq!(
             state.pending_io_types.get(&FactId(2)),

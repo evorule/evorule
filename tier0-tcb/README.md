@@ -140,27 +140,27 @@ I/O 指令映射采用**双路径模式**——通过 `exists(__exec__.payload._
 
 ```
 首次执行（__io_result__ 不存在）：
-  instruction(call_llm) → branch(exists(__io_result__)=false) → io_request → IoRequired
+  instruction(call_external) → branch(exists(__io_result__)=false) → io_request → IoRequired
 
 恢复执行（__io_result__ 已注入）：
-  instruction(call_llm) → branch(exists(__io_result__)=true) → set(llm_response, __io_result__) → State
+  instruction(call_external) → branch(exists(__io_result__)=true) → set(llm_response, __io_result__) → State
 ```
 
 **业务字段命名约定**：
 
-| I/O 类型      | 业务字段名      |
-| ------------- | --------------- |
-| `call_llm`    | `llm_response`  |
-| `query_db`    | `db_result`     |
-| `http_get`    | `http_response` |
-| `save_memory` | `memory_result` |
-| `call_tool`   | `tool_result`   |
+| I/O 类型        | 业务字段名      |
+| --------------- | --------------- |
+| `call_external` | `llm_response`  |
+| `query_db`      | `db_result`     |
+| `http_get`      | `http_response` |
+| `save_memory`   | `memory_result` |
+| `call_service`  | `service_result` |
 
 > **重要**：反应器在 `set` 消费 `__io_result__` 后会自动清除该字段。因为 `exists` 域检查的是"路径存在"（Null 也算存在），若不清除，后续不同的 I/O 指令会错误地走 `on_true` 分支消费旧结果。详见设计文档 §5 / 约束 T17/T18。
 
 ### 2.7 可选参数跳过
 
-`exec_io_request` 中，路径引用解析失败（`PathResolutionFailed`）时**跳过该参数而非报错**。这样 `call_llm` 的 `temperature`/`max_tokens` 等可选参数在业务指令未提供时不会导致 I/O 请求失败。
+`exec_io_request` 中，路径引用解析失败（`PathResolutionFailed`）时**跳过该参数而非报错**。这样 `call_external` 的 `temperature`/`max_tokens` 等可选参数在业务指令未提供时不会导致 I/O 请求失败。
 
 ---
 
@@ -325,13 +325,13 @@ match result {
 
 ### 4.3 I/O 请求示例
 
-`core_eval.json` 中 `call_llm` 映射采用**双路径**机制——通过 `exists(__io_result__)` 区分首次执行和恢复执行：
+`core_eval.json` 中 `call_external` 映射采用**双路径**机制——通过 `exists(__io_result__)` 区分首次执行和恢复执行：
 
 ```json
 {
   "type": "branch",
   "params": {
-    "domain": { "type": "instruction", "instruction_type": "call_llm" },
+    "domain": { "type": "instruction", "instruction_type": "call_external" },
     "on_true": [
       {
         "type": "branch",
@@ -354,7 +354,7 @@ match result {
             {
               "type": "io_request",
               "params": {
-                "io_type": "call_llm",
+                "io_type": "call_external",
                 "prompt": "__exec__.instruction.params.prompt"
               }
             }
@@ -368,11 +368,11 @@ match result {
 
 ```rust
 // 首次执行：__io_result__ 不存在 → 走 on_false → IoRequired
-let result = execute_transition(&core_eval, &call_llm_instr, &payload, &queue).unwrap();
+let result = execute_transition(&core_eval, &call_external_instr, &payload, &queue).unwrap();
 
 match result {
     TransitionResult::IoRequired { io_type, params } => {
-        assert_eq!(io_type, "call_llm");
+        assert_eq!(io_type, "call_external");
         // params.prompt 已从 __exec__.instruction.params.prompt 解析为实际值
         // 反应器收到此信号后：
         //   1. 调用真实 LLM 获取结果
@@ -436,12 +436,12 @@ pub enum TcbError {
 
 ### 6.2 当前已映射的业务指令
 
-| 类别     | 业务指令                                                           |
-| -------- | ------------------------------------------------------------------ |
-| 原子计算 | `increment` / `decrement` / `set`                                  |
-| 控制流   | `sequence` / `conditional` / `while_loop`                          |
-| I/O 映射 | `call_llm` / `query_db` / `http_get` / `save_memory` / `call_tool` |
-| 兜底     | 任何未匹配指令（`all([])` 规则）→ noop                             |
+| 类别     | 业务指令                                                                |
+| -------- | ----------------------------------------------------------------------- |
+| 原子计算 | `increment` / `decrement` / `set`                                       |
+| 控制流   | `sequence` / `conditional` / `while_loop`                               |
+| I/O 映射 | `call_external` / `query_db` / `http_get` / `save_memory` / `call_service` |
+| 兜底     | 任何未匹配指令（`all([])` 规则）→ noop                                  |
 
 ### 6.3 扩展新业务指令
 

@@ -38,6 +38,12 @@ pub struct AuditEntry {
 /// 审计器
 ///
 /// 周期性消费 [`FactsLog`] 中的新增事实，构建带哈希链的审计条目列表。
+/// 维护 `BTreeMap<FactId, usize>` 实时索引，支持 O(log n) 的因果链查询。
+///
+/// # 持久化（WAL）
+/// 可选地通过 [`Auditor::with_wal_path`] 启用 WAL 持久化。
+/// 启用后，每个新增审计条目以 JSONL 格式追加写入磁盘，
+/// 进程重启后可通过 [`Auditor::load_from_wal`] 恢复审计状态。
 pub struct Auditor {
     /// FactsLog 引用
     facts_log: FactsLog,
@@ -49,6 +55,10 @@ pub struct Auditor {
     entries: Vec<AuditEntry>,
     /// 上一条目的哈希
     last_hash: String,
+    /// FactId -> entries 索引的实时索引（优化因果链查询）
+    index: BTreeMap<FactId, usize>,
+    /// WAL 持久化路径（可选）
+    wal_path: Option<std::path::PathBuf>,
 }
 
 impl Auditor {
@@ -62,6 +72,45 @@ impl Auditor {
             last_audited_version: 0,
             entries: Vec::new(),
             last_hash: String::from("genesis"),
+            index: BTreeMap::new(),
+            wal_path: None,
+        }
+    }
+
+    /// 设置 WAL 持久化路径
+    ///
+    /// 启用后，每次 `audit_new` 产生的新条目将以 JSONL 格式
+    /// 追加写入该路径。进程重启后可通过 `load_from_wal` 恢复。
+    pub fn with_wal_path<P: AsRef<std::path::Path>>(mut self, path: P) -> Self {
+        self.wal_path = Some(path.as_ref().to_path_buf());
+        self
+    }
+
+    /// 将单条审计条目序列化为 JSONL 行
+    fn entry_to_json_line(entry: &AuditEntry) -> String {
+        serde_json::json!({
+            "fact_id": entry.fact_id.0,
+            "fact_type": entry.fact_type,
+            "logical_time": entry.logical_time,
+            "content_hash": entry.content_hash,
+            "prev_hash": entry.prev_hash,
+            "cause": entry.cause.map(|c| c.0),
+        })
+        .to_string()
+    }
+
+    /// 追加单条审计条目到 WAL 文件
+    fn append_wal(&self, entry: &AuditEntry) {
+        if let Some(ref path) = self.wal_path {
+            let line = Self::entry_to_json_line(entry);
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                let _ = writeln!(file, "{}", line);
+            }
         }
     }
 
@@ -88,7 +137,7 @@ impl Auditor {
         }
 
         let count = history.len() - start;
-        for fact in &history[start..] {
+        for (idx_offset, fact) in history[start..].iter().enumerate() {
             let fact_id = fact.id();
             let fact_type = fact.type_name();
             let logical_time = self.clock.tick();
@@ -101,6 +150,9 @@ impl Auditor {
             let new_hash = blake3::hash(combined.as_bytes()).to_hex().to_string();
             self.last_hash = new_hash;
 
+            let entry_index = start + idx_offset;
+            self.index.insert(fact_id, entry_index);
+
             self.entries.push(AuditEntry {
                 fact_id,
                 fact_type,
@@ -109,6 +161,9 @@ impl Auditor {
                 prev_hash,
                 cause,
             });
+
+            // 写入 WAL（如启用）
+            self.append_wal(&self.entries[entry_index]);
         }
 
         self.last_audited_version = self.facts_log.version();
@@ -186,17 +241,14 @@ impl Auditor {
     /// 返回从该 FactId 起，沿 `cause` 字段向上追溯的审计条目列表，
     /// 顺序为：起始条目 → 其因果父 → … → 根因（`cause` 为 `None` 的条目）。
     /// 若中途找不到对应条目，则在断点处终止追溯。
+    ///
+    /// # 性能优化
+    /// 使用实时维护的 `BTreeMap<FactId, usize>` 索引，查询复杂度为 O(log n)。
     pub fn causal_chain(&self, fact_id: FactId) -> Vec<AuditEntry> {
-        // 建立 fact_id -> index 索引
-        let mut index: BTreeMap<u64, usize> = BTreeMap::new();
-        for (i, e) in self.entries.iter().enumerate() {
-            index.insert(e.fact_id.0, i);
-        }
-
         let mut chain = Vec::new();
         let mut current = Some(fact_id);
         while let Some(cur_id) = current {
-            match index.get(&cur_id.0) {
+            match self.index.get(&cur_id) {
                 Some(&i) => {
                     let entry = self.entries[i].clone();
                     current = entry.cause;
@@ -210,7 +262,116 @@ impl Auditor {
         }
         chain
     }
+
+    /// 从 WAL 文件加载审计状态
+    ///
+    /// 读取 WAL 文件中的 JSONL 行，重建 `entries`、`index`、`last_hash`
+    /// 和 `clock`。文件不存在或为空时返回空状态。
+    ///
+    /// # 注意
+    /// 此方法不校验 FactsLog 中是否存在对应 Fact，仅恢复内存结构。
+    /// 调用方应确保 WAL 文件来自可信来源。
+    pub fn load_from_wal(&mut self, path: &std::path::Path) -> std::io::Result<()> {
+        use std::io::BufRead;
+
+        if !path.exists() {
+            return Ok(());
+        }
+
+        let file = std::fs::File::open(path)?;
+        let reader = std::io::BufReader::new(file);
+
+        for (idx, line) in reader.lines().enumerate() {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            let parsed: serde_json::Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => {
+                    tracing::warn!(line = idx, "load_from_wal: 跳过无效 JSON 行");
+                    continue;
+                }
+            };
+
+            let fact_id_num = match parsed.get("fact_id").and_then(|v| v.as_u64()) {
+                Some(n) => n,
+                None => continue,
+            };
+            let fact_type = match parsed.get("fact_type").and_then(|v| v.as_str()) {
+                Some(s) => s,
+                None => continue,
+            };
+            let logical_time = parsed
+                .get("logical_time")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let content_hash = parsed
+                .get("content_hash")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let prev_hash = parsed
+                .get("prev_hash")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let cause = parsed.get("cause").and_then(|v| v.as_u64()).map(FactId);
+
+            let fact_id = FactId(fact_id_num);
+            let entry = AuditEntry {
+                fact_id,
+                // 安全：fact_type 是静态字符串名（来自 Fact::type_name），
+                // 此处使用泄漏扩展生命周期。WAL 中的类型名都是已知的固定字符串，
+                // 实际使用中应做类型映射表。这里做简化处理。
+                fact_type: FACT_TYPE_STATIC_TABLE
+                    .iter()
+                    .copied()
+                    .find(|t| *t == fact_type)
+                    .unwrap_or("Unknown"),
+                logical_time,
+                content_hash: content_hash.clone(),
+                prev_hash: prev_hash.clone(),
+                cause,
+            };
+
+            self.index.insert(fact_id, self.entries.len());
+            self.entries.push(entry);
+
+            // 重算链哈希（验证并更新 last_hash）
+            let combined = format!("{}{}", prev_hash, content_hash);
+            self.last_hash = blake3::hash(combined.as_bytes()).to_hex().to_string();
+
+            // 更新时钟到最大值
+            if logical_time > self.clock.current() {
+                // 逻辑时钟通过 tick 推进；从 WAL 恢复时直接设置到最大值+1
+                // 这里我们用一个小技巧：多次 tick 直到达到目标
+                while self.clock.current() < logical_time {
+                    self.clock.tick();
+                }
+            }
+        }
+
+        self.wal_path = Some(path.to_path_buf());
+        Ok(())
+    }
 }
+
+/// Fact 类型名静态表（用于 WAL 加载时获取 &'static str）
+///
+/// 包含所有已知的 Fact 变体类型名，加载 WAL 时从中查找匹配项，
+/// 以获取 `&'static str` 引用。
+const FACT_TYPE_STATIC_TABLE: &[&str] = &[
+    "StateTransition",
+    "Command",
+    "PayloadUpdate",
+    "IoRequest",
+    "IoResponse",
+    "ControlSignal",
+    "Error",
+    "Unknown",
+];
 
 /// 从 Fact 中提取因果父 Fact ID
 ///
@@ -223,5 +384,333 @@ fn extract_cause(fact: &Fact) -> Option<FactId> {
         Fact::IoRequest { cause, .. } => Some(*cause),
         Fact::IoResponse { request_id, .. } => Some(*request_id),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tier0_tcb::JsonValue;
+    use tier1_reactor::{Fact, FactId, FactsLog, IoType};
+
+    fn make_facts_log() -> FactsLog {
+        FactsLog::new()
+    }
+
+    #[test]
+    fn test_auditor_basic_chain() {
+        let log = make_facts_log();
+        let f0 = Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "k1".into(),
+            value: JsonValue::string("v1"),
+        };
+        let id0 = f0.id();
+        log.append(f0).unwrap();
+
+        let f1 = Fact::StateTransition {
+            id: FactId(2),
+            cause: id0,
+            new_payload: JsonValue::empty_object(),
+            new_queue: vec![],
+        };
+        log.append(f1).unwrap();
+
+        let mut auditor = Auditor::new(log);
+        let n = auditor.audit_new();
+        assert_eq!(n, 2);
+        assert!(auditor.verify());
+        assert_eq!(auditor.entries().len(), 2);
+    }
+
+    #[test]
+    fn test_auditor_causal_chain() {
+        let log = make_facts_log();
+
+        let f0 = Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "root".into(),
+            value: JsonValue::from(0i64),
+        };
+        let id0 = f0.id();
+        log.append(f0).unwrap();
+
+        let f1 = Fact::StateTransition {
+            id: FactId(2),
+            cause: id0,
+            new_payload: JsonValue::empty_object(),
+            new_queue: vec![],
+        };
+        let id1 = f1.id();
+        log.append(f1).unwrap();
+
+        let f2 = Fact::IoRequest {
+            id: FactId(3),
+            cause: id1,
+            io_type: IoType::HttpGet,
+            params: JsonValue::empty_object(),
+        };
+        let id2 = f2.id();
+        log.append(f2).unwrap();
+
+        let mut auditor = Auditor::new(log);
+        auditor.audit_new();
+
+        let chain = auditor.causal_chain(id2);
+        assert_eq!(chain.len(), 3);
+        assert_eq!(chain[0].fact_id, id2);
+        assert_eq!(chain[1].fact_id, id1);
+        assert_eq!(chain[2].fact_id, id0);
+    }
+
+    #[test]
+    fn test_auditor_wal_persist_and_reload() {
+        let tmp =
+            std::env::temp_dir().join(format!("auditor_wal_test_{}.jsonl", std::process::id()));
+        let _ = std::fs::remove_file(&tmp);
+
+        // 第一轮：写入 WAL
+        {
+            let log = make_facts_log();
+            let f0 = Fact::PayloadUpdate {
+                id: FactId(1),
+                path: "a".into(),
+                value: JsonValue::from(1i64),
+            };
+            let f1 = Fact::PayloadUpdate {
+                id: FactId(2),
+                path: "b".into(),
+                value: JsonValue::from(2i64),
+            };
+            log.append(f0).unwrap();
+            log.append(f1).unwrap();
+
+            let mut auditor = Auditor::new(log).with_wal_path(&tmp);
+            let n = auditor.audit_new();
+            assert_eq!(n, 2);
+            assert!(auditor.verify());
+        }
+
+        // 第二轮：从 WAL 恢复
+        {
+            let log = make_facts_log();
+            let mut auditor = Auditor::new(log);
+            auditor.load_from_wal(&tmp).expect("load wal");
+            assert_eq!(auditor.entries().len(), 2);
+            assert!(auditor.verify());
+        }
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_auditor_wal_nonexistent_file() {
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+        let result = auditor.load_from_wal(std::path::Path::new("/nonexistent/path/wal.jsonl"));
+        assert!(result.is_ok());
+        assert_eq!(auditor.entries().len(), 0);
+    }
+
+    #[test]
+    fn test_auditor_wal_incremental() {
+        let tmp =
+            std::env::temp_dir().join(format!("auditor_wal_incr_{}.jsonl", std::process::id()));
+        let _ = std::fs::remove_file(&tmp);
+
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log.clone()).with_wal_path(&tmp);
+
+        // 第一批
+        let f1 = Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "k1".into(),
+            value: JsonValue::string("v1"),
+        };
+        log.append(f1).unwrap();
+        assert_eq!(auditor.audit_new(), 1);
+
+        // 第二批
+        let f2 = Fact::PayloadUpdate {
+            id: FactId(2),
+            path: "k2".into(),
+            value: JsonValue::string("v2"),
+        };
+        log.append(f2).unwrap();
+        assert_eq!(auditor.audit_new(), 1);
+
+        // 从 WAL 恢复应得到 2 条
+        let mut auditor2 = Auditor::new(make_facts_log());
+        auditor2.load_from_wal(&tmp).expect("load wal");
+        assert_eq!(auditor2.entries().len(), 2);
+        assert!(auditor2.verify());
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_auditor_empty() {
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+        assert_eq!(auditor.audit_new(), 0);
+        assert!(auditor.verify());
+        assert_eq!(auditor.entries().len(), 0);
+    }
+
+    #[test]
+    fn test_auditor_incremental_idempotent() {
+        let log = make_facts_log();
+        let f = Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "x".into(),
+            value: JsonValue::string("y"),
+        };
+        log.append(f).unwrap();
+
+        let mut auditor = Auditor::new(log);
+        assert_eq!(auditor.audit_new(), 1);
+        // 再次调用 audit_new，无新事实，应返回 0
+        assert_eq!(auditor.audit_new(), 0);
+        assert_eq!(auditor.audit_new(), 0);
+        assert_eq!(auditor.entries().len(), 1);
+    }
+
+    #[test]
+    fn test_auditor_causal_chain_not_found() {
+        let log = make_facts_log();
+        let f = Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "x".into(),
+            value: JsonValue::string("y"),
+        };
+        log.append(f).unwrap();
+
+        let mut auditor = Auditor::new(log);
+        auditor.audit_new();
+
+        // 不存在的 fact_id
+        let chain = auditor.causal_chain(FactId(999));
+        assert!(chain.is_empty());
+    }
+
+    #[test]
+    fn test_auditor_causal_chain_root() {
+        let log = make_facts_log();
+        let f = Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "x".into(),
+            value: JsonValue::string("y"),
+        };
+        let id = f.id();
+        log.append(f).unwrap();
+
+        let mut auditor = Auditor::new(log);
+        auditor.audit_new();
+
+        // 根因（没有 cause）的因果链只有自己
+        let chain = auditor.causal_chain(id);
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].fact_id, id);
+        assert!(chain[0].cause.is_none());
+    }
+
+    #[test]
+    fn test_auditor_report_format() {
+        let log = make_facts_log();
+        let f = Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "k".into(),
+            value: JsonValue::string("v"),
+        };
+        log.append(f).unwrap();
+
+        let mut auditor = Auditor::new(log);
+        auditor.audit_new();
+
+        let report = auditor.report();
+        let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
+        assert_eq!(parsed["entry_count"], 1);
+        assert_eq!(parsed["entries"].as_array().unwrap().len(), 1);
+        assert!(parsed["last_hash"].is_string());
+        assert!(parsed["last_audited_version"].is_number());
+    }
+
+    #[test]
+    fn test_auditor_verify_empty_chain() {
+        let log = make_facts_log();
+        let auditor = Auditor::new(log);
+        assert!(auditor.verify());
+    }
+
+    #[test]
+    fn test_auditor_io_response_causal_link() {
+        let log = make_facts_log();
+        let req = Fact::IoRequest {
+            id: FactId(10),
+            cause: FactId(1),
+            io_type: IoType::HttpGet,
+            params: JsonValue::empty_object(),
+        };
+        let req_id = req.id();
+        log.append(req).unwrap();
+
+        let resp = Fact::IoResponse {
+            id: FactId(11),
+            request_id: req_id,
+            result: JsonValue::string("ok"),
+            error: None,
+        };
+        let resp_id = resp.id();
+        log.append(resp).unwrap();
+
+        let mut auditor = Auditor::new(log);
+        auditor.audit_new();
+
+        // IoResponse 的因果父是 request_id
+        let chain = auditor.causal_chain(resp_id);
+        assert_eq!(chain.len(), 2);
+        assert_eq!(chain[0].fact_id, resp_id);
+        assert_eq!(chain[1].fact_id, req_id);
+    }
+
+    #[test]
+    fn test_auditor_last_hash_genesis() {
+        let log = make_facts_log();
+        let auditor = Auditor::new(log);
+        // 初始 last_hash 为 "genesis"
+        // 通过 report 间接验证
+        let report = auditor.report();
+        let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
+        assert_eq!(parsed["last_hash"], "genesis");
+    }
+
+    #[test]
+    fn test_auditor_wal_with_invalid_lines() {
+        let tmp =
+            std::env::temp_dir().join(format!("auditor_wal_bad_{}.jsonl", std::process::id()));
+        let _ = std::fs::remove_file(&tmp);
+
+        // 手动写入混合有效和无效行的 WAL
+        use std::io::Write;
+        let mut file = std::fs::File::create(&tmp).unwrap();
+        writeln!(file, "not valid json").unwrap();
+        writeln!(
+            file,
+            r#"{{"fact_id": 5, "fact_type": "PayloadUpdate", "logical_time": 3, "content_hash": "abc", "prev_hash": "genesis", "cause": null}}"#
+        )
+        .unwrap();
+        writeln!(file, "").unwrap(); // 空行
+        drop(file);
+
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+        auditor.load_from_wal(&tmp).expect("load wal");
+
+        // 只有 1 条有效条目
+        assert_eq!(auditor.entries().len(), 1);
+        assert_eq!(auditor.entries()[0].fact_id, FactId(5));
+        assert_eq!(auditor.entries()[0].fact_type, "PayloadUpdate");
+
+        let _ = std::fs::remove_file(&tmp);
     }
 }

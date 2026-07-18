@@ -1,4 +1,4 @@
-//! Append-Only 事实审计链
+﻿//! Append-Only 事实审计链
 //!
 //! # 设计依据
 //! 基于《02_反应式数据执行器》§2.2，FactsLog 是系统的唯一真相存储：
@@ -79,6 +79,20 @@ pub struct FactsLog {
     inner: Arc<RwLock<FactsLogInner>>,
 }
 
+impl std::fmt::Debug for FactsLog {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let inner = self
+            .inner
+            .read()
+            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        f.debug_struct("FactsLog")
+            .field("version", &inner.version)
+            .field("history_len", &inner.history.len())
+            .field("has_wal", &inner.wal.is_some())
+            .finish()
+    }
+}
+
 impl FactsLog {
     /// 创建空的 FactsLog（初始版本为 0，payload 为空对象，无 WAL）
     pub fn new() -> Self {
@@ -98,7 +112,10 @@ impl FactsLog {
     pub fn with_initial_payload(payload: JsonValue) -> Self {
         let log = Self::new();
         {
-            let mut inner = log.inner.write().expect("FactsLog lock poisoned");
+            let mut inner = log
+                .inner
+                .write()
+                .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
             inner.current_snapshot = payload;
         }
         log
@@ -139,7 +156,10 @@ impl FactsLog {
         let records = read_wal(&path).map_err(|e| FactsLogError::WalError(e.to_string()))?;
         let log = Self::new();
         {
-            let mut inner = log.inner.write().expect("FactsLog lock poisoned");
+            let mut inner = log
+                .inner
+                .write()
+                .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
             for (version_before, fact) in records {
                 inner.history.push((version_before, fact.clone()));
                 match &fact {
@@ -244,7 +264,10 @@ impl FactsLog {
 
     /// 读取当前快照 (payload, queue, version)
     pub fn snapshot(&self) -> (JsonValue, Vec<JsonValue>, u64) {
-        let inner = self.inner.read().expect("FactsLog lock poisoned");
+        let inner = self
+            .inner
+            .read()
+            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
         (
             inner.current_snapshot.clone(),
             inner.current_queue.clone(),
@@ -257,7 +280,10 @@ impl FactsLog {
     /// 返回所有 `version_before >= from_version` 的事实。
     /// 如果 `from_version` 为 0，返回完整历史。
     pub fn read_from(&self, from_version: u64) -> Vec<Fact> {
-        let inner = self.inner.read().expect("FactsLog lock poisoned");
+        let inner = self
+            .inner
+            .read()
+            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
         inner
             .history
             .iter()
@@ -268,14 +294,17 @@ impl FactsLog {
 
     /// 返回当前版本号
     pub fn version(&self) -> u64 {
-        self.inner.read().expect("FactsLog lock poisoned").version
+        self.inner
+            .read()
+            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"))
+            .version
     }
 
     /// 返回最后稳定版本号
     pub fn last_stable_version(&self) -> u64 {
         self.inner
             .read()
-            .expect("FactsLog lock poisoned")
+            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"))
             .last_stable_version
     }
 
@@ -283,14 +312,17 @@ impl FactsLog {
     pub fn history_len(&self) -> usize {
         self.inner
             .read()
-            .expect("FactsLog lock poisoned")
+            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"))
             .history
             .len()
     }
 
     /// 返回完整历史（用于全量审计）
     pub fn history(&self) -> Vec<Fact> {
-        let inner = self.inner.read().expect("FactsLog lock poisoned");
+        let inner = self
+            .inner
+            .read()
+            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
         inner.history.iter().map(|(_, f)| f.clone()).collect()
     }
 
@@ -301,8 +333,71 @@ impl FactsLog {
     ///
     /// 与 `history()` 的区别：保留版本号信息，供时间机器按版本范围过滤。
     pub fn history_with_versions(&self) -> Vec<(u64, Fact)> {
-        let inner = self.inner.read().expect("FactsLog lock poisoned");
+        let inner = self
+            .inner
+            .read()
+            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
         inner.history.iter().map(|(v, f)| (*v, f.clone())).collect()
+    }
+
+    /// 按 path 前缀查询 PayloadUpdate Fact（P0-1）
+    ///
+    /// 返回所有 `PayloadUpdate.path` 以指定前缀开头的事实。用于 evo-agent 的 auto_recall
+    /// 机制，按命名空间前缀（如 `agent_researcher.shared.research_notes`）查询历史记忆。
+    ///
+    /// # 复杂度
+    /// O(n)，n 为 history 长度。遍历所有事实，筛选匹配的 PayloadUpdate。
+    ///
+    /// # 示例
+    /// ```
+    /// use tier1_reactor::FactsLog;
+    /// let log = FactsLog::new();
+    /// let facts = log.facts_by_path_prefix("agent_researcher.shared");
+    /// // 返回所有 path 以 "agent_researcher.shared" 开头的 PayloadUpdate
+    /// ```
+    pub fn facts_by_path_prefix(&self, prefix: &str) -> Vec<(u64, Fact)> {
+        let inner = self
+            .inner
+            .read()
+            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        inner
+            .history
+            .iter()
+            .filter(|(_, fact)| {
+                matches!(fact, Fact::PayloadUpdate { path, .. } if path.starts_with(prefix))
+            })
+            .map(|(v, f)| (*v, f.clone()))
+            .collect()
+    }
+
+    /// 重置 FactsLog 到初始状态（用于对象池复用）
+    ///
+    /// 清空历史记录、快照和队列，重置版本号。
+    /// 保留已分配的 Vec 容量（`clear()` 而非重新创建），减少内存重分配。
+    /// WAL 写入器会被丢弃（重置为 `None`），仅适用于内存模式复用。
+    ///
+    /// # 安全性
+    /// 调用方必须确保此时没有其他线程正在访问此 FactsLog
+    /// （即 `is_reusable()` 返回 `true`）。
+    pub fn reset(&self) {
+        let mut inner = self
+            .inner
+            .write()
+            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        inner.history.clear();
+        inner.current_snapshot = JsonValue::empty_object();
+        inner.current_queue.clear();
+        inner.version = 0;
+        inner.last_stable_version = 0;
+        inner.wal = None;
+    }
+
+    /// 检查 FactsLog 是否可安全复用
+    ///
+    /// 当 Arc 强引用计数为 1 时（仅当前持有者），表示反应器已释放其引用，
+    /// 可以安全重置并回收到对象池。
+    pub fn is_reusable(&self) -> bool {
+        Arc::strong_count(&self.inner) == 1
     }
 }
 
@@ -422,7 +517,7 @@ mod tests {
         log.append(Fact::IoRequest {
             id: FactId(3),
             cause: FactId(2),
-            io_type: IoType::CallLlm,
+            io_type: IoType::CallExternal,
             params: JsonValue::empty_object(),
         })
         .unwrap();
@@ -524,7 +619,7 @@ mod tests {
             .append(Fact::IoRequest {
                 id: FactId(1),
                 cause: FactId(0),
-                io_type: IoType::CallLlm,
+                io_type: IoType::CallExternal,
                 params: JsonValue::empty_object(),
             })
             .unwrap();
@@ -571,7 +666,7 @@ mod tests {
         log.append(Fact::IoRequest {
             id: FactId(3),
             cause: FactId(2),
-            io_type: IoType::CallLlm,
+            io_type: IoType::CallExternal,
             params: JsonValue::empty_object(),
         })
         .unwrap();
@@ -657,6 +752,120 @@ mod tests {
         for (i, fact) in history.iter().enumerate() {
             assert_eq!(fact.id(), ids[i]);
         }
+    }
+
+    // === P0-1 facts_by_path_prefix 测试 ===
+
+    #[test]
+    fn test_facts_by_path_prefix_empty_history() {
+        let log = FactsLog::new();
+        let result = log.facts_by_path_prefix("any_prefix");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_facts_by_path_prefix_no_matches() {
+        let log = FactsLog::new();
+        log.append(Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "agent_other.shared.note".to_string(),
+            value: JsonValue::string("hello"),
+        })
+        .unwrap();
+
+        let result = log.facts_by_path_prefix("agent_researcher");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_facts_by_path_prefix_single_match() {
+        let log = FactsLog::new();
+        log.append(Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "agent_researcher.shared.note".to_string(),
+            value: JsonValue::string("hello"),
+        })
+        .unwrap();
+
+        let result = log.facts_by_path_prefix("agent_researcher.shared");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1.id(), FactId(1));
+    }
+
+    #[test]
+    fn test_facts_by_path_prefix_multiple_matches() {
+        let log = FactsLog::new();
+        log.append(Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "agent_researcher.shared.note1".to_string(),
+            value: JsonValue::string("v1"),
+        })
+        .unwrap();
+        log.append(Fact::PayloadUpdate {
+            id: FactId(2),
+            path: "agent_researcher.shared.note2".to_string(),
+            value: JsonValue::string("v2"),
+        })
+        .unwrap();
+        log.append(Fact::PayloadUpdate {
+            id: FactId(3),
+            path: "agent_other.shared.note3".to_string(),
+            value: JsonValue::string("v3"),
+        })
+        .unwrap();
+
+        let result = log.facts_by_path_prefix("agent_researcher.shared");
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].1.id(), FactId(1));
+        assert_eq!(result[1].1.id(), FactId(2));
+    }
+
+    #[test]
+    fn test_facts_by_path_prefix_prefix_boundary() {
+        let log = FactsLog::new();
+        log.append(Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "agent_researcher_shared.note".to_string(),
+            value: JsonValue::string("v1"),
+        })
+        .unwrap();
+        log.append(Fact::PayloadUpdate {
+            id: FactId(2),
+            path: "agent_researcher.shared.note".to_string(),
+            value: JsonValue::string("v2"),
+        })
+        .unwrap();
+
+        let result = log.facts_by_path_prefix("agent_researcher.");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1.id(), FactId(2));
+    }
+
+    #[test]
+    fn test_facts_by_path_prefix_only_payload_update() {
+        let log = FactsLog::new();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::empty_object(),
+        })
+        .unwrap();
+        log.append(Fact::PayloadUpdate {
+            id: FactId(2),
+            path: "agent_researcher.shared.note".to_string(),
+            value: JsonValue::string("v1"),
+        })
+        .unwrap();
+        log.append(Fact::StateTransition {
+            id: FactId(3),
+            cause: FactId(1),
+            new_payload: JsonValue::empty_object(),
+            new_queue: vec![],
+        })
+        .unwrap();
+
+        let result = log.facts_by_path_prefix("agent_researcher");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1.id(), FactId(2));
     }
 
     // === P0-1 WAL 持久化测试 ===
@@ -840,7 +1049,7 @@ mod tests {
         log.append(Fact::IoRequest {
             id: FactId(4),
             cause: FactId(3),
-            io_type: IoType::CallLlm,
+            io_type: IoType::CallExternal,
             params: JsonValue::object_from_pairs(&[("prompt", JsonValue::String("hi".into()))]),
         })
         .unwrap();

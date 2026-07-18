@@ -1,4 +1,4 @@
-#![forbid(unsafe_code)]
+﻿#![forbid(unsafe_code)]
 //! Memory I/O Handler —— 基于 `tokio::fs` 实现持久化键值存储。
 //!
 //! - 写模式：参数包含 `value` 字段时，将内容写入 `base_dir/<key>` 文件，返回 `JsonValue::Bool(true)`。

@@ -1,7 +1,7 @@
-//! evorule-server —— 独立二进制服务入口
+﻿//! evorule-server —— 独立二进制服务入口
 //!
 //! 启动 GovernanceServer（HTTP API + SSE 事件流 + 多会话管理），
-//! 内置 IoSubscriber（LLM / DB / HTTP / Memory / Tool 五种 I/O handler）。
+//! 内置 IoSubscriber（DB / HTTP / Memory 三种 I/O handler）。
 //!
 //! # 用法
 //! ```bash
@@ -28,18 +28,16 @@ use std::time::Duration;
 use clap::Parser;
 use tier0_tcb::JsonValue;
 use tier1_reactor::Reactor;
-use tier2_governance::agent::AgentDefinitionManager;
-use tier2_governance::api::agent_api::{AgentManager, DispatcherFactory};
 use tier2_governance::api::auth::AuthConfig;
 use tier2_governance::api::server::{AppState, GovernanceApi, GovernanceServer, SessionApi};
 use tier2_governance::auditor::Auditor;
 use tier2_governance::io_dispatcher::IoDispatcher;
 use tier2_governance::io_handlers::{
-    db_handler::DbHandler, http_handler::HttpHandler, llm_handler::LlmHandler,
-    memory_handler::MemoryHandler, tool_handler::ToolHandler,
+    db_handler::DbHandler, http_handler::HttpHandler, memory_handler::MemoryHandler,
 };
 use tier2_governance::io_subscriber::IoSubscriber;
 use tier2_governance::metrics::{Metrics, SharedMetrics};
+use tier2_governance::shared_facts_log::SharedFactsLog;
 use tracing::{error, info, warn};
 
 /// 优雅退出超时（P2-8：等待进行中请求的最长时间）
@@ -64,11 +62,6 @@ const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 /// db_path = "./data/evorule.db"
 /// memory_dir = "./data/memory"
 ///
-/// [llm]
-/// api_key = "sk-..."
-/// base_url = "https://api.openai.com/v1"
-/// model = "gpt-4o-mini"
-///
 /// [log]
 /// level = "info"
 /// format = "json"
@@ -81,8 +74,6 @@ struct FileConfig {
     auth: FileAuthConfig,
     #[serde(default)]
     paths: FilePathsConfig,
-    #[serde(default)]
-    llm: FileLlmConfig,
     #[serde(default)]
     log: FileLogConfig,
 }
@@ -104,13 +95,6 @@ struct FilePathsConfig {
     rules_dir: Option<PathBuf>,
     db_path: Option<PathBuf>,
     memory_dir: Option<PathBuf>,
-}
-
-#[derive(Debug, Default, serde::Deserialize)]
-struct FileLlmConfig {
-    api_key: Option<String>,
-    base_url: Option<String>,
-    model: Option<String>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -199,18 +183,6 @@ struct Cli {
     #[arg(long, env = "EVORULE_MEMORY_DIR")]
     memory_dir: Option<PathBuf>,
 
-    /// LLM API Key（OpenAI 兼容）
-    #[arg(long, env = "EVORULE_LLM_API_KEY")]
-    llm_api_key: Option<String>,
-
-    /// LLM API 基础 URL（默认 OpenAI 官方）
-    #[arg(long, env = "EVORULE_LLM_BASE_URL")]
-    llm_base_url: Option<String>,
-
-    /// 默认 LLM 模型标识
-    #[arg(long, env = "EVORULE_LLM_MODEL")]
-    llm_model: Option<String>,
-
     /// 反应器最大指令执行步数
     #[arg(long, env = "EVORULE_MAX_ROUNDS")]
     max_rounds: Option<usize>,
@@ -232,9 +204,6 @@ struct ResolvedConfig {
     rules_dir: PathBuf,
     db_path: PathBuf,
     memory_dir: PathBuf,
-    llm_api_key: Option<String>,
-    llm_base_url: Option<String>,
-    llm_model: String,
     max_rounds: usize,
     log_level: String,
     log_format: String,
@@ -265,12 +234,6 @@ impl ResolvedConfig {
                 .memory_dir
                 .or(file.paths.memory_dir)
                 .unwrap_or_else(|| PathBuf::from("./data/memory")),
-            llm_api_key: cli.llm_api_key.or(file.llm.api_key),
-            llm_base_url: cli.llm_base_url.or(file.llm.base_url),
-            llm_model: cli
-                .llm_model
-                .or(file.llm.model)
-                .unwrap_or_else(|| "gpt-4o-mini".to_string()),
             max_rounds: cli.max_rounds.or(file.server.max_rounds).unwrap_or(1000),
             log_level: cli
                 .log_level
@@ -370,10 +333,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("规则目录: {}", cfg.rules_dir.display());
     info!("数据库: {}", cfg.db_path.display());
     info!("Memory 目录: {}", cfg.memory_dir.display());
-    info!(
-        "LLM 模型: {} (base_url: {:?})",
-        cfg.llm_model, cfg.llm_base_url
-    );
     info!("日志格式: {}", cfg.log_format);
     info!(
         "认证: {}",
@@ -394,27 +353,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     ensure_dir(&cfg.memory_dir)?;
 
-    // 4. 初始化 5 个 I/O handler
-    let api_key = cfg
-        .llm_api_key
-        .clone()
-        .unwrap_or_else(|| "dummy_key".to_string());
-    let llm = LlmHandler::with_model(api_key, cfg.llm_base_url.clone(), cfg.llm_model.clone());
+    // 4. 初始化 3 个 I/O handler
     let db = DbHandler::connect_file(&cfg.db_path)
         .await
         .map_err(|e| format!("数据库连接失败: {}", e))?;
     let http = HttpHandler::new();
     let memory = MemoryHandler::new(cfg.memory_dir.clone());
-    let tool = ToolHandler::new();
-    let dispatcher = IoDispatcher::new(llm, db, http, memory, tool);
+    let dispatcher = IoDispatcher::new(db, http, memory);
 
     // P2-7: 创建 Prometheus 指标（共享给 IoSubscriber + AppState）
-    let metrics: SharedMetrics = Arc::new(Metrics::new());
+    let metrics: SharedMetrics =
+        Arc::new(Metrics::new().map_err(|e| format!("指标初始化失败: {}", e))?);
 
     // P2-7: IoSubscriber 注入 metrics，记录 I/O 耗时和错误
     let subscriber = IoSubscriber::new(dispatcher).with_metrics(metrics.clone());
 
-    info!("[1/4] I/O handler 已初始化（LLM/DB/HTTP/Memory/Tool）");
+    info!("[1/4] I/O handler 已初始化（DB/HTTP/Memory）");
 
     // 5. 创建单反应器（GovernanceApi 向后兼容路由用）
     let reactor = Reactor::builder(core_eval.clone())
@@ -431,67 +385,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("[2/4] 反应器 + I/O 订阅者已启动");
 
-    // 7. 创建审计器 + GovernanceApi + SessionApi + AgentManager + AppState
+    // 7. 创建审计器 + GovernanceApi + SessionApi + AppState
     let auditor = Auditor::new(facts_log.clone());
     let api = GovernanceApi::new(tx.clone(), facts_log, auditor);
-    let session_api = SessionApi::new(core_eval.clone(), cfg.max_rounds);
-    // 启动后台 reaper 任务，定期清理过期和已结束的会话（P0-3）
+    let session_api = SessionApi::new(core_eval, cfg.max_rounds);
     session_api.start_reaper();
-
-    // Phase A-4: 创建 AgentManager（dispatcher_factory + definitions + tools_json）
-    let llm_api_key = cfg
-        .llm_api_key
-        .clone()
-        .unwrap_or_else(|| "dummy_key".to_string());
-    let llm_base_url = cfg.llm_base_url.clone();
-    let llm_model = cfg.llm_model.clone();
-    let db_path = cfg.db_path.clone();
-    let memory_dir = cfg.memory_dir.clone();
-
-    let dispatcher_factory: DispatcherFactory = Arc::new(move || {
-        let api_key = llm_api_key.clone();
-        let base_url = llm_base_url.clone();
-        let model = llm_model.clone();
-        let db_path = db_path.clone();
-        let memory_dir = memory_dir.clone();
-        Box::pin(async move {
-            let llm = LlmHandler::with_model(api_key, base_url, model);
-            let db = DbHandler::connect_file(&db_path)
-                .await
-                .map_err(|e| format!("DB connect failed: {}", e))?;
-            let http = HttpHandler::new();
-            let memory = MemoryHandler::new(memory_dir);
-            let tool = ToolHandler::new();
-            Ok(IoDispatcher::new(llm, db, http, memory, tool))
-        })
-    });
-
-    // 预计算工具描述（当前为空数组，工具可在 ToolRegistry 中注册后传入）
-    let tools_json = JsonValue::Array(vec![]);
-
-    let definitions = AgentDefinitionManager::new(cfg.rules_dir.join("agents"));
-    let agent_manager = AgentManager::new(
-        definitions,
-        core_eval,
-        cfg.max_rounds,
-        dispatcher_factory,
-        tools_json,
-    )
-    .with_memory_dir(cfg.memory_dir.clone());
 
     // P2-8: 创建 readiness flag（优雅退出时设为 false）
     let readiness: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
+
+    // P1-1: 创建跨会话共享事实存储
+    let shared_facts = SharedFactsLog::new();
 
     // P2-7/P2-8: AppState 注入 metrics 和 readiness
     let state = AppState::new(
         api,
         session_api,
-        agent_manager,
         metrics.clone(),
         readiness.clone(),
+        shared_facts,
     );
 
-    info!("[3/4] 审计器 + GovernanceApi + SessionApi + AgentManager 已创建");
+    info!("[3/4] 审计器 + GovernanceApi + SessionApi 已创建");
 
     // 8. 构建服务器（带认证）
     let auth = match &cfg.auth_token {
@@ -552,7 +467,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         {
             use tokio::signal::unix::{signal, SignalKind};
-            let mut sigterm = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+            let mut sigterm = signal(SignalKind::terminate())
+                .unwrap_or_else(|e| panic!("install SIGTERM handler: {}", e));
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
                     info!("收到 SIGINT (Ctrl+C) 信号，开始优雅退出...");

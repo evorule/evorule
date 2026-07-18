@@ -1,4 +1,4 @@
-//! HTTP API 服务（axum）
+﻿//! HTTP API 服务（axum）
 //!
 //! 提供外部访问接口，支持通过 HTTP 提交命令、查询状态、获取审计报告。
 //!
@@ -10,11 +10,11 @@
 //! - `POST /api/reload` — 手动触发配置热重载
 //! - `GET /api/health` — 健康检查
 
-use crate::api::agent_api::AgentManager;
 use crate::api::auth::AuthConfig;
 use crate::api::session::SessionManager;
 use crate::auditor::Auditor;
 use crate::metrics::SharedMetrics;
+use crate::shared_facts_log::SharedFactsLog;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tier0_tcb::JsonValue;
@@ -133,6 +133,8 @@ pub struct SessionApi {
     next_id: Arc<std::sync::atomic::AtomicU64>,
     /// 当前活跃 SSE 连接数（P1-6：全局计数器，限制 MAX_SSE_CONNECTIONS）
     sse_connections: Arc<AtomicU64>,
+    /// 反应器集群（用于会话间协作）
+    cluster: Arc<Mutex<crate::cluster::ReactorCluster>>,
 }
 
 impl SessionApi {
@@ -142,10 +144,12 @@ impl SessionApi {
     /// - `core_eval`：transform 规则列表（用于创建每个会话的反应器）
     /// - `max_rounds`：每个反应器的最大指令执行步数
     pub fn new(core_eval: Vec<JsonValue>, max_rounds: usize) -> Self {
+        let sessions = Arc::new(Mutex::new(SessionManager::new(core_eval, max_rounds)));
         Self {
-            sessions: Arc::new(Mutex::new(SessionManager::new(core_eval, max_rounds))),
+            sessions: sessions.clone(),
             next_id: Arc::new(std::sync::atomic::AtomicU64::new(30000)),
             sse_connections: Arc::new(AtomicU64::new(0)),
+            cluster: Arc::new(Mutex::new(crate::cluster::ReactorCluster::new(sessions))),
         }
     }
 
@@ -208,7 +212,7 @@ impl SessionApi {
             loop {
                 interval.tick().await;
                 let reaped = {
-                    let mut mgr = sessions.lock().await;
+                    let mgr = sessions.lock().await;
                     mgr.reap_all()
                 };
                 if reaped > 0 {
@@ -254,7 +258,6 @@ impl Drop for SseMetricsGuard {
 /// 通过 axum `FromRef` 模式，handler 可按需提取子状态：
 /// - `State<GovernanceApi>` — 单反应器模式路由
 /// - `State<SessionApi>` — 多会话模式路由
-/// - `State<AgentManager>` — Agent API 路由
 /// - `State<SharedMetrics>` — Prometheus 指标（P2-7）
 /// - `State<ReadinessFlag>` — 就绪标志（P2-8）
 #[derive(Clone)]
@@ -263,12 +266,12 @@ pub struct AppState {
     governance: GovernanceApi,
     /// 多会话 API
     sessions: SessionApi,
-    /// Agent API
-    agents: AgentManager,
     /// Prometheus 指标（P2-7）
     metrics: SharedMetrics,
     /// 就绪标志（P2-8：优雅退出时设为 false）
     readiness: ReadinessFlag,
+    /// 跨会话共享事实存储（P1-1）
+    shared_facts: SharedFactsLog,
 }
 
 impl AppState {
@@ -276,16 +279,16 @@ impl AppState {
     pub fn new(
         governance: GovernanceApi,
         sessions: SessionApi,
-        agents: AgentManager,
         metrics: SharedMetrics,
         readiness: ReadinessFlag,
+        shared_facts: SharedFactsLog,
     ) -> Self {
         Self {
             governance,
             sessions,
-            agents,
             metrics,
             readiness,
+            shared_facts,
         }
     }
 }
@@ -302,12 +305,6 @@ impl FromRef<AppState> for SessionApi {
     }
 }
 
-impl FromRef<AppState> for AgentManager {
-    fn from_ref(state: &AppState) -> Self {
-        state.agents.clone()
-    }
-}
-
 impl FromRef<AppState> for SharedMetrics {
     fn from_ref(state: &AppState) -> Self {
         state.metrics.clone()
@@ -317,6 +314,12 @@ impl FromRef<AppState> for SharedMetrics {
 impl FromRef<AppState> for ReadinessFlag {
     fn from_ref(state: &AppState) -> Self {
         state.readiness.clone()
+    }
+}
+
+impl FromRef<AppState> for SharedFactsLog {
+    fn from_ref(state: &AppState) -> Self {
+        state.shared_facts.clone()
     }
 }
 
@@ -392,7 +395,7 @@ fn tcb_to_serde(v: &JsonValue) -> serde_json::Value {
 }
 
 use async_stream::stream;
-use axum::extract::{FromRef, Path, State};
+use axum::extract::{FromRef, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, Sse};
 use axum::response::Json;
@@ -629,7 +632,7 @@ async fn create_session(
     State(metrics): State<SharedMetrics>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let result = {
-        let mut sessions = api.sessions.lock().await;
+        let sessions = api.sessions.lock().await;
         sessions.create_session()
     };
     match result {
@@ -672,7 +675,7 @@ async fn close_session(
     Path(session_id): Path<u64>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let result = {
-        let mut sessions = api.sessions.lock().await;
+        let sessions = api.sessions.lock().await;
         sessions.close_session(session_id)
     };
     match result {
@@ -684,6 +687,91 @@ async fn close_session(
             })))
         }
         Err(_) => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+/// 从父会话创建子会话 handler
+///
+/// `POST /api/sessions/from/:parent_id` → 基于父会话创建新会话，
+/// 记录跨会话因果关系（父会话 ID + 初始内容哈希）
+#[derive(serde::Deserialize)]
+struct CreateSessionFromParentParams {
+    version: Option<u64>,
+}
+
+async fn create_session_from_parent(
+    State(api): State<SessionApi>,
+    State(metrics): State<SharedMetrics>,
+    Path(parent_id): Path<u64>,
+    Query(params): Query<CreateSessionFromParentParams>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let result = {
+        let sessions = api.sessions.lock().await;
+        sessions.create_session_from_parent_at_version(parent_id, params.version)
+    };
+    match result {
+        Ok(id) => {
+            metrics.inc_sessions();
+            Ok(Json(serde_json::json!({
+                "session_id": id,
+                "parent_session_id": parent_id,
+                "message": "Session created from parent",
+                "forked_from_version": params.version
+            })))
+        }
+        Err(crate::api::session::SessionError::NotFound { id }) => {
+            tracing::warn!(parent_id = id, "Parent session not found");
+            Err(StatusCode::NOT_FOUND)
+        }
+        Err(crate::api::session::SessionError::LimitExceeded { current, max }) => {
+            tracing::warn!(current, max, "Session creation rejected: limit exceeded");
+            Err(StatusCode::TOO_MANY_REQUESTS)
+        }
+        Err(crate::api::session::SessionError::InvalidVersion { version }) => {
+            tracing::warn!(version, "Invalid version for session fork");
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct CreateSessionForkParams {
+    version: Option<u64>,
+}
+
+async fn create_session_fork(
+    State(api): State<SessionApi>,
+    State(metrics): State<SharedMetrics>,
+    Path(parent_id): Path<u64>,
+    Query(params): Query<CreateSessionForkParams>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let version = params.version.ok_or(StatusCode::BAD_REQUEST)?;
+    let result = {
+        let sessions = api.sessions.lock().await;
+        sessions.create_session_from_parent_at_version(parent_id, Some(version))
+    };
+    match result {
+        Ok(id) => {
+            metrics.inc_sessions();
+            Ok(Json(serde_json::json!({
+                "session_id": id,
+                "parent_session_id": parent_id,
+                "forked_from_version": version,
+                "message": "Session forked from parent at specified version"
+            })))
+        }
+        Err(crate::api::session::SessionError::NotFound { id }) => {
+            tracing::warn!(parent_id = id, "Parent session not found for fork");
+            Err(StatusCode::NOT_FOUND)
+        }
+        Err(crate::api::session::SessionError::LimitExceeded { current, max }) => {
+            tracing::warn!(current, max, "Session fork rejected: limit exceeded");
+            Err(StatusCode::TOO_MANY_REQUESTS)
+        }
+        Err(crate::api::session::SessionError::InvalidVersion { version }) => {
+            tracing::warn!(version, "Invalid version for session fork");
+            Err(StatusCode::BAD_REQUEST)
+        }
     }
 }
 
@@ -707,7 +795,7 @@ async fn session_command(
     let id = api.next_id();
     let instruction = serde_to_tcb(req.instruction);
 
-    let mut sessions = api.sessions.lock().await;
+    let sessions = api.sessions.lock().await;
     sessions.touch_session(session_id);
     let session = sessions
         .get_session(session_id)
@@ -735,7 +823,7 @@ async fn session_state(
     State(metrics): State<SharedMetrics>,
     Path(session_id): Path<u64>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let mut sessions = api.sessions.lock().await;
+    let sessions = api.sessions.lock().await;
     sessions.touch_session(session_id);
     let session = sessions
         .get_session(session_id)
@@ -743,8 +831,45 @@ async fn session_state(
 
     let (payload, queue, version) = session.facts_log.snapshot();
 
-    // P2-7: 更新 FactsLog 版本号指标
     metrics.set_facts_log_version(version);
+
+    let mut reactor_obj = serde_json::Map::new();
+    reactor_obj.insert(
+        "phase".into(),
+        session
+            .handle
+            .current_phase()
+            .map(|p| serde_json::Value::String(p.as_str().to_string()))
+            .unwrap_or(serde_json::Value::Null),
+    );
+    reactor_obj.insert(
+        "causal_depth".into(),
+        session
+            .handle
+            .causal_depth()
+            .map(|d| serde_json::Value::Number(d.into()))
+            .unwrap_or(serde_json::Value::Null),
+    );
+    reactor_obj.insert(
+        "invariant_violations".into(),
+        serde_json::Value::Number(session.handle.invariant_violations().into()),
+    );
+    reactor_obj.insert(
+        "pending_io_count".into(),
+        session
+            .handle
+            .pending_io_count()
+            .map(|c| serde_json::Value::Number(c.into()))
+            .unwrap_or(serde_json::Value::Null),
+    );
+    reactor_obj.insert(
+        "current_step".into(),
+        session
+            .handle
+            .current_step()
+            .map(|s| serde_json::Value::Number(s.into()))
+            .unwrap_or(serde_json::Value::Null),
+    );
 
     let mut obj = serde_json::Map::new();
     obj.insert("payload".into(), tcb_to_serde(&payload));
@@ -753,8 +878,94 @@ async fn session_state(
         serde_json::Value::Array(queue.iter().map(tcb_to_serde).collect()),
     );
     obj.insert("version".into(), serde_json::Value::Number(version.into()));
+    obj.insert("reactor".into(), serde_json::Value::Object(reactor_obj));
 
     Ok(Json(serde_json::Value::Object(obj)))
+}
+
+/// 会话审计报告 handler
+///
+/// `GET /api/sessions/:id/audit` → 返回指定会话的审计报告
+async fn session_audit(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    sessions.touch_session(session_id);
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // 先审计新事实
+    let _new_count = session.audit_new();
+
+    let report_str = session.audit_report();
+    let report: serde_json::Value = serde_json::from_str(&report_str)
+        .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+
+    Ok(Json(report))
+}
+
+/// 会话审计链验证 handler
+///
+/// `GET /api/sessions/:id/audit/verify` → 验证指定会话的审计链完整性
+async fn session_audit_verify(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    sessions.touch_session(session_id);
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let _new_count = session.audit_new();
+    let valid = session.audit_verify();
+
+    Ok(Json(serde_json::json!({
+        "valid": valid,
+        "session_id": session_id,
+    })))
+}
+
+/// 会话因果链查询 handler
+///
+/// `GET /api/sessions/:id/audit/causal/:fact_id` → 追溯指定 Fact 的因果链
+async fn session_causal_chain(
+    State(api): State<SessionApi>,
+    Path((session_id, fact_id)): Path<(u64, u64)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    use tier1_reactor::FactId;
+
+    let sessions = api.sessions.lock().await;
+    sessions.touch_session(session_id);
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let _new_count = session.audit_new();
+    let chain = session.causal_chain(FactId(fact_id));
+
+    let entries: Vec<serde_json::Value> = chain
+        .iter()
+        .map(|e| {
+            serde_json::json!({
+                "fact_id": e.fact_id.0,
+                "fact_type": e.fact_type,
+                "logical_time": e.logical_time,
+                "content_hash": e.content_hash,
+                "prev_hash": e.prev_hash,
+                "cause": e.cause.map(|c| c.0),
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "session_id": session_id,
+        "fact_id": fact_id,
+        "chain_length": entries.len(),
+        "chain": entries,
+    })))
 }
 
 /// 会话 PayloadUpdate handler
@@ -768,7 +979,7 @@ async fn session_payload(
     let id = api.next_id();
     let value = serde_to_tcb(req.value);
 
-    let mut sessions = api.sessions.lock().await;
+    let sessions = api.sessions.lock().await;
     sessions.touch_session(session_id);
     let session = sessions
         .get_session(session_id)
@@ -823,7 +1034,7 @@ async fn session_events(
 
     // 从 SessionManager 获取 event 通道接收端
     let mut event_rx = {
-        let mut sessions = api.sessions.lock().await;
+        let sessions = api.sessions.lock().await;
         sessions.touch_session(session_id);
         let session = sessions
             .get_session(session_id)
@@ -895,6 +1106,329 @@ async fn session_events(
     Ok(Sse::new(stream))
 }
 
+#[derive(serde::Deserialize)]
+struct ReplayParams {
+    from: Option<u64>,
+    to: Option<u64>,
+}
+
+#[derive(serde::Deserialize)]
+struct DiffParams {
+    a: u64,
+    b: u64,
+}
+
+#[derive(serde::Deserialize)]
+struct FactsByPrefixParams {
+    prefix: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct JoinRequest {
+    target_id: u64,
+    direction: Option<String>,
+}
+
+async fn session_replay(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+    Query(params): Query<ReplayParams>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let from = params.from.unwrap_or(0);
+    let to = params.to.unwrap_or_else(|| session.facts_log.version());
+
+    let all_facts = session.facts_log.history_with_versions();
+    let result: Vec<_> = all_facts
+        .into_iter()
+        .filter(|(v, _)| *v >= from && *v <= to)
+        .map(|(version, fact)| {
+            serde_json::json!({
+                "version": version,
+                "type": fact.type_name(),
+                "id": fact.id().0,
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::Value::Array(result)))
+}
+
+async fn session_history(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let all_facts = session.facts_log.history_with_versions();
+    let result: Vec<_> = all_facts
+        .into_iter()
+        .map(|(version, fact)| {
+            serde_json::json!({
+                "version": version,
+                "type": fact.type_name(),
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::Value::Array(result)))
+}
+
+async fn session_facts_by_prefix(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+    Query(params): Query<FactsByPrefixParams>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let prefix = params.prefix.unwrap_or_default();
+    let facts = session.facts_log.facts_by_path_prefix(&prefix);
+
+    let result: Vec<_> = facts
+        .into_iter()
+        .map(|(version, fact)| {
+            if let Fact::PayloadUpdate { id, path, value } = fact {
+                serde_json::json!({
+                    "fact_id": id.0,
+                    "version": version,
+                    "path": path,
+                    "value": tcb_to_serde(&value),
+                })
+            } else {
+                serde_json::json!({})
+            }
+        })
+        .collect();
+
+    Ok(Json(serde_json::Value::Array(result)))
+}
+
+async fn shared_facts_by_prefix(
+    State(shared_facts): State<SharedFactsLog>,
+    Query(params): Query<FactsByPrefixParams>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let prefix = params.prefix.unwrap_or_default();
+    let facts = shared_facts.facts_by_path_prefix(&prefix);
+
+    let result: Vec<_> = facts
+        .into_iter()
+        .map(|sf| {
+            serde_json::json!({
+                "fact_id": sf.fact_id.0,
+                "path": sf.path,
+                "value": tcb_to_serde(&sf.value),
+                "source_session_id": sf.source_session_id,
+                "version": sf.version,
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::Value::Array(result)))
+}
+
+async fn shared_fact_source(
+    State(shared_facts): State<SharedFactsLog>,
+    Path(fact_id): Path<u64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let fact = shared_facts
+        .fact_by_id(FactId(fact_id))
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(serde_json::json!({
+        "fact_id": fact.fact_id.0,
+        "path": fact.path,
+        "value": tcb_to_serde(&fact.value),
+        "source_session_id": fact.source_session_id,
+        "version": fact.version,
+    })))
+}
+
+async fn debug_phase(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let phase = session
+        .handle
+        .current_phase()
+        .map(|p| serde_json::Value::String(p.as_str().to_string()))
+        .unwrap_or(serde_json::Value::Null);
+
+    Ok(Json(serde_json::json!({
+        "session_id": session_id,
+        "phase": phase,
+    })))
+}
+
+async fn debug_queue(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let queue = session.handle.current_queue();
+
+    Ok(Json(serde_json::json!({
+        "session_id": session_id,
+        "queue": serde_json::Value::Array(queue.iter().map(tcb_to_serde).collect()),
+    })))
+}
+
+async fn debug_pending_io(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let pending_io = session.handle.pending_io();
+
+    let result: Vec<_> = pending_io
+        .into_iter()
+        .map(|(fact_id, io_type, duration)| {
+            serde_json::json!({
+                "fact_id": fact_id.0,
+                "io_type": io_type.to_string(),
+                "duration_ms": duration.as_millis(),
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "session_id": session_id,
+        "pending_io": serde_json::Value::Array(result),
+    })))
+}
+
+async fn session_rewind(
+    State(api): State<SessionApi>,
+    Path((session_id, version)): Path<(u64, u64)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let snapshot =
+        tier1_reactor::rewind(&session.facts_log, version).ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(serde_json::json!({
+        "version": snapshot.version,
+        "payload": tcb_to_serde(&snapshot.payload),
+        "queue": snapshot.queue.into_iter().map(|v| tcb_to_serde(&v)).collect::<Vec<_>>(),
+    })))
+}
+
+async fn session_diff(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+    Query(params): Query<DiffParams>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let diff_result = tier1_reactor::diff(&session.facts_log, params.a, params.b);
+    let summary = diff_result.summary();
+
+    Ok(Json(serde_json::json!({
+        "version_a": params.a,
+        "version_b": params.b,
+        "added": diff_result.added.into_iter().map(|(k, v)| {
+            serde_json::json!({ "key": k, "value": tcb_to_serde(&v) })
+        }).collect::<Vec<_>>(),
+        "removed": diff_result.removed.into_iter().map(|(k, v)| {
+            serde_json::json!({ "key": k, "value": tcb_to_serde(&v) })
+        }).collect::<Vec<_>>(),
+        "changed": diff_result.changed.into_iter().map(|(k, v_a, v_b)| {
+            serde_json::json!({ "key": k, "old_value": tcb_to_serde(&v_a), "new_value": tcb_to_serde(&v_b) })
+        }).collect::<Vec<_>>(),
+        "unchanged": diff_result.unchanged,
+        "summary": summary,
+    })))
+}
+
+async fn session_join(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+    Json(req): Json<JoinRequest>,
+) -> Result<Json<ApiResponse>, StatusCode> {
+    let direction = match req.direction.as_deref() {
+        Some("atob") => crate::cluster::SyncDirection::AtoB,
+        Some("btoa") => crate::cluster::SyncDirection::BtoA,
+        _ => crate::cluster::SyncDirection::Bidirectional,
+    };
+
+    let cluster = api.cluster.lock().await;
+    match cluster.join(session_id, req.target_id, direction).await {
+        Ok(_) => Ok(Json(ApiResponse {
+            success: true,
+            message: format!(
+                "Session {} joined with {} (direction: {:?})",
+                session_id, req.target_id, direction
+            ),
+            fact_id: None,
+        })),
+        Err(e) => Ok(Json(ApiResponse {
+            success: false,
+            message: e.to_string(),
+            fact_id: None,
+        })),
+    }
+}
+
+async fn session_leave(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+) -> Result<Json<ApiResponse>, StatusCode> {
+    let cluster = api.cluster.lock().await;
+    match cluster.leave_all(session_id).await {
+        Ok(_) => Ok(Json(ApiResponse {
+            success: true,
+            message: format!("Session {} left all cluster partnerships", session_id),
+            fact_id: None,
+        })),
+        Err(e) => Ok(Json(ApiResponse {
+            success: false,
+            message: e.to_string(),
+            fact_id: None,
+        })),
+    }
+}
+
+async fn session_cluster_status(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cluster = api.cluster.lock().await;
+    let members = cluster.members().await;
+
+    Ok(Json(serde_json::json!({
+        "session_id": session_id,
+        "cluster_members": members,
+    })))
+}
+
 /// 治理层 HTTP 服务器
 ///
 /// 支持两套路由：
@@ -942,7 +1476,7 @@ impl GovernanceServer {
             .per_second(RATE_LIMIT_PER_SECOND)
             .burst_size(RATE_LIMIT_BURST_SIZE)
             .finish()
-            .expect("governor config build invariant failed");
+            .unwrap_or_else(|| tower_governor::governor::GovernorConfig::default());
 
         // P2-7/P2-8: 公开路由（免认证）— health/liveness/readiness/metrics
         let public_routes = Router::new()
@@ -960,37 +1494,39 @@ impl GovernanceServer {
             .route("/api/audit", get(get_audit))
             // 多会话模式路由
             .route("/api/sessions", post(create_session).get(list_sessions))
+            .route(
+                "/api/sessions/from/{parent_id}",
+                post(create_session_from_parent),
+            )
+            .route("/api/sessions/fork/{parent_id}", post(create_session_fork))
             .route("/api/sessions/{id}", delete(close_session))
             .route("/api/sessions/{id}/command", post(session_command))
             .route("/api/sessions/{id}/state", get(session_state))
+            .route("/api/sessions/{id}/audit", get(session_audit))
+            .route("/api/sessions/{id}/audit/verify", get(session_audit_verify))
+            .route(
+                "/api/sessions/{id}/audit/causal/{fact_id}",
+                get(session_causal_chain),
+            )
             .route("/api/sessions/{id}/payload", post(session_payload))
             .route("/api/sessions/{id}/events", get(session_events))
-            // Agent API 路由（Phase A-4）
+            // 治理层演进 API（回放、时间旅行、集群协作）
+            .route("/api/sessions/{id}/replay", get(session_replay))
+            .route("/api/sessions/{id}/history", get(session_history))
+            .route("/api/sessions/{id}/facts", get(session_facts_by_prefix))
+            .route("/api/shared/facts", get(shared_facts_by_prefix))
             .route(
-                "/api/agents/types",
-                get(crate::api::agent_api::list_agent_types),
+                "/api/shared/facts/{fact_id}/source",
+                get(shared_fact_source),
             )
-            .route(
-                "/api/agents/types/{agent_type}",
-                get(crate::api::agent_api::get_agent_type),
-            )
-            .route("/api/agents/run", post(crate::api::agent_api::run_agent))
-            .route(
-                "/api/agents/{session_id}/status",
-                get(crate::api::agent_api::agent_status),
-            )
-            .route(
-                "/api/agents/{session_id}/events",
-                get(crate::api::agent_api::agent_events),
-            )
-            .route(
-                "/api/agents/{session_id}/stop",
-                post(crate::api::agent_api::stop_agent),
-            )
-            .route(
-                "/api/agents/{session_id}/result",
-                get(crate::api::agent_api::agent_result),
-            )
+            .route("/api/sessions/{id}/debug/phase", get(debug_phase))
+            .route("/api/sessions/{id}/debug/queue", get(debug_queue))
+            .route("/api/sessions/{id}/debug/pending_io", get(debug_pending_io))
+            .route("/api/sessions/{id}/rewind/{version}", get(session_rewind))
+            .route("/api/sessions/{id}/diff", get(session_diff))
+            .route("/api/sessions/{id}/join", post(session_join))
+            .route("/api/sessions/{id}/leave", post(session_leave))
+            .route("/api/sessions/{id}/cluster", get(session_cluster_status))
             .layer(axum::middleware::from_fn_with_state(
                 auth,
                 crate::api::auth::auth_middleware,
@@ -1115,14 +1651,14 @@ mod tests {
         let fact = Fact::IoRequest {
             id: FactId(3),
             cause: FactId(1),
-            io_type: IoType::CallLlm,
+            io_type: IoType::CallExternal,
             params: JsonValue::Null,
         };
         let json: serde_json::Value = serde_json::from_str(&fact_to_sse_data(&fact)).unwrap();
         assert_eq!(json["type"], "IoRequest");
         assert_eq!(json["id"], 3);
         assert_eq!(json["cause"], 1);
-        assert_eq!(json["io_type"], "call_llm");
+        assert_eq!(json["io_type"], "call_external");
     }
 
     #[test]

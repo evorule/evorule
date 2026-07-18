@@ -1,4 +1,4 @@
-#![forbid(unsafe_code)]
+﻿#![forbid(unsafe_code)]
 //! 时间机器 —— rewind / fork / diff / replay API（阶段5，软回滚模式）
 //!
 //! # 设计依据

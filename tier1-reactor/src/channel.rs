@@ -1,4 +1,4 @@
-//! 双通道封装（command mpsc + event broadcast）
+﻿//! 双通道封装（command mpsc + event broadcast）
 //!
 //! # 设计依据
 //! 基于《02_反应式数据执行器》§3.3 和《04_树形结构》channel.rs 定义：

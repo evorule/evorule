@@ -33,7 +33,7 @@ pub enum MetaInstructionResult {
     State(JsonValue),
     /// I/O 请求信号（立即传播，不继续执行后续指令）
     IoRequired {
-        /// I/O 类型（如 "call_llm"、"query_db"）
+        /// I/O 类型（如 "call_external"、"query_db"）
         io_type: String,
         /// I/O 请求参数（路径引用已解析为具体值）
         params: JsonValue,
@@ -287,7 +287,7 @@ fn exec_branch(
 /// io_request 元指令：产生 I/O 请求信号（不修改状态）
 ///
 /// # 参数
-/// - `params.io_type`：I/O 类型字符串（如 "call_llm"），必填
+/// - `params.io_type`：I/O 类型字符串（如 "call_external"），必填
 /// - `params.*`：其他参数，支持路径引用（`__` 开头的字符串自动解析）
 ///
 /// # 行为
@@ -572,13 +572,13 @@ mod tests {
     #[test]
     fn test_io_request_basic() {
         // 基本测试：io_request 返回 IoRequired 信号
-        let state = make_exec_state("call_llm", make_payload(0), vec![]);
+        let state = make_exec_state("call_external", make_payload(0), vec![]);
         let instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("io_request")),
             (
                 "params",
                 JsonValue::object_from_pairs(&[
-                    ("io_type", JsonValue::string("call_llm")),
+                    ("io_type", JsonValue::string("call_external")),
                     ("prompt", JsonValue::string("Hello")),
                 ]),
             ),
@@ -587,7 +587,7 @@ mod tests {
         let result = exec_io_request(&instr, state.clone()).unwrap();
         match result {
             MetaInstructionResult::IoRequired { io_type, params } => {
-                assert_eq!(io_type, "call_llm");
+                assert_eq!(io_type, "call_external");
                 assert_eq!(params.get("prompt").and_then(|v| v.as_str()), Some("Hello"));
                 // io_type 不应出现在 params 中
                 assert!(params.get("io_type").is_none());
@@ -600,7 +600,7 @@ mod tests {
     fn test_io_request_path_resolution() {
         // 测试：params 中的路径引用被正确解析
         let instruction = JsonValue::object_from_pairs(&[
-            ("type", JsonValue::string("call_llm")),
+            ("type", JsonValue::string("call_external")),
             (
                 "params",
                 JsonValue::object_from_pairs(&[("prompt", JsonValue::string("Summarize this"))]),
@@ -613,7 +613,7 @@ mod tests {
             (
                 "params",
                 JsonValue::object_from_pairs(&[
-                    ("io_type", JsonValue::string("call_llm")),
+                    ("io_type", JsonValue::string("call_external")),
                     (
                         "prompt",
                         JsonValue::string("__exec__.instruction.params.prompt"),
@@ -625,7 +625,7 @@ mod tests {
         let result = exec_io_request(&io_instr, state).unwrap();
         match result {
             MetaInstructionResult::IoRequired { io_type, params } => {
-                assert_eq!(io_type, "call_llm");
+                assert_eq!(io_type, "call_external");
                 // 路径引用应被解析为实际值
                 assert_eq!(
                     params.get("prompt").and_then(|v| v.as_str()),
@@ -639,7 +639,7 @@ mod tests {
     #[test]
     fn test_io_request_does_not_modify_state() {
         // 测试：io_request 不修改状态
-        let state = make_exec_state("call_llm", make_payload(42), vec![]);
+        let state = make_exec_state("call_external", make_payload(42), vec![]);
         let state_snapshot = state.clone();
 
         let instr = JsonValue::object_from_pairs(&[
@@ -647,7 +647,7 @@ mod tests {
             (
                 "params",
                 JsonValue::object_from_pairs(&[
-                    ("io_type", JsonValue::string("call_llm")),
+                    ("io_type", JsonValue::string("call_external")),
                     ("prompt", JsonValue::string("test")),
                 ]),
             ),
@@ -663,7 +663,7 @@ mod tests {
     #[test]
     fn test_io_request_via_execute_meta_instruction() {
         // 测试：通过 execute_meta_instruction 调用 io_request
-        let state = make_exec_state("call_llm", make_payload(0), vec![]);
+        let state = make_exec_state("call_external", make_payload(0), vec![]);
         let instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("io_request")),
             (
@@ -690,7 +690,7 @@ mod tests {
 
     #[test]
     fn test_io_request_missing_io_type() {
-        let state = make_exec_state("call_llm", make_payload(0), vec![]);
+        let state = make_exec_state("call_external", make_payload(0), vec![]);
         let instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("io_request")),
             (
@@ -705,7 +705,7 @@ mod tests {
 
     #[test]
     fn test_io_request_missing_params() {
-        let state = make_exec_state("call_llm", make_payload(0), vec![]);
+        let state = make_exec_state("call_external", make_payload(0), vec![]);
         let instr = JsonValue::object_from_pairs(&[("type", JsonValue::string("io_request"))]);
 
         let result = exec_io_request(&instr, state);
@@ -715,7 +715,7 @@ mod tests {
     #[test]
     fn test_io_request_in_branch_propagates() {
         // 测试：io_request 在 branch 的 on_true 中，信号正确传播
-        let state = make_exec_state("call_llm", make_payload(10), vec![]);
+        let state = make_exec_state("call_external", make_payload(10), vec![]);
         let instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
             (
@@ -736,7 +736,7 @@ mod tests {
                             (
                                 "params",
                                 JsonValue::object_from_pairs(&[
-                                    ("io_type", JsonValue::string("call_llm")),
+                                    ("io_type", JsonValue::string("call_external")),
                                     ("prompt", JsonValue::string("hi")),
                                 ]),
                             ),
@@ -749,7 +749,7 @@ mod tests {
         let result = execute_meta_instruction(&instr, state, 0).unwrap();
         match result {
             MetaInstructionResult::IoRequired { io_type, .. } => {
-                assert_eq!(io_type, "call_llm");
+                assert_eq!(io_type, "call_external");
             }
             _ => panic!("expected IoRequired from branch propagation"),
         }
@@ -758,7 +758,7 @@ mod tests {
     #[test]
     fn test_io_request_in_branch_on_false_not_triggered() {
         // 测试：域条件为假时，on_true 中的 io_request 不触发
-        let state = make_exec_state("call_llm", make_payload(5), vec![]);
+        let state = make_exec_state("call_external", make_payload(5), vec![]);
         let instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
             (
@@ -779,7 +779,7 @@ mod tests {
                             (
                                 "params",
                                 JsonValue::object_from_pairs(&[
-                                    ("io_type", JsonValue::string("call_llm")),
+                                    ("io_type", JsonValue::string("call_external")),
                                     ("prompt", JsonValue::string("hi")),
                                 ]),
                             ),
@@ -797,7 +797,7 @@ mod tests {
     #[test]
     fn test_io_request_stops_subsequent_instructions() {
         // 测试：io_request 后续的子指令不执行
-        let state = make_exec_state("call_llm", make_payload(10), vec![]);
+        let state = make_exec_state("call_external", make_payload(10), vec![]);
         let instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
             (
@@ -820,7 +820,7 @@ mod tests {
                                 (
                                     "params",
                                     JsonValue::object_from_pairs(&[
-                                        ("io_type", JsonValue::string("call_llm")),
+                                        ("io_type", JsonValue::string("call_external")),
                                         ("prompt", JsonValue::string("hi")),
                                     ]),
                                 ),
@@ -846,7 +846,7 @@ mod tests {
         let result = execute_meta_instruction(&instr, state, 0).unwrap();
         match result {
             MetaInstructionResult::IoRequired { io_type, .. } => {
-                assert_eq!(io_type, "call_llm");
+                assert_eq!(io_type, "call_external");
             }
             _ => panic!("expected IoRequired"),
         }
@@ -870,7 +870,7 @@ mod tests {
     fn test_io_request_nested_two_layers_propagates() {
         // 测试：io_request 在两层嵌套 branch 中正确传播
         // 外层 branch(condition=true) → 内层 branch(condition=true) → io_request
-        let state = make_exec_state("call_llm", make_payload(10), vec![]);
+        let state = make_exec_state("call_external", make_payload(10), vec![]);
         let inner_branch = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
             (
@@ -891,7 +891,7 @@ mod tests {
                             (
                                 "params",
                                 JsonValue::object_from_pairs(&[
-                                    ("io_type", JsonValue::string("call_llm")),
+                                    ("io_type", JsonValue::string("call_external")),
                                     ("prompt", JsonValue::string("nested")),
                                 ]),
                             ),
@@ -921,7 +921,7 @@ mod tests {
         let result = execute_meta_instruction(&outer_branch, state, 0).unwrap();
         match result {
             MetaInstructionResult::IoRequired { io_type, params } => {
-                assert_eq!(io_type, "call_llm");
+                assert_eq!(io_type, "call_external");
                 assert_eq!(
                     params.get("prompt").and_then(|v| v.as_str()),
                     Some("nested")
@@ -1479,9 +1479,9 @@ mod tests {
     #[test]
     fn test_io_request_optional_params_skipped_when_path_not_found() {
         // 测试 C-01：可选参数路径不存在时跳过，不返回错误
-        // 模拟 call_llm 指令只有 prompt，没有 temperature 和 max_tokens
+        // 模拟 call_external 指令只有 prompt，没有 temperature 和 max_tokens
         let instruction = JsonValue::object_from_pairs(&[
-            ("type", JsonValue::string("call_llm")),
+            ("type", JsonValue::string("call_external")),
             (
                 "params",
                 JsonValue::object_from_pairs(&[("prompt", JsonValue::string("hello"))]),
@@ -1496,7 +1496,7 @@ mod tests {
             (
                 "params",
                 JsonValue::object_from_pairs(&[
-                    ("io_type", JsonValue::string("call_llm")),
+                    ("io_type", JsonValue::string("call_external")),
                     (
                         "prompt",
                         JsonValue::string("__exec__.instruction.params.prompt"),
@@ -1516,7 +1516,7 @@ mod tests {
         let result = execute_meta_instruction(&io_instr, state, 0).unwrap();
         match result {
             MetaInstructionResult::IoRequired { io_type, params } => {
-                assert_eq!(io_type, "call_llm");
+                assert_eq!(io_type, "call_external");
                 // prompt 应存在
                 assert_eq!(params.get("prompt").and_then(|v| v.as_str()), Some("hello"));
                 // temperature 和 max_tokens 应不存在（路径解析失败被跳过）
@@ -1531,7 +1531,7 @@ mod tests {
     fn test_io_request_all_params_present() {
         // 测试 C-01：所有参数路径都存在时，全部包含在请求中
         let instruction = JsonValue::object_from_pairs(&[
-            ("type", JsonValue::string("call_llm")),
+            ("type", JsonValue::string("call_external")),
             (
                 "params",
                 JsonValue::object_from_pairs(&[
@@ -1548,7 +1548,7 @@ mod tests {
             (
                 "params",
                 JsonValue::object_from_pairs(&[
-                    ("io_type", JsonValue::string("call_llm")),
+                    ("io_type", JsonValue::string("call_external")),
                     (
                         "prompt",
                         JsonValue::string("__exec__.instruction.params.prompt"),
@@ -1579,13 +1579,13 @@ mod tests {
     #[test]
     fn test_io_request_literal_params_always_included() {
         // 测试 C-01：字面值参数（非路径引用）始终包含
-        let state = make_exec_state("call_llm", make_payload(0), vec![]);
+        let state = make_exec_state("call_external", make_payload(0), vec![]);
         let io_instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("io_request")),
             (
                 "params",
                 JsonValue::object_from_pairs(&[
-                    ("io_type", JsonValue::string("call_llm")),
+                    ("io_type", JsonValue::string("call_external")),
                     ("prompt", JsonValue::string("fixed_prompt")),
                     ("timeout_ms", JsonValue::Integer(5000)),
                 ]),
@@ -1676,7 +1676,6 @@ mod tests {
         }
     }
 
-
     // ===== Branch coverage L312:12: io_request params 非 Object 类型 =====
     /// exec_io_request: params 是 Integer (非 Object) 时仍应返回 IoRequired
     /// 覆盖 `if let Some(obj) = params.as_object()` 的 False 分支
@@ -1719,5 +1718,4 @@ mod tests {
         let result = exec_io_request(&instr, state);
         let _ = result;
     }
-
 }

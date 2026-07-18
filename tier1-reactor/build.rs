@@ -1,14 +1,18 @@
-//! tier1-reactor compile-time gate (G8)
+﻿//! tier1-reactor compile-time gate (G8 + F11 + §5.2)
 //!
 //! 强制执行 G8：反应器/治理层不得展开 conditional/while_loop/sequence。
+//! 强制执行 F11：非测试代码不得使用 debug_assert!/unwrap()/expect()。
+//! 强制执行 §5.2：Rust 代码中不得出现业务术语字符串字面量。
 //!
 //! 控制流指令名只能出现在 core_eval.json（宪法）和测试 fixture 中，
 //! 不得出现在 tier1/tier2 的 Rust 源码中——在那里它们只会意味着
 //! 硬编码的控制流展开，违背 01_设计方案.txt §0 的"根本性纠偏"目标
 //! 和 §16.2 G8 约束。
 //!
-//! # 禁止的字符串字面量
-//!   "conditional"、"while_loop"、"sequence"
+//! # 禁止的模式
+//! - G8: "conditional"、"while_loop"、"sequence"（字符串字面量）
+//! - F11: debug_assert!、.unwrap(、.expect(
+//! - §5.2: "math_rule"、"physics_rule"、"summarize"、"admin"、"teacher"
 //!
 //! # 豁免
 //! - 测试模块（`#[cfg(test)] mod tests { ... }` 内部）
@@ -24,14 +28,29 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-/// G8 禁止模式：(标签, 字节子串)
+/// 禁止模式：(标签, 字节子串)
 ///
-/// needle 含双引号边界，精确匹配字符串字面量，不误报注释中
+/// G8 needle 含双引号边界，精确匹配字符串字面量，不误报注释中
 /// 无引号的单词（如 `// conditional 指令`）。
+/// F11 needle 匹配 panic-prone 构造（.unwrap(、.expect(、debug_assert!）。
+/// §5.2 needle 匹配业务术语字符串字面量。
 const FORBIDDEN: &[(&str, &str)] = &[
+    // G8: 控制流指令名不得出现在 Rust 字符串中
     ("G8-conditional", "\"conditional\""),
     ("G8-while_loop", "\"while_loop\""),
     ("G8-sequence", "\"sequence\""),
+    // F11: 非测试代码禁止 panic-prone 构造
+    ("F11-debug_assert", "debug_assert!"),
+    ("F11-unwrap", ".unwrap("),
+    ("F11-expect", ".expect("),
+    // §5.2: 业务术语不得硬编码在 Rust 中
+    ("S5.2-math_rule", "\"math_rule\""),
+    ("S5.2-physics_rule", "\"physics_rule\""),
+    ("S5.2-summarize", "\"summarize\""),
+    ("S5.2-admin", "\"admin\""),
+    ("S5.2-teacher", "\"teacher\""),
+    ("S5.2-call_external", "\"call_external\""),
+    ("S5.2-call_service", "\"call_service\""),
 ];
 
 /// 从源码中剥离 `#[cfg(test)] mod tests { ... }` 块体。
@@ -338,6 +357,12 @@ fn main() -> ExitCode {
                 if trimmed.starts_with("//") {
                     continue;
                 }
+                // 豁免 fact.rs 中的 IoType/ControlFlowType 字符串映射
+                // （§5.2 和 G8 的唯一真值来源，必须在此集中定义）
+                let is_fact_rs = path.file_name().and_then(|s| s.to_str()) == Some("fact.rs");
+                if (label.starts_with("S5.2") || label.starts_with("G8")) && is_fact_rs {
+                    continue;
+                }
                 if line.contains(needle) {
                     violations.push((
                         path.clone(),
@@ -358,15 +383,13 @@ fn main() -> ExitCode {
     }
 
     eprintln!();
-    eprintln!("==== {crate_name} compile-time gate FAILED (G8) ====");
+    eprintln!("==== {crate_name} compile-time gate FAILED ====");
     eprintln!("{} violation(s):", violations.len());
     for (path, label, detail) in &violations {
         eprintln!("  [{}] {}: {}", label, path.display(), detail);
     }
     eprintln!();
-    eprintln!("G8 约束（01_设计方案.txt §16.2）：反应器/治理层不得展开");
-    eprintln!("conditional/while_loop/sequence。控制流必须由 TCB 通过 JSON 解释。");
-    eprintln!("这些指令名只应出现在 core_eval.json 和测试 fixture 中。");
+    eprintln!("违规类型：G8=控制流指令字面量 | F11=panic-prone构造 | §5.2=业务术语硬编码");
     eprintln!("紧急跳过：EVORULE_SKIP_GATE=1 cargo build（须有书面理由）");
     ExitCode::FAILURE
 }

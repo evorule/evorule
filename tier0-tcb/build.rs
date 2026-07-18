@@ -13,6 +13,11 @@
 //! | .unwrap()/.expect() | `\.unwrap\(`, `\.expect\(`   | T9       |
 //! | `unsafe`         | `\bunsafe\b`                   | T10      |
 //! | `debug_assert!`  | `\bdebug_assert!`              | T11      |
+//! | f32/f64/Float    | `f32`, `f64`, `Float`          | T12      |
+//! | SystemTime/Instant | `SystemTime`, `Instant`      | T5       |
+//! | rand/random()    | `rand::`, `random()`           | T6       |
+//! | I/O (fs/net/io) | `std::fs::`, `std::net::`, etc | T4       |
+//! | thread/async     | `std::thread`, `tokio::`, etc  | T14      |
 //!
 //! # Skip the gate (emergency only)
 //!
@@ -42,6 +47,28 @@ const FORBIDDEN: &[(&str, &str)] = &[
     ("T10-unsafe-keyword", "unsafe"),
     // T11: debug-only assertion (must be reachable in release)
     ("T11-debug_assert", "debug_assert!"),
+    // T12: floating-point types (non-deterministic across platforms)
+    ("T12-f32", "f32"),
+    ("T12-f64", "f64"),
+    ("T12-Float", "Float"),
+    // T5: system time (breaks determinism)
+    ("T5-SystemTime", "SystemTime"),
+    ("T5-Instant", "Instant"),
+    // T6: random number generation
+    ("T6-rand", "rand::"),
+    ("T6-random", "random()"),
+    // T4: I/O operations (file, network, database, process)
+    ("T4-std-fs", "std::fs::"),
+    ("T4-std-net", "std::net::"),
+    ("T4-std-io", "std::io::"),
+    ("T4-File-open", "File::open"),
+    ("T4-std-process", "std::process::"),
+    // T14: threads and async runtime
+    ("T14-std-thread", "std::thread"),
+    ("T14-tokio", "tokio::"),
+    ("T14-async", "async"),
+    ("T14-await", "await"),
+    ("T14-spawn", "spawn("),
 ];
 
 /// Strip `#[cfg(test)] mod tests { ... }` block bodies from source.
@@ -385,15 +412,12 @@ fn main() -> ExitCode {
                 // catches 99% of false positives.
                 let trimmed = line.trim_start();
                 let is_comment = trimmed.starts_with("//");
-                let skip_for_comment = match *label {
-                    // `unsafe` mentioned in doc-comments is fine, AND
-                    // inside lint attributes like #[forbid(unsafe_code)].
-                    l if l.contains("unsafe") => {
-                        is_comment || trimmed.starts_with("#[") || trimmed.starts_with("#!")
-                    }
-                    // `.unwrap(` / `.expect(` shown in doc-comments is fine.
-                    "T9-unwrap-call" | "T9-expect-call" => is_comment,
-                    _ => false,
+                // All patterns: skip doc/line comments.
+                // `unsafe` additionally skips lint attributes like #[forbid(unsafe_code)].
+                let skip_for_comment = if label.contains("unsafe") {
+                    is_comment || trimmed.starts_with("#[") || trimmed.starts_with("#!")
+                } else {
+                    is_comment
                 };
                 if skip_for_comment {
                     continue;

@@ -1,4 +1,4 @@
-//! TheEquation 反应式执行器
+﻿//! TheEquation 反应式执行器
 //!
 //! # 设计原则
 //! - 事实驱动：所有交互通过 Fact 通道进行
@@ -28,6 +28,8 @@
 //! - `io_timeout_policy` — I/O 超时阈值策略（阶段3-1.4）
 //! - `metrics` — 可观测性指标（阶段3-1.5）
 //! - `time_machine` — 时间机器 rewind/fork/diff/replay（阶段5，软回滚模式）
+//! - `debug_control` — 调试器级控制 pause/resume/step（阶段6，第四组）
+//! - `pure` — 纯逻辑模块，Kani 形式化验证准备（阶段7，第五组）
 //!
 //! # 使用示例
 //! ```ignore
@@ -59,33 +61,42 @@
 //! }
 //! ```
 
-#![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(clippy::unwrap_used)]
 
 mod channel;
+mod debug_control;
 mod error;
 mod fact;
 mod facts_log;
+#[cfg(feature = "ffi")]
+mod ffi;
 mod invariants;
 mod io_timeout_policy;
 mod metrics;
 mod phase;
+#[allow(dead_code)]
+mod pure;
 mod reactor;
+mod rule_safety;
+mod rule_validator;
 mod stable_detector;
 mod state;
 mod time_machine;
 mod wal;
 
 pub use channel::{ChannelPair, EventReceiver, EventSender, FactReceiver, FactSender};
+pub use debug_control::{BreakCondition, DebugControl};
 pub use error::ReactorError;
-pub use fact::{Fact, FactId, FactIdGenerator, IoType};
+pub use fact::{ControlFlowType, Fact, FactId, FactIdGenerator, IoType};
 pub use facts_log::{FactsLog, FactsLogError};
 pub use invariants::InvariantViolation;
 pub use io_timeout_policy::{IoTimeoutPolicy, TimeoutThreshold};
 pub use metrics::ReactorMetrics;
 pub use phase::{PhaseContext, ReactorPhase};
-pub use reactor::{Reactor, ReactorBuilder, ReactorHandle, ReactorStateSnapshot};
+pub use reactor::{PendingIoEntry, Reactor, ReactorBuilder, ReactorHandle, ReactorStateSnapshot};
+pub use rule_safety::{RuleSafetyAnalyzer, SafetyMetrics, SafetyReport};
+pub use rule_validator::{RuleValidator, ValidationError, ValidationResult};
 pub use stable_detector::StableDetector;
 pub use time_machine::{diff, fork, replay, rewind, PayloadDiff, RewindSnapshot};
 pub use wal::{

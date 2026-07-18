@@ -1,4 +1,4 @@
-//! I/O Handler trait 定义
+﻿//! I/O Handler trait 定义
 //!
 //! 所有 I/O handler 实现此 trait，由 `IoDispatcher` 根据 `IoType` 分发。
 

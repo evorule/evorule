@@ -540,7 +540,6 @@ impl From<bool> for JsonValue {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -718,66 +717,123 @@ mod tests {
     fn test_ord_null_is_smallest() {
         assert_eq!(JsonValue::Null.cmp(&JsonValue::Null), Ordering::Equal);
         assert_eq!(JsonValue::Null.cmp(&JsonValue::Bool(false)), Ordering::Less);
-        assert_eq!(JsonValue::Bool(false).cmp(&JsonValue::Null), Ordering::Greater);
+        assert_eq!(
+            JsonValue::Bool(false).cmp(&JsonValue::Null),
+            Ordering::Greater
+        );
         assert_eq!(JsonValue::Null.cmp(&JsonValue::Integer(0)), Ordering::Less);
         assert_eq!(JsonValue::Null.cmp(&JsonValue::string("")), Ordering::Less);
-        assert_eq!(JsonValue::Null.cmp(&JsonValue::empty_array()), Ordering::Less);
-        assert_eq!(JsonValue::Null.cmp(&JsonValue::empty_object()), Ordering::Less);
+        assert_eq!(
+            JsonValue::Null.cmp(&JsonValue::empty_array()),
+            Ordering::Less
+        );
+        assert_eq!(
+            JsonValue::Null.cmp(&JsonValue::empty_object()),
+            Ordering::Less
+        );
     }
 
     /// 验证 Bool < Integer < String
     #[test]
     fn test_ord_type_grouping_bool_integer_string() {
         // 同类型内
-        assert_eq!(JsonValue::Bool(true).cmp(&JsonValue::Bool(false)), Ordering::Greater);
-        assert_eq!(JsonValue::Integer(0).cmp(&JsonValue::Integer(1)), Ordering::Less);
-        assert_eq!(JsonValue::string("a").cmp(&JsonValue::string("b")), Ordering::Less);
+        assert_eq!(
+            JsonValue::Bool(true).cmp(&JsonValue::Bool(false)),
+            Ordering::Greater
+        );
+        assert_eq!(
+            JsonValue::Integer(0).cmp(&JsonValue::Integer(1)),
+            Ordering::Less
+        );
+        assert_eq!(
+            JsonValue::string("a").cmp(&JsonValue::string("b")),
+            Ordering::Less
+        );
         // 跨类型
-        assert_eq!(JsonValue::Bool(false).cmp(&JsonValue::Integer(0)), Ordering::Less);
-        assert_eq!(JsonValue::Integer(99).cmp(&JsonValue::Bool(true)), Ordering::Greater);
-        assert_eq!(JsonValue::Integer(99).cmp(&JsonValue::string("a")), Ordering::Less);
-        assert_eq!(JsonValue::string("z").cmp(&JsonValue::Integer(0)), Ordering::Greater);
+        assert_eq!(
+            JsonValue::Bool(false).cmp(&JsonValue::Integer(0)),
+            Ordering::Less
+        );
+        assert_eq!(
+            JsonValue::Integer(99).cmp(&JsonValue::Bool(true)),
+            Ordering::Greater
+        );
+        assert_eq!(
+            JsonValue::Integer(99).cmp(&JsonValue::string("a")),
+            Ordering::Less
+        );
+        assert_eq!(
+            JsonValue::string("z").cmp(&JsonValue::Integer(0)),
+            Ordering::Greater
+        );
     }
 
     /// 验证 String < Array
     #[test]
     fn test_ord_string_lt_array() {
-        assert_eq!(JsonValue::string("z").cmp(&JsonValue::empty_array()), Ordering::Less);
-        assert_eq!(JsonValue::empty_array().cmp(&JsonValue::string("")), Ordering::Greater);
+        assert_eq!(
+            JsonValue::string("z").cmp(&JsonValue::empty_array()),
+            Ordering::Less
+        );
+        assert_eq!(
+            JsonValue::empty_array().cmp(&JsonValue::string("")),
+            Ordering::Greater
+        );
     }
 
     /// 验证 Array < Object
     #[test]
     fn test_ord_array_lt_object() {
-        assert_eq!(JsonValue::empty_array().cmp(&JsonValue::empty_object()), Ordering::Less);
-        assert_eq!(JsonValue::empty_object().cmp(&JsonValue::empty_array()), Ordering::Greater);
+        assert_eq!(
+            JsonValue::empty_array().cmp(&JsonValue::empty_object()),
+            Ordering::Less
+        );
+        assert_eq!(
+            JsonValue::empty_object().cmp(&JsonValue::empty_array()),
+            Ordering::Greater
+        );
     }
 
     /// 验证 Object 按字典序比较键值对
     #[test]
     fn test_ord_object_lexicographic() {
         // 空对象
-        assert_eq!(JsonValue::empty_object().cmp(&JsonValue::empty_object()), Ordering::Equal);
+        assert_eq!(
+            JsonValue::empty_object().cmp(&JsonValue::empty_object()),
+            Ordering::Equal
+        );
         // 长度不同 (短 < 长)
         let mut short = BTreeMap::new();
         short.insert("a".to_string(), JsonValue::Integer(1));
         let mut long = BTreeMap::new();
         long.insert("a".to_string(), JsonValue::Integer(1));
         long.insert("b".to_string(), JsonValue::Integer(2));
-        assert_eq!(JsonValue::object(short.clone()).cmp(&JsonValue::object(long)), Ordering::Less);
+        assert_eq!(
+            JsonValue::object(short.clone()).cmp(&JsonValue::object(long)),
+            Ordering::Less
+        );
 
         // 同长度, key 不同: {"a": 1} < {"b": 1}
         let mut a = BTreeMap::new();
         a.insert("a".to_string(), JsonValue::Integer(1));
         let mut b = BTreeMap::new();
         b.insert("b".to_string(), JsonValue::Integer(1));
-        assert_eq!(JsonValue::object(a.clone()).cmp(&JsonValue::object(b.clone())), Ordering::Less);
-        assert_eq!(JsonValue::object(b).cmp(&JsonValue::object(a.clone())), Ordering::Greater);
+        assert_eq!(
+            JsonValue::object(a.clone()).cmp(&JsonValue::object(b.clone())),
+            Ordering::Less
+        );
+        assert_eq!(
+            JsonValue::object(b).cmp(&JsonValue::object(a.clone())),
+            Ordering::Greater
+        );
 
         // 同长度 + 同 key, value 不同: {"a": 1} < {"a": 2}
         let mut a2 = BTreeMap::new();
         a2.insert("a".to_string(), JsonValue::Integer(2));
-        assert_eq!(JsonValue::object(a).cmp(&JsonValue::object(a2)), Ordering::Less);
+        assert_eq!(
+            JsonValue::object(a).cmp(&JsonValue::object(a2)),
+            Ordering::Less
+        );
     }
 
     // ===== PartialOrd (L113-118) =====
@@ -899,7 +955,10 @@ mod tests {
     #[test]
     fn test_from_vec() {
         let v: JsonValue = vec![JsonValue::Integer(1), JsonValue::Integer(2)].into();
-        assert_eq!(v, JsonValue::array(vec![JsonValue::Integer(1), JsonValue::Integer(2)]));
+        assert_eq!(
+            v,
+            JsonValue::array(vec![JsonValue::Integer(1), JsonValue::Integer(2)])
+        );
         // 空 vec
         let empty: JsonValue = Vec::<JsonValue>::new().into();
         assert_eq!(empty, JsonValue::empty_array());
@@ -943,7 +1002,11 @@ mod tests {
     fn test_array_ord_internal_cmp() {
         let a = JsonValue::Array(vec![JsonValue::Integer(1), JsonValue::Integer(2)]);
         let b = JsonValue::Array(vec![JsonValue::Integer(1), JsonValue::Integer(3)]);
-        let c = JsonValue::Array(vec![JsonValue::Integer(1), JsonValue::Integer(2), JsonValue::Integer(0)]);
+        let c = JsonValue::Array(vec![
+            JsonValue::Integer(1),
+            JsonValue::Integer(2),
+            JsonValue::Integer(0),
+        ]);
         let d = JsonValue::Array(vec![JsonValue::Integer(1), JsonValue::Integer(2)]);
 
         // 前缀相同, 末项不同
@@ -961,10 +1024,7 @@ mod tests {
     /// 验证 Object Ord 中 "a 有 b 无" 边 (Some(_), None) => Greater
     #[test]
     fn test_object_ord_some_none_edge() {
-        let small = JsonValue::Object(BTreeMap::from([(
-            "a".to_string(),
-            JsonValue::Integer(1),
-        )]));
+        let small = JsonValue::Object(BTreeMap::from([("a".to_string(), JsonValue::Integer(1))]));
         let big = JsonValue::Object(BTreeMap::from([
             ("a".to_string(), JsonValue::Integer(1)),
             ("b".to_string(), JsonValue::Integer(2)),
@@ -979,10 +1039,7 @@ mod tests {
     /// 验证 Object 的 get_mut 成功分支 (非 _ => None 分支)
     #[test]
     fn test_object_get_mut_object_branch() {
-        let mut obj = JsonValue::Object(BTreeMap::from([(
-            "a".to_string(),
-            JsonValue::Integer(1),
-        )]));
+        let mut obj = JsonValue::Object(BTreeMap::from([("a".to_string(), JsonValue::Integer(1))]));
 
         // 存在 key 返回 Some(&mut V)
         let v = obj.get_mut("a").expect("key 'a' should exist");
@@ -1045,10 +1102,22 @@ mod tests {
         let mut m = BTreeMap::new();
         // 用 chr 显式构造, 避免 Rust 字符串字面量的转义层叠混乱
         // 一个反斜杠 -> Display 后是两个反斜杠
-        m.insert(format!("back{}slash", char::from(b'\\' as u8)).into(), JsonValue::Integer(1));
-        m.insert(format!("new{}line", char::from(b'\n' as u8)).into(), JsonValue::Integer(2));
-        m.insert(format!("carriage{}return", char::from(b'\r' as u8)).into(), JsonValue::Integer(3));
-        m.insert(format!("tab{}char", char::from(b'\t' as u8)).into(), JsonValue::Integer(4));
+        m.insert(
+            format!("back{}slash", char::from(b'\\')),
+            JsonValue::Integer(1),
+        );
+        m.insert(
+            format!("new{}line", char::from(b'\n')),
+            JsonValue::Integer(2),
+        );
+        m.insert(
+            format!("carriage{}return", char::from(b'\r')),
+            JsonValue::Integer(3),
+        );
+        m.insert(
+            format!("tab{}char", char::from(b'\t')),
+            JsonValue::Integer(4),
+        );
         let obj = JsonValue::Object(m);
 
         let s = format!("{}", obj);
@@ -1060,4 +1129,3 @@ mod tests {
         assert!(s.contains("\\t"), "tab 转义失败, got: {}", s);
     }
 }
-

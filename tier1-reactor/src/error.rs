@@ -1,4 +1,4 @@
-//! 反应器错误类型
+﻿//! 反应器错误类型
 
 /// 反应器错误
 #[derive(Debug, Clone, PartialEq, Eq)]

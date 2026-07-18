@@ -601,7 +601,6 @@ mod tests {
         assert_eq!(resolve_path(&state, "\\"), None);
     }
 
-
     /// 测试：parse_path_segments("") 直接调用覆盖空路径防御检查 (path.rs L210-211)
     /// 注：parse_path_segments 是私有 fn，正常通过 resolve_path 调用时已被前置空检查拦截
     /// 此测试是为了打桩覆盖解析器内部的 defensive guard
@@ -611,5 +610,4 @@ mod tests {
         // 但 parse_path_segments 本身应返回 None（segments 为空）
         assert_eq!(parse_path_segments(""), None);
     }
-
 }

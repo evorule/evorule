@@ -7,7 +7,7 @@
     "sections": [
       "1. 原子计算指令: increment, decrement, set",
       "2. 控制流指令: sequence, conditional, while_loop",
-      "3. I/O 指令映射: call_llm, query_db, http_get, save_memory, call_tool",
+      "3. I/O 指令映射: call_external, query_db, http_get, save_memory, call_service",
       "4. 默认处理: 所有未匹配指令 -> noop (all([]) 兜底规则)"
     ]
   },
@@ -168,7 +168,7 @@
       "params": {
         "domain": {
           "type": "instruction",
-          "instruction_type": "call_llm"
+          "instruction_type": "call_external"
         },
         "on_true": [
           {
@@ -189,7 +189,7 @@
                 {
                   "type": "io_request",
                   "params": {
-                    "io_type": "call_llm",
+                    "io_type": "call_external",
                     "prompt": "__exec__.instruction.params.prompt",
                     "temperature": "__exec__.instruction.params.temperature",
                     "max_tokens": "__exec__.instruction.params.max_tokens"
@@ -318,7 +318,7 @@
       "params": {
         "domain": {
           "type": "instruction",
-          "instruction_type": "call_tool"
+          "instruction_type": "call_service"
         },
         "on_true": [
           {
@@ -329,7 +329,7 @@
                 {
                   "type": "set",
                   "params": {
-                    "attr": "tool_result",
+                    "attr": "service_result",
                     "operation": "set",
                     "value": "__exec__.payload.__io_result__"
                   }
@@ -339,8 +339,8 @@
                 {
                   "type": "io_request",
                   "params": {
-                    "io_type": "call_tool",
-                    "tool_name": "__exec__.instruction.params.tool_name",
+                    "io_type": "call_service",
+                    "service_name": "__exec__.instruction.params.service_name",
                     "args": "__exec__.instruction.params.args"
                   }
                 }

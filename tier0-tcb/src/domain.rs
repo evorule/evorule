@@ -788,7 +788,7 @@ mod tests {
     #[test]
     fn test_instruction_eq_type_set_but_current_missing_returns_false() {
         // state 不包含 __exec__.instruction.type
-        let mut root = BTreeMap::new();
+        let root = BTreeMap::new();
         let state = JsonValue::Object(root);
         let domain = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("instruction")),
@@ -848,9 +848,7 @@ mod tests {
     #[test]
     fn test_eq_empty_domain_returns_false() {
         let state = make_exec_state("noop", make_payload(10));
-        let domain = JsonValue::object_from_pairs(&[
-            ("type", JsonValue::string("eq")),
-        ]);
+        let domain = JsonValue::object_from_pairs(&[("type", JsonValue::string("eq"))]);
         assert!(!evaluate_domain(&domain, &state));
     }
 
@@ -882,10 +880,7 @@ mod tests {
     #[test]
     fn test_exists_without_path_field_returns_false() {
         let state = make_exec_state("noop", make_payload(10));
-        let domain = JsonValue::object_from_pairs(&[
-            ("type", JsonValue::string("exists")),
-        ]);
+        let domain = JsonValue::object_from_pairs(&[("type", JsonValue::string("exists"))]);
         assert!(!evaluate_domain(&domain, &state));
     }
-
 }

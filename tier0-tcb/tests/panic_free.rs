@@ -100,41 +100,41 @@ fn all_jsonvalues() -> Vec<JsonValue> {
 
 /// Adversarial string inputs for paths, keys, and string values.
 const ADVERSARIAL_STRINGS: &[&str] = &[
-    "",                          // empty
-    ".",                         // single dot
-    "..",                        // double dot
-    "...",                       // triple dot
-    "a",                         // single char
-    "a.b",                       // normal path
-    "a.b.c.d.e.f",               // deep path
-    ".a",                        // leading dot
-    "a.",                        // trailing dot
-    "a..b",                      // double dot mid
-    "a...b",                     // triple dot mid
-    "\\",                        // backslash
-    "\\\\",                      // double backslash
-    "\0",                        // NUL
-    "\n",                        // newline
-    "\r",                        // carriage return
-    "\t",                        // tab
-    "a\0b",                      // embedded NUL
-    "a\nb",                      // embedded newline
-    "a/b/c",                     // slashes
-    "user.name@domain.com",      // email
-    "key with spaces",           // spaces
-    "\u{1F511}unicode\u{1F511}", // emoji
-    "\u{200B}zero\u{200B}width", // zero-width space
-    "a[0]",                      // bracket
-    "a.0",                       // numeric segment
-    "a[invalid]",                // malformed bracket
-    "a.[0]",                     // dot before bracket
-    "\u{4E2D}\u{6587}\u{952E}\u{540D}", // Chinese
-    "\u{03A9}",                  // Greek
-    "\u{1D54F}",                 // math alphanumeric
-    "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-=",  // 64 chars
-    "a[",                          // unclosed bracket (parse_path_segments L201)
-    "a[]",                         // empty brackets (parse_path_segments L205)
-    "a[0",                         // unclosed bracket with idx_str="0" (L201)
+    "",                                                                  // empty
+    ".",                                                                 // single dot
+    "..",                                                                // double dot
+    "...",                                                               // triple dot
+    "a",                                                                 // single char
+    "a.b",                                                               // normal path
+    "a.b.c.d.e.f",                                                       // deep path
+    ".a",                                                                // leading dot
+    "a.",                                                                // trailing dot
+    "a..b",                                                              // double dot mid
+    "a...b",                                                             // triple dot mid
+    "\\",                                                                // backslash
+    "\\\\",                                                              // double backslash
+    "\0",                                                                // NUL
+    "\n",                                                                // newline
+    "\r",                                                                // carriage return
+    "\t",                                                                // tab
+    "a\0b",                                                              // embedded NUL
+    "a\nb",                                                              // embedded newline
+    "a/b/c",                                                             // slashes
+    "user.name@domain.com",                                              // email
+    "key with spaces",                                                   // spaces
+    "\u{1F511}unicode\u{1F511}",                                         // emoji
+    "\u{200B}zero\u{200B}width",                                         // zero-width space
+    "a[0]",                                                              // bracket
+    "a.0",                                                               // numeric segment
+    "a[invalid]",                                                        // malformed bracket
+    "a.[0]",                                                             // dot before bracket
+    "\u{4E2D}\u{6587}\u{952E}\u{540D}",                                  // Chinese
+    "\u{03A9}",                                                          // Greek
+    "\u{1D54F}",                                                         // math alphanumeric
+    "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-=", // 64 chars
+    "a[",  // unclosed bracket (parse_path_segments L201)
+    "a[]", // empty brackets (parse_path_segments L205)
+    "a[0", // unclosed bracket with idx_str="0" (L201)
 ];
 
 // ============================================================================
@@ -281,15 +281,7 @@ fn panic_free_string_constructor_with_adversarial_inputs() {
 
 #[test]
 fn panic_free_i64_constructor_with_boundary_values() {
-    for &v in &[
-        0i64,
-        1,
-        -1,
-        i64::MAX,
-        i64::MIN,
-        i64::MAX - 1,
-        i64::MIN + 1,
-    ] {
+    for &v in &[0i64, 1, -1, i64::MAX, i64::MIN, i64::MAX - 1, i64::MIN + 1] {
         let desc = v.to_string();
         assert_no_panic(&format!("Integer({})", desc), || {
             let _ = JsonValue::Integer(v);
@@ -437,7 +429,11 @@ fn panic_free_resolve_path_on_all_states_and_paths() {
     for v in all_jsonvalues() {
         for &path in ADVERSARIAL_STRINGS {
             assert_no_panic(
-                &format!("resolve_path(state={}, path={:?})", describe_variant(&v), path),
+                &format!(
+                    "resolve_path(state={}, path={:?})",
+                    describe_variant(&v),
+                    path
+                ),
                 || {
                     let _ = resolve_path(&v, path);
                 },
@@ -450,12 +446,9 @@ fn panic_free_resolve_path_on_all_states_and_paths() {
 fn panic_free_resolve_path_mut_on_all_states_and_paths() {
     for mut v in all_jsonvalues() {
         for &path in ADVERSARIAL_STRINGS {
-            assert_no_panic(
-                &format!("resolve_path_mut(path={:?})", path),
-                || {
-                    let _ = resolve_path_mut(&mut v, path);
-                },
-            );
+            assert_no_panic(&format!("resolve_path_mut(path={:?})", path), || {
+                let _ = resolve_path_mut(&mut v, path);
+            });
         }
     }
 }
@@ -497,7 +490,11 @@ fn panic_free_execute_transition_arbitrary_inputs() {
     ];
     let instructions = all_jsonvalues();
     let payloads = all_jsonvalues();
-    let queues: Vec<Vec<JsonValue>> = vec![vec![], all_jsonvalues(), (0..32).map(JsonValue::Integer).collect()];
+    let queues: Vec<Vec<JsonValue>> = vec![
+        vec![],
+        all_jsonvalues(),
+        (0..32).map(JsonValue::Integer).collect(),
+    ];
 
     let mut case_count = 0u64;
     for core_eval in &core_eval_cases {
@@ -581,11 +578,7 @@ fn panic_free_tcb_error_traits_via_observed_errors() {
             JsonValue::String("not_an_object".into()),
             JsonValue::Null,
         ),
-        (
-            "instr=Array",
-            JsonValue::array(vec![]),
-            JsonValue::Null,
-        ),
+        ("instr=Array", JsonValue::array(vec![]), JsonValue::Null),
         (
             "instr=Object empty",
             JsonValue::object(BTreeMap::new()),

@@ -65,7 +65,7 @@ class Event:
 
     @property
     def io_type(self) -> str | None:
-        """IoRequest 事件的 I/O 类型（call_llm / query_db / http_get / save_memory / call_tool）"""
+        """IoRequest 事件的 I/O 类型（call_external / query_db / http_get / save_memory / call_service）"""
         return self.raw.get("io_type")
 
     @property

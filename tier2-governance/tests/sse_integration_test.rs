@@ -179,11 +179,11 @@ async fn test_sse_io_request_event() {
 
     let mut event_rx = event_tx.subscribe();
 
-    // 发送 call_llm 指令触发 IoRequest
+    // 发送 call_external 指令触发 IoRequest
     let mut params = BTreeMap::new();
     params.insert("prompt".to_string(), JsonValue::string("test"));
     let mut instr = BTreeMap::new();
-    instr.insert("type".to_string(), JsonValue::string("call_llm"));
+    instr.insert("type".to_string(), JsonValue::string("call_external"));
     instr.insert("params".to_string(), JsonValue::Object(params));
 
     tx.send(Fact::Command {
@@ -204,5 +204,5 @@ async fn test_sse_io_request_event() {
     .await
     .expect("timeout waiting for IoRequest");
 
-    assert_eq!(io_request, IoType::CallLlm);
+    assert_eq!(io_request, IoType::CallExternal);
 }

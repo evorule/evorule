@@ -79,7 +79,6 @@ mod std_impls {
     impl std::error::Error for TcbError {}
 }
 
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -109,10 +108,7 @@ mod tests {
             format!("{}", TcbError::InvalidState),
             "invalid state structure"
         );
-        assert_eq!(
-            format!("{}", TcbError::InvalidType),
-            "invalid type"
-        );
+        assert_eq!(format!("{}", TcbError::InvalidType), "invalid type");
         assert_eq!(
             format!("{}", TcbError::PathResolutionFailed("x.y".to_string())),
             "path resolution failed: x.y"
@@ -136,13 +132,7 @@ mod tests {
     fn test_partial_eq_same_variant() {
         assert_eq!(TcbError::InvalidState, TcbError::InvalidState);
         assert_ne!(TcbError::InvalidState, TcbError::InvalidType);
-        assert_eq!(
-            TcbError::MissingField("x"),
-            TcbError::MissingField("x")
-        );
-        assert_ne!(
-            TcbError::MissingField("x"),
-            TcbError::MissingField("y")
-        );
+        assert_eq!(TcbError::MissingField("x"), TcbError::MissingField("x"));
+        assert_ne!(TcbError::MissingField("x"), TcbError::MissingField("y"));
     }
 }

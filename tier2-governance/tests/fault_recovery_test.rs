@@ -11,8 +11,7 @@ use tier1_reactor::{Fact, Reactor};
 use tier2_governance::{
     io_dispatcher::IoDispatcher,
     io_handlers::{
-        db_handler::DbHandler, http_handler::HttpHandler, llm_handler::LlmHandler,
-        memory_handler::MemoryHandler, tool_handler::ToolHandler,
+        db_handler::DbHandler, http_handler::HttpHandler, memory_handler::MemoryHandler,
     },
     io_subscriber::IoSubscriber,
 };
@@ -62,13 +61,13 @@ fn load_core_eval() -> Vec<JsonValue> {
         .unwrap_or_default()
 }
 
-/// 构造 call_tool 指令
-fn make_call_tool_instruction(tool_name: &str, args: &str) -> JsonValue {
+/// 构造 call_service 指令
+fn make_call_service_instruction(service_name: &str, args: &str) -> JsonValue {
     let mut params = BTreeMap::new();
-    params.insert("tool_name".to_string(), JsonValue::string(tool_name));
+    params.insert("service_name".to_string(), JsonValue::string(service_name));
     params.insert("args".to_string(), JsonValue::string(args));
     let mut instr = BTreeMap::new();
-    instr.insert("type".to_string(), JsonValue::string("call_tool"));
+    instr.insert("type".to_string(), JsonValue::string("call_service"));
     instr.insert("params".to_string(), JsonValue::Object(params));
     JsonValue::Object(instr)
 }
@@ -94,31 +93,15 @@ fn make_sequence_instruction(instructions: Vec<JsonValue>) -> JsonValue {
     JsonValue::Object(instr)
 }
 
-/// 创建测试用 IoDispatcher（注册 echo 工具，不注册其他工具以触发错误）
+/// 创建测试用 IoDispatcher
 async fn create_test_dispatcher(temp_dir: &std::path::Path) -> IoDispatcher {
-    let llm = LlmHandler::new("dummy_key".to_string(), None);
     let db = DbHandler::connect("sqlite::memory:")
         .await
         .expect("Failed to connect to in-memory SQLite");
     let http = HttpHandler::new();
     let memory = MemoryHandler::new(temp_dir.to_path_buf());
 
-    let mut tool = ToolHandler::new();
-    // 注册 echo 工具
-    tool.register(
-        "echo".to_string(),
-        Box::new(|args: &JsonValue| {
-            let args_owned = args.clone();
-            Box::pin(async move {
-                Ok(JsonValue::string(format!(
-                    "echo: {}",
-                    args_owned.as_str().unwrap_or("(non-string)")
-                )))
-            })
-        }),
-    );
-
-    IoDispatcher::new(llm, db, http, memory, tool)
+    IoDispatcher::new(db, http, memory)
 }
 
 /// 收集事件直到 Stable 或 Error，返回 (errors, stable_snapshot)
@@ -174,7 +157,7 @@ async fn test_io_error_propagation() {
     // 调用不存在的工具 "nonexistent_tool"
     let cmd = Fact::Command {
         id: tier1_reactor::FactId(20000),
-        instruction: make_call_tool_instruction("nonexistent_tool", "test"),
+        instruction: make_call_service_instruction("nonexistent_tool", "test"),
     };
     tx.send(cmd).unwrap();
 
@@ -190,7 +173,7 @@ async fn test_io_error_propagation() {
 
 /// P3-10 测试 2：I/O 超时恢复
 ///
-/// 发送 call_tool 指令但不启动 IoSubscriber（模拟 IoResponse 永不到达）
+/// 发送 call_service 指令但不启动 IoSubscriber（模拟 IoResponse 永不到达）
 /// → 反应器应在 io_error_timeout 后发射 Error 并恢复到 Stable
 #[tokio::test]
 async fn test_io_timeout_recovery() {
@@ -208,10 +191,10 @@ async fn test_io_timeout_recovery() {
 
     // 注意：不启动 IoSubscriber，模拟 IoResponse 永不到达
 
-    // 发送 call_tool 指令 → 触发 IoRequest → 无响应 → 超时
+    // 发送 call_service 指令 → 触发 IoRequest → 无响应 → 超时
     let cmd = Fact::Command {
         id: tier1_reactor::FactId(20000),
-        instruction: make_call_tool_instruction("echo", "hello"),
+        instruction: make_call_service_instruction("echo", "hello"),
     };
     tx.send(cmd).unwrap();
 
@@ -337,7 +320,7 @@ async fn test_reactor_continues_after_error() {
 
 /// P3-10 测试 5：I/O 超时恢复后继续服务
 ///
-/// 1. 发送 call_tool 但不启动 IoSubscriber → I/O 超时 Error + Stable
+/// 1. 发送 call_service 但不启动 IoSubscriber → I/O 超时 Error + Stable
 /// 2. 发送正常 increment 指令 → 应正常执行
 /// 验证 I/O 超时恢复后反应器仍能继续服务
 #[tokio::test]
@@ -356,7 +339,7 @@ async fn test_reactor_continues_after_io_timeout() {
     // 第一阶段：I/O 超时（不启动 IoSubscriber）
     let cmd1 = Fact::Command {
         id: tier1_reactor::FactId(20000),
-        instruction: make_call_tool_instruction("echo", "hello"),
+        instruction: make_call_service_instruction("echo", "hello"),
     };
     tx.send(cmd1).unwrap();
 
@@ -389,7 +372,7 @@ async fn test_reactor_continues_after_io_timeout() {
 
 /// P3-10 测试 6：正常 I/O 流程（对照测试）
 ///
-/// 启动 IoSubscriber，发送 call_tool("echo") 指令
+/// 启动 IoSubscriber，发送 call_service("echo") 指令
 /// → IoRequest → IoSubscriber 执行 → IoResponse → 反应器恢复 → Stable
 #[tokio::test]
 async fn test_normal_io_flow() {
@@ -414,7 +397,7 @@ async fn test_normal_io_flow() {
     // 发送 echo 工具调用
     let cmd = Fact::Command {
         id: tier1_reactor::FactId(20000),
-        instruction: make_call_tool_instruction("echo", "test_input"),
+        instruction: make_call_service_instruction("echo", "test_input"),
     };
     tx.send(cmd).unwrap();
 

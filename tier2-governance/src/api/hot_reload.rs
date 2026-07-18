@@ -1,4 +1,4 @@
-//! 业务规则热重载
+﻿//! 业务规则热重载
 //!
 //! 监听 `core_eval.json` 文件变化，自动重新加载 transform 列表。
 //! 通过 `tokio::sync::watch` 通道通知上层组件（如反应器）使用新配置。
@@ -11,7 +11,8 @@
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::PathBuf;
-use tier0_tcb::JsonValue;
+use tier0_tcb::{execute_transition, JsonValue, TransitionResult};
+use tier1_reactor::{ControlFlowType, IoType};
 use tokio::sync::watch;
 use tracing::{error, info, warn};
 
@@ -29,6 +30,21 @@ pub enum HotReloadError {
     /// 文件监听失败
     #[error("Failed to watch file: {0}")]
     WatchError(String),
+
+    /// 配置验证失败
+    #[error("Config validation failed: {0}")]
+    ValidationError(String),
+}
+
+/// 配置验证结果
+#[derive(Debug, Clone)]
+pub struct ValidationResult {
+    /// 是否通过验证
+    pub valid: bool,
+    /// 错误信息列表
+    pub errors: Vec<String>,
+    /// 警告信息列表
+    pub warnings: Vec<String>,
 }
 
 /// 将 `serde_json::Value` 转换为 `tier0_tcb::JsonValue`
@@ -74,6 +90,183 @@ pub fn load_core_eval(path: &PathBuf) -> Result<Vec<JsonValue>, HotReloadError> 
     Ok(transform)
 }
 
+/// 验证 core_eval 配置合法性（干跑测试）
+///
+/// 通过在沙箱 payload 上预执行所有支持的指令类型，验证 core_eval 的 transform 列表是否有效。
+/// 这确保热重载的配置不会导致反应器运行时崩溃。
+pub fn validate_core_eval(core_eval: &[JsonValue]) -> ValidationResult {
+    let mut result = ValidationResult {
+        valid: true,
+        errors: Vec::new(),
+        warnings: Vec::new(),
+    };
+
+    // 沙箱 payload（空对象）
+    let sandbox_payload = JsonValue::Object(std::collections::BTreeMap::new());
+
+    // 测试指令列表：覆盖 core_eval.json 中所有合法指令类型
+    let test_instructions = vec![
+        // 原子计算指令
+        make_test_instruction(
+            "increment",
+            &[
+                ("attr", JsonValue::string("x")),
+                ("delta", JsonValue::Integer(1)),
+            ],
+        ),
+        make_test_instruction(
+            "decrement",
+            &[
+                ("attr", JsonValue::string("x")),
+                ("delta", JsonValue::Integer(1)),
+            ],
+        ),
+        make_test_instruction(
+            "set",
+            &[
+                ("attr", JsonValue::string("x")),
+                ("operation", JsonValue::string("set")),
+                ("value", JsonValue::Integer(42)),
+            ],
+        ),
+        // 控制流指令
+        make_test_instruction(
+            ControlFlowType::Sequence.as_str(),
+            &[(
+                "instructions",
+                JsonValue::array(vec![make_test_instruction("noop", &[])]),
+            )],
+        ),
+        make_test_instruction(
+            ControlFlowType::Conditional.as_str(),
+            &[
+                (
+                    "domain",
+                    JsonValue::object_from_pairs(&[
+                        ("type", JsonValue::string("all")),
+                        ("inner", JsonValue::empty_array()),
+                    ]),
+                ),
+                ("then", make_test_instruction("noop", &[])),
+                ("else", make_test_instruction("noop", &[])),
+            ],
+        ),
+        make_test_instruction(
+            ControlFlowType::WhileLoop.as_str(),
+            &[
+                (
+                    "condition",
+                    JsonValue::object_from_pairs(&[
+                        ("type", JsonValue::string("all")),
+                        ("inner", JsonValue::empty_array()),
+                    ]),
+                ),
+                ("body", make_test_instruction("noop", &[])),
+            ],
+        ),
+        // I/O 指令
+        make_test_instruction(
+            IoType::CallExternal.as_str(),
+            &[("url", JsonValue::string("https://example.com"))],
+        ),
+        make_test_instruction(
+            IoType::QueryDb.as_str(),
+            &[
+                ("query", JsonValue::string("SELECT 1")),
+                ("params", JsonValue::empty_array()),
+            ],
+        ),
+        make_test_instruction(
+            IoType::HttpGet.as_str(),
+            &[
+                ("url", JsonValue::string("http://localhost")),
+                ("headers", JsonValue::empty_object()),
+                ("timeout_ms", JsonValue::Integer(1000)),
+            ],
+        ),
+        make_test_instruction(
+            IoType::SaveMemory.as_str(),
+            &[
+                ("key", JsonValue::string("test")),
+                ("value", JsonValue::string("data")),
+            ],
+        ),
+        make_test_instruction(
+            IoType::CallService.as_str(),
+            &[
+                ("service_name", JsonValue::string("test")),
+                ("args", JsonValue::empty_object()),
+            ],
+        ),
+        // 兜底指令
+        make_test_instruction("noop", &[]),
+    ];
+
+    // 干跑测试：在沙箱上执行每条指令
+    for instr in &test_instructions {
+        let instr_type = instr
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        match execute_transition(core_eval, instr, &sandbox_payload, &[]) {
+            Ok(TransitionResult::State { .. }) => {
+                // 正常转换
+            }
+            Ok(TransitionResult::IoRequired { .. }) => {
+                // I/O 请求是正常行为（I/O 指令预期会触发 IoRequired）
+            }
+            Err(e) => {
+                result.valid = false;
+                result
+                    .errors
+                    .push(format!("instruction type '{}' failed: {}", instr_type, e));
+            }
+        }
+    }
+
+    // 检查是否有 all([]) 兜底规则
+    let has_catch_all = core_eval.iter().any(|rule| {
+        if let Some(rule_type) = rule.get("type").and_then(|v| v.as_str()) {
+            if rule_type == "branch" {
+                if let Some(params) = rule.get("params") {
+                    if let Some(domain) = params.get("domain") {
+                        if let Some(domain_type) = domain.get("type").and_then(|v| v.as_str()) {
+                            if domain_type == "all" {
+                                if let Some(inner) = domain.get("inner").and_then(|v| v.as_array())
+                                {
+                                    return inner.is_empty();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
+    });
+
+    if !has_catch_all {
+        result
+            .warnings
+            .push("Missing all([]) catch-all rule".to_string());
+    }
+
+    // 检查 transform 列表长度
+    if core_eval.is_empty() {
+        result.warnings.push("Empty transform list".to_string());
+    }
+
+    result
+}
+
+/// 创建测试指令
+fn make_test_instruction(instr_type: &str, params: &[(&str, JsonValue)]) -> JsonValue {
+    JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string(instr_type)),
+        ("params", JsonValue::object_from_pairs(params)),
+    ])
+}
+
 /// 热重载管理器
 ///
 /// 监听配置文件变化，通过 watch 通道广播新配置。
@@ -100,6 +293,19 @@ impl HotReloader {
     ) -> Result<(Self, watch::Receiver<Vec<JsonValue>>), HotReloadError> {
         // 初始加载
         let initial_config = load_core_eval(&config_path)?;
+
+        // 验证初始配置
+        let validation = validate_core_eval(&initial_config);
+        if !validation.valid {
+            let errors = validation.errors.join("; ");
+            return Err(HotReloadError::ValidationError(errors));
+        }
+        if !validation.warnings.is_empty() {
+            for w in &validation.warnings {
+                warn!("Hot reload: config warning - {}", w);
+            }
+        }
+
         info!(
             "Hot reload: initial config loaded with {} transforms from {}",
             initial_config.len(),
@@ -122,10 +328,26 @@ impl HotReloader {
 
                     match load_core_eval(&config_path_for_closure) {
                         Ok(new_config) => {
+                            // 验证新配置（宪法稳定性：只接受合法配置）
+                            let validation = validate_core_eval(&new_config);
+                            if !validation.valid {
+                                error!("Hot reload: config validation failed, rejecting update");
+                                for e in &validation.errors {
+                                    error!("Hot reload: validation error - {}", e);
+                                }
+                                return;
+                            }
+
                             info!(
                                 "Hot reload: config reloaded with {} transforms",
                                 new_config.len()
                             );
+                            if !validation.warnings.is_empty() {
+                                for w in &validation.warnings {
+                                    warn!("Hot reload: config warning - {}", w);
+                                }
+                            }
+
                             if tx_clone.send(new_config).is_err() {
                                 warn!("Hot reload: no receivers, config update dropped");
                             }

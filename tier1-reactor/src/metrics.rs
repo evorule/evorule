@@ -1,4 +1,4 @@
-//! 反应器可观测性指标（阶段3-1.5）
+﻿//! 反应器可观测性指标（阶段3-1.5）
 //!
 //! # 设计
 //!
@@ -167,6 +167,8 @@ mod tests {
             steps,
             queue_len,
             finished,
+            // 阶段6 新增字段使用默认值（测试 helper 不关心 inspect/调试状态）
+            ..Default::default()
         }
     }
 

@@ -33,7 +33,7 @@ pub enum TransitionResult {
 
     /// I/O 请求：需要上层反应器执行 I/O
     IoRequired {
-        /// I/O 类型（如 "call_llm"、"query_db" 等）
+        /// I/O 类型（如 "call_external"、"query_db" 等）
         io_type: String,
         /// I/O 请求参数（路径引用已解析为具体值）
         params: JsonValue,

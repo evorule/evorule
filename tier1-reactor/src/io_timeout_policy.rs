@@ -1,4 +1,4 @@
-//! I/O 超时阈值策略（机制-策略分离：查表是机制，阈值数据来自 JSON）
+﻿//! I/O 超时阈值策略（机制-策略分离：查表是机制，阈值数据来自 JSON）
 //!
 //! # 设计
 //!
@@ -22,7 +22,7 @@
 //! {
 //!   "default": { "warn_secs": 30, "error_secs": 60 },
 //!   "by_io_type": {
-//!     "call_llm": { "warn_secs": 60, "error_secs": 120 },
+//!     "call_external": { "warn_secs": 60, "error_secs": 120 },
 //!     "query_db": { "warn_secs": 5, "error_secs": 15 }
 //!   }
 //! }
@@ -116,7 +116,7 @@ impl IoTimeoutPolicy {
     /// {
     ///   "default": { "warn_secs": 30, "error_secs": 60 },
     ///   "by_io_type": {
-    ///     "call_llm": { "warn_secs": 60, "error_secs": 120 }
+    ///     "call_external": { "warn_secs": 60, "error_secs": 120 }
     ///   }
     /// }
     /// ```
@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn test_default_threshold() {
         let p = IoTimeoutPolicy::with_defaults();
-        let t = p.threshold_for(IoType::CallLlm);
+        let t = p.threshold_for(IoType::CallExternal);
         assert_eq!(t.warn, Duration::from_secs(30));
         assert_eq!(t.error, Duration::from_secs(60));
     }
@@ -187,10 +187,10 @@ mod tests {
     #[test]
     fn test_override_specific_io_type() {
         let p = IoTimeoutPolicy::with_defaults()
-            .with_override(IoType::CallLlm, TimeoutThreshold::from_secs(60, 120));
+            .with_override(IoType::CallExternal, TimeoutThreshold::from_secs(60, 120));
 
         // call_llm 使用覆盖值
-        let t = p.threshold_for(IoType::CallLlm);
+        let t = p.threshold_for(IoType::CallExternal);
         assert_eq!(t.warn, Duration::from_secs(60));
         assert_eq!(t.error, Duration::from_secs(120));
 
@@ -203,12 +203,12 @@ mod tests {
     #[test]
     fn test_multiple_overrides() {
         let p = IoTimeoutPolicy::with_defaults()
-            .with_override(IoType::CallLlm, TimeoutThreshold::from_secs(60, 120))
+            .with_override(IoType::CallExternal, TimeoutThreshold::from_secs(60, 120))
             .with_override(IoType::QueryDb, TimeoutThreshold::from_secs(5, 15));
 
         assert_eq!(p.override_count(), 2);
 
-        let t = p.threshold_for(IoType::CallLlm);
+        let t = p.threshold_for(IoType::CallExternal);
         assert_eq!(t.warn, Duration::from_secs(60));
 
         let t = p.threshold_for(IoType::QueryDb);
@@ -234,7 +234,7 @@ mod tests {
                 "by_io_type",
                 JsonValue::object_from_pairs(&[
                     (
-                        "call_llm",
+                        "call_external",
                         JsonValue::object_from_pairs(&[
                             ("warn_secs", JsonValue::Integer(90)),
                             ("error_secs", JsonValue::Integer(180)),
@@ -258,8 +258,8 @@ mod tests {
         assert_eq!(t.warn, Duration::from_secs(20));
         assert_eq!(t.error, Duration::from_secs(40));
 
-        // call_llm 覆盖
-        let t = p.threshold_for(IoType::CallLlm);
+        // call_external 覆盖
+        let t = p.threshold_for(IoType::CallExternal);
         assert_eq!(t.warn, Duration::from_secs(90));
         assert_eq!(t.error, Duration::from_secs(180));
 
@@ -280,7 +280,7 @@ mod tests {
         let json = JsonValue::object_from_pairs(&[(
             "by_io_type",
             JsonValue::object_from_pairs(&[(
-                "call_llm",
+                "call_external",
                 JsonValue::object_from_pairs(&[
                     ("warn_secs", JsonValue::Integer(60)),
                     ("error_secs", JsonValue::Integer(120)),
@@ -319,7 +319,7 @@ mod tests {
                     ]),
                 ),
                 (
-                    "call_llm",
+                    "call_external",
                     JsonValue::object_from_pairs(&[
                         ("warn_secs", JsonValue::Integer(60)),
                         ("error_secs", JsonValue::Integer(120)),
@@ -329,8 +329,8 @@ mod tests {
         )]);
 
         let p = IoTimeoutPolicy::from_json(&json);
-        assert_eq!(p.override_count(), 1); // 只有 call_llm 被识别
-        let t = p.threshold_for(IoType::CallLlm);
+        assert_eq!(p.override_count(), 1); // 只有 call_external 被识别
+        let t = p.threshold_for(IoType::CallExternal);
         assert_eq!(t.warn, Duration::from_secs(60));
     }
 
@@ -381,14 +381,14 @@ mod tests {
     fn test_threshold_for_all_io_types() {
         // 验证所有 5 个 IoType 都能查表
         let p = IoTimeoutPolicy::with_defaults()
-            .with_override(IoType::CallLlm, TimeoutThreshold::from_secs(1, 2))
+            .with_override(IoType::CallExternal, TimeoutThreshold::from_secs(1, 2))
             .with_override(IoType::QueryDb, TimeoutThreshold::from_secs(3, 4))
             .with_override(IoType::HttpGet, TimeoutThreshold::from_secs(5, 6))
             .with_override(IoType::SaveMemory, TimeoutThreshold::from_secs(7, 8))
-            .with_override(IoType::CallTool, TimeoutThreshold::from_secs(9, 10));
+            .with_override(IoType::CallService, TimeoutThreshold::from_secs(9, 10));
 
         assert_eq!(
-            p.threshold_for(IoType::CallLlm).warn,
+            p.threshold_for(IoType::CallExternal).warn,
             Duration::from_secs(1)
         );
         assert_eq!(
@@ -404,7 +404,7 @@ mod tests {
             Duration::from_secs(7)
         );
         assert_eq!(
-            p.threshold_for(IoType::CallTool).warn,
+            p.threshold_for(IoType::CallService).warn,
             Duration::from_secs(9)
         );
     }

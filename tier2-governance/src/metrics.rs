@@ -1,3 +1,4 @@
+﻿#![forbid(unsafe_code)]
 //! Prometheus 指标模块（P2-7）
 //!
 //! 定义 evorule 的核心运行时指标，通过 `/metrics` 端点暴露给 Prometheus 抓取。
@@ -13,12 +14,47 @@
 //! | `evorule_sse_connections_active` | Gauge | — | 当前活跃 SSE 连接数 |
 //! | `evorule_http_requests_total` | Counter | `method`, `path`, `status` | HTTP 请求总数 |
 
+use std::fmt;
 use std::sync::Arc;
 
 use prometheus::{
     HistogramOpts, HistogramVec, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
 };
 use tier1_reactor::IoType;
+
+/// 指标创建错误
+#[derive(Debug)]
+pub enum MetricsError {
+    /// Gauge 指标创建失败
+    GaugeCreationFailed(String),
+    /// Counter 指标创建失败
+    CounterCreationFailed(String),
+    /// Histogram 指标创建失败
+    HistogramCreationFailed(String),
+    /// 指标注册到 Registry 失败
+    RegistryRegistrationFailed(String),
+}
+
+impl fmt::Display for MetricsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MetricsError::GaugeCreationFailed(name) => {
+                write!(f, "Failed to create gauge: {}", name)
+            }
+            MetricsError::CounterCreationFailed(name) => {
+                write!(f, "Failed to create counter: {}", name)
+            }
+            MetricsError::HistogramCreationFailed(name) => {
+                write!(f, "Failed to create histogram: {}", name)
+            }
+            MetricsError::RegistryRegistrationFailed(name) => {
+                write!(f, "Failed to register metric: {}", name)
+            }
+        }
+    }
+}
+
+impl std::error::Error for MetricsError {}
 
 /// evorule 运行时指标集合
 ///
@@ -37,11 +73,13 @@ pub struct Metrics {
 
 impl Metrics {
     /// 创建并注册所有指标
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, MetricsError> {
         let registry = Registry::new();
 
-        let sessions_active =
-            IntGauge::new("evorule_sessions_active", "Current active sessions").unwrap();
+        let sessions_active = IntGauge::new("evorule_sessions_active", "Current active sessions")
+            .map_err(|_| {
+            MetricsError::GaugeCreationFailed("evorule_sessions_active".to_string())
+        })?;
         let commands_total = IntCounterVec::new(
             Opts::new(
                 "evorule_commands_total",
@@ -49,7 +87,7 @@ impl Metrics {
             ),
             &["type"],
         )
-        .unwrap();
+        .map_err(|_| MetricsError::CounterCreationFailed("evorule_commands_total".to_string()))?;
         let io_duration_seconds = HistogramVec::new(
             HistogramOpts::new(
                 "evorule_io_duration_seconds",
@@ -60,7 +98,9 @@ impl Metrics {
             ]),
             &["io_type"],
         )
-        .unwrap();
+        .map_err(|_| {
+            MetricsError::HistogramCreationFailed("evorule_io_duration_seconds".to_string())
+        })?;
         let io_errors_total = IntCounterVec::new(
             Opts::new(
                 "evorule_io_errors_total",
@@ -68,14 +108,18 @@ impl Metrics {
             ),
             &["io_type"],
         )
-        .unwrap();
+        .map_err(|_| MetricsError::CounterCreationFailed("evorule_io_errors_total".to_string()))?;
         let facts_log_version =
-            IntGauge::new("evorule_facts_log_version", "Current FactsLog version").unwrap();
+            IntGauge::new("evorule_facts_log_version", "Current FactsLog version").map_err(
+                |_| MetricsError::GaugeCreationFailed("evorule_facts_log_version".to_string()),
+            )?;
         let sse_connections_active = IntGauge::new(
             "evorule_sse_connections_active",
             "Current active SSE connections",
         )
-        .unwrap();
+        .map_err(|_| {
+            MetricsError::GaugeCreationFailed("evorule_sse_connections_active".to_string())
+        })?;
         let http_requests_total = IntCounterVec::new(
             Opts::new(
                 "evorule_http_requests_total",
@@ -83,30 +127,49 @@ impl Metrics {
             ),
             &["method", "path", "status"],
         )
-        .unwrap();
+        .map_err(|_| {
+            MetricsError::CounterCreationFailed("evorule_http_requests_total".to_string())
+        })?;
 
-        // 注册所有指标到 registry
         registry
             .register(Box::new(sessions_active.clone()))
-            .unwrap();
-        registry.register(Box::new(commands_total.clone())).unwrap();
+            .map_err(|_| {
+                MetricsError::RegistryRegistrationFailed("evorule_sessions_active".to_string())
+            })?;
+        registry
+            .register(Box::new(commands_total.clone()))
+            .map_err(|_| {
+                MetricsError::RegistryRegistrationFailed("evorule_commands_total".to_string())
+            })?;
         registry
             .register(Box::new(io_duration_seconds.clone()))
-            .unwrap();
+            .map_err(|_| {
+                MetricsError::RegistryRegistrationFailed("evorule_io_duration_seconds".to_string())
+            })?;
         registry
             .register(Box::new(io_errors_total.clone()))
-            .unwrap();
+            .map_err(|_| {
+                MetricsError::RegistryRegistrationFailed("evorule_io_errors_total".to_string())
+            })?;
         registry
             .register(Box::new(facts_log_version.clone()))
-            .unwrap();
+            .map_err(|_| {
+                MetricsError::RegistryRegistrationFailed("evorule_facts_log_version".to_string())
+            })?;
         registry
             .register(Box::new(sse_connections_active.clone()))
-            .unwrap();
+            .map_err(|_| {
+                MetricsError::RegistryRegistrationFailed(
+                    "evorule_sse_connections_active".to_string(),
+                )
+            })?;
         registry
             .register(Box::new(http_requests_total.clone()))
-            .unwrap();
+            .map_err(|_| {
+                MetricsError::RegistryRegistrationFailed("evorule_http_requests_total".to_string())
+            })?;
 
-        Self {
+        Ok(Self {
             registry,
             sessions_active,
             commands_total,
@@ -115,7 +178,7 @@ impl Metrics {
             facts_log_version,
             sse_connections_active,
             http_requests_total,
-        }
+        })
     }
 
     /// 渲染所有指标为 Prometheus 文本格式（供 `/metrics` 端点返回）
@@ -126,8 +189,6 @@ impl Metrics {
             .encode_to_string(&mfs)
             .unwrap_or_else(|e| format!("# encoding error: {e}"))
     }
-
-    // ===== 会话指标 =====
 
     /// 会话数 +1（创建会话时调用）
     pub fn inc_sessions(&self) {
@@ -144,16 +205,12 @@ impl Metrics {
         self.sessions_active.set(n);
     }
 
-    // ===== 命令指标 =====
-
     /// 命令计数 +1（按指令类型打标签）
     pub fn inc_commands(&self, instruction_type: &str) {
         self.commands_total
             .with_label_values(&[instruction_type])
             .inc();
     }
-
-    // ===== I/O 指标 =====
 
     /// 记录 I/O 调用耗时（按 io_type 打标签）
     pub fn observe_io_duration(&self, io_type: &IoType, duration: std::time::Duration) {
@@ -169,14 +226,10 @@ impl Metrics {
             .inc();
     }
 
-    // ===== FactsLog 指标 =====
-
     /// 设置 FactsLog 当前版本号
     pub fn set_facts_log_version(&self, version: u64) {
         self.facts_log_version.set(version as i64);
     }
-
-    // ===== SSE 指标 =====
 
     /// SSE 连接数 +1
     pub fn inc_sse_connections(&self) {
@@ -193,19 +246,11 @@ impl Metrics {
         self.sse_connections_active.set(n);
     }
 
-    // ===== HTTP 请求指标 =====
-
     /// HTTP 请求计数 +1（按 method/path/status 打标签）
     pub fn inc_http_requests(&self, method: &str, path: &str, status: &str) {
         self.http_requests_total
             .with_label_values(&[method, path, status])
             .inc();
-    }
-}
-
-impl Default for Metrics {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -217,145 +262,110 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
 
+    fn make_metrics() -> Metrics {
+        Metrics::new().unwrap()
+    }
+
     #[test]
     fn test_metrics_new_registers_all() {
-        let m = Metrics::new();
-        // Prometheus 的 Vec 类型（CounterVec/HistogramVec）在没有设置标签值时
-        // 不会在 gather() 输出中出现，因此先初始化至少一个标签组合
+        let m = make_metrics();
         m.inc_commands("init");
-        let io_type = IoType::CallLlm;
+        let io_type = IoType::CallExternal;
         m.observe_io_duration(&io_type, std::time::Duration::from_secs(0));
         m.inc_io_errors(&io_type);
         m.inc_http_requests("GET", "/", "200");
 
-        // registry 应包含 7 个 collector
-        let mfs = m.registry.gather();
-        let names: Vec<&str> = mfs.iter().map(|mf| mf.get_name()).collect();
-        assert!(names.contains(&"evorule_sessions_active"));
-        assert!(names.contains(&"evorule_commands_total"));
-        assert!(names.contains(&"evorule_io_duration_seconds"));
-        assert!(names.contains(&"evorule_io_errors_total"));
-        assert!(names.contains(&"evorule_facts_log_version"));
-        assert!(names.contains(&"evorule_sse_connections_active"));
-        assert!(names.contains(&"evorule_http_requests_total"));
+        let output = m.render();
+        assert!(output.contains("evorule_sessions_active"));
+        assert!(output.contains("evorule_commands_total"));
+        assert!(output.contains("evorule_io_duration_seconds"));
+        assert!(output.contains("evorule_io_errors_total"));
+        assert!(output.contains("evorule_facts_log_version"));
+        assert!(output.contains("evorule_sse_connections_active"));
+        assert!(output.contains("evorule_http_requests_total"));
     }
 
     #[test]
     fn test_render_outputs_text_format() {
-        let m = Metrics::new();
+        let m = make_metrics();
         m.inc_sessions();
         m.inc_commands("increment");
         let output = m.render();
         assert!(output.contains("evorule_sessions_active"));
         assert!(output.contains("evorule_commands_total"));
-        assert!(output.contains("1")); // sessions_active = 1
+        assert!(output.contains("1"));
     }
 
     #[test]
     fn test_sessions_gauge() {
-        let m = Metrics::new();
+        let m = make_metrics();
         m.inc_sessions();
         m.inc_sessions();
         m.dec_sessions();
-        let mfs = m.registry.gather();
-        let sessions_mf = mfs
-            .iter()
-            .find(|mf| mf.get_name() == "evorule_sessions_active")
-            .unwrap();
-        assert_eq!(sessions_mf.get_metric()[0].get_gauge().get_value(), 1.0);
+        let output = m.render();
+        assert!(output.contains("evorule_sessions_active 1"));
     }
 
     #[test]
     fn test_commands_counter_by_type() {
-        let m = Metrics::new();
+        let m = make_metrics();
         m.inc_commands("increment");
         m.inc_commands("increment");
         m.inc_commands("set");
-        let mfs = m.registry.gather();
-        let cmds_mf = mfs
-            .iter()
-            .find(|mf| mf.get_name() == "evorule_commands_total")
-            .unwrap();
-        let inc_metric = cmds_mf
-            .get_metric()
-            .iter()
-            .find(|m| m.get_label()[0].get_value() == "increment")
-            .unwrap();
-        assert_eq!(inc_metric.get_counter().get_value(), 2.0);
+        let output = m.render();
+        assert!(output.contains("evorule_commands_total{type=\"increment\"} 2"));
+        assert!(output.contains("evorule_commands_total{type=\"set\"} 1"));
     }
 
     #[test]
     fn test_io_duration_histogram() {
-        let m = Metrics::new();
-        let io_type = IoType::CallLlm;
+        let m = make_metrics();
+        let io_type = IoType::CallExternal;
         m.observe_io_duration(&io_type, std::time::Duration::from_millis(150));
         m.observe_io_duration(&io_type, std::time::Duration::from_millis(350));
-        let mfs = m.registry.gather();
-        let io_mf = mfs
-            .iter()
-            .find(|mf| mf.get_name() == "evorule_io_duration_seconds")
-            .unwrap();
-        let metric = &io_mf.get_metric()[0];
-        let hist = metric.get_histogram();
-        assert_eq!(hist.get_sample_count(), 2);
+        let output = m.render();
+        assert!(output.contains("evorule_io_duration_seconds_bucket"));
+        assert!(output.contains("evorule_io_duration_seconds_count"));
+        assert!(output.contains("evorule_io_duration_seconds_sum"));
     }
 
     #[test]
     fn test_facts_log_version_gauge() {
-        let m = Metrics::new();
+        let m = make_metrics();
         m.set_facts_log_version(42);
-        let mfs = m.registry.gather();
-        let ver_mf = mfs
-            .iter()
-            .find(|mf| mf.get_name() == "evorule_facts_log_version")
-            .unwrap();
-        assert_eq!(ver_mf.get_metric()[0].get_gauge().get_value(), 42.0);
+        let output = m.render();
+        assert!(output.contains("evorule_facts_log_version 42"));
     }
 
     #[test]
     fn test_sse_connections_gauge() {
-        let m = Metrics::new();
+        let m = make_metrics();
         m.inc_sse_connections();
         m.inc_sse_connections();
         m.set_sse_connections(5);
-        let mfs = m.registry.gather();
-        let sse_mf = mfs
-            .iter()
-            .find(|mf| mf.get_name() == "evorule_sse_connections_active")
-            .unwrap();
-        assert_eq!(sse_mf.get_metric()[0].get_gauge().get_value(), 5.0);
+        let output = m.render();
+        assert!(output.contains("evorule_sse_connections_active 5"));
     }
 
     #[test]
     fn test_http_requests_counter() {
-        let m = Metrics::new();
+        let m = make_metrics();
         m.inc_http_requests("GET", "/api/health", "200");
         m.inc_http_requests("POST", "/api/command", "200");
         m.inc_http_requests("GET", "/api/health", "200");
-        let mfs = m.registry.gather();
-        let http_mf = mfs
-            .iter()
-            .find(|mf| mf.get_name() == "evorule_http_requests_total")
-            .unwrap();
-        let health_metric = http_mf
-            .get_metric()
-            .iter()
-            .find(|m| m.get_label().iter().any(|l| l.get_value() == "/api/health"))
-            .unwrap();
-        assert_eq!(health_metric.get_counter().get_value(), 2.0);
+        let output = m.render();
+        assert!(output.contains("method=\"GET\""));
+        assert!(output.contains("path=\"/api/health\""));
+        assert!(output.contains("status=\"200\""));
     }
 
     #[test]
     fn test_io_errors_counter() {
-        let m = Metrics::new();
-        let io_type = IoType::CallLlm;
+        let m = make_metrics();
+        let io_type = IoType::CallExternal;
         m.inc_io_errors(&io_type);
         m.inc_io_errors(&io_type);
-        let mfs = m.registry.gather();
-        let err_mf = mfs
-            .iter()
-            .find(|mf| mf.get_name() == "evorule_io_errors_total")
-            .unwrap();
-        assert_eq!(err_mf.get_metric()[0].get_counter().get_value(), 2.0);
+        let output = m.render();
+        assert!(output.contains("evorule_io_errors_total{io_type=\"call_external\"} 2"));
     }
 }

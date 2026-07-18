@@ -23,15 +23,55 @@ pub struct HttpHandler {
     client: Client,
 }
 
+/// 默认最大空闲连接数
+const DEFAULT_POOL_MAX_IDLE_PER_HOST: usize = 100;
+/// 默认连接超时（秒）
+const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 30;
+/// 默认 TCP Keep-Alive（秒）
+const DEFAULT_TCP_KEEPALIVE_SECS: u64 = 60;
+
 impl HttpHandler {
     /// 创建新的 HTTP 处理器。
     ///
-    /// 内部使用 `reqwest::Client::new()` 构造客户端，
-    /// 该方法在 TLS 后端初始化失败时会返回错误（此处映射为字符串错误）。
+    /// 使用优化的连接池配置：
+    /// - `pool_max_idle_per_host`: 100（默认 2）
+    /// - `connect_timeout`: 30s
+    /// - `tcp_keepalive`: 60s
     pub fn new() -> Self {
-        // 注意：`reqwest::Client::new()` 在 TLS 失败时 panic，
-        // 这是 reqwest 自身行为，非本 crate 的 unwrap。
-        let client = Client::new();
+        let client = match Client::builder()
+            .pool_max_idle_per_host(DEFAULT_POOL_MAX_IDLE_PER_HOST)
+            .connect_timeout(Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS))
+            .tcp_keepalive(Duration::from_secs(DEFAULT_TCP_KEEPALIVE_SECS))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("Failed to build reqwest Client: {}", e);
+                // 降级为默认 Client
+                Client::new()
+            }
+        };
+        Self { client }
+    }
+
+    /// 使用自定义连接池配置创建 HTTP 处理器
+    pub fn with_pool_config(
+        pool_max_idle_per_host: usize,
+        connect_timeout: Duration,
+        tcp_keepalive: Duration,
+    ) -> Self {
+        let client = match Client::builder()
+            .pool_max_idle_per_host(pool_max_idle_per_host)
+            .connect_timeout(connect_timeout)
+            .tcp_keepalive(tcp_keepalive)
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("Failed to build reqwest Client: {}", e);
+                Client::new()
+            }
+        };
         Self { client }
     }
 }
@@ -112,8 +152,16 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_url_returns_error() {
-        // 同步校验逻辑：execute 是 async，这里仅验证常量
+    fn test_with_pool_config() {
+        let _handler =
+            HttpHandler::with_pool_config(50, Duration::from_secs(15), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_pool_config_constants() {
+        assert_eq!(DEFAULT_POOL_MAX_IDLE_PER_HOST, 100);
+        assert_eq!(DEFAULT_CONNECT_TIMEOUT_SECS, 30);
+        assert_eq!(DEFAULT_TCP_KEEPALIVE_SECS, 60);
         assert_eq!(DEFAULT_TIMEOUT_MS, 10_000);
     }
 }

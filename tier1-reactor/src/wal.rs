@@ -580,11 +580,11 @@ mod tests {
     #[test]
     fn test_fact_io_request_roundtrip() {
         for io_type in [
-            IoType::CallLlm,
+            IoType::CallExternal,
             IoType::QueryDb,
             IoType::HttpGet,
             IoType::SaveMemory,
-            IoType::CallTool,
+            IoType::CallService,
         ] {
             let fact = Fact::IoRequest {
                 id: FactId(3),

@@ -11,8 +11,7 @@ use tier2_governance::{
     hash,
     io_dispatcher::IoDispatcher,
     io_handlers::{
-        db_handler::DbHandler, http_handler::HttpHandler, llm_handler::LlmHandler,
-        memory_handler::MemoryHandler, tool_handler::ToolHandler,
+        db_handler::DbHandler, http_handler::HttpHandler, memory_handler::MemoryHandler,
     },
     io_subscriber::IoSubscriber,
 };
@@ -65,13 +64,13 @@ fn load_core_eval() -> Vec<JsonValue> {
         .unwrap_or_default()
 }
 
-/// 构造 call_tool 指令
-fn make_call_tool_instruction(tool_name: &str, args: &str) -> JsonValue {
+/// 构造 call_service 指令
+fn make_call_service_instruction(service_name: &str, args: &str) -> JsonValue {
     let mut params = BTreeMap::new();
-    params.insert("tool_name".to_string(), JsonValue::string(tool_name));
+    params.insert("service_name".to_string(), JsonValue::string(service_name));
     params.insert("args".to_string(), JsonValue::string(args));
     let mut instr = BTreeMap::new();
-    instr.insert("type".to_string(), JsonValue::string("call_tool"));
+    instr.insert("type".to_string(), JsonValue::string("call_service"));
     instr.insert("params".to_string(), JsonValue::Object(params));
     JsonValue::Object(instr)
 }
@@ -100,49 +99,17 @@ fn make_increment_instruction(attr: &str, delta: i64) -> JsonValue {
 
 /// 创建测试用 IoDispatcher
 ///
-/// - LlmHandler: dummy key（不会被调用）
 /// - DbHandler: SQLite 内存数据库
-/// - HttpHandler: 默认 client（不会被调用）
+/// - HttpHandler: 默认 client
 /// - MemoryHandler: 临时目录
-/// - ToolHandler: 注册 echo 工具
 async fn create_test_dispatcher(temp_dir: &std::path::Path) -> IoDispatcher {
-    let llm = LlmHandler::new("dummy_key".to_string(), None);
     let db = DbHandler::connect("sqlite::memory:")
         .await
         .expect("Failed to connect to in-memory SQLite");
     let http = HttpHandler::new();
     let memory = MemoryHandler::new(temp_dir.to_path_buf());
 
-    let mut tool = ToolHandler::new();
-    // 注册 echo 工具：返回 args 的回声
-    tool.register(
-        "echo".to_string(),
-        Box::new(|args: &JsonValue| {
-            let args_owned = args.clone();
-            Box::pin(async move {
-                Ok(JsonValue::string(format!(
-                    "echo: {}",
-                    args_owned.as_str().unwrap_or("(non-string)")
-                )))
-            })
-        }),
-    );
-    // 注册 double 工具：将数字翻倍
-    tool.register(
-        "double".to_string(),
-        Box::new(|args: &JsonValue| {
-            let args_owned = args.clone();
-            Box::pin(async move {
-                if let Some(n) = args_owned.as_i64() {
-                    Ok(JsonValue::Integer(n * 2))
-                } else {
-                    Err("double requires integer args".to_string())
-                }
-            })
-        }),
-    );
-
-    IoDispatcher::new(llm, db, http, memory, tool)
+    IoDispatcher::new(db, http, memory)
 }
 
 /// 等待 Stable 事实
@@ -170,7 +137,7 @@ async fn wait_for_stable(rx: &mut tier1_reactor::EventReceiver) -> Option<JsonVa
 // ===== 测试用例 =====
 
 #[tokio::test]
-async fn test_end_to_end_call_tool_with_io_subscriber() {
+async fn test_end_to_end_io_subscriber_with_save_memory() {
     let core_eval = load_core_eval();
     let temp_dir = std::env::temp_dir().join("tier2_test_io_subscriber");
     std::fs::create_dir_all(&temp_dir).ok();
@@ -188,8 +155,8 @@ async fn test_end_to_end_call_tool_with_io_subscriber() {
         let _ = subscriber.run(sub_rx, sub_tx).await;
     });
 
-    // 提交 call_tool(echo, "hello") 指令
-    let instruction = make_call_tool_instruction("echo", "hello");
+    // 提交 save_memory 指令
+    let instruction = make_save_memory_instruction("test_key", "hello memory");
     tx.send(Fact::Command {
         id: FactId(1),
         instruction,
@@ -201,11 +168,11 @@ async fn test_end_to_end_call_tool_with_io_subscriber() {
         .await
         .expect("Timed out waiting for Stable");
 
-    // 验证 tool_result 业务字段被正确设置
+    // 验证 memory_result 业务字段被正确设置
     assert_eq!(
-        snapshot.get("tool_result").and_then(|v| v.as_str()),
-        Some("echo: hello"),
-        "tool_result should be set to echo result"
+        snapshot.get("memory_result").and_then(|v| v.as_bool()),
+        Some(true),
+        "memory_result should be true"
     );
 
     // 验证 __io_result__ 已被清除
@@ -213,6 +180,11 @@ async fn test_end_to_end_call_tool_with_io_subscriber() {
         snapshot.get("__io_result__").is_none(),
         "__io_result__ should be cleared after consumption"
     );
+
+    // 验证文件实际被写入
+    let file_path = temp_dir.join("test_key");
+    let content = std::fs::read_to_string(&file_path).expect("File should exist");
+    assert_eq!(content, "hello memory");
 
     // 清理
     std::fs::remove_dir_all(&temp_dir).ok();
@@ -285,8 +257,8 @@ async fn test_io_subscriber_handles_errors() {
         let _ = subscriber.run(sub_rx, sub_tx).await;
     });
 
-    // 提交 call_tool(double, "not_a_number") — 会触发错误
-    let instruction = make_call_tool_instruction("double", "not_a_number");
+    // 提交 call_service(double, "not_a_number") — 会触发错误
+    let instruction = make_call_service_instruction("double", "not_a_number");
     tx.send(Fact::Command {
         id: FactId(1),
         instruction,
@@ -301,9 +273,9 @@ async fn test_io_subscriber_handles_errors() {
     // 验证 tool_result 被设置为 Null（因为 double 失败了）
     // 注意：IoResponse 的 error 字段被设置，但 result 为 Null
     assert!(
-        snapshot.get("tool_result") == Some(&JsonValue::Null)
-            || snapshot.get("tool_result").is_none(),
-        "tool_result should be Null or absent on error"
+        snapshot.get("service_result") == Some(&JsonValue::Null)
+            || snapshot.get("service_result").is_none(),
+        "service_result should be Null or absent on error"
     );
 
     // 清理
@@ -329,14 +301,14 @@ async fn test_multiple_io_requests_sequence() {
         let _ = subscriber.run(sub_rx, sub_tx).await;
     });
 
-    // 使用 sequence 指令打包两个 call_tool，避免反应器在第一个 Stable 后退出
-    let first_call = make_call_tool_instruction("echo", "first");
-    let second_call = make_call_tool_instruction("echo", "second");
+    // 使用 sequence 指令打包两个 save_memory，避免反应器在第一个 Stable 后退出
+    let first_save = make_save_memory_instruction("key1", "value1");
+    let second_save = make_save_memory_instruction("key2", "value2");
 
     let mut seq_params = BTreeMap::new();
     seq_params.insert(
         "instructions".to_string(),
-        JsonValue::Array(vec![first_call, second_call]),
+        JsonValue::Array(vec![first_save, second_save]),
     );
     let mut seq_instr = BTreeMap::new();
     seq_instr.insert("type".to_string(), JsonValue::string("sequence"));
@@ -353,11 +325,11 @@ async fn test_multiple_io_requests_sequence() {
         .await
         .expect("Timed out waiting for Stable");
 
-    // 第二个 call_tool 的结果会覆盖第一个
+    // 验证 memory_result 为 true（第二个 save_memory 的结果）
     assert_eq!(
-        snapshot.get("tool_result").and_then(|v| v.as_str()),
-        Some("echo: second"),
-        "tool_result should be the result of the second call_tool"
+        snapshot.get("memory_result").and_then(|v| v.as_bool()),
+        Some(true),
+        "memory_result should be true"
     );
 
     // 清理

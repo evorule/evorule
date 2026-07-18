@@ -1,4 +1,4 @@
-#![forbid(unsafe_code)]
+﻿#![forbid(unsafe_code)]
 //! Database I/O Handler —— 基于 `sqlx` 接入 SQLite。
 //!
 //! 执行 SQL 语句并将结果转换为 `JsonValue`：
