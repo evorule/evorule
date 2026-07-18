@@ -1129,6 +1129,17 @@ struct JoinRequest {
     direction: Option<String>,
 }
 
+/// IoResponse 请求体（外部提交）
+#[derive(serde::Deserialize)]
+struct IoResponseRequest {
+    /// 对应的 IoRequest ID
+    request_id: u64,
+    /// I/O 执行结果
+    result: serde_json::Value,
+    /// I/O 错误信息（可选）
+    error: Option<String>,
+}
+
 async fn session_replay(
     State(api): State<SessionApi>,
     Path(session_id): Path<u64>,
@@ -1368,6 +1379,60 @@ async fn session_diff(
     })))
 }
 
+/// IoResponse 外部提交 handler
+///
+/// `POST /api/sessions/:id/io_response` → 外部（如 evo-agent）提交 IoResponse，
+/// 允许 Agent 通过 HTTP API 异步返回 I/O 执行结果。
+///
+/// 请求体格式：
+/// ```json
+/// {
+///   "request_id": 123,
+///   "result": {"content": "response data"},
+///   "error": null
+/// }
+/// ```
+async fn session_io_response(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+    Json(req): Json<IoResponseRequest>,
+) -> Result<Json<ApiResponse>, StatusCode> {
+    let id = api.next_id();
+    let request_id = tier1_reactor::FactId(req.request_id);
+    let result = serde_to_tcb(req.result);
+
+    let sessions = api.sessions.lock().await;
+    sessions.touch_session(session_id);
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    match session.command_tx.send(Fact::IoResponse {
+        id,
+        request_id,
+        result,
+        error: req.error,
+    }) {
+        Ok(()) => {
+            tracing::info!(
+                session_id,
+                request_id = req.request_id,
+                "IoResponse submitted externally"
+            );
+            Ok(Json(ApiResponse {
+                success: true,
+                message: "IoResponse submitted".to_string(),
+                fact_id: Some(id.0),
+            }))
+        }
+        Err(_) => Ok(Json(ApiResponse {
+            success: false,
+            message: "Command channel closed (reactor exited)".to_string(),
+            fact_id: None,
+        })),
+    }
+}
+
 async fn session_join(
     State(api): State<SessionApi>,
     Path(session_id): Path<u64>,
@@ -1510,6 +1575,7 @@ impl GovernanceServer {
             )
             .route("/api/sessions/{id}/payload", post(session_payload))
             .route("/api/sessions/{id}/events", get(session_events))
+            .route("/api/sessions/{id}/io_response", post(session_io_response))
             // 治理层演进 API（回放、时间旅行、集群协作）
             .route("/api/sessions/{id}/replay", get(session_replay))
             .route("/api/sessions/{id}/history", get(session_history))
