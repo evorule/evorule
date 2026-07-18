@@ -10,12 +10,12 @@
 //! | Code             | Pattern                        | Spec ref |
 //! |------------------|--------------------------------|----------|
 //! | HashMap/HashSet  | `\bHashMap\b`, `\bHashSet\b`   | T8       |
-//! | .unwrap()/.expect() | `\.unwrap\(`, `\.expect\(`   | T9       |
+//! | `.unwrap()/.expect()` | `\.unwrap\(`, `\.expect\(`   | T9       |
 //! | `unsafe`         | `\bunsafe\b`                   | T10      |
 //! | `debug_assert!`  | `\bdebug_assert!`              | T11      |
 //! | f32/f64/Float    | `f32`, `f64`, `Float`          | T12      |
 //! | SystemTime/Instant | `SystemTime`, `Instant`      | T5       |
-//! | rand/random()    | `rand::`, `random()`           | T6       |
+//! | `rand/random()`    | `rand::`, `random()`           | T6       |
 //! | I/O (fs/net/io) | `std::fs::`, `std::net::`, etc | T4       |
 //! | thread/async     | `std::thread`, `tokio::`, etc  | T14      |
 //!
@@ -95,7 +95,7 @@ fn strip_test_mod(src: &str) -> String {
                     if let Some(close_idx) = match_brace(src, open_idx) {
                         // Keep src[i..open_idx+1] (signature + opening brace),
                         // drop body (open_idx+1..close_idx), keep close brace.
-                        out.push_str(&src[i..open_idx + 1]);
+                        out.push_str(&src[i..=open_idx]);
                         out.push_str(&src[close_idx..]);
                         i = close_idx + 1;
                         continue;
@@ -363,12 +363,11 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let manifest_dir = match std::env::var("CARGO_MANIFEST_DIR") {
-        Ok(s) => PathBuf::from(s),
-        Err(_) => {
-            eprintln!("build.rs: CARGO_MANIFEST_DIR not set");
-            return ExitCode::FAILURE;
-        }
+    let manifest_dir = if let Ok(s) = std::env::var("CARGO_MANIFEST_DIR") {
+        PathBuf::from(s)
+    } else {
+        eprintln!("build.rs: CARGO_MANIFEST_DIR not set");
+        return ExitCode::FAILURE;
     };
     let src_dir = manifest_dir.join("src");
     if !src_dir.exists() {
