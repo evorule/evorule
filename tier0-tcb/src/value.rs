@@ -51,7 +51,7 @@ pub enum JsonValue {
     String(String),
     /// 数组（有序列表）
     Array(Vec<JsonValue>),
-    /// 对象（键值对，使用 BTreeMap 保证确定性顺序）
+    /// 对象（键值对，使用 `BTreeMap` 保证确定性顺序）
     Object(BTreeMap<String, JsonValue>),
 }
 
@@ -70,7 +70,7 @@ impl PartialEq for JsonValue {
                 if a.len() != b.len() {
                     return false;
                 }
-                for (k, v) in a.iter() {
+                for (k, v) in a {
                     if let Some(bv) = b.get(k) {
                         if v != bv {
                             return false;
@@ -124,7 +124,7 @@ impl Ord for JsonValue {
                         (Some(_), None) => return Ordering::Greater,
                         (Some((ak, av)), Some((bk, bv))) => match ak.cmp(bk) {
                             Ordering::Equal => match av.cmp(bv) {
-                                Ordering::Equal => continue,
+                                Ordering::Equal => {}
                                 other => return other,
                             },
                             other => return other,
@@ -197,7 +197,7 @@ impl JsonValue {
         }
     }
 
-    /// 尝试转换为 &[JsonValue]
+    /// 尝试转换为 &[`JsonValue`]
     pub fn as_array(&self) -> Option<&[JsonValue]> {
         match self {
             JsonValue::Array(v) => Some(v.as_slice()),
@@ -213,7 +213,7 @@ impl JsonValue {
         }
     }
 
-    /// 尝试转换为 &BTreeMap
+    /// 尝试转换为 &`BTreeMap`
     pub fn as_object(&self) -> Option<&BTreeMap<String, JsonValue>> {
         match self {
             JsonValue::Object(map) => Some(map),
@@ -221,7 +221,7 @@ impl JsonValue {
         }
     }
 
-    /// 尝试转换为可变 &mut BTreeMap
+    /// 尝试转换为可变 &mut `BTreeMap`
     pub fn as_object_mut(&mut self) -> Option<&mut BTreeMap<String, JsonValue>> {
         match self {
             JsonValue::Object(map) => Some(map),
@@ -298,8 +298,8 @@ impl fmt::Display for JsonValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             JsonValue::Null => write!(f, "null"),
-            JsonValue::Bool(b) => write!(f, "{}", b),
-            JsonValue::Integer(i) => write!(f, "{}", i),
+            JsonValue::Bool(b) => write!(f, "{b}"),
+            JsonValue::Integer(i) => write!(f, "{i}"),
             JsonValue::String(s) => {
                 // JSON 标准字符串转义
                 write!(f, "\"")?;
@@ -313,7 +313,7 @@ impl fmt::Display for JsonValue {
                         '\x08' => write!(f, "\\b")?,
                         '\x0c' => write!(f, "\\f")?,
                         c if (c as u32) < 0x20 => write!(f, "\\u{:04x}", c as u32)?,
-                        c => write!(f, "{}", c)?,
+                        c => write!(f, "{c}")?,
                     }
                 }
                 write!(f, "\"")
@@ -324,7 +324,7 @@ impl fmt::Display for JsonValue {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", v)?;
+                    write!(f, "{v}")?;
                 }
                 write!(f, "]")
             }
@@ -344,10 +344,10 @@ impl fmt::Display for JsonValue {
                             '\r' => write!(f, "\\r")?,
                             '\t' => write!(f, "\\t")?,
                             c if (c as u32) < 0x20 => write!(f, "\\u{:04x}", c as u32)?,
-                            c => write!(f, "{}", c)?,
+                            c => write!(f, "{c}")?,
                         }
                     }
-                    write!(f, "\": {}", v)?;
+                    write!(f, "\": {v}")?;
                 }
                 write!(f, "}}")
             }
@@ -472,7 +472,7 @@ impl JsonValue {
     }
 }
 
-/// 从 BTreeMap 快捷构造对象
+/// 从 `BTreeMap` 快捷构造对象
 impl From<BTreeMap<String, JsonValue>> for JsonValue {
     fn from(map: BTreeMap<String, JsonValue>) -> Self {
         JsonValue::Object(map)
@@ -603,7 +603,7 @@ mod tests {
         assert_eq!(JsonValue::Integer(0).as_object(), None);
     }
 
-    /// 验证 as_array_mut / as_object_mut 同样有类型检查
+    /// 验证 `as_array_mut` / `as_object_mut` 同样有类型检查
     #[test]
     fn test_as_mut_methods_type_mismatch() {
         let mut v = JsonValue::Integer(0);
@@ -637,7 +637,7 @@ mod tests {
     }
 
     // ===== const fns (L305-317) =====
-    /// 验证 const fn null()/bool()/integer() 能在 const context 使用
+    /// 验证 const fn `null()/bool()/integer()` 能在 const context 使用
     #[test]
     fn test_const_constructors() {
         const N: JsonValue = JsonValue::null();
@@ -649,14 +649,14 @@ mod tests {
     }
 
     // ===== empty_array helper (L349) =====
-    /// 验证 empty_array 等价于 Vec::new()
+    /// 验证 `empty_array` 等价于 `Vec::new()`
     #[test]
     fn test_empty_array() {
         assert_eq!(JsonValue::empty_array(), JsonValue::Array(Vec::new()));
     }
 
     // ===== PartialEq (L33-60) =====
-    /// 验证 PartialEq 同类型相等
+    /// 验证 `PartialEq` 同类型相等
     #[test]
     fn test_partial_eq_same_type() {
         assert_eq!(JsonValue::Null, JsonValue::Null);
@@ -669,7 +669,7 @@ mod tests {
         );
     }
 
-    /// 验证 PartialEq 跨类型返回 false (覆盖 `_ => false` 兜底)
+    /// 验证 `PartialEq` 跨类型返回 false (覆盖 `_ => false` 兜底)
     #[test]
     fn test_partial_eq_cross_type() {
         assert_ne!(JsonValue::Null, JsonValue::Bool(false));
@@ -681,7 +681,7 @@ mod tests {
         assert_ne!(JsonValue::string("a"), JsonValue::Integer(0));
     }
 
-    /// 验证 PartialEq Object 分支 (包括 key 不同 / value 不同 / length 不同)
+    /// 验证 `PartialEq` Object 分支 (包括 key 不同 / value 不同 / length 不同)
     #[test]
     fn test_partial_eq_object() {
         let mut a = BTreeMap::new();
@@ -837,7 +837,7 @@ mod tests {
     }
 
     // ===== PartialOrd (L113-118) =====
-    /// 验证 PartialOrd 始终返回 Some (因为 Ord 是 total order)
+    /// 验证 `PartialOrd` 始终返回 Some (因为 Ord 是 total order)
     #[test]
     fn test_partial_ord_returns_some() {
         assert_eq!(
@@ -868,7 +868,7 @@ mod tests {
         assert_eq!(format!("{}", JsonValue::Bool(false)), "false");
         assert_eq!(format!("{}", JsonValue::Integer(0)), "0");
         assert_eq!(format!("{}", JsonValue::Integer(-42)), "-42");
-        assert_eq!(format!("{}", JsonValue::Integer(123456789)), "123456789");
+        assert_eq!(format!("{}", JsonValue::Integer(123_456_789)), "123456789");
     }
 
     /// 验证 Display String 的标准 JSON 转义 (`"` `\` 控制字符 unicode<0x20)
@@ -898,10 +898,10 @@ mod tests {
             JsonValue::Integer(2),
             JsonValue::Integer(3),
         ]);
-        assert_eq!(format!("{}", arr), "[1, 2, 3]");
+        assert_eq!(format!("{arr}"), "[1, 2, 3]");
     }
 
-    /// 验证 Display Object 渲染 (BTreeMap 保证键有序)
+    /// 验证 Display Object 渲染 (`BTreeMap` 保证键有序)
     #[test]
     fn test_display_object() {
         assert_eq!(format!("{}", JsonValue::empty_object()), "{}");
@@ -910,7 +910,7 @@ mod tests {
             ("a", JsonValue::Integer(2)),
         ]);
         // BTreeMap 按 key 字典序: a < z
-        assert_eq!(format!("{}", obj), "{\"a\": 2, \"z\": 1}");
+        assert_eq!(format!("{obj}"), "{\"a\": 2, \"z\": 1}");
     }
 
     /// 验证 Display Object key 的转义
@@ -919,7 +919,7 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert("a\"b".to_string(), JsonValue::Integer(1));
         let obj = JsonValue::object(m);
-        assert_eq!(format!("{}", obj), "{\"a\\\"b\": 1}");
+        assert_eq!(format!("{obj}"), "{\"a\\\"b\": 1}");
     }
 
     // ===== From impls (L351-393) =====
@@ -964,7 +964,7 @@ mod tests {
         assert_eq!(empty, JsonValue::empty_array());
     }
 
-    /// 验证 From<BTreeMap<String, JsonValue>>
+    /// 验证 From<`BTreeMap`<String, `JsonValue`>>
     #[test]
     fn test_from_btreemap() {
         let mut m = BTreeMap::new();
@@ -975,7 +975,7 @@ mod tests {
         assert_eq!(v, JsonValue::object(expected));
     }
     // ===== const fn 构造函数 (L305-317) =====
-    /// 验证 const fn null() / bool() / integer() 在运行时调用
+    /// 验证 const fn `null()` / `bool()` / `integer()` 在运行时调用
     /// 注: stable Rust 的 llvm-cov 对 const fn 函数体有覆盖盲点,
     /// 调用它们至少能确保符号被实例化
     #[test]
@@ -997,7 +997,7 @@ mod tests {
     }
 
     // ===== Ord: Array 内部 cmp (L87) =====
-    /// 验证 Array 类型的字典序比较 (Vec::cmp 分支)
+    /// 验证 Array 类型的字典序比较 (`Vec::cmp` 分支)
     #[test]
     fn test_array_ord_internal_cmp() {
         let a = JsonValue::Array(vec![JsonValue::Integer(1), JsonValue::Integer(2)]);
@@ -1036,7 +1036,7 @@ mod tests {
     }
 
     // ===== Object get_mut 成功路径 (L218) =====
-    /// 验证 Object 的 get_mut 成功分支 (非 _ => None 分支)
+    /// 验证 Object 的 `get_mut` 成功分支 (非 _ => None 分支)
     #[test]
     fn test_object_get_mut_object_branch() {
         let mut obj = JsonValue::Object(BTreeMap::from([("a".to_string(), JsonValue::Integer(1))]));
@@ -1120,12 +1120,12 @@ mod tests {
         );
         let obj = JsonValue::Object(m);
 
-        let s = format!("{}", obj);
+        let s = format!("{obj}");
 
         // 单个反斜杠在 Display 输出中是两个反斜杠, 即字符串中 "\\"
-        assert!(s.contains("\\\\"), "backslash 转义失败, got: {}", s);
-        assert!(s.contains("\\n"), "newline 转义失败, got: {}", s);
-        assert!(s.contains("\\r"), "CR 转义失败, got: {}", s);
-        assert!(s.contains("\\t"), "tab 转义失败, got: {}", s);
+        assert!(s.contains("\\\\"), "backslash 转义失败, got: {s}");
+        assert!(s.contains("\\n"), "newline 转义失败, got: {s}");
+        assert!(s.contains("\\r"), "CR 转义失败, got: {s}");
+        assert!(s.contains("\\t"), "tab 转义失败, got: {s}");
     }
 }

@@ -60,7 +60,7 @@ pub fn resolve_path<'a>(state: &'a JsonValue, path: &str) -> Option<&'a JsonValu
     let segments = parse_path_segments(path)?;
     let mut current = state;
 
-    for seg in segments.iter() {
+    for seg in &segments {
         match seg {
             PathSegment::Field(field) => {
                 current = match current {
@@ -209,7 +209,7 @@ fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
             segments.push(PathSegment::Index(field, idx));
             // ']' 后必须是 '.', '[', 或字符串结束（拒绝 "[0]abc" 等非法拼接）
             match chars.peek() {
-                None | Some('.') | Some('[') => {}
+                None | Some('.' | '[') => {}
                 _ => return None,
             }
             continue;
@@ -557,7 +557,7 @@ mod tests {
     // ===== Index(field) 非 Object 分支 + 转义末尾检查 =====
 
     /// 测试：当 current 不是 Object 而 segment 是 Index(Some(field), idx) 时返回 None
-    /// 覆盖 resolve_path_inner 中 PathSegment::Index 的 field 分支非 Object 情况 (path.rs L55)
+    /// 覆盖 `resolve_path_inner` 中 `PathSegment::Index` 的 field 分支非 Object 情况 (path.rs L55)
     #[test]
     fn test_resolve_path_index_with_field_on_non_object_returns_none() {
         // state 是 Array，但 path "a[0]" 要求先在 current 上访问字段 "a"
@@ -567,7 +567,7 @@ mod tests {
     }
 
     /// 测试：mutable 版本在相同情况下也应返回 None
-    /// 覆盖 resolve_path_mut_inner 中 PathSegment::Index 的 field 分支 (path.rs L106-107)
+    /// 覆盖 `resolve_path_mut_inner` 中 `PathSegment::Index` 的 field 分支 (path.rs L106-107)
     #[test]
     fn test_resolve_path_mut_index_with_field_on_non_object_returns_none() {
         let mut state = JsonValue::array(vec![JsonValue::Integer(42)]);
@@ -575,7 +575,7 @@ mod tests {
     }
 
     /// 测试：mutable 版本在 field 字段名缺失时也应返回 None
-    /// 补充覆盖 L107 的 get_mut 失败分支
+    /// 补充覆盖 L107 的 `get_mut` 失败分支
     #[test]
     fn test_resolve_path_mut_index_with_missing_field_on_object_returns_none() {
         // state 是 Object 但不含字段 "a"，因此 Index(Some("a"), 0) 的字段访问失败
@@ -584,7 +584,7 @@ mod tests {
     }
 
     /// 测试：路径以反斜杠结尾（未结束的转义序列）应返回 None
-    /// 覆盖 parse_path_segments 中 escaped 末尾检查 (path.rs L204)
+    /// 覆盖 `parse_path_segments` 中 escaped 末尾检查 (path.rs L204)
     #[test]
     fn test_resolve_path_trailing_backslash_returns_none() {
         // path 字符串 "x\" 在 Rust 源中表示单字符 "x" + 单个 "\"（反斜杠）
@@ -601,8 +601,8 @@ mod tests {
         assert_eq!(resolve_path(&state, "\\"), None);
     }
 
-    /// 测试：parse_path_segments("") 直接调用覆盖空路径防御检查 (path.rs L210-211)
-    /// 注：parse_path_segments 是私有 fn，正常通过 resolve_path 调用时已被前置空检查拦截
+    /// `测试：parse_path_segments`("") 直接调用覆盖空路径防御检查 (path.rs L210-211)
+    /// `注：parse_path_segments` 是私有 fn，正常通过 `resolve_path` 调用时已被前置空检查拦截
     /// 此测试是为了打桩覆盖解析器内部的 defensive guard
     #[test]
     fn test_parse_path_segments_empty_returns_none() {

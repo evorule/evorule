@@ -59,12 +59,12 @@ pub enum TcbError {
 impl core::fmt::Display for TcbError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            TcbError::MissingField(field) => write!(f, "missing field: {}", field),
-            TcbError::UnknownMetaInstruction(ty) => write!(f, "unknown meta instruction: {}", ty),
-            TcbError::UnknownOperation(op) => write!(f, "unknown operation: {}", op),
+            TcbError::MissingField(field) => write!(f, "missing field: {field}"),
+            TcbError::UnknownMetaInstruction(ty) => write!(f, "unknown meta instruction: {ty}"),
+            TcbError::UnknownOperation(op) => write!(f, "unknown operation: {op}"),
             TcbError::InvalidState => write!(f, "invalid state structure"),
             TcbError::InvalidType => write!(f, "invalid type"),
-            TcbError::PathResolutionFailed(path) => write!(f, "path resolution failed: {}", path),
+            TcbError::PathResolutionFailed(path) => write!(f, "path resolution failed: {path}"),
             TcbError::NestingTooDeep => write!(f, "branch nesting depth exceeds limit (64)"),
             TcbError::EmptyInstructionList => write!(f, "empty instruction list"),
             TcbError::IntegerOverflow => write!(f, "integer arithmetic overflow"),
@@ -127,7 +127,7 @@ mod tests {
         );
     }
 
-    /// Debug trait 派生自 PartialEq, 验证 PartialEq 行为
+    /// Debug trait 派生自 `PartialEq`, 验证 `PartialEq` 行为
     #[test]
     fn test_partial_eq_same_variant() {
         assert_eq!(TcbError::InvalidState, TcbError::InvalidState);

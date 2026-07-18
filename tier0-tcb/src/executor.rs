@@ -1,4 +1,4 @@
-//! 元指令执行器 - 3 个元指令 + io_request 信号
+//! 元指令执行器 - 3 个元指令 + `io_request` 信号
 //!
 //! # 元指令列表
 //! - `set`：修改 payload 字段
@@ -33,7 +33,7 @@ pub enum MetaInstructionResult {
     State(JsonValue),
     /// I/O 请求信号（立即传播，不继续执行后续指令）
     IoRequired {
-        /// I/O 类型（如 "call_external"、"query_db"）
+        /// I/O 类型（如 "`call_external"、"query_db`"）
         io_type: String,
         /// I/O 请求参数（路径引用已解析为具体值）
         params: JsonValue,
@@ -52,6 +52,18 @@ pub enum MetaInstructionResult {
 /// - `Ok(State(state))`：正常执行，返回新状态
 /// - `Ok(IoRequired { io_type, params })`：I/O 请求信号
 /// - `Err(TcbError)`：执行错误
+///
+/// # Errors
+///
+/// - `TcbError::MissingField`：指令中缺少必需字段（如 `type`、`params.attr`）
+/// - `TcbError::UnknownMetaInstruction`：未知的元指令 `type`
+/// - `TcbError::UnknownOperation`：未知的 `set` 操作类型
+/// - `TcbError::InvalidState`：状态结构异常（如 `__exec__` 不存在）
+/// - `TcbError::InvalidType`：类型不匹配（如 `add` 遇到非整数）
+/// - `TcbError::PathResolutionFailed`：路径解析失败
+/// - `TcbError::NestingTooDeep`：`branch` 嵌套深度超限（最大 64 层）
+/// - `TcbError::EmptyInstructionList`：`push` 空列表、`branch` 空分支
+/// - `TcbError::IntegerOverflow`：`add`/`sub` 超出 i64 范围
 ///
 /// # 代码示例
 ///
@@ -134,7 +146,7 @@ fn resolve_path_or_literal(
 /// set 元指令：修改 payload 字段
 ///
 /// `attr` 和 `value` 都支持路径引用（`__` 开头的字符串自动解析）。
-/// 这允许 core_eval.json 将业务指令的参数映射到 set 的属性名和值。
+/// 这允许 `core_eval.json` 将业务指令的参数映射到 set 的属性名和值。
 fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbError> {
     let params = instr
         .get("params")
@@ -155,7 +167,7 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
     // 解析 attr 路径：支持嵌套（如 "a.b.c" → 导航到 __exec__.payload.a.b，设置 c）
     let (parent_path, field) = match attr.rsplit_once('.') {
         Some((parent, f)) if !parent.is_empty() && !f.is_empty() => {
-            (format!("__exec__.payload.{}", parent), f)
+            (format!("__exec__.payload.{parent}"), f)
         }
         Some(_) => return Err(TcbError::PathResolutionFailed(attr.to_string())),
         None => ("__exec__.payload".to_string(), attr),
@@ -195,7 +207,7 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
 ///
 /// 顶层值如果是路径引用字符串，先解析为数组；
 /// 然后遍历数组元素，如果元素是 `__` 开头的字符串，解析为路径引用。
-/// 这样 core_eval.json 可以写：
+/// 这样 `core_eval.json` 可以写：
 /// ```json
 /// "instructions": ["__exec__.instruction.params.then"]
 /// ```
@@ -284,10 +296,10 @@ fn exec_branch(
     Ok(MetaInstructionResult::State(state))
 }
 
-/// io_request 元指令：产生 I/O 请求信号（不修改状态）
+/// `io_request` 元指令：产生 I/O 请求信号（不修改状态）
 ///
 /// # 参数
-/// - `params.io_type`：I/O 类型字符串（如 "call_external"），必填
+/// - `params.io_type`：I/O 类型字符串（如 "`call_external"），必填`
 /// - `params.*`：其他参数，支持路径引用（`__` 开头的字符串自动解析）
 ///
 /// # 行为
@@ -318,10 +330,7 @@ fn exec_io_request(instr: &JsonValue, state: JsonValue) -> Result<MetaInstructio
                 Ok(resolved) => {
                     request_params.insert(key.clone(), resolved);
                 }
-                Err(TcbError::PathResolutionFailed(_)) => {
-                    // 可选参数路径不存在时跳过
-                    continue;
-                }
+                Err(TcbError::PathResolutionFailed(_)) => {} // 可选参数路径不存在时跳过
                 Err(e) => return Err(e),
             }
         }
@@ -1608,7 +1617,7 @@ mod tests {
     // ===== resolve_path_or_literal None 分支 + rsplit_once 空段分支 =====
 
     /// 测试：set 缺少 value 字段应返回 MissingField("value")
-    /// 覆盖 resolve_path_or_literal 的 None 分支 (executor.rs L87)
+    /// 覆盖 `resolve_path_or_literal` 的 None 分支 (executor.rs L87)
     #[test]
     fn test_set_missing_value_field() {
         let state = make_exec_state("set", make_payload(0), vec![]);
@@ -1628,8 +1637,8 @@ mod tests {
         assert!(matches!(result, Err(TcbError::MissingField("value"))));
     }
 
-    /// 测试：set 的 attr 含空段（如 "x." 或 ".y"）应返回 PathResolutionFailed
-    /// 覆盖 exec_set 中 rsplit_once('.') 后空段的 fallthrough 分支 (executor.rs L117)
+    /// 测试：set 的 attr 含空段（如 "x." 或 ".y"）应返回 `PathResolutionFailed`
+    /// 覆盖 `exec_set` 中 `rsplit_once`('.') 后空段的 fallthrough 分支 (executor.rs L117)
     #[test]
     fn test_set_attr_with_trailing_dot_returns_path_resolution_failed() {
         let state = make_exec_state("set", make_payload(0), vec![]);
@@ -1652,7 +1661,7 @@ mod tests {
         }
     }
 
-    /// 测试：set 的 attr 为 ".y"（前导点号 + 空 parent 段）也应返回 PathResolutionFailed
+    /// 测试：set 的 attr 为 ".y"（前导点号 + 空 parent 段）也应返回 `PathResolutionFailed`
     /// 补充覆盖：与 trailing dot 互补的另一空段情况
     #[test]
     fn test_set_attr_with_leading_dot_returns_path_resolution_failed() {
@@ -1677,7 +1686,7 @@ mod tests {
     }
 
     // ===== Branch coverage L312:12: io_request params 非 Object 类型 =====
-    /// exec_io_request: params 是 Integer (非 Object) 时仍应返回 IoRequired
+    /// `exec_io_request`: params 是 Integer (非 Object) 时仍应返回 `IoRequired`
     /// 覆盖 `if let Some(obj) = params.as_object()` 的 False 分支
     #[test]
     fn test_io_request_with_non_object_params_integer() {
@@ -1692,7 +1701,7 @@ mod tests {
         let _ = result;
     }
 
-    /// exec_io_request: params 是 String (非 Object) 时不 panic
+    /// `exec_io_request`: params 是 String (非 Object) 时不 panic
     #[test]
     fn test_io_request_with_non_object_params_string() {
         let state = make_exec_state("io_request", make_payload(0), vec![]);
@@ -1706,7 +1715,7 @@ mod tests {
         let _ = result;
     }
 
-    /// exec_io_request: params 是 Array (非 Object) 时不 panic
+    /// `exec_io_request`: params 是 Array (非 Object) 时不 panic
     #[test]
     fn test_io_request_with_non_object_params_array() {
         let state = make_exec_state("io_request", make_payload(0), vec![]);

@@ -1,4 +1,4 @@
-//! TheEquation TCB Core - 纯计算内核
+//! `TheEquation` TCB Core - 纯计算内核
 //!
 //! # 设计原则
 //! - 零依赖（`#![no_std]` 兼容）

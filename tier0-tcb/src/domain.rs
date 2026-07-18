@@ -748,7 +748,7 @@ mod tests {
     // ===== evaluate_* fallthrough (L56-58, L71-73, L81-82, L96-97) =====
     // 这些 fallthrough 只在 "path/value 存在但 resolve 失败 / 类型不匹配" 时触发
 
-    /// 验证 evaluate_eq: path 存在但 resolve 失败 → false
+    /// 验证 `evaluate_eq`: path 存在但 resolve 失败 → false
     #[test]
     fn test_eq_path_set_but_unresolvable_returns_false() {
         // path 设置了但 state 中没有该路径 → 走 false fallthrough
@@ -761,7 +761,7 @@ mod tests {
         assert!(!evaluate_domain(&domain, &state));
     }
 
-    /// 验证 evaluate_lt: path 存在但 resolve 失败 → false
+    /// 验证 `evaluate_lt`: path 存在但 resolve 失败 → false
     #[test]
     fn test_lt_path_set_but_unresolvable_returns_false() {
         let state = make_exec_state("noop", make_payload(10));
@@ -773,7 +773,7 @@ mod tests {
         assert!(!evaluate_domain(&domain, &state));
     }
 
-    /// 验证 evaluate_exists: path 存在但 resolve 失败 → false
+    /// 验证 `evaluate_exists`: path 存在但 resolve 失败 → false
     #[test]
     fn test_exists_path_set_but_unresolvable_returns_false() {
         let state = make_exec_state("noop", make_payload(10));
@@ -784,7 +784,7 @@ mod tests {
         assert!(!evaluate_domain(&domain, &state));
     }
 
-    /// 验证 evaluate_instruction_eq: instruction_type 设置但 current 是 None → false
+    /// 验证 `evaluate_instruction_eq`: `instruction_type` 设置但 current 是 None → false
     #[test]
     fn test_instruction_eq_type_set_but_current_missing_returns_false() {
         // state 不包含 __exec__.instruction.type
@@ -798,8 +798,8 @@ mod tests {
     }
 
     // ===== Branch coverage L73: depth > MAX_DOMAIN_DEPTH =====
-    /// 验证递归深度超过 MAX_DOMAIN_DEPTH (64) 时 evaluate_domain 返回 false (early return)
-    /// 构造 Not 包裹 65 层 → 每层 evaluate_not 都会 depth+1, 在第 65 层触发深度上限
+    /// 验证递归深度超过 `MAX_DOMAIN_DEPTH` (64) 时 `evaluate_domain` 返回 false (early return)
+    /// 构造 Not 包裹 65 层 → 每层 `evaluate_not` 都会 depth+1, 在第 65 层触发深度上限
     #[test]
     fn test_recursion_depth_limit_exceeded_returns_false() {
         // 内层 exists("__exec__.payload.x") 对 state (x=10) 返回 true
@@ -822,7 +822,7 @@ mod tests {
     }
 
     // ===== Branch coverage L95:12: evaluate_eq 缺 path 或 value =====
-    /// evaluate_eq: domain 缺 path 字段时返回 false (覆盖 L95:12 False)
+    /// `evaluate_eq`: domain 缺 path 字段时返回 false (覆盖 L95:12 False)
     #[test]
     fn test_eq_without_path_field_returns_false() {
         let state = make_exec_state("noop", make_payload(10));
@@ -833,7 +833,7 @@ mod tests {
         assert!(!evaluate_domain(&domain, &state));
     }
 
-    /// evaluate_eq: domain 缺 value 字段时返回 false (覆盖 L95:12 False 不同路径)
+    /// `evaluate_eq`: domain 缺 value 字段时返回 false (覆盖 L95:12 False 不同路径)
     #[test]
     fn test_eq_without_value_field_returns_false() {
         let state = make_exec_state("noop", make_payload(10));
@@ -844,7 +844,7 @@ mod tests {
         assert!(!evaluate_domain(&domain, &state));
     }
 
-    /// evaluate_eq: domain 既无 path 也无 value 时返回 false
+    /// `evaluate_eq`: domain 既无 path 也无 value 时返回 false
     #[test]
     fn test_eq_empty_domain_returns_false() {
         let state = make_exec_state("noop", make_payload(10));
@@ -853,7 +853,7 @@ mod tests {
     }
 
     // ===== Branch coverage L108:12: evaluate_lt 缺 path 或 value =====
-    /// evaluate_lt: domain 缺 path 字段时返回 false (覆盖 L108:12 False)
+    /// `evaluate_lt`: domain 缺 path 字段时返回 false (覆盖 L108:12 False)
     #[test]
     fn test_lt_without_path_field_returns_false() {
         let state = make_exec_state("noop", make_payload(10));
@@ -864,7 +864,7 @@ mod tests {
         assert!(!evaluate_domain(&domain, &state));
     }
 
-    /// evaluate_lt: domain 缺 value 字段时返回 false (覆盖 L108:12 False 不同路径)
+    /// `evaluate_lt`: domain 缺 value 字段时返回 false (覆盖 L108:12 False 不同路径)
     #[test]
     fn test_lt_without_value_field_returns_false() {
         let state = make_exec_state("noop", make_payload(10));
@@ -876,7 +876,7 @@ mod tests {
     }
 
     // ===== Branch coverage L121:12: evaluate_exists 缺 path =====
-    /// evaluate_exists: domain 缺 path 字段时返回 false (覆盖 L121:12 False)
+    /// `evaluate_exists`: domain 缺 path 字段时返回 false (覆盖 L121:12 False)
     #[test]
     fn test_exists_without_path_field_returns_false() {
         let state = make_exec_state("noop", make_payload(10));
