@@ -1,0 +1,80 @@
+{
+  "$schema": "https://evorule.example/schemas/invariants-v0.1.json",
+  "$comment": "声明式语义不变式示例。本文件演示如何通过 JSON 描述业务约束，由 tier1-reactor 在主循环每次不变式自检阶段一并求值。规则内容（策略）属于应用层，可按需裁剪；本文件不进 core_eval，不影响 Kani 形式化验证目标。",
+  "invariants": [
+    {
+      "id": "io-result-must-be-consumed",
+      "description": "若 payload.__io_result__ 存在，io_recovery 必须为 true（声明式镜像结构性 #4）",
+      "severity": "error",
+      "rule": {
+        "type": "implies",
+        "antecedent": {
+          "type": "exists",
+          "path": "__exec__.payload.__io_result__"
+        },
+        "consequent": {
+          "type": "eq",
+          "path": "__exec__.io_recovery",
+          "value": true
+        }
+      }
+    },
+    {
+      "id": "version-must-be-non-negative",
+      "description": "version 字段必须非负（>= 0），违规视为 error",
+      "severity": "error",
+      "rule": {
+        "type": "not",
+        "inner": {
+          "type": "lt",
+          "path": "__exec__.version",
+          "value": 0
+        }
+      }
+    },
+    {
+      "id": "queue-length-bounded",
+      "description": "队列长度应保持小于 1000，超过即告警（业务软限制）",
+      "severity": "warn",
+      "rule": {
+        "type": "lt",
+        "path": "__exec__.queue_len",
+        "value": 1000
+      }
+    },
+    {
+      "id": "pending-io-must-not-exceed-hard-limit",
+      "description": "同时挂起的 I/O 请求数不应超过 100（硬保护），违规视为 error",
+      "severity": "error",
+      "rule": {
+        "type": "lt",
+        "path": "__exec__.pending_io_count",
+        "value": 100
+      }
+    },
+    {
+      "id": "awaiting-io-phase-consistency",
+      "description": "若有 pending I/O，phase 应为 awaiting_io 或 executing（不应停留在 idle）",
+      "severity": "warn",
+      "rule": {
+        "type": "implies",
+        "antecedent": {
+          "type": "not",
+          "inner": {
+            "type": "lt",
+            "path": "__exec__.pending_io_count",
+            "value": 1
+          }
+        },
+        "consequent": {
+          "type": "not",
+          "inner": {
+            "type": "eq",
+            "path": "__exec__.phase",
+            "value": "idle"
+          }
+        }
+      }
+    }
+  ]
+}

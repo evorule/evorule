@@ -19,6 +19,7 @@ use crate::io_timeout_policy::IoTimeoutPolicy;
 #[cfg(test)]
 use crate::io_timeout_policy::TimeoutThreshold;
 use crate::phase::ReactorPhase;
+use crate::semantic_invariants::{SemanticInvariantRule, SemanticInvariantViolation, Severity};
 use crate::stable_detector::StableDetector;
 use crate::state::ReactorState;
 use crate::{EventReceiver, EventSender, FactReceiver, FactSender};
@@ -119,6 +120,11 @@ pub struct ReactorBuilder {
     facts_log: FactsLog,
     /// 执行中断标志（外部可通过 ReactorHandle 设置）
     interrupt_flag: Arc<AtomicBool>,
+    /// 声明式语义不变式规则（默认空 = 不做语义检查）
+    ///
+    /// 由 `invariants.json` 加载并编译（`implies` 已展开）。
+    /// 主循环每次不变式自检时一并求值，违规按 severity 记录日志。
+    semantic_invariants: Vec<SemanticInvariantRule>,
 }
 
 impl ReactorBuilder {
@@ -135,6 +141,7 @@ impl ReactorBuilder {
             initial_payload: None,
             facts_log: FactsLog::new(),
             interrupt_flag: Arc::new(AtomicBool::new(false)),
+            semantic_invariants: Vec::new(),
         }
     }
 
@@ -222,6 +229,38 @@ impl ReactorBuilder {
         self
     }
 
+    /// 设置声明式语义不变式规则（来自 `invariants.json`）
+    ///
+    /// 默认为空列表（不做语义检查）。调用方应通过
+    /// [`SemanticInvariantRule::from_json_array`] 从 JSON 加载规则列表，
+    /// 再通过此方法注入。
+    ///
+    /// # 规则加载示例
+    ///
+    /// ```ignore
+    /// use tier1_reactor::{Reactor, SemanticInvariantRule};
+    /// use tier0_tcb::JsonValue;
+    /// use tier1_reactor::wal::serde_to_tcb;
+    ///
+    /// let raw_json: serde_json::Value = serde_json::from_str(&invariants_json_str).unwrap();
+    /// let tcb_json = serde_to_tcb(&raw_json);
+    /// let rules = SemanticInvariantRule::from_json_array(&tcb_json).unwrap();
+    ///
+    /// let reactor = Reactor::builder(core_eval)
+    ///     .semantic_invariants(rules)
+    ///     .build();
+    /// ```
+    ///
+    /// # 规范合规
+    ///
+    /// - ✅ 规则内容来自 JSON（策略），加载是机制
+    /// - ✅ 默认空列表不影响现有行为（向后兼容）
+    /// - ✅ 不修改结构性不变式（[crate::invariants]）与 Kani 验证目标
+    pub fn semantic_invariants(mut self, rules: Vec<SemanticInvariantRule>) -> Self {
+        self.semantic_invariants = rules;
+        self
+    }
+
     /// 构建反应器
     pub fn build(self) -> Reactor {
         Reactor {
@@ -235,6 +274,7 @@ impl ReactorBuilder {
             initial_payload: self.initial_payload,
             facts_log: self.facts_log,
             interrupt_flag: self.interrupt_flag,
+            semantic_invariants: self.semantic_invariants,
         }
     }
 }
@@ -258,6 +298,8 @@ pub struct Reactor {
     facts_log: FactsLog,
     /// 执行中断标志（外部可通过 ReactorHandle 设置）
     interrupt_flag: Arc<AtomicBool>,
+    /// 声明式语义不变式规则（默认空 = 不做语义检查）
+    semantic_invariants: Vec<SemanticInvariantRule>,
 }
 
 impl Reactor {
@@ -369,7 +411,7 @@ impl Reactor {
             Self::update_snapshot(&snapshot, &state, steps, false, &debug_control);
             // 0. 不变式自检：检查上一轮是否引入结构性违规
             //    违规用 tracing::error! 记录，不中断反应器（符合 F11）
-            Self::run_invariant_check(&mut state, steps);
+            Self::run_invariant_check(&mut state, steps, &self.semantic_invariants);
 
             // 0.5 检查执行中断标志
             if interrupt_flag.swap(false, std::sync::atomic::Ordering::Acquire) {
@@ -762,19 +804,25 @@ impl Reactor {
         }
     }
 
-    /// 不变式自检（白盒化：5 条结构性约束）
+    /// 不变式自检（结构性 + 语义性）
     ///
-    /// 在主循环每次迭代开头调用，检查上一轮是否引入违规。
-    /// 违规用 `tracing::error!` 记录（符合 F11，不用 debug_assert!），
-    /// 累计计数到 `state.invariant_violations`，不中断反应器。
-    fn run_invariant_check(state: &mut ReactorState, steps: usize) {
-        let violations = crate::invariants::check_invariants(state, steps);
-        if violations.is_empty() {
-            return;
-        }
-        let count = violations.len() as u64;
-        state.invariant_violations = state.invariant_violations.saturating_add(count);
-        for v in &violations {
+    /// 在主循环每次迭代开头调用：
+    /// 1. 检查 5 条结构性不变式（[crate::invariants]），违规用 `tracing::error!` 记录
+    /// 2. 若 `semantic_rules` 非空，检查声明式语义不变式
+    ///    - `Severity::Error` 违规用 `tracing::error!`
+    ///    - `Severity::Warn` 违规用 `tracing::warn!`
+    ///
+    /// 违规累计计数到 `state.invariant_violations`，不中断反应器（符合 F11）。
+    fn run_invariant_check(
+        state: &mut ReactorState,
+        steps: usize,
+        semantic_rules: &[SemanticInvariantRule],
+    ) {
+        // 1. 结构性不变式（硬编码，始终启用）
+        let structural = crate::invariants::check_invariants(state, steps);
+        let structural_count = structural.len() as u64;
+        state.invariant_violations = state.invariant_violations.saturating_add(structural_count);
+        for v in &structural {
             tracing::error!(
                 phase = %state.phase.as_str(),
                 violation = v.as_str(),
@@ -782,6 +830,46 @@ impl Reactor {
                 "不变式违规: {}",
                 v
             );
+        }
+
+        // 2. 语义不变式（JSON 驱动，默认空 = 跳过）
+        if semantic_rules.is_empty() {
+            return;
+        }
+        let semantic = crate::semantic_invariants::check_semantic_invariants(state, semantic_rules);
+        let semantic_count = semantic.len() as u64;
+        state.invariant_violations = state.invariant_violations.saturating_add(semantic_count);
+        for v in &semantic {
+            Self::log_semantic_violation(state.phase, v, state.invariant_violations);
+        }
+    }
+
+    /// 记录单条语义不变式违规（按 severity 分级）
+    ///
+    /// - `Severity::Error` → `tracing::error!`
+    /// - `Severity::Warn` → `tracing::warn!`
+    fn log_semantic_violation(phase: ReactorPhase, v: &SemanticInvariantViolation, total: u64) {
+        match v.severity {
+            Severity::Error => {
+                tracing::error!(
+                    phase = %phase.as_str(),
+                    rule_id = %v.rule_id,
+                    severity = "error",
+                    total_violations = total,
+                    "语义不变式违规: {}",
+                    v.description
+                );
+            }
+            Severity::Warn => {
+                tracing::warn!(
+                    phase = %phase.as_str(),
+                    rule_id = %v.rule_id,
+                    severity = "warn",
+                    total_violations = total,
+                    "语义不变式告警: {}",
+                    v.description
+                );
+            }
         }
     }
 

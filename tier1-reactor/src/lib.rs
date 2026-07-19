@@ -33,6 +33,7 @@
 //! - `time_machine` — 时间机器 rewind/fork/diff/replay（阶段5，软回滚模式）
 //! - `debug_control` — 调试器级控制 pause/resume/step（阶段6，第四组）
 //! - `pure` — 纯逻辑模块，Kani 形式化验证准备（阶段7，第五组）
+//! - `semantic_invariants` — 声明式语义不变式引擎（JSON 驱动，复用 tier0 域原语）
 //!
 //! # 使用示例
 //! ```ignore
@@ -83,6 +84,7 @@ mod pure;
 mod reactor;
 mod rule_safety;
 mod rule_validator;
+mod semantic_invariants;
 mod stable_detector;
 mod state;
 mod time_machine;
@@ -100,6 +102,9 @@ pub use phase::{PhaseContext, ReactorPhase};
 pub use reactor::{PendingIoEntry, Reactor, ReactorBuilder, ReactorHandle, ReactorStateSnapshot};
 pub use rule_safety::{RuleSafetyAnalyzer, SafetyMetrics, SafetyReport};
 pub use rule_validator::{RuleValidator, ValidationError, ValidationResult};
+pub use semantic_invariants::{
+    SemanticInvariantError, SemanticInvariantRule, SemanticInvariantViolation, Severity,
+};
 pub use stable_detector::StableDetector;
 pub use time_machine::{diff, fork, replay, rewind, PayloadDiff, RewindSnapshot};
 pub use wal::{
