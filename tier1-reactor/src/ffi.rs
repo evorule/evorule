@@ -1,4 +1,8 @@
-﻿#![allow(unsafe_code)]
+﻿// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+
+#![allow(unsafe_code)]
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
 //! C FFI 接口 —— 暴露 evorule 核心功能给 C/C++/Python 等外部语言。

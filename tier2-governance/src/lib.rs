@@ -1,4 +1,7 @@
-﻿//! TheEquation 治理层 - I/O 订阅者、审计链、HTTP API
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! TheEquation 治理层 - I/O 订阅者、审计链、HTTP API
 //!
 //! # 定位
 //! tier2-governance 是三层架构的最上层：

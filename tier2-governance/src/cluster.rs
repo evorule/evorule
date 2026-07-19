@@ -1,4 +1,7 @@
-﻿//! 反应器集群 - 多 reactor 协作原语（阶段8：第六组）
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! 反应器集群 - 多 reactor 协作原语（阶段8：第六组）
 //!
 //! # 设计
 //!

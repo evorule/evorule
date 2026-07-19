@@ -1,4 +1,4 @@
-﻿//! tier2-governance compile-time gate (G8 + F11 + §5.2)
+//! tier2-governance compile-time gate (G8 + F11 + §5.2)
 //!
 //! 强制执行 G8：反应器/治理层不得展开 conditional/while_loop/sequence。
 //! 强制执行 F11：非测试代码不得使用 debug_assert!/unwrap()/expect()。

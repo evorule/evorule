@@ -15,9 +15,13 @@ class SessionNotFoundError(EvoruleError):
     """会话不存在（HTTP 404）"""
 
 
+class SessionClosedError(EvoruleError):
+    """会话已在客户端关闭（不再允许操作）"""
+
+
 class CommandError(EvoruleError):
     """命令提交失败（channel closed 或其他错误）"""
 
 
-class ConnectionError(EvoruleError):
+class EvoruleConnectionError(EvoruleError):
     """连接服务器失败"""

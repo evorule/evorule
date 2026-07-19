@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! 通用对象池 —— 复用已分配的对象以减少 GC 压力
 //!
 //! # 设计依据
@@ -73,10 +76,7 @@ impl<T> ObjectPool<T> {
     /// 调用方应检查返回的对象是否需要重置。
     /// 如果池为空，返回 `None`，调用方需自行创建新对象。
     pub fn acquire(&self) -> Option<T> {
-        self.free
-            .lock()
-            .ok()
-            .and_then(|mut pool| pool.pop())
+        self.free.lock().ok().and_then(|mut pool| pool.pop())
     }
 
     /// 释放对象到池中
@@ -206,8 +206,7 @@ mod tests {
         let pool: ObjectPool<Vec<u8>> = ObjectPool::new(8);
 
         // 创建大容量 Vec 并释放
-        let mut big: Vec<u8> = Vec::with_capacity(4096);
-        big.extend(std::iter::repeat(0u8).take(4096));
+        let mut big: Vec<u8> = vec![0; 4096];
         big.clear();
         pool.release(big);
 

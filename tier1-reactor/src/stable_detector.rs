@@ -1,4 +1,7 @@
-﻿//! 稳定检测逻辑
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! 稳定检测逻辑
 //!
 //! # 设计依据
 //! 基于《02_反应式数据执行器》§3.2 和《04_树形结构》stable_detector.rs 定义：

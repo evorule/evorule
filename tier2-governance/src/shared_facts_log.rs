@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! 跨会话共享事实存储
 //!
 //! # 设计依据
@@ -44,6 +47,7 @@ struct SharedFactsLogInner {
     facts_log: FactsLog,
     next_fact_id: u64,
     fact_sources: BTreeMap<FactId, u64>,
+    used_at_startup: BTreeMap<u64, Vec<FactId>>,
 }
 
 impl std::fmt::Debug for SharedFactsLogInner {
@@ -64,6 +68,7 @@ impl SharedFactsLog {
                 facts_log: FactsLog::new(),
                 next_fact_id: 1,
                 fact_sources: BTreeMap::new(),
+                used_at_startup: BTreeMap::new(),
             })),
         }
     }
@@ -76,6 +81,7 @@ impl SharedFactsLog {
                 facts_log,
                 next_fact_id: 1,
                 fact_sources: BTreeMap::new(),
+                used_at_startup: BTreeMap::new(),
             })),
         })
     }
@@ -214,6 +220,40 @@ impl SharedFactsLog {
         inner.facts_log.history_len()
     }
 
+    /// 记录会话启动时使用的事实 ID
+    ///
+    /// 用于追踪共享事实的消费关系，支持跨会话因果追溯。
+    pub fn record_used_at_startup(&self, session_id: u64, fact_ids: &[FactId]) {
+        let mut inner = self
+            .inner
+            .write()
+            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        inner.used_at_startup.insert(session_id, fact_ids.to_vec());
+    }
+
+    /// 查询会话启动时使用的事实 ID
+    pub fn get_used_at_startup(&self, session_id: u64) -> Option<Vec<FactId>> {
+        let inner = self
+            .inner
+            .read()
+            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        inner.used_at_startup.get(&session_id).cloned()
+    }
+
+    /// 查询使用指定事实的所有会话
+    pub fn get_sessions_using_fact(&self, fact_id: FactId) -> Vec<u64> {
+        let inner = self
+            .inner
+            .read()
+            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        inner
+            .used_at_startup
+            .iter()
+            .filter(|(_, facts)| facts.contains(&fact_id))
+            .map(|(session_id, _)| *session_id)
+            .collect()
+    }
+
     /// 重置 SharedFactsLog 到初始状态
     pub fn reset(&self) {
         let mut inner = self
@@ -223,6 +263,7 @@ impl SharedFactsLog {
         inner.facts_log.reset();
         inner.next_fact_id = 1;
         inner.fact_sources.clear();
+        inner.used_at_startup.clear();
     }
 }
 

@@ -1,4 +1,7 @@
-﻿#![forbid(unsafe_code)]
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+#![forbid(unsafe_code)]
 //! Prometheus 指标模块（P2-7）
 //!
 //! 定义 evorule 的核心运行时指标，通过 `/metrics` 端点暴露给 Prometheus 抓取。
@@ -270,7 +273,7 @@ mod tests {
     fn test_metrics_new_registers_all() {
         let m = make_metrics();
         m.inc_commands("init");
-        let io_type = IoType::CallExternal;
+        let io_type = IoType::CALL_EXTERNAL;
         m.observe_io_duration(&io_type, std::time::Duration::from_secs(0));
         m.inc_io_errors(&io_type);
         m.inc_http_requests("GET", "/", "200");
@@ -320,7 +323,7 @@ mod tests {
     #[test]
     fn test_io_duration_histogram() {
         let m = make_metrics();
-        let io_type = IoType::CallExternal;
+        let io_type = IoType::CALL_EXTERNAL;
         m.observe_io_duration(&io_type, std::time::Duration::from_millis(150));
         m.observe_io_duration(&io_type, std::time::Duration::from_millis(350));
         let output = m.render();
@@ -362,7 +365,7 @@ mod tests {
     #[test]
     fn test_io_errors_counter() {
         let m = make_metrics();
-        let io_type = IoType::CallExternal;
+        let io_type = IoType::CALL_EXTERNAL;
         m.inc_io_errors(&io_type);
         m.inc_io_errors(&io_type);
         let output = m.render();

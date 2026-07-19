@@ -1,4 +1,7 @@
-﻿//! I/O Dispatcher - 根据 IoType 分发到对应 handler
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! I/O Dispatcher - 根据 IoType 分发到对应 handler
 //!
 //! # 设计
 //! 使用 Enum Dispatch 模式，4 种 I/O 类型各有对应 handler：
@@ -32,12 +35,22 @@ impl IoDispatcher {
 
     /// 根据 IoType 分发执行
     pub async fn dispatch(&self, io_type: &IoType, params: &JsonValue) -> IoResult {
-        match io_type {
-            IoType::CallExternal => self.http.execute(params).await,
-            IoType::QueryDb => self.db.execute(params).await,
-            IoType::HttpGet => self.http.execute(params).await,
-            IoType::SaveMemory => self.memory.execute(params).await,
-            IoType::CallService => self.http.execute(params).await,
+        if io_type == &IoType::CALL_EXTERNAL {
+            self.http.execute(params).await
+        } else if io_type == &IoType::QUERY_DB {
+            self.db.execute(params).await
+        } else if io_type == &IoType::HTTP_GET {
+            self.http.execute(params).await
+        } else if io_type == &IoType::SAVE_MEMORY {
+            self.memory.execute(params).await
+        } else if io_type == &IoType::CALL_SERVICE {
+            self.http.execute(params).await
+        } else {
+            tracing::warn!(
+                "Unknown IoType: {}, using default HTTP handler",
+                io_type.as_str()
+            );
+            self.http.execute(params).await
         }
     }
 }

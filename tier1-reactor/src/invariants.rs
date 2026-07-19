@@ -1,4 +1,7 @@
-﻿//! 反应器不变式自检（白盒化：结构性约束验证）
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! 反应器不变式自检（白盒化：结构性约束验证）
 //!
 //! # 设计
 //!

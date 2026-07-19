@@ -1,9 +1,9 @@
 [package]
 name = "tier2-governance"
-version = "6.0.0"
+version = "0.1.0"
 edition = "2021"
 description = "TheEquation 治理层 - I/O 订阅者、审计链、HTTP API"
-license = "MIT OR Apache-2.0"
+license = "AGPL-3.0"
 
 [dependencies]
 # 本地依赖
@@ -39,7 +39,7 @@ blake3 = "1" # 哈希
 # HTTP API
 axum = "0.8"
 tower = { version = "0.5", features = ["limit"] }
-tower-http = { version = "0.6", features = ["trace", "cors", "limit"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "limit", "fs"] }
 tower_governor = "0.8"
 
 # 安全（P1-5：恒定时间比较，防时序攻击）
@@ -50,8 +50,7 @@ notify = "7"
 
 # 序列化
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-toml = "0.8"                                     # P2-9：TOML 配置文件
+serde_json = "1"                                 # P2-9：JSON 配置文件(v6.1 起替代 TOML)
 
 # 错误处理
 thiserror = "2"

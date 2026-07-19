@@ -6,6 +6,17 @@
 
 import type { EventData, EventType } from "./types.js";
 
+/** EventType 白名单（运行时校验用） */
+const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "Command",
+  "StateTransition",
+  "IoRequest",
+  "IoResponse",
+  "Stable",
+  "PayloadUpdate",
+  "Error",
+]);
+
 /** SSE 事件 */
 export class Event {
   /** 事件类型 */
@@ -21,8 +32,25 @@ export class Event {
     this.raw = Object.freeze({ ...data }) as Readonly<EventData>;
   }
 
-  /** 从 JSON 对象构造 Event */
+  /**
+   * 从 JSON 对象构造 Event
+   *
+   * 运行时对 type 字段做白名单校验，未知类型抛出 Error。
+   * 对 id 字段做数值校验。
+   */
   static fromJson(data: Record<string, unknown>): Event {
+    const type = data.type;
+    if (typeof type !== "string" || !KNOWN_EVENT_TYPES.has(type)) {
+      throw new Error(
+        `Invalid SSE event type: ${JSON.stringify(type)}`,
+      );
+    }
+    const id = data.id;
+    if (typeof id !== "number" || !Number.isFinite(id)) {
+      throw new Error(
+        `Invalid SSE event id: ${JSON.stringify(id)}`,
+      );
+    }
     return new Event(data as unknown as EventData);
   }
 

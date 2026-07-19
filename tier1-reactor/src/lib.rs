@@ -1,4 +1,7 @@
-﻿//! TheEquation 反应式执行器
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! TheEquation 反应式执行器
 //!
 //! # 设计原则
 //! - 事实驱动：所有交互通过 Fact 通道进行

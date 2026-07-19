@@ -24,8 +24,9 @@ from .events import Event
 from .exceptions import (
     AuthenticationError,
     CommandError,
-    ConnectionError,
+    EvoruleConnectionError,
     EvoruleError,
+    SessionClosedError,
     SessionNotFoundError,
 )
 from .session import Session
@@ -39,7 +40,8 @@ __all__ = [
     "EvoruleError",
     "AuthenticationError",
     "SessionNotFoundError",
+    "SessionClosedError",
     "CommandError",
-    "ConnectionError",
+    "EvoruleConnectionError",
     "__version__",
 ]

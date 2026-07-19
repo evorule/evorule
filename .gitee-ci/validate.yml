@@ -1,0 +1,54 @@
+# Gitee Go pipeline for EvoRule
+# 依据 VERSION_STRATEGY.md 自动校验
+# 触发条件: 改版本相关文件
+#
+# 本地等价命令: pwsh scripts/validate-all.ps1
+
+stages:
+  - validate
+
+variables:
+  GIT_DEPTH: "20"
+
+# 1. PR 阶段: 改任何版本/许可证/CHANGELOG 都跑
+validate-pr:
+  stage: validate
+  image: mcr.microsoft.com/powershell:lts-nanoserver-1809
+  script:
+    - pwsh -NoProfile -File scripts/validate-version.ps1
+    - pwsh -NoProfile -File scripts/validate-changelog.ps1
+    - pwsh -NoProfile -File scripts/validate-license.ps1
+    - pwsh -NoProfile -File scripts/validate-cargolock.ps1
+  rules:
+    - changes:
+        - Cargo.toml
+        - "**/Cargo.toml"
+        - "**/package.json"
+        - "**/pyproject.toml"
+        - "**/CHANGELOG.md"
+        - "**/LICENSE"
+        - "tier0-tcb/core_eval.json"
+        - "scripts/**"
+        - "VERSION_STRATEGY.md"
+
+# 2. Tag 阶段: 推 tag 时强制跑
+validate-tag:
+  stage: validate
+  image: mcr.microsoft.com/powershell:lts-nanoserver-1809
+  script:
+    - pwsh -NoProfile -File scripts/validate-all.ps1
+  rules:
+    - changes:
+        - "**"
+
+# 3. release-job (参考,可选): 实际发版时跑
+# 暂不开,等 0.1.0 真正发版时再 enable
+# release:
+#   stage: release
+#   image: mcr.microsoft.com/powershell:lts-nanoserver-1809
+#   script:
+#     - pwsh -NoProfile -File scripts/validate-all.ps1
+#     - git tag "v$(grep '^version' Cargo.toml | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+#   rules:
+#     - changes:
+#         - "**"

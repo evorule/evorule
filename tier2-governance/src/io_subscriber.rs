@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! I/O 订阅者 - 订阅 event broadcast 通道，过滤 IoRequest 事实，执行 I/O，回写 IoResponse
 //!
 //! # 工作流程
@@ -333,7 +336,7 @@ mod tests {
     #[test]
     fn test_io_type_import_available() {
         // 确保 IoType 在本模块内可见且可使用（防止 import 被意外删除）
-        let t = IoType::CallExternal;
+        let t = IoType::CALL_EXTERNAL;
         assert_eq!(t.as_str(), "call_external");
     }
 

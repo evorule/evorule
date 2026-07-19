@@ -1,9 +1,9 @@
 [package]
 name = "tier1-reactor"
-version = "6.0.0"
+version = "0.1.0"
 edition = "2021"
 description = "TheEquation 反应式执行器 - 事实驱动的状态转换引擎"
-license = "MIT OR Apache-2.0"
+license = "AGPL-3.0"
 repository = "https://github.com/evorule/tier1-reactor"
 
 [dependencies]

@@ -1,4 +1,7 @@
-﻿//! I/O Handler trait 定义
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! I/O Handler trait 定义
 //!
 //! 所有 I/O handler 实现此 trait，由 `IoDispatcher` 根据 `IoType` 分发。
 

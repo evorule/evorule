@@ -4,6 +4,9 @@
   "description": "TCB 宪法 - 将业务指令映射为元指令（反应式执行器版）",
   "metadata": {
     "author": "evorule-core",
+    "license": "CC0-1.0 Universal (Public Domain)",
+    "public_domain_notice": "本文件(core_eval.json,即 EvoRule 宪法)以 CC0 1.0 公共领域奉献。任何人都可以自由使用、修改、再分发,无需保留版权声明。EvoRule 代码本身采用 AGPL-3.0-or-later,但本解释器规范是公共领域 —— 任何人都可以实现兼容的 EvoRule 引擎。",
+    "spdx_license_id": "CC0-1.0",
     "sections": [
       "1. 原子计算指令: increment, decrement, set",
       "2. 控制流指令: sequence, conditional, while_loop",

@@ -1,4 +1,7 @@
-﻿#![forbid(unsafe_code)]
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+#![forbid(unsafe_code)]
 //! 调试器级控制 —— pause / resume / step（阶段6，第四组）
 //!
 //! # 设计依据

@@ -1,4 +1,7 @@
-﻿//! 会话管理器 - 多反应器实例隔离
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! 会话管理器 - 多反应器实例隔离
 //!
 //! 每个会话对应一个独立的长驻反应器实例，拥有独立的 state、FactsLog、
 //! command 通道和 event 通道。SessionManager 负责会话的创建、查找和销毁。
@@ -375,23 +378,32 @@ impl SessionManager {
 
         let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
 
-        let initial_content_hash = match version {
+        let (initial_content_hash, initial_payload, initial_version) = match version {
             Some(v) => {
                 let snapshot = tier1_reactor::rewind(&parent.facts_log, v)
                     .ok_or(SessionError::InvalidVersion { version: v })?;
-                blake3::hash(snapshot.payload.to_string().as_bytes())
-                    .to_hex()
-                    .to_string()
+                (
+                    blake3::hash(snapshot.payload.to_string().as_bytes())
+                        .to_hex()
+                        .to_string(),
+                    snapshot.payload,
+                    v,
+                )
             }
             None => {
-                let (payload, _, _) = parent.facts_log.snapshot();
-                blake3::hash(payload.to_string().as_bytes())
-                    .to_hex()
-                    .to_string()
+                let (payload, _, version) = parent.facts_log.snapshot();
+                (
+                    blake3::hash(payload.to_string().as_bytes())
+                        .to_hex()
+                        .to_string(),
+                    payload,
+                    version,
+                )
             }
         };
 
         let facts_log = self.create_facts_log(session_id);
+        facts_log.set_initial_state(initial_payload, initial_version);
 
         let reactor = Reactor::builder(self.core_eval.clone())
             .max_rounds(self.max_rounds)
@@ -657,7 +669,7 @@ impl SessionManager {
     /// 遍历 `pending_recycle`，对于 `is_reusable()` 为 true 的 FactsLog：
     /// - 重置内部状态
     /// - 释放到对象池
-    /// 不可复用的（反应器仍在运行）保留在列表中等待下次清理。
+    ///   - 不可复用的（反应器仍在运行）保留在列表中等待下次清理。
     fn reclaim_pending(&self) {
         if let Ok(mut pending) = self.pending_recycle.lock() {
             if pending.is_empty() {

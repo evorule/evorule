@@ -1,4 +1,7 @@
-﻿#![forbid(unsafe_code)]
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+#![forbid(unsafe_code)]
 //! Memory I/O Handler —— 基于 `tokio::fs` 实现持久化键值存储。
 //!
 //! - 写模式：参数包含 `value` 字段时，将内容写入 `base_dir/<key>` 文件，返回 `JsonValue::Bool(true)`。

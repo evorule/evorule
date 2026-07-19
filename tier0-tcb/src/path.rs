@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! 路径解析 - 支持点号分隔 + 数组索引，永不 panic
 
 use crate::value::JsonValue;

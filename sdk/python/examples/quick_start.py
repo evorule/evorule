@@ -75,7 +75,37 @@ async def main() -> None:
             y = state.get("payload", {}).get("y", 0)
             print(f"\n验证: x={x} (期望 15), y={y} (期望 3)")
             assert x == 15 and y == 3, f"状态验证失败: x={x}, y={y}"
-            print("\n✅ SDK 端到端验证通过！")
+            print("\n✅ SDK 端到端验证通过！\n")
+
+            # 8. 演示时间旅行：replay / rewind / diff
+            print("--- 演示时间旅行：replay / rewind / diff ---")
+            replay_data = await session.replay()
+            facts = replay_data.get("facts", [])
+            print(f"replay: 共 {len(facts)} 个 Fact")
+
+            # 回滚到 version=1（初始状态）
+            rewind_data = await session.rewind(1)
+            print(f"rewind(1): version={rewind_data.get('version')}, payload={rewind_data.get('payload')}")
+
+            # 对比 version=1 和当前版本（应是回滚前的最新版本）
+            diff_data = await session.diff(1, 2)
+            print(f"diff(1→2): version_a={diff_data.get('version_a')}, version_b={diff_data.get('version_b')}")
+            print(f"  added={len(diff_data.get('added', []))} 项, removed={len(diff_data.get('removed', []))} 项, changed={len(diff_data.get('changed', []))} 项")
+
+            # 9. 演示 debug 端点
+            print("\n--- 演示 debug 端点 ---")
+            phase = await session.debug_phase()
+            print(f"debug_phase: {phase}")
+            queue = await session.debug_queue()
+            print(f"debug_queue: {len(queue)} 项")
+            pending_io = await session.debug_pending_io()
+            print(f"debug_pending_io: {len(pending_io)} 项")
+
+            # 10. 演示 interrupt（最后一步，触发后会停止反应器）
+            print("\n--- 演示 interrupt ---")
+            interrupt_resp = await session.interrupt()
+            print(f"interrupt 响应: {interrupt_resp}")
+            print("反应器已中断，后续命令将失败")
 
     print("\n=== 完成 ===")
 

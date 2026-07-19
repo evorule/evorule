@@ -1,4 +1,7 @@
-﻿#![forbid(unsafe_code)]
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+#![forbid(unsafe_code)]
 //! 规则安全分析器 —— 检测循环/递归/I/O攻击（阶段10.1问题4）
 //!
 //! # 设计依据
@@ -292,11 +295,11 @@ impl RuleSafetyAnalyzer {
         matches!(
             IoType::parse(instr_type),
             Some(
-                IoType::CallExternal
-                    | IoType::QueryDb
-                    | IoType::HttpGet
-                    | IoType::SaveMemory
-                    | IoType::CallService
+                IoType::CALL_EXTERNAL
+                    | IoType::QUERY_DB
+                    | IoType::HTTP_GET
+                    | IoType::SAVE_MEMORY
+                    | IoType::CALL_SERVICE
             )
         )
     }

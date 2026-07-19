@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! 元指令执行器 - 3 个元指令 + `io_request` 信号
 //!
 //! # 元指令列表
@@ -16,7 +19,6 @@ use crate::error::TcbError;
 use crate::path::{resolve_path, resolve_path_mut};
 use crate::value::JsonValue;
 use alloc::collections::BTreeMap;
-use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -164,18 +166,40 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
 
     let value = resolve_path_or_literal(&state, params.get("value"))?;
 
-    // 解析 attr 路径：支持嵌套（如 "a.b.c" → 导航到 __exec__.payload.a.b，设置 c）
-    let (parent_path, field) = match attr.rsplit_once('.') {
-        Some((parent, f)) if !parent.is_empty() && !f.is_empty() => {
-            (format!("__exec__.payload.{parent}"), f)
-        }
-        Some(_) => return Err(TcbError::PathResolutionFailed(attr.to_string())),
-        None => ("__exec__.payload".to_string(), attr),
-    };
+    let parts: Vec<&str> = attr.split('.').collect();
+    if parts.is_empty() || parts.first() == Some(&"") {
+        return Err(TcbError::PathResolutionFailed(attr.to_string()));
+    }
 
-    let parent_obj = resolve_path_mut(&mut state, &parent_path)
-        .and_then(|v| v.as_object_mut())
+    let field = *parts
+        .last()
         .ok_or(TcbError::PathResolutionFailed(attr.to_string()))?;
+
+    let parent_obj = if parts.len() == 1 {
+        resolve_path_mut(&mut state, "__exec__.payload")
+            .and_then(|v| v.as_object_mut())
+            .ok_or(TcbError::PathResolutionFailed(attr.to_string()))?
+    } else {
+        let mut current = resolve_path_mut(&mut state, "__exec__.payload")
+            .and_then(|v| v.as_object_mut())
+            .ok_or(TcbError::PathResolutionFailed(attr.to_string()))?;
+
+        for &part in parts
+            .get(0..parts.len() - 1)
+            .ok_or(TcbError::PathResolutionFailed(attr.to_string()))?
+        {
+            if !current.contains_key(part) {
+                current.insert(part.to_string(), JsonValue::empty_object());
+            }
+
+            current = current
+                .get_mut(part)
+                .and_then(|v| v.as_object_mut())
+                .ok_or(TcbError::PathResolutionFailed(attr.to_string()))?;
+        }
+
+        current
+    };
 
     let current = parent_obj
         .get(field)

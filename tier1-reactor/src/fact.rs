@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! 事实（Fact）定义 - 系统的原子通信单元
 
 use tier0_tcb::JsonValue;
@@ -16,44 +19,41 @@ impl core::fmt::Display for FactId {
 ///
 /// 阶段3-1.4：实现 `Copy`，使 `register_io_request(id, io_type)` 后 `io_type`
 /// 仍可在调用方使用（如 reactor 中需要在 register 后再用于 Fact::IoRequest）。
+///
+/// 阶段6：从硬编码枚举改为 String newtype，支持自定义 I/O 类型扩展。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum IoType {
-    /// 调用外部服务
-    CallExternal,
-    /// 查询数据库
-    QueryDb,
-    /// HTTP GET 请求
-    HttpGet,
-    /// 保存到记忆
-    SaveMemory,
-    /// 调用外部服务
-    CallService,
-}
+pub struct IoType(pub &'static str);
 
 impl IoType {
+    /// 调用外部服务
+    pub const CALL_EXTERNAL: Self = IoType("call_external");
+    /// 查询数据库
+    pub const QUERY_DB: Self = IoType("query_db");
+    /// HTTP GET 请求
+    pub const HTTP_GET: Self = IoType("http_get");
+    /// 保存到记忆
+    pub const SAVE_MEMORY: Self = IoType("save_memory");
+    /// 调用外部服务
+    pub const CALL_SERVICE: Self = IoType("call_service");
+
     /// 从字符串解析 I/O 类型
     ///
-    /// 与 core_eval.json 的 io_type 字段对应，未知类型返回 None。
+    /// 与 core_eval.json 的 io_type 字段对应。
+    /// 阶段6：未知类型不再返回 None，而是创建自定义 IoType。
     pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "call_external" => Some(IoType::CallExternal),
-            "query_db" => Some(IoType::QueryDb),
-            "http_get" => Some(IoType::HttpGet),
-            "save_memory" => Some(IoType::SaveMemory),
-            "call_service" => Some(IoType::CallService),
-            _ => None,
-        }
+        Some(match s {
+            "call_external" => IoType("call_external"),
+            "query_db" => IoType("query_db"),
+            "http_get" => IoType("http_get"),
+            "save_memory" => IoType("save_memory"),
+            "call_service" => IoType("call_service"),
+            _ => IoType(Box::leak(s.to_string().into_boxed_str())),
+        })
     }
 
     /// 转为字符串
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            IoType::CallExternal => "call_external",
-            IoType::QueryDb => "query_db",
-            IoType::HttpGet => "http_get",
-            IoType::SaveMemory => "save_memory",
-            IoType::CallService => "call_service",
-        }
+    pub fn as_str(&self) -> &str {
+        self.0
     }
 }
 
@@ -282,7 +282,7 @@ mod tests {
         let io_req = Fact::IoRequest {
             id: FactId(20),
             cause: FactId(10),
-            io_type: IoType::CallExternal,
+            io_type: IoType::CALL_EXTERNAL,
             params: JsonValue::empty_object(),
         };
         assert_eq!(io_req.id(), FactId(20));
@@ -312,11 +312,11 @@ mod tests {
     fn test_io_type_roundtrip() {
         // 所有 IoType 变体的 parse ↔ as_str 往返
         for expected in [
-            IoType::CallExternal,
-            IoType::QueryDb,
-            IoType::HttpGet,
-            IoType::SaveMemory,
-            IoType::CallService,
+            IoType::CALL_EXTERNAL,
+            IoType::QUERY_DB,
+            IoType::HTTP_GET,
+            IoType::SAVE_MEMORY,
+            IoType::CALL_SERVICE,
         ] {
             let s = expected.as_str();
             let parsed = IoType::parse(s).expect("roundtrip should succeed");
@@ -326,18 +326,27 @@ mod tests {
 
     #[test]
     fn test_io_type_parse_unknown() {
-        assert!(IoType::parse("unknown").is_none());
-        assert!(IoType::parse("").is_none());
-        assert!(IoType::parse("CALL_LLM").is_none()); // 大小写敏感
+        assert!(IoType::parse("unknown").is_some());
+        if let Some(parsed) = IoType::parse("unknown") {
+            assert_eq!(parsed.as_str(), "unknown");
+        }
+        assert!(IoType::parse("").is_some());
+        if let Some(parsed) = IoType::parse("") {
+            assert_eq!(parsed.as_str(), "");
+        }
+        assert!(IoType::parse("CALL_LLM").is_some());
+        if let Some(parsed) = IoType::parse("CALL_LLM") {
+            assert_eq!(parsed.as_str(), "CALL_LLM");
+        }
     }
 
     #[test]
     fn test_io_type_display() {
-        assert_eq!(format!("{}", IoType::CallExternal), "call_external");
-        assert_eq!(format!("{}", IoType::QueryDb), "query_db");
-        assert_eq!(format!("{}", IoType::HttpGet), "http_get");
-        assert_eq!(format!("{}", IoType::SaveMemory), "save_memory");
-        assert_eq!(format!("{}", IoType::CallService), "call_service");
+        assert_eq!(format!("{}", IoType::CALL_EXTERNAL), "call_external");
+        assert_eq!(format!("{}", IoType::QUERY_DB), "query_db");
+        assert_eq!(format!("{}", IoType::HTTP_GET), "http_get");
+        assert_eq!(format!("{}", IoType::SAVE_MEMORY), "save_memory");
+        assert_eq!(format!("{}", IoType::CALL_SERVICE), "call_service");
     }
 
     #[test]
@@ -383,7 +392,7 @@ mod tests {
         assert!(!Fact::IoRequest {
             id: FactId(6),
             cause: FactId(0),
-            io_type: IoType::CallExternal,
+            io_type: IoType::CALL_EXTERNAL,
             params: JsonValue::empty_object(),
         }
         .is_terminal());
@@ -429,7 +438,7 @@ mod tests {
             Fact::IoRequest {
                 id: FactId(1),
                 cause: FactId(0),
-                io_type: IoType::CallExternal,
+                io_type: IoType::CALL_EXTERNAL,
                 params: JsonValue::empty_object(),
             }
             .type_name(),

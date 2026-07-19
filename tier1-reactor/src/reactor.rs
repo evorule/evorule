@@ -1,4 +1,7 @@
-﻿//! 反应器核心 - 事实驱动的状态转换引擎
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! 反应器核心 - 事实驱动的状态转换引擎
 //!
 //! # 架构
 //! - 双通道：command 通道（用户→反应器），event 通道（反应器→用户）
@@ -26,6 +29,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use std::collections::VecDeque;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -113,6 +117,8 @@ pub struct ReactorBuilder {
     initial_payload: Option<JsonValue>,
     /// FactsLog（默认使用 `FactsLog::new()` 纯内存模式）
     facts_log: FactsLog,
+    /// 执行中断标志（外部可通过 ReactorHandle 设置）
+    interrupt_flag: Arc<AtomicBool>,
 }
 
 impl ReactorBuilder {
@@ -128,6 +134,7 @@ impl ReactorBuilder {
             io_timeout_policy: None,
             initial_payload: None,
             facts_log: FactsLog::new(),
+            interrupt_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -227,6 +234,7 @@ impl ReactorBuilder {
             io_timeout_policy: self.io_timeout_policy,
             initial_payload: self.initial_payload,
             facts_log: self.facts_log,
+            interrupt_flag: self.interrupt_flag,
         }
     }
 }
@@ -248,6 +256,8 @@ pub struct Reactor {
     /// 阶段5：初始 payload（fork 时设置，正常启动为 None = 空对象）
     initial_payload: Option<JsonValue>,
     facts_log: FactsLog,
+    /// 执行中断标志（外部可通过 ReactorHandle 设置）
+    interrupt_flag: Arc<AtomicBool>,
 }
 
 impl Reactor {
@@ -287,11 +297,15 @@ impl Reactor {
         // 阶段6：创建调试控制（共享在 reactor 主循环与 ReactorHandle 之间）
         let debug_control = DebugControl::new();
         let debug_control_for_run = debug_control.clone();
+        // 执行中断标志（共享在 reactor 主循环与 ReactorHandle 之间）
+        let interrupt_flag = self.interrupt_flag.clone();
+        let interrupt_flag_for_run = self.interrupt_flag.clone();
         let handle = tokio::spawn(self.run(
             channels.command_rx,
             channels.event_tx,
             snapshot_for_run,
             debug_control_for_run,
+            interrupt_flag_for_run,
         ));
         (
             channels.command_tx,
@@ -301,6 +315,7 @@ impl Reactor {
                 handle,
                 snapshot,
                 debug_control,
+                interrupt_flag,
             },
             facts_log,
         )
@@ -331,6 +346,7 @@ impl Reactor {
         event_tx: EventSender,
         snapshot: Arc<Mutex<ReactorStateSnapshot>>,
         debug_control: DebugControl,
+        interrupt_flag: Arc<AtomicBool>,
     ) -> Result<(), ReactorError> {
         let mut state = ReactorState::new();
         // 阶段5：fork 场景下设置初始 payload
@@ -354,6 +370,28 @@ impl Reactor {
             // 0. 不变式自检：检查上一轮是否引入结构性违规
             //    违规用 tracing::error! 记录，不中断反应器（符合 F11）
             Self::run_invariant_check(&mut state, steps);
+
+            // 0.5 检查执行中断标志
+            if interrupt_flag.swap(false, std::sync::atomic::Ordering::Acquire) {
+                state.phase = ReactorPhase::Error;
+                let id = id_gen.next_id();
+                let err_fact = Fact::Error {
+                    id,
+                    message: "Execution interrupted by external request".to_string(),
+                };
+                Self::emit_fact(&self.facts_log, &event_tx, err_fact);
+                // 发射 Stable 恢复
+                state.phase = ReactorPhase::Stable;
+                let stable_id = id_gen.next_id();
+                let stable_fact = Fact::Stable {
+                    id: stable_id,
+                    final_snapshot: state.payload.clone(),
+                };
+                Self::emit_fact(&self.facts_log, &event_tx, stable_fact);
+                steps = 0;
+                state.phase = ReactorPhase::Idle;
+                continue 'main;
+            }
 
             // 1. 非阻塞 drain command 通道中所有待处理 Fact
             //    ISSUE-1 修复：避免稳定检测前遗漏通道中已排队的 Fact
@@ -720,7 +758,7 @@ impl Reactor {
             tracing::warn!("FactsLog append failed: {}", e);
         }
         if event_tx.send(fact).is_err() {
-            tracing::warn!("Event broadcast channel has no receivers, fact not delivered");
+            tracing::debug!("Event broadcast channel has no receivers, fact not delivered");
         }
     }
 
@@ -921,23 +959,59 @@ impl Reactor {
         path: &str,
         value: JsonValue,
     ) -> Result<(), ReactorError> {
-        // 先尝试解析已存在路径
         if let Some(target) = resolve_path_mut(&mut state.payload, path) {
             *target = value;
             return Ok(());
         }
 
-        // 路径不存在：仅支持顶层字段创建
-        if !path.contains('.') && !path.contains('[') {
-            if let JsonValue::Object(map) = &mut state.payload {
-                map.insert(path.to_string(), value);
-                return Ok(());
-            }
+        let parts: Vec<&str> = path.split('.').collect();
+        if parts.is_empty() {
+            return Err(ReactorError::InvalidState {
+                field: "payload path is empty",
+            });
         }
 
-        Err(ReactorError::InvalidState {
-            field: "payload path does not exist",
-        })
+        let field = parts.last().ok_or(ReactorError::InvalidState {
+            field: "payload path is empty",
+        })?;
+
+        let parent_obj = if parts.len() == 1 {
+            if let JsonValue::Object(map) = &mut state.payload {
+                map
+            } else {
+                return Err(ReactorError::InvalidState {
+                    field: "payload is not an object",
+                });
+            }
+        } else {
+            let mut current = &mut state.payload;
+
+            for &part in &parts[0..parts.len() - 1] {
+                if let JsonValue::Object(map) = current {
+                    if !map.contains_key(part) {
+                        map.insert(part.to_string(), JsonValue::empty_object());
+                    }
+                    current = map.get_mut(part).ok_or(ReactorError::InvalidState {
+                        field: "failed to access nested path",
+                    })?;
+                } else {
+                    return Err(ReactorError::InvalidState {
+                        field: "intermediate path is not an object",
+                    });
+                }
+            }
+
+            if let JsonValue::Object(map) = current {
+                map
+            } else {
+                return Err(ReactorError::InvalidState {
+                    field: "parent path is not an object",
+                });
+            }
+        };
+
+        parent_obj.insert(field.to_string(), value);
+        Ok(())
     }
 
     /// 注入 I/O 结果到 payload.__io_result__
@@ -998,6 +1072,8 @@ pub struct ReactorHandle {
     snapshot: Arc<Mutex<ReactorStateSnapshot>>,
     /// 阶段6：调试控制（共享在 reactor 主循环与 handle 之间）
     debug_control: DebugControl,
+    /// 执行中断标志（共享在 reactor 主循环与 handle 之间）
+    interrupt_flag: Arc<AtomicBool>,
 }
 
 impl ReactorHandle {
@@ -1182,6 +1258,22 @@ impl ReactorHandle {
     pub fn step_quota(&self) -> usize {
         self.debug_control.step_quota()
     }
+
+    /// 请求中断反应器执行（控制 API）
+    ///
+    /// 设置中断标志，reactor 在下次主循环检查点响应：
+    /// - 发射 Error 事件（消息："Execution interrupted by external request"）
+    /// - 发射 Stable 事件（包含当前 payload 快照）
+    /// - 重置步数计数器
+    /// - 返回到 Idle 状态等待下一命令
+    ///
+    /// 与 `abort()` 的区别：
+    /// - `interrupt()`：优雅中断，保留当前状态，可继续执行
+    /// - `abort()`：强制终止任务，状态不可恢复
+    pub fn interrupt(&self) {
+        self.interrupt_flag
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
 }
 
 #[cfg(test)]
@@ -1208,10 +1300,21 @@ mod tests {
     }
 
     #[test]
-    fn test_update_payload_nested_nonexistent_fails() {
+    fn test_update_payload_nested_nonexistent_creates() {
         let mut state = ReactorState::new();
         let result = Reactor::update_payload(&mut state, "a.b.c", JsonValue::Integer(1));
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        assert_eq!(
+            state
+                .payload
+                .get("a")
+                .and_then(|v| v.as_object())
+                .and_then(|m| m.get("b"))
+                .and_then(|v| v.as_object())
+                .and_then(|m| m.get("c"))
+                .and_then(|v| v.as_i64()),
+            Some(1)
+        );
     }
 
     #[test]
@@ -1302,11 +1405,11 @@ mod tests {
     #[test]
     fn test_builder_with_io_timeout_policy() {
         let policy = IoTimeoutPolicy::with_defaults()
-            .with_override(IoType::CallExternal, TimeoutThreshold::from_secs(60, 120));
+            .with_override(IoType::CALL_EXTERNAL, TimeoutThreshold::from_secs(60, 120));
         let builder = ReactorBuilder::new(vec![]).with_io_timeout_policy(policy);
         assert!(builder.io_timeout_policy.is_some());
         let p = builder.io_timeout_policy.as_ref().expect("policy set");
-        let t = p.threshold_for(IoType::CallExternal);
+        let t = p.threshold_for(IoType::CALL_EXTERNAL);
         assert_eq!(t.warn, Duration::from_secs(60));
         assert_eq!(t.error, Duration::from_secs(120));
     }
@@ -1315,7 +1418,7 @@ mod tests {
     fn test_resolve_threshold_no_policy_uses_default() {
         // 无 policy 时使用全局 default
         let (warn, error) = Reactor::resolve_threshold(
-            Some(&IoType::CallExternal),
+            Some(&IoType::CALL_EXTERNAL),
             Duration::from_secs(30),
             Duration::from_secs(60),
             None,
@@ -1328,9 +1431,9 @@ mod tests {
     fn test_resolve_threshold_with_policy_uses_override() {
         // 有 policy 且 io_type 有覆盖时，使用覆盖值
         let policy = IoTimeoutPolicy::with_defaults()
-            .with_override(IoType::CallExternal, TimeoutThreshold::from_secs(90, 180));
+            .with_override(IoType::CALL_EXTERNAL, TimeoutThreshold::from_secs(90, 180));
         let (warn, error) = Reactor::resolve_threshold(
-            Some(&IoType::CallExternal),
+            Some(&IoType::CALL_EXTERNAL),
             Duration::from_secs(30),
             Duration::from_secs(60),
             Some(&policy),
@@ -1344,7 +1447,7 @@ mod tests {
         // 有 policy 但 io_type 无覆盖时，使用 policy.default
         let policy = IoTimeoutPolicy::new(TimeoutThreshold::from_secs(20, 40));
         let (warn, error) = Reactor::resolve_threshold(
-            Some(&IoType::QueryDb),
+            Some(&IoType::QUERY_DB),
             Duration::from_secs(30),
             Duration::from_secs(60),
             Some(&policy),
@@ -1387,7 +1490,7 @@ mod tests {
         // 无 policy 时使用全局阈值
         let mut state = ReactorState::new();
         let id = FactId(1);
-        state.register_io_request(id, IoType::CallExternal);
+        state.register_io_request(id, IoType::CALL_EXTERNAL);
         // 模拟 35s 前（超过 30s warn，未超过 60s error）
         state
             .pending_io_timestamps
@@ -1411,10 +1514,10 @@ mod tests {
         let mut state = ReactorState::new();
         // CallLlm：warn=60s, error=120s
         let llm_id = FactId(1);
-        state.register_io_request(llm_id, IoType::CallExternal);
+        state.register_io_request(llm_id, IoType::CALL_EXTERNAL);
         // QueryDb：warn=5s, error=15s
         let db_id = FactId(2);
-        state.register_io_request(db_id, IoType::QueryDb);
+        state.register_io_request(db_id, IoType::QUERY_DB);
 
         // 模拟 10s 前：CallLlm 未超 warn(60s)，QueryDb 已超 error(15s)? 不，10s < 15s
         // QueryDb: 10s > warn(5s) but 10s < error(15s) → warn
@@ -1426,8 +1529,8 @@ mod tests {
             .insert(db_id, Instant::now() - Duration::from_secs(10));
 
         let policy = IoTimeoutPolicy::with_defaults()
-            .with_override(IoType::CallExternal, TimeoutThreshold::from_secs(60, 120))
-            .with_override(IoType::QueryDb, TimeoutThreshold::from_secs(5, 15));
+            .with_override(IoType::CALL_EXTERNAL, TimeoutThreshold::from_secs(60, 120))
+            .with_override(IoType::QUERY_DB, TimeoutThreshold::from_secs(5, 15));
 
         let (warn, error) = Reactor::scan_io_timeouts_by_policy(
             &state,
@@ -1449,14 +1552,14 @@ mod tests {
         // 有 policy 时按 io_type 查表，触发 error 级别
         let mut state = ReactorState::new();
         let db_id = FactId(1);
-        state.register_io_request(db_id, IoType::QueryDb);
+        state.register_io_request(db_id, IoType::QUERY_DB);
         // 模拟 20s 前（超过 QueryDb error=15s）
         state
             .pending_io_timestamps
             .insert(db_id, Instant::now() - Duration::from_secs(20));
 
         let policy = IoTimeoutPolicy::with_defaults()
-            .with_override(IoType::QueryDb, TimeoutThreshold::from_secs(5, 15));
+            .with_override(IoType::QUERY_DB, TimeoutThreshold::from_secs(5, 15));
 
         let (warn, error) = Reactor::scan_io_timeouts_by_policy(
             &state,
@@ -1478,8 +1581,8 @@ mod tests {
         let mut state = ReactorState::new();
         let llm_id = FactId(1);
         let db_id = FactId(2);
-        state.register_io_request(llm_id, IoType::CallExternal);
-        state.register_io_request(db_id, IoType::QueryDb);
+        state.register_io_request(llm_id, IoType::CALL_EXTERNAL);
+        state.register_io_request(db_id, IoType::QUERY_DB);
 
         // CallLlm: warn=60, error=120 → 70s 时 warn
         // QueryDb: warn=5, error=15 → 70s 时 error
@@ -1491,8 +1594,8 @@ mod tests {
             .insert(db_id, Instant::now() - Duration::from_secs(70));
 
         let policy = IoTimeoutPolicy::with_defaults()
-            .with_override(IoType::CallExternal, TimeoutThreshold::from_secs(60, 120))
-            .with_override(IoType::QueryDb, TimeoutThreshold::from_secs(5, 15));
+            .with_override(IoType::CALL_EXTERNAL, TimeoutThreshold::from_secs(60, 120))
+            .with_override(IoType::QUERY_DB, TimeoutThreshold::from_secs(5, 15));
 
         let (warn, error) = Reactor::scan_io_timeouts_by_policy(
             &state,
@@ -1616,7 +1719,7 @@ mod tests {
     async fn test_handle_snapshot_with_io_timeout_policy() {
         // 配置 IoTimeoutPolicy 不影响只读 API 的语义
         let policy = IoTimeoutPolicy::with_defaults()
-            .with_override(IoType::CallExternal, TimeoutThreshold::from_secs(60, 120));
+            .with_override(IoType::CALL_EXTERNAL, TimeoutThreshold::from_secs(60, 120));
         let reactor = Reactor::builder(vec![])
             .with_io_timeout_policy(policy)
             .build();

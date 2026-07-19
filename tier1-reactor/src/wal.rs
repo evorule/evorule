@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! Write-Ahead Log (WAL) —— 事实审计链的磁盘持久化
 //!
 //! # 设计依据
@@ -580,11 +583,11 @@ mod tests {
     #[test]
     fn test_fact_io_request_roundtrip() {
         for io_type in [
-            IoType::CallExternal,
-            IoType::QueryDb,
-            IoType::HttpGet,
-            IoType::SaveMemory,
-            IoType::CallService,
+            IoType::CALL_EXTERNAL,
+            IoType::QUERY_DB,
+            IoType::HTTP_GET,
+            IoType::SAVE_MEMORY,
+            IoType::CALL_SERVICE,
         ] {
             let fact = Fact::IoRequest {
                 id: FactId(3),

@@ -1,4 +1,7 @@
-﻿//! 认证中间件
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! 认证中间件
 //!
 //! 提供基于 token 的简单认证，用于 HTTP API 访问控制。
 //!

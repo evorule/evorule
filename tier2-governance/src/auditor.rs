@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! 审计器 - 基于 FactsLog 构建审计链
 //!
 //! # 功能
@@ -447,7 +450,7 @@ mod tests {
         let f2 = Fact::IoRequest {
             id: FactId(3),
             cause: id1,
-            io_type: IoType::HttpGet,
+            io_type: IoType::HTTP_GET,
             params: JsonValue::empty_object(),
         };
         let id2 = f2.id();
@@ -648,7 +651,7 @@ mod tests {
         let req = Fact::IoRequest {
             id: FactId(10),
             cause: FactId(1),
-            io_type: IoType::HttpGet,
+            io_type: IoType::HTTP_GET,
             params: JsonValue::empty_object(),
         };
         let req_id = req.id();
@@ -699,7 +702,7 @@ mod tests {
             r#"{{"fact_id": 5, "fact_type": "PayloadUpdate", "logical_time": 3, "content_hash": "abc", "prev_hash": "genesis", "cause": null}}"#
         )
         .unwrap();
-        writeln!(file, "").unwrap(); // 空行
+        writeln!(file).unwrap(); // 空行
         drop(file);
 
         let log = make_facts_log();

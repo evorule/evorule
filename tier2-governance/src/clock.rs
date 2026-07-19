@@ -1,4 +1,7 @@
-﻿//! 逻辑时钟（Lamport Clock）
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! 逻辑时钟（Lamport Clock）
 //!
 //! 用于跨组件事件排序，保证因果一致性。
 //!

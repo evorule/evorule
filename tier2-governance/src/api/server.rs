@@ -1,4 +1,7 @@
-﻿//! HTTP API 服务（axum）
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! HTTP API 服务（axum）
 //!
 //! 提供外部访问接口，支持通过 HTTP 提交命令、查询状态、获取审计报告。
 //!
@@ -115,11 +118,13 @@ const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
 /// HTTP 并发请求数上限（P1-4：1000 并发，防止连接耗尽）
 const MAX_CONCURRENCY: usize = 1000;
 
-/// 速率限制：每秒允许的请求数（令牌桶填充速率，P1-4）
-const RATE_LIMIT_PER_SECOND: u64 = 10;
+/// 速率限制：令牌桶补充周期（秒），每周期补充 burst_size 个令牌（P1-4）
+/// 实际持续速率 = burst_size / per_second（req/s）
+/// 当前配置：burst=200, period=1s → 200 req/s 持续，200 突发
+const RATE_LIMIT_PER_SECOND: u64 = 1;
 
 /// 速率限制：突发请求数上限（令牌桶容量，P1-4）
-const RATE_LIMIT_BURST_SIZE: u32 = 20;
+const RATE_LIMIT_BURST_SIZE: u32 = 200;
 
 /// 会话管理 API 共享状态
 ///
@@ -1264,6 +1269,60 @@ async fn shared_fact_source(
     })))
 }
 
+async fn record_used_at_startup(
+    State(shared_facts): State<SharedFactsLog>,
+    Path(session_id): Path<u64>,
+    Json(req): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse>, StatusCode> {
+    let fact_ids: Vec<FactId> = req
+        .get("fact_ids")
+        .and_then(|v| v.as_array())
+        .ok_or(StatusCode::BAD_REQUEST)?
+        .iter()
+        .filter_map(|v| v.as_u64())
+        .map(FactId)
+        .collect();
+
+    shared_facts.record_used_at_startup(session_id, &fact_ids);
+
+    tracing::info!(
+        session_id,
+        fact_count = fact_ids.len(),
+        "Recorded used_at_startup"
+    );
+    Ok(Json(ApiResponse {
+        success: true,
+        message: "used_at_startup recorded".to_string(),
+        fact_id: None,
+    }))
+}
+
+async fn get_used_at_startup(
+    State(shared_facts): State<SharedFactsLog>,
+    Path(session_id): Path<u64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let fact_ids = shared_facts
+        .get_used_at_startup(session_id)
+        .unwrap_or_default();
+
+    let result: Vec<_> = fact_ids.into_iter().map(|f| f.0).collect();
+    Ok(Json(serde_json::json!({
+        "session_id": session_id,
+        "fact_ids": result,
+    })))
+}
+
+async fn get_sessions_using_fact(
+    State(shared_facts): State<SharedFactsLog>,
+    Path(fact_id): Path<u64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = shared_facts.get_sessions_using_fact(FactId(fact_id));
+    Ok(Json(serde_json::json!({
+        "fact_id": fact_id,
+        "sessions": sessions,
+    })))
+}
+
 async fn debug_phase(
     State(api): State<SessionApi>,
     Path(session_id): Path<u64>,
@@ -1327,6 +1386,24 @@ async fn debug_pending_io(
     Ok(Json(serde_json::json!({
         "session_id": session_id,
         "pending_io": serde_json::Value::Array(result),
+    })))
+}
+
+async fn session_interrupt(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    session.handle.interrupt();
+
+    Ok(Json(serde_json::json!({
+        "session_id": session_id,
+        "success": true,
+        "message": "Interrupt requested, reactor will respond at next checkpoint",
     })))
 }
 
@@ -1528,27 +1605,33 @@ impl GovernanceServer {
     /// 2. `RequestBodyLimitLayer` — 请求体大小限制（1MB）
     /// 3. `ConcurrencyLimitLayer` — 并发连接数限制（1000）
     /// 4. `CorsLayer` — CORS 预检处理
-    /// 5. `GovernorLayer` — 速率限制（每 IP 10 req/s，突发 20）
+    /// 5. `GovernorLayer` — 速率限制（每 IP 200 req/s，突发 200）
     ///
     /// # 注意
     /// `GovernorLayer` 依赖 `ConnectInfo<SocketAddr>` 提取客户端 IP，
     /// 因此 bin 启动时必须使用 `into_make_service_with_connect_info::<SocketAddr>()`。
+    ///
+    /// # tower-governor 参数语义
+    /// `per_second` 是令牌桶补充周期（秒），每周期补充 `burst_size` 个令牌。
+    /// 持续速率 = burst_size / per_second（req/s）。
+    /// burst_size 同时是桶的最大容量（突发上限）。
     pub fn build_router(&self) -> Router {
         let auth = self.auth.clone();
 
-        // P1-4: 速率限制配置（令牌桶：每秒 10 令牌填充，桶容量 20）
+        // P1-4: 速率限制配置（令牌桶：每 1 秒补充 200 令牌，桶容量 200 → 200 req/s）
         let governor_config = tower_governor::governor::GovernorConfigBuilder::default()
             .per_second(RATE_LIMIT_PER_SECOND)
             .burst_size(RATE_LIMIT_BURST_SIZE)
             .finish()
-            .unwrap_or_else(|| tower_governor::governor::GovernorConfig::default());
+            .unwrap_or_else(tower_governor::governor::GovernorConfig::default);
 
         // P2-7/P2-8: 公开路由（免认证）— health/liveness/readiness/metrics
         let public_routes = Router::new()
             .route("/api/health", get(health))
             .route("/api/health/liveness", get(liveness))
             .route("/api/health/readiness", get(readiness))
-            .route("/metrics", get(metrics_handler));
+            .route("/metrics", get(metrics_handler))
+            .nest_service("/debugger", tower_http::services::ServeDir::new("sdk/web"));
 
         // 受保护路由（需认证）
         let protected_routes = Router::new()
@@ -1585,9 +1668,22 @@ impl GovernanceServer {
                 "/api/shared/facts/{fact_id}/source",
                 get(shared_fact_source),
             )
+            .route(
+                "/api/shared/facts/{fact_id}/used_by",
+                get(get_sessions_using_fact),
+            )
+            .route(
+                "/api/sessions/{id}/used_at_startup",
+                post(record_used_at_startup),
+            )
+            .route(
+                "/api/sessions/{id}/used_at_startup",
+                get(get_used_at_startup),
+            )
             .route("/api/sessions/{id}/debug/phase", get(debug_phase))
             .route("/api/sessions/{id}/debug/queue", get(debug_queue))
             .route("/api/sessions/{id}/debug/pending_io", get(debug_pending_io))
+            .route("/api/sessions/{id}/interrupt", post(session_interrupt))
             .route("/api/sessions/{id}/rewind/{version}", get(session_rewind))
             .route("/api/sessions/{id}/diff", get(session_diff))
             .route("/api/sessions/{id}/join", post(session_join))
@@ -1717,7 +1813,7 @@ mod tests {
         let fact = Fact::IoRequest {
             id: FactId(3),
             cause: FactId(1),
-            io_type: IoType::CallExternal,
+            io_type: IoType::CALL_EXTERNAL,
             params: JsonValue::Null,
         };
         let json: serde_json::Value = serde_json::from_str(&fact_to_sse_data(&fact)).unwrap();

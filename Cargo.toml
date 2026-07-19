@@ -3,9 +3,9 @@ resolver = "2"
 members = ["tier0-tcb", "tier1-reactor", "tier2-governance"]
 
 [workspace.package]
-version = "6.0.0"
+version = "0.1.0"
 edition = "2021"
-license = "MIT OR Apache-2.0"
+license = "AGPL-3.0"
 authors = ["TheEquation Project"]
 repository = "https://github.com/evorule/evorule"
 

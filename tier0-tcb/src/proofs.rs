@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! Kani 形式化验证 proof 函数
 //!
 //! 这些函数仅在 `kani` feature 启用时编译（通过 `kani cargo build` 注入 `--cfg kani`）。

@@ -1,4 +1,7 @@
-﻿//! I/O Handler 实现模块
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! I/O Handler 实现模块
 //!
 //! 3 种 I/O 类型的具体 handler 实现，全部接入真实 SDK。
 

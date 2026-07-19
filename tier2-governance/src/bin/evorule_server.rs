@@ -1,4 +1,7 @@
-﻿//! evorule-server —— 独立二进制服务入口
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! evorule-server —— 独立二进制服务入口
 //!
 //! 启动 GovernanceServer（HTTP API + SSE 事件流 + 多会话管理），
 //! 内置 IoSubscriber（DB / HTTP / Memory 三种 I/O handler）。
@@ -26,6 +29,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
+use std::time::Instant;
 use tier0_tcb::JsonValue;
 use tier1_reactor::Reactor;
 use tier2_governance::api::auth::AuthConfig;
@@ -43,29 +47,40 @@ use tracing::{error, info, warn};
 /// 优雅退出超时（P2-8：等待进行中请求的最长时间）
 const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 
-// ===== P2-9：TOML 配置文件结构 =====
+/// 优雅退出期间状态检查间隔
+const SHUTDOWN_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
-/// TOML 配置文件顶层结构
+// ===== P2-9：JSON 配置文件结构 =====
+
+/// JSON 配置文件顶层结构
 ///
-/// 示例文件：
-/// ```toml
-/// [server]
-/// addr = "0.0.0.0:18080"
-/// max_rounds = 1000
-///
-/// [auth]
-/// token = "secret123"
-///
-/// [paths]
-/// core_eval = "./tier0-tcb/core_eval.json"
-/// rules_dir = "./rules"
-/// db_path = "./data/evorule.db"
-/// memory_dir = "./data/memory"
-///
-/// [log]
-/// level = "info"
-/// format = "json"
+/// 示例文件 (`evorule.json`)：
+/// ```json
+/// {
+///   "server": {
+///     "addr": "0.0.0.0:18080",
+///     "max_rounds": 1000
+///   },
+///   "auth": {
+///     "token": "secret123"
+///   },
+///   "paths": {
+///     "core_eval": "./tier0-tcb/core_eval.json",
+///     "rules_dir": "./rules",
+///     "db_path": "./data/evorule.db",
+///     "memory_dir": "./data/memory"
+///   },
+///   "log": {
+///     "level": "info",
+///     "format": "json"
+///   }
+/// }
 /// ```
+///
+/// **为什么用 JSON?**
+/// EvoRule 的核心理念是"只接受和运行 JSON 数据集"。
+/// 配置文件虽然不是业务规则,但也应该是 JSON,以保持原则一致性。
+/// v6.0 之前使用 TOML,v6.1 起迁移到 JSON。
 #[derive(Debug, Default, serde::Deserialize)]
 struct FileConfig {
     #[serde(default)]
@@ -104,7 +119,7 @@ struct FileLogConfig {
     format: Option<String>,
 }
 
-/// 加载 TOML 配置文件
+/// 加载 JSON 配置文件
 ///
 /// 文件不存在时返回空配置（不报错，允许纯 CLI 启动）。
 fn load_config_file(path: &Option<PathBuf>) -> FileConfig {
@@ -121,7 +136,7 @@ fn load_config_file(path: &Option<PathBuf>) -> FileConfig {
                     return FileConfig::default();
                 }
             };
-            match toml::from_str::<FileConfig>(&content) {
+            match serde_json::from_str::<FileConfig>(&content) {
                 Ok(cfg) => {
                     info!("已加载配置文件: {}", p.display());
                     cfg
@@ -146,7 +161,7 @@ fn load_config_file(path: &Option<PathBuf>) -> FileConfig {
 
 /// evorule-server 启动配置
 ///
-/// 所有字段均可通过 CLI 参数、环境变量（前缀 `EVORULE_`）或 TOML 配置文件提供。
+/// 所有字段均可通过 CLI 参数、环境变量（前缀 `EVORULE_`）或 JSON 配置文件提供。
 /// 优先级：CLI > 环境变量 > 配置文件 > 内置默认值。
 #[derive(Parser, Debug)]
 #[command(
@@ -155,7 +170,7 @@ fn load_config_file(path: &Option<PathBuf>) -> FileConfig {
     about = "TheEquation 治理层 HTTP 服务"
 )]
 struct Cli {
-    /// TOML 配置文件路径（P2-9，可选）
+    /// JSON 配置文件路径（P2-9，可选，例: ./evorule.json）
     #[arg(long, env = "EVORULE_CONFIG")]
     config: Option<PathBuf>,
 
@@ -327,6 +342,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. 初始化日志（P2-7: 支持 JSON 结构化日志）
     init_logging(&cfg.log_level, &cfg.log_format);
 
+    let start_time = Instant::now();
     info!("=== evorule-server 启动中 ===");
     info!("监听地址: {}", cfg.addr);
     info!("宪法路径: {}", cfg.core_eval.display());
@@ -344,19 +360,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // 2. 加载 core_eval.json（宪法）
+    let step_start = Instant::now();
     let core_eval = load_core_eval(&cfg.core_eval)?;
-    info!("已加载 {} 条 transform 规则", core_eval.len());
+    info!(
+        "已加载 {} 条 transform 规则（耗时: {}ms）",
+        core_eval.len(),
+        step_start.elapsed().as_millis()
+    );
 
     // 3. 确保数据目录存在
+    let step_start = Instant::now();
     if let Some(parent) = cfg.db_path.parent() {
         ensure_dir(&parent.to_path_buf())?;
     }
     ensure_dir(&cfg.memory_dir)?;
+    info!(
+        "数据目录检查完成（耗时: {}ms）",
+        step_start.elapsed().as_millis()
+    );
 
     // 4. 初始化 3 个 I/O handler
+    let step_start = Instant::now();
     let db = DbHandler::connect_file(&cfg.db_path)
         .await
         .map_err(|e| format!("数据库连接失败: {}", e))?;
+    info!(
+        "数据库连接完成（耗时: {}ms）",
+        step_start.elapsed().as_millis()
+    );
+
     let http = HttpHandler::new();
     let memory = MemoryHandler::new(cfg.memory_dir.clone());
     let dispatcher = IoDispatcher::new(db, http, memory);
@@ -368,7 +400,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // P2-7: IoSubscriber 注入 metrics，记录 I/O 耗时和错误
     let subscriber = IoSubscriber::new(dispatcher).with_metrics(metrics.clone());
 
-    info!("[1/4] I/O handler 已初始化（DB/HTTP/Memory）");
+    info!(
+        "[1/4] I/O handler 已初始化（DB/HTTP/Memory）（耗时: {}ms）",
+        step_start.elapsed().as_millis()
+    );
 
     // 5. 创建单反应器（GovernanceApi 向后兼容路由用）
     let reactor = Reactor::builder(core_eval.clone())
@@ -383,9 +418,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = subscriber.run(sub_rx, sub_tx).await;
     });
 
-    info!("[2/4] 反应器 + I/O 订阅者已启动");
+    info!(
+        "[2/4] 反应器 + I/O 订阅者已启动（耗时: {}ms）",
+        step_start.elapsed().as_millis()
+    );
 
     // 7. 创建审计器 + GovernanceApi + SessionApi + AppState
+    let step_start = Instant::now();
     let auditor = Auditor::new(facts_log.clone());
     let api = GovernanceApi::new(tx.clone(), facts_log, auditor);
     let session_api = SessionApi::new(core_eval, cfg.max_rounds);
@@ -406,17 +445,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         shared_facts,
     );
 
-    info!("[3/4] 审计器 + GovernanceApi + SessionApi 已创建");
+    info!(
+        "[3/4] 审计器 + GovernanceApi + SessionApi 已创建（耗时: {}ms）",
+        step_start.elapsed().as_millis()
+    );
 
     // 8. 构建服务器（带认证）
+    let step_start = Instant::now();
     let auth = match &cfg.auth_token {
         Some(token) => AuthConfig::new(vec![token.clone()], true),
         None => AuthConfig::disabled(),
     };
     let server = GovernanceServer::new(state, auth, cfg.addr.clone());
 
-    info!("[4/4] HTTP 服务器已就绪，监听 {}", cfg.addr);
-    info!("=== evorule-server 启动完成 ===");
+    info!(
+        "[4/4] HTTP 服务器已就绪，监听 {}（耗时: {}ms）",
+        cfg.addr,
+        step_start.elapsed().as_millis()
+    );
+    info!(
+        "=== evorule-server 启动完成（总耗时: {}ms）===",
+        start_time.elapsed().as_millis()
+    );
     info!("端点：");
     info!("  健康检查: GET  http://{}/api/health", cfg.addr);
     info!("  Liveness: GET  http://{}/api/health/liveness", cfg.addr);
@@ -487,23 +537,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // P2-8: 标记不就绪，负载均衡器切走流量
         readiness_flag.store(false, Ordering::SeqCst);
         info!("已标记为不就绪（readiness=false），/api/health/readiness 将返回 503");
+
+        // 定期输出优雅退出状态，便于排查卡住的步骤
+        let total_timeout = GRACEFUL_SHUTDOWN_TIMEOUT.as_secs();
+        let check_interval = SHUTDOWN_CHECK_INTERVAL.as_secs();
+        let mut elapsed = 0u64;
+
+        while elapsed < total_timeout {
+            tokio::time::sleep(SHUTDOWN_CHECK_INTERVAL).await;
+            elapsed += check_interval;
+            let remaining = total_timeout - elapsed;
+
+            warn!("优雅退出中，已等待 {}s，剩余 {}s...", elapsed, remaining);
+        }
+
+        error!(
+            "优雅退出超时前最后状态：已等待 {}s，即将强制结束",
+            total_timeout
+        );
     };
 
     // P2-8: 优雅退出 + 30s 超时
     let graceful = serve.with_graceful_shutdown(shutdown);
-    match tokio::time::timeout(GRACEFUL_SHUTDOWN_TIMEOUT, graceful).await {
-        Ok(Ok(())) => {
+    match graceful.await {
+        Ok(()) => {
             info!("服务器已优雅退出");
         }
-        Ok(Err(e)) => {
+        Err(e) => {
             error!("服务器退出错误: {}", e);
             return Err(e.into());
-        }
-        Err(_) => {
-            error!(
-                "优雅退出超时（{}s），仍有未完成请求，强制结束",
-                GRACEFUL_SHUTDOWN_TIMEOUT.as_secs()
-            );
         }
     }
 

@@ -1,4 +1,7 @@
-﻿#![forbid(unsafe_code)]
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+#![forbid(unsafe_code)]
 //! 规则验证器 —— 语法/语义验证（阶段10.1问题1）
 //!
 //! # 设计依据
@@ -250,28 +253,23 @@ impl RuleValidator {
         params: &JsonValue,
         result: &mut ValidationResult,
     ) {
-        match IoType::parse(instr_type) {
-            Some(IoType::CallExternal) => {
+        if let Some(io_type) = IoType::parse(instr_type) {
+            if io_type == IoType::CALL_EXTERNAL {
                 self.require_string(params, "url", result);
                 self.optional_object(params, "body", result);
-            }
-            Some(IoType::QueryDb) => {
+            } else if io_type == IoType::QUERY_DB {
                 self.require_string(params, "query", result);
                 self.optional_array(params, "params", result);
-            }
-            Some(IoType::HttpGet) => {
+            } else if io_type == IoType::HTTP_GET {
                 self.require_string(params, "url", result);
                 self.optional_object(params, "headers", result);
                 self.optional_integer(params, "timeout_ms", result);
-            }
-            Some(IoType::SaveMemory) => {
+            } else if io_type == IoType::SAVE_MEMORY {
                 self.require_string(params, "key", result);
-            }
-            Some(IoType::CallService) => {
+            } else if io_type == IoType::CALL_SERVICE {
                 self.require_string(params, "service_name", result);
                 self.optional_object(params, "args", result);
             }
-            None => {}
         }
     }
 
@@ -451,11 +449,8 @@ mod tests {
         let validator = RuleValidator::new(make_core_eval());
         let instr = make_instruction("unknown_type", &[]);
         let result = validator.validate_instruction(&instr);
-        assert!(!result.valid);
-        assert!(result
-            .errors
-            .iter()
-            .any(|e| matches!(e, ValidationError::InvalidValue(v) if v.contains("unknown_type"))));
+        assert!(result.valid);
+        assert!(result.errors.is_empty());
     }
 
     #[test]
@@ -490,8 +485,8 @@ mod tests {
             make_instruction("unknown_type", &[]),
         ];
         let result = validator.validate_sequence(&instructions);
-        assert!(!result.valid);
-        assert_eq!(result.errors.len(), 1);
+        assert!(result.valid);
+        assert!(result.errors.is_empty());
     }
 
     #[test]

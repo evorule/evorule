@@ -80,6 +80,111 @@ class EvoruleClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def liveness(self) -> dict[str, Any]:
+        """Liveness 探针（GET /api/health/liveness）
+
+        始终返回 200，只要进程在运行就算存活。
+
+        返回：
+            `{"success": true, "message": "alive", "fact_id": null}`
+        """
+        resp = await self._http.get("/api/health/liveness")
+        if resp.status_code == 401:
+            raise AuthenticationError("Authentication failed")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def readiness(self) -> dict[str, Any]:
+        """Readiness 探针（GET /api/health/readiness）
+
+        就绪时返回 200，未就绪（如优雅退出中）返回 503。
+
+        返回：
+            `{"success": true, "message": "ready", "fact_id": null}`
+        异常：
+            httpx.HTTPStatusError: 服务未就绪（503）
+        """
+        resp = await self._http.get("/api/health/readiness")
+        if resp.status_code == 401:
+            raise AuthenticationError("Authentication failed")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def fork_session(self, parent_id: int, version: int | None = None) -> dict[str, Any]:
+        """从父会话的指定版本分叉新会话
+
+        - 传 version 时使用 POST /api/sessions/fork/{parent_id}?version=X（需指定版本）
+        - 不传 version 时使用 POST /api/sessions/from/{parent_id}（从最新版本分叉）
+
+        参数：
+            parent_id: 父会话 ID
+            version: 分叉起点版本号（可选，不传则从最新版本分叉）
+
+        返回：
+            `{"session_id", "parent_session_id", "forked_from_version", "message"}`
+        """
+        if version is not None:
+            resp = await self._http.post(
+                f"/api/sessions/fork/{parent_id}",
+                params={"version": version},
+            )
+        else:
+            resp = await self._http.post(
+                f"/api/sessions/from/{parent_id}",
+            )
+        if resp.status_code == 401:
+            raise AuthenticationError("Authentication failed")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def shared_facts(self, prefix: str = "") -> list[dict[str, Any]]:
+        """查询共享 Fact 列表（GET /api/shared/facts）
+
+        参数：
+            prefix: 可选的路径前缀过滤（如 "user.profile"）
+
+        返回：
+            共享 Fact 列表，每项包含 fact_id / path / value / source_session_id / version
+        """
+        params: dict[str, str] = {}
+        if prefix:
+            params["prefix"] = prefix
+        resp = await self._http.get("/api/shared/facts", params=params)
+        if resp.status_code == 401:
+            raise AuthenticationError("Authentication failed")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def shared_fact_source(self, fact_id: int) -> dict[str, Any]:
+        """查询共享 Fact 的来源信息（GET /api/shared/facts/{fact_id}/source）
+
+        参数：
+            fact_id: 共享 Fact ID
+
+        返回：
+            `{"fact_id", "path", "value", "source_session_id", "version"}`
+        """
+        resp = await self._http.get(f"/api/shared/facts/{fact_id}/source")
+        if resp.status_code == 401:
+            raise AuthenticationError("Authentication failed")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def shared_fact_used_by(self, fact_id: int) -> dict[str, Any]:
+        """查询使用了指定共享 Fact 的会话列表（GET /api/shared/facts/{fact_id}/used_by）
+
+        参数：
+            fact_id: 共享 Fact ID
+
+        返回：
+            `{"fact_id": int, "sessions": [int, ...]}`
+        """
+        resp = await self._http.get(f"/api/shared/facts/{fact_id}/used_by")
+        if resp.status_code == 401:
+            raise AuthenticationError("Authentication failed")
+        resp.raise_for_status()
+        return resp.json()
+
     async def create_session(self) -> Session:
         """创建会话（POST /api/sessions）
 
@@ -105,6 +210,24 @@ class EvoruleClient:
             raise AuthenticationError("Authentication failed")
         resp.raise_for_status()
         return resp.json().get("sessions", [])
+
+    async def shared_facts(self, prefix: str = "") -> list[dict[str, Any]]:
+        """查询共享 Fact 列表（GET /api/shared/facts）
+
+        参数：
+            prefix: 可选的路径前缀过滤（如 "user.profile"）
+
+        返回：
+            共享 Fact 列表，每项包含 fact_id / path / value / source_session_id / version
+        """
+        params: dict[str, str] = {}
+        if prefix:
+            params["prefix"] = prefix
+        resp = await self._http.get("/api/shared/facts", params=params)
+        if resp.status_code == 401:
+            raise AuthenticationError("Authentication failed")
+        resp.raise_for_status()
+        return resp.json()
 
     async def close(self) -> None:
         """关闭客户端，释放底层 HTTP 连接"""

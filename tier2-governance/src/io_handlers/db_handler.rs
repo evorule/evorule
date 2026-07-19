@@ -1,4 +1,7 @@
-﻿#![forbid(unsafe_code)]
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+#![forbid(unsafe_code)]
 //! Database I/O Handler —— 基于 `sqlx` 接入 SQLite。
 //!
 //! 执行 SQL 语句并将结果转换为 `JsonValue`：
@@ -11,7 +14,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqliteQueryResult, SqliteRow};
+use sqlx::sqlite::{
+    SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions, SqliteQueryResult,
+    SqliteRow,
+};
 use sqlx::{Column, Row};
 use tier0_tcb::JsonValue;
 
@@ -19,6 +25,12 @@ use crate::io_handler::{IoHandler, IoResult};
 
 /// 单次 DB 查询超时（P0-2：DB 5s）
 const DB_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 连接池最大连接数
+const MAX_CONNECTIONS: u32 = 4;
+
+/// 连接获取超时（避免等待过长）
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// SQLite 处理器
 ///
@@ -41,7 +53,19 @@ impl DbHandler {
     /// # 参数
     /// - `database_url`: SQLite 连接字符串。
     pub async fn connect(database_url: &str) -> Result<Self, sqlx::Error> {
-        let pool = SqlitePool::connect(database_url).await?;
+        let options: SqliteConnectOptions = database_url
+            .parse()
+            .unwrap_or_else(|_| SqliteConnectOptions::new())
+            .create_if_missing(true)
+            .busy_timeout(Duration::from_secs(2))
+            .foreign_keys(true);
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(MAX_CONNECTIONS)
+            .acquire_timeout(CONNECT_TIMEOUT)
+            .connect_with(options)
+            .await?;
+
         Ok(Self { pool })
     }
 
@@ -54,8 +78,17 @@ impl DbHandler {
     pub async fn connect_file(path: impl AsRef<Path>) -> Result<Self, sqlx::Error> {
         let options = SqliteConnectOptions::new()
             .filename(path)
-            .create_if_missing(true);
-        let pool = SqlitePool::connect_with(options).await?;
+            .create_if_missing(true)
+            .busy_timeout(Duration::from_secs(2))
+            .foreign_keys(true)
+            .journal_mode(SqliteJournalMode::Wal);
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(MAX_CONNECTIONS)
+            .acquire_timeout(CONNECT_TIMEOUT)
+            .connect_with(options)
+            .await?;
+
         Ok(Self { pool })
     }
 }

@@ -1,4 +1,7 @@
-﻿//! 内容哈希工具（BLAKE3）
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! 内容哈希工具（BLAKE3）
 //!
 //! 用于审计链防篡改：每个 Fact 的哈希包含前一个 Fact 的哈希，形成哈希链。
 //!

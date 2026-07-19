@@ -1,4 +1,7 @@
-﻿//! 业务规则热重载
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! 业务规则热重载
 //!
 //! 监听 `core_eval.json` 文件变化，自动重新加载 transform 列表。
 //! 通过 `tokio::sync::watch` 通道通知上层组件（如反应器）使用新配置。
@@ -166,18 +169,18 @@ pub fn validate_core_eval(core_eval: &[JsonValue]) -> ValidationResult {
         ),
         // I/O 指令
         make_test_instruction(
-            IoType::CallExternal.as_str(),
+            IoType::CALL_EXTERNAL.as_str(),
             &[("url", JsonValue::string("https://example.com"))],
         ),
         make_test_instruction(
-            IoType::QueryDb.as_str(),
+            IoType::QUERY_DB.as_str(),
             &[
                 ("query", JsonValue::string("SELECT 1")),
                 ("params", JsonValue::empty_array()),
             ],
         ),
         make_test_instruction(
-            IoType::HttpGet.as_str(),
+            IoType::HTTP_GET.as_str(),
             &[
                 ("url", JsonValue::string("http://localhost")),
                 ("headers", JsonValue::empty_object()),
@@ -185,14 +188,14 @@ pub fn validate_core_eval(core_eval: &[JsonValue]) -> ValidationResult {
             ],
         ),
         make_test_instruction(
-            IoType::SaveMemory.as_str(),
+            IoType::SAVE_MEMORY.as_str(),
             &[
                 ("key", JsonValue::string("test")),
                 ("value", JsonValue::string("data")),
             ],
         ),
         make_test_instruction(
-            IoType::CallService.as_str(),
+            IoType::CALL_SERVICE.as_str(),
             &[
                 ("service_name", JsonValue::string("test")),
                 ("args", JsonValue::empty_object()),

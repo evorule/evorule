@@ -1,4 +1,7 @@
-﻿//! Append-Only 事实审计链
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! Append-Only 事实审计链
 //!
 //! # 设计依据
 //! 基于《02_反应式数据执行器》§2.2，FactsLog 是系统的唯一真相存储：
@@ -17,6 +20,7 @@ use crate::fact::Fact;
 use crate::wal::{read_wal, WalWriter};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
+use tier0_tcb::path::resolve_path_mut;
 use tier0_tcb::JsonValue;
 
 /// FactsLog 错误类型
@@ -121,6 +125,20 @@ impl FactsLog {
         log
     }
 
+    /// 设置初始状态（用于 fork 场景）
+    ///
+    /// 设置初始 payload 和版本号，但不增加版本计数。
+    /// 这用于从父会话 fork 时继承状态。
+    pub fn set_initial_state(&self, payload: JsonValue, version: u64) {
+        let mut inner = self
+            .inner
+            .write()
+            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        inner.current_snapshot = payload;
+        inner.version = version;
+        inner.last_stable_version = version;
+    }
+
     /// 创建带 WAL 持久化的 FactsLog（P0-1）
     ///
     /// 全新启动场景：truncate 已有 WAL 文件，从空状态开始。
@@ -184,10 +202,44 @@ impl FactsLog {
                     Fact::Stable { .. } => {
                         inner.last_stable_version = inner.version;
                     }
-                    Fact::Command { .. }
-                    | Fact::PayloadUpdate { .. }
-                    | Fact::IoRequest { .. }
-                    | Fact::Error { .. } => {}
+                    Fact::PayloadUpdate { path, value, .. } => {
+                        if let Some(target) = resolve_path_mut(&mut inner.current_snapshot, path) {
+                            *target = value.clone();
+                        } else {
+                            let parts: Vec<&str> = path.split('.').collect();
+                            if !parts.is_empty() {
+                                if parts.len() == 1 && !path.contains('[') {
+                                    if let JsonValue::Object(map) = &mut inner.current_snapshot {
+                                        map.insert(path.clone(), value.clone());
+                                    }
+                                } else {
+                                    let mut current = &mut inner.current_snapshot;
+                                    for (i, &part) in parts.iter().enumerate() {
+                                        if i == parts.len() - 1 {
+                                            if let JsonValue::Object(map) = current {
+                                                map.insert(part.to_string(), value.clone());
+                                            }
+                                        } else if let JsonValue::Object(map) = current {
+                                            if !map.contains_key(part) {
+                                                map.insert(
+                                                    part.to_string(),
+                                                    JsonValue::empty_object(),
+                                                );
+                                            }
+                                            if let Some(next) = map.get_mut(part) {
+                                                current = next;
+                                            } else {
+                                                break;
+                                            }
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Fact::Command { .. } | Fact::IoRequest { .. } | Fact::Error { .. } => {}
                 }
             }
             // 重放完成，挂载 WAL 继续追加
@@ -248,10 +300,41 @@ impl FactsLog {
             Fact::Stable { .. } => {
                 inner.last_stable_version = inner.version;
             }
-            Fact::Command { .. }
-            | Fact::PayloadUpdate { .. }
-            | Fact::IoRequest { .. }
-            | Fact::Error { .. } => {
+            Fact::PayloadUpdate { path, value, .. } => {
+                if let Some(target) = resolve_path_mut(&mut inner.current_snapshot, path) {
+                    *target = value.clone();
+                } else {
+                    let parts: Vec<&str> = path.split('.').collect();
+                    if !parts.is_empty() {
+                        if parts.len() == 1 && !path.contains('[') {
+                            if let JsonValue::Object(map) = &mut inner.current_snapshot {
+                                map.insert(path.clone(), value.clone());
+                            }
+                        } else {
+                            let mut current = &mut inner.current_snapshot;
+                            for (i, &part) in parts.iter().enumerate() {
+                                if i == parts.len() - 1 {
+                                    if let JsonValue::Object(map) = current {
+                                        map.insert(part.to_string(), value.clone());
+                                    }
+                                } else if let JsonValue::Object(map) = current {
+                                    if !map.contains_key(part) {
+                                        map.insert(part.to_string(), JsonValue::empty_object());
+                                    }
+                                    if let Some(next) = map.get_mut(part) {
+                                        current = next;
+                                    } else {
+                                        break;
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Fact::Command { .. } | Fact::IoRequest { .. } | Fact::Error { .. } => {
                 // 这些事实不直接修改快照，版本号不变
             }
         }
@@ -517,7 +600,7 @@ mod tests {
         log.append(Fact::IoRequest {
             id: FactId(3),
             cause: FactId(2),
-            io_type: IoType::CallExternal,
+            io_type: IoType::CALL_EXTERNAL,
             params: JsonValue::empty_object(),
         })
         .unwrap();
@@ -619,7 +702,7 @@ mod tests {
             .append(Fact::IoRequest {
                 id: FactId(1),
                 cause: FactId(0),
-                io_type: IoType::CallExternal,
+                io_type: IoType::CALL_EXTERNAL,
                 params: JsonValue::empty_object(),
             })
             .unwrap();
@@ -666,7 +749,7 @@ mod tests {
         log.append(Fact::IoRequest {
             id: FactId(3),
             cause: FactId(2),
-            io_type: IoType::CallExternal,
+            io_type: IoType::CALL_EXTERNAL,
             params: JsonValue::empty_object(),
         })
         .unwrap();
@@ -1049,7 +1132,7 @@ mod tests {
         log.append(Fact::IoRequest {
             id: FactId(4),
             cause: FactId(3),
-            io_type: IoType::CallExternal,
+            io_type: IoType::CALL_EXTERNAL,
             params: JsonValue::object_from_pairs(&[("prompt", JsonValue::String("hi".into()))]),
         })
         .unwrap();

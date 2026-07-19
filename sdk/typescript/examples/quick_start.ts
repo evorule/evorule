@@ -76,13 +76,46 @@ async function main(): Promise<void> {
     const y = (state.payload as Record<string, number>).y ?? 0;
     console.log(`\n验证: x=${x} (期望 15), y=${y} (期望 3)`);
     if (x === 15 && y === 3) {
-      console.log("\n✅ SDK 端到端验证通过！");
+      console.log("\n✅ SDK 端到端验证通过！\n");
     } else {
       console.log("\n❌ 状态验证失败！");
       process.exit(1);
     }
 
-    // 8. 关闭会话
+    // 8. 演示时间旅行：replay / rewind / diff
+    console.log("--- 演示时间旅行：replay / rewind / diff ---");
+    const replayData = await session.replay();
+    console.log(`replay: 共 ${replayData.facts.length} 个 Fact`);
+
+    const rewindData = await session.rewind(1);
+    console.log(
+      `rewind(1): version=${rewindData.version}, payload=${JSON.stringify(rewindData.payload)}`,
+    );
+
+    const diffData = await session.diff(1, 2);
+    console.log(
+      `diff(1→2): version_a=${diffData.version_a}, version_b=${diffData.version_b}`,
+    );
+    console.log(
+      `  added=${diffData.added.length} 项, removed=${diffData.removed.length} 项, changed=${diffData.changed.length} 项`,
+    );
+
+    // 9. 演示 debug 端点
+    console.log("\n--- 演示 debug 端点 ---");
+    const phase = await session.debugPhase();
+    console.log(`debug_phase: ${phase}`);
+    const queue = await session.debugQueue();
+    console.log(`debug_queue: ${queue.length} 项`);
+    const pendingIo = await session.debugPendingIo();
+    console.log(`debug_pending_io: ${pendingIo.length} 项`);
+
+    // 10. 演示 interrupt（最后一步，触发后会停止反应器）
+    console.log("\n--- 演示 interrupt ---");
+    const interruptResp = await session.interrupt();
+    console.log(`interrupt 响应: ${JSON.stringify(interruptResp)}`);
+    console.log("反应器已中断，后续命令将失败");
+
+    // 11. 关闭会话
     await session.close();
     console.log(`\n会话已关闭`);
   } finally {

@@ -1,4 +1,7 @@
-﻿//! 反应器纯逻辑模块（阶段7：Kani 形式化验证准备）
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! 反应器纯逻辑模块（阶段7：Kani 形式化验证准备）
 //!
 //! # 设计目标
 //!
@@ -291,10 +294,13 @@ pub mod kani_proofs {
     //! cargo kani -p tier1-reactor --features kani
     //! ```
 
-    use super::*;
-
     // 证明桩：具体证明在后续阶段实现
     // 此处仅用于验证 feature flag 正常工作
+    #[allow(dead_code)]
+    fn _kani_placeholder() {
+        use super::*;
+        let _ = JsonValue::Null;
+    }
 }
 
 #[cfg(test)]
@@ -434,7 +440,7 @@ mod tests {
         let mut state = ReactorState::new();
         let result = apply_io_response(&mut state, FactId(999), JsonValue::Null);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
     }
 
     #[test]
@@ -443,12 +449,12 @@ mod tests {
         let id = FactId(1);
         let instr = increment_instr("x", 1);
         // 注册 I/O 请求
-        state.register_io_request(id, IoType::CallExternal);
+        state.register_io_request(id, IoType::CALL_EXTERNAL);
         state.save_io_instruction(id, instr.clone());
         // 应用响应
         let result = apply_io_response(&mut state, id, JsonValue::string("result"));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
         // 验证结果已注入
         assert!(matches!(
             state.payload.get("__io_result__"),
@@ -483,10 +489,13 @@ mod tests {
         let mut state = ReactorState::new();
         let id = FactId(1);
         let instr = increment_instr("x", 1);
-        register_io_request_pure(&mut state, id, IoType::CallExternal, instr.clone());
+        register_io_request_pure(&mut state, id, IoType::CALL_EXTERNAL, instr.clone());
         assert_eq!(state.pending_io_count, 1);
         assert!(state.pending_requests.contains(&id));
-        assert_eq!(state.pending_io_types.get(&id), Some(&IoType::CallExternal));
+        assert_eq!(
+            state.pending_io_types.get(&id),
+            Some(&IoType::CALL_EXTERNAL)
+        );
         assert_eq!(state.pending_io_instructions.get(&id), Some(&instr));
         // 时间戳不在纯函数中设置，由调用方负责
         assert!(!state.pending_io_timestamps.contains_key(&id));
@@ -497,8 +506,8 @@ mod tests {
         let mut state = ReactorState::new();
         let id = FactId(1);
         let instr = increment_instr("x", 1);
-        register_io_request_pure(&mut state, id, IoType::CallExternal, instr.clone());
-        register_io_request_pure(&mut state, id, IoType::CallExternal, instr.clone());
+        register_io_request_pure(&mut state, id, IoType::CALL_EXTERNAL, instr.clone());
+        register_io_request_pure(&mut state, id, IoType::CALL_EXTERNAL, instr.clone());
         assert_eq!(state.pending_io_count, 1);
     }
 }

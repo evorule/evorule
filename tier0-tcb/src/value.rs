@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! JSON 值类型 - 确定性数据模型
 
 use alloc::{string::String, string::ToString, vec::Vec};

@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evorule"
-version = "6.0.0"
+version = "0.1.0"
 description = "Python SDK for evorule-server (HTTP API + SSE 事件流)"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "AGPL-3.0" }
 authors = [{ name = "TheEquation" }]
 dependencies = ["httpx>=0.27"]
 
