@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -23,7 +22,6 @@ from evorule import (
     EvoruleClient,
     EvoruleError,
     SessionClosedError,
-    SessionNotFoundError,
 )
 
 BASE_URL = os.environ.get("EVORULE_BASE_URL", "http://127.0.0.1:18081")
@@ -114,6 +112,7 @@ async def test_01_session_lifecycle(tr: TestResult) -> None:
     print("\n[Scenario 1] Session lifecycle")
     async with EvoruleClient(BASE_URL) as client:
         before = await client.list_sessions()
+        assert isinstance(before, list)
         tr.ok("list_sessions (initial)")
 
         session = await client.create_session()
@@ -200,7 +199,7 @@ async def test_03_payload_update(tr: TestResult) -> None:
 
         resp2 = await session.update_payload("counter", 42)
         if resp2.get("success") is not True:
-            tr.fail("update_payload (counter=42)", f"success=false")
+            tr.fail("update_payload (counter=42)", "success=false")
         else:
             tr.ok("update_payload (counter=42)")
 
@@ -231,7 +230,7 @@ async def test_04_time_machine(tr: TestResult) -> None:
             tr.ok(f"replay (type: {type(replay).__name__})")
 
         v2 = v3 - 1
-        rewind = await session.rewind(v2)
+        await session.rewind(v2)
         tr.ok(f"rewind(version={v2})")
 
         state_after = await session.state()
@@ -319,7 +318,7 @@ async def test_07_shared_facts(tr: TestResult) -> None:
         if isinstance(facts, list) and facts:
             fact_id = facts[0].get("fact_id") or facts[0].get("id")
             if fact_id is not None:
-                source = await client.shared_fact_source(fact_id)
+                await client.shared_fact_source(fact_id)
                 tr.ok(f"shared_fact_source (fact_id={fact_id})")
 
                 used_by = await client.shared_fact_used_by(fact_id)
@@ -406,6 +405,7 @@ async def test_12_cluster(tr: TestResult) -> None:
         tr.ok(f"create 2 sessions ({s1.session_id}, {s2.session_id})")
 
         resp = await s1.join(target_id=s2.session_id, direction="bidirectional")
+        assert resp.get("success") is True or "message" in resp
         tr.ok(f"join ({s1.session_id} <-> {s2.session_id})")
 
         status = await s1.cluster_status()
@@ -413,6 +413,7 @@ async def test_12_cluster(tr: TestResult) -> None:
         tr.ok(f"cluster_status (keys: {', '.join(keys)})")
 
         resp2 = await s1.leave()
+        assert resp2.get("success") is True or "message" in resp2
         tr.ok("leave")
 
         await s1.close()
@@ -458,7 +459,7 @@ async def test_14_health(tr: TestResult) -> None:
     async with EvoruleClient(BASE_URL) as client:
         h = await client.health()
         if h.get("success") is not True:
-            tr.fail("health", f"success=false")
+            tr.fail("health", "success=false")
         else:
             tr.ok(f"health (message={h.get('message')})")
 

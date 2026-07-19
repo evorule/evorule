@@ -18,7 +18,7 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![core_eval.json: CC0-1.0](https://img.shields.io/badge/core_eval.json-CC0%201.0-lightgrey.svg)](https://creativecommons.org/publicdomain/zero/1.0/)
 [![Kani](https://img.shields.io/badge/Kani-6_proof_stubs-purple.svg)](tier0-tcb/src/proofs.rs)
-[![Version](https://img.shields.io/badge/version-6.0.0-green.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](Cargo.toml)
 
 ---
 

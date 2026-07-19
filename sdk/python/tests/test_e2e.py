@@ -26,7 +26,6 @@ from evorule import (
     EvoruleClient,
     EvoruleError,
     SessionClosedError,
-    SessionNotFoundError,
 )
 
 BASE_URL = os.environ.get("EVORULE_BASE_URL", "http://localhost:18080")
@@ -63,6 +62,7 @@ async def test_01_session_lifecycle(tr: TestResult) -> None:
     print("\n[场景 1] 会话生命周期")
     async with EvoruleClient(BASE_URL) as client:
         before = await client.list_sessions()
+        assert isinstance(before, list)
         tr.ok("list_sessions（空列表 OK）")
 
         session = await client.create_session()
@@ -253,7 +253,7 @@ async def test_07_shared_facts(tr: TestResult) -> None:
         if facts:
             fact_id = facts[0].get("fact_id") or facts[0].get("id")
             if fact_id is not None:
-                source = await client.shared_fact_source(fact_id)
+                await client.shared_fact_source(fact_id)
                 tr.ok(f"shared_fact_source(fact_id={fact_id})")
 
                 used_by = await client.shared_fact_used_by(fact_id)
@@ -399,7 +399,7 @@ async def test_14_health(tr: TestResult) -> None:
 
 
 async def main() -> int:
-    print(f"evorule Python SDK E2E 测试")
+    print("evorule Python SDK E2E 测试")
     print(f"服务器: {BASE_URL}")
     print(f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 

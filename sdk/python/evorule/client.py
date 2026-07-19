@@ -211,24 +211,6 @@ class EvoruleClient:
         resp.raise_for_status()
         return resp.json().get("sessions", [])
 
-    async def shared_facts(self, prefix: str = "") -> list[dict[str, Any]]:
-        """查询共享 Fact 列表（GET /api/shared/facts）
-
-        参数：
-            prefix: 可选的路径前缀过滤（如 "user.profile"）
-
-        返回：
-            共享 Fact 列表，每项包含 fact_id / path / value / source_session_id / version
-        """
-        params: dict[str, str] = {}
-        if prefix:
-            params["prefix"] = prefix
-        resp = await self._http.get("/api/shared/facts", params=params)
-        if resp.status_code == 401:
-            raise AuthenticationError("Authentication failed")
-        resp.raise_for_status()
-        return resp.json()
-
     async def close(self) -> None:
         """关闭客户端，释放底层 HTTP 连接"""
         await self._http.aclose()
