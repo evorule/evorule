@@ -243,6 +243,18 @@ struct Cli {
     /// WAL 文件最大大小（MB，P03：达到此大小后自动轮换文件，默认 100MB，0 表示不轮换）
     #[arg(long, env = "EVORULE_WAL_MAX_SIZE_MB")]
     wal_max_size_mb: Option<u64>,
+
+    /// 启用审计链实时验证（P06：每次 audit_new 后自动验证审计链完整性）
+    #[arg(long, env = "EVORULE_AUTO_VERIFY")]
+    auto_verify: bool,
+
+    /// 自动验证阈值（P06：审计条目数超过此值时跳过验证，0 表示不限制，默认 1000）
+    #[arg(long, env = "EVORULE_AUTO_VERIFY_THRESHOLD")]
+    auto_verify_threshold: Option<usize>,
+
+    /// 自动验证间隔（P06：每 N 次 audit_new 验证一次，默认 1）
+    #[arg(long, env = "EVORULE_AUTO_VERIFY_INTERVAL")]
+    auto_verify_interval: Option<usize>,
 }
 
 /// 合并后的最终配置（CLI > env > file > default）
@@ -265,6 +277,12 @@ struct ResolvedConfig {
     wal_fsync: bool,
     /// WAL 文件最大大小（字节，P03：达到此大小后自动轮换文件）
     max_wal_size_bytes: u64,
+    /// 是否启用审计链实时验证（P06）
+    auto_verify: bool,
+    /// 自动验证阈值（P06，0 表示不限制）
+    auto_verify_threshold: usize,
+    /// 自动验证间隔（P06，1 表示每次都验证）
+    auto_verify_interval: usize,
 }
 
 impl ResolvedConfig {
@@ -308,6 +326,9 @@ impl ResolvedConfig {
             wal_dir: cli.wal_dir.or(file.paths.wal_dir),
             wal_fsync: cli.wal_fsync,
             max_wal_size_bytes: max_wal_size_mb * 1024 * 1024,
+            auto_verify: cli.auto_verify,
+            auto_verify_threshold: cli.auto_verify_threshold.unwrap_or(1000),
+            auto_verify_interval: cli.auto_verify_interval.unwrap_or(1),
         }
     }
 }
@@ -570,6 +591,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "已禁用（纯内存模式）".to_string()
         }
     );
+    info!(
+        "实时审计验证: {}",
+        if cfg.auto_verify {
+            format!(
+                "已启用（阈值: {}, 间隔: {}）",
+                cfg.auto_verify_threshold, cfg.auto_verify_interval
+            )
+        } else {
+            "已禁用".to_string()
+        }
+    );
 
     // 2. 加载 core_eval.json（宪法）
     let step_start = Instant::now();
@@ -654,12 +686,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let step_start = Instant::now();
     let auditor = Auditor::new(facts_log.clone());
     let api = GovernanceApi::new(tx.clone(), facts_log, auditor);
-    let session_api = SessionApi::new_with_wal_options(
+    let session_api = SessionApi::new_with_full_config(
         core_eval,
         cfg.max_rounds,
         cfg.wal_dir.clone(),
         cfg.wal_fsync,
         cfg.max_wal_size_bytes,
+        cfg.auto_verify,
+        cfg.auto_verify_threshold,
+        cfg.auto_verify_interval,
     );
     session_api.start_reaper();
 

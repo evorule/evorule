@@ -177,8 +177,42 @@ impl SessionApi {
         wal_fsync: bool,
         max_wal_size_bytes: u64,
     ) -> Self {
+        Self::new_with_full_config(
+            core_eval,
+            max_rounds,
+            wal_dir,
+            wal_fsync,
+            max_wal_size_bytes,
+            false,
+            1000,
+            1,
+        )
+    }
+
+    /// 创建会话管理 API（支持完整配置，P06）
+    ///
+    /// # 参数
+    /// - `core_eval`：transform 规则列表（用于创建每个会话的反应器）
+    /// - `max_rounds`：每个反应器的最大指令执行步数
+    /// - `wal_dir`：WAL 文件存储目录（为 None 时使用纯内存模式）
+    /// - `wal_fsync`：是否在每次 WAL 写入后执行 fsync
+    /// - `max_wal_size_bytes`：单个 WAL 文件最大大小（0 表示不轮换）
+    /// - `auto_verify`：是否启用审计链实时验证
+    /// - `auto_verify_threshold`：自动验证阈值（0 表示不限制）
+    /// - `auto_verify_interval`：自动验证间隔（1 表示每次都验证）
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_full_config(
+        core_eval: Vec<JsonValue>,
+        max_rounds: usize,
+        wal_dir: Option<std::path::PathBuf>,
+        wal_fsync: bool,
+        max_wal_size_bytes: u64,
+        auto_verify: bool,
+        auto_verify_threshold: usize,
+        auto_verify_interval: usize,
+    ) -> Self {
         let sessions = Arc::new(Mutex::new(
-            session::SessionManager::with_limits_and_wal_full(
+            session::SessionManager::with_limits_and_wal_and_auto_verify(
                 core_eval,
                 max_rounds,
                 session::DEFAULT_MAX_SESSIONS,
@@ -187,6 +221,9 @@ impl SessionApi {
                 session::DEFAULT_SHARD_COUNT,
                 wal_fsync,
                 max_wal_size_bytes,
+                auto_verify,
+                auto_verify_threshold,
+                auto_verify_interval,
             ),
         ));
         Self {

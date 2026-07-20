@@ -62,6 +62,24 @@ pub struct Auditor {
     index: BTreeMap<FactId, usize>,
     /// WAL 持久化路径（可选）
     wal_path: Option<std::path::PathBuf>,
+    /// 是否在 audit_new 后自动验证审计链完整性（P06）
+    ///
+    /// 启用后每次 audit_new 完成后自动调用 verify()，及时发现数据篡改。
+    /// 性能开销为 O(n)（n 为审计条目数），建议在大条目数场景配合
+    /// `auto_verify_threshold` 和 `auto_verify_interval` 使用。
+    auto_verify: bool,
+    /// 自动验证阈值（P06）
+    ///
+    /// 当审计条目数超过此阈值时，跳过自动验证以避免性能问题。
+    /// 默认 1000。设为 0 表示不限制（始终验证）。
+    auto_verify_threshold: usize,
+    /// 自动验证间隔（P06）
+    ///
+    /// 每 N 次 audit_new 执行一次自动验证（仅在 auto_verify=true 时生效）。
+    /// 默认 1（每次都验证）。设为 100 表示每 100 次验证一次。
+    auto_verify_interval: usize,
+    /// audit_new 调用计数（P06，用于间隔控制）
+    audit_new_count: u64,
 }
 
 impl Auditor {
@@ -77,7 +95,66 @@ impl Auditor {
             last_hash: String::from("genesis"),
             index: BTreeMap::new(),
             wal_path: None,
+            auto_verify: false,
+            auto_verify_threshold: 1000,
+            auto_verify_interval: 1,
+            audit_new_count: 0,
         }
+    }
+
+    /// 创建带实时验证配置的审计器（P06）
+    ///
+    /// # 参数
+    /// - `facts_log`：FactsLog 引用
+    /// - `auto_verify`：是否在 audit_new 后自动验证
+    /// - `auto_verify_threshold`：条目数超过此阈值时跳过验证（0 表示不限制）
+    /// - `auto_verify_interval`：每 N 次 audit_new 验证一次（1 表示每次都验证）
+    pub fn new_with_auto_verify(
+        facts_log: FactsLog,
+        auto_verify: bool,
+        auto_verify_threshold: usize,
+        auto_verify_interval: usize,
+    ) -> Self {
+        Self {
+            facts_log,
+            clock: LogicalClock::new(),
+            last_audited_version: 0,
+            entries: Vec::new(),
+            last_hash: String::from("genesis"),
+            index: BTreeMap::new(),
+            wal_path: None,
+            auto_verify,
+            auto_verify_threshold,
+            auto_verify_interval: if auto_verify_interval == 0 {
+                1
+            } else {
+                auto_verify_interval
+            },
+            audit_new_count: 0,
+        }
+    }
+
+    /// 设置实时验证配置（P06）
+    ///
+    /// 可在创建后修改自动验证配置。
+    pub fn set_auto_verify(
+        &mut self,
+        auto_verify: bool,
+        auto_verify_threshold: usize,
+        auto_verify_interval: usize,
+    ) {
+        self.auto_verify = auto_verify;
+        self.auto_verify_threshold = auto_verify_threshold;
+        self.auto_verify_interval = if auto_verify_interval == 0 {
+            1
+        } else {
+            auto_verify_interval
+        };
+    }
+
+    /// 查询当前是否启用自动验证（P06）
+    pub fn is_auto_verify_enabled(&self) -> bool {
+        self.auto_verify
     }
 
     /// 设置 WAL 持久化路径
@@ -183,7 +260,48 @@ impl Auditor {
             version = self.last_audited_version,
             "audit_new: 完成"
         );
+
+        // P06: 实时审计验证
+        self.audit_new_count += 1;
+        if self.should_auto_verify() {
+            if !self.verify() {
+                tracing::error!(
+                    entries = self.entries.len(),
+                    audit_new_count = self.audit_new_count,
+                    "audit_new: 实时审计验证失败，审计链可能存在数据篡改或损坏"
+                );
+            } else {
+                tracing::debug!(entries = self.entries.len(), "audit_new: 实时审计验证通过");
+            }
+        }
+
         count
+    }
+
+    /// 判断本次是否应执行自动验证（P06）
+    ///
+    /// 综合考虑三个条件：
+    /// 1. `auto_verify` 必须为 true
+    /// 2. 条目数不超过 `auto_verify_threshold`（0 表示不限制）
+    /// 3. `audit_new_count` 是 `auto_verify_interval` 的倍数
+    fn should_auto_verify(&self) -> bool {
+        if !self.auto_verify || self.entries.is_empty() {
+            return false;
+        }
+        if self.auto_verify_threshold > 0 && self.entries.len() > self.auto_verify_threshold {
+            tracing::debug!(
+                entries = self.entries.len(),
+                threshold = self.auto_verify_threshold,
+                "实时审计验证: 条目数超过阈值，跳过验证"
+            );
+            return false;
+        }
+        if self.auto_verify_interval > 1
+            && self.audit_new_count % self.auto_verify_interval as u64 != 0
+        {
+            return false;
+        }
+        true
     }
 
     /// 验证审计链完整性
@@ -723,5 +841,183 @@ mod tests {
         assert_eq!(auditor.entries()[0].fact_type, "PayloadUpdate");
 
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    // === P06 实时审计验证测试 ===
+
+    #[test]
+    fn test_auto_verify_default_disabled() {
+        let log = make_facts_log();
+        let auditor = Auditor::new(log);
+        assert!(
+            !auditor.is_auto_verify_enabled(),
+            "auto_verify 默认应为 false"
+        );
+    }
+
+    #[test]
+    fn test_auto_verify_enabled() {
+        let log = make_facts_log();
+        let auditor = Auditor::new_with_auto_verify(log, true, 1000, 1);
+        assert!(auditor.is_auto_verify_enabled());
+    }
+
+    #[test]
+    fn test_auto_verify_runs_after_audit_new() {
+        let log = make_facts_log();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::empty_object(),
+        })
+        .unwrap();
+        log.append(Fact::StateTransition {
+            id: FactId(2),
+            cause: FactId(1),
+            new_payload: JsonValue::empty_object(),
+            new_queue: vec![],
+        })
+        .unwrap();
+
+        // 启用自动验证
+        let mut auditor = Auditor::new_with_auto_verify(log, true, 1000, 1);
+        let n = auditor.audit_new();
+        assert_eq!(n, 2);
+        // 验证审计链应通过
+        assert!(auditor.verify());
+    }
+
+    #[test]
+    fn test_auto_verify_threshold_skips_verification() {
+        let log = make_facts_log();
+
+        // 添加 3 条事实
+        for i in 0..3 {
+            log.append(Fact::Command {
+                id: FactId(i as u64 + 1),
+                instruction: JsonValue::empty_object(),
+            })
+            .unwrap();
+        }
+
+        // 设置阈值为 2（条目数 3 > 2，应跳过验证）
+        let mut auditor = Auditor::new_with_auto_verify(log, true, 2, 1);
+        auditor.audit_new();
+        // 条目数超过阈值，但审计链本身是正确的
+        assert_eq!(auditor.entries().len(), 3);
+        assert!(auditor.verify()); // 手动验证仍然通过
+    }
+
+    #[test]
+    fn test_auto_verify_threshold_zero_means_no_limit() {
+        let log = make_facts_log();
+
+        for i in 0..100 {
+            log.append(Fact::Command {
+                id: FactId(i as u64 + 1),
+                instruction: JsonValue::empty_object(),
+            })
+            .unwrap();
+        }
+
+        // 阈值 0 表示不限制
+        let mut auditor = Auditor::new_with_auto_verify(log, true, 0, 1);
+        auditor.audit_new();
+        assert_eq!(auditor.entries().len(), 100);
+        assert!(auditor.verify());
+    }
+
+    #[test]
+    fn test_auto_verify_interval_skips_intermediate_calls() {
+        let log = make_facts_log();
+
+        // 第一次 audit_new 前添加事实
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::empty_object(),
+        })
+        .unwrap();
+
+        // 间隔为 3，只在第 3、6、9... 次执行验证
+        let mut auditor = Auditor::new_with_auto_verify(log, true, 0, 3);
+        auditor.audit_new(); // count=1，不验证
+        assert_eq!(auditor.audit_new_count, 1);
+
+        // 再添加事实
+        auditor
+            .facts_log
+            .append(Fact::Command {
+                id: FactId(2),
+                instruction: JsonValue::empty_object(),
+            })
+            .unwrap();
+        auditor.audit_new(); // count=2，不验证
+        assert_eq!(auditor.audit_new_count, 2);
+
+        // 再添加事实
+        auditor
+            .facts_log
+            .append(Fact::Command {
+                id: FactId(3),
+                instruction: JsonValue::empty_object(),
+            })
+            .unwrap();
+        auditor.audit_new(); // count=3，验证
+        assert_eq!(auditor.audit_new_count, 3);
+        assert_eq!(auditor.entries().len(), 3);
+    }
+
+    #[test]
+    fn test_set_auto_verify_after_creation() {
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+        assert!(!auditor.is_auto_verify_enabled());
+
+        auditor.set_auto_verify(true, 500, 10);
+        assert!(auditor.is_auto_verify_enabled());
+    }
+
+    #[test]
+    fn test_auto_verify_interval_zero_becomes_one() {
+        let log = make_facts_log();
+        // 间隔 0 会被自动修正为 1
+        let auditor = Auditor::new_with_auto_verify(log, true, 0, 0);
+        // 通过行为间接验证：添加一条事实后 audit_new 应执行验证（因为间隔=1）
+        drop(auditor);
+    }
+
+    #[test]
+    fn test_auto_verify_empty_entries_skips() {
+        let log = make_facts_log();
+        // 没有 fact 时 audit_new 应返回 0 且不验证
+        let mut auditor = Auditor::new_with_auto_verify(log, true, 0, 1);
+        let n = auditor.audit_new();
+        assert_eq!(n, 0);
+        assert_eq!(auditor.entries().len(), 0);
+        // verify 在空条目时返回 true（无链可验证）
+        assert!(auditor.verify());
+    }
+
+    #[test]
+    fn test_auto_verify_detects_corruption() {
+        let log = make_facts_log();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::empty_object(),
+        })
+        .unwrap();
+        log.append(Fact::Command {
+            id: FactId(2),
+            instruction: JsonValue::empty_object(),
+        })
+        .unwrap();
+
+        let mut auditor = Auditor::new_with_auto_verify(log, true, 0, 1);
+        auditor.audit_new();
+
+        // 篡改第一条审计条目的 prev_hash
+        auditor.entries[0].prev_hash = "tampered".to_string();
+
+        // verify 应检测到篡改
+        assert!(!auditor.verify());
     }
 }

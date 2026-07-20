@@ -170,6 +170,19 @@ pub struct SessionManager {
     /// 达到此大小后自动轮换文件（0 表示不轮换）。
     /// 默认值为 100MB。
     max_wal_size_bytes: u64,
+    /// 是否启用审计链实时验证（P06）
+    ///
+    /// 启用后在每次 audit_new 后自动调用 verify()，及时发现数据篡改。
+    /// 性能开销为 O(n)，建议大条目数场景配合阈值和间隔使用。
+    auto_verify: bool,
+    /// 自动验证阈值（P06）
+    ///
+    /// 当审计条目数超过此阈值时，跳过自动验证。0 表示不限制。
+    auto_verify_threshold: usize,
+    /// 自动验证间隔（P06）
+    ///
+    /// 每 N 次 audit_new 执行一次自动验证。1 表示每次都验证。
+    auto_verify_interval: usize,
     /// 当前总会话数（乐观计数）
     count: AtomicU64,
     /// FactsLog 对象池（复用已释放的 FactsLog，减少内存重分配）
@@ -305,6 +318,49 @@ impl SessionManager {
         wal_fsync: bool,
         max_wal_size_bytes: u64,
     ) -> Self {
+        Self::with_limits_and_wal_and_auto_verify(
+            core_eval,
+            max_rounds,
+            max_sessions,
+            session_ttl,
+            wal_dir,
+            shard_count,
+            wal_fsync,
+            max_wal_size_bytes,
+            false,
+            1000,
+            1,
+        )
+    }
+
+    /// 创建会话管理器并指定完整配置（P06）
+    ///
+    /// # 参数
+    /// - `core_eval`：transform 规则列表
+    /// - `max_rounds`：每个反应器的最大指令执行步数
+    /// - `max_sessions`：最大并发会话数
+    /// - `session_ttl`：会话无活动超时时间
+    /// - `wal_dir`：WAL 文件存储目录（为 None 时使用纯内存模式）
+    /// - `shard_count`：分片数（推荐 16-64）
+    /// - `wal_fsync`：是否在每次 WAL 写入后执行 fsync
+    /// - `max_wal_size_bytes`：单个 WAL 文件最大大小（0 表示不轮换）
+    /// - `auto_verify`：是否启用审计链实时验证
+    /// - `auto_verify_threshold`：自动验证阈值（0 表示不限制）
+    /// - `auto_verify_interval`：自动验证间隔（1 表示每次都验证）
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_limits_and_wal_and_auto_verify(
+        core_eval: Vec<JsonValue>,
+        max_rounds: usize,
+        max_sessions: usize,
+        session_ttl: Duration,
+        wal_dir: Option<PathBuf>,
+        shard_count: usize,
+        wal_fsync: bool,
+        max_wal_size_bytes: u64,
+        auto_verify: bool,
+        auto_verify_threshold: usize,
+        auto_verify_interval: usize,
+    ) -> Self {
         let shards = (0..shard_count)
             .map(|_| Arc::new(Mutex::new(BTreeMap::new())))
             .collect();
@@ -319,6 +375,13 @@ impl SessionManager {
             wal_dir,
             wal_fsync,
             max_wal_size_bytes,
+            auto_verify,
+            auto_verify_threshold,
+            auto_verify_interval: if auto_verify_interval == 0 {
+                1
+            } else {
+                auto_verify_interval
+            },
             count: AtomicU64::new(0),
             facts_log_pool: ObjectPool::with_default_size(),
             pending_recycle: Mutex::new(Vec::new()),
@@ -384,7 +447,12 @@ impl SessionManager {
             "Session created (long-running reactor spawned)"
         );
 
-        let auditor = Arc::new(std::sync::Mutex::new(Auditor::new(facts_log.clone())));
+        let auditor = Arc::new(std::sync::Mutex::new(Auditor::new_with_auto_verify(
+            facts_log.clone(),
+            self.auto_verify,
+            self.auto_verify_threshold,
+            self.auto_verify_interval,
+        )));
 
         shard_guard.insert(
             session_id,
@@ -505,7 +573,12 @@ impl SessionManager {
             "Session created from parent (cross-session causality)"
         );
 
-        let auditor = Arc::new(std::sync::Mutex::new(Auditor::new(facts_log.clone())));
+        let auditor = Arc::new(std::sync::Mutex::new(Auditor::new_with_auto_verify(
+            facts_log.clone(),
+            self.auto_verify,
+            self.auto_verify_threshold,
+            self.auto_verify_interval,
+        )));
 
         shard_guard.insert(
             session_id,
