@@ -255,6 +255,10 @@ struct Cli {
     /// 自动验证间隔（P06：每 N 次 audit_new 验证一次，默认 1）
     #[arg(long, env = "EVORULE_AUTO_VERIFY_INTERVAL")]
     auto_verify_interval: Option<usize>,
+
+    /// 禁用速率限制(仅用于 benchmark/性能测试)
+    #[arg(long, env = "EVORULE_NO_RATE_LIMIT")]
+    no_rate_limit: bool,
 }
 
 /// 合并后的最终配置（CLI > env > file > default）
@@ -283,6 +287,8 @@ struct ResolvedConfig {
     auto_verify_threshold: usize,
     /// 自动验证间隔（P06，1 表示每次都验证）
     auto_verify_interval: usize,
+    /// 是否禁用速率限制（仅 benchmark 使用）
+    rate_limit_per_sec: u64,
 }
 
 impl ResolvedConfig {
@@ -329,6 +335,9 @@ impl ResolvedConfig {
             auto_verify: cli.auto_verify,
             auto_verify_threshold: cli.auto_verify_threshold.unwrap_or(1000),
             auto_verify_interval: cli.auto_verify_interval.unwrap_or(1),
+            // 速率限制：默认 200 req/s（per_sec=1, burst=200）。
+            // --no-rate-limit 设为 0 → build_router() 完全跳过 GovernorLayer（真正禁用限速）
+            rate_limit_per_sec: if cli.no_rate_limit { 0 } else { 1 },
         }
     }
 }
@@ -740,7 +749,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             AuthConfig::disabled()
         }
     };
-    let server = GovernanceServer::new(state, auth, cfg.addr.clone());
+    let server = GovernanceServer::new(state, auth, cfg.addr.clone(), cfg.rate_limit_per_sec, 200);
 
     info!(
         "[4/4] HTTP 服务器已就绪，监听 {}（耗时: {}ms）",

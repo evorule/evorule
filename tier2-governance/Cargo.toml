@@ -43,6 +43,9 @@ axum = "0.8"
 tower = { version = "0.5", features = ["limit"] }
 tower-http = { version = "0.6", features = ["trace", "cors", "limit", "fs"] }
 tower_governor = "0.8"
+# governor 直接依赖：用于在 resolve_governor_config 签名中显式指定 NoOpMiddleware 类型参数
+# (tower_governor 未 pub re-export NoOpMiddleware，只能通过 governor crate 访问)
+governor = "0.10"
 
 # 安全（P1-5：恒定时间比较，防时序攻击）
 subtle = "2"

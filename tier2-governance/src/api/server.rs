@@ -118,14 +118,6 @@ const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
 /// HTTP 并发请求数上限（P1-4：1000 并发，防止连接耗尽）
 const MAX_CONCURRENCY: usize = 1000;
 
-/// 速率限制：令牌桶补充周期（秒），每周期补充 burst_size 个令牌（P1-4）
-/// 实际持续速率 = burst_size / per_second（req/s）
-/// 当前配置：burst=200, period=1s → 200 req/s 持续，200 突发
-const RATE_LIMIT_PER_SECOND: u64 = 1;
-
-/// 速率限制：突发请求数上限（令牌桶容量，P1-4）
-const RATE_LIMIT_BURST_SIZE: u32 = 200;
-
 /// 会话管理 API 共享状态
 ///
 /// 持有 `SessionManager`（Arc<Mutex> 保护），管理多个独立反应器实例。
@@ -1375,6 +1367,27 @@ struct JoinRequest {
     direction: Option<String>,
 }
 
+/// 集群广播请求体（用户决策 1：evorule 核心新增集群广播 API）
+///
+/// `POST /api/sessions/{id}/broadcast`
+///
+/// 将一个 PayloadUpdate 显式广播到集群所有成员。
+/// 用于 evo-agent MemoryManager 写 shared 记忆时的集群同步。
+#[derive(serde::Deserialize)]
+struct BroadcastRequest {
+    /// 字段路径
+    pub path: String,
+    /// 字段值
+    pub value: serde_json::Value,
+    /// 是否排除源会话自身（默认 true）
+    #[serde(default = "default_exclude_source")]
+    pub exclude_source: bool,
+}
+
+fn default_exclude_source() -> bool {
+    true
+}
+
 /// IoResponse 请求体（外部提交）
 #[derive(serde::Deserialize)]
 struct IoResponseRequest {
@@ -1812,6 +1825,43 @@ async fn session_cluster_status(
     })))
 }
 
+/// 集群广播 handler（用户决策 1）
+///
+/// `POST /api/sessions/{id}/broadcast`
+///
+/// 将一个 PayloadUpdate 显式广播到集群所有成员（除源会话外，可配置）。
+/// 用于 evo-agent MemoryManager 写 shared 记忆时的集群同步：
+/// - 不跳过 `__` 前缀路径（显式调用尊重调用方意图）
+/// - 每个目标生成独立 FactId，进入目标 FactsLog 审计链
+/// - 记录 sync_ids 防回环
+async fn session_broadcast(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+    Json(req): Json<BroadcastRequest>,
+) -> Result<Json<ApiResponse>, StatusCode> {
+    let value = serde_to_tcb(req.value);
+
+    let cluster = api.cluster.lock().await;
+    match cluster
+        .broadcast(session_id, &req.path, &value, req.exclude_source)
+        .await
+    {
+        Ok(sent) => Ok(Json(ApiResponse {
+            success: true,
+            message: format!(
+                "Broadcasted PayloadUpdate (path={}) to {} cluster member(s)",
+                req.path, sent
+            ),
+            fact_id: None,
+        })),
+        Err(e) => Ok(Json(ApiResponse {
+            success: false,
+            message: e.to_string(),
+            fact_id: None,
+        })),
+    }
+}
+
 /// 治理层 HTTP 服务器
 ///
 /// 支持两套路由：
@@ -1821,6 +1871,10 @@ pub struct GovernanceServer {
     state: AppState,
     auth: AuthConfig,
     addr: String,
+    /// 速率限制：每 IP 持续速率（req/s）。0 表示禁用限速。
+    rate_limit_per_sec: u64,
+    /// 速率限制：令牌桶容量（突发上限）
+    rate_limit_burst: u32,
 }
 
 impl GovernanceServer {
@@ -1830,13 +1884,33 @@ impl GovernanceServer {
     /// - `state`：应用全局状态（合并 GovernanceApi + SessionApi）
     /// - `auth`：认证配置
     /// - `addr`：监听地址（如 "0.0.0.0:8080"）
-    pub fn new(state: AppState, auth: AuthConfig, addr: String) -> Self {
-        Self { state, auth, addr }
+    /// - `rate_limit_per_sec`：每 IP 持续速率（req/s），`0` = 禁用
+    /// - `rate_limit_burst`：突发上限（令牌桶容量）
+    pub fn new(
+        state: AppState,
+        auth: AuthConfig,
+        addr: String,
+        rate_limit_per_sec: u64,
+        rate_limit_burst: u32,
+    ) -> Self {
+        Self {
+            state,
+            auth,
+            addr,
+            rate_limit_per_sec,
+            rate_limit_burst,
+        }
     }
 
-    /// 创建禁用认证的开发服务器
+    /// 创建禁用认证的开发服务器（保留默认限速 200 req/s）
     pub fn dev(state: AppState, addr: String) -> Self {
-        Self::new(state, AuthConfig::disabled(), addr)
+        Self::new(state, AuthConfig::disabled(), addr, 1, 200)
+    }
+
+    /// 创建禁用认证 + 禁用限速的基准测试服务器（仅用于 benchmarks）
+    pub fn bench(state: AppState, addr: String) -> Self {
+        // per_sec=0 触发 build_router() 完全跳过 GovernorLayer（真正禁用限速）
+        Self::new(state, AuthConfig::disabled(), addr, 0, 0)
     }
 
     /// 构建路由（公开，供 bin 自定义启动流程使用）
@@ -1846,7 +1920,7 @@ impl GovernanceServer {
     /// 2. `RequestBodyLimitLayer` — 请求体大小限制（1MB）
     /// 3. `ConcurrencyLimitLayer` — 并发连接数限制（1000）
     /// 4. `CorsLayer` — CORS 预检处理
-    /// 5. `GovernorLayer` — 速率限制（每 IP 200 req/s，突发 200）
+    /// 5. `GovernorLayer` — 速率限制（每 IP `rate_limit_burst / rate_limit_per_sec` req/s）
     ///
     /// # 注意
     /// `GovernorLayer` 依赖 `ConnectInfo<SocketAddr>` 提取客户端 IP，
@@ -1859,12 +1933,14 @@ impl GovernanceServer {
     pub fn build_router(&self) -> Router {
         let auth = self.auth.clone();
 
-        // P1-4: 速率限制配置（令牌桶：每 1 秒补充 200 令牌，桶容量 200 → 200 req/s）
-        let governor_config = tower_governor::governor::GovernorConfigBuilder::default()
-            .per_second(RATE_LIMIT_PER_SECOND)
-            .burst_size(RATE_LIMIT_BURST_SIZE)
-            .finish()
-            .unwrap_or_else(tower_governor::governor::GovernorConfig::default);
+        // P1-4: 速率限制配置（令牌桶：每 period 秒补充 burst 个令牌）
+        // rate_limit_per_sec == 0 表示完全禁用限速（不添加 GovernorLayer）
+        // 修复：之前用 (1, 1_000_000) 模拟"无限速"，但 GovernorConfigBuilder::finish()
+        // 可能 fallback 到 GovernorConfig::default()（默认低限速），导致 --no-rate-limit
+        // 实际仍触发 429。现在通过 resolve_governor_config() 条件性返回 None 来跳过 GovernorLayer。
+        //
+        // 注意：GovernorLayer 不能存入 Option<GovernorLayer> 变量（其 M/RespBody 泛型
+        // 只能在 .layer() 调用时通过 Layer trait 约束推断），因此采用 match 分支。
 
         // P2-7/P2-8: 公开路由（免认证）— health/liveness/readiness/metrics
         let public_routes = Router::new()
@@ -1943,20 +2019,37 @@ impl GovernanceServer {
             .route("/api/sessions/{id}/join", post(session_join))
             .route("/api/sessions/{id}/leave", post(session_leave))
             .route("/api/sessions/{id}/cluster", get(session_cluster_status))
+            .route("/api/sessions/{id}/broadcast", post(session_broadcast))
             .layer(axum::middleware::from_fn_with_state(
                 auth,
                 crate::api::auth::auth_middleware,
             ));
 
         // 合并路由 + 全局安全层（从内到外：body limit → concurrency → cors → rate limit）
-        Router::new()
+        // 修复：当 resolve_governor_config() 返回 None 时，完全跳过 GovernorLayer（真正禁用限速）
+        let router = Router::new()
             .merge(public_routes)
             .merge(protected_routes)
             .layer(RequestBodyLimitLayer::new(MAX_REQUEST_BODY_BYTES))
             .layer(tower::limit::ConcurrencyLimitLayer::new(MAX_CONCURRENCY))
-            .layer(CorsLayer::permissive())
-            .layer(tower_governor::GovernorLayer::new(governor_config))
-            .with_state(self.state.clone())
+            .layer(CorsLayer::permissive());
+
+        match resolve_governor_config(self.rate_limit_per_sec, self.rate_limit_burst) {
+            None => {
+                tracing::info!("速率限制已禁用（--no-rate-limit / per_sec=0）");
+                router.with_state(self.state.clone())
+            }
+            Some(cfg) => {
+                tracing::info!(
+                    "速率限制已启用：{} req/s（burst={}）",
+                    self.rate_limit_burst as u64 / self.rate_limit_per_sec,
+                    self.rate_limit_burst
+                );
+                router
+                    .layer(tower_governor::GovernorLayer::new(cfg))
+                    .with_state(self.state.clone())
+            }
+        }
     }
 
     /// 启动 HTTP 服务器
@@ -1975,10 +2068,96 @@ impl GovernanceServer {
     }
 }
 
+/// 速率限制配置决策（纯函数，可单元测试）
+///
+/// 根据 `per_sec` 和 `burst` 参数构造 `GovernorConfig`，决定是否启用限速。
+///
+/// # 参数
+/// - `per_sec`：令牌桶补充周期（秒）。`0` 表示禁用限速。
+/// - `burst`：令牌桶容量（突发上限）。
+///
+/// # 返回
+/// - `None`：禁用限速（调用方不应添加 `GovernorLayer`）
+/// - `Some(cfg)`：启用限速，使用返回的配置构造 `GovernorLayer`
+///
+/// # 设计理由
+/// `GovernorConfigBuilder::finish()` 可能返回 `None`，旧代码用
+/// `unwrap_or_else(GovernorConfig::default)` fallback，但 `default()` 的限速值
+/// 很低，会导致 `--no-rate-limit` 名义禁用、实际仍强限速的 bug。
+/// 抽取为独立函数后，`per_sec == 0` 路径直接返回 `None`，彻底绕过 fallback 陷阱。
+pub fn resolve_governor_config(
+    per_sec: u64,
+    burst: u32,
+) -> Option<
+    tower_governor::governor::GovernorConfig<
+        tower_governor::key_extractor::PeerIpKeyExtractor,
+        governor::middleware::NoOpMiddleware,
+    >,
+> {
+    if per_sec == 0 {
+        return None;
+    }
+    tower_governor::governor::GovernorConfigBuilder::default()
+        .per_second(per_sec)
+        .burst_size(burst)
+        .finish()
+        .or_else(|| {
+            tracing::warn!(
+                "GovernorConfigBuilder::finish() 返回 None，fallback 到 GovernorConfig::default()"
+            );
+            Some(tower_governor::governor::GovernorConfig::default())
+        })
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+
+    // ===== resolve_governor_config 单元测试 =====
+    // 覆盖 030 文档记录的 --no-rate-limit 修复场景
+
+    #[test]
+    fn test_resolve_governor_config_disabled_when_per_sec_zero() {
+        // 本次 bug 的核心场景：--no-rate-limit → per_sec=0 → 必须返回 None
+        let result = resolve_governor_config(0, 200);
+        assert!(
+            result.is_none(),
+            "per_sec=0 必须返回 None（禁用限速），实际返回: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_resolve_governor_config_disabled_when_both_zero() {
+        // bench() 路径：per_sec=0, burst=0 → 必须返回 None
+        let result = resolve_governor_config(0, 0);
+        assert!(
+            result.is_none(),
+            "per_sec=0 且 burst=0 必须返回 None，实际返回: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_resolve_governor_config_enabled_normal() {
+        // 默认配置：per_sec=1, burst=200 → 必须返回 Some
+        let result = resolve_governor_config(1, 200);
+        assert!(
+            result.is_some(),
+            "per_sec=1, burst=200 必须返回 Some（启用限速）"
+        );
+    }
+
+    #[test]
+    fn test_resolve_governor_config_enabled_small_burst() {
+        // 边界值：per_sec=1, burst=1 → 仍应返回 Some（最小有效限速配置）
+        let result = resolve_governor_config(1, 1);
+        assert!(
+            result.is_some(),
+            "per_sec=1, burst=1 必须返回 Some（最小有效限速配置）"
+        );
+    }
+
+    // ===== 既有单元测试 =====
 
     #[test]
     fn test_serde_to_tcb_roundtrip() {

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+﻿// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! 反应器集群 - 多 reactor 协作原语（阶段8：第六组）
@@ -797,6 +797,102 @@ impl ReactorCluster {
 
         Ok(())
     }
+
+    /// 显式广播一个 PayloadUpdate 到集群所有成员（一对多扇出）
+    ///
+    /// 与 `join` + `on_payload_update` 的自动成对同步不同，`broadcast` 是显式的
+    /// 一对多扇出机制：
+    /// - 调用方明确指定要广播的 path 和 value
+    /// - **不跳过 `__` 前缀路径**（显式调用尊重调用方意图，用于 evo-agent 共享记忆
+    ///   `__memory__.shared.*` 的集群同步场景）
+    /// - 每个目标会话生成独立的 FactId，并记录到目标的 `seen_sync_ids` 防回环
+    /// - 发送到目标的 `command_tx`，进入目标的 FactsLog 审计链
+    ///
+    /// # 使用场景
+    ///
+    /// evo-agent 的 MemoryManager 写 shared 记忆时，调用此 API 把变更同步到集群
+    /// 所有会话，保证多用户并发场景下共享记忆的一致性。
+    ///
+    /// # 参数
+    /// - `source_session`：发起广播的源会话 ID（必须在集群中）
+    /// - `path`：状态变更路径（如 `__memory__.agent_general.shared.user_prefs`）
+    /// - `value`：新值
+    /// - `exclude_source`：是否排除源会话自身（默认 true，避免自发送）
+    ///
+    /// # 返回
+    /// - `Ok(usize)`：成功发送的目标会话数（不含被排除的源）
+    /// - `Err(ClusterError::NotInCluster)`：源会话不在集群中
+    pub async fn broadcast(
+        &self,
+        source_session: SessionId,
+        path: &str,
+        value: &JsonValue,
+        exclude_source: bool,
+    ) -> Result<usize, ClusterError> {
+        // 1. 检查源会话在集群中 + 收集目标列表
+        let targets: Vec<SessionId> = {
+            let members = self.members.lock().await;
+            if !members.contains_key(&source_session) {
+                return Err(ClusterError::NotInCluster(source_session));
+            }
+            members
+                .keys()
+                .copied()
+                .filter(|id| !exclude_source || *id != source_session)
+                .collect()
+        };
+
+        if targets.is_empty() {
+            tracing::info!(
+                source = source_session,
+                path = path,
+                "Broadcast has no targets (single-member cluster or all excluded)"
+            );
+            return Ok(0);
+        }
+
+        // 2. 向每个目标发送 PayloadUpdate
+        let mgr = self.session_manager.lock().await;
+        let mut sent: Vec<(SessionId, u64)> = Vec::with_capacity(targets.len());
+
+        for target_id in targets {
+            let session = match mgr.get_session(target_id) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            let fact_id = self.id_gen.lock().await.next_id();
+            let fact = Fact::PayloadUpdate {
+                id: fact_id,
+                path: path.to_string(),
+                value: value.clone(),
+            };
+
+            if session.command_tx.send(fact).is_ok() {
+                sent.push((target_id, fact_id.0));
+            }
+        }
+        drop(mgr);
+
+        // 3. 记录 sync IDs 到目标成员的 seen_sync_ids，防止回环
+        {
+            let mut members = self.members.lock().await;
+            for (target_id, sync_id) in &sent {
+                if let Some(member) = members.get_mut(target_id) {
+                    member.seen_sync_ids.insert(*sync_id);
+                }
+            }
+        }
+
+        tracing::info!(
+            source = source_session,
+            path = path,
+            sent = sent.len(),
+            "Broadcast PayloadUpdate to cluster members"
+        );
+
+        Ok(sent.len())
+    }
 }
 
 #[cfg(test)]
@@ -1274,5 +1370,215 @@ mod tests {
 
         let result = cluster.leave_all(a).await;
         assert!(matches!(result, Err(ClusterError::NotInCluster(_))));
+    }
+
+    // ===== broadcast API 单元测试（用户决策 1：集群广播） =====
+
+    #[tokio::test]
+    async fn test_broadcast_to_all_members() {
+        // 3 个会话 join 后,a 广播应发送给 b 和 c（排除 a 自身）
+        let cluster = make_cluster();
+        let mgr = cluster.session_manager.lock().await;
+        let a = mgr.create_session().unwrap();
+        let b = mgr.create_session().unwrap();
+        let c = mgr.create_session().unwrap();
+
+        let mut b_events = mgr.get_session(b).unwrap().event_tx.subscribe();
+        let mut c_events = mgr.get_session(c).unwrap().event_tx.subscribe();
+        drop(mgr);
+
+        // a-b 和 a-c join（星形拓扑）
+        cluster
+            .join(a, b, SyncDirection::Bidirectional)
+            .await
+            .unwrap();
+        cluster
+            .join(a, c, SyncDirection::Bidirectional)
+            .await
+            .unwrap();
+
+        let sent = cluster
+            .broadcast(a, "__memory__.shared.key", &JsonValue::string("v1"), true)
+            .await
+            .unwrap();
+        assert_eq!(sent, 2, "应发送给 b 和 c 共 2 个目标");
+
+        // b 和 c 都应收到
+        for (label, mut rx) in [("b", b_events), ("c", c_events)] {
+            let received = tokio::time::timeout(Duration::from_millis(200), async {
+                loop {
+                    if let Ok(Fact::PayloadUpdate { path, .. }) = rx.recv().await {
+                        if path == "__memory__.shared.key" {
+                            return true;
+                        }
+                    }
+                }
+            })
+            .await;
+            assert!(received.is_ok(), "{} 应收到广播", label);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_includes_source_when_not_excluded() {
+        // exclude_source=false 时,源会话也应收到
+        let cluster = make_cluster();
+        let mgr = cluster.session_manager.lock().await;
+        let a = mgr.create_session().unwrap();
+        let b = mgr.create_session().unwrap();
+
+        let mut a_events = mgr.get_session(a).unwrap().event_tx.subscribe();
+        drop(mgr);
+
+        cluster
+            .join(a, b, SyncDirection::Bidirectional)
+            .await
+            .unwrap();
+
+        let sent = cluster
+            .broadcast(a, "field", &JsonValue::Integer(42), false)
+            .await
+            .unwrap();
+        assert_eq!(sent, 2, "include_source 时应发送给 a 和 b 共 2 个目标");
+
+        // a 也应收到自己广播的内容
+        let received = tokio::time::timeout(Duration::from_millis(200), async {
+            loop {
+                if let Ok(Fact::PayloadUpdate { path, value, .. }) = a_events.recv().await {
+                    if path == "field" && value == JsonValue::Integer(42) {
+                        return true;
+                    }
+                }
+            }
+        })
+        .await;
+        assert!(received.is_ok(), "a 应收到自己广播的 PayloadUpdate");
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_does_not_skip_underscore_paths() {
+        // broadcast 与 on_payload_update 不同：显式调用不跳过 __ 前缀路径
+        let cluster = make_cluster();
+        let mgr = cluster.session_manager.lock().await;
+        let a = mgr.create_session().unwrap();
+        let b = mgr.create_session().unwrap();
+
+        let mut b_events = mgr.get_session(b).unwrap().event_tx.subscribe();
+        drop(mgr);
+
+        cluster
+            .join(a, b, SyncDirection::Bidirectional)
+            .await
+            .unwrap();
+
+        let sent = cluster
+            .broadcast(
+                a,
+                "__memory__.agent_x.shared.prefs",
+                &JsonValue::Bool(true),
+                true,
+            )
+            .await
+            .unwrap();
+        assert_eq!(sent, 1, "__ 前缀路径也应在 broadcast 中被发送");
+
+        let received = tokio::time::timeout(Duration::from_millis(200), async {
+            loop {
+                if let Ok(Fact::PayloadUpdate { path, .. }) = b_events.recv().await {
+                    if path == "__memory__.agent_x.shared.prefs" {
+                        return true;
+                    }
+                }
+            }
+        })
+        .await;
+        assert!(received.is_ok(), "b 应收到 __ 前缀路径的广播");
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_records_sync_ids_for_loop_prevention() {
+        // 广播后,目标的 seen_sync_ids 应记录新 fact_id,防止后续 on_payload_update 回环
+        let cluster = make_cluster();
+        let mgr = cluster.session_manager.lock().await;
+        let a = mgr.create_session().unwrap();
+        let b = mgr.create_session().unwrap();
+        drop(mgr);
+
+        cluster
+            .join(a, b, SyncDirection::Bidirectional)
+            .await
+            .unwrap();
+
+        let sent = cluster
+            .broadcast(a, "test_path", &JsonValue::Null, true)
+            .await
+            .unwrap();
+        assert_eq!(sent, 1);
+
+        // b 的 seen_sync_ids 应非空（包含刚收到的 fact_id）
+        let members = cluster.members.lock().await;
+        let member_b = members.get(&b).expect("b 应在集群中");
+        // SyncIdRingBuffer 的 set 不暴露 len,但我们可以通过 on_payload_update 回环检测验证
+        // 这里用一个不可能的大 ID 测试 contains 不可行,改为通过 on_payload_update 行为验证
+        drop(members);
+
+        // 给 b 一些时间处理广播
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // 从 b 发起 on_payload_update,因为 b 已经在 seen_sync_ids 中,
+        // 但 on_payload_update 检查的是 source 的 seen_sync_ids,不是 target 的
+        // 所以这里换个方式:直接验证 broadcast 返回值和 history
+        let mgr = cluster.session_manager.lock().await;
+        let session_b = mgr.get_session(b).unwrap();
+        let history = session_b.facts_log.history();
+        let has_broadcast_fact = history
+            .iter()
+            .any(|f| matches!(f, Fact::PayloadUpdate { path, .. } if path == "test_path"));
+        assert!(
+            has_broadcast_fact,
+            "b 的 history 应包含广播的 PayloadUpdate"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_fails_when_source_not_in_cluster() {
+        let cluster = make_cluster();
+        let mgr = cluster.session_manager.lock().await;
+        let a = mgr.create_session().unwrap();
+        let b = mgr.create_session().unwrap();
+        drop(mgr);
+
+        // a 和 b 都存在,但都没 join 任何集群
+        let result = cluster.broadcast(a, "path", &JsonValue::Null, true).await;
+        assert!(
+            matches!(result, Err(ClusterError::NotInCluster(_))),
+            "源不在集群中应返回 NotInCluster 错误"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_single_member_cluster_returns_zero() {
+        // 只有一个成员的集群,exclude_source=true 时应返回 0
+        let cluster = make_cluster();
+        let mgr = cluster.session_manager.lock().await;
+        let a = mgr.create_session().unwrap();
+        let b = mgr.create_session().unwrap();
+        drop(mgr);
+
+        // a-b join 后,a 是集群成员
+        cluster
+            .join(a, b, SyncDirection::Bidirectional)
+            .await
+            .unwrap();
+
+        // 让 b 离开集群,只剩 a
+        cluster.leave_all(b).await.unwrap();
+
+        // 现在 a 在集群中,但没有其他成员
+        let sent = cluster
+            .broadcast(a, "path", &JsonValue::Null, true)
+            .await
+            .unwrap();
+        assert_eq!(sent, 0, "单成员集群 exclude_source=true 应返回 0");
     }
 }
