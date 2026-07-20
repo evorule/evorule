@@ -131,6 +131,40 @@ impl Session {
         }
     }
 
+    /// 导出审计链为 JSON 字符串（P04）
+    ///
+    /// 返回包含 `version`、`last_hash`、`last_audited_version`、
+    /// `entry_count` 和 `entries` 数组的 JSON 字符串。
+    /// 可用于跨实例迁移、离线分析或备份。
+    pub fn audit_export(&self) -> String {
+        if let Ok(auditor) = self.auditor.lock() {
+            auditor.export()
+        } else {
+            String::from("{}")
+        }
+    }
+
+    /// 从 JSON 字符串导入审计链（P04）
+    ///
+    /// 覆盖当前审计状态。导入成功后自动调用 `verify()` 校验完整性，
+    /// 返回 `(import_ok, verify_ok)`。
+    ///
+    /// # 安全说明
+    /// 调用方应确保数据来自可信来源，导入操作具有破坏性。
+    pub fn audit_import(&self, json_str: &str) -> (bool, bool) {
+        if let Ok(mut auditor) = self.auditor.lock() {
+            match auditor.import_and_verify(json_str) {
+                Ok(verify_ok) => (true, verify_ok),
+                Err(e) => {
+                    tracing::warn!(error = %e, "audit_import: 导入失败");
+                    (false, false)
+                }
+            }
+        } else {
+            (false, false)
+        }
+    }
+
     /// 获取因果链（从指定 FactId 追溯）
     pub fn causal_chain(&self, fact_id: FactId) -> Vec<AuditEntry> {
         if let Ok(auditor) = self.auditor.lock() {

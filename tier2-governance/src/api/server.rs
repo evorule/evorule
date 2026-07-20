@@ -1049,6 +1049,81 @@ async fn session_causal_chain(
     })))
 }
 
+/// 会话审计链导出 handler（P04）
+///
+/// `GET /api/sessions/:id/audit/export` → 导出指定会话的审计链为 JSON
+///
+/// 返回包含完整哈希链的审计数据，可用于跨实例迁移、离线分析或备份。
+/// 导出是只读操作，使用 GET 方法语义更合适。
+async fn session_audit_export(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    sessions.touch_session(session_id);
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // 先审计新事实，确保导出包含最新条目
+    let _new_count = session.audit_new();
+
+    let export_str = session.audit_export();
+    let export: serde_json::Value = serde_json::from_str(&export_str)
+        .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+
+    Ok(Json(export))
+}
+
+/// 会话审计链导入 handler（P04）
+///
+/// `POST /api/sessions/:id/audit/import` → 导入外部审计链数据
+///
+/// **安全注意事项**：
+/// 1. 导入操作会**完全覆盖**当前会话的审计链，具有破坏性
+/// 2. 应仅允许管理员或授权用户调用此接口
+/// 3. 建议在调用前验证导入数据的来源和完整性
+/// 4. 导入后会自动调用 `verify()` 验证审计链完整性
+///
+/// # 返回
+/// - `200 OK`：导入成功且审计链验证通过
+/// - `202 Accepted`：导入成功但审计链验证失败（数据可能已损坏）
+/// - `400 Bad Request`：JSON 解析失败或字段缺失
+/// - `404 Not Found`：会话不存在
+async fn session_audit_import(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+    Json(data): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    sessions.touch_session(session_id);
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let json_str = serde_json::to_string(&data).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let (import_ok, verify_ok) = session.audit_import(&json_str);
+
+    if !import_ok {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let status = if verify_ok { "ok" } else { "verify_failed" };
+    if !verify_ok {
+        tracing::warn!(
+            session_id = session_id,
+            "session_audit_import: 导入成功但审计链验证失败"
+        );
+    }
+
+    Ok(Json(serde_json::json!({
+        "session_id": session_id,
+        "imported": import_ok,
+        "verify_ok": verify_ok,
+        "status": status,
+    })))
+}
+
 /// 会话 PayloadUpdate handler
 ///
 /// `POST /api/sessions/:id/payload` → 更新指定会话的 payload 字段
@@ -1728,6 +1803,11 @@ impl GovernanceServer {
             .route("/api/sessions/{id}/state", get(session_state))
             .route("/api/sessions/{id}/audit", get(session_audit))
             .route("/api/sessions/{id}/audit/verify", get(session_audit_verify))
+            .route("/api/sessions/{id}/audit/export", get(session_audit_export))
+            .route(
+                "/api/sessions/{id}/audit/import",
+                post(session_audit_import),
+            )
             .route(
                 "/api/sessions/{id}/audit/causal/{fact_id}",
                 get(session_causal_chain),

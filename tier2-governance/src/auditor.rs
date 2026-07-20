@@ -208,6 +208,9 @@ impl Auditor {
     /// # 返回值
     /// 本次新增的审计条目数量。
     pub fn audit_new(&mut self) -> usize {
+        // P06: 计数始终递增（按调用次数，而非新事实数），用于自动验证间隔控制
+        self.audit_new_count += 1;
+
         let history = self.facts_log.history();
         let start = self.entries.len();
         if start >= history.len() {
@@ -262,7 +265,6 @@ impl Auditor {
         );
 
         // P06: 实时审计验证
-        self.audit_new_count += 1;
         if self.should_auto_verify() {
             if !self.verify() {
                 tracing::error!(
@@ -484,6 +486,184 @@ impl Auditor {
 
         self.wal_path = Some(path.to_path_buf());
         Ok(())
+    }
+
+    /// 导出审计链为 JSON 格式（P04）
+    ///
+    /// 返回包含所有审计条目的 JSON 字符串，可用于跨实例迁移或离线分析。
+    ///
+    /// # 导出格式
+    /// ```json
+    /// {
+    ///   "version": "1.0",
+    ///   "last_hash": "<末尾链哈希>",
+    ///   "last_audited_version": <已审计版本>,
+    ///   "entry_count": <条目数>,
+    ///   "entries": [ { ...AuditEntry }, ... ]
+    /// }
+    /// ```
+    ///
+    /// # 安全说明
+    /// 导出数据包含完整的哈希链信息，可作为审计证据。
+    /// 调用方应妥善保护导出数据，防止被篡改。
+    pub fn export(&self) -> String {
+        let entries_json: Vec<serde_json::Value> = self
+            .entries
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "fact_id": e.fact_id.0,
+                    "fact_type": e.fact_type,
+                    "logical_time": e.logical_time,
+                    "content_hash": e.content_hash,
+                    "prev_hash": e.prev_hash,
+                    "cause": e.cause.map(|c| c.0),
+                })
+            })
+            .collect();
+
+        let export = serde_json::json!({
+            "version": "1.0",
+            "last_hash": self.last_hash,
+            "last_audited_version": self.last_audited_version,
+            "entry_count": self.entries.len(),
+            "entries": entries_json,
+        });
+
+        serde_json::to_string_pretty(&export).unwrap_or_else(|_| String::from("{}"))
+    }
+
+    /// 从 JSON 导入审计链（P04）
+    ///
+    /// 覆盖当前审计状态，导入外部审计数据。
+    ///
+    /// # 参数
+    /// `json_str`：由 `export()` 产生的 JSON 字符串
+    ///
+    /// # 返回
+    /// - `Ok(())`：导入成功
+    /// - `Err(String)`：JSON 解析或字段缺失错误
+    ///
+    /// # 安全注意事项
+    /// 1. 导入操作会**完全覆盖**当前审计链，具有破坏性
+    /// 2. 调用方应确保导入数据来自可信来源
+    /// 3. 导入后会自动调用 `verify()` 校验哈希链完整性
+    /// 4. `fact_type` 字段会被映射到 `FACT_TYPE_STATIC_TABLE` 中的已知类型，
+    ///    未知类型会被替换为 `"Unknown"`（保留哈希链但丢失类型语义）
+    pub fn import(&mut self, json_str: &str) -> Result<(), String> {
+        let parsed: serde_json::Value =
+            serde_json::from_str(json_str).map_err(|e| format!("JSON parse error: {}", e))?;
+
+        let version = parsed
+            .get("version")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "Missing 'version' field".to_string())?;
+
+        if version != "1.0" {
+            return Err(format!("Unsupported version: {} (expected 1.0)", version));
+        }
+
+        let entries_arr = parsed
+            .get("entries")
+            .and_then(|e| e.as_array())
+            .ok_or_else(|| "Missing 'entries' array".to_string())?;
+
+        // 清空当前状态
+        self.entries.clear();
+        self.index.clear();
+        self.last_hash = String::from("genesis");
+        self.last_audited_version = 0;
+        self.audit_new_count = 0;
+
+        for (idx, entry_val) in entries_arr.iter().enumerate() {
+            let fact_id_num = entry_val
+                .get("fact_id")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| format!("Entry {} missing 'fact_id'", idx))?;
+            let fact_type_str = entry_val
+                .get("fact_type")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| format!("Entry {} missing 'fact_type'", idx))?;
+            let logical_time = entry_val
+                .get("logical_time")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let content_hash = entry_val
+                .get("content_hash")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let prev_hash = entry_val
+                .get("prev_hash")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let cause = entry_val.get("cause").and_then(|v| v.as_u64()).map(FactId);
+
+            // 复用 FACT_TYPE_STATIC_TABLE 将字符串映射为 &'static str
+            let fact_type: &'static str = FACT_TYPE_STATIC_TABLE
+                .iter()
+                .copied()
+                .find(|t| *t == fact_type_str)
+                .unwrap_or("Unknown");
+
+            let entry = AuditEntry {
+                fact_id: FactId(fact_id_num),
+                fact_type,
+                logical_time,
+                content_hash,
+                prev_hash,
+                cause,
+            };
+
+            self.index.insert(entry.fact_id, idx);
+            self.entries.push(entry);
+        }
+
+        // 恢复末尾哈希和已审计版本
+        self.last_hash = parsed
+            .get("last_hash")
+            .and_then(|v| v.as_str())
+            .unwrap_or("genesis")
+            .to_string();
+        self.last_audited_version = parsed
+            .get("last_audited_version")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        // 同步逻辑时钟到导入数据中的最大 logical_time
+        let max_logical_time = self
+            .entries
+            .iter()
+            .map(|e| e.logical_time)
+            .max()
+            .unwrap_or(0);
+        while self.clock.current() < max_logical_time {
+            self.clock.tick();
+        }
+
+        tracing::info!(
+            entries = self.entries.len(),
+            last_audited_version = self.last_audited_version,
+            "import: 审计链导入完成"
+        );
+
+        Ok(())
+    }
+
+    /// 导入后立即验证审计链完整性（P04 便捷方法）
+    ///
+    /// 等价于 `import()` 后调用 `verify()`，返回导入是否成功且审计链完整。
+    pub fn import_and_verify(&mut self, json_str: &str) -> Result<bool, String> {
+        self.import(json_str)?;
+        let valid = self.verify();
+        if !valid {
+            tracing::warn!(
+                entries = self.entries.len(),
+                "import_and_verify: 导入后审计链验证失败，数据可能已损坏"
+            );
+        }
+        Ok(valid)
     }
 }
 
@@ -1019,5 +1199,257 @@ mod tests {
 
         // verify 应检测到篡改
         assert!(!auditor.verify());
+    }
+
+    // ===== P04: 导出/导入 测试 =====
+
+    fn build_auditor_with_entries() -> Auditor {
+        let log = make_facts_log();
+        let f0 = Fact::PayloadUpdate {
+            id: FactId(10),
+            path: "k1".into(),
+            value: JsonValue::string("v1"),
+        };
+        let id0 = f0.id();
+        log.append(f0).unwrap();
+
+        let f1 = Fact::StateTransition {
+            id: FactId(11),
+            cause: id0,
+            new_payload: JsonValue::empty_object(),
+            new_queue: vec![],
+        };
+        log.append(f1).unwrap();
+
+        let mut auditor = Auditor::new(log);
+        auditor.audit_new();
+        auditor
+    }
+
+    #[test]
+    fn test_export_format() {
+        let auditor = build_auditor_with_entries();
+        let json_str = auditor.export();
+
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["version"], "1.0");
+        assert!(parsed["last_hash"].is_string());
+        assert_eq!(parsed["last_audited_version"], 1); // facts_log version
+        assert_eq!(parsed["entry_count"], 2);
+        assert!(parsed["entries"].is_array());
+        assert_eq!(parsed["entries"].as_array().unwrap().len(), 2);
+
+        // 检查第一个条目字段
+        let e0 = &parsed["entries"][0];
+        assert_eq!(e0["fact_id"], 10);
+        assert_eq!(e0["fact_type"], "PayloadUpdate");
+        assert_eq!(e0["prev_hash"], "genesis");
+        assert!(e0["cause"].is_null());
+    }
+
+    #[test]
+    fn test_export_empty_auditor() {
+        let log = make_facts_log();
+        let auditor = Auditor::new(log);
+        let json_str = auditor.export();
+
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["version"], "1.0");
+        assert_eq!(parsed["entry_count"], 0);
+        assert_eq!(parsed["entries"], serde_json::Value::Array(vec![]));
+        assert_eq!(parsed["last_hash"], "genesis");
+    }
+
+    #[test]
+    fn test_import_export_roundtrip() {
+        let auditor = build_auditor_with_entries();
+        let export_str = auditor.export();
+        let original_verify = auditor.verify();
+        assert!(original_verify);
+
+        // 导入到新 auditor
+        let log2 = make_facts_log();
+        let mut imported = Auditor::new(log2);
+        let result = imported.import(&export_str);
+        assert!(result.is_ok());
+
+        // 验证数据一致性
+        assert_eq!(imported.entries().len(), 2);
+        assert_eq!(imported.entries()[0].fact_id, FactId(10));
+        assert_eq!(imported.entries()[1].fact_id, FactId(11));
+        assert_eq!(
+            imported.entries()[0].content_hash,
+            auditor.entries()[0].content_hash
+        );
+        assert_eq!(imported.entries()[0].prev_hash, "genesis");
+        assert_eq!(imported.last_hash, auditor.last_hash);
+        assert_eq!(imported.last_audited_version, auditor.last_audited_version);
+
+        // 导入后哈希链应保持完整
+        assert!(imported.verify());
+    }
+
+    #[test]
+    fn test_import_version_check() {
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+
+        let bad_version = r#"{"version": "2.0", "entries": []}"#;
+        let result = auditor.import(bad_version);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unsupported version"));
+    }
+
+    #[test]
+    fn test_import_missing_version() {
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+
+        let no_version = r#"{"entries": []}"#;
+        let result = auditor.import(no_version);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("version"));
+    }
+
+    #[test]
+    fn test_import_missing_entries() {
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+
+        let no_entries = r#"{"version": "1.0"}"#;
+        let result = auditor.import(no_entries);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("entries"));
+    }
+
+    #[test]
+    fn test_import_invalid_json() {
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+
+        let result = auditor.import("not a valid json {{{");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("JSON parse error"));
+    }
+
+    #[test]
+    fn test_import_unknown_fact_type_becomes_unknown() {
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+
+        // 构造包含未知 fact_type 的导入数据
+        let import_data = r#"{
+            "version": "1.0",
+            "last_hash": "anyhash",
+            "last_audited_version": 1,
+            "entries": [
+                {
+                    "fact_id": 99,
+                    "fact_type": "SomeUnknownType",
+                    "logical_time": 5,
+                    "content_hash": "abc",
+                    "prev_hash": "genesis",
+                    "cause": null
+                }
+            ]
+        }"#;
+
+        let result = auditor.import(import_data);
+        assert!(result.is_ok());
+        assert_eq!(auditor.entries().len(), 1);
+        assert_eq!(auditor.entries()[0].fact_type, "Unknown");
+        assert_eq!(auditor.entries()[0].fact_id, FactId(99));
+    }
+
+    #[test]
+    fn test_import_resets_state() {
+        // 原审计器有 2 个条目
+        let mut auditor = build_auditor_with_entries();
+        assert_eq!(auditor.entries().len(), 2);
+
+        // 导入空数据
+        let empty_export = r#"{
+            "version": "1.0",
+            "last_hash": "genesis",
+            "last_audited_version": 0,
+            "entries": []
+        }"#;
+        let result = auditor.import(empty_export);
+        assert!(result.is_ok());
+        assert_eq!(auditor.entries().len(), 0);
+        assert_eq!(auditor.last_hash, "genesis");
+        assert_eq!(auditor.last_audited_version, 0);
+    }
+
+    #[test]
+    fn test_import_and_verify_detects_corruption() {
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+
+        // 构造 prev_hash 不连续的损坏数据
+        let corrupted = r#"{
+            "version": "1.0",
+            "last_hash": "fakehash",
+            "last_audited_version": 1,
+            "entries": [
+                {
+                    "fact_id": 1,
+                    "fact_type": "Command",
+                    "logical_time": 1,
+                    "content_hash": "hash1",
+                    "prev_hash": "genesis",
+                    "cause": null
+                },
+                {
+                    "fact_id": 2,
+                    "fact_type": "Command",
+                    "logical_time": 2,
+                    "content_hash": "hash2",
+                    "prev_hash": "WRONG_PREV_HASH",
+                    "cause": null
+                }
+            ]
+        }"#;
+
+        let result = auditor.import_and_verify(corrupted);
+        assert!(result.is_ok());
+        // 导入成功但验证应失败
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_import_preserves_causal_chain() {
+        let auditor = build_auditor_with_entries();
+        let export_str = auditor.export();
+
+        // 验证原审计器的因果链
+        let original_chain = auditor.causal_chain(FactId(11));
+        assert_eq!(original_chain.len(), 2);
+
+        // 导入到新审计器
+        let log2 = make_facts_log();
+        let mut imported = Auditor::new(log2);
+        imported.import(&export_str).unwrap();
+
+        // 因果链应可正确追溯
+        let chain = imported.causal_chain(FactId(11));
+        assert_eq!(chain.len(), 2);
+        assert_eq!(chain[0].fact_id, FactId(11));
+        assert_eq!(chain[1].fact_id, FactId(10));
+    }
+
+    #[test]
+    fn test_import_resets_audit_new_count() {
+        // 原审计器已多次调用 audit_new，计数 > 0
+        let mut auditor = build_auditor_with_entries();
+        auditor.audit_new(); // 再次调用，count = 2
+        assert_eq!(auditor.audit_new_count, 2);
+
+        // 导入应重置 audit_new_count
+        let export_str = auditor.export();
+        let log2 = make_facts_log();
+        let mut imported = Auditor::new(log2);
+        imported.import(&export_str).unwrap();
+        assert_eq!(imported.audit_new_count, 0);
     }
 }
