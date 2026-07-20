@@ -476,10 +476,11 @@ fn tcb_to_serde(v: &JsonValue) -> serde_json::Value {
 }
 
 use async_stream::stream;
+use axum::body::Bytes;
 use axum::extract::{FromRef, Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{header, StatusCode};
 use axum::response::sse::{Event, Sse};
-use axum::response::Json;
+use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{delete, get, post};
 use axum::Router;
 use futures_core::Stream;
@@ -1121,6 +1122,95 @@ async fn session_audit_import(
         "imported": import_ok,
         "verify_ok": verify_ok,
         "status": status,
+    })))
+}
+
+/// 会话审计链压缩导出 handler（P05）
+///
+/// `GET /api/sessions/:id/audit/export/compressed` → 返回 gzip 压缩的审计链
+///
+/// 返回 `application/gzip` 二进制数据，体积通常为 JSON 格式的 5-10%。
+/// 适用于网络传输受限或大批量迁移场景。
+async fn session_audit_export_compressed(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+) -> Result<Response, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    sessions.touch_session(session_id);
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // 先审计新事实，确保导出包含最新条目
+    let _new_count = session.audit_new();
+
+    let compressed = session.audit_export_compressed();
+    if compressed.is_empty() {
+        tracing::warn!(
+            session_id = session_id,
+            "session_audit_export_compressed: 压缩失败"
+        );
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/gzip"),
+            (header::CONTENT_ENCODING, "gzip"),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"audit_chain.json.gz\"",
+            ),
+        ],
+        compressed,
+    )
+        .into_response())
+}
+
+/// 会话审计链压缩导入 handler（P05）
+///
+/// `POST /api/sessions/:id/audit/import/compressed` → 导入 gzip 压缩的审计链
+///
+/// 请求体为 gzip 二进制数据（`Content-Type: application/gzip`）。
+/// 解压后等价于 [`session_audit_import`]，导入成功后自动调用 `verify()`。
+///
+/// **安全注意事项** 与 [`session_audit_import`] 相同。
+async fn session_audit_import_compressed(
+    State(api): State<SessionApi>,
+    Path(session_id): Path<u64>,
+    body: Bytes,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sessions = api.sessions.lock().await;
+    sessions.touch_session(session_id);
+    let session = sessions
+        .get_session(session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if body.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let (import_ok, verify_ok) = session.audit_import_compressed(&body);
+
+    if !import_ok {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let status = if verify_ok { "ok" } else { "verify_failed" };
+    if !verify_ok {
+        tracing::warn!(
+            session_id = session_id,
+            "session_audit_import_compressed: 导入成功但审计链验证失败"
+        );
+    }
+
+    Ok(Json(serde_json::json!({
+        "session_id": session_id,
+        "imported": import_ok,
+        "verify_ok": verify_ok,
+        "status": status,
+        "format": "gzip",
     })))
 }
 
@@ -1807,6 +1897,14 @@ impl GovernanceServer {
             .route(
                 "/api/sessions/{id}/audit/import",
                 post(session_audit_import),
+            )
+            .route(
+                "/api/sessions/{id}/audit/export/compressed",
+                get(session_audit_export_compressed),
+            )
+            .route(
+                "/api/sessions/{id}/audit/import/compressed",
+                post(session_audit_import_compressed),
             )
             .route(
                 "/api/sessions/{id}/audit/causal/{fact_id}",

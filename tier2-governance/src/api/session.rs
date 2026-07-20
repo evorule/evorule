@@ -165,6 +165,42 @@ impl Session {
         }
     }
 
+    /// 导出压缩的审计链（P05）
+    ///
+    /// 返回 gzip 压缩字节流，可用于减少网络传输或存储空间。
+    /// 失败时返回 `Vec::new()`（调用方应视为错误）。
+    pub fn audit_export_compressed(&self) -> Vec<u8> {
+        if let Ok(auditor) = self.auditor.lock() {
+            match auditor.export_compressed() {
+                Ok(data) => data,
+                Err(e) => {
+                    tracing::warn!(error = %e, "audit_export_compressed: 压缩失败");
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// 从压缩数据导入审计链（P05）
+    ///
+    /// 解压 gzip 字节流并导入。导入成功后自动调用 `verify()` 校验完整性，
+    /// 返回 `(import_ok, verify_ok)`。
+    pub fn audit_import_compressed(&self, compressed: &[u8]) -> (bool, bool) {
+        if let Ok(mut auditor) = self.auditor.lock() {
+            match auditor.import_compressed_and_verify(compressed) {
+                Ok(verify_ok) => (true, verify_ok),
+                Err(e) => {
+                    tracing::warn!(error = %e, "audit_import_compressed: 导入失败");
+                    (false, false)
+                }
+            }
+        } else {
+            (false, false)
+        }
+    }
+
     /// 获取因果链（从指定 FactId 追溯）
     pub fn causal_chain(&self, fact_id: FactId) -> Vec<AuditEntry> {
         if let Ok(auditor) = self.auditor.lock() {

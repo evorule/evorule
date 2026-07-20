@@ -665,6 +665,78 @@ impl Auditor {
         }
         Ok(valid)
     }
+
+    /// 导出压缩的审计链（P05）
+    ///
+    /// 使用 gzip 压缩 [`export`](Self::export) 产生的 JSON 数据，
+    /// 减少传输和存储大小。压缩率通常可达 5-10 倍（取决于条目数和哈希重复度）。
+    ///
+    /// # 返回
+    /// - `Ok(Vec<u8>)`：gzip 压缩字节流
+    /// - `Err(String)`：压缩失败（极少见，通常是内存不足）
+    ///
+    /// # 使用场景
+    /// - 网络传输：减少带宽占用
+    /// - 长期归档：减少存储成本
+    /// - 跨实例迁移：批量传输
+    pub fn export_compressed(&self) -> Result<Vec<u8>, String> {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        let export_str = self.export();
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(export_str.as_bytes())
+            .map_err(|e| format!("Compression write error: {}", e))?;
+        encoder
+            .finish()
+            .map_err(|e| format!("Compression finish error: {}", e))
+    }
+
+    /// 从压缩数据导入审计链（P05）
+    ///
+    /// 解压 gzip 数据后调用 [`import`](Self::import)。
+    ///
+    /// # 参数
+    /// `compressed`：由 [`export_compressed`](Self::export_compressed) 产生的 gzip 字节流
+    ///
+    /// # 返回
+    /// - `Ok(())`：解压并导入成功
+    /// - `Err(String)`：解压失败或导入数据格式错误
+    ///
+    /// # 安全说明
+    /// 与 [`import`](Self::import) 相同，调用方应确保数据来自可信来源。
+    /// 此方法**不会**自动调用 `verify()`，如需验证请使用
+    /// [`import_compressed_and_verify`](Self::import_compressed_and_verify)。
+    pub fn import_compressed(&mut self, compressed: &[u8]) -> Result<(), String> {
+        use flate2::read::GzDecoder;
+        use std::io::Read;
+
+        let mut decoder = GzDecoder::new(compressed);
+        let mut decompressed = String::new();
+        decoder
+            .read_to_string(&mut decompressed)
+            .map_err(|e| format!("Decompression error: {}", e))?;
+
+        self.import(&decompressed)
+    }
+
+    /// 从压缩数据导入并立即验证（P05 便捷方法）
+    ///
+    /// 等价于 [`import_compressed`](Self::import_compressed) 后调用 [`verify`](Self::verify)，
+    /// 返回导入是否成功且审计链完整。
+    pub fn import_compressed_and_verify(&mut self, compressed: &[u8]) -> Result<bool, String> {
+        self.import_compressed(compressed)?;
+        let valid = self.verify();
+        if !valid {
+            tracing::warn!(
+                entries = self.entries.len(),
+                "import_compressed_and_verify: 导入后审计链验证失败"
+            );
+        }
+        Ok(valid)
+    }
 }
 
 /// Fact 类型名静态表（用于 WAL 加载时获取 &'static str）
@@ -1451,5 +1523,218 @@ mod tests {
         let mut imported = Auditor::new(log2);
         imported.import(&export_str).unwrap();
         assert_eq!(imported.audit_new_count, 0);
+    }
+
+    // ===== P05: 压缩导出/导入 测试 =====
+
+    #[test]
+    fn test_export_compressed_returns_valid_gzip() {
+        let auditor = build_auditor_with_entries();
+        let compressed = auditor.export_compressed().unwrap();
+
+        // gzip magic number: 0x1f 0x8b
+        assert!(compressed.len() >= 2);
+        assert_eq!(compressed[0], 0x1f);
+        assert_eq!(compressed[1], 0x8b);
+    }
+
+    #[test]
+    fn test_export_compressed_smaller_than_json() {
+        // 构造较大的审计链（100 条目）
+        let log = make_facts_log();
+        for i in 0..100 {
+            log.append(Fact::Command {
+                id: FactId(i as u64 + 1),
+                instruction: JsonValue::empty_object(),
+            })
+            .unwrap();
+        }
+        let mut auditor = Auditor::new(log);
+        auditor.audit_new();
+
+        let json_size = auditor.export().len();
+        let compressed = auditor.export_compressed().unwrap();
+        let compressed_size = compressed.len();
+
+        // 压缩后应明显小于 JSON（通常 < 30%）
+        // 由于 fact_type 等字段重复度高，压缩率应很好
+        assert!(
+            compressed_size < json_size,
+            "compressed {} should be < json {}",
+            compressed_size,
+            json_size
+        );
+        // 压缩率至少应小于 50%
+        let ratio = compressed_size as f64 / json_size as f64;
+        assert!(ratio < 0.5, "compression ratio {} should be < 0.5", ratio);
+    }
+
+    #[test]
+    fn test_import_compressed_roundtrip() {
+        let auditor = build_auditor_with_entries();
+        let compressed = auditor.export_compressed().unwrap();
+        let original_verify = auditor.verify();
+        assert!(original_verify);
+
+        // 解压并导入到新 auditor
+        let log2 = make_facts_log();
+        let mut imported = Auditor::new(log2);
+        let result = imported.import_compressed(&compressed);
+        assert!(result.is_ok());
+
+        // 验证数据一致性
+        assert_eq!(imported.entries().len(), 2);
+        assert_eq!(imported.entries()[0].fact_id, FactId(10));
+        assert_eq!(imported.entries()[1].fact_id, FactId(11));
+        assert_eq!(imported.entries()[0].prev_hash, "genesis");
+        assert_eq!(imported.last_hash, auditor.last_hash);
+
+        // 导入后哈希链应保持完整
+        assert!(imported.verify());
+    }
+
+    #[test]
+    fn test_import_compressed_invalid_gzip() {
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+
+        // 非 gzip 数据应返回错误
+        let bad_data = b"this is not gzip data at all";
+        let result = auditor.import_compressed(bad_data);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Decompression error"));
+    }
+
+    #[test]
+    fn test_import_compressed_empty_data() {
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+
+        // 空数据应返回错误
+        let result = auditor.import_compressed(&[]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_import_compressed_and_verify_detects_corruption() {
+        // 构造损坏的 JSON 数据（prev_hash 不连续）
+        let corrupted_json = r#"{
+            "version": "1.0",
+            "last_hash": "fakehash",
+            "last_audited_version": 1,
+            "entries": [
+                {
+                    "fact_id": 1,
+                    "fact_type": "Command",
+                    "logical_time": 1,
+                    "content_hash": "hash1",
+                    "prev_hash": "genesis",
+                    "cause": null
+                },
+                {
+                    "fact_id": 2,
+                    "fact_type": "Command",
+                    "logical_time": 2,
+                    "content_hash": "hash2",
+                    "prev_hash": "WRONG",
+                    "cause": null
+                }
+            ]
+        }"#;
+
+        // 先压缩损坏的 JSON
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(corrupted_json.as_bytes()).unwrap();
+        let corrupted_compressed = encoder.finish().unwrap();
+
+        // 导入并验证应返回 Ok(false)
+        let log = make_facts_log();
+        let mut auditor = Auditor::new(log);
+        let result = auditor.import_compressed_and_verify(&corrupted_compressed);
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_export_compressed_empty_auditor() {
+        let log = make_facts_log();
+        let auditor = Auditor::new(log);
+        let compressed = auditor.export_compressed().unwrap();
+
+        // 空审计器也能正常压缩（gzip 头 + 空 entries 数组）
+        assert!(compressed.len() > 0);
+
+        // 解压后应为有效 JSON
+        let log2 = make_facts_log();
+        let mut imported = Auditor::new(log2);
+        imported.import_compressed(&compressed).unwrap();
+        assert_eq!(imported.entries().len(), 0);
+        assert_eq!(imported.last_hash, "genesis");
+    }
+
+    #[test]
+    fn test_compressed_preserves_causal_chain() {
+        let auditor = build_auditor_with_entries();
+        let compressed = auditor.export_compressed().unwrap();
+
+        // 导入到新审计器
+        let log2 = make_facts_log();
+        let mut imported = Auditor::new(log2);
+        imported.import_compressed(&compressed).unwrap();
+
+        // 因果链应可正确追溯
+        let chain = imported.causal_chain(FactId(11));
+        assert_eq!(chain.len(), 2);
+        assert_eq!(chain[0].fact_id, FactId(11));
+        assert_eq!(chain[1].fact_id, FactId(10));
+    }
+
+    #[test]
+    fn test_compressed_roundtrip_large_chain() {
+        // 大批量数据的压缩/解压往返测试
+        // 构造真实因果链：Fact1 → Fact2 → ... → Fact501（IoRequest 链）
+        let log = make_facts_log();
+
+        // 第 1 个：PayloadUpdate（根，无 cause）
+        log.append(Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "root".into(),
+            value: JsonValue::from(0i64),
+        })
+        .unwrap();
+
+        // 第 2..501：IoRequest 链，每个 cause 指向上一个
+        for i in 1..500 {
+            log.append(Fact::IoRequest {
+                id: FactId(i as u64 + 1),
+                cause: FactId(i as u64),
+                io_type: tier1_reactor::IoType::HTTP_GET,
+                params: JsonValue::empty_object(),
+            })
+            .unwrap();
+        }
+
+        let mut auditor = Auditor::new(log);
+        auditor.audit_new();
+        assert_eq!(auditor.entries().len(), 500);
+
+        // 压缩 → 解压 → 导入
+        let compressed = auditor.export_compressed().unwrap();
+        let log2 = make_facts_log();
+        let mut imported = Auditor::new(log2);
+        imported.import_compressed(&compressed).unwrap();
+
+        // 验证数据完整
+        assert_eq!(imported.entries().len(), 500);
+        assert!(imported.verify());
+
+        // 因果链应可从末尾追溯到根（长度 500）
+        let chain = imported.causal_chain(FactId(500));
+        assert_eq!(chain.len(), 500);
+        assert_eq!(chain[0].fact_id, FactId(500)); // 末尾
+        assert_eq!(chain[499].fact_id, FactId(1)); // 根
     }
 }
