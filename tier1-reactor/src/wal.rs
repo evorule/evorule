@@ -34,7 +34,7 @@
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tier0_tcb::JsonValue;
 
@@ -357,26 +357,102 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
     }
 }
 
+/// WAL 文件轮换策略默认值（P03）
+pub const DEFAULT_MAX_WAL_SIZE_BYTES: u64 = 100 * 1024 * 1024;
+
 /// WAL 写入器
 ///
 /// 持有 `BufWriter<File>`，每次 `append` 后立即 `flush`，
 /// 保证 write-ahead 语义（进程崩溃时磁盘已落盘）。
+///
+/// # fsync 支持（P02）
+/// 可选的 fsync 支持，启用后在每次 flush 后执行 `sync_all()`，
+/// 确保断电时数据不丢失（性能开销较大，默认禁用）。
+///
+/// # 文件轮换（P03）
+/// 支持按大小自动轮换，单个文件超过 `max_size_bytes` 时自动创建新文件，
+/// 文件名格式为 `session_N.wal`（主文件）和 `session_N.wal.1`、`session_N.wal.2` 等（轮换文件）。
 pub struct WalWriter {
     writer: BufWriter<File>,
+    path: PathBuf,
+    max_size_bytes: u64,
+    current_size_bytes: u64,
+    fsync_on_flush: bool,
+    file_sequence: u64,
 }
 
 impl WalWriter {
+    fn build_rotated_path(path: &Path, sequence: u64) -> PathBuf {
+        if sequence == 0 {
+            path.to_path_buf()
+        } else {
+            let mut p = path.to_path_buf();
+            let ext = p
+                .extension()
+                .map(|e| e.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let stem = p
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if ext.is_empty() {
+                p.set_file_name(format!("{}.{}", stem, sequence));
+            } else {
+                p.set_file_name(format!("{}.{}.{}", stem, sequence, ext));
+            }
+            p
+        }
+    }
+
+    fn open_file(path: &Path, sequence: u64, truncate: bool) -> Result<(File, PathBuf), WalError> {
+        let rotated_path = Self::build_rotated_path(path, sequence);
+        let mut options = OpenOptions::new();
+        options.create(true).write(true);
+        if truncate {
+            options.truncate(true);
+        } else {
+            options.append(true);
+        }
+        let file = options.open(&rotated_path)?;
+        Ok((file, rotated_path))
+    }
+
     /// 创建新 WAL 文件（truncate 已有文件）
     ///
     /// 用于 `FactsLog::with_wal` 全新启动场景。
     pub fn create<P: AsRef<Path>>(path: P) -> Result<Self, WalError> {
-        let file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(path)?;
+        Self::create_with_options(path, DEFAULT_MAX_WAL_SIZE_BYTES, false)
+    }
+
+    /// 创建新 WAL 文件并指定 fsync 选项（P02）
+    ///
+    /// # 参数
+    /// - `path`: WAL 文件路径
+    /// - `fsync`: 是否在每次 flush 后执行 fsync
+    pub fn create_with_fsync<P: AsRef<Path>>(path: P, fsync: bool) -> Result<Self, WalError> {
+        Self::create_with_options(path, DEFAULT_MAX_WAL_SIZE_BYTES, fsync)
+    }
+
+    /// 创建新 WAL 文件并指定轮换和 fsync 选项（P03）
+    ///
+    /// # 参数
+    /// - `path`: WAL 文件路径
+    /// - `max_size_bytes`: 单个文件最大大小，达到后自动轮换（0 表示不轮换）
+    /// - `fsync`: 是否在每次 flush 后执行 fsync
+    pub fn create_with_options<P: AsRef<Path>>(
+        path: P,
+        max_size_bytes: u64,
+        fsync: bool,
+    ) -> Result<Self, WalError> {
+        let path_buf = path.as_ref().to_path_buf();
+        let (file, _) = Self::open_file(&path_buf, 0, true)?;
         Ok(Self {
             writer: BufWriter::new(file),
+            path: path_buf,
+            max_size_bytes,
+            current_size_bytes: 0,
+            fsync_on_flush: fsync,
+            file_sequence: 0,
         })
     }
 
@@ -385,15 +461,75 @@ impl WalWriter {
     /// 用于 `FactsLog::recover` 后继续写入：文件已存在则追加，
     /// 不存在则创建（recover 空文件场景）。
     pub fn append<P: AsRef<Path>>(path: P) -> Result<Self, WalError> {
-        let file = OpenOptions::new().create(true).append(true).open(path)?;
+        Self::append_with_options(path, DEFAULT_MAX_WAL_SIZE_BYTES, false)
+    }
+
+    /// 以追加模式打开 WAL 文件并指定 fsync 选项（P02）
+    ///
+    /// # 参数
+    /// - `path`: WAL 文件路径
+    /// - `fsync`: 是否在每次 flush 后执行 fsync
+    pub fn append_with_fsync<P: AsRef<Path>>(path: P, fsync: bool) -> Result<Self, WalError> {
+        Self::append_with_options(path, DEFAULT_MAX_WAL_SIZE_BYTES, fsync)
+    }
+
+    /// 以追加模式打开 WAL 文件并指定轮换和 fsync 选项（P03）
+    ///
+    /// # 参数
+    /// - `path`: WAL 文件路径
+    /// - `max_size_bytes`: 单个文件最大大小，达到后自动轮换（0 表示不轮换）
+    /// - `fsync`: 是否在每次 flush 后执行 fsync
+    pub fn append_with_options<P: AsRef<Path>>(
+        path: P,
+        max_size_bytes: u64,
+        fsync: bool,
+    ) -> Result<Self, WalError> {
+        let path_buf = path.as_ref().to_path_buf();
+
+        let mut sequence = 0;
+        loop {
+            let rotated_path = Self::build_rotated_path(&path_buf, sequence);
+            if !rotated_path.exists() {
+                if sequence > 0 {
+                    sequence -= 1;
+                }
+                break;
+            }
+            sequence += 1;
+        }
+
+        let (file, _) = Self::open_file(&path_buf, sequence, false)?;
+
+        let current_size = if sequence == 0 && path_buf.exists() {
+            std::fs::metadata(&path_buf).map(|m| m.len()).unwrap_or(0)
+        } else {
+            0
+        };
+
         Ok(Self {
             writer: BufWriter::new(file),
+            path: path_buf,
+            max_size_bytes,
+            current_size_bytes: current_size,
+            fsync_on_flush: fsync,
+            file_sequence: sequence,
         })
+    }
+
+    fn rotate(&mut self) -> Result<(), WalError> {
+        self.file_sequence += 1;
+        let (file, _) = Self::open_file(&self.path, self.file_sequence, true)?;
+        self.writer = BufWriter::new(file);
+        self.current_size_bytes = 0;
+        Ok(())
     }
 
     /// 追加一条记录：`{"version_before": N, "fact": {...}}`
     ///
-    /// 调用后立即 `flush`（不 fsync），保证进程崩溃不丢数据。
+    /// 调用后立即 `flush`，若启用 fsync 则额外执行 `sync_all()`，
+    /// 保证进程崩溃和断电时数据不丢失。
+    ///
+    /// 若启用文件轮换（`max_size_bytes > 0`），当当前文件大小超过阈值时自动创建新文件。
     pub fn append_record(&mut self, version_before: u64, fact: &Fact) -> Result<(), WalError> {
         let mut record = serde_json::Map::new();
         record.insert(
@@ -402,25 +538,38 @@ impl WalWriter {
         );
         record.insert("fact".into(), fact_to_json(fact));
         let line = serde_json::to_string(&serde_json::Value::Object(record))?;
+
+        let line_bytes = line.len() as u64 + 1;
+
+        if self.max_size_bytes > 0
+            && self.current_size_bytes > 0
+            && self.current_size_bytes + line_bytes > self.max_size_bytes
+        {
+            self.rotate()?;
+        }
+
         writeln!(self.writer, "{line}")?;
         self.writer.flush()?;
+
+        if self.fsync_on_flush {
+            self.writer.get_mut().sync_all()?;
+        }
+
+        self.current_size_bytes += line_bytes;
+
         Ok(())
     }
 }
 
-/// 读取 WAL 文件，返回所有 (version_before, Fact) 记录
-///
-/// 用于 `FactsLog::recover`：读取 → 重放事实（不写 WAL）→ 挂载 WAL 继续追加。
-///
-/// # 错误处理
-/// - 文件不存在 → `WalError::Io`
-/// - 任意行 JSON 解析失败 → `WalError::InvalidFact`（带行号）
-/// - 空行自动跳过
-pub fn read_wal<P: AsRef<Path>>(path: P) -> Result<Vec<(u64, Fact)>, WalError> {
+fn read_wal_file<P: AsRef<Path>>(
+    path: P,
+    base_line_no: usize,
+) -> Result<Vec<(u64, Fact)>, WalError> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let mut records = Vec::new();
-    for (line_no, line) in reader.lines().enumerate() {
+    for (line_idx, line) in reader.lines().enumerate() {
+        let line_no = base_line_no + line_idx;
         let line = line?;
         if line.trim().is_empty() {
             continue;
@@ -442,6 +591,78 @@ pub fn read_wal<P: AsRef<Path>>(path: P) -> Result<Vec<(u64, Fact)>, WalError> {
         let fact = fact_from_json(fact_value)?;
         records.push((version_before, fact));
     }
+    Ok(records)
+}
+
+/// 读取 WAL 文件，返回所有 (version_before, Fact) 记录
+///
+/// 支持单文件和多文件轮换格式（P03）：
+/// - 单文件：`session_N.wal`
+/// - 多文件：`session_N.wal`、`session_N.wal.1`、`session_N.wal.2` 等
+///
+/// 用于 `FactsLog::recover`：读取 → 重放事实（不写 WAL）→ 挂载 WAL 继续追加。
+///
+/// # 向后兼容性（P03）
+/// 完全兼容旧版单文件 WAL：
+/// - 自动检测：读取时先检查主文件（无序列号后缀）是否存在
+/// - 顺序读取：按序列号从小到大依次读取轮换文件
+/// - 无缝升级：启用轮换后，新建的 WAL 会自动使用轮换策略，旧 WAL 文件不受影响
+/// - 降级支持：若只存在主文件（旧版格式），行为与旧版完全一致
+///
+/// # 错误处理
+/// - 文件不存在 → `WalError::Io`
+/// - 任意行 JSON 解析失败 → `WalError::InvalidFact`（带行号）
+/// - 空行自动跳过
+pub fn read_wal<P: AsRef<Path>>(path: P) -> Result<Vec<(u64, Fact)>, WalError> {
+    let path_buf = path.as_ref().to_path_buf();
+    let mut records = Vec::new();
+    let mut line_no = 0;
+    let mut found_any_file = false;
+
+    if path_buf.exists() {
+        records.extend(read_wal_file(&path_buf, line_no)?);
+        line_no += std::fs::read_to_string(&path_buf)
+            .map(|s| s.lines().count())
+            .unwrap_or(0);
+        found_any_file = true;
+    }
+
+    let mut sequence = 1;
+    loop {
+        let rotated_path = {
+            let mut p = path_buf.clone();
+            let ext = p
+                .extension()
+                .map(|e| e.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let stem = p
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if ext.is_empty() {
+                p.set_file_name(format!("{}.{}", stem, sequence));
+            } else {
+                p.set_file_name(format!("{}.{}.{}", stem, sequence, ext));
+            }
+            p
+        };
+
+        if !rotated_path.exists() {
+            break;
+        }
+
+        records.extend(read_wal_file(&rotated_path, line_no)?);
+        line_no += std::fs::read_to_string(&rotated_path)
+            .map(|s| s.lines().count())
+            .unwrap_or(0);
+        found_any_file = true;
+        sequence += 1;
+    }
+
+    if !found_any_file {
+        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "WAL file not found").into());
+    }
+
     Ok(records)
 }
 

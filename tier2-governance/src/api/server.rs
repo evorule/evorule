@@ -14,7 +14,7 @@
 //! - `GET /api/health` — 健康检查
 
 use crate::api::auth::AuthConfig;
-use crate::api::session::SessionManager;
+use crate::api::session;
 use crate::auditor::Auditor;
 use crate::metrics::SharedMetrics;
 use crate::shared_facts_log::SharedFactsLog;
@@ -133,7 +133,7 @@ const RATE_LIMIT_BURST_SIZE: u32 = 200;
 #[derive(Clone)]
 pub struct SessionApi {
     /// 会话管理器
-    sessions: Arc<Mutex<SessionManager>>,
+    sessions: Arc<Mutex<session::SessionManager>>,
     /// API 层 FactId 计数器（从 30000 起，避免与反应器自身 ID 冲突）
     next_id: Arc<std::sync::atomic::AtomicU64>,
     /// 当前活跃 SSE 连接数（P1-6：全局计数器，限制 MAX_SSE_CONNECTIONS）
@@ -149,7 +149,46 @@ impl SessionApi {
     /// - `core_eval`：transform 规则列表（用于创建每个会话的反应器）
     /// - `max_rounds`：每个反应器的最大指令执行步数
     pub fn new(core_eval: Vec<JsonValue>, max_rounds: usize) -> Self {
-        let sessions = Arc::new(Mutex::new(SessionManager::new(core_eval, max_rounds)));
+        Self::new_with_fsync(core_eval, max_rounds, false)
+    }
+
+    /// 创建会话管理 API（支持 fsync 配置，P02）
+    ///
+    /// # 参数
+    /// - `core_eval`：transform 规则列表（用于创建每个会话的反应器）
+    /// - `max_rounds`：每个反应器的最大指令执行步数
+    /// - `wal_fsync`：是否在每次 WAL 写入后执行 fsync
+    pub fn new_with_fsync(core_eval: Vec<JsonValue>, max_rounds: usize, wal_fsync: bool) -> Self {
+        Self::new_with_wal_options(core_eval, max_rounds, None, wal_fsync, 100 * 1024 * 1024)
+    }
+
+    /// 创建会话管理 API（支持完整 WAL 配置，P03）
+    ///
+    /// # 参数
+    /// - `core_eval`：transform 规则列表（用于创建每个会话的反应器）
+    /// - `max_rounds`：每个反应器的最大指令执行步数
+    /// - `wal_dir`：WAL 文件存储目录（为 None 时使用纯内存模式）
+    /// - `wal_fsync`：是否在每次 WAL 写入后执行 fsync
+    /// - `max_wal_size_bytes`：单个 WAL 文件最大大小（0 表示不轮换）
+    pub fn new_with_wal_options(
+        core_eval: Vec<JsonValue>,
+        max_rounds: usize,
+        wal_dir: Option<std::path::PathBuf>,
+        wal_fsync: bool,
+        max_wal_size_bytes: u64,
+    ) -> Self {
+        let sessions = Arc::new(Mutex::new(
+            session::SessionManager::with_limits_and_wal_full(
+                core_eval,
+                max_rounds,
+                session::DEFAULT_MAX_SESSIONS,
+                session::DEFAULT_SESSION_TTL,
+                wal_dir,
+                session::DEFAULT_SHARD_COUNT,
+                wal_fsync,
+                max_wal_size_bytes,
+            ),
+        ));
         Self {
             sessions: sessions.clone(),
             next_id: Arc::new(std::sync::atomic::AtomicU64::new(30000)),

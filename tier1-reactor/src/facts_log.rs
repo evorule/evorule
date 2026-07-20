@@ -17,7 +17,7 @@
 //! - 读取者（审计器）可同步获取快照
 
 use crate::fact::Fact;
-use crate::wal::{read_wal, WalWriter};
+use crate::wal::{read_wal, WalWriter, DEFAULT_MAX_WAL_SIZE_BYTES};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 use tier0_tcb::path::resolve_path_mut;
@@ -72,6 +72,18 @@ struct FactsLogInner {
     ///
     /// `recover()` 重放期间临时为 `None`，重放完成后挂载为 `Some` 以继续追加。
     wal: Option<WalWriter>,
+
+    /// 是否在 WAL flush 后执行 fsync（P02）
+    ///
+    /// 启用后在每次 WAL 写入后执行 `sync_all()`，确保断电时数据不丢失。
+    /// 性能开销较大，默认禁用。
+    fsync_on_flush: bool,
+
+    /// WAL 文件最大大小（字节，P03）
+    ///
+    /// 达到此大小后自动轮换文件（0 表示不轮换）。
+    /// 默认值为 `DEFAULT_MAX_WAL_SIZE_BYTES`（100MB）。
+    max_wal_size_bytes: u64,
 }
 
 /// Append-Only 事实审计链
@@ -108,6 +120,8 @@ impl FactsLog {
                 version: 0,
                 last_stable_version: 0,
                 wal: None,
+                fsync_on_flush: false,
+                max_wal_size_bytes: DEFAULT_MAX_WAL_SIZE_BYTES,
             })),
         }
     }
@@ -147,7 +161,39 @@ impl FactsLog {
     /// # 错误
     /// - `WalError`：WAL 文件创建/打开失败
     pub fn with_wal<P: AsRef<Path>>(path: P) -> Result<Self, FactsLogError> {
-        let wal = WalWriter::create(path).map_err(|e| FactsLogError::WalError(e.to_string()))?;
+        Self::with_wal_and_fsync(path, false)
+    }
+
+    /// 创建带 WAL 持久化和 fsync 的 FactsLog（P02）
+    ///
+    /// 与 `with_wal` 相同，但启用 fsync 确保断电时数据不丢失。
+    ///
+    /// # 参数
+    /// - `path`: WAL 文件路径
+    /// - `fsync`: 是否在每次 flush 后执行 fsync
+    ///
+    /// # 错误
+    /// - `WalError`：WAL 文件创建/打开失败
+    pub fn with_wal_and_fsync<P: AsRef<Path>>(path: P, fsync: bool) -> Result<Self, FactsLogError> {
+        Self::with_wal_options(path, DEFAULT_MAX_WAL_SIZE_BYTES, fsync)
+    }
+
+    /// 创建带 WAL 持久化、轮换和 fsync 的 FactsLog（P03）
+    ///
+    /// # 参数
+    /// - `path`: WAL 文件路径
+    /// - `max_wal_size_bytes`: 单个 WAL 文件最大大小（0 表示不轮换）
+    /// - `fsync`: 是否在每次 flush 后执行 fsync
+    ///
+    /// # 错误
+    /// - `WalError`：WAL 文件创建/打开失败
+    pub fn with_wal_options<P: AsRef<Path>>(
+        path: P,
+        max_wal_size_bytes: u64,
+        fsync: bool,
+    ) -> Result<Self, FactsLogError> {
+        let wal = WalWriter::create_with_options(path, max_wal_size_bytes, fsync)
+            .map_err(|e| FactsLogError::WalError(e.to_string()))?;
         Ok(Self {
             inner: Arc::new(RwLock::new(FactsLogInner {
                 history: Vec::new(),
@@ -156,6 +202,8 @@ impl FactsLog {
                 version: 0,
                 last_stable_version: 0,
                 wal: Some(wal),
+                fsync_on_flush: fsync,
+                max_wal_size_bytes,
             })),
         })
     }
@@ -171,6 +219,47 @@ impl FactsLog {
     /// - `WalError`：WAL 读取失败或重放完成后挂载失败
     /// - `VersionOverflow`：重放过程中版本号溢出
     pub fn recover<P: AsRef<Path>>(path: P) -> Result<Self, FactsLogError> {
+        Self::recover_with_fsync(path, false)
+    }
+
+    /// 从 WAL 恢复 FactsLog 并指定 fsync 选项（P02）
+    ///
+    /// # 恢复流程
+    /// 1. 读取 WAL 文件所有 (version_before, Fact) 记录
+    /// 2. 重放事实到内存状态（重放期间 WAL 未挂载，不重复写入磁盘）
+    /// 3. 重放完成后以 `append` 模式挂载 WAL，继续追加新事实
+    ///
+    /// # 参数
+    /// - `path`: WAL 文件路径
+    /// - `fsync`: 是否在每次 flush 后执行 fsync
+    ///
+    /// # 错误
+    /// - `WalError`：WAL 读取失败或重放完成后挂载失败
+    /// - `VersionOverflow`：重放过程中版本号溢出
+    pub fn recover_with_fsync<P: AsRef<Path>>(path: P, fsync: bool) -> Result<Self, FactsLogError> {
+        Self::recover_with_options(path, DEFAULT_MAX_WAL_SIZE_BYTES, fsync)
+    }
+
+    /// 从 WAL 恢复 FactsLog 并指定轮换和 fsync 选项（P03）
+    ///
+    /// # 恢复流程
+    /// 1. 读取 WAL 文件所有 (version_before, Fact) 记录（支持多文件轮换）
+    /// 2. 重放事实到内存状态（重放期间 WAL 未挂载，不重复写入磁盘）
+    /// 3. 重放完成后以 `append` 模式挂载 WAL，继续追加新事实
+    ///
+    /// # 参数
+    /// - `path`: WAL 文件路径
+    /// - `max_wal_size_bytes`: 单个 WAL 文件最大大小（0 表示不轮换）
+    /// - `fsync`: 是否在每次 flush 后执行 fsync
+    ///
+    /// # 错误
+    /// - `WalError`：WAL 读取失败或重放完成后挂载失败
+    /// - `VersionOverflow`：重放过程中版本号溢出
+    pub fn recover_with_options<P: AsRef<Path>>(
+        path: P,
+        max_wal_size_bytes: u64,
+        fsync: bool,
+    ) -> Result<Self, FactsLogError> {
         let records = read_wal(&path).map_err(|e| FactsLogError::WalError(e.to_string()))?;
         let log = Self::new();
         {
@@ -243,9 +332,11 @@ impl FactsLog {
                 }
             }
             // 重放完成，挂载 WAL 继续追加
-            let wal =
-                WalWriter::append(path).map_err(|e| FactsLogError::WalError(e.to_string()))?;
+            let wal = WalWriter::append_with_options(path, max_wal_size_bytes, fsync)
+                .map_err(|e| FactsLogError::WalError(e.to_string()))?;
             inner.wal = Some(wal);
+            inner.fsync_on_flush = fsync;
+            inner.max_wal_size_bytes = max_wal_size_bytes;
         }
         Ok(log)
     }
@@ -1178,5 +1269,297 @@ mod tests {
         assert_eq!(recovered_last_stable, original_last_stable);
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    // === P02 WAL fsync 测试 ===
+
+    #[test]
+    fn test_with_wal_and_fsync_creates_empty_log() {
+        let path = temp_wal_path("with_wal_fsync_empty");
+        let log = FactsLog::with_wal_and_fsync(&path, true).unwrap();
+        assert_eq!(log.version(), 0);
+        assert_eq!(log.history_len(), 0);
+        assert!(std::fs::metadata(&path).is_ok());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_wal_fsync_persists_facts_across_drop() {
+        let path = temp_wal_path("fsync_persist_drop");
+
+        let log = FactsLog::with_wal_and_fsync(&path, true).unwrap();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::object_from_pairs(&[("type", JsonValue::string("increment"))]),
+        })
+        .unwrap();
+        log.append(Fact::StateTransition {
+            id: FactId(2),
+            cause: FactId(1),
+            new_payload: JsonValue::object_from_pairs(&[("x", JsonValue::Integer(42))]),
+            new_queue: vec![],
+        })
+        .unwrap();
+
+        let (snap_before, _, ver_before) = log.snapshot();
+        let hist_before = log.history();
+        assert_eq!(ver_before, 1);
+        assert_eq!(hist_before.len(), 2);
+
+        drop(log);
+
+        let recovered = FactsLog::recover_with_fsync(&path, true).unwrap();
+        let (snap_after, _, ver_after) = recovered.snapshot();
+        let hist_after = recovered.history();
+
+        assert_eq!(ver_after, ver_before);
+        assert_eq!(snap_after, snap_before);
+        assert_eq!(hist_after.len(), hist_before.len());
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_recover_with_fsync_can_continue_appending() {
+        let path = temp_wal_path("fsync_continue_append");
+
+        let log = FactsLog::with_wal_and_fsync(&path, true).unwrap();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::empty_object(),
+        })
+        .unwrap();
+        drop(log);
+
+        let recovered = FactsLog::recover_with_fsync(&path, true).unwrap();
+        assert_eq!(recovered.history_len(), 1);
+        recovered
+            .append(Fact::Error {
+                id: FactId(2),
+                message: "post-recovery with fsync".into(),
+            })
+            .unwrap();
+        assert_eq!(recovered.history_len(), 2);
+        drop(recovered);
+
+        let recovered2 = FactsLog::recover(&path).unwrap();
+        assert_eq!(recovered2.history_len(), 2);
+        let history = recovered2.history();
+        assert_eq!(history[1].id(), FactId(2));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_fsync_false_is_default() {
+        let path = temp_wal_path("fsync_default");
+
+        let log = FactsLog::with_wal(&path).unwrap();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::empty_object(),
+        })
+        .unwrap();
+        drop(log);
+
+        let recovered = FactsLog::recover(&path).unwrap();
+        assert_eq!(recovered.history_len(), 1);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // === P03 WAL 文件轮换测试 ===
+
+    #[test]
+    fn test_wal_rotation_creates_multiple_files() {
+        let path = temp_wal_path("rotation_create");
+
+        let log = FactsLog::with_wal_options(&path, 100, false).unwrap();
+
+        for i in 0..10 {
+            log.append(Fact::Command {
+                id: FactId(i as u64 + 1),
+                instruction: JsonValue::object_from_pairs(&[(
+                    "data",
+                    JsonValue::string(&"x".repeat(50)),
+                )]),
+            })
+            .unwrap();
+        }
+        assert_eq!(log.history_len(), 10);
+
+        drop(log);
+
+        let files = std::fs::read_dir(path.parent().unwrap()).unwrap();
+        let wal_files: Vec<_> = files
+            .filter_map(|e| {
+                let e = e.unwrap();
+                let name = e.file_name().to_string_lossy().to_string();
+                if name.contains("rotation_create") {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert!(
+            wal_files.len() > 1,
+            "Expected multiple WAL files, got {:?}",
+            wal_files
+        );
+
+        for f in &wal_files {
+            let fp = path.parent().unwrap().join(f);
+            let _ = std::fs::remove_file(&fp);
+        }
+    }
+
+    #[test]
+    fn test_wal_rotation_recover_reads_all_files() {
+        let path = temp_wal_path("rotation_recover");
+
+        let log = FactsLog::with_wal_options(&path, 100, false).unwrap();
+
+        for i in 0..20 {
+            log.append(Fact::Command {
+                id: FactId(i as u64 + 1),
+                instruction: JsonValue::object_from_pairs(&[(
+                    "data",
+                    JsonValue::string(&"x".repeat(30)),
+                )]),
+            })
+            .unwrap();
+        }
+        let history_before = log.history();
+        assert_eq!(history_before.len(), 20);
+
+        drop(log);
+
+        let recovered = FactsLog::recover(&path).unwrap();
+        let history_after = recovered.history();
+        assert_eq!(history_after.len(), 20);
+
+        for i in 0..20 {
+            assert_eq!(history_after[i].id(), history_before[i].id());
+        }
+
+        let files = std::fs::read_dir(path.parent().unwrap()).unwrap();
+        for e in files {
+            let e = e.unwrap();
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.contains("rotation_recover") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+
+    #[test]
+    fn test_wal_rotation_default_size() {
+        let path = temp_wal_path("rotation_default");
+
+        let log = FactsLog::with_wal(&path).unwrap();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::empty_object(),
+        })
+        .unwrap();
+        assert_eq!(log.history_len(), 1);
+
+        drop(log);
+
+        let recovered = FactsLog::recover(&path).unwrap();
+        assert_eq!(recovered.history_len(), 1);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_wal_rotation_zero_disables_rotation() {
+        let path = temp_wal_path("rotation_zero");
+
+        let log = FactsLog::with_wal_options(&path, 0, false).unwrap();
+
+        for i in 0..100 {
+            log.append(Fact::Command {
+                id: FactId(i as u64 + 1),
+                instruction: JsonValue::object_from_pairs(&[(
+                    "data",
+                    JsonValue::string(&"x".repeat(100)),
+                )]),
+            })
+            .unwrap();
+        }
+        assert_eq!(log.history_len(), 100);
+
+        drop(log);
+
+        let files = std::fs::read_dir(path.parent().unwrap()).unwrap();
+        let wal_files: Vec<_> = files
+            .filter_map(|e| {
+                let e = e.unwrap();
+                let name = e.file_name().to_string_lossy().to_string();
+                if name.contains("rotation_zero") {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(
+            wal_files.len(),
+            1,
+            "Expected single WAL file when rotation disabled, got {:?}",
+            wal_files
+        );
+
+        let recovered = FactsLog::recover(&path).unwrap();
+        assert_eq!(recovered.history_len(), 100);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_wal_rotation_after_recovery() {
+        let path = temp_wal_path("rotation_after_recovery");
+
+        let log = FactsLog::with_wal_options(&path, 100, false).unwrap();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::string("initial"),
+        })
+        .unwrap();
+        drop(log);
+
+        let recovered = FactsLog::recover_with_options(&path, 100, false).unwrap();
+        assert_eq!(recovered.history_len(), 1);
+
+        for i in 0..20 {
+            recovered
+                .append(Fact::Command {
+                    id: FactId(i as u64 + 2),
+                    instruction: JsonValue::object_from_pairs(&[(
+                        "data",
+                        JsonValue::string(&"x".repeat(50)),
+                    )]),
+                })
+                .unwrap();
+        }
+        assert_eq!(recovered.history_len(), 21);
+
+        drop(recovered);
+
+        let recovered2 = FactsLog::recover(&path).unwrap();
+        assert_eq!(recovered2.history_len(), 21);
+
+        let files = std::fs::read_dir(path.parent().unwrap()).unwrap();
+        for e in files {
+            let e = e.unwrap();
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.contains("rotation_after_recovery") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
     }
 }

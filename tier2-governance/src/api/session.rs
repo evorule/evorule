@@ -38,7 +38,7 @@ pub const DEFAULT_SESSION_TTL: Duration = Duration::from_secs(30 * 60);
 /// 后台 reaper 清理间隔（5 分钟）
 pub const REAPER_INTERVAL: Duration = Duration::from_secs(5 * 60);
 /// 默认分片数（16 片，平衡并发度和内存开销）
-const DEFAULT_SHARD_COUNT: usize = 16;
+pub const DEFAULT_SHARD_COUNT: usize = 16;
 
 /// 会话 ID
 pub type SessionId = u64;
@@ -160,6 +160,16 @@ pub struct SessionManager {
     session_ttl: Duration,
     /// WAL 文件存储目录（为 None 时使用纯内存模式）
     wal_dir: Option<PathBuf>,
+    /// WAL fsync 开关（P02）
+    ///
+    /// 启用后在每次 WAL 写入后执行 `sync_all()`，确保断电时数据不丢失。
+    /// 性能开销较大，默认禁用。
+    wal_fsync: bool,
+    /// WAL 文件最大大小（字节，P03）
+    ///
+    /// 达到此大小后自动轮换文件（0 表示不轮换）。
+    /// 默认值为 100MB。
+    max_wal_size_bytes: u64,
     /// 当前总会话数（乐观计数）
     count: AtomicU64,
     /// FactsLog 对象池（复用已释放的 FactsLog，减少内存重分配）
@@ -232,6 +242,69 @@ impl SessionManager {
         wal_dir: Option<PathBuf>,
         shard_count: usize,
     ) -> Self {
+        Self::with_limits_and_wal_and_fsync(
+            core_eval,
+            max_rounds,
+            max_sessions,
+            session_ttl,
+            wal_dir,
+            shard_count,
+            false,
+        )
+    }
+
+    /// 创建会话管理器并指定资源限制、WAL 目录和 fsync 选项（P02）
+    ///
+    /// # 参数
+    /// - `core_eval`：transform 规则列表
+    /// - `max_rounds`：每个反应器的最大指令执行步数
+    /// - `max_sessions`：最大并发会话数
+    /// - `session_ttl`：会话无活动超时时间
+    /// - `wal_dir`：WAL 文件存储目录（为 None 时使用纯内存模式）
+    /// - `shard_count`：分片数（推荐 16-64）
+    /// - `wal_fsync`：是否在每次 WAL 写入后执行 fsync（确保断电时数据不丢失）
+    pub fn with_limits_and_wal_and_fsync(
+        core_eval: Vec<JsonValue>,
+        max_rounds: usize,
+        max_sessions: usize,
+        session_ttl: Duration,
+        wal_dir: Option<PathBuf>,
+        shard_count: usize,
+        wal_fsync: bool,
+    ) -> Self {
+        Self::with_limits_and_wal_full(
+            core_eval,
+            max_rounds,
+            max_sessions,
+            session_ttl,
+            wal_dir,
+            shard_count,
+            wal_fsync,
+            100 * 1024 * 1024,
+        )
+    }
+
+    /// 创建会话管理器并指定资源限制、WAL 目录、fsync 和轮换选项（P03）
+    ///
+    /// # 参数
+    /// - `core_eval`：transform 规则列表
+    /// - `max_rounds`：每个反应器的最大指令执行步数
+    /// - `max_sessions`：最大并发会话数
+    /// - `session_ttl`：会话无活动超时时间
+    /// - `wal_dir`：WAL 文件存储目录（为 None 时使用纯内存模式）
+    /// - `shard_count`：分片数（推荐 16-64）
+    /// - `wal_fsync`：是否在每次 WAL 写入后执行 fsync（确保断电时数据不丢失）
+    /// - `max_wal_size_bytes`：单个 WAL 文件最大大小（0 表示不轮换）
+    pub fn with_limits_and_wal_full(
+        core_eval: Vec<JsonValue>,
+        max_rounds: usize,
+        max_sessions: usize,
+        session_ttl: Duration,
+        wal_dir: Option<PathBuf>,
+        shard_count: usize,
+        wal_fsync: bool,
+        max_wal_size_bytes: u64,
+    ) -> Self {
         let shards = (0..shard_count)
             .map(|_| Arc::new(Mutex::new(BTreeMap::new())))
             .collect();
@@ -244,6 +317,8 @@ impl SessionManager {
             max_sessions,
             session_ttl,
             wal_dir,
+            wal_fsync,
+            max_wal_size_bytes,
             count: AtomicU64::new(0),
             facts_log_pool: ObjectPool::with_default_size(),
             pending_recycle: Mutex::new(Vec::new()),
@@ -633,9 +708,9 @@ impl SessionManager {
     fn create_facts_log(&self, session_id: SessionId) -> FactsLog {
         if let Some(ref wal_dir) = self.wal_dir {
             let wal_path = wal_dir.join(format!("session_{}.wal", session_id));
-            match FactsLog::with_wal(&wal_path) {
+            match FactsLog::with_wal_options(&wal_path, self.max_wal_size_bytes, self.wal_fsync) {
                 Ok(facts_log) => {
-                    tracing::debug!(session_id, wal_path = %wal_path.display(), "FactsLog created with WAL");
+                    tracing::debug!(session_id, wal_path = %wal_path.display(), fsync = self.wal_fsync, max_wal_size_bytes = self.max_wal_size_bytes, "FactsLog created with WAL");
                     facts_log
                 }
                 Err(e) => {

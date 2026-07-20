@@ -112,6 +112,8 @@ struct FilePathsConfig {
     rules_dir: Option<PathBuf>,
     db_path: Option<PathBuf>,
     memory_dir: Option<PathBuf>,
+    /// WAL 文件存储目录（可选，指定后启用 WAL 持久化）
+    wal_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -229,6 +231,18 @@ struct Cli {
     /// 日志目录最大占用空间（MB，默认 1024MB）
     #[arg(long, env = "EVORULE_LOG_MAX_SIZE_MB")]
     log_max_size_mb: Option<u64>,
+
+    /// WAL 文件存储目录（可选，指定后启用 WAL 持久化）
+    #[arg(long, env = "EVORULE_WAL_DIR")]
+    wal_dir: Option<PathBuf>,
+
+    /// WAL fsync 开关（P02：启用后在每次 WAL 写入后执行 fsync，确保断电时数据不丢失）
+    #[arg(long, env = "EVORULE_WAL_FSYNC")]
+    wal_fsync: bool,
+
+    /// WAL 文件最大大小（MB，P03：达到此大小后自动轮换文件，默认 100MB，0 表示不轮换）
+    #[arg(long, env = "EVORULE_WAL_MAX_SIZE_MB")]
+    wal_max_size_mb: Option<u64>,
 }
 
 /// 合并后的最终配置（CLI > env > file > default）
@@ -245,11 +259,18 @@ struct ResolvedConfig {
     log_file: Option<PathBuf>,
     log_max_days: u32,
     log_max_size_mb: u64,
+    /// WAL 文件存储目录（可选，指定后启用 WAL 持久化）
+    wal_dir: Option<PathBuf>,
+    /// WAL fsync 开关（P02：启用后在每次 WAL 写入后执行 fsync）
+    wal_fsync: bool,
+    /// WAL 文件最大大小（字节，P03：达到此大小后自动轮换文件）
+    max_wal_size_bytes: u64,
 }
 
 impl ResolvedConfig {
     /// 按 CLI > env > file > default 优先级解析配置
     fn resolve(cli: Cli, file: FileConfig) -> Self {
+        let max_wal_size_mb = cli.wal_max_size_mb.unwrap_or(100);
         Self {
             addr: cli
                 .addr
@@ -284,6 +305,9 @@ impl ResolvedConfig {
             log_file: cli.log_file.or(file.log.file),
             log_max_days: cli.log_max_days.or(file.log.max_days).unwrap_or(7),
             log_max_size_mb: cli.log_max_size_mb.or(file.log.max_size_mb).unwrap_or(1024),
+            wal_dir: cli.wal_dir.or(file.paths.wal_dir),
+            wal_fsync: cli.wal_fsync,
+            max_wal_size_bytes: max_wal_size_mb * 1024 * 1024,
         }
     }
 }
@@ -533,6 +557,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "已禁用（开发模式）"
         }
     );
+    info!(
+        "WAL: {}",
+        if let Some(dir) = &cfg.wal_dir {
+            format!(
+                "目录: {}, fsync: {}, 最大大小: {}MB",
+                dir.display(),
+                cfg.wal_fsync,
+                cfg.max_wal_size_bytes / (1024 * 1024)
+            )
+        } else {
+            "已禁用（纯内存模式）".to_string()
+        }
+    );
 
     // 2. 加载 core_eval.json（宪法）
     let step_start = Instant::now();
@@ -549,6 +586,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ensure_dir(&parent.to_path_buf())?;
     }
     ensure_dir(&cfg.memory_dir)?;
+    if let Some(wal_dir) = &cfg.wal_dir {
+        ensure_dir(wal_dir)?;
+    }
     info!(
         "数据目录检查完成（耗时: {}ms）",
         step_start.elapsed().as_millis()
@@ -614,7 +654,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let step_start = Instant::now();
     let auditor = Auditor::new(facts_log.clone());
     let api = GovernanceApi::new(tx.clone(), facts_log, auditor);
-    let session_api = SessionApi::new(core_eval, cfg.max_rounds);
+    let session_api = SessionApi::new_with_wal_options(
+        core_eval,
+        cfg.max_rounds,
+        cfg.wal_dir.clone(),
+        cfg.wal_fsync,
+        cfg.max_wal_size_bytes,
+    );
     session_api.start_reaper();
 
     // P2-8: 创建 readiness flag（优雅退出时设为 false）
