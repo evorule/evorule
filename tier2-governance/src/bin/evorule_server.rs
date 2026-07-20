@@ -722,7 +722,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let step_start = Instant::now();
     let auth = match &cfg.auth_token {
         Some(token) => AuthConfig::new(vec![token.clone()], true),
-        None => AuthConfig::disabled(),
+        None => {
+            // 警告：如果绑定到非 loopback 且未设 auth token，提示用户加 --auth-token
+            let is_non_loopback = !cfg.addr.starts_with("127.")
+                && !cfg.addr.starts_with("localhost")
+                && cfg.addr != "0.0.0.0:0";
+            if is_non_loopback {
+                warn!(
+                    "🔓 认证已禁用,但服务器绑定到 {} (非 loopback)。\n\
+                     生产环境必须设置 --auth-token 或 EVORULE_AUTH_TOKEN 环境变量!\n\
+                     否则任何能访问该地址的进程都能读/写所有 session 数据。",
+                    cfg.addr
+                );
+            } else {
+                info!("🔓 认证已禁用 (loopback 模式,仅适合开发)");
+            }
+            AuthConfig::disabled()
+        }
     };
     let server = GovernanceServer::new(state, auth, cfg.addr.clone());
 
