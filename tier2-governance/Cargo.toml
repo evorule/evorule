@@ -25,6 +25,7 @@ futures-core = "0.3"
 # 日志
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
 
 # Metrics（P2-7：prometheus 指标暴露）
 prometheus = "0.13"
@@ -64,3 +65,7 @@ tempfile = "3"
 [[bin]]
 name = "evorule-server"
 path = "src/bin/evorule_server.rs"
+
+# 注: evorule CLI 已迁到独立 crate D:\evorule\evorule-cli\
+# 原因: tier2-governance 依赖 axum/reqwest/sqlx 等 C 依赖,无法 musl 静态编译
+# CLI 只用 tier0-tcb,适合 musl 单文件分发(圈 2 合规刚需)

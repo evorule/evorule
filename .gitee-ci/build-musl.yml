@@ -1,0 +1,117 @@
+# Gitee Go pipeline: 圈 2 静态二进制构建
+# 目标: x86_64 + aarch64 musl 静态链接(单文件,零系统依赖)
+# 触发: 打 tag v*.*.* 或合并到 main/dev/wip
+#
+# 注意: musl 必须在 Linux runner 跑(Windows runner 装不了 musl-tools)
+# 输出: evorule-x86_64 + evorule-aarch64 (直接给合规用户用)
+#
+# 编译期检查:
+#   - tier0-tcb G8 门控:反应器/治理层不展开控制流
+#   - evorule-cli G8 门控:本 PR 新增,与 tier1/tier2 同套规则
+#   - F11:主代码路径禁 panic-prone 构造
+#   - §5.2:业务术语不硬编码
+# 全部在 build.rs 内自动跑,失败直接 exit 1。
+
+stages:
+  - build
+  - test
+  - verify
+
+variables:
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+  # 可重现构建 env(reproducible-builds.org 标准)
+  SOURCE_DATE_EPOCH: "1700000000"
+  CARGO_INCREMENTAL: "0"
+  RUSTFLAGS: "-C link-arg=-Wl,--build-id=none"
+  CARGO_PROFILE_RELEASE_DEBUG: "false"
+  CARGO_PROFILE_RELEASE_STRIP: "true"
+
+# x86_64 musl 静态构建
+build:musl:x86_64:
+  stage: build
+  image: rust:1.92-slim
+  before_script:
+    - apt-get update
+    - apt-get install -y musl-tools
+    - rustup target add x86_64-unknown-linux-musl
+  script:
+    - cd evorule-cli
+    - bash build-musl.sh --target x86_64-unknown-linux-musl
+    - cp .build/rust/x86_64-unknown-linux-musl/release/evorule ../evorule-x86_64-unknown-linux-musl
+  artifacts:
+    paths:
+      - evorule-x86_64-unknown-linux-musl
+    expire_in: 30 days
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "dev/wip"
+    - changes:
+        - evorule-cli/**
+        - tier0-tcb/**
+        - VERSION_STRATEGY.md
+        - .gitee-ci/build-musl.yml
+
+# aarch64 musl 静态构建(交叉编译,AWS Graviton / RPi / arm 服务器适用)
+build:musl:aarch64:
+  stage: build
+  image: rust:1.92-slim
+  before_script:
+    - apt-get update
+    - apt-get install -y musl-tools gcc-aarch64-linux-gnu
+    - rustup target add aarch64-unknown-linux-musl
+  script:
+    - cd evorule-cli
+    - bash build-musl.sh --target aarch64-unknown-linux-musl
+    - cp .build/rust/aarch64-unknown-linux-musl/release/evorule ../evorule-aarch64-unknown-linux-musl
+  artifacts:
+    paths:
+      - evorule-aarch64-unknown-linux-musl
+    expire_in: 30 days
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "dev/wip"
+    - changes:
+        - evorule-cli/**
+        - tier0-tcb/**
+        - VERSION_STRATEGY.md
+        - .gitee-ci/build-musl.yml
+
+# Reproducible build 校验(只对 tag 触发,确保 release artifact 可重现)
+verify:reproducible:
+  stage: verify
+  image: rust:1.92-slim
+  before_script:
+    - apt-get update
+    - apt-get install -y musl-tools gcc-aarch64-linux-gnu
+    - rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+  script:
+    - cd evorule-cli
+    - echo "=== x86_64 --repro ==="
+    - bash build-musl.sh --target x86_64-unknown-linux-musl --repro
+    - echo "=== aarch64 --repro ==="
+    - bash build-musl.sh --target aarch64-unknown-linux-musl --repro
+  rules:
+    - if: $CI_COMMIT_TAG
+
+# E2E test(对每个 build 跑,防止 CLI 功能退化)
+test:e2e:x86_64:
+  stage: test
+  image: rust:1.92-slim
+  before_script:
+    - apt-get update
+    - apt-get install -y musl-tools
+    - rustup target add x86_64-unknown-linux-musl
+  script:
+    - cd evorule-cli
+    - bash build-musl.sh --target x86_64-unknown-linux-musl
+    - bash tests/e2e.sh .build/rust/x86_64-unknown-linux-musl/release/evorule
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "dev/wip"
+    - changes:
+        - evorule-cli/**
+        - tier0-tcb/**
+        - .gitee-ci/build-musl.yml

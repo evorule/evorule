@@ -1,0 +1,15 @@
+{
+  "scenario": "某律师查阅客户合同纠纷案卷宗",
+  "lawyer_id": "lawyer_li_007",
+  "lawyer_role": "partner",
+  "case_id": "CASE-2026-07-15-0123",
+  "client_id": "ACME-CORP",
+  "privilege_level": "attorney_client",
+  "action": "read_documents",
+  "documents": [
+    "contract_2024_signed.pdf",
+    "amendment_01.docx",
+    "correspondence_2025.eml"
+  ],
+  "timestamp": "2026-07-20T15:00:00+08:00"
+}

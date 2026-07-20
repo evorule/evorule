@@ -17,7 +17,7 @@ evorule e2e 冒烟测试
 # 运行
   python tests/e2e_smoke.py
   # 或
-  python tests/e2e_smoke.py --binary ./target/debug/evorule_server.exe --addr 127.0.0.1:18081
+  python tests/e2e_smoke.py --binary ./.build/rust/debug/evorule_server.exe --addr 127.0.0.1:18081
 """
 
 import argparse
@@ -279,9 +279,9 @@ def main() -> int:
     parser.add_argument(
         "--binary",
         type=Path,
-        default=Path("./target/debug/evorule_server")
+        default=Path("./.build/rust/debug/evorule_server")
         if sys.platform != "win32"
-        else Path("./target/debug/evorule_server.exe"),
+        else Path("./.build/rust/debug/evorule_server.exe"),
         help="evorule_server 二进制路径",
     )
     parser.add_argument(

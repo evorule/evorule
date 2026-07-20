@@ -1,0 +1,20 @@
+{
+  "transform": [
+    {
+      "type": "io_request",
+      "params": {
+        "io_type": "audit_log",
+        "params": {
+          "regulation": "HIPAA / 等保 2.0 / 三级等保",
+          "event_type": "patient_data_access",
+          "user_id": "__exec__.payload.user_id",
+          "user_role": "__exec__.payload.user_role",
+          "patient_id": "__exec__.payload.patient_id",
+          "action": "__exec__.payload.action",
+          "data_fields_accessed": "__exec__.payload.fields",
+          "timestamp": "__exec__.payload.timestamp"
+        }
+      }
+    }
+  ]
+}

@@ -43,6 +43,7 @@ use tier2_governance::io_subscriber::IoSubscriber;
 use tier2_governance::metrics::{Metrics, SharedMetrics};
 use tier2_governance::shared_facts_log::SharedFactsLog;
 use tracing::{error, info, warn};
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
 /// 优雅退出超时（P2-8：等待进行中请求的最长时间）
 const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
@@ -72,7 +73,8 @@ const SHUTDOWN_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 ///   },
 ///   "log": {
 ///     "level": "info",
-///     "format": "json"
+///     "format": "json",
+///     "file": "./logs/evorule.log"
 ///   }
 /// }
 /// ```
@@ -117,6 +119,12 @@ struct FileLogConfig {
     level: Option<String>,
     /// `plain` 或 `json`（P2-7）
     format: Option<String>,
+    /// 日志文件路径（生产环境持久化，可选）
+    file: Option<PathBuf>,
+    /// 日志文件保留天数（默认 7 天）
+    max_days: Option<u32>,
+    /// 日志目录最大占用空间（MB，默认 1024MB）
+    max_size_mb: Option<u64>,
 }
 
 /// 加载 JSON 配置文件
@@ -209,6 +217,18 @@ struct Cli {
     /// 日志格式（P2-7：`plain` 或 `json`，默认 `plain`）
     #[arg(long, env = "EVORULE_LOG_FORMAT")]
     log_format: Option<String>,
+
+    /// 日志文件路径（生产环境持久化，可选）
+    #[arg(long, env = "EVORULE_LOG_FILE")]
+    log_file: Option<PathBuf>,
+
+    /// 日志文件保留天数（默认 7 天）
+    #[arg(long, env = "EVORULE_LOG_MAX_DAYS")]
+    log_max_days: Option<u32>,
+
+    /// 日志目录最大占用空间（MB，默认 1024MB）
+    #[arg(long, env = "EVORULE_LOG_MAX_SIZE_MB")]
+    log_max_size_mb: Option<u64>,
 }
 
 /// 合并后的最终配置（CLI > env > file > default）
@@ -222,6 +242,9 @@ struct ResolvedConfig {
     max_rounds: usize,
     log_level: String,
     log_format: String,
+    log_file: Option<PathBuf>,
+    log_max_days: u32,
+    log_max_size_mb: u64,
 }
 
 impl ResolvedConfig {
@@ -258,6 +281,9 @@ impl ResolvedConfig {
                 .log_format
                 .or(file.log.format)
                 .unwrap_or_else(|| "plain".to_string()),
+            log_file: cli.log_file.or(file.log.file),
+            log_max_days: cli.log_max_days.or(file.log.max_days).unwrap_or(7),
+            log_max_size_mb: cli.log_max_size_mb.or(file.log.max_size_mb).unwrap_or(1024),
         }
     }
 }
@@ -311,20 +337,157 @@ fn ensure_dir(path: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-/// 初始化日志订阅器（P2-7：支持 plain 和 json 两种格式）
-fn init_logging(level: &str, format: &str) {
+/// 初始化日志订阅器（P2-7：支持 plain 和 json 两种格式，支持文件持久化）
+///
+/// # 参数
+/// - `level`: 日志级别（error/warn/info/debug/trace）
+/// - `format`: 日志格式（plain/json）
+/// - `log_file`: 日志文件路径（可选，指定后启用文件持久化）
+fn init_logging(level: &str, format: &str, log_file: Option<&PathBuf>) {
     let filter = tracing_subscriber::EnvFilter::try_new(level)
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
 
-    match format.to_lowercase().as_str() {
-        "json" => {
-            tracing_subscriber::fmt()
-                .with_env_filter(filter)
-                .json()
-                .init();
+    let is_json = format.to_lowercase() == "json";
+
+    if let Some(file_path) = log_file {
+        let dir = file_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let file_name = file_path
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("evorule.log"));
+
+        let appender = RollingFileAppender::new(Rotation::DAILY, dir, file_name);
+        let (non_blocking, _guard) = tracing_appender::non_blocking(appender);
+
+        let builder = tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_writer(non_blocking);
+
+        if is_json {
+            let _ = tracing::subscriber::set_global_default(builder.json().finish());
+        } else {
+            let _ = tracing::subscriber::set_global_default(builder.finish());
         }
-        _ => {
-            tracing_subscriber::fmt().with_env_filter(filter).init();
+        return;
+    }
+
+    let builder = tracing_subscriber::fmt().with_env_filter(filter);
+
+    if is_json {
+        let _ = tracing::subscriber::set_global_default(builder.json().finish());
+    } else {
+        let _ = tracing::subscriber::set_global_default(builder.finish());
+    }
+}
+
+async fn log_cleanup_task(log_dir: PathBuf, max_days: u32, max_size_mb: u64) {
+    let interval = Duration::from_secs(3600);
+    let max_size_bytes = max_size_mb * 1024 * 1024;
+
+    loop {
+        tokio::time::sleep(interval).await;
+
+        if !log_dir.exists() {
+            continue;
+        }
+
+        let mut log_files = match std::fs::read_dir(&log_dir) {
+            Ok(entries) => entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    let fname = e.file_name();
+                    let name = fname.to_string_lossy();
+                    name.starts_with("evorule") && name.ends_with(".log")
+                })
+                .collect::<Vec<_>>(),
+            Err(e) => {
+                warn!("读取日志目录失败 {}: {}", log_dir.display(), e);
+                continue;
+            }
+        };
+
+        log_files.sort_by(|a, b| {
+            a.metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or_else(|_| std::time::SystemTime::UNIX_EPOCH)
+                .cmp(
+                    &b.metadata()
+                        .and_then(|m| m.modified())
+                        .unwrap_or_else(|_| std::time::SystemTime::UNIX_EPOCH),
+                )
+        });
+
+        let cutoff = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_else(|_| std::time::Duration::from_secs(0))
+            .as_secs()
+            - (max_days as u64) * 24 * 3600;
+
+        let mut deleted_count = 0;
+        for entry in &log_files {
+            let mtime = match entry.metadata().and_then(|m| m.modified()) {
+                Ok(t) => t
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                Err(_) => continue,
+            };
+
+            if mtime < cutoff {
+                if let Err(e) = std::fs::remove_file(entry.path()) {
+                    warn!("删除过期日志文件失败 {}: {}", entry.path().display(), e);
+                } else {
+                    deleted_count += 1;
+                }
+            }
+        }
+
+        if deleted_count > 0 {
+            info!("已清理 {} 个过期日志文件", deleted_count);
+        }
+
+        let total_size: u64 = log_files
+            .iter()
+            .filter_map(|e| e.metadata().ok())
+            .map(|m| m.len())
+            .sum();
+
+        if total_size > max_size_bytes {
+            let mut to_delete = Vec::new();
+            let mut current_size = total_size;
+
+            for entry in &log_files {
+                if current_size <= max_size_bytes {
+                    break;
+                }
+
+                let fname = entry.file_name();
+                let name = fname.to_string_lossy();
+                if name == "evorule.log" {
+                    continue;
+                }
+
+                if let Ok(len) = entry.metadata().map(|m| m.len()) {
+                    to_delete.push(entry.path().clone());
+                    current_size -= len;
+                }
+            }
+
+            for path in &to_delete {
+                if let Err(e) = std::fs::remove_file(path) {
+                    warn!("删除日志文件失败 {}: {}", path.display(), e);
+                }
+            }
+
+            if !to_delete.is_empty() {
+                info!(
+                    "已清理 {} 个日志文件以释放空间，原大小: {}MB，目标: {}MB",
+                    to_delete.len(),
+                    total_size / 1024 / 1024,
+                    max_size_mb
+                );
+            }
         }
     }
 }
@@ -339,8 +502,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 按 CLI > env > file > default 优先级解析
     let cfg = ResolvedConfig::resolve(cli, file_config);
 
-    // 1. 初始化日志（P2-7: 支持 JSON 结构化日志）
-    init_logging(&cfg.log_level, &cfg.log_format);
+    // 1. 初始化日志（P2-7: 支持 JSON 结构化日志，支持文件持久化）
+    init_logging(&cfg.log_level, &cfg.log_format, cfg.log_file.as_ref());
 
     let start_time = Instant::now();
     info!("=== evorule-server 启动中 ===");
@@ -350,6 +513,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("数据库: {}", cfg.db_path.display());
     info!("Memory 目录: {}", cfg.memory_dir.display());
     info!("日志格式: {}", cfg.log_format);
+    info!(
+        "日志输出: {}",
+        if let Some(file) = &cfg.log_file {
+            format!("文件: {}", file.display())
+        } else {
+            "控制台".to_string()
+        }
+    );
+    info!(
+        "日志清理: 保留 {} 天, 最大 {}MB",
+        cfg.log_max_days, cfg.log_max_size_mb
+    );
     info!(
         "认证: {}",
         if cfg.auth_token.is_some() {
@@ -418,12 +593,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = subscriber.run(sub_rx, sub_tx).await;
     });
 
+    // 7. spawn 日志清理任务（定期清理过期和超大日志文件）
+    if let Some(log_file) = &cfg.log_file {
+        if let Some(log_dir) = log_file.parent() {
+            let log_dir = log_dir.to_path_buf();
+            let max_days = cfg.log_max_days;
+            let max_size_mb = cfg.log_max_size_mb;
+            tokio::spawn(async move {
+                log_cleanup_task(log_dir, max_days, max_size_mb).await;
+            });
+        }
+    }
+
     info!(
         "[2/4] 反应器 + I/O 订阅者已启动（耗时: {}ms）",
         step_start.elapsed().as_millis()
     );
 
-    // 7. 创建审计器 + GovernanceApi + SessionApi + AppState
+    // 8. 创建审计器 + GovernanceApi + SessionApi + AppState
     let step_start = Instant::now();
     let auditor = Auditor::new(facts_log.clone());
     let api = GovernanceApi::new(tx.clone(), facts_log, auditor);

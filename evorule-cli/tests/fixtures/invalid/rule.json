@@ -1,0 +1,10 @@
+{
+  "transform": [
+    {
+      "params": {
+        "domain": {"type": "all", "inner": []},
+        "on_true": []
+      }
+    }
+  ]
+}

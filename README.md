@@ -76,6 +76,7 @@
 | ✅ **Kani 形式化验证** | JSON 状态机的核心不变式被证明,而非靠 review |
 | 🧱 **三层架构** | tier0 = JSON 状态机 / tier1 = JSON 事件循环 / tier2 = JSON HTTP |
 | 🤖 **AI Agent 编排** | 通过独立的 [evo-agent](https://github.com/evorule/evo-agent) 把 LLM 输出(也是 JSON)接入 |
+| 🏥 **单文件 CLI 落地圈 2** | [`evorule-cli/`](evorule-cli/) —— musl 静态链接,1.6 MB,零网络零遥测,直接给医疗/律所合规官用 |
 
 ---
 
@@ -535,9 +536,44 @@ blake3 = "1"            # JSON 哈希链
 
 ---
 
+## 衍生工具:evorule CLI(圈 2 合规刚需)
+
+[`evorule-cli/`](evorule-cli/) 是 EvoRule 的**单文件命令行工具**,专门为"圈 2 合规刚需"用户设计:
+
+> **"把你公司的合规规则写成一个 JSON 文件,放到本地,evorule 帮你跑 + 审计 + 重放"**
+
+| 维度 | 满足情况 |
+|---|---|
+| **零网络** | 无 reqwest,无任何外联代码 |
+| **零遥测** | tracing 只写 stderr |
+| **零系统依赖** | musl 静态链接,1.6 MB 单文件,`ldd` 显示 `statically linked` |
+| **零 AI 决策** | 不调 LLM,纯确定性执行 |
+| **可审计** | 输出 JSON Lines fact log,可 grep / diff / 重放 |
+| **可重现** | 同源码两次构建 SHA256 一致,监管可独立复现 |
+| **G8 门控** | 编译期拦截"硬编码控制流"违规,与 tier1/tier2 同套规则 |
+| **多架构** | `x86_64-unknown-linux-musl` + `aarch64-unknown-linux-musl`(AWS Graviton / RPi 适用) |
+
+**4 个子命令**:
+
+```bash
+evorule validate ./rules/         # 校验 JSON 规则 schema
+evorule run ./rules/ -o fact.log  # 执行 + 输出 fact log(JSONL)
+evorule replay fact.log           # 重放 fact log(pretty-print)
+evorule diff before.log after.log # 对比两个 fact log
+```
+
+**30 秒给监管严格行业讲清楚**:
+
+> 把医院的合规规则写成 JSON 放到 `/etc/hospital-rules/`,装 evorule 单文件,跑 `evorule run /etc/hospital-rules/ -o /var/log/fact.log`,给监管看 fact.log —— **不联网、不上报、不 AI 决策**。
+
+构建 / 验证 / CI 集成详见 [`evorule-cli/README.md`](evorule-cli/README.md)。
+
+---
+
 ## 相关项目
 
 - [evo-agent](https://github.com/evorule/evo-agent) — AI Agent 编排层,在 EvoRule 之上实现 LLM + 工具 + 记忆闭环(LLM 输出也是 JSON)
+- [evorule-cli](evorule-cli/) — 单文件 CLI,圈 2 合规刚需场景(医疗/律所/金融/政务),musl 静态链接、零网络、可重现
 - [evorule/sdk/typescript](sdk/typescript) — TypeScript SDK,完整封装 19 个 JSON HTTP 端点
 - [evorule/sdk/python](sdk/python) — Python SDK(规划中)
 

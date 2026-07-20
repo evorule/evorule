@@ -1,0 +1,9 @@
+{
+  "scenario": "某医生查询住院患者病历",
+  "user_id": "doctor_zhang_001",
+  "user_role": "attending_physician",
+  "patient_id": "P-2024-08-15-0042",
+  "action": "read",
+  "fields": ["name", "age", "diagnosis", "medications", "lab_results"],
+  "timestamp": "2026-07-20T14:30:00+08:00"
+}

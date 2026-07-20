@@ -437,8 +437,8 @@ fn test_hash_chain_verification() {
 fn test_content_hash_deterministic() {
     let value = JsonValue::string("test content");
 
-    let hash1 = hash::content_hash(&value);
-    let hash2 = hash::content_hash(&value);
+    let hash1 = hash::content_hash(&value).unwrap();
+    let hash2 = hash::content_hash(&value).unwrap();
 
     assert_eq!(hash1, hash2, "Content hash should be deterministic");
     assert!(!hash1.is_empty(), "Hash should not be empty");
@@ -449,8 +449,8 @@ fn test_content_hash_different_inputs() {
     let value1 = JsonValue::string("content1");
     let value2 = JsonValue::string("content2");
 
-    let hash1 = hash::content_hash(&value1);
-    let hash2 = hash::content_hash(&value2);
+    let hash1 = hash::content_hash(&value1).unwrap();
+    let hash2 = hash::content_hash(&value2).unwrap();
 
     assert_ne!(
         hash1, hash2,

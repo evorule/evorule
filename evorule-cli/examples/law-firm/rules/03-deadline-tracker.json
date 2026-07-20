@@ -1,0 +1,35 @@
+{
+  "transform": [
+    {
+      "type": "set",
+      "params": {
+        "attr": "__exec__.payload.deadline_check.days_remaining",
+        "operation": "set",
+        "value": "__exec__.payload.days_until_deadline"
+      }
+    },
+    {
+      "type": "set",
+      "params": {
+        "attr": "__exec__.payload.deadline_check.checked_at",
+        "operation": "set",
+        "value": "__exec__.payload.timestamp"
+      }
+    },
+    {
+      "type": "io_request",
+      "params": {
+        "io_type": "log_deadline_status",
+        "params": {
+          "lawyer_id": "__exec__.payload.lawyer_id",
+          "case_id": "__exec__.payload.case_id",
+          "deadline_type": "__exec__.payload.deadline_type",
+          "deadline_date": "__exec__.payload.deadline_date",
+          "days_remaining": "__exec__.payload.days_until_deadline",
+          "regulation": "民事诉讼法 / 仲裁法 时效规定",
+          "alert_required": "true"
+        }
+      }
+    }
+  ]
+}

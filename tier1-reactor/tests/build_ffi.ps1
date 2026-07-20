@@ -15,7 +15,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$TargetDir = Join-Path $RepoRoot "..\target"
+$TargetDir = Join-Path $RepoRoot "..\.build\rust"
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host " evorule C FFI Build Script" -ForegroundColor Cyan

@@ -1,0 +1,30 @@
+[package]
+name = "evorule-cli"
+version = "0.1.0"
+edition = "2021"
+description = "evorule CLI - local JSON rule execution tool for compliance-sensitive users (zero network, zero telemetry, musl static)"
+license = "AGPL-3.0-or-later"
+publish = false  # Internal binary, not on crates.io
+
+[[bin]]
+name = "evorule"  # 用户友好名(不是包名 evorule-cli)
+path = "src/main.rs"
+
+[dependencies]
+# Core: only depend on tier0-tcb (pure Rust, no_std-friendly, no C deps)
+tier0-tcb = { path = "../tier0-tcb" }
+
+# CLI essentials (all pure Rust)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive", "env"] }
+thiserror = "2"
+
+# Tracing (optional but useful for the user to see what evorule is doing)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 注: profile 在 workspace root (/mnt/d/evorule/Cargo.toml) 统一配置
+# evorule-cli 不重复声明,避免 "profiles for the non root package will be ignored" 警告
+
+# musl static link target: cargo build --release --target x86_64-unknown-linux-musl

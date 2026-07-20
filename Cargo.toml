@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["tier0-tcb", "tier1-reactor", "tier2-governance"]
+members = ["tier0-tcb", "tier1-reactor", "tier2-governance", "evorule-cli"]
 
 [workspace.package]
 version = "0.1.0"

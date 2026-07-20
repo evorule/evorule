@@ -1,0 +1,49 @@
+{
+  "transform": [
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "exists",
+          "path": "__exec__.payload.potential_conflict_with"
+        },
+        "on_true": [
+          {
+            "type": "io_request",
+            "params": {
+              "io_type": "check_conflict_of_interest",
+              "params": {
+                "lawyer_id": "__exec__.payload.lawyer_id",
+                "case_id": "__exec__.payload.case_id",
+                "conflict_with_case": "__exec__.payload.potential_conflict_with",
+                "client_id": "__exec__.payload.client_id"
+              }
+            }
+          }
+        ],
+        "on_false": [
+          {
+            "type": "set",
+            "params": {
+              "attr": "__exec__.payload.conflict_check_result",
+              "operation": "set",
+              "value": "no_potential_conflict_declared"
+            }
+          },
+          {
+            "type": "io_request",
+            "params": {
+              "io_type": "log_conflict_check",
+              "params": {
+                "lawyer_id": "__exec__.payload.lawyer_id",
+                "case_id": "__exec__.payload.case_id",
+                "result": "no_potential_conflict",
+                "regulation": "律师执业行为规范 第 11 条 / ABA Model Rule 1.7"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
