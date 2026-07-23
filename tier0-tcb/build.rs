@@ -1,6 +1,6 @@
 //! tier0-tcb compile-time gate
 //!
-//! Enforces 特别规范.md (TCB L1/L2/L3 redlines) at compile time.
+//! Enforces TIER0_SPEC.md (TCB L1/L2/L3 redlines) at compile time.
 //!
 //! Per the spec (§"编译时门禁 build.rs"), this scans all .rs source files
 //! in `src/` and aborts the build if forbidden patterns are found.
@@ -448,7 +448,7 @@ fn main() -> ExitCode {
         eprintln!("  [{}] {}: {}", label, path.display(), detail);
     }
     eprintln!();
-    eprintln!("These patterns are forbidden by 特别规范.md (compile-time gate).");
+    eprintln!("These patterns are forbidden by TIER0_SPEC.md (compile-time gate).");
     eprintln!("To bypass in an emergency, set EVORULE_SKIP_GATE=1 (with justification comment).");
     ExitCode::FAILURE
 }
