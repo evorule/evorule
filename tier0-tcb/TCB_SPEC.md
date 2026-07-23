@@ -92,17 +92,29 @@ TCB 的 `build.rs` 在**所有构建模式（debug/release）**下扫描源码�
 | **T10** | 路径解析永不 panic，支持数组索引 | 安全性 + 灵活性 |
 
 
-### 代码量目标
+### 代码量目标 vs 实际(2026-07-23 实测)
 
-| 组件 | 行数 | 说明 |
-| :--- | :--- | :--- |
-| `equation.rs` | ~40 | TheEquation 循环 + trace 记录 |
-| `executor.rs` | ~50 | 3.5 个元指令（set/push/branch + io_request） |
-| `domain.rs` | ~50 | 6 个域类型 |
-| `path.rs` | ~25 | 点号路径 + 数组索引 |
-| `value.rs` | ~60 | JsonValue + BTreeMap |
-| `error.rs` | ~10 | 错误枚举 |
-| **TCB 总计** | **~235** | 零依赖，无状态 |
+| 组件 | 目标 | 实际核心(去 cfg(test)) | 实际 cfg(test) | 实际总 | 倍数 | 说明 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `equation.rs` | ~40 | — | — | — | — | 不存在(早 TheEquation 命名,已被 `transition.rs` 替代) |
+| `executor.rs` | ~50 | **329** | 1357 | 1686 | 6.6× | 3.5 元指令(set/push/branch + io_request) |
+| `domain.rs` | ~50 | **155** | 704 | 859 | 3.1× | 6 个域类型(Eq/Lt/Exists/InstructionEq/All/Not) |
+| `path.rs` | ~25 | **223** | 361 | 584 | 8.9× | 点号路径 + 数组索引 + 转义 |
+| `value.rs` | ~60 | **517** | 576 | 1093 | 8.6× | JsonValue + BTreeMap,5 种值类型 |
+| `error.rs` | ~10 | **79** | 56 | 135 | 7.9× | TcbError 枚举 + 错误消息 |
+| `lib.rs` | — | **61** | 0 | 61 | — | 模块声明 + 类型重导出 |
+| `transition.rs` | — | **195** | 1129 | 1324 | — | TheEquation 主循环 + 状态转换 |
+| **TCB 核心(7 文件)** | **~235** | **1559** | **4183** | **5742** | **6.6×** | 零依赖,无状态 |
+
+> **不计入上表**:`src/proofs.rs` 164 行,全部 `#[cfg(kani)]` 门控(由 `lib.rs` 的 `#[cfg(kani)] mod proofs;` 引入),Kani 形式化验证代码,非核心实现。
+
+**实际核心 1559 行,目标 235 行,差距 6.6×,原因**:
+
+1. **测试代码量大(4183 / 1559 = 2.7×)** — 反映 evorule 重视测试驱动(Kani + proptest + 集成测试,见 `tests/`)
+2. **错误处理 + 边界情况** — `Result` + `Option` + 显式错误传播,无 `unwrap` / `expect`(L39-42 deny 强制)
+3. **路径解析鲁棒性** — 转义(`\.` / `\\`)、空路径、嵌套、非 Object 字段访问,边界处理比"点号 + 索引"目标多
+4. **JsonValue 完整实现** — 5 种值类型(Null/Bool/Integer/String/Array/Object),每种都有 as_/is_/构造/比较 + Serialize/Deserialize
+5. **executor 参数解析** — 路径引用(`__path__`)、可选参数、嵌套参数解析(目标里"3.5 元指令"未涵盖这些辅助逻辑)
 
 
 ### 总结口诀
