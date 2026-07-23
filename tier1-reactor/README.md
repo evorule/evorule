@@ -6,9 +6,6 @@
 - **依赖**:tier0-tcb (路径依赖)
 - **协议**:AGPL-3.0-or-later
 
-> ⚠️ **本目录不发 crates.io**(`Cargo.toml` 设 `publish = false`)。
-> 唯一分发渠道:[Gitee](https://gitee.com/evorulelab/evorule)。
-
 ## 设计原则
 
 - **事实驱动**：所有交互通过 Fact 通道进行
@@ -120,6 +117,3 @@ evorule_reactor_free(reactor);
 ## 许可证
 
 **代码**:`AGPL-3.0-or-later`(见 [`LICENSE`](LICENSE) 文件)。
-
-**分发**:本目录 `Cargo.toml` 设 `publish = false`,**仅通过 Gitee
-分发**(https://gitee.com/evorulelab/evorule),**不上 crates.io**。
