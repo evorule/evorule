@@ -1,4 +1,4 @@
-//! Panic-free contract tests for tier0-tcb v6.0.0.
+//! Panic-free contract tests for tier0-tcb v0.1.0-alpha.1.
 //!
 //! # Goal
 //!

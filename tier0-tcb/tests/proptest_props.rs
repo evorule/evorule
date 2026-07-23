@@ -1,4 +1,4 @@
-//! tier0-tcb v6.0.0 -- Property tests (proptest)
+//! tier0-tcb v0.1.0-alpha.1 -- Property tests (proptest)
 //!
 //! ## 目的
 //!
@@ -17,7 +17,10 @@
 //!
 //! ## Hygiene
 //!
-//! - `ProptestConfig::with_cases(200)` 限制每属性 case 数
+//! - `ProptestConfig { cases: 200, failure_persistence:
+//!   Some(Box::new(FileFailurePersistence::Off)), ... }` 限制每属性 case 数
+//!   (200 个) + 关闭 `FileFailurePersistence`(避免 19 行 "FileFailurePersistence
+//!   set, but failed to find lib.rs or main.rs" 红色报警)
 //! - 不依赖 `*.proptest-regressions` 文件回放 (`FileFailurePersistence`
 //!   会永久重放旧反例, 掩盖真实 assertion bug -- 已 .gitignore)
 //! - 所有 proptest 用 fresh config, 不读取 .proptest-regressions

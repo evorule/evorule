@@ -1,4 +1,4 @@
-//! tier0-tcb v6.0.0 -- End-to-End Integration Test
+//! tier0-tcb v0.1.0-alpha.1 -- End-to-End Integration Test
 //!
 //! 自动化 version of `examples/end_to_end.rs`. 加载真 `core_eval.json`
 //! (宪法) -> 解析为 `JsonValue` -> 通过 `execute_transition()` 跑业务指令
