@@ -551,56 +551,19 @@ pub enum TcbError {
 
 ## 八、Kani 形式化验证
 
-### 8.1 运行方式
+`#[cfg(kani)]` 门控的 `proofs.rs` 仅在 Kani 工具链下编译,常规 `cargo build` / `cargo test` / `cargo clippy` 不编译。
 
-```bash
-# 需先安装 Kani 工具链（Kani 0.67.0 + Rust nightly 2025-11-21）
-cargo kani -p tier0-tcb --features kani --harness <PROOF_NAME>
-```
+| Proof                       | 验证目标                                                       | 状态     |
+| --------------------------- | -------------------------------------------------------------- | -------- |
+| `verify_value_roundtrip`    | `JsonValue::Integer(n).as_i64() == Some(n)` 对任意 `i64` 成立   | ✅ PASS  |
+| `verify_path_no_panic`      | 路径解析对 Array 状态不 panic                                  | ⚠️ 工具链 |
+| `verify_set_integer_safety` | `i64::checked_add` 上溢返回 None                                | ✅ PASS  |
+| `verify_transition_bounded` | JsonValue 状态遍历不 panic                                      | ✅ PASS  |
+| `verify_set_sub_safety`     | `i64::checked_sub` 下溢返回 None                                | ✅ PASS  |
 
-`#[cfg(kani)]` 门控的 `proofs.rs` 仅在 Kani 工具链注入 `--cfg kani` 时编译。常规 `cargo build` / `cargo test` / `cargo clippy` 不会编译 proofs.rs。
-
-### 8.2 验证目标
-
-| Proof                       | 验证目标                                                       |
-| --------------------------- | -------------------------------------------------------------- |
-| `verify_value_roundtrip`    | 对任意 `i64`,`JsonValue::Integer(n).as_i64() == Some(n)`        |
-| `verify_path_no_panic`      | 路径解析对 Array 状态不 panic,返回 None / Some 符合预期       |
-| `verify_set_integer_safety` | `i64::checked_add` 行为正确(add 上溢返回 None)                |
-| `verify_transition_bounded` | JsonValue 状态遍历不 panic(状态机可终止)                      |
-| `verify_set_sub_safety`     | `i64::checked_sub` 行为正确(sub 下溢返回 None)                |
-
-> 原 `verify_domain_boolean` 已删除(2026-07-23):注释声称避开
-> `BTreeMap` 但实际用了,自相矛盾。改用 proptest
-> `domain_eval_never_panics_arbitrary_type` 保底覆盖,详见
-> [`tests/proptest_props.rs`](tests/proptest_props.rs)。
-
-### 8.3 当前状态(实测 2026-07-22,Kani 0.65.0 + nightly-2025-08-06)
-
-| Proof                       | 状态         | 耗时  | check 数                  |
-| --------------------------- | ------------ | ----- | ------------------------- |
-| `verify_value_roundtrip`    | ✅ PASS      | 0.12s | 0/377 failed              |
-| `verify_path_no_panic`      | ⚠️ TIMEOUT   | 5min  | Kani 工具链 alloc std unwind bound 限制 |
-| `verify_set_integer_safety` | ✅ PASS      | 0.16s | 0/41 failed               |
-| `verify_transition_bounded` | ✅ PASS      | 0.29s | 0/436 failed (9 unreachable) |
-| `verify_set_sub_safety`     | ✅ PASS      | 0.17s | 0/41 failed               |
-
-**总计 4/5 PASS (80%)**。
-
-`verify_path_no_panic` TIMEOUT 的根因是 **Kani 0.65.0 / 0.67.0 工具链
-对 `core::str::from_utf8` 内部走 memcmp 的默认 unwind bound 100 不够**,
-与 evorule 代码正确性无关。Kani 0.65.0 (prebuilt) + Kani 0.67.0 +
-Rust nightly 三个组合都卡同一处。降 `--default-unwind` 到 30 仍 TIMEOUT,
-说明是工具链固有限制。详见 `tier0-tcb/TIER0_SPEC.md`。
-
-**核心证明已建立**:
-
-- `i64` 加法不上溢(`verify_set_integer_safety`)
-- `i64` 减法不下溢(`verify_set_sub_safety`)
-- `JsonValue` 状态遍历不 panic(`verify_value_roundtrip` + `verify_transition_bounded`)
-
-待 Kani 0.68+ alloc std unwind bound 优化后补全 `verify_path_no_panic`
-(已用 proptest `resolve_path_never_panics_arbitrary_path` 保底覆盖)。
+`verify_path_no_panic` 当前被 proptest
+[`resolve_path_never_panics_arbitrary_path`](tests/proptest_props.rs)
+保底覆盖;在 `TIER0_SPEC.md` 中记录了 Kani 工具链对该 proof 的限制及未来版本的重启计划。
 
 ---
 
