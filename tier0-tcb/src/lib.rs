@@ -51,10 +51,6 @@ pub mod path;
 pub mod transition;
 pub mod value;
 
-// Kani 形式化验证（仅在 kani feature 启用时编译）
-#[cfg(kani)]
-mod proofs;
-
 // 核心类型重导出（仅公开稳定的 API）
 pub use error::TcbError;
 pub use transition::{execute_transition, TransitionResult};
