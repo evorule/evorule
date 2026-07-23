@@ -1,7 +1,7 @@
 {
   "rule_id": "core.eval",
-  "version": "6.0.0",
-  "description": "TCB 宪法 - 将业务指令映射为元指令（反应式执行器版）",
+  "version": "0.1.0",
+  "description": "TCB 宪法 - 将业务指令映射为元指令(反应式执行器版)",
   "metadata": {
     "author": "evorule-core",
     "license": "CC0-1.0 Universal (Public Domain)",
