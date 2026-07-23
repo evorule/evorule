@@ -11,9 +11,6 @@
 - **build.rs 编译时门禁**:14 条 redline (T1-T14) 编译期强制,PASSED
 - **协议**:AGPL-3.0-or-later(代码) + CC0-1.0(`core_eval.json` 公共领域)
 
-> ⚠️ **本目录不发 crates.io**(`Cargo.toml` 设 `publish = false`)。
-> 唯一分发渠道:[Gitee](https://gitee.com/evorulelab/evorule)。
-
 ---
 
 ## 一、项目定位
@@ -625,6 +622,3 @@ pub enum TcbError {
 任何人都可自由实现兼容的 EvoRule 引擎,无需保留版权声明。
 `core_eval.json` 文件内的 `metadata.public_domain_notice` 字段
 有详细说明。
-
-**分发**:本目录 `Cargo.toml` 设 `publish = false`,**仅通过 Gitee
-分发**(https://gitee.com/evorulelab/evorule),**不上 crates.io**。
