@@ -19,7 +19,7 @@ circulation among security-conscious users (compliance, regulated industries).
 > - `evorule` 0.1.0 (tier0-tcb, tier1-reactor, tier2-governance, evorule-cli)
 > - `evo-agent` 0.1.0
 > - Shared workspace: `D:\evorule`, `D:\evo-agent`, `D:\evorule-application`
->   **Auditor**: EvoRule maintainers + Mavis (peer review)
+>   **Auditor**: EvoRule maintainers (peer review)
 >   **Methodology**: code review + automated tooling + manual threat walk-through
 >   **Independent reviewer**: ⚠️ NOT YET APPOINTED (required for 1.0.0)
 
@@ -383,7 +383,7 @@ We will not only document gaps; we also want to celebrate what works:
 
 | Role                     | Name                        | Sign-off Date | Notes                  |
 | ------------------------ | --------------------------- | ------------- | ---------------------- |
-| **Audit author**         | EvoRule maintainers + Mavis | 2026-07-20    | DRAFT — pending review |
+| **Audit author**         | EvoRule maintainers         | 2026-07-20    | DRAFT — pending review |
 | **Independent reviewer** | 🔴 **TBD**                  | n/a           | Required for 1.0.0     |
 | **Project lead**         | 🔴 **TBD**                  | n/a           | Required for 1.0.0     |
 
@@ -453,4 +453,4 @@ cargo test --workspace
 ---
 
 > "我们不是在追求完美的安全,我们是在追求**透明的安全**——把哪些做了、哪些没做、风险在哪里,全部写下来。"
-> —— Mavis, 2026-07-20
+> —— EvoRule maintainers, 2026-07-20
