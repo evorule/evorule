@@ -5,7 +5,7 @@ edition = "2021"
 description = "EvoRule TCB Core - Zero-dependency pure computation kernel"
 license = "AGPL-3.0-or-later"
 repository = "https://gitee.com/evorulelab/evorule"
-publish = false  # 0.1.0 仅通过 Gitee 分发,不上 crates.io
+publish = false  # 不发布到任何 registry
 
 [lib]
 crate-type = ["rlib"]
