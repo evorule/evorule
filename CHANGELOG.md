@@ -72,7 +72,7 @@
 - ❌ **Gitee Go CI 没真跑过** — `.yml` 写了但没 push 验证
 - ❌ **跨平台 release 没真测过** — 28 号评估只跑过 Windows + localhost
 - ❌ **公开 demo 视频缺** — 有评估文档,没 GIF
-- 🟡 **L9 Kani 5 proof, 4/5 PASS + 19 proptest** — 2026-07-23 更新;4 PASS(i64 加/减不上溢、JsonValue 类型安全、状态转换有界);1 个 verify*path_no_panic 改进待 Kani 环境验证;删除 verify_domain_boolean(→proptest);新增 5 个 proptest。详见 [白皮书](文档/kani/02*形式化验证白皮书.txt)
+- 🟡 **L9 Kani 5 proof, 4/5 PASS + 19 proptest** — 2026-07-23 更新;4 PASS(i64 加/减不上溢、JsonValue 类型安全、状态转换有界);1 个 verify_path_no_panic 因 Kani 工具链 alloc std unwind bound 限制 TIMEOUT(改由 proptest `resolve_path_never_panics_arbitrary_path` 保底);删除 verify_domain_boolean(改由 proptest `domain_eval_never_panics_arbitrary_type` 替代);新增 5 个 proptest。详见 `tier0-tcb/TIER0_SPEC.md`
 - ❌ **依赖自动审计缺** — `cargo-audit` 装不上(rustc 1.92 < 1.96)
 
 详见 [STATUS.md](STATUS.md) §"已知问题"。
