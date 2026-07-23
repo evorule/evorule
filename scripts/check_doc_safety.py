@@ -2,7 +2,7 @@
 # =============================================================================
 # check_doc_safety.py - 校验 git staged 文件不含 文档/ 路径
 #
-# 用户规则 2026-07-15: evorule/文档/ = 助手内部区. 不要 git add, 不提交不发布.
+# 内部规则 2026-07-15: evorule/文档/ = 内部工作区. 不 git add, 不提交不发布.
 #
 # 用法:
 #   python scripts/check_doc_safety.py            # 校验当前 staged
