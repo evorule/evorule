@@ -23,6 +23,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 添加 `cdylib` crate-type 支持动态链接库编译
 
+## [v0.1.0-alpha.1] - 2026-07-20 (EvoRule 公开 alpha)
+
+EvoRule 项目化重塑首版
+- 品牌: TheEquation → EvoRule
+- 协议: MIT OR Apache-2.0 → AGPL-3.0-or-later (项目统一)
+- 仅 Gitee 分发(`publish = false`)
+- 详见根 [README.md](../../README.md) + [REACTOR_SPEC.md](REACTOR_SPEC.md)
+
+## [v0.1.0] - 2026-07-20 (EvoRule 公开 baseline)
+
+跟 [v0.1.0-alpha.1] 同源,正式公开。
+- 全部功能继承自历史版本
+- 仅 Gitee 分发(`publish = false`)
+
 ## [6.0.0] - 2026-07-17
 
 ### Added

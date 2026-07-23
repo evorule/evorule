@@ -1,6 +1,13 @@
 # tier1-reactor
 
-TheEquation 反应式执行器 - 事实驱动的状态转换引擎
+> EvoRule 三层架构的 Tier 1 反应式执行器 —— 事实驱动的状态转换引擎。
+
+- **版本**:v0.1.0-alpha.1
+- **依赖**:tier0-tcb (路径依赖)
+- **协议**:AGPL-3.0-or-later
+
+> ⚠️ **本目录不发 crates.io**(`Cargo.toml` 设 `publish = false`)。
+> 唯一分发渠道:[Gitee](https://gitee.com/evorulelab/evorule)。
 
 ## 设计原则
 
@@ -112,4 +119,7 @@ evorule_reactor_free(reactor);
 
 ## 许可证
 
-MIT OR Apache-2.0
+**代码**:`AGPL-3.0-or-later`(见 [`LICENSE`](LICENSE) 文件)。
+
+**分发**:本目录 `Cargo.toml` 设 `publish = false`,**仅通过 Gitee
+分发**(https://gitee.com/evorulelab/evorule),**不上 crates.io**。

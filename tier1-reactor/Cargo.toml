@@ -5,6 +5,7 @@ edition = "2021"
 description = "EvoRule 反应式执行器 - 事实驱动的状态转换引擎"
 license = "AGPL-3.0-or-later"
 repository = "https://gitee.com/evorulelab/evorule"
+publish = false
 
 [dependencies]
 tier0-tcb = { path = "../tier0-tcb" }
