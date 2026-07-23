@@ -1383,8 +1383,8 @@ mod tests {
         let b = mgr.create_session().unwrap();
         let c = mgr.create_session().unwrap();
 
-        let mut b_events = mgr.get_session(b).unwrap().event_tx.subscribe();
-        let mut c_events = mgr.get_session(c).unwrap().event_tx.subscribe();
+        let b_events = mgr.get_session(b).unwrap().event_tx.subscribe();
+        let c_events = mgr.get_session(c).unwrap().event_tx.subscribe();
         drop(mgr);
 
         // a-b 和 a-c join（星形拓扑）
@@ -1517,7 +1517,7 @@ mod tests {
 
         // b 的 seen_sync_ids 应非空（包含刚收到的 fact_id）
         let members = cluster.members.lock().await;
-        let member_b = members.get(&b).expect("b 应在集群中");
+        let _member_b = members.get(&b).expect("b 应在集群中");
         // SyncIdRingBuffer 的 set 不暴露 len,但我们可以通过 on_payload_update 回环检测验证
         // 这里用一个不可能的大 ID 测试 contains 不可行,改为通过 on_payload_update 行为验证
         drop(members);
@@ -1545,7 +1545,7 @@ mod tests {
         let cluster = make_cluster();
         let mgr = cluster.session_manager.lock().await;
         let a = mgr.create_session().unwrap();
-        let b = mgr.create_session().unwrap();
+        let _b = mgr.create_session().unwrap();
         drop(mgr);
 
         // a 和 b 都存在,但都没 join 任何集群
