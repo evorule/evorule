@@ -5,9 +5,9 @@ members = ["tier0-tcb", "tier1-reactor", "tier2-governance", "evorule-cli"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "AGPL-3.0"
+license = "AGPL-3.0-or-later"
 authors = ["TheEquation Project"]
-repository = "https://github.com/evorule/evorule"
+repository = "https://gitee.com/evorulelab/evorule"
 
 [profile.release]
 opt-level = 3

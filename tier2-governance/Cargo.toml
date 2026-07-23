@@ -2,8 +2,8 @@
 name = "tier2-governance"
 version = "0.1.0"
 edition = "2021"
-description = "TheEquation 治理层 - I/O 订阅者、审计链、HTTP API"
-license = "AGPL-3.0"
+description = "EvoRule 治理层 - I/O 订阅者、审计链、HTTP API"
+license = "AGPL-3.0-or-later"
 
 [dependencies]
 # 本地依赖

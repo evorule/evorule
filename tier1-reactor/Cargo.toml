@@ -2,9 +2,9 @@
 name = "tier1-reactor"
 version = "0.1.0"
 edition = "2021"
-description = "TheEquation 反应式执行器 - 事实驱动的状态转换引擎"
-license = "AGPL-3.0"
-repository = "https://github.com/evorule/tier1-reactor"
+description = "EvoRule 反应式执行器 - 事实驱动的状态转换引擎"
+license = "AGPL-3.0-or-later"
+repository = "https://gitee.com/evorulelab/evorule"
 
 [dependencies]
 tier0-tcb = { path = "../tier0-tcb" }
