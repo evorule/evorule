@@ -1,7 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+// Kani 形式化验证的整个文件门控:仅在 Kani 工具链注入 `--cfg kani` 时编译
+// (普通 `cargo build` / `cargo test` 不参与编译,避免 `kani` crate 引用编译错误)
+#![cfg(kani)]
 //! Kani 形式化验证 proof 函数
+//!
+//! # 位置说明
+//! 本文件位于 `tests/` 目录而非 `src/` 目录,作为 Kani 形式化验证的
+//! "独立验证代码",与核心实现解耦:
+//! - 不计入 TCB 核心代码量统计(见 `TCB_SPEC.md` §代码量目标)
+//! - 不受 `build.rs` T1-T14 编译时门禁约束(仅扫 `src/` 目录)
+//! - 仅在 Kani 工具链注入 `--cfg kani` 时编译,普通 `cargo build` /
+//!   `cargo test` 不参与编译
+//!
+//! 使用 `cargo kani -p tier0-tcb --harness <proof_name>` 跑单个 proof,
+//! 或 `cargo kani -p tier0-tcb` 跑全部(从 `Cargo.toml` 的
+//! `[package.metadata.kani]` 读 proofs 列表)。
 //!
 //! 这些函数仅在 `kani` feature 启用时编译（通过 `kani cargo build` 注入 `--cfg kani`）。
 //! 每个 proof 函数使用 `#[kani::proof]` 属性标记，由 Kani 验证器自动发现并验证。
@@ -60,8 +75,8 @@
 //! - **i64 减法不下溢**（`verify_set_sub_safety`）
 //! - **JsonValue 状态遍历不 panic**（`verify_value_roundtrip` + `verify_transition_bounded`）
 
-use crate::path::resolve_path;
-use crate::value::JsonValue;
+use tier0_tcb::path::resolve_path;
+use tier0_tcb::JsonValue;
 use alloc::vec;
 
 /// 验证 JsonValue 的构造与访问一致性
