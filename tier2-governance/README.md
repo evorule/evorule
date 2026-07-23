@@ -6,9 +6,6 @@
 - **依赖**:tier0-tcb + tier1-reactor (路径依赖)
 - **协议**:AGPL-3.0-or-later
 
-> ⚠️ **本目录不发 crates.io**(`Cargo.toml` 设 `publish = false`)。
-> 唯一分发渠道:[Gitee](https://gitee.com/evorulelab/evorule)。
-
 ## 概述
 
 `tier2-governance` 是 EvoRule 治理层,负责:
@@ -65,6 +62,3 @@ cargo run -p evorule-cli -- <subcommand>
 ## 协议与分发
 
 **代码**:`AGPL-3.0-or-later`(见 [`LICENSE`](LICENSE))。
-
-**分发**:本目录 `Cargo.toml` 设 `publish = false`,**仅通过 Gitee
-分发**(https://gitee.com/evorulelab/evorule),**不上 crates.io**。
