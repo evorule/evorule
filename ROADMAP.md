@@ -31,7 +31,7 @@
 | 版本号 | 含义 | 承诺 |
 |---|---|---|
 | **0.1.0** 当前 | first public preview / alpha | 能跑、知道自己能跑什么、知道自己不能跑什么、API 可能变 |
-| **0.2.0** 下一 | 上下文架构 + L9 Kani 剩余 2 proof | API 大致稳定,但仍可能有 breaking |
+| **0.2.0** 下一 | 上下文架构 + L9 Kani 剩余 1 proof | API 大致稳定,但仍可能有 breaking |
 | **0.3.0** | 应用层 P0 完成 | API 接近稳定,开始考虑兼容承诺 |
 | **1.0.0** 远期 | production-grade | API 冻结、SLA、第三方安全审计 |
 
@@ -54,7 +54,7 @@
 ### 还不行的(诚实记账)
 
 - ❌ **第三方安全审计** — 自审 + 修正历史 3 处,1.0 之前不做
-- 🟡 **L9 Kani 部分真实证明** — 5 proof, 4/5 PASS + 19 proptest(2026-07-23 更新, Kani 0.67.0);4 PASS(i64 加/减不上溢、JsonValue 类型安全、状态转换有界);1 个 verify_path_no_panic 改进待 Kani 环境验证;删除 verify_domain_boolean(→proptest);新增 5 个 proptest。详见 [白皮书](文档/kani/02_形式化验证白皮书.txt)
+- 🟡 **L9 Kani 部分真实证明** — 5 proof, 4/5 PASS + 19 proptest(2026-07-23 更新, Kani 0.67.0);4 PASS(i64 加/减不上溢、JsonValue 类型安全、状态转换有界);1 个 verify_path_no_panic 因 Kani 工具链 alloc std unwind bound 限制 TIMEOUT(改由 proptest `resolve_path_never_panics_arbitrary_path` 保底);删除 verify_domain_boolean(改由 proptest `domain_eval_never_panics_arbitrary_type` 替代);新增 5 个 proptest。详见 [`tier0-tcb/TIER0_SPEC.md`](tier0-tcb/TIER0_SPEC.md)
 - ❌ **公开 demo 视频** — 有评估文档,没 GIF/视频
 - ❌ **依赖自动审计** — cargo-audit 装不上(rustc 1.92 vs kstring 1.96 要求)
 - ❌ **应用层 killer app** — 时间旅行调试器在 0.2.0 之后
@@ -72,7 +72,7 @@
 - evo-agent MemoryManager 升级(自动 recall 策略、压缩、去重)
 - evorule fact log 索引优化(支持跨 session 命名空间查询)
 - 长期记忆压缩机制(防止无限膨胀)
-- L9 Kani 剩余 2 proof(`verify_path_no_panic` / `verify_domain_boolean`)— 跟踪 Kani 0.68+ alloc std unwind bound 修复
+- L9 Kani 剩余 1 proof(`verify_path_no_panic`)— 跟踪 Kani 0.68+ alloc std unwind bound 修复
 
 ---
 

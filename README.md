@@ -429,7 +429,7 @@ cargo test -p tier0-tcb --test proptest_props
 - `verify_set_sub_safety` — set 减法安全性 ✅ PASS
 - `verify_transition_bounded` — 状态转换有界 ✅ PASS
 
-> 🟡 **4/5 PASS + 19 proptest**。详见 [形式化验证白皮书](文档/kani/02_形式化验证白皮书.txt)。
+> 🟡 **4/5 PASS + 19 proptest**。详见 [`tier0-tcb/TIER0_SPEC.md`](tier0-tcb/TIER0_SPEC.md)。
 
 ---
 
@@ -465,7 +465,7 @@ cargo test -p tier0-tcb --test proptest_props
 
 ### 0.1.0-alpha.1 限制
 
-- 🟡 Kani proof 4/5 PASS + 19 proptest(详见 [白皮书](文档/kani/02_形式化验证白皮书.txt))
+- 🟡 Kani proof 4/5 PASS + 19 proptest(详见 [`tier0-tcb/TIER0_SPEC.md`](tier0-tcb/TIER0_SPEC.md))
 - ⚠️ Hot reload 仅支持业务规则 JSON,内核改动仍需重启
 - ⚠️ Cluster 模式仍在早期(多反应器 JSON 同步语义有限)
 - ⚠️ JSON 表达力有限(无 Lambda,无复杂类型推导) —— 这是边界,不是 bug
