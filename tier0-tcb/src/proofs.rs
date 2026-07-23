@@ -53,7 +53,7 @@
 //!
 //! `verify_path_no_panic` 已改进（加 `kani::assert` 验证返回值），待 Kani 环境验证
 //! 能否通过。proptest `resolve_path_never_panics_arbitrary_path` 已提供保底覆盖。
-//! 若 Kani 仍 TIMEOUT 则删除此 proof。详见 `文档/kani/01_验证现状与问题分析.txt`。
+//! 若 Kani 仍 TIMEOUT 则删除此 proof。详见 `../TIER0_SPEC.md`。
 //!
 //! 当前 4/5 已建立核心证明：
 //! - **i64 加法不上溢**（`verify_set_integer_safety`）
@@ -90,7 +90,7 @@ fn verify_value_roundtrip() {
 /// 此 proof 改进自原 `verify_path_no_panic`（原版无 assert，验证价值为零）。
 /// 若 Kani 环境下因 `parse_path_segments` 的 String 建模开销仍 TIMEOUT，
 /// 可删除此 proof——proptest `resolve_path_never_panics_arbitrary_path`
-/// 已提供保底覆盖。详见 `文档/kani/01_验证现状与问题分析.txt`。
+/// 已提供保底覆盖。详见 `../TIER0_SPEC.md`。
 #[kani::proof]
 fn verify_path_no_panic() {
     let state = JsonValue::Array(vec![JsonValue::Integer(kani::any())]);
