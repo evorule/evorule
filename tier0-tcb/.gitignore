@@ -1,5 +1,6 @@
 # Build artifacts
 /target/
+build_probe.rs
 
 # Kani verification artifacts
 /kani-results/
