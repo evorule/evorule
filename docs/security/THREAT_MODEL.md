@@ -8,7 +8,7 @@ industries).
 -->
 
 > **Status**: v0.2.0-draft (expansion of `SECURITY_AUDIT_v0.1.0.md` §3)
-> **Author**: EvoRule maintainers + Mavis
+> **Author**: EvoRule maintainers
 > **Date**: 2026-07-20
 > **Methodology**: STRIDE + Attack Trees + Data Flow Diagrams
 > **Scope**: EvoRule 生态全栈(evorule / evo-agent / evorule-cli / evorule-application)
@@ -783,7 +783,7 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 > "威胁模型不是'我们阻止了所有攻击'。
 > 威胁模型是'我们清楚知道**没阻止哪些攻击**,并且**用户能看见**'。"
-> —— Mavis × EvoRule 作者,2026-07-20
+> —— EvoRule maintainers, 2026-07-20
 
 感谢 [`STRATEGIC_DIRECTION.md`](../../evorule-application/STRATEGIC_DIRECTION.md) 的 5 原则贯穿本文档,
 感谢 [`SECURITY_AUDIT_v0.1.0.md`](SECURITY_AUDIT_v0.1.0.md) 的 corrective culture(自我修正 M2)。
