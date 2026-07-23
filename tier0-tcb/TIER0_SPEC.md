@@ -11,10 +11,13 @@ TCB 的全部“智能”是一个 while 循环：反复应用 `core.eval` 规�
 
 TCB 只允许包含以下内容：
 
-1. **3 个元指令的执行逻辑**：
-   - `set`：修改 payload 字段（操作：`set`/`add`/`sub`）
-   - `push`：推指令到队列前端
-   - `branch`：条件执行子指令列表
+1. **3.5 个元指令的执行逻辑**（3 个真元指令 + 0.5 个 signal 元指令）：
+   - **真元指令**(3 个,修改状态)：
+     - `set`：修改 payload 字段（操作：`set`/`add`/`sub`）
+     - `push`：推指令到队列前端
+     - `branch`：条件执行子指令列表
+   - **半元指令**(0.5 个,不改状态)：
+     - `io_request`：产生 I/O 信号（`MetaInstructionResult::IoRequired`），由上层反应器执行 I/O 后注入 `__io_result__` 重新走 `core_eval.json` 消费分支
 
 2. **6 个域类型的评估逻辑**：
    - `Eq`、`Lt`、`Exists`、`InstructionEq`、`All`、`Not`
@@ -33,7 +36,7 @@ TCB 只允许包含以下内容：
 
 | 编号 | 禁止项 | 理由 |
 | :--- | :--- | :--- |
-| **T1** | 增加第 4 个元指令 | 指令集有限性 = 确定性来源 |
+| **T1** | 增加第 4 个**真**元指令 | 指令集有限性 = 确定性来源。`io_request` 算 0.5(只产生 signal,不改 TCB 内部状态),已计入"3.5 元指令"配额。|
 | **T2** | 增加第 7 个域类型 | 同上 |
 | **T3** | 运行时修改 `core_eval.json` | 宪法稳定性 |
 | **T4** | 任何 I/O 操作（文件、网络、数据库） | 确定性要求 |
@@ -77,7 +80,7 @@ TCB 的 `build.rs` 在**所有构建模式（debug/release）**下扫描源码�
 
 | 编号 | 约束 | 理由 |
 | :--- | :--- | :--- |
-| **T1** | 只能使用 3 个元指令（set/push/branch） | 指令集有限性 = 确定性来源 |
+| **T1** | 只能使用 3 个**真**元指令（set/push/branch）+ 0.5 个 signal 元指令（io_request） | 指令集有限性 = 确定性来源。io_request 是"半个",因为它不改 TCB 内部状态,只产生跨界 signal。|
 | **T2** | 只能使用 6 个域类型 | 同上 |
 | **T3** | `core_eval.json` 不可运行时修改 | 宪法稳定性 |
 | **T4** | 无 I/O、无时间、无随机 | 确定性要求 |
@@ -94,7 +97,7 @@ TCB 的 `build.rs` 在**所有构建模式（debug/release）**下扫描源码�
 | 组件 | 行数 | 说明 |
 | :--- | :--- | :--- |
 | `equation.rs` | ~40 | TheEquation 循环 + trace 记录 |
-| `executor.rs` | ~50 | 3 个元指令（set/push/branch） |
+| `executor.rs` | ~50 | 3.5 个元指令（set/push/branch + io_request） |
 | `domain.rs` | ~50 | 6 个域类型 |
 | `path.rs` | ~25 | 点号路径 + 数组索引 |
 | `value.rs` | ~60 | JsonValue + BTreeMap |
