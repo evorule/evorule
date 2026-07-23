@@ -1,6 +1,6 @@
 # EvoRule Project Agents Guide
 
-> **这是给 AI agent(包括 Mavis)和人类贡献者的工作规则。**
+> **这是给 AI agent 和人类贡献者的工作规则。**
 > 战略方向见 [D:\evorule-application\STRATEGIC_DIRECTION.md](file:///D:/evorule-application/STRATEGIC_DIRECTION.md)。
 > 本文件只讲**具体规则**,不重复战略。
 
