@@ -7,7 +7,7 @@
 - **外部依赖**:0
 - **测试**:`cargo test` 215 PASS / 0 failed(157 单元 + 4 个 proptest 段共 58 = `integration_end_to_end` 4 + `panic_free` 22 + `proptest_props` 19 + `tcb_error_variants` 13)
 - **Clippy**:零警告(`deny(unwrap_used/expect_used/indexing_slicing/panic)`)
-- **形式化验证**:Kani 5 proof, 4/5 PASS(2026-07-22 实测,Kani 0.65.0)
+- **形式化验证**:Kani 5 proof, 4/5 PASS
 - **build.rs 编译时门禁**:14 条 redline (T1-T14) 编译期强制,PASSED
 - **协议**:AGPL-3.0-or-later(代码) + CC0-1.0(`core_eval.json` 公共领域)
 
@@ -158,7 +158,7 @@ execute_transition 检测 IoRequired → 返回 TransitionResult::IoRequired
 
 这确保 `core_eval.json` **完全控制 I/O 映射**——新增 I/O 类型只需修改 JSON，无需改 TCB 代码。
 
-### 2.6 I/O 双路径机制（v5.0.2）
+### 2.6 I/O 双路径机制
 
 I/O 指令映射采用**双路径模式**——通过 `exists(__exec__.payload.__io_result__)` 域条件区分首次执行和恢复执行：
 
@@ -272,11 +272,6 @@ transition.rs （状态转换，依赖 executor/path/value）
 | `verify_set_integer_safety` | 整数 `i64::checked_add` 行为正确                              |
 | `verify_transition_bounded` | JsonValue 状态遍历不 panic,execute_transition 内部状态机可终止 |
 | `verify_set_sub_safety`     | 整数 `i64::checked_sub` 行为正确                              |
-
-> 原 `verify_domain_boolean` 已删除(2026-07-23):
-> 注释声称避开 `BTreeMap` 但实际用了,自相矛盾。改用 proptest
-> `domain_eval_never_panics_arbitrary_type` 替代,详见
-> [`tests/proptest_props.rs`](tests/proptest_props.rs)。
 
 ---
 
@@ -454,7 +449,7 @@ pub enum TcbError {
 ```json
 {
   "rule_id": "core.eval",
-  "version": "6.0.0",
+  "version": "0.1.0",
   "description": "TCB 宪法 - 将业务指令映射为元指令",
   "metadata": { ... },
   "transform": [ ... ]
@@ -569,16 +564,14 @@ pub enum TcbError {
 
 ## 九、源码审计
 
-`tier0-tcb` 的源码审计通过以下方式进行(2026-07 完成):
+`tier0-tcb` 的源码审计通过以下方式进行:
 
 1. **build.rs 编译时门禁** — 14 条 redline (T1-T14) 强制,
    详见 [`TIER0_SPEC.md`](TIER0_SPEC.md)。
 2. **形式化验证** — Kani 5 proof, 4/5 PASS(见第八节)。
 3. **属性测试** — proptest 19 / 0 / 0(详见
    [`tests/proptest_props.rs`](tests/proptest_props.rs))。
-4. **内部审计报告** — 历史 `audit/00-..10-..` 系列报告(v5.0.2 时代)
-   暂未迁入本仓库(2026-07 内部资料,非开源对象);如需访问请
-   邮件联系 [evorulelab@gmail.com](mailto:evorulelab@gmail.com)。
+4. **第三方安全审计** — 留待 1.0.0 公开版,0.1.0 不做。
 
 ---
 
@@ -588,7 +581,7 @@ pub enum TcbError {
 
 | 编号 | 事项                       | 状态     | 说明                                                       |
 | ---- | -------------------------- | -------- | ---------------------------------------------------------- |
-| N-01 | Kani `verify_path_no_panic` | TIMEOUT | Kani 0.65/0.67 工具链 alloc std unwind bound 限制,等 0.68+ |
+| N-01 | Kani `verify_path_no_panic` | TIMEOUT | Kani 工具链 alloc std unwind bound 限制,等 0.68+ 修 |
 | N-02 | `MAX_TRANSFORM_RULES` 限制 | 待办     | `execute_transition` 对 `core_eval` 长度无限制              |
 
 ### 10.2 后续 Tier 路线
@@ -611,9 +604,8 @@ pub enum TcbError {
 
 ## 十一、设计文档参考
 
-> ⚠️ **注意**:`tier0-tcb/build.rs` 之前引用 `文档/01_设计方案.txt §0`
-> 作为 G8 / F11 / §5.2 约束的源。但 `文档/` 目录在 .gitignore 中(永不
-> commit),不公开发布。
+> **权威源**:`tier0-tcb/build.rs` 现引用本仓库内 SPEC 文档作为
+> 14 条 redline (T1-T14) 的源,不再依赖 `文档/` 目录(已 .gitignore)。
 
 实际权威源:
 
