@@ -41,7 +41,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 [![Rust](https://img.shields.io/badge/rust-1.74%2B-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![core_eval.json: CC0-1.0](https://img.shields.io/badge/core_eval.json-CC0%201.0-lightgrey.svg)](https://creativecommons.org/publicdomain/zero/1.0/)
-[![Kani](https://img.shields.io/badge/Kani-4_of_5_PASS-blue.svg)](tier0-tcb/src/proofs.rs)
+[![Kani](https://img.shields.io/badge/Kani-4_of_5_PASS-blue.svg)](tier0-tcb/tests/kani_proofs.rs)
 [![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](Cargo.toml)
 
 ---
