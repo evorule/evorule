@@ -261,7 +261,7 @@ transition.rs （状态转换，依赖 executor/path/value）
 - 迭代 `core_eval` transform 列表，检测 `IoRequired` 信号
 - `TransitionResult` 枚举：`State { new_payload, new_queue }` | `IoRequired { io_type, params }`
 
-#### [proofs.rs](file:///d:/evorule/tier0-tcb/src/proofs.rs) — Kani 验证
+#### [tests/kani_proofs.rs](file:///d:/evorule/tier0-tcb/tests/kani_proofs.rs) — Kani 验证
 
 5 个 `#[kani::proof]` 函数(仅 `#[cfg(kani)]` 时编译):
 

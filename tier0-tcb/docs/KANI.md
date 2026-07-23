@@ -1,6 +1,6 @@
 # Kani 形式化验证指南
 
-[tier0-tcb](../) 的 5 个 Kani proof 函数位于 [`src/proofs.rs`](../src/proofs.rs)。
+[tier0-tcb](../) 的 5 个 Kani proof 函数位于 [`tests/kani_proofs.rs`](../tests/kani_proofs.rs)。
 
 ## 📋 Proof 清单
 

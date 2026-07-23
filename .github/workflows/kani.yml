@@ -1,13 +1,12 @@
 # =============================================================================
 # GitHub Actions: Kani 形式化验证
 #
-# Kani 验证 tier0-tcb/src/proofs.rs 中的 6 个 proof:
+# Kani 验证 tier0-tcb/tests/kani_proofs.rs 中的 5 个 proof:
 #   1. verify_value_roundtrip     - JsonValue 构造/访问一致性
 #   2. verify_path_no_panic       - 路径解析对任意输入不 panic
-#   3. verify_domain_boolean      - 域评估返回 bool
-#   4. verify_set_integer_safety  - 整数加法不溢出
-#   5. verify_set_sub_safety      - 整数减法不溢出
-#   6. verify_transition_bounded  - 空 core_eval 成功
+#   3. verify_set_integer_safety  - 整数加法不溢出
+#   4. verify_set_sub_safety      - 整数减法不溢出
+#   5. verify_transition_bounded  - 状态转换有界
 #
 # 单个 proof 跑 1min - 24h 不等. 当前 workflow 跑全部 proofs.
 # 如需加速, 可改为单 proof 矩阵并行.

@@ -41,9 +41,9 @@ detect_platform() {
 # === Subcommands ===
 
 cmd_list() {
-    echo "Available proofs (from tier0-tcb/src/proofs.rs):"
+    echo "Available proofs (from tier0-tcb/tests/kani_proofs.rs):"
     cd "$PROOF_DIR"
-    grep -E '^fn verify_' src/proofs.rs | sed 's/^fn /  /; s/().*//'
+    grep -E '^fn verify_' tests/kani_proofs.rs | sed 's/^fn /  /; s/().*//'
 }
 
 cmd_install_wsl() {
