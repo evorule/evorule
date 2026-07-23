@@ -101,6 +101,23 @@ impl GovernanceApi {
         let auditor = self.auditor.lock().await;
         auditor.report()
     }
+
+    /// 获取审计条目数
+    pub async fn audit_entry_count(&self) -> usize {
+        let auditor = self.auditor.lock().await;
+        auditor.entries().len()
+    }
+
+    /// 验证审计链完整性
+    pub async fn audit_verify(&self) -> bool {
+        let auditor = self.auditor.lock().await;
+        auditor.verify()
+    }
+
+    /// 获取审计器引用（用于高级操作）
+    pub fn auditor(&self) -> Arc<Mutex<Auditor>> {
+        self.auditor.clone()
+    }
 }
 
 /// 全局 SSE 连接数上限（P1-6：防止连接耗尽）
@@ -132,6 +149,8 @@ pub struct SessionApi {
     sse_connections: Arc<AtomicU64>,
     /// 反应器集群（用于会话间协作）
     cluster: Arc<Mutex<crate::cluster::ReactorCluster>>,
+    /// 已加载的核心规则（core_eval），供 Portal 只读查询
+    core_eval: Arc<Vec<JsonValue>>,
 }
 
 impl SessionApi {
@@ -205,7 +224,7 @@ impl SessionApi {
     ) -> Self {
         let sessions = Arc::new(Mutex::new(
             session::SessionManager::with_limits_and_wal_and_auto_verify(
-                core_eval,
+                core_eval.clone(),
                 max_rounds,
                 session::DEFAULT_MAX_SESSIONS,
                 session::DEFAULT_SESSION_TTL,
@@ -223,7 +242,16 @@ impl SessionApi {
             next_id: Arc::new(std::sync::atomic::AtomicU64::new(30000)),
             sse_connections: Arc::new(AtomicU64::new(0)),
             cluster: Arc::new(Mutex::new(crate::cluster::ReactorCluster::new(sessions))),
+            core_eval: Arc::new(core_eval),
         }
+    }
+
+    /// 获取已加载的核心规则（core_eval）只读引用
+    ///
+    /// 供 Portal API 查询当前加载的 transform 规则列表。
+    /// 返回的是构造时传入的 core_eval 快照，不反映热重载后的变更。
+    pub fn core_eval(&self) -> &[JsonValue] {
+        &self.core_eval
     }
 
     /// 生成下一个 FactId
@@ -272,6 +300,18 @@ impl SessionApi {
     /// 返回当前活跃 SSE 连接数（用于监控/测试）
     pub fn sse_connection_count(&self) -> u64 {
         self.sse_connections.load(Ordering::SeqCst)
+    }
+
+    /// 返回当前活跃会话数（P2-10：语义修正）
+    ///
+    /// 与 `sse_connection_count()` 的区别：
+    /// - `sse_connection_count`：SSE 连接数（一个会话可能无 SSE 或多 SSE）
+    /// - `active_session_count`：真实活跃会话数（SessionManager 内部 atomic 计数）
+    ///
+    /// Portal summary 应使用此方法而非 SSE 连接数。
+    pub async fn active_session_count(&self) -> u64 {
+        let mgr = self.sessions.lock().await;
+        mgr.len() as u64
     }
 
     /// 启动后台 reaper 任务，定期清理过期和已结束的会话
@@ -467,6 +507,7 @@ fn tcb_to_serde(v: &JsonValue) -> serde_json::Value {
     }
 }
 
+use crate::api::portal::{portal_anomalies, portal_search, portal_summary, portal_team};
 use async_stream::stream;
 use axum::body::Bytes;
 use axum::extract::{FromRef, Path, Query, State};
@@ -1957,6 +1998,11 @@ impl GovernanceServer {
             .route("/api/payload", post(update_payload))
             .route("/api/state", get(get_state))
             .route("/api/audit", get(get_audit))
+            // Portal 工作台端点（聚合数据，供前端使用）
+            .route("/api/portal/summary", get(portal_summary))
+            .route("/api/portal/anomalies", get(portal_anomalies))
+            .route("/api/portal/team", get(portal_team))
+            .route("/api/search", get(portal_search))
             // 多会话模式路由
             .route("/api/sessions", post(create_session).get(list_sessions))
             .route(

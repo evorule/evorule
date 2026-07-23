@@ -299,7 +299,9 @@ impl Auditor {
             return false;
         }
         if self.auto_verify_interval > 1
-            && self.audit_new_count % self.auto_verify_interval as u64 != 0
+            && !self
+                .audit_new_count
+                .is_multiple_of(self.auto_verify_interval as u64)
         {
             return false;
         }
@@ -336,6 +338,14 @@ impl Auditor {
     /// 获取审计条目
     pub fn entries(&self) -> &[AuditEntry] {
         &self.entries
+    }
+
+    /// 获取当前审计链的末尾哈希
+    ///
+    /// 返回最后一条审计条目的链哈希，初始为 `"genesis"`。
+    /// 可用于快速获取审计链状态，无需解析 `report()` 的 JSON。
+    pub fn last_hash(&self) -> &str {
+        &self.last_hash
     }
 
     /// 生成审计报告（JSON 格式）

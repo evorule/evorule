@@ -490,9 +490,7 @@ impl WalWriter {
         loop {
             let rotated_path = Self::build_rotated_path(&path_buf, sequence);
             if !rotated_path.exists() {
-                if sequence > 0 {
-                    sequence -= 1;
-                }
+                sequence = sequence.saturating_sub(1);
                 break;
             }
             sequence += 1;

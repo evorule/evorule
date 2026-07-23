@@ -25,12 +25,57 @@
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
 徽章说明:
+
 - 🆕 新增
 - 🔄 变更
 - 🐛 修复
 - 🗑 弃用
 - ⚠️ Breaking Change
 - 🔒 安全
+
+---
+
+## [0.1.0-alpha.1] - 2026-07-20
+
+**First Public Preview / 公开基座。**
+
+⚠️ **不承诺 API 稳定**。这是 0.1.0 系列的开端,真正的 `v0.1.0` (production) 在 0.2.0 之后单独发。
+
+### 🆕 新增
+
+- **公开基座** — 第一次 push 到 Gitee 公开仓库
+- **ROADMAP.md** — 公开路线图(3 圈战略 / 4 阶段时间表)
+- **STATUS.md** — 公开当前状态(知道能跑什么 / 不能跑什么)
+- **docs/PLAN_v0.1.0-alpha.md** — 阶段 0 → 阶段 4 发版计划
+
+### 🔄 变更
+
+- **README.md 顶部加 alpha banner** — 显式标注"不是 production-ready"
+- **CHANGELOG.md** — 加 v0.1.0-alpha.1 段(本段)
+- **SECURITY.md** — 加 supported versions 段
+- **`.gitee/ISSUE_TEMPLATE.md`** — bug_report + feature_request 模板
+
+### 🔒 安全
+
+- **M1 Bearer token** — `--auth-token` / `EVORULE_AUTH_TOKEN`,非 loopback 启动警告
+- **SECURITY_AUDIT v0.1.0.md** — 4 medium issues 全 closed,11 LOW documented
+- **THREAT_MODEL.md** — 14 章节,7 attack trees,STRIDE per component
+- **DEPENDENCY_AUDIT v0.1.0.md** — 25 deps,0 known CVEs(cargo-audit 装不上是 rustc 太老)
+
+### 📚 文档
+
+- **`docs/benchmarks/EVAL_2026-07-20.md`** — evorule-server release 模式 30+ 端点评估(从 28 号搬,已脱敏)
+- **5 原则 DESIGN_PRINCIPLES** — 透明 / 可选 / 可控 / 可回放 / 可审计
+
+### 已知问题
+
+- ❌ **Gitee Go CI 没真跑过** — `.yml` 写了但没 push 验证
+- ❌ **跨平台 release 没真测过** — 28 号评估只跑过 Windows + localhost
+- ❌ **公开 demo 视频缺** — 有评估文档,没 GIF
+- 🟡 **L9 Kani 5 proof, 4/5 PASS + 19 proptest** — 2026-07-23 更新;4 PASS(i64 加/减不上溢、JsonValue 类型安全、状态转换有界);1 个 verify*path_no_panic 改进待 Kani 环境验证;删除 verify_domain_boolean(→proptest);新增 5 个 proptest。详见 [白皮书](文档/kani/02*形式化验证白皮书.txt)
+- ❌ **依赖自动审计缺** — `cargo-audit` 装不上(rustc 1.92 < 1.96)
+
+详见 [STATUS.md](STATUS.md) §"已知问题"。
 
 ---
 
@@ -41,7 +86,7 @@
 ### 🆕 新增
 
 - **VERSION_STRATEGY.md** (v1.1) — 生态版本号标准,12 章节
-- **5 个 validate-*.ps1 + validate-all.ps1** — SemVer / CHANGELOG / License / Cargo.lock / Tag 校验
+- **5 个 validate-\*.ps1 + validate-all.ps1** — SemVer / CHANGELOG / License / Cargo.lock / Tag 校验
 - **.gitee-ci/validate.yml** — Gitee Go 流水线
 - **.gitee/PULL_REQUEST_TEMPLATE.md** — 人类审查 checklist(分 4 档:通用 / SDK / 升 1.0 / 第三方审计)
 - **D:\evorule\文档\pre-0.1.0-checklist.md** — 发版前单一真相源
@@ -66,11 +111,11 @@
 
 ---
 
-## [未发布] - v6.1.0
+## [未发布] - 0.2.0
 
 ### 🆕 新增
 
-- **TypeScript SDK** (`@evorule/sdk` v6.0.0) - 19 个 HTTP 端点完整封装
+- **TypeScript SDK** (`@evorule/sdk` 0.1.0-alpha.1) - 19 个 HTTP 端点完整封装
   - `EvoruleClient` + `Session` + `Event` 类
   - SSE 事件流订阅
   - 5 种异常类型(EvoruleError / AuthenticationError / SessionNotFoundError / SessionClosedError / CommandError)
@@ -145,10 +190,12 @@
 早期 Python 版本,作为 EvoRule Rust 版的设计来源。
 
 **API 升级**:
+
 - `Domain.__hash__()` - 新增哈希方法
 - License 从 Apache-2.0 更新为 AGPL-3.0-or-later
 
 **文档**:
+
 - `CLA-individual.md` - 个人贡献者协议
 - `COMMERCIAL_EXEMPTION.md` - 商业豁免协议说明
 - `FREE_COMMERCIAL_LICENSE.md` - 免费商业许可说明
@@ -157,6 +204,7 @@
 - `docs/licensing/` - 许可证 FAQ
 
 **修复**:
+
 - 统一版本号为 0.2.0b0
 - 移除 `evorule_quality_cache` 从 Git 追踪
 
@@ -166,16 +214,19 @@
 
 ## 未来规划
 
-### v6.1(近期)
+### 0.2.0(近期)
+
 - 真实 LLM 集成(OpenAI 兼容协议)
 - Tier 1 完整 Kani 验证
 - 移除过时的 `replay` API 数组格式(统一为 `{"facts": []}`)
 
-### v6.2(中期)
+### 0.3.0(中期)
+
 - Cluster 多反应器 → Raft 共识
 - 业务规则 DSL v2(更可读)
 
-### v7.0(远期)
+### 1.0.0(远期)
+
 - 反应式规则(LLM 生成 + 规则自动反应)
 
 ---

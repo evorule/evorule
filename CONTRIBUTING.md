@@ -20,7 +20,7 @@
 # Contributing to EvoRule
 
 **Project**: EvoRule — Reactive Execution Engine
-**Version**: v6.0
+**Version**: 0.1.0-alpha.1
 **Last updated**: 2026-07-19
 
 > 🇨🇳 **中文版贡献指南见 [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md)。**
@@ -36,6 +36,7 @@
 ❌ **Do NOT push business logic into `tier0-tcb`**
 
 **Why**:
+
 - The larger the TCB, the harder it is to formally verify
 - TCB changes = constitution changes — must pass build.rs gates + Kani
 - Business logic should be JSON data loaded at runtime
@@ -46,6 +47,7 @@
 ❌ **Do NOT embed LLM / business rules / workflows inside `evorule`**
 
 **Why**:
+
 - Mechanism layer is independently verifiable
 - Application layer can evolve independently (LLM upgrade doesn't touch evorule)
 - The HTTP + JSON contract is public, cross-language
@@ -56,6 +58,7 @@
 ❌ **Do NOT introduce non-JSON data formats (binary, protobuf, msgpack) in the system**
 
 **Why**:
+
 - Transparency, explainability, and auditability all stem from JSON
 - `git diff` = audit, `grep` = query, JSONL = time machine
 - Business can be read, written, and version-controlled
@@ -66,6 +69,7 @@
 ❌ **Do NOT introduce "internal state changes without a cause"**
 
 **Why**:
+
 - `rewind` / `replay` / `diff` are built on the causal chain
 - Auditing, debugging, and dispute resolution all depend on it
 
@@ -77,13 +81,16 @@ Use [Gitee Issues](https://gitee.com/evorulelab/evorule/issues) (preferred) or
 GitHub Issues for international contributors.
 
 **Report template**:
+
 ```markdown
 **Environment**:
+
 - OS: [e.g. Windows 11 / Ubuntu 22.04]
 - Rust: [e.g. 1.74]
-- evorule version: [e.g. v6.0.0]
+- evorule version: [e.g. 0.1.0-alpha.1]
 
 **Steps to reproduce**:
+
 1. ...
 2. ...
 
@@ -104,6 +111,7 @@ GitHub Issues for international contributors.
 Also use Issues with the `enhancement` label.
 
 **Template**:
+
 ```markdown
 **Problem**: What's wrong with the current approach?
 **Proposed solution**: Brief description
@@ -162,6 +170,7 @@ test(e2e): add core constitution smoke test
 - Corporate contributors: contact evorulelab@gmail.com
 
 **Why CLA?**
+
 - Enable commercial licensing (see [DUAL_LICENSE.md](DUAL_LICENSE.md))
 - Avoid contributor copyright disputes
 - AGPL-3.0 alone is not enough for commercial dual-licensing
@@ -179,6 +188,7 @@ test(e2e): add core constitution smoke test
 ### End-to-end tests
 
 Start `evorule-server` and verify 5 core scenarios:
+
 1. Health check
 2. Session lifecycle
 3. `set` + `increment` + `state` (constitution core)

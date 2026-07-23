@@ -19,7 +19,29 @@
 
 # 安全漏洞报告政策
 
-**最后更新**: 2026-07-19
+**最后更新**: 2026-07-20
+
+## ⚠️ Supported Versions / 支持的版本
+
+| 版本 | 支持状态 | 说明 |
+|---|---|---|
+| `v0.1.0-alpha.x` | ✅ Supported | 公开基座阶段 |
+| `v0.1.0` (production) | ⏳ Pending | 0.2.0 后发,届时成为主支持线 |
+| `v6.0.x` (内部旧版) | ❌ EOL | 已退役,无 Gitee 撤回成本 |
+| `< v0.1.0-alpha.1` | ❌ Unsupported | 公开仓库之前的 commit 不维护 |
+
+**alpha 阶段承诺**:
+- Critical / High 漏洞:60 天内修
+- Medium / Low 漏洞:推迟到 0.2.0
+- 安全公告:修完后 30 天内公开披露(经协调)
+
+**1.0.0 之后承诺**(届时更新本文档):
+- Critical:7 天
+- High:30 天
+- Medium:90 天
+- Low:next release
+
+---
 
 ## 报告安全漏洞
 

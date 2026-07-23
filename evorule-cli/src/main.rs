@@ -91,9 +91,17 @@ fn main() -> ExitCode {
     init_tracing();
 
     match cli.command {
-        Command::Run { rules_dir, payload, payload_file, output } => {
-            run_rules(&rules_dir, payload.as_deref(), payload_file.as_deref(), output.as_deref())
-        }
+        Command::Run {
+            rules_dir,
+            payload,
+            payload_file,
+            output,
+        } => run_rules(
+            &rules_dir,
+            payload.as_deref(),
+            payload_file.as_deref(),
+            output.as_deref(),
+        ),
         Command::Replay { fact_log } => replay_facts(&fact_log),
         Command::Diff { a, b } => diff_facts(&a, &b),
         Command::Validate { rules_dir } => validate_rules(&rules_dir),
@@ -111,15 +119,18 @@ fn init_tracing() {
 /// 加载规则目录,合并 transform 列表
 fn load_rules(rules_dir: &Path) -> Result<Vec<TcbValue>, String> {
     if !rules_dir.exists() {
-        return Err(format!("Rules directory does not exist: {}", rules_dir.display()));
+        return Err(format!(
+            "Rules directory does not exist: {}",
+            rules_dir.display()
+        ));
     }
     if !rules_dir.is_dir() {
         return Err(format!("Not a directory: {}", rules_dir.display()));
     }
 
     let mut all_transforms = Vec::new();
-    let entries = fs::read_dir(rules_dir)
-        .map_err(|e| format!("Failed to read directory: {}", e))?;
+    let entries =
+        fs::read_dir(rules_dir).map_err(|e| format!("Failed to read directory: {}", e))?;
 
     let mut file_count = 0;
     for entry in entries {
@@ -160,13 +171,14 @@ fn load_rules(rules_dir: &Path) -> Result<Vec<TcbValue>, String> {
     if file_count == 0 {
         return Err(format!("No .json files found in {}", rules_dir.display()));
     }
-    info!(files = file_count, transforms = all_transforms.len(), "Rules loaded");
+    info!(
+        files = file_count,
+        transforms = all_transforms.len(),
+        "Rules loaded"
+    );
 
     // 转换为 TCB 类型
-    let tcb_transforms: Vec<TcbValue> = all_transforms
-        .into_iter()
-        .map(json_to_tcb)
-        .collect();
+    let tcb_transforms: Vec<TcbValue> = all_transforms.into_iter().map(json_to_tcb).collect();
     Ok(tcb_transforms)
 }
 
@@ -198,8 +210,8 @@ fn json_to_tcb(v: JsonValue) -> TcbValue {
 fn parse_initial_payload(s: Option<&str>) -> Result<TcbValue, String> {
     match s {
         Some(p) => {
-            let json: JsonValue = serde_json::from_str(p)
-                .map_err(|e| format!("Invalid payload JSON: {}", e))?;
+            let json: JsonValue =
+                serde_json::from_str(p).map_err(|e| format!("Invalid payload JSON: {}", e))?;
             Ok(json_to_tcb(json))
         }
         None => Ok(TcbValue::object(BTreeMap::new())),
@@ -252,7 +264,10 @@ fn run_rules(
         let instr = json_to_tcb(instr_json);
 
         match execute_transition(&transforms, &instr, &payload, &[]) {
-            Ok(TransitionResult::State { new_payload, new_queue }) => {
+            Ok(TransitionResult::State {
+                new_payload,
+                new_queue,
+            }) => {
                 payload = new_payload;
                 // 把 new_queue 转回 serde_json
                 for item in new_queue {

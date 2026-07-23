@@ -44,17 +44,27 @@ try {
         }
     }
 
-    # 3. All tags format check
+    # 3. Version tags format check (only check 'v'-prefixed tags)
+    # Non-version tags (e.g. checkpoint-*) are development markers, not releases
     $allTags = git tag --list
     if ($allTags.Count -eq 0) {
         Write-Host "[INFO] No git tags yet" -ForegroundColor Cyan
     } else {
-        $badTags = @($allTags | Where-Object { $_ -notmatch $tagPattern })
-        if ($badTags.Count -gt 0) {
-            Write-Host "[FAIL] Bad tag format: $($badTags -join ', ')" -ForegroundColor Red
-            $failed = $true
+        $versionTags = @($allTags | Where-Object { $_ -match '^v' })
+        $nonVersionTags = @($allTags | Where-Object { $_ -notmatch '^v' })
+        if ($nonVersionTags.Count -gt 0) {
+            Write-Host "[INFO] Non-version tags (ignored): $($nonVersionTags -join ', ')" -ForegroundColor DarkGray
+        }
+        if ($versionTags.Count -eq 0) {
+            Write-Host "[INFO] No version tags (v*) yet" -ForegroundColor Cyan
         } else {
-            Write-Host "[OK]   All $($allTags.Count) tags have 'vX.Y.Z' format" -ForegroundColor Green
+            $badTags = @($versionTags | Where-Object { $_ -notmatch $tagPattern })
+            if ($badTags.Count -gt 0) {
+                Write-Host "[FAIL] Bad version tag format: $($badTags -join ', ')" -ForegroundColor Red
+                $failed = $true
+            } else {
+                Write-Host "[OK]   All $($versionTags.Count) version tags have 'vX.Y.Z' format" -ForegroundColor Green
+            }
         }
     }
 

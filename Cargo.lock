@@ -2657,6 +2657,7 @@ dependencies = [
  "clap",
  "flate2",
  "futures-core",
+ "governor",
  "notify",
  "prometheus",
  "reqwest",

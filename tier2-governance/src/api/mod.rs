@@ -7,8 +7,14 @@
 
 pub mod auth;
 pub mod hot_reload;
+pub mod portal;
 pub mod server;
 pub mod session;
 
+pub use portal::{
+    portal_anomalies, portal_search, portal_summary, portal_team, AnomaliesResponse, AnomalyItem,
+    AuditChainStatus, PortalSummary, RuleItem, SearchQuery, SearchResult, TeamMember, TeamResponse,
+    TriggerItem, UserInfo,
+};
 pub use server::{AppState, GovernanceApi, GovernanceServer, SessionApi};
 pub use session::{Session, SessionError, SessionId, SessionManager};

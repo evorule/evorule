@@ -106,5 +106,99 @@ if ($failed) {
     Write-Host "`n[RESULT] FAILED" -ForegroundColor Red
     exit 1
 }
+
+# 4. Document version consistency (VERSION_STRATEGY §10)
+# Cargo.toml is the "source of truth"; docs must not reference retired versions.
+if (-not $Quiet) { Write-Host "`n=== Document Version Consistency ===" -ForegroundColor Cyan }
+
+$canonicalVersion = $versions['evorule-workspace']  # e.g. "0.1.0"
+
+# 4a. README.md bibtex version = {X} must match canonical
+$readmePath = "$evoruleRoot\README.md"
+if (Test-Path $readmePath) {
+    $readmeContent = Get-Content $readmePath -Raw -Encoding UTF8
+    if ($readmeContent -match 'version\s*=\s*\{([^}]+)\}') {
+        $bibtexVersion = $Matches[1].Trim()
+        if ($bibtexVersion -notlike "$canonicalVersion*") {
+            Write-Host "[FAIL] README.md bibtex version '$bibtexVersion' != Cargo.toml '$canonicalVersion'" -ForegroundColor Red
+            $failed = $true
+        } else {
+            Write-Host "[OK]   README.md bibtex version = $bibtexVersion" -ForegroundColor Green
+        }
+    }
+}
+
+# 4b. CONTRIBUTING.md Version: X must match canonical
+$contribPath = "$evoruleRoot\CONTRIBUTING.md"
+if (Test-Path $contribPath) {
+    $contribContent = Get-Content $contribPath -Raw -Encoding UTF8
+    if ($contribContent -match '\*\*Version\*\*:\s*(.+)') {
+        $contribVersion = $Matches[1].Trim()
+        if ($contribVersion -notlike "$canonicalVersion*") {
+            Write-Host "[FAIL] CONTRIBUTING.md Version '$contribVersion' != Cargo.toml '$canonicalVersion'" -ForegroundColor Red
+            $failed = $true
+        } else {
+            Write-Host "[OK]   CONTRIBUTING.md Version = $contribVersion" -ForegroundColor Green
+        }
+    }
+}
+
+# 4c. CHANGELOG.md first entry version must be > canonical (next version)
+# The first "## [...] - X.Y.Z" line in CHANGELOG is the latest/unreleased version
+$changelogPath = "$evoruleRoot\CHANGELOG.md"
+if (Test-Path $changelogPath) {
+    $changelogContent = [System.IO.File]::ReadAllText($changelogPath, [System.Text.Encoding]::UTF8)
+    # Match first "## [something] - version" heading (avoids Chinese encoding issues)
+    if ($changelogContent -match '##\s*\[[^\]]+\]\s*-\s*(\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?)') {
+        $unreleasedVersion = $Matches[1].Trim()
+        if ($unreleasedVersion -match '^(\d+)\.(\d+)') {
+            $unMajor = [int]$Matches[1]
+            $unMinor = [int]$Matches[2]
+            if ($canonicalVersion -match '^(\d+)\.(\d+)') {
+                $canMajor = [int]$Matches[1]
+                $canMinor = [int]$Matches[2]
+                if ($unMajor -lt $canMajor -or ($unMajor -eq $canMajor -and $unMinor -le $canMinor)) {
+                    Write-Host "[FAIL] CHANGELOG first entry '$unreleasedVersion' <= current '$canonicalVersion'" -ForegroundColor Red
+                    $failed = $true
+                } else {
+                    Write-Host "[OK]   CHANGELOG first entry = $unreleasedVersion (> $canonicalVersion)" -ForegroundColor Green
+                }
+            }
+        }
+    }
+}
+
+# 4d. Retired version scan — no v6.x / v7.0 in non-historical docs
+# CHANGELOG historical sections (## [6.0.0] etc.) are exempt
+$retiredPatterns = @('v6\.0', 'v6\.1', 'v6\.2', 'v7\.0', '6\.0\.0')
+$docFiles = @(
+    @{ Path = "$evoruleRoot\README.md"; Name = 'README.md' }
+    @{ Path = "$evoruleRoot\CONTRIBUTING.md"; Name = 'CONTRIBUTING.md' }
+    @{ Path = "$evoruleRoot\ROADMAP.md"; Name = 'ROADMAP.md' }
+    @{ Path = "$evoruleRoot\VERSION_STRATEGY.md"; Name = 'VERSION_STRATEGY.md' }
+)
+$retiredFound = $false
+foreach ($doc in $docFiles) {
+    if (-not (Test-Path $doc.Path)) { continue }
+    $lines = Get-Content $doc.Path -Encoding UTF8
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        foreach ($pattern in $retiredPatterns) {
+            if ($line -match $pattern) {
+                Write-Host "[FAIL] $($doc.Name):$($i+1) contains retired version pattern '$pattern': $($line.Trim())" -ForegroundColor Red
+                $failed = $true
+                $retiredFound = $true
+            }
+        }
+    }
+}
+if (-not $retiredFound) {
+    Write-Host "[OK]   No retired version references (v6.x/v7.0) in docs" -ForegroundColor Green
+}
+
+if ($failed) {
+    Write-Host "`n[RESULT] FAILED" -ForegroundColor Red
+    exit 1
+}
 Write-Host "`n[RESULT] PASSED" -ForegroundColor Green
 exit 0

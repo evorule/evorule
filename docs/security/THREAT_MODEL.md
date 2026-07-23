@@ -19,12 +19,12 @@ industries).
 
 ## 0. 怎么读这份文档
 
-| 你是谁 | 读哪些章节 |
-|---|---|
-| **工程师**(改代码前) | §3 资产 + §4 信任边界 + §6 STRIDE per component |
-| **安全 reviewer**(独立 review) | §3 + §4 + §6 + §7 attack trees + §8 mitigations |
-| **Circle 2 合规用户**(医疗/律所/金融) | §1 一句话 + §2 关键洞察 + §9 残留风险 |
-| **监管** | §1 + §2 + §9 + §10 验收标准 |
+| 你是谁                                | 读哪些章节                                      |
+| ------------------------------------- | ----------------------------------------------- |
+| **工程师**(改代码前)                  | §3 资产 + §4 信任边界 + §6 STRIDE per component |
+| **安全 reviewer**(独立 review)        | §3 + §4 + §6 + §7 attack trees + §8 mitigations |
+| **Circle 2 合规用户**(医疗/律所/金融) | §1 一句话 + §2 关键洞察 + §9 残留风险           |
+| **监管**                              | §1 + §2 + §9 + §10 验收标准                     |
 
 ---
 
@@ -44,13 +44,13 @@ industries).
 
 源自 [`D:\evo-agent\DESIGN_PRINCIPLES.md`](../../evo-agent/DESIGN_PRINCIPLES.md):
 
-| 原则 | 在威胁模型中怎么体现 |
-|---|---|
-| **透明** | 所有威胁 + mitigations 都公开,无 hidden 控制 |
-| **可选** | 用户能选 active/candidate/blocked 三档 |
-| **可控** | 关键操作必须经用户批准,blocked 永不允许 |
-| **可回放** | 任何决策可以 replay / diff / rewind |
-| **可审计** | 每个决策留 blake3 哈希链 fact log |
+| 原则       | 在威胁模型中怎么体现                         |
+| ---------- | -------------------------------------------- |
+| **透明**   | 所有威胁 + mitigations 都公开,无 hidden 控制 |
+| **可选**   | 用户能选 active/candidate/blocked 三档       |
+| **可控**   | 关键操作必须经用户批准,blocked 永不允许      |
+| **可回放** | 任何决策可以 replay / diff / rewind          |
+| **可审计** | 每个决策留 blake3 哈希链 fact log            |
 
 ### 2.2 "EvoRule 没有智能,只有执行的最佳实践"
 
@@ -63,12 +63,12 @@ industries).
 
 ### 2.3 "Framework vs Application" 解耦
 
-| 层 | 威胁模型重点 |
-|---|---|
-| **evorule 机制层** (tier0/1/2) | 完整性、确定性、形式化验证、可审计性 |
-| **evo-agent 应用层** | 工具权限、LLM prompt injection、SSRF |
-| **evorule-cli** | 静态二进制、无网络、reproducible build |
-| **evorule-application**(time-travel-debugger 等) | UI 注入、CSRF、来源验证 |
+| 层                                               | 威胁模型重点                           |
+| ------------------------------------------------ | -------------------------------------- |
+| **evorule 机制层** (tier0/1/2)                   | 完整性、确定性、形式化验证、可审计性   |
+| **evo-agent 应用层**                             | 工具权限、LLM prompt injection、SSRF   |
+| **evorule-cli**                                  | 静态二进制、无网络、reproducible build |
+| **evorule-application**(time-travel-debugger 等) | UI 注入、CSRF、来源验证                |
 
 **应用层破坏,不会污染机制层**(机制层 100% 独立)。这降低了风险半径。
 
@@ -78,18 +78,18 @@ industries).
 
 按重要性排序。**资产 = 任何"如果被破坏会让 EvoRule 失去用户价值"的东西**。
 
-| # | 资产 | 重要性 | 位置 | 备份策略 |
-|---|---|---|---|---|
-| **A1** | **Fact log + blake3 哈希链** | 🔴 **Crown jewel**(Circle 2 卖点) | `tier1-reactor/facts_log.rs` + WAL | WAL 持久化 + 周期性 snapshot |
-| **A2** | **core_eval.json**(系统宪法) | 🔴 **Critical**(破坏 = 任意代码执行) | 加载时从 disk | build.rs 编译时门禁(无运行时热更新) |
-| **A3** | **agent.json / rules/*.json** | 🟡 High(用户业务) | evo-agent 加载 | 备份靠用户 |
-| **A4** | **LLM API key** | 🟡 High(泄露 = 经济损失) | 环境变量 | 用户管理 + 不入 log |
-| **A5** | **WAL 文件**(Write-Ahead Log) | 🟡 High(破坏 = 数据丢失) | `tier1-reactor/wal.rs` | 周期性 rotate |
-| **A6** | **Audit 报告** | 🟡 Medium | `tier2-governance/auditor.rs` | 由 fact log 派生 |
-| **A7** | **Reactor state(payload)** | 🟢 Medium | in-memory | snapshot + WAL |
-| **A8** | **工具输出**(file_read / shell_exec / http_get) | 🟢 Medium | 各 tool 的返回 | 短期(过后不再用) |
-| **A9** | **时间旅行 debugger 数据**(session 历史) | 🟢 Low | evorule-server | 复用 A1 |
-| **A10** | **共享 facts**(`shared.*` namespace) | 🟢 Low | `tier2-governance/shared_facts_log.rs` | A1 派生 |
+| #       | 资产                                            | 重要性                               | 位置                                   | 备份策略                            |
+| ------- | ----------------------------------------------- | ------------------------------------ | -------------------------------------- | ----------------------------------- |
+| **A1**  | **Fact log + blake3 哈希链**                    | 🔴 **Crown jewel**(Circle 2 卖点)    | `tier1-reactor/facts_log.rs` + WAL     | WAL 持久化 + 周期性 snapshot        |
+| **A2**  | **core_eval.json**(系统宪法)                    | 🔴 **Critical**(破坏 = 任意代码执行) | 加载时从 disk                          | build.rs 编译时门禁(无运行时热更新) |
+| **A3**  | **agent.json / rules/\*.json**                  | 🟡 High(用户业务)                    | evo-agent 加载                         | 备份靠用户                          |
+| **A4**  | **LLM API key**                                 | 🟡 High(泄露 = 经济损失)             | 环境变量                               | 用户管理 + 不入 log                 |
+| **A5**  | **WAL 文件**(Write-Ahead Log)                   | 🟡 High(破坏 = 数据丢失)             | `tier1-reactor/wal.rs`                 | 周期性 rotate                       |
+| **A6**  | **Audit 报告**                                  | 🟡 Medium                            | `tier2-governance/auditor.rs`          | 由 fact log 派生                    |
+| **A7**  | **Reactor state(payload)**                      | 🟢 Medium                            | in-memory                              | snapshot + WAL                      |
+| **A8**  | **工具输出**(file_read / shell_exec / http_get) | 🟢 Medium                            | 各 tool 的返回                         | 短期(过后不再用)                    |
+| **A9**  | **时间旅行 debugger 数据**(session 历史)        | 🟢 Low                               | evorule-server                         | 复用 A1                             |
+| **A10** | **共享 facts**(`shared.*` namespace)            | 🟢 Low                               | `tier2-governance/shared_facts_log.rs` | A1 派生                             |
 
 **关键洞察:**
 
@@ -169,27 +169,27 @@ industries).
 
 ### 4.2 信任级别定义
 
-| 级别 | 含义 | EvoRule 例子 |
-|---|---|---|
-| **🔴 UNTRUSTED** | 任何输入都视为攻击 | LLM 响应、用户输入的 JSON、外部 HTTP 响应、CLI args |
-| **🟡 SEMI-TRUSTED** | 默认信,但要验证 | 配置文件、WAL 文件、build artifact、docs.rs / crates.io |
-| **🟢 TRUSTED** | 系统内部代码,认证通过 | tier0-tcb / tier1-reactor / tier2-governance 自身 |
-| **🟢 FORMALLY VERIFIED** | 数学证明正确 | tier0-tcb 5 个 Kani proofs(3 个是 stub,见 SECURITY_AUDIT L9) |
+| 级别                     | 含义                  | EvoRule 例子                                                 |
+| ------------------------ | --------------------- | ------------------------------------------------------------ |
+| **🔴 UNTRUSTED**         | 任何输入都视为攻击    | LLM 响应、用户输入的 JSON、外部 HTTP 响应、CLI args          |
+| **🟡 SEMI-TRUSTED**      | 默认信,但要验证       | 配置文件、WAL 文件、build artifact、docs.rs / crates.io      |
+| **🟢 TRUSTED**           | 系统内部代码,认证通过 | tier0-tcb / tier1-reactor / tier2-governance 自身            |
+| **🟢 FORMALLY VERIFIED** | 数学证明正确          | tier0-tcb 5 个 Kani proofs(3 个是 stub,见 SECURITY_AUDIT L9) |
 
 ### 4.3 信任边界清单
 
-| # | 边界 | 方向 | 当前认证 | 威胁等级 | 详见 |
-|---|---|---|---|---|---|
-| **B1** | User → evo-agent CLI | 入 | 无(local process) | 🟢 LOW | §6.1 |
-| **B2** | evo-agent → evorule-server (HTTP localhost) | 出 | 🟢 **Bearer token**(`--auth-token` / `EVORULE_AUTH_TOKEN`,M1 closed 2026-07-20) | 🟢 LOW (default dev mode = no auth, with warning) |* | 🟡 MEDIUM | §6.1,§7.1 |
-| **B3** | evo-agent → LLM provider (HTTPS) | 出 | Bearer token | 🟢 LOW(env) | §6.1,§7.2 |
-| **B4** | evo-agent → External HTTP (HTTPS) | 出 | 无,但有 SSRF 防护 | 🟢 LOW | §6.1,§7.3 |
-| **B5** | evorule-server → filesystem (state/) | 出 | local process | 🟢 LOW | §6.2,§7.4 |
-| **B6** | tier2-governance → tier1-reactor | 内 | Rust 类型系统 + Kani | 🟢 LOW | §6.2 |
-| **B7** | tier1-reactor → tier0-tcb | 内 | Rust 类型系统 + Kani | 🟢 LOW | §6.2,§6.3 |
-| **B8** | Browser → evorule-server (/debugger/) | 入 | 🟢 **Bearer token (M1 closed 2026-07-20)** | 🟢 LOW | 🟡 MEDIUM | §6.4,§7.5 |
-| **B9** | LLM Provider → evo-agent | 入 | HTTPS + cert | 🟢 LOW | §6.1,§7.2 |
-| **B10** | 共享 facts cross-session | 内 | fact 引用 + causable | 🟡 MEDIUM(M3) | §6.2,§7.6 |
+| #       | 边界                                        | 方向 | 当前认证                                                                        | 威胁等级                                          | 详见      |
+| ------- | ------------------------------------------- | ---- | ------------------------------------------------------------------------------- | ------------------------------------------------- | --------- | --------- | --------- |
+| **B1**  | User → evo-agent CLI                        | 入   | 无(local process)                                                               | 🟢 LOW                                            | §6.1      |
+| **B2**  | evo-agent → evorule-server (HTTP localhost) | 出   | 🟢 **Bearer token**(`--auth-token` / `EVORULE_AUTH_TOKEN`,M1 closed 2026-07-20) | 🟢 LOW (default dev mode = no auth, with warning) | \*        | 🟡 MEDIUM | §6.1,§7.1 |
+| **B3**  | evo-agent → LLM provider (HTTPS)            | 出   | Bearer token                                                                    | 🟢 LOW(env)                                       | §6.1,§7.2 |
+| **B4**  | evo-agent → External HTTP (HTTPS)           | 出   | 无,但有 SSRF 防护                                                               | 🟢 LOW                                            | §6.1,§7.3 |
+| **B5**  | evorule-server → filesystem (state/)        | 出   | local process                                                                   | 🟢 LOW                                            | §6.2,§7.4 |
+| **B6**  | tier2-governance → tier1-reactor            | 内   | Rust 类型系统 + Kani                                                            | 🟢 LOW                                            | §6.2      |
+| **B7**  | tier1-reactor → tier0-tcb                   | 内   | Rust 类型系统 + Kani                                                            | 🟢 LOW                                            | §6.2,§6.3 |
+| **B8**  | Browser → evorule-server (/debugger/)       | 入   | 🟢 **Bearer token (M1 closed 2026-07-20)**                                      | 🟢 LOW                                            | 🟡 MEDIUM | §6.4,§7.5 |
+| **B9**  | LLM Provider → evo-agent                    | 入   | HTTPS + cert                                                                    | 🟢 LOW                                            | §6.1,§7.2 |
+| **B10** | 共享 facts cross-session                    | 内   | fact 引用 + causable                                                            | 🟡 MEDIUM(M3)                                     | §6.2,§7.6 |
 
 ---
 
@@ -315,65 +315,65 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ### 6.1 evo-agent(应用层,UNTRUSTED input from LLM)
 
-| STRIDE | 威胁 | 当前 mitigation | 残留风险 |
-|---|---|---|---|
-| **S** | LLM 假冒 evo-agent 调 LLM | Bearer token in env | 🟢 LOW |
-| **S** | LLM 假冒 user 调 blocked tool | blocked 永不允许,即使 `approved=true` | 🟢 LOW |
-| **T** | LLM 改 core_eval.json | TCB 不读 LLM 改的东西;只读编译时门禁 | 🟢 LOW |
-| **T** | LLM 改 audit log | log path 不在 workdir;server-side 写 | 🟢 LOW |
-| **R** | LLM 说"我没调过 rm" | log 留痕(0.2.0:M3 完善) | 🟡 MEDIUM (M3) |
-| **I** | LLM 泄露 user 私有数据给 external | SSRF blocklist + workdir sandbox | 🟢 LOW |
-| **D** | LLM 触发 shell_exec 死循环 | 60s timeout | 🟢 LOW |
-| **D** | LLM 触发 file_read 10GB 文件 | 10MB size limit | 🟢 LOW |
-| **E** | LLM 用 `sudo` / `bash` | blocked list | 🟢 LOW |
-| **E** | LLM 通过 symlink 逃逸 workdir | canonicalize() 检查 | 🟢 LOW |
-| **E** | LLM 改 agent.json.tools 注入未知工具 | **🟡 M4**(未校验) | 🟡 MEDIUM (M4) |
+| STRIDE | 威胁                                 | 当前 mitigation                       | 残留风险       |
+| ------ | ------------------------------------ | ------------------------------------- | -------------- |
+| **S**  | LLM 假冒 evo-agent 调 LLM            | Bearer token in env                   | 🟢 LOW         |
+| **S**  | LLM 假冒 user 调 blocked tool        | blocked 永不允许,即使 `approved=true` | 🟢 LOW         |
+| **T**  | LLM 改 core_eval.json                | TCB 不读 LLM 改的东西;只读编译时门禁  | 🟢 LOW         |
+| **T**  | LLM 改 audit log                     | log path 不在 workdir;server-side 写  | 🟢 LOW         |
+| **R**  | LLM 说"我没调过 rm"                  | log 留痕(0.2.0:M3 完善)               | 🟡 MEDIUM (M3) |
+| **I**  | LLM 泄露 user 私有数据给 external    | SSRF blocklist + workdir sandbox      | 🟢 LOW         |
+| **D**  | LLM 触发 shell_exec 死循环           | 60s timeout                           | 🟢 LOW         |
+| **D**  | LLM 触发 file_read 10GB 文件         | 10MB size limit                       | 🟢 LOW         |
+| **E**  | LLM 用 `sudo` / `bash`               | blocked list                          | 🟢 LOW         |
+| **E**  | LLM 通过 symlink 逃逸 workdir        | canonicalize() 检查                   | 🟢 LOW         |
+| **E**  | LLM 改 agent.json.tools 注入未知工具 | **🟡 M4**(未校验)                     | 🟡 MEDIUM (M4) |
 
 ### 6.2 evorule-server / tier1-reactor / tier2-governance(机制层)
 
-| STRIDE | 威胁 | 当前 mitigation | 残留风险 |
-|---|---|---|---|
-| **S** | Localhost 进程假冒 user 调 API | 🟢 M1 closed (Bearer token optional, with warning) | 🟢 LOW |
-| **T** | 攻击者改 WAL 文件 | blake3 链 verify 失败 → 拒绝 | 🟢 LOW(M2 done) |
-| **T** | 攻击者改 fact | 同上(每个 fact 都有 hash) | 🟢 LOW |
-| **T** | 攻击者改 core_eval.json | build.rs 编译时门禁 | 🟢 LOW |
-| **R** | Admin 删 audit log 后否认 | blake3 链 verify 失败 → 不可逆 | 🟢 LOW |
-| **I** | localhost 攻击者读所有 session | 🟢 M1 closed (需要 `--auth-token` 才有写读权限) | 🟢 LOW |
-| **D** | 提交超大 payload | 1MB body limit | 🟢 LOW |
-| **D** | 并发洪泛 | 1000 并发上限 | 🟢 LOW |
-| **D** | SSE 连接耗尽 | 100 SSE 上限 | 🟢 LOW |
-| **E** | 攻击者通过 io_request 调任意 RPC | io_type 白名单(`call_external` / `call_service`) | 🟢 LOW |
-| **E** | 跨 session 读其他 session 数据 | session_id 校验 | 🟢 LOW |
+| STRIDE | 威胁                             | 当前 mitigation                                    | 残留风险        |
+| ------ | -------------------------------- | -------------------------------------------------- | --------------- |
+| **S**  | Localhost 进程假冒 user 调 API   | 🟢 M1 closed (Bearer token optional, with warning) | 🟢 LOW          |
+| **T**  | 攻击者改 WAL 文件                | blake3 链 verify 失败 → 拒绝                       | 🟢 LOW(M2 done) |
+| **T**  | 攻击者改 fact                    | 同上(每个 fact 都有 hash)                          | 🟢 LOW          |
+| **T**  | 攻击者改 core_eval.json          | build.rs 编译时门禁                                | 🟢 LOW          |
+| **R**  | Admin 删 audit log 后否认        | blake3 链 verify 失败 → 不可逆                     | 🟢 LOW          |
+| **I**  | localhost 攻击者读所有 session   | 🟢 M1 closed (需要 `--auth-token` 才有写读权限)    | 🟢 LOW          |
+| **D**  | 提交超大 payload                 | 1MB body limit                                     | 🟢 LOW          |
+| **D**  | 并发洪泛                         | 1000 并发上限                                      | 🟢 LOW          |
+| **D**  | SSE 连接耗尽                     | 100 SSE 上限                                       | 🟢 LOW          |
+| **E**  | 攻击者通过 io_request 调任意 RPC | io_type 白名单(`call_external` / `call_service`)   | 🟢 LOW          |
+| **E**  | 跨 session 读其他 session 数据   | session_id 校验                                    | 🟢 LOW          |
 
 ### 6.3 tier0-tcb(TCB,formally verified 目标)
 
-| STRIDE | 威胁 | 当前 mitigation | 残留风险 |
-|---|---|---|---|
-| **T** | 攻击者构造能 bypass invariant 的 JsonValue | Kani proofs(5 个,3 个 stub) | 🟡 LOW (L9) |
-| **R** | reactor 行为不可重放 | FactsLog append-only + core_eval 启动定 | 🟢 LOW |
-| **E** | 攻击者通过 transition 调用未授权 op | 5 个 core domain(string/integer/...)严格控制 | 🟢 LOW |
-| **D** | 整数溢出 | `verify_set_integer_safety`(Kani) | 🟢 LOW |
-| **D** | 路径解析 panic | `verify_path_no_panic`(Kani) | 🟢 LOW |
+| STRIDE | 威胁                                       | 当前 mitigation                              | 残留风险            |
+| ------ | ------------------------------------------ | -------------------------------------------- | ------------------- |
+| **T**  | 攻击者构造能 bypass invariant 的 JsonValue | Kani 4/5 PASS + 19 proptest                  | 🟢 LOW (L9 partial) |
+| **R**  | reactor 行为不可重放                       | FactsLog append-only + core_eval 启动定      | 🟢 LOW              |
+| **E**  | 攻击者通过 transition 调用未授权 op        | 5 个 core domain(string/integer/...)严格控制 | 🟢 LOW              |
+| **D**  | 整数溢出                                   | `verify_set_integer_safety`(Kani)            | 🟢 LOW              |
+| **D**  | 路径解析 panic                             | `verify_path_no_panic`(Kani)                 | 🟢 LOW              |
 
 ### 6.4 time-travel-debugger(应用层,Browser)
 
-| STRIDE | 威胁 | 当前 mitigation | 残留风险 |
-|---|---|---|---|
-| **S** | 攻击者用 XSS 假冒 user | CSP(plan) + 5 原则之"可选"(用户能选 viewer) | 🟢 LOW (M1 间接缓解 — 需 Bearer token) |M1 间接) |
-| **T** | 攻击者改 debugger.html | 单 HTML 文件本地化,无 build,用户能 diff | 🟢 LOW |
-| **R** | 攻击者改 UI 不留痕 | UI 不写 fact log(只读) | 🟢 LOW |
-| **I** | 同源攻击读其他 session data | **🟡 M1**(server 无 auth) | 🟡 MEDIUM (M1) |
-| **D** | 拖时间滑块触发 10 万 rewind | virtual scrolling + debounce | 🟡 LOW (R6) |
-| **E** | 攻击者通过 debugger 改 server state | debugger 只读 + fork 显式确认 | 🟢 LOW |
+| STRIDE | 威胁                                | 当前 mitigation                             | 残留风险                               |
+| ------ | ----------------------------------- | ------------------------------------------- | -------------------------------------- | -------- |
+| **S**  | 攻击者用 XSS 假冒 user              | CSP(plan) + 5 原则之"可选"(用户能选 viewer) | 🟢 LOW (M1 间接缓解 — 需 Bearer token) | M1 间接) |
+| **T**  | 攻击者改 debugger.html              | 单 HTML 文件本地化,无 build,用户能 diff     | 🟢 LOW                                 |
+| **R**  | 攻击者改 UI 不留痕                  | UI 不写 fact log(只读)                      | 🟢 LOW                                 |
+| **I**  | 同源攻击读其他 session data         | **🟡 M1**(server 无 auth)                   | 🟡 MEDIUM (M1)                         |
+| **D**  | 拖时间滑块触发 10 万 rewind         | virtual scrolling + debounce                | 🟡 LOW (R6)                            |
+| **E**  | 攻击者通过 debugger 改 server state | debugger 只读 + fork 显式确认               | 🟢 LOW                                 |
 
 ### 6.5 evorule-cli(独立二进制,无 AI)
 
-| STRIDE | 威胁 | 当前 mitigation | 残留风险 |
-|---|---|---|---|
-| **T** | 攻击者改 binary | SHA256 verify + reproducible build | 🟢 LOW |
-| **T** | 攻击者改 rule.json | 由 evorule 机制层校验(如果 mechanism 启用) | 🟢 LOW |
-| **E** | 攻击者通过 CLI 调任意 op | CLI 是 thin wrapper,所有权限受 evorule 控制 | 🟢 LOW |
-| **I** | 攻击者嗅探 CLI output | stdout 是 local,无网络 | 🟢 LOW |
+| STRIDE | 威胁                     | 当前 mitigation                             | 残留风险 |
+| ------ | ------------------------ | ------------------------------------------- | -------- |
+| **T**  | 攻击者改 binary          | SHA256 verify + reproducible build          | 🟢 LOW   |
+| **T**  | 攻击者改 rule.json       | 由 evorule 机制层校验(如果 mechanism 启用)  | 🟢 LOW   |
+| **E**  | 攻击者通过 CLI 调任意 op | CLI 是 thin wrapper,所有权限受 evorule 控制 | 🟢 LOW   |
+| **I**  | 攻击者嗅探 CLI output    | stdout 是 local,无网络                      | 🟢 LOW   |
 
 ---
 
@@ -654,25 +654,25 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ## 8. Mitigation 映射表(Threat → Control → Test)
 
-| 威胁 | Mitigation | 已实现? | 验证方法 | 漏洞编号 |
-|---|---|---|---|---|
-| M1 localhost 无认证 | 短:require loopback;中:Bearer token;长:Unix socket + permission | ❌ 0.2.0 | integration test | M1 |
-| M3 tool call 不写 fact | 把 call_service 写进 facts_log | ❌ 0.2.0 | integration test | M3 |
-| M4 tools 字段未校验 | from_definition 早失败 | ✅ 已实现 | unit test | M4 已 done |
-| L1 zip-slip | tar 显式 reject `..` | ❌ 0.2.0 | unit test | L1 |
-| L2 xargs chain | 文档化 | ❌ 0.2.0 | docs | L2 |
-| L3 DNS rebinding | resolve 后再 validate IP | ❌ 0.2.0 | unit test | L3 |
-| L4 TOCTOU | 同 L3 | ❌ 0.2.0 | unit test | L4 |
-| L5 168 warnings | `cargo fix --lib` | ❌ 0.2.0 | `cargo build 0 warn` | L5 |
-| L9 3 Kani stubs 写实 | 写真正的 Kani proofs | ❌ 0.3.0 | `kani verify` | L9 |
-| **M2 blake3 链** | tier2-governance/auditor.rs | ✅ **DONE** | unit test | M2 closed |
-| SSRF blocklist | 硬编码 IP 段 | ✅ done | unit test | n/a |
-| 3-layer model | 6 工具统一 | ✅ done | unit test | n/a |
-| workdir sandbox | canonicalize | ✅ done | unit test | n/a |
-| `#![forbid(unsafe_code)]` | 全栈 | ✅ done | `cargo build` | n/a |
-| `core_eval.json` 编译时门禁 | build.rs | ✅ done | unit test | n/a |
-| `WAL fsync` | `wal_fsync` 开关 | ✅ done | unit test | n/a |
-| `audit_verify` HTTP 端点 | server.rs | ✅ done | unit test | n/a |
+| 威胁                        | Mitigation                                                      | 已实现?            | 验证方法             | 漏洞编号   |
+| --------------------------- | --------------------------------------------------------------- | ------------------ | -------------------- | ---------- |
+| M1 localhost 无认证         | 短:require loopback;中:Bearer token;长:Unix socket + permission | ❌ 0.2.0           | integration test     | M1         |
+| M3 tool call 不写 fact      | 把 call_service 写进 facts_log                                  | ❌ 0.2.0           | integration test     | M3         |
+| M4 tools 字段未校验         | from_definition 早失败                                          | ✅ 已实现          | unit test            | M4 已 done |
+| L1 zip-slip                 | tar 显式 reject `..`                                            | ❌ 0.2.0           | unit test            | L1         |
+| L2 xargs chain              | 文档化                                                          | ❌ 0.2.0           | docs                 | L2         |
+| L3 DNS rebinding            | resolve 后再 validate IP                                        | ❌ 0.2.0           | unit test            | L3         |
+| L4 TOCTOU                   | 同 L3                                                           | ❌ 0.2.0           | unit test            | L4         |
+| L5 168 warnings             | `cargo fix --lib`                                               | ❌ 0.2.0           | `cargo build 0 warn` | L5         |
+| L9 Kani proofs              | 4/5 PASS + 19 proptest done; 1 proof + tier1 remaining          | 🟡 0.2.0 (partial) | `kani verify`        | L9 partial |
+| **M2 blake3 链**            | tier2-governance/auditor.rs                                     | ✅ **DONE**        | unit test            | M2 closed  |
+| SSRF blocklist              | 硬编码 IP 段                                                    | ✅ done            | unit test            | n/a        |
+| 3-layer model               | 6 工具统一                                                      | ✅ done            | unit test            | n/a        |
+| workdir sandbox             | canonicalize                                                    | ✅ done            | unit test            | n/a        |
+| `#![forbid(unsafe_code)]`   | 全栈                                                            | ✅ done            | `cargo build`        | n/a        |
+| `core_eval.json` 编译时门禁 | build.rs                                                        | ✅ done            | unit test            | n/a        |
+| `WAL fsync`                 | `wal_fsync` 开关                                                | ✅ done            | unit test            | n/a        |
+| `audit_verify` HTTP 端点    | server.rs                                                       | ✅ done            | unit test            | n/a        |
 
 ---
 
@@ -680,11 +680,11 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ### 9.1 MEDIUM(0.2.0 必须修)
 
-| # | 残留风险 | 用户影响 | 缓解(短期) |
-|---|---|---|---|
-| M1 | localhost 进程能假冒 user | 共享机器上其他 user 能读全部 session | 0.2.0 加 Bearer token;0.3.0 加 Unix socket |
-| M3 | tool call 不写 fact log | 合规 reviewer 看不到 LLM 调过什么工具 | 0.2.0 写 |
-| M4 (done) | ✅ | ✅ | ✅ |
+| #         | 残留风险                  | 用户影响                              | 缓解(短期)                                 |
+| --------- | ------------------------- | ------------------------------------- | ------------------------------------------ |
+| M1        | localhost 进程能假冒 user | 共享机器上其他 user 能读全部 session  | 0.2.0 加 Bearer token;0.3.0 加 Unix socket |
+| M3        | tool call 不写 fact log   | 合规 reviewer 看不到 LLM 调过什么工具 | 0.2.0 写                                   |
+| M4 (done) | ✅                        | ✅                                    | ✅                                         |
 
 ### 9.2 LOW(0.2.0 nice-to-have)
 
@@ -712,30 +712,30 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ## 10. 验收标准(Definition of Done — v0.2.0 之前)
 
-| Gate | 当前 | 目标 |
-|---|---|---|
-| **M1 closed** | ❌ | ✅ Bearer token on /api/* (loopback 可豁免) |
-| **M3 closed** | ❌ | ✅ tool call 落 fact log,call_service 作为新 FactType |
-| **THREAT_MODEL.md** | 🟡 draft(本文件) | 🟢 released + reviewer-signed |
-| **SECURITY_AUDIT 0.2.0** | 0.1.0(corr. 1) | 0.2.0 with M1/M3 closed |
-| **`cargo audit`** | ❌ not run | ✅ 0 high-severity |
-| **168 warnings** | ❌ | ✅ 0 warnings OR documented exceptions |
-| **3 integration test** | ❌ | ✅ mock LLM,pass |
-| **17 中文乱码** | ❌ | ✅ 重写 + UTF-8 no BOM |
-| **5 Kani proofs** | 🟡 5 stubs(2 真实) | 🟢 5 真实 proofs |
-| **独立 reviewer** | ❌ | ✅ 1 个 reviewer sign-off |
+| Gate                     | 当前               | 目标                                                  |
+| ------------------------ | ------------------ | ----------------------------------------------------- |
+| **M1 closed**            | ❌                 | ✅ Bearer token on /api/\* (loopback 可豁免)          |
+| **M3 closed**            | ❌                 | ✅ tool call 落 fact log,call_service 作为新 FactType |
+| **THREAT_MODEL.md**      | 🟡 draft(本文件)   | 🟢 released + reviewer-signed                         |
+| **SECURITY_AUDIT 0.2.0** | 0.1.0(corr. 1)     | 0.2.0 with M1/M3 closed                               |
+| **`cargo audit`**        | ❌ not run         | ✅ 0 high-severity                                    |
+| **168 warnings**         | ❌                 | ✅ 0 warnings OR documented exceptions                |
+| **3 integration test**   | ❌                 | ✅ mock LLM,pass                                      |
+| **17 中文乱码**          | ❌                 | ✅ 重写 + UTF-8 no BOM                                |
+| **5 Kani proofs**        | 🟡 5 stubs(2 真实) | 🟢 5 真实 proofs                                      |
+| **独立 reviewer**        | ❌                 | ✅ 1 个 reviewer sign-off                             |
 
 ---
 
 ## 11. 长期路线图(Long-term, 1.0+)
 
-| 阶段 | 目标 |
-|---|---|
+| 阶段    | 目标                                                        |
+| ------- | ----------------------------------------------------------- |
 | **1.0** | M1/M3/M4 closed;独立 reviewer;5 原则全过;SOC 2 Type 1 ready |
-| **1.1** | 第三方密码学 review(blake3 链 + WAL);penetration test |
-| **1.2** | 形式化证明 reactor invariants(reachability, deadlock-free) |
-| **2.0** | Circle 3 B 端 — SOC 2 Type 2, ISO 27001, HIPAA attestation |
-| **3.0** | 多租户 + 加密 compute(SGX / Nitro Enclave) |
+| **1.1** | 第三方密码学 review(blake3 链 + WAL);penetration test       |
+| **1.2** | 形式化证明 reactor invariants(reachability, deadlock-free)  |
+| **2.0** | Circle 3 B 端 — SOC 2 Type 2, ISO 27001, HIPAA attestation  |
+| **3.0** | 多租户 + 加密 compute(SGX / Nitro Enclave)                  |
 
 ---
 
@@ -769,12 +769,13 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ## 13. Change Log
 
-| Version | Date | Change |
-|---|---|---|
-| 0.2.0-draft | 2026-07-20 | Initial expansion from SECURITY_AUDIT v0.1.0 §3. 7 attack trees, 6 components analyzed, 4 medium + 11 low risks documented. |
+| Version               | Date       | Change                                                                                                                                                                                                         |
+| --------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.2.0-draft           | 2026-07-20 | Initial expansion from SECURITY_AUDIT v0.1.0 §3. 7 attack trees, 6 components analyzed, 4 medium + 11 low risks documented.                                                                                    |
 | 0.2.0-draft (corr. 1) | 2026-07-20 | **M1 closed**: HTTP API Bearer token middleware + startup warning on non-loopback without `--auth-token`. Boundary B2/B8 updated from MEDIUM to LOW. M3 closed (false alarm — tool calls already in fact log). |
-| (planned 0.2.0) | 2026-08 | Add M1/M3 mitigation sections after fixes land. |
-| (planned 1.0) | 2026-12 | Independent reviewer sign-off; full attack tree per finding closed. |
+| 0.2.0-draft (corr. 2) | 2026-07-23 | **L9 partially resolved**: Kani proofs improved from 5 stubs to 4/5 PASS + 19 proptest. Deleted `verify_domain_boolean` (BTreeMap issue → proptest). Improved `verify_path_no_panic` (4 assert added). See [白皮书](../../文档/kani/02_形式化验证白皮书.txt). Also: `cargo fmt` 25 diffs → 0; 720 workspace tests pass. |
+| (planned 0.2.0)       | 2026-08    | Add M1/M3 mitigation sections after fixes land.                                                                                                                                                                |
+| (planned 1.0)         | 2026-12    | Independent reviewer sign-off; full attack tree per finding closed.                                                                                                                                            |
 
 ---
 

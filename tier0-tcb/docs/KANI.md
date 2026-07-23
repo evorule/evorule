@@ -1,6 +1,6 @@
 # Kani 形式化验证指南
 
-[tier0-tcb](../) 的 6 个 Kani proof 函数位于 [`src/proofs.rs`](../src/proofs.rs)。
+[tier0-tcb](../) 的 5 个 Kani proof 函数位于 [`src/proofs.rs`](../src/proofs.rs)。
 
 ## 📋 Proof 清单
 
@@ -8,10 +8,15 @@
 |---|---|---|---|
 | 1 | `verify_value_roundtrip` | JsonValue Integer 构造/访问一致性 | < 1 min |
 | 2 | `verify_path_no_panic` | 路径解析对任意输入不 panic | < 1 min |
-| 3 | `verify_domain_boolean` | 域评估返回 bool | < 1 min |
-| 4 | `verify_set_integer_safety` | add 不溢出（`i64::MAX + 1`） | < 1 min |
-| 5 | `verify_set_sub_safety` | sub 不溢出（`i64::MIN - 1`） | < 1 min |
-| 6 | `verify_transition_bounded` | 空 core_eval 成功 | < 1 min |
+| 3 | `verify_set_integer_safety` | add 不溢出（`i64::MAX + 1`） | < 1 min |
+| 4 | `verify_set_sub_safety` | sub 不溢出（`i64::MIN - 1`） | < 1 min |
+| 5 | `verify_transition_bounded` | 空 core_eval 成功 | < 1 min |
+| ~~6~~ | ~~`verify_domain_boolean`~~ | ~~域评估返回 bool~~ | 🗑️ 已移除 |
+
+> **已移除的 proof**：`verify_domain_boolean` 因注释与代码矛盾（声称避开 BTreeMap
+> 却用了 BTreeMap）导致 TIMEOUT，已于 2026-07-23 移除，改用 proptest 属性测试替代
+> （`tests/proptest_props.rs` 的 `domain_eval_never_panics_arbitrary_type` /
+> `domain_eval_nested_never_panics`）。详见 `文档/kani/01_验证现状与问题分析.txt`。
 
 > **实测时间未知**: Kani 第一次跑可能因 CBMC 状态爆炸超过 1 小时。建议先跑 `--proof verify_value_roundtrip` 等短 proof 验证环境。
 

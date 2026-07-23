@@ -378,6 +378,7 @@ impl SessionManager {
     /// - `shard_count`：分片数（推荐 16-64）
     /// - `wal_fsync`：是否在每次 WAL 写入后执行 fsync（确保断电时数据不丢失）
     /// - `max_wal_size_bytes`：单个 WAL 文件最大大小（0 表示不轮换）
+    #[allow(clippy::too_many_arguments)]
     pub fn with_limits_and_wal_full(
         core_eval: Vec<JsonValue>,
         max_rounds: usize,

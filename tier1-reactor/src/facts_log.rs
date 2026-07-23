@@ -514,6 +514,26 @@ impl FactsLog {
         inner.history.iter().map(|(v, f)| (*v, f.clone())).collect()
     }
 
+    /// 返回最后 N 条带版本号的历史（P2-8：避免全量 clone）
+    ///
+    /// 与 `history_with_versions()` 的区别：只 clone 最后 `n` 条 Fact，
+    /// 而非全量 clone。当 history 很大（万级 fact）时，复杂度从 O(全量) 降到 O(n)。
+    ///
+    /// 用于 Portal API 的 recent_triggers 等只需最近 N 条的场景。
+    /// 若 `n >= history.len()`，返回全部历史（等价于 `history_with_versions()`）。
+    pub fn history_last_with_versions(&self, n: usize) -> Vec<(u64, Fact)> {
+        let inner = self
+            .inner
+            .read()
+            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        let history = &inner.history;
+        let start = history.len().saturating_sub(n);
+        history[start..]
+            .iter()
+            .map(|(v, f)| (*v, f.clone()))
+            .collect()
+    }
+
     /// 按 path 前缀查询 PayloadUpdate Fact（P0-1）
     ///
     /// 返回所有 `PayloadUpdate.path` 以指定前缀开头的事实。用于 evo-agent 的 auto_recall

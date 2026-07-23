@@ -49,6 +49,7 @@ install_llvm_cov_log.txt
 # Kani 形式化验证产物
 kani-results/
 *.kani
+.kani-logs/
 
 # 文档目录 (暂不提交, 待整理) - USER 规则 2026-07-15: 内部文件, 永不 commit
 文档/
@@ -89,3 +90,15 @@ sse_test_client.py
 # === 2026-07-17 dev/wip 第二轮 cleanup: 用户重新生成的 build/test output ===
 /build_out.txt
 /test_out.txt
+
+# === 2026-07-22 发布前盘点: 排除 benchmark / 一次性脚本产物 ===
+docs/benchmarks/tmp/
+docs/benchmarks/exp_*_output.txt
+docs/benchmarks/exp_*_results.csv
+docs/benchmarks/exp_*.txt
+docs/benchmarks/exp_*_smoke.ps1
+docs/benchmarks/sess*_audit.json
+docs/benchmarks/server_help.txt
+docs/benchmarks/*.log
+docs/benchmarks/*_dump.json
+find_p2.ps1

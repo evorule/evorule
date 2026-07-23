@@ -63,8 +63,7 @@ fn main() {
         return;
     }
 
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .expect("CARGO_MANIFEST_DIR not set");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let src_path = Path::new(&manifest_dir).join("src").join("main.rs");
 
     let src = match fs::read_to_string(&src_path) {
@@ -84,7 +83,10 @@ fn main() {
         for (idx, line) in src_stripped.lines().enumerate() {
             if line.contains(needle) {
                 // 检查豁免:如果这一行包含任何豁免子串,跳过
-                if ALLOWED_SURROUNDING_LINES.iter().any(|allowed| line.contains(allowed)) {
+                if ALLOWED_SURROUNDING_LINES
+                    .iter()
+                    .any(|allowed| line.contains(allowed))
+                {
                     continue;
                 }
                 violations.push((label.to_string(), needle.to_string(), idx + 1));
@@ -107,7 +109,9 @@ fn main() {
         eprintln!("These patterns are forbidden by G8 (no control flow expansion)");
         eprintln!("and F11 (no panic-prone main-path constructs).");
         eprintln!();
-        eprintln!("To bypass in an emergency, set EVORULE_SKIP_GATE=1 (with justification comment).");
+        eprintln!(
+            "To bypass in an emergency, set EVORULE_SKIP_GATE=1 (with justification comment)."
+        );
         std::process::exit(1);
     }
 }
