@@ -1,19 +1,24 @@
 # tier0-tcb
 
-> TheEquation 系统的 Tier 0 可信计算基（Trusted Computing Base）——零依赖、`no_std` 兼容的纯计算内核。
+> EvoRule 三层架构的 Tier 0 可信计算基 (Trusted Computing Base) ——零依赖、`no_std` 兼容的纯计算内核。
 
-- **版本**：v0.1.0-alpha.1
-- **定位**：纯函数 + 确定性 + 永不 panic
-- **外部依赖**：0
-- **测试**：97 单元测试 + 19 proptest（全部通过）
-- **Clippy**：零警告（`deny(unwrap_used/expect_used/indexing_slicing/panic)`）
-- **形式化验证**：Kani 5 proof, 4/5 PASS（4 个✅ + 1 个已改进待 Kani 验证；原 verify_domain_boolean 已改用 proptest 替代）
+- **版本**:v0.1.0-alpha.1
+- **定位**:纯函数 + 确定性 + 永不 panic
+- **外部依赖**:0
+- **测试**:`cargo test` 215 PASS / 0 failed(157 单元 + 4 个 proptest 段共 58 = `integration_end_to_end` 4 + `panic_free` 22 + `proptest_props` 19 + `tcb_error_variants` 13)
+- **Clippy**:零警告(`deny(unwrap_used/expect_used/indexing_slicing/panic)`)
+- **形式化验证**:Kani 5 proof, 4/5 PASS(2026-07-22 实测,Kani 0.65.0)
+- **build.rs 编译时门禁**:14 条 redline (T1-T14) 编译期强制,PASSED
+- **协议**:AGPL-3.0-or-later(代码) + CC0-1.0(`core_eval.json` 公共领域)
+
+> ⚠️ **本目录不发 crates.io**(`Cargo.toml` 设 `publish = false`)。
+> 唯一分发渠道:[Gitee](https://gitee.com/evorulelab/evorule)。
 
 ---
 
 ## 一、项目定位
 
-`tier0-tcb` 是 TheEquation 系统三层架构的最底层：
+`tier0-tcb` 是 EvoRule 三层架构的最底层:
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -239,15 +244,20 @@ transition.rs （状态转换，依赖 executor/path/value）
 
 #### [proofs.rs](file:///d:/evorule/tier0-tcb/src/proofs.rs) — Kani 验证
 
-5 个 `#[kani::proof]` 函数（仅 `#[cfg(kani)]` 时编译）：
+5 个 `#[kani::proof]` 函数(仅 `#[cfg(kani)]` 时编译):
 
-| Proof 函数                  | 验证目标                                 |
-| --------------------------- | ---------------------------------------- |
-| `verify_value_roundtrip`    | JsonValue 构造与访问一致性               |
-| `verify_path_no_panic`      | 路径解析对任意输入永不 panic             |
-| `verify_domain_boolean`     | 域评估始终返回布尔值                     |
-| `verify_set_integer_safety` | 整数运算不溢出（溢出返回错误而非 panic） |
-| `verify_transition_bounded` | 状态转换在有限步内完成                   |
+| Proof 函数                  | 验证目标                                                       |
+| --------------------------- | -------------------------------------------------------------- |
+| `verify_value_roundtrip`    | JsonValue 构造与访问一致性                                     |
+| `verify_path_no_panic`      | 路径解析对 Array 状态不 panic 且返回预期结果(已加 assert)     |
+| `verify_set_integer_safety` | 整数 `i64::checked_add` 行为正确                              |
+| `verify_transition_bounded` | JsonValue 状态遍历不 panic,execute_transition 内部状态机可终止 |
+| `verify_set_sub_safety`     | 整数 `i64::checked_sub` 行为正确                              |
+
+> 原 `verify_domain_boolean` 已删除(2026-07-23):
+> 注释声称避开 `BTreeMap` 但实际用了,自相矛盾。改用 proptest
+> `domain_eval_never_panics_arbitrary_type` 替代,详见
+> [`tests/proptest_props.rs`](tests/proptest_props.rs)。
 
 ---
 
@@ -533,57 +543,60 @@ cargo kani -p tier0-tcb --features kani --harness <PROOF_NAME>
 
 ### 8.2 验证目标
 
-| Proof                       | 验证目标                                                  |
-| --------------------------- | --------------------------------------------------------- |
-| `verify_value_roundtrip`    | 对任意 `i64`，`JsonValue::Integer(n).as_i64() == Some(n)` |
-| `verify_path_no_panic`      | 对任意合法路径字符串，`resolve_path` 始终返回 `Option`    |
-| `verify_domain_boolean`     | 域评估对任意输入始终返回布尔值（不 panic）                |
-| `verify_set_integer_safety` | `set` 的 `add` 运算溢出时返回 `Err` 而非 panic            |
-| `verify_transition_bounded` | `execute_transition` 在有限步内完成（不无限循环）         |
-| `verify_set_sub_safety`     | `set` 的 `sub` 运算下溢时返回 `Err` 而非 panic            |
+| Proof                       | 验证目标                                                       |
+| --------------------------- | -------------------------------------------------------------- |
+| `verify_value_roundtrip`    | 对任意 `i64`,`JsonValue::Integer(n).as_i64() == Some(n)`        |
+| `verify_path_no_panic`      | 路径解析对 Array 状态不 panic,返回 None / Some 符合预期       |
+| `verify_set_integer_safety` | `i64::checked_add` 行为正确(add 上溢返回 None)                |
+| `verify_transition_bounded` | JsonValue 状态遍历不 panic(状态机可终止)                      |
+| `verify_set_sub_safety`     | `i64::checked_sub` 行为正确(sub 下溢返回 None)                |
 
-### 8.3 当前状态（实测 2026-07-22，Kani 0.67.0 + nightly-2025-11-21）
+> 原 `verify_domain_boolean` 已删除(2026-07-23):注释声称避开
+> `BTreeMap` 但实际用了,自相矛盾。改用 proptest
+> `domain_eval_never_panics_arbitrary_type` 保底覆盖,详见
+> [`tests/proptest_props.rs`](tests/proptest_props.rs)。
 
-| Proof                       | 状态       | 耗时  | check 数                 |
-| --------------------------- | ---------- | ----- | ------------------------ |
-| `verify_value_roundtrip`    | ✅ PASS    | 0.15s | 0/377 failed             |
-| `verify_path_no_panic`      | ⚠️ TIMEOUT | 5min  | (Kani 工具链限制)        |
-| `verify_domain_boolean`     | ⚠️ TIMEOUT | 5min  | (Kani 工具链限制)        |
-| `verify_set_integer_safety` | ✅ PASS    | 0.16s | 0/41 failed              |
-| `verify_transition_bounded` | ✅ PASS    | 0.29s | 0/436 failed (9 unreach) |
-| `verify_set_sub_safety`     | ✅ PASS    | 0.17s | 0/41 failed              |
+### 8.3 当前状态(实测 2026-07-22,Kani 0.65.0 + nightly-2025-08-06)
 
-**总计 4/6 PASS (66.7%)**。
+| Proof                       | 状态         | 耗时  | check 数                  |
+| --------------------------- | ------------ | ----- | ------------------------- |
+| `verify_value_roundtrip`    | ✅ PASS      | 0.12s | 0/377 failed              |
+| `verify_path_no_panic`      | ⚠️ TIMEOUT   | 5min  | Kani 工具链 alloc std unwind bound 限制 |
+| `verify_set_integer_safety` | ✅ PASS      | 0.16s | 0/41 failed               |
+| `verify_transition_bounded` | ✅ PASS      | 0.29s | 0/436 failed (9 unreachable) |
+| `verify_set_sub_safety`     | ✅ PASS      | 0.17s | 0/41 failed               |
 
-2 个 TIMEOUT 的根因是 **Kani 0.67.0 + nightly-2025-11-21 工具链对 `alloc::collections::BTreeMap` 内部循环（`correct_childrens_parent_links`）和 `memcmp` 内部循环的默认 unwind bound 不够**，与 evorule 代码正确性无关。把 `--default-unwind` 降到 30 仍 TIMEOUT，说明是工具链固有限制。
+**总计 4/5 PASS (80%)**。
 
-**核心证明已建立**：
+`verify_path_no_panic` TIMEOUT 的根因是 **Kani 0.65.0 / 0.67.0 工具链
+对 `core::str::from_utf8` 内部走 memcmp 的默认 unwind bound 100 不够**,
+与 evorule 代码正确性无关。Kani 0.65.0 (prebuilt) + Kani 0.67.0 +
+Rust nightly 三个组合都卡同一处。降 `--default-unwind` 到 30 仍 TIMEOUT,
+说明是工具链固有限制。详见 `tier0-tcb/TIER0_SPEC.md`。
 
-- `i64` 加法不上溢（`verify_set_integer_safety`）
-- `i64` 减法不下溢（`verify_set_sub_safety`）
-- `JsonValue` 状态遍历不 panic（`verify_value_roundtrip` + `verify_transition_bounded`）
+**核心证明已建立**:
 
-待 Kani 未来版本优化 alloc std unwind bound 后补全 `verify_path_no_panic` 和 `verify_domain_boolean` 两个 proof。
+- `i64` 加法不上溢(`verify_set_integer_safety`)
+- `i64` 减法不下溢(`verify_set_sub_safety`)
+- `JsonValue` 状态遍历不 panic(`verify_value_roundtrip` + `verify_transition_bounded`)
+
+待 Kani 0.68+ alloc std unwind bound 优化后补全 `verify_path_no_panic`
+(已用 proptest `resolve_path_never_panics_arbitrary_path` 保底覆盖)。
 
 ---
 
-## 九、审计报告
+## 九、源码审计
 
-完整的源码审计报告位于 [`audit/`](file:///d:/evorule/tier0-tcb/audit) 目录：
+`tier0-tcb` 的源码审计通过以下方式进行(2026-07 完成):
 
-| 文件                                                                                    | 内容                                                         |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| [00-审计概览.md](file:///d:/evorule/tier0-tcb/audit/00-审计概览.md)                     | 审计总览（最终版）                                           |
-| [01-cargo-toml.md](file:///d:/evorule/tier0-tcb/audit/01-cargo-toml.md)                 | Cargo.toml 审计                                              |
-| [02-lib-rs.md](file:///d:/evorule/tier0-tcb/audit/02-lib-rs.md)                         | lib.rs 审计                                                  |
-| [03-error-rs.md](file:///d:/evorule/tier0-tcb/audit/03-error-rs.md)                     | error.rs 审计                                                |
-| [04-value-rs.md](file:///d:/evorule/tier0-tcb/audit/04-value-rs.md)                     | value.rs 审计                                                |
-| [05-path-rs.md](file:///d:/evorule/tier0-tcb/audit/05-path-rs.md)                       | path.rs 审计                                                 |
-| [06-domain-rs.md](file:///d:/evorule/tier0-tcb/audit/06-domain-rs.md)                   | domain.rs 审计                                               |
-| [07-executor-rs.md](file:///d:/evorule/tier0-tcb/audit/07-executor-rs.md)               | executor.rs 审计                                             |
-| [08-transition-rs.md](file:///d:/evorule/tier0-tcb/audit/08-transition-rs.md)           | transition.rs 审计                                           |
-| [09-编译与测试验证.md](file:///d:/evorule/tier0-tcb/audit/09-编译与测试验证.md)         | cargo test + clippy 实测结果                                 |
-| [10-架构修复与测试补充.md](file:///d:/evorule/tier0-tcb/audit/10-架构修复与测试补充.md) | io_request 架构修复 + core_eval.json 兼容性 + C-01/C-02 修复 |
+1. **build.rs 编译时门禁** — 14 条 redline (T1-T14) 强制,
+   详见 [`TIER0_SPEC.md`](TIER0_SPEC.md)。
+2. **形式化验证** — Kani 5 proof, 4/5 PASS(见第八节)。
+3. **属性测试** — proptest 19 / 0 / 0(详见
+   [`tests/proptest_props.rs`](tests/proptest_props.rs))。
+4. **内部审计报告** — 历史 `audit/00-..10-..` 系列报告(v5.0.2 时代)
+   暂未迁入本仓库(2026-07 内部资料,非开源对象);如需访问请
+   邮件联系 [evorulelab@gmail.com](mailto:evorulelab@gmail.com)。
 
 ---
 
@@ -591,36 +604,53 @@ cargo kani -p tier0-tcb --features kani --harness <PROOF_NAME>
 
 ### 10.1 非阻塞遗留事项
 
-| 编号 | 事项                       | 状态 | 说明                                           |
-| ---- | -------------------------- | ---- | ---------------------------------------------- |
-| N-01 | Kani proof 实际验证        | 待办 | 需安装 Kani 工具链运行 `kani cargo build`      |
-| N-03 | `MAX_TRANSFORM_RULES` 限制 | 待办 | `execute_transition` 对 `core_eval` 长度无限制 |
+| 编号 | 事项                       | 状态     | 说明                                                       |
+| ---- | -------------------------- | -------- | ---------------------------------------------------------- |
+| N-01 | Kani `verify_path_no_panic` | TIMEOUT | Kani 0.65/0.67 工具链 alloc std unwind bound 限制,等 0.68+ |
+| N-02 | `MAX_TRANSFORM_RULES` 限制 | 待办     | `execute_transition` 对 `core_eval` 长度无限制              |
 
 ### 10.2 后续 Tier 路线
 
-根据设计文档 `d:\evorule\文档\04_树形结构.txt`：
+`TransitionResult::IoRequired` 已为 tier1-reactor 准备就绪:
 
-1. **tier1-reactor**：反应式执行器
-   - Fact 枚举 + MPSC 通道
-   - Reactor 主循环：消费 `TransitionResult::IoRequired` → 产生 `IoRequest` 事实并缓存原指令 → 收到 `IoResponse` 后注入 `__io_result__` → 将原指令 `push_front` 到队列前端重新执行 → `exists(__io_result__)` 为真 → `set` 消费结果 → 清除 `__io_result__`
-2. **tier2-governance**：治理层
-   - I/O 订阅者机制
-   - 审计日志
-   - HTTP API
+1. **tier1-reactor** — 反应式执行器
+   - 消费 `TransitionResult::IoRequired` → 产生 `IoRequest` 事实并
+     缓存原指令 → 收到 `IoResponse` 后注入 `__io_result__` →
+     将原指令 `push_front` 到队列前端重新执行 →
+     `exists(__io_result__)` 为真 → `set` 消费结果 → 清除 `__io_result__`
+2. **tier2-governance** — 治理层
+   - I/O 订阅者机制 / 审计日志 / HTTP API
 
-`tier0-tcb` 的 `TransitionResult::IoRequired` 已为 tier1-reactor 准备就绪。
+详细设计见根 [`README.md`](../../README.md) 三层架构章节 +
+[`GATE_REFERENCE.md`](../../GATE_REFERENCE.md)(G8 / F11 / §5.2 等
+跨模块约束总览)。
 
 ---
 
 ## 十一、设计文档参考
 
-- `d:\evorule\文档\01_设计方案.txt` — v5.0.2 核心设计
-- `d:\evorule\文档\02_反应式数据执行器.txt` — 反应式架构
-- `d:\evorule\文档\03_添加反应器.txt` — 简化反应器方案
-- `d:\evorule\文档\04_树形结构.txt` — 项目结构与分层
+> ⚠️ **注意**:`tier0-tcb/build.rs` 之前引用 `文档/01_设计方案.txt §0`
+> 作为 G8 / F11 / §5.2 约束的源。但 `文档/` 目录在 .gitignore 中(永不
+> commit),不公开发布。
+
+实际权威源:
+
+- `tier0-tcb/TIER0_SPEC.md` — 本模块 14 条 redline (T1-T14)
+- [`../../GATE_REFERENCE.md`](../../GATE_REFERENCE.md) — G8 / F11 / §5.2
+  跨模块 gate 约束总览(项目级,commit 进 git)
+- `tier1-reactor/REACTOR_SPEC.md` — 反应器机制-策略分离
+- `tier2-governance/GOVERNANCE_SPEC.md` — 治理层机制-策略分离
 
 ---
 
 ## 十二、许可证
 
-MIT OR Apache-2.0
+**代码**:`AGPL-3.0-or-later`(见 [`LICENSE`](LICENSE) 文件,完整协议文本)。
+
+**`core_eval.json` 宪法**:`CC0-1.0 Universal`(公共领域),
+任何人都可自由实现兼容的 EvoRule 引擎,无需保留版权声明。
+`core_eval.json` 文件内的 `metadata.public_domain_notice` 字段
+有详细说明。
+
+**分发**:本目录 `Cargo.toml` 设 `publish = false`,**仅通过 Gitee
+分发**(https://gitee.com/evorulelab/evorule),**不上 crates.io**。
