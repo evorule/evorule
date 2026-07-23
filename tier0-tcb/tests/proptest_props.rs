@@ -23,6 +23,7 @@
 //! - 所有 proptest 用 fresh config, 不读取 .proptest-regressions
 
 use proptest::prelude::*;
+use proptest::test_runner::FileFailurePersistence;
 use tier0_tcb::domain::evaluate_domain;
 use tier0_tcb::path::resolve_path;
 use tier0_tcb::{execute_transition, JsonValue, TransitionResult};
@@ -84,7 +85,15 @@ fn build_increment_core_eval() -> Vec<JsonValue> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(200))]
+    #![proptest_config(ProptestConfig {
+        cases: 200,
+        // tier0-tcb 是 lib crate (无 main.rs), proptest 默认的 SourceParallel
+        // 找不到 lib.rs/main.rs 会刷 "FileFailurePersistence::SourceParallel set,
+        // but failed to find lib.rs or main.rs" 红色警告。
+        // 我们已有 .gitignore 排除 *.proptest-regressions, 不需要存盘反例, 直接关掉。
+        failure_persistence: Some(Box::new(FileFailurePersistence::Off)),
+        ..ProptestConfig::default()
+    })]
 
     // -------------------------------------------------------------------------
     // 1. JsonValue 构造/访问 roundtrip 一致
@@ -351,5 +360,158 @@ proptest! {
             let v = resolve_path(&new_payload, "x");
             prop_assert_eq!(v.and_then(|vv: &JsonValue| vv.as_i64()), Some(x));
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. 健壮性：任意输入不 panic（替代 Kani 无法验证的 proof）
+    //    路径解析 / 域评估 / 状态转换 —— 因 String / BTreeMap 建模开销 Kani TIMEOUT，
+    //    改用 proptest 随机验证，不受 unwind bound 限制
+    // -------------------------------------------------------------------------
+
+    /// 验证 `resolve_path` 对任意 path 字符串不 panic
+    ///
+    /// 覆盖原 Kani proof `verify_path_no_panic` 的目标（保底方案）：
+    /// - 任意 path 组合（含畸形：空串、双点号、前导/尾随点号等）
+    /// - Object state（字段访问）+ Array state（索引访问）
+    /// - 不 panic 即通过（返回值由 path 和 state 结构决定）
+    #[test]
+    fn resolve_path_never_panics_arbitrary_path(
+        x in arb_small_i64(),
+        path in "[a-z0-9.]{0,20}",
+    ) {
+        let state_obj = JsonValue::object_from_pairs(&[("x", JsonValue::Integer(x))]);
+        let state_arr = JsonValue::array(vec![JsonValue::Integer(x)]);
+        let _ = resolve_path(&state_obj, &path);
+        let _ = resolve_path(&state_arr, &path);
+    }
+
+    /// 验证 `evaluate_domain` 对任意 domain 类型 + 字段缺失 + 两种 state 不 panic
+    ///
+    /// 覆盖原 Kani proof `verify_domain_boolean` 的目标：
+    /// - 任意 type 字符串（含未知类型，如 "xyz"）→ 走 `_ => false` 分支
+    /// - 字段随机缺失（path/value 有无组合）→ 走各 evaluate_* 的 fallthrough
+    /// - 两种 state：Object（正常）+ Array（path 必然失败）
+    #[test]
+    fn domain_eval_never_panics_arbitrary_type(
+        x in arb_small_i64(),
+        dom_type in "[a-z]{1,12}",
+        has_path in any::<bool>(),
+        has_value in any::<bool>(),
+    ) {
+        let mut pairs: Vec<(&str, JsonValue)> = vec![
+            ("type", JsonValue::string(dom_type.as_str())),
+        ];
+        if has_path {
+            pairs.push(("path", JsonValue::string("__exec__.payload.x")));
+        }
+        if has_value {
+            pairs.push(("value", JsonValue::Integer(x)));
+        }
+        let domain = JsonValue::object_from_pairs(&pairs);
+
+        let state_obj = JsonValue::object_from_pairs(&[(
+            "__exec__",
+            JsonValue::object_from_pairs(&[(
+                "payload",
+                JsonValue::object_from_pairs(&[("x", JsonValue::Integer(x))]),
+            )]),
+        )]);
+        let state_arr = JsonValue::array(vec![JsonValue::Integer(x)]);
+
+        // 关键不变量：对任意 domain + state，evaluate_domain 不 panic
+        let r1 = evaluate_domain(&domain, &state_obj);
+        let r2 = evaluate_domain(&domain, &state_arr);
+        // 返回值必为 bool（签名保证，此处显式断言强化语义）
+        let _: bool = r1;
+        let _: bool = r2;
+    }
+
+    /// 验证 `evaluate_domain` 对嵌套 domain（not 递归）不 panic 且不栈溢出
+    ///
+    /// 覆盖 domain.rs L76-78 的 `MAX_DOMAIN_DEPTH` 深度限制：
+    /// - 0..20 层嵌套 Not（在深度限制内），正常求值
+    /// - 奇偶层翻转结果，但不 panic
+    #[test]
+    fn domain_eval_nested_never_panics(
+        x in arb_small_i64(),
+        depth in 0u8..20,
+    ) {
+        let mut domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("eq")),
+            ("path", JsonValue::string("__exec__.payload.x")),
+            ("value", JsonValue::Integer(x)),
+        ]);
+        for _ in 0..depth {
+            domain = JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("not")),
+                ("inner", domain),
+            ]);
+        }
+        let state = JsonValue::object_from_pairs(&[(
+            "__exec__",
+            JsonValue::object_from_pairs(&[(
+                "payload",
+                JsonValue::object_from_pairs(&[("x", JsonValue::Integer(x))]),
+            )]),
+        )]);
+        // 嵌套 domain 求值不 panic
+        let _: bool = evaluate_domain(&domain, &state);
+    }
+
+    /// 验证 `execute_transition` 对任意指令类型不 panic
+    ///
+    /// 现有 proptest 只测 increment，此测试覆盖任意指令类型（含未知类型）：
+    /// - 已知类型（increment）走对应规则
+    /// - 未知类型走 catch-all 或无匹配（返回原 state）
+    /// - 任意情况都不 panic（返回 Ok 或 Err，不 abort）
+    #[test]
+    fn execute_transition_arbitrary_type_no_panic(
+        instr_type in "[a-z]{1,10}",
+        x in arb_small_i64(),
+    ) {
+        let instruction = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string(instr_type.as_str())),
+            ("params", JsonValue::object_from_pairs(&[("x", JsonValue::Integer(x))])),
+        ]);
+        let payload = JsonValue::object_from_pairs(&[("x", JsonValue::Integer(x))]);
+        let core_eval = build_increment_core_eval();
+        let _ = execute_transition(&core_eval, &instruction, &payload, &[]);
+    }
+
+    /// 验证 `execute_transition` 对畸形 instruction 不 panic
+    ///
+    /// 覆盖 instruction 的各种畸形组合：
+    /// - 缺 type 字段 / type 不是字符串
+    /// - 缺 params 字段 / params 不是 Object
+    /// - 任意畸形组合都不 panic（返回 Err 或原 state）
+    #[test]
+    fn execute_transition_malformed_instruction_no_panic(
+        x in arb_small_i64(),
+        has_type in any::<bool>(),
+        type_is_string in any::<bool>(),
+        has_params in any::<bool>(),
+        params_is_object in any::<bool>(),
+    ) {
+        let mut instr_pairs: Vec<(&str, JsonValue)> = Vec::new();
+        if has_type {
+            let type_val = if type_is_string {
+                JsonValue::string("increment")
+            } else {
+                JsonValue::Integer(42)
+            };
+            instr_pairs.push(("type", type_val));
+        }
+        if has_params {
+            let params_val = if params_is_object {
+                JsonValue::object_from_pairs(&[("x", JsonValue::Integer(x))])
+            } else {
+                JsonValue::Integer(42)
+            };
+            instr_pairs.push(("params", params_val));
+        }
+        let instruction = JsonValue::object_from_pairs(&instr_pairs);
+        let payload = JsonValue::object_from_pairs(&[("x", JsonValue::Integer(x))]);
+        let core_eval = build_increment_core_eval();
+        let _ = execute_transition(&core_eval, &instruction, &payload, &[]);
     }
 }
