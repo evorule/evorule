@@ -3,24 +3,25 @@ EvoRule 形式化验证白皮书
 EvoRule Formal Verification Whitepaper
 ================================================================
 
-版本: 0.1.0
-日期: 2026-07-24
+版本: 0.3.0
+日期: 2026-07-25
 适用范围: EvoRule 机制层（tier0-tcb / tier1-reactor / tier2-governance）
 协议: AGPL-3.0-or-later（代码）+ CC0-1.0（core_eval.json）
 
-----------------------------------------------------------------
-摘要
-----------------------------------------------------------------
+---
+
+## 摘要
 
 EvoRule 是一个反应式规则执行引擎，其核心承诺是**确定性**和**可审计性**。
 本文档定义 EvoRule 机制层的形式化验证战略：哪些不变量必须被数学证明，
 哪些用属性测试覆盖，以及如何分阶段达到 1.0.0 的"production ready"门槛。
 
 EvoRule 采用**三层验证体系**：
-  1. Kani 符号执行 —— 穷尽证明算术完备性（如整数不溢出）
-  2. TLA+ 状态机验证 —— 证明控制流性质（终止性/确定性/深度强制）【1.0 门槛】
-  3. proptest 属性测试 —— 随机验证输入健壮性（如任意路径不 panic）
-  4. 编译时门控（G8/T4-T14）—— 架构级守卫（如控制流不得硬编码）
+
+1. Kani 符号执行 —— 穷尽证明算术完备性（如整数不溢出）
+2. TLA+ 状态机验证 —— 证明控制流性质（终止性/确定性/深度强制）【1.0 门槛】
+3. proptest 属性测试 —— 随机验证输入健壮性（如任意路径不 panic）
+4. 编译时门控（G8/T4-T14）—— 架构级守卫（如控制流不得硬编码）
 
 【诚实声明】当前 tier0-tcb 的 5 个 Kani proof 全部验证 Rust 标准库原语
 （i64 checked_add/sub、JsonValue 构造器），**没有一个验证 EvoRule 核心逻辑**
@@ -28,439 +29,467 @@ EvoRule 采用**三层验证体系**：
 内部循环 unwind bound 不足，是结构性限制。因此本白皮书引入 TLA+ 作为
 Kani 的正交互补，证状态机性质（终止性/确定性/深度强制），并**纳入 1.0 门槛**。
 
-1.0.0 门槛要求（VERSION_STRATEGY §4.4）：
-  tier0 核心不变式被 Kani 算术证明 + TLA+ 状态机证明（不止 stub）
+1.0.0 门槛要求（VERSION_STRATEGY §4.4 目标，Phase 1 修订后生效）：
+tier0 核心不变式被 Kani 算术证明 + TLA+ 状态机证明（不止 stub）
+【注】当前 §4.4 原文仅要求 Kani 证明；本白皮书建议 Phase 1 后修订为 Kani + TLA+ 组合（详见 §11.4）
 
-当前状态（2026-07-24）：
-  - tier0-tcb: 5 个 Kani proof（4 PASS + 1 待验证），19 个 proptest
-    【诚实】4 个 PASS proof 验证的是 Rust 标准库原语，非 EvoRule 核心逻辑
-  - tier1-reactor: pure.rs 验证准备层有 1 个占位桩 `_kani_placeholder`，
-    0 个真实 proof；5 条不变量已定义运行时检查
-  - tier2-governance: 审计链 blake3 哈希验证已实现，形式化证明待补
+当前状态（2026-07-25）：
 
-1.0 阻塞项：
-  - TLA+ 纳入 1.0 门槛（必须 TLC PASS + 修订 §4.4）
-  - tier0 达标即可升 1.0，tier1/tier2 作为 1.x 路线
+- tier0-tcb: 5 个 Kani proof（4 PASS + 1 待验证），19 个 proptest
+  【诚实】4 个 PASS proof 验证的是 Rust 标准库原语，非 EvoRule 核心逻辑
+- tier1-reactor: pure.rs 验证准备层有 1 个占位桩 `_kani_placeholder`，
+  0 个真实 proof；5 条不变量已定义运行时检查
+- tier2-governance: 审计链 blake3 哈希验证已实现，形式化证明待补
 
-----------------------------------------------------------------
-一、引言与动机
-----------------------------------------------------------------
+  1.0 阻塞项：
+
+- TLA+ 纳入 1.0 门槛（必须 TLC PASS + 修订 §4.4）
+- tier0 达标即可升 1.0，tier1/tier2 作为 1.x 路线
+
+---
+
+## 一、引言与动机
 
 1.1 为什么规则引擎需要形式化验证
 
-  规则引擎的本质是"把人类意图翻译成机器可执行的确定性逻辑"。当规则
-  引擎被用于金融风控、医疗决策、合规审计等场景时，一个未被发现的
-  bug 可能导致：
-  - 整数溢出 → 资金计算错误
-  - 状态损坏 → 审计链断裂
-  - 非确定性 → 同样输入产生不同输出
+规则引擎的本质是"把人类意图翻译成机器可执行的确定性逻辑"。当规则
+引擎被用于金融风控、医疗决策、合规审计等场景时，一个未被发现的
+bug 可能导致：
 
-  传统测试只能覆盖有限的输入组合，而形式化验证能**穷尽所有可能的输入**，
-  证明不变量在 2^64 个值上恒成立。这是"测试过"与"证明过"的本质区别。
+- 整数溢出 → 资金计算错误
+- 状态损坏 → 审计链断裂
+- 非确定性 → 同样输入产生不同输出
 
-  但形式化验证不是银弹。不同工具有不同的能力边界：
-  - Kani 擅长算术完备性证明，但无法建模 BTreeMap 内部循环
-  - TLA+ 擅长状态机性质证明，但 TLC 是有界模型（∀N 需 TLAPS）
-  - proptest 覆盖广但不穷尽
+传统测试只能覆盖有限的输入组合，而形式化验证能**穷尽所有可能的输入**，
+证明不变量在 2^64 个值上恒成立。这是"测试过"与"证明过"的本质区别。
 
-  EvoRule 的验证策略是**分层互补**：用每个工具的强项，诚实地标注其弱项。
+但形式化验证不是银弹。不同工具有不同的能力边界：
+
+- Kani 擅长算术完备性证明，但无法建模 BTreeMap 内部循环
+- TLA+ 擅长状态机性质证明，但 TLC 是有界模型（∀N 需 TLAPS）
+- proptest 覆盖广但不穷尽
+
+EvoRule 的验证策略是**分层互补**：用每个工具的强项，诚实地标注其弱项。
 
 1.2 TCB（Trusted Computing Base）概念
 
-  TCB 是系统中**必须信任的最小代码集**——如果 TCB 有 bug，整个系统
-  的保证都无效。EvoRule 的 TCB 是 tier0-tcb：
+TCB 是系统中**必须信任的最小代码集**——如果 TCB 有 bug，整个系统
+的保证都无效。EvoRule 的 TCB 是 tier0-tcb：
 
-  - 零外部依赖（no_std + 仅 alloc）
-  - 零 unsafe（#![forbid(unsafe_code)]）
-  - 纯函数式（输入→输出，无副作用）
-  - 确定性（相同输入恒产生相同输出）
+- 零外部依赖（no_std + 仅 alloc）
+- 零 unsafe（#![forbid(unsafe_code)]）
+- 纯函数式（输入→输出，无副作用）
+- 确定性（相同输入恒产生相同输出）
 
-  tier0-tcb 之外的所有代码（tier1 反应器、tier2 治理层、应用层）都
-  建立在 TCB 之上。TCB 的正确性是整个 EvoRule 信任链的根基。
+tier0-tcb 之外的所有代码（tier1 反应器、tier2 治理层、应用层）都
+建立在 TCB 之上。TCB 的正确性是整个 EvoRule 信任链的根基。
 
 1.3 EvoRule 三层架构与验证边界
 
-  ┌──────────────────────────────────────────────────────┐
-  │ tier2-governance（治理层）                           │
-  │ - 审计链 blake3 哈希验证                              │
-  │ - 审计报告生成                                        │
-  │ - API / Session 管理                                  │
-  │ 验证目标：审计链完整性、不可篡改性                     │
-  │ 1.0 角色：1.x 路线（不阻塞 1.0）                      │
-  ├──────────────────────────────────────────────────────┤
-  │ tier1-reactor（反应器层）                             │
-  │ - FactsLog append-only 审计链                         │
-  │ - Reactor 状态机（pure.rs 纯逻辑抽离）                │
-  │ - 5 条结构性不变量                                    │
-  │ - FFI（允许 unsafe，C 互操作）                        │
-  │ 验证目标：状态一致性、append-only 保证                │
-  │ 1.0 角色：1.x 路线（不阻塞 1.0）                      │
-  ├──────────────────────────────────────────────────────┤
-  │ tier0-tcb（可信计算基）                               │
-  │ - JsonValue 类型系统（6 变体）                        │
-  │ - resolve_path 路径解析                               │
-  │ - evaluate_domain 域评估                              │
-  │ - execute_meta_instruction 元指令执行                 │
-  │ - execute_transition 状态转换                         │
-  │ 验证目标：不溢出、不 panic、确定性、终止性             │
-  │ 1.0 角色：1.0 阻塞项（必须达标）                      │
-  └──────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│ tier2-governance（治理层） │
+│ - 审计链 blake3 哈希验证 │
+│ - 审计报告生成 │
+│ - API / Session 管理 │
+│ 验证目标：审计链完整性、不可篡改性 │
+│ 1.0 角色：1.x 路线（不阻塞 1.0） │
+├──────────────────────────────────────────────────────┤
+│ tier1-reactor（反应器层） │
+│ - FactsLog append-only 审计链 │
+│ - Reactor 状态机（pure.rs 纯逻辑抽离） │
+│ - 5 条结构性不变量 │
+│ - FFI（允许 unsafe，C 互操作） │
+│ 验证目标：状态一致性、append-only 保证 │
+│ 1.0 角色：1.x 路线（不阻塞 1.0） │
+├──────────────────────────────────────────────────────┤
+│ tier0-tcb（可信计算基） │
+│ - JsonValue 类型系统（6 变体） │
+│ - resolve_path 路径解析 │
+│ - evaluate_domain 域评估 │
+│ - execute_meta_instruction 元指令执行 │
+│ - execute_transition 状态转换 │
+│ 验证目标：不溢出、不 panic、确定性、终止性 │
+│ 1.0 角色：1.0 阻塞项（必须达标） │
+└──────────────────────────────────────────────────────┘
 
-  G8 门控（编译时架构守卫，tier1/tier2 build.rs 强制）：
-  "反应器/治理层不得展开 conditional/while_loop/sequence，
-   控制流必须由 TCB 通过 JSON 解释。"
-  这意味着 tier1/tier2 的控制流必须委托给 tier0，不能自己实现
-  if/while/for 循环逻辑。这保证了所有控制流都在 TCB 的验证范围内。
+G8 门控（编译时架构守卫，tier1/tier2 build.rs 强制）：
+"反应器/治理层不得展开 conditional/while_loop/sequence，
+控制流必须由 TCB 通过 JSON 解释。"
+这意味着 tier1/tier2 的控制流必须委托给 tier0，不能自己实现
+if/while/for 循环逻辑。这保证了所有控制流都在 TCB 的验证范围内。
 
-  【1.0 门槛边界】VERSION_STRATEGY §4.4 字面只要求 tier0 核心不变式
-  被证明。tier1/tier2 的形式化验证作为 1.x 路线，不阻塞 1.0 发布。
+【1.0 门槛边界】VERSION_STRATEGY §4.4 字面只要求 tier0 核心不变式
+被证明。tier1/tier2 的形式化验证作为 1.x 路线，不阻塞 1.0 发布。
 
-----------------------------------------------------------------
-二、验证范围与边界
-----------------------------------------------------------------
+---
+
+## 二、验证范围与边界
 
 2.1 必须验证（P0：安全关键不变量，1.0 阻塞）
 
-  这些不变量如果被违反，会导致资金损失、数据损坏或审计失效。
+这些不变量如果被违反，会导致资金损失、数据损坏或审计失效。
 
-  | # | 不变量 | 层 | 验证工具 | 当前状态 |
-  |---|---|---|---|---|
-  | P0-1 | i64 加法不溢出（checked_add 返回 None 而非 panic） | tier0 | Kani | ✅ PASS |
-  | P0-2 | i64 减法不下溢（checked_sub 返回 None 而非 panic） | tier0 | Kani | ✅ PASS |
-  | P0-3 | resolve_path 对任意输入不 panic | tier0 | proptest | ✅ PASS（Kani 受限） |
-  | P0-4 | evaluate_domain 始终返回 bool，不 panic | tier0 | proptest | ✅ PASS（Kani 受限） |
-  | P0-5 | execute_transition 确定性（相同输入→相同输出） | tier0 | TLA+ | ⏳ Phase 1 待实现 |
-  | P0-6 | JsonValue 类型构造/访问一致性 | tier0 | Kani | ✅ PASS |
-  | P0-7 | execute_transition 状态机终止性 | tier0 | TLA+ | ⏳ Phase 1 待实现 |
-  | P0-8 | 递归深度硬上界强制（MAX_*_DEPTH=64） | tier0 | TLA+ | ⏳ Phase 1 待实现 |
+| #    | 不变量                                             | 层    | 验证工具 | 当前状态             |
+| ---- | -------------------------------------------------- | ----- | -------- | -------------------- |
+| P0-1 | i64 加法不溢出（checked_add 返回 None 而非 panic） | tier0 | Kani     | ✅ PASS              |
+| P0-2 | i64 减法不下溢（checked_sub 返回 None 而非 panic） | tier0 | Kani     | ✅ PASS              |
+| P0-3 | resolve_path 对任意输入不 panic                    | tier0 | proptest | ✅ PASS（Kani 受限） |
+| P0-4 | evaluate_domain 始终返回 bool，不 panic            | tier0 | proptest | ✅ PASS（Kani 受限） |
+| P0-5 | execute_transition 确定性（相同输入→相同输出）     | tier0 | TLA+     | ⏳ Phase 1 待实现    |
+| P0-6 | JsonValue 类型构造/访问一致性                      | tier0 | Kani     | ✅ PASS              |
+| P0-7 | execute_transition 状态机终止性                    | tier0 | TLA+     | ⏳ Phase 1 待实现    |
+| P0-8 | 递归深度硬上界强制（MAX\_\*\_DEPTH=64）            | tier0 | TLA+     | ⏳ Phase 1 待实现    |
 
-  【诚实说明】本白皮书将 P0-5（execute_transition 确定性）的真实验证工具
-  标注为 TLA+（v0.4.0 实现），Kani 暂不覆盖端到端 execute_transition。
-  详见 L0-5 证明义务（附录 F）。
+【诚实说明】本白皮书将 P0-5（execute_transition 确定性）的真实验证工具
+标注为 TLA+（v0.4.0 实现），Kani 暂不覆盖端到端 execute_transition。
+详见 L0-5 证明义务（附录 F）。
 
 2.2 应该验证（P1：正确性增强，1.x 路线）
 
-  这些不变量提升系统可靠性，但违反不会直接导致安全事故。
+这些不变量提升系统可靠性，但违反不会直接导致安全事故。
 
-  | # | 不变量 | 层 | 验证工具 | 当前状态 |
-  |---|---|---|---|---|
-  | P1-1 | I/O 计数一致性（pending_io_count == len == len） | tier1 | Kani | ⏳ 1.x 待实现 |
-  | P1-2 | io_recovery ⟺ payload.__io_result__ 存在 | tier1 | Kani | ⏳ 1.x 待实现 |
-  | P1-3 | version 单调递增（不回退） | tier1 | Kani | ⏳ 1.x 待实现 |
-  | P1-4 | FactsLog append-only（历史不可修改） | tier1 | Kani | ⏳ 1.x 待实现 |
-  | P1-5 | 审计链哈希完整性（篡改可检测） | tier2 | proptest | ⏳ 1.x 待实现 |
-  | P1-6 | 审计重放确定性（重放 FactsLog 产生相同状态） | tier2 | proptest | ⏳ 1.x 待实现 |
+| #    | 不变量                                           | 层    | 验证工具 | 当前状态      |
+| ---- | ------------------------------------------------ | ----- | -------- | ------------- |
+| P1-1 | I/O 计数一致性（pending_io_count == len == len） | tier1 | Kani     | ⏳ 1.x 待实现 |
+| P1-2 | io_recovery ⟺ payload.**io_result** 存在         | tier1 | Kani     | ⏳ 1.x 待实现 |
+| P1-3 | version 单调递增（不回退）                       | tier1 | Kani     | ⏳ 1.x 待实现 |
+| P1-4 | FactsLog append-only（历史不可修改）             | tier1 | Kani     | ⏳ 1.x 待实现 |
+| P1-5 | 审计链哈希完整性（篡改可检测）                   | tier2 | proptest | ⏳ 1.x 待实现 |
+| P1-6 | 审计重放确定性（重放 FactsLog 产生相同状态）     | tier2 | proptest | ⏳ 1.x 待实现 |
 
 2.3 不在范围内
 
-  以下内容**不纳入**形式化验证，原因附后：
+以下内容**不纳入**形式化验证，原因附后：
 
-  | 内容 | 原因 |
-  |---|---|
-  | LLM 调用的正确性 | LLM 是非确定性外部服务，不在 TCB 内 |
-  | 网络层（HTTP/TCP） | 由 OS 和 tokio 保证，EvoRule 不验证 |
-  | 操作系统调度确定性 | 超出应用层控制范围 |
-  | FFI unsafe 代码（tier1 ffi.rs） | C 互操作边界，用集成测试覆盖 |
-  | 业务规则逻辑 | 在 core_eval.json 中定义，由用户负责 |
-  | 序列化/反序列化 | 由 serde 保证，不在 TCB 内 |
+| 内容                            | 原因                                 |
+| ------------------------------- | ------------------------------------ |
+| LLM 调用的正确性                | LLM 是非确定性外部服务，不在 TCB 内  |
+| 网络层（HTTP/TCP）              | 由 OS 和 tokio 保证，EvoRule 不验证  |
+| 操作系统调度确定性              | 超出应用层控制范围                   |
+| FFI unsafe 代码（tier1 ffi.rs） | C 互操作边界，用集成测试覆盖         |
+| 业务规则逻辑                    | 在 core_eval.json 中定义，由用户负责 |
+| 序列化/反序列化                 | 由 serde 保证，不在 TCB 内           |
 
-----------------------------------------------------------------
-三、验证方法论
-----------------------------------------------------------------
+---
+
+## 三、验证方法论
 
 3.1 四层验证策略
 
-  EvoRule 不依赖单一验证手段，而是四层互补：
+EvoRule 不依赖单一验证手段，而是四层互补：
 
-  层级          | 工具          | 覆盖范围             | 成本
-  -------------|-------------|-------------------|--------
-  形式化证明    | Kani 0.67    | 穷尽 2^64 输入空间   | 高（分钟级）
-  状态机验证    | TLA+ TLC     | 有限模型穷举(n≤3)   | 中（秒级）
-  属性测试      | proptest     | 随机 N 个输入（200） | 低（秒级）
-  编译时门控    | build.rs     | 架构级约束           | 零（编译期）
+| 层级       | 工具      | 覆盖范围             | 成本         |
+| ---------- | --------- | -------------------- | ------------ |
+| 形式化证明 | Kani 0.67 | 穷尽 2^64 输入空间   | 高（分钟级） |
+| 状态机验证 | TLA+ TLC  | 有限模型穷举(n≤3)    | 中（秒级）   |
+| 属性测试   | proptest  | 随机 N 个输入（200） | 低（秒级）   |
+| 编译时门控 | build.rs  | 架构级约束           | 零（编译期） |
 
-  原则：Kani 证"算术完备性"，TLA+ 证"状态机性质"，
-        proptest 证"健壮性"，门控证"架构合规"。
+原则：Kani 证"算术完备性"，TLA+ 证"状态机性质"，
+proptest 证"健壮性"，门控证"架构合规"。
 
 3.2 Kani 符号执行
 
-  Kani 是 Rust 的形式化验证工具，基于 CBMC 模型检测器。它将 Rust 代码
-  编译为 GOTO 程序，然后穷尽所有执行路径，验证：
-  - 不 panic（所有 panic 路径不可达）
-  - 自定义 assert 恒成立
-  - 无未定义行为
+Kani 是 Rust 的形式化验证工具，基于 CBMC 模型检测器。它将 Rust 代码
+编译为 GOTO 程序，然后穷尽所有执行路径，验证：
 
-  适用场景（EvoRule 已用）：
-  - 纯算术（i64 加减的溢出）
-  - 类型安全（enum 匹配穷尽、JsonValue 构造器）
+- 不 panic（所有 panic 路径不可达）
+- 自定义 assert 恒成立
+- 无未定义行为
 
-  不适用场景（EvoRule 已知限制）：
-  - BTreeMap/HashMap 内部循环（unwind bound 不足）
-  - String 堆分配建模开销大
-  - 异步运行时（tokio/async）
-  - 系统调用（Instant::now / 文件 I/O）
+适用场景（EvoRule 已用）：
 
-  【诚实声明】EvoRule 当前 5 个 Kani proof 中，4 个 PASS 的 proof
-  验证的全是 Rust 标准库原语（i64::checked_add/checked_sub、
-  JsonValue::Integer 构造器），不是 EvoRule 业务逻辑。这是 Kani
-  工具链对 BTreeMap 建模限制的结构性结果，非工程努力不够。
+- 纯算术（i64 加减的溢出）
+- 类型安全（enum 匹配穷尽、JsonValue 构造器）
+
+不适用场景（EvoRule 已知限制）：
+
+- BTreeMap/HashMap 内部循环（unwind bound 不足）
+- String 堆分配建模开销大
+- 异步运行时（tokio/async）
+- 系统调用（Instant::now / 文件 I/O）
+
+【诚实声明】EvoRule 当前 5 个 Kani proof 中，4 个 PASS 的 proof
+验证的全是 Rust 标准库原语（i64::checked_add/checked_sub、
+JsonValue::Integer 构造器），不是 EvoRule 业务逻辑。这是 Kani
+工具链对 BTreeMap 建模限制的结构性结果，非工程努力不够。
 
 3.3 TLA+ 状态机验证（1.0 门槛核心）
 
-  TLA+ 是 Leslie Lamport 设计的形式化规范语言，TLC 是其有界模型检测器。
-  EvoRule 用 TLA+ 验证 Kani 无法覆盖的状态机性质：
-  - 终止性（execute_transition 在有限步内完成）
-  - 确定性（相同输入→相同输出）
-  - 深度强制（MAX_TRANSFORM_RULES/MAX_BRANCH_DEPTH/MAX_DOMAIN_DEPTH 硬上界）
-  - I/O 提前返回语义（IoRequired 信号立即返回）
+TLA+ 是 Leslie Lamport 设计的形式化规范语言，TLC 是其有界模型检测器。
+EvoRule 用 TLA+ 验证 Kani 无法覆盖的状态机性质：
 
-  【诚实声明】TLC 是有界模型检测器，证有限模型穷举（n≤3, d≤3）。
-  数学 ∀N 归纳证明需 TLAPS（TLA+ Proof Language），
-  标注为未来工作（1.x 后学术增强）。
+- 终止性（execute_transition 在有限步内完成）
+- 确定性（相同输入→相同输出）
+- 深度强制（MAX_TRANSFORM_RULES/MAX_BRANCH_DEPTH/MAX_DOMAIN_DEPTH 硬上界）
+- I/O 提前返回语义（IoRequired 信号立即返回）
+
+【诚实声明】TLC 是有界模型检测器，证有限模型穷举（n≤3, d≤3）。
+数学 ∀N 归纳证明需 TLAPS（TLA+ Proof Language），
+标注为未来工作（1.x 后学术增强）。
 
 3.4 proptest 属性测试
 
-  proptest 生成随机输入，验证属性在大量样本上成立。虽然不能穷尽，
-  但能覆盖 Kani/TLA+ 无法处理的场景（如任意字符串、BTreeMap 操作）。
+proptest 生成随机输入，验证属性在大量样本上成立。虽然不能穷尽，
+但能覆盖 Kani/TLA+ 无法处理的场景（如任意字符串、BTreeMap 操作）。
 
-  EvoRule 当前的 19 个 proptest 覆盖 5 类：
-  - JsonValue roundtrip（5 个）
-  - 路径解析确定性 + 健壮性（3 个）
-  - 域比较对称性（3 个）
-  - 状态转换幂等性 + 数学律（3 个）
-  - 健壮性：任意输入不 panic（5 个）
+EvoRule 当前的 19 个 proptest 覆盖 5 类：
 
-3.5 编译时门控（G8/T4-T14）
+- JsonValue roundtrip（5 个）
+- 路径解析确定性 + 健壮性（3 个）
+- 域比较对称性（3 个）
+- 状态转换幂等性 + 数学律（3 个）
+- 健壮性：任意输入不 panic（5 个）
 
-  build.rs 在编译时扫描源码，强制架构约束：
+  3.5 编译时门控（G8/T4-T14）
 
-  | 门控 | 规则 | 强制层 | 实现位置 |
-  |---|---|---|---|
-  | G8 | 禁止 "conditional"/"while_loop"/"sequence" 字符串字面量 | tier1/tier2 | tier1/tier2 build.rs |
-  | T4 | 禁止 I/O 操作（std::fs/net/io） | tier0 | tier0 build.rs |
-  | T5 | 禁止 SystemTime/Instant（确定性） | tier0 | tier0 build.rs |
-  | T6 | 禁止 rand/random（确定性） | tier0 | tier0 build.rs |
-  | T8 | 禁止 HashMap/HashSet（确定性迭代） | tier0 | tier0 build.rs |
-  | T9 | 禁止 .unwrap()/.expect()（不 panic） | tier0 | tier0 build.rs |
-  | T10 | 禁止 unsafe（内存安全） | tier0 | tier0 build.rs |
-  | T11 | 禁止 debug_assert!（用 tracing） | tier0 | tier0 build.rs |
-  | T12 | 禁止 f32/f64/Float（确定性） | tier0 | tier0 build.rs |
-  | T14 | 禁止 thread/async（确定性） | tier0 | tier0 build.rs |
+build.rs 在编译时扫描源码，强制架构约束：
 
-  实现细节：
-  - 字节串匹配（非 regex），零依赖
-  - T8/T9 在 #[cfg(test)] mod tests 中豁免（测试可用 unwrap）
-  - T10/T11 全局强制（包括测试代码）
-  - G8 在 tier1/tier2 测试代码中豁免（测试可构造控制流指令 fixture）
+| 门控 | 规则                                                    | 强制层      | 实现位置             |
+| ---- | ------------------------------------------------------- | ----------- | -------------------- |
+| G8   | 禁止 "conditional"/"while_loop"/"sequence" 字符串字面量 | tier1/tier2 | tier1/tier2 build.rs |
+| T4   | 禁止 I/O 操作（std::fs/net/io）                         | tier0       | tier0 build.rs       |
+| T5   | 禁止 SystemTime/Instant（确定性）                       | tier0       | tier0 build.rs       |
+| T6   | 禁止 rand/random（确定性）                              | tier0       | tier0 build.rs       |
+| T8   | 禁止 HashMap/HashSet（确定性迭代）                      | tier0       | tier0 build.rs       |
+| T9   | 禁止 .unwrap()/.expect()（不 panic）                    | tier0       | tier0 build.rs       |
+| T10  | 禁止 unsafe（内存安全）                                 | tier0       | tier0 build.rs       |
+| T11  | 禁止 debug_assert!（用 tracing）                        | tier0       | tier0 build.rs       |
+| T12  | 禁止 f32/f64/Float（确定性）                            | tier0       | tier0 build.rs       |
+| T14  | 禁止 thread/async（确定性）                             | tier0       | tier0 build.rs       |
 
-3.6 验证分层矩阵
+实现细节：
 
-  | 验证目标 | Kani | TLA+ | proptest | 门控 | 单元测试 |
-  |---|---|---|---|---|---|
-  | 整数不溢出 | ✅ 主力 | — | 补充 | — | 边界值 |
-  | 状态机终止性 | ❌ 受限 | ✅ 主力 | — | — | — |
-  | 状态机确定性 | ❌ 受限 | ✅ 主力 | 补充 | — | 端到端 |
-  | 深度强制 | ❌ 受限 | ✅ 主力 | — | — | 边界值 |
-  | 路径不 panic | ❌ 受限 | — | ✅ 主力 | — | 边界值 |
-  | 域评估返回 bool | ❌ 受限 | — | ✅ 主力 | — | 穷尽类型 |
-  | 架构合规 | — | — | — | ✅ 主力 | — |
+- 字节串匹配（非 regex），零依赖
+- T8/T9 在 #[cfg(test)] mod tests 中豁免（测试可用 unwrap）
+- T10/T11 全局强制（包括测试代码）
+- G8 在 tier1/tier2 测试代码中豁免（测试可构造控制流指令 fixture）
 
-----------------------------------------------------------------
-四、tier0-tcb 验证目标
-----------------------------------------------------------------
+  3.6 验证分层矩阵
+
+| 验证目标        | Kani    | TLA+    | proptest | 门控    | 单元测试 |
+| --------------- | ------- | ------- | -------- | ------- | -------- |
+| 整数不溢出      | ✅ 主力 | —       | 补充     | —       | 边界值   |
+| 状态机终止性    | ❌ 受限 | ✅ 主力 | —        | —       | —        |
+| 状态机确定性    | ❌ 受限 | ✅ 主力 | 补充     | —       | 端到端   |
+| 深度强制        | ❌ 受限 | ✅ 主力 | —        | —       | 边界值   |
+| 路径不 panic    | ❌ 受限 | —       | ✅ 主力  | —       | 边界值   |
+| 域评估返回 bool | ❌ 受限 | —       | ✅ 主力  | —       | 穷尽类型 |
+| 架构合规        | —       | —       | —        | ✅ 主力 | —        |
+
+---
+
+## 四、tier0-tcb 验证目标
 
 4.1 模块结构与不变量
 
-  tier0-tcb/src/
-  ├── value.rs       JsonValue 类型系统（6 变体 + as_*/is_*/get/insert）
-  ├── path.rs        resolve_path / resolve_path_mut（JSON 路径解析）
-  ├── domain.rs      evaluate_domain（eq/lt/exists/instruction/all/not）
-  ├── executor.rs    execute_meta_instruction（set/push/branch/io_request）
-  ├── transition.rs  execute_transition（规则匹配 + 指令派发）
-  ├── error.rs       TcbError（10 种错误变体）
-  └── lib.rs         模块导出 + 编译时门控
+tier0-tcb/src/
+├── value.rs JsonValue 类型系统（6 变体 + as*\*/is*\*/get/insert）
+├── path.rs resolve_path / resolve_path_mut（JSON 路径解析）
+├── domain.rs evaluate_domain（eq/lt/exists/instruction/all/not）
+├── executor.rs execute_meta_instruction（set/push/branch/io_request）
+├── transition.rs execute_transition（规则匹配 + 指令派发）
+├── error.rs TcbError（10 种错误变体）
+└── lib.rs 模块导出 + 编译时门控
 
-  tier0-tcb/tests/
-  ├── kani_proofs.rs     Kani proof 集合（5 个，#[cfg(kani)] 门控）
-  ├── proptest_props.rs  proptest 属性测试（19 个）
-  └── ...                集成测试 + 端到端测试
+tier0-tcb/tests/
+├── kani_proofs.rs Kani proof 集合（5 个，#[cfg(kani)] 门控）
+├── proptest_props.rs proptest 属性测试（19 个）
+└── ... 集成测试 + 端到端测试
 
-  核心不变量：
-  1. 永不 panic（所有错误通过 Result 返回）
-  2. 整数运算溢出返回 Err 而非 panic
-  3. 路径解析失败返回 None 而非 panic
-  4. 相同输入恒产生相同输出（确定性）
-  5. 有限步内终止（三条硬上界：MAX_TRANSFORM_RULES/MAX_BRANCH_DEPTH/MAX_DOMAIN_DEPTH 均=64）
+核心不变量：
+
+1. 永不 panic（所有错误通过 Result 返回）
+2. 整数运算溢出返回 Err 而非 panic
+3. 路径解析失败返回 None 而非 panic
+4. 相同输入恒产生相同输出（确定性）
+5. 有限步内终止（三条硬上界：MAX_TRANSFORM_RULES/MAX_BRANCH_DEPTH/MAX_DOMAIN_DEPTH 均=64）
 
 4.2 整数运算安全（P0-1, P0-2）—— 已验证 ✅
 
-  验证目标：i64::checked_add / checked_sub 在所有 2^64 × 2^64 输入组合上
-  正确返回 None（溢出）或 Some（结果），绝不 panic。
+验证目标：i64::checked_add / checked_sub 在所有 2^64 × 2^64 输入组合上
+正确返回 None（溢出）或 Some（结果），绝不 panic。
 
-  Kani proof（tests/kani_proofs.rs）：
-  - verify_set_integer_safety  ✅ PASS (0.16s, 0/41 failed)
-  - verify_set_sub_safety       ✅ PASS (0.17s, 0/41 failed)
+Kani proof（tests/kani_proofs.rs）：
 
-  这等价于证明了 EvoRule 的 exec_set add/sub 路径安全性，因为
-  exec_set 内部直接调用 i64::checked_add/checked_sub。
+- verify_set_integer_safety ✅ PASS (0.16s, 0/41 failed)
+- verify_set_sub_safety ✅ PASS (0.17s, 0/41 failed)
+
+这等价于证明了 EvoRule 的 exec_set add/sub 路径安全性，因为
+exec_set 内部直接调用 i64::checked_add/checked_sub。
 
 4.3 路径解析安全（P0-3）—— proptest 覆盖 ✅
 
-  验证目标：resolve_path 对任意 path 字符串 + 任意 JsonValue 状态不 panic。
+验证目标：resolve_path 对任意 path 字符串 + 任意 JsonValue 状态不 panic。
 
-  Kani proof（tests/kani_proofs.rs）：
-  - verify_path_no_panic  🔧 已改进（加 assert），待 Kani 环境验证
-    若仍 TIMEOUT 则删除，proptest 已保底
+Kani proof（tests/kani_proofs.rs）：
 
-  proptest 保底（tests/proptest_props.rs）：
-  - resolve_path_never_panics_arbitrary_path  ✅ PASS (200 case)
-    任意 path [a-z0-9.]{0,20} + Object/Array 两种 state
+- verify_path_no_panic 🔧 已改进（加 assert），待 Kani 环境验证
+  若仍 TIMEOUT 则删除，proptest 已保底
 
-  已知限制：Kani 对 parse_path_segments 的 String 建模开销大，
-  可能 TIMEOUT。proptest 已提供保底覆盖。
+proptest 保底（tests/proptest_props.rs）：
+
+- resolve_path_never_panics_arbitrary_path ✅ PASS (200 case)
+  任意 path [a-z0-9.]{0,20} + Object/Array 两种 state
+
+已知限制：Kani 对 parse_path_segments 的 String 建模开销大，
+可能 TIMEOUT。proptest 已提供保底覆盖。
 
 4.4 域评估安全（P0-4）—— proptest 覆盖 ✅
 
-  验证目标：evaluate_domain 对任意 domain 结构 + 任意 state 不 panic，
-  始终返回 bool。
+验证目标：evaluate_domain 对任意 domain 结构 + 任意 state 不 panic，
+始终返回 bool。
 
-  Kani proof verify_domain_boolean 受限于 BTreeMap 建模开销，
-  改用 proptest 替代：
-  - domain_eval_never_panics_arbitrary_type  ✅ PASS (200 case)
-    任意 domain 类型 + 字段缺失 + Object/Array state
-  - domain_eval_nested_never_panics  ✅ PASS (200 case)
-    0..20 层嵌套 Not domain
+Kani proof verify_domain_boolean 受限于 BTreeMap 建模开销，
+改用 proptest 替代：
 
-4.5 状态转换性质（P0-5, P0-7, P0-8）—— TLA+ 待实现 ⏳
+- domain_eval_never_panics_arbitrary_type ✅ PASS (200 case)
+  任意 domain 类型 + 字段缺失 + Object/Array state
+- domain_eval_nested_never_panics ✅ PASS (200 case)
+  0..20 层嵌套 Not domain
 
-  验证目标：
-  - P0-5 确定性：execute_transition 对相同输入恒产生相同输出
-  - P0-7 终止性：execute_transition 在有限步内完成
-  - P0-8 深度强制：三条硬上界（MAX_*=64）被强制
+  4.5 状态转换性质（P0-5, P0-7, P0-8）—— TLA+ 待实现 ⏳
 
-  【诚实说明】verify_transition_bounded（kani_proofs.rs:182-197）的
-  当前实现测的是 JsonValue::empty_object() 和 Array 构造器，不直接覆盖
-  execute_transition。P0-5 的端到端验证留给 TLA+。
+验证目标：
 
-  这三个性质的真正验证工具是 TLA+（Phase 1 实现），因为：
-  - execute_transition 内部操作 BTreeMap（Kani 无法建模）
-  - 终止性/确定性是状态机性质（Kani 不擅长，TLA+ 擅长）
-  - 深度强制涉及递归调用栈（TLA+ 用 depth 计数器抽象）
+- P0-5 确定性：execute_transition 对相同输入恒产生相同输出
+- P0-7 终止性：execute_transition 在有限步内完成
+- P0-8 深度强制：三条硬上界（MAX\_\*=64）被强制
 
-  proptest 保底：
-  - execute_transition_increment_deterministic  ✅ PASS
-  - execute_transition_increment_correctness    ✅ PASS
-  - execute_transition_arbitrary_type_no_panic  ✅ PASS (任意指令类型)
-  - execute_transition_malformed_instruction_no_panic  ✅ PASS (畸形输入)
+【诚实说明】verify_transition_bounded（kani_proofs.rs:182-197）的
+当前实现测的是 JsonValue::empty_object() 和 Array 构造器，不直接覆盖
+execute_transition。P0-5 的端到端验证留给 TLA+。
 
-4.6 JsonValue 类型安全（P0-6）—— 已验证 ✅
+这三个性质的真正验证工具是 TLA+（Phase 1 实现），因为：
 
-  验证目标：JsonValue 的构造与访问一致性（Integer 构造 → as_i64 返回 Some）。
+- execute_transition 内部操作 BTreeMap（Kani 无法建模）
+- 终止性/确定性是状态机性质（Kani 不擅长，TLA+ 擅长）
+- 深度强制涉及递归调用栈（TLA+ 用 depth 计数器抽象）
 
-  Kani proof（tests/kani_proofs.rs）：
-  - verify_value_roundtrip  ✅ PASS (0.15s, 0/377 failed, 7 unreachable)
+proptest 保底：
 
-4.7 tier0 当前状态与缺口
+- execute_transition_increment_deterministic ✅ PASS
+- execute_transition_increment_correctness ✅ PASS
+- execute_transition_arbitrary_type_no_panic ✅ PASS (任意指令类型)
+- execute_transition_malformed_instruction_no_panic ✅ PASS (畸形输入)
 
-  已完成（4/5 Kani PASS + 19 proptest）：
-  - ✅ 整数加减不溢出（Kani）
-  - ✅ JsonValue 类型安全（Kani）
-  - ✅ 域评估健壮性（proptest）
-  - ✅ 路径解析健壮性（proptest + Kani 待验证）
-  - ✅ 状态转换健壮性（proptest 保底）
+  4.6 JsonValue 类型安全（P0-6）—— 已验证 ✅
 
-  缺口（1.0 阻塞）：
-  - ⏳ P0-5/P0-7/P0-8 状态机性质（TLA+ 待实现）
-  - ⏳ verify_path_no_panic 的 Kani 环境验证（需 WSL/Docker）
-  - ⏳ Kani 版本三处不一致
+验证目标：JsonValue 的构造与访问一致性（Integer 构造 → as_i64 返回 Some）。
+
+Kani proof（tests/kani_proofs.rs）：
+
+- verify_value_roundtrip ✅ PASS (0.15s, 0/377 failed, 7 unreachable)
+
+  4.7 tier0 当前状态与缺口
+
+已完成（4/5 Kani PASS + 19 proptest）：
+
+- ✅ 整数加减不溢出（Kani）
+- ✅ JsonValue 类型安全（Kani）
+- ✅ 域评估健壮性（proptest）
+- ✅ 路径解析健壮性（proptest + Kani 待验证）
+- ✅ 状态转换健壮性（proptest 保底）
+
+缺口（1.0 阻塞）：
+
+- ⏳ P0-5/P0-7/P0-8 状态机性质（TLA+ 待实现）
+- ⏳ verify_path_no_panic 的 Kani 环境验证（需 WSL/Docker）
+- ⏳ Kani 版本三处不一致
 
   1.0 门槛评估（诚实）：
-  - 当前**未达标**——Kani proof 验证的是 Rust 标准库原语，非 EvoRule 核心
-  - TLA+ 落地后可达标（证状态机性质 + §4.4 修订）
 
-----------------------------------------------------------------
-五、tier1-reactor 验证目标（1.x 路线，不阻塞 1.0）
-----------------------------------------------------------------
+- 当前**未达标**——Kani proof 验证的是 Rust 标准库原语，非 EvoRule 核心
+- TLA+ 落地后可达标（证状态机性质 + §4.4 修订）
+
+---
+
+## 五、tier1-reactor 验证目标（1.x 路线，不阻塞 1.0）
 
 5.1 pure.rs 验证准备层
 
-  tier1-reactor/src/pure.rs 将反应器主循环中不含 I/O、不含 tokio、
-  不含 tracing 的纯逻辑抽离，为 Kani 验证做准备。
+tier1-reactor/src/pure.rs 将反应器主循环中不含 I/O、不含 tokio、
+不含 tracing 的纯逻辑抽离，为 Kani 验证做准备。
 
-  已抽离的纯函数：
-  - next_step()          单步执行（pop 指令 → execute_transition → 更新 state）
-  - apply_command()      追加指令到队列
-  - apply_payload_update()  更新 payload 路径值
-  - apply_io_response()  完成 I/O 请求 + 注入结果
-  - check_invariants()   检查 5 条结构性不变量
-  - is_stable()          稳定条件判定
-  - register_io_request_pure()  注册 I/O 请求（纯函数版，无 Instant::now）
+已抽离的纯函数：
 
-5.2 五条结构性不变量
+- next_step() 单步执行（pop 指令 → execute_transition → 更新 state）
+- apply_command() 追加指令到队列
+- apply_payload_update() 更新 payload 路径值
+- apply_io_response() 完成 I/O 请求 + 注入结果
+- check_invariants() 检查 5 条结构性不变量
+- is_stable() 稳定条件判定
+- register_io_request_pure() 注册 I/O 请求（纯函数版，无 Instant::now）
 
-  在 tier1-reactor/src/invariants.rs 中定义，每次 phase 转移时检查：
+  5.2 五条结构性不变量
 
-  | # | 不变量 | 检查函数 | 违规类型 |
-  |---|---|---|---|
-  | 1 | pending_io_count == pending_requests.len() == pending_io_timestamps.len() | check_io_count_consistency | IoCountMismatch |
-  | 2 | io_recovery == true ⇒ payload.__io_result__ 存在 | check_io_recovery_consistency | IoRecoveryWithoutResult |
-  | 3 | version >= prev_version（单调递增） | check_version_monotonic | VersionDecreased |
-  | 4 | payload.__io_result__ 存在 ⇒ io_recovery == true | check_io_recovery_consistency | ResultWithoutIoRecovery |
-  | 5 | pending_io>0 ∧ queue空 ∧ io_recovery=true ∧ 无 result ⇒ 冲突 | check_no_recovery_conflict | RecoveryWhileAwaitingIo |
+在 tier1-reactor/src/invariants.rs 中定义，每次 phase 转移时检查：
 
-  注：#2 和 #4 合为双向蕴含（io_recovery ⟺ __io_result__ 存在）。
-  #5 为弱约束（仅当四个条件同时满足才违规）。
+| #   | 不变量                                                                    | 检查函数                      | 违规类型                |
+| --- | ------------------------------------------------------------------------- | ----------------------------- | ----------------------- |
+| 1   | pending_io_count == pending_requests.len() == pending_io_timestamps.len() | check_io_count_consistency    | IoCountMismatch         |
+| 2   | io_recovery == true ⇒ payload.**io_result** 存在                          | check_io_recovery_consistency | IoRecoveryWithoutResult |
+| 3   | version >= prev_version（单调递增）                                       | check_version_monotonic       | VersionDecreased        |
+| 4   | payload.**io_result** 存在 ⇒ io_recovery == true                          | check_io_recovery_consistency | ResultWithoutIoRecovery |
+| 5   | pending_io>0 ∧ queue空 ∧ io_recovery=true ∧ 无 result ⇒ 冲突              | check_no_recovery_conflict    | RecoveryWhileAwaitingIo |
+
+注：#2 和 #4 合为双向蕴含（io_recovery ⟺ **io_result** 存在）。
+#5 为弱约束（仅当四个条件同时满足才违规）。
 
 5.3 Kani 证明桩（当前状态：1 个占位桩，0 个真实 proof）
 
-  【诚实声明】tier1-reactor/src/pure.rs:269-304 的 kani_proofs 模块
-  当前只有 1 个占位桩函数 `_kani_placeholder()`（函数体 `let _ = JsonValue::Null;`），
-  0 个真实 Kani proof。注释描述了 5 个待实现 proof：
+【诚实声明】tier1-reactor/src/pure.rs:269-304 的 kani*proofs 模块
+当前只有 1 个占位桩函数 `_kani_placeholder()`（函数体 `let * = JsonValue::Null;`），
+0 个真实 Kani proof。注释描述了 5 个待实现 proof：
 
-  1. invariant_io_count_consistency：next_step 后 #1 仍成立
-  2. invariant_version_monotonic：next_step 后 version 不回退
-  3. invariant_io_recovery_iff_result：next_step 后 #2+#4 仍成立
-  4. command_does_not_decrease_queue：apply_command 后队列不减
-  5. max_rounds_termination：bounded model checking 证明有限步终止
+1. invariant_io_count_consistency：next_step 后 #1 仍成立
+2. invariant_version_monotonic：next_step 后 version 不回退
+3. invariant_io_recovery_iff_result：next_step 后 #2+#4 仍成立
+4. command_does_not_decrease_queue：apply_command 后队列不减
+5. max_rounds_termination：bounded model checking 证明有限步终止
 
-  这些 proof 在 1.x 路线实现，不阻塞 1.0。
+这些 proof 在 1.x 路线实现，不阻塞 1.0。
 
 5.4 FactsLog append-only 保证（P1-4）
 
-  FactsLog 是 EvoRule 的"唯一真相存储"（single source of truth）：
-  - 所有 Fact 追加到不可变历史（Vec<(u64, Fact)>）
-  - 当前物化快照由最近的 StateTransition 确定
-  - 单调递增版本号
+FactsLog 是 EvoRule 的"唯一真相存储"（single source of truth）：
 
-  验证目标（1.x）：
-  - history 只增长，不修改/删除已追加的 Fact
-  - version 只递增，不回退
-  - current_snapshot 始终与 history 重放结果一致
+- 所有 Fact 追加到不可变历史（Vec<(u64, Fact)>）
+- 当前物化快照由最近的 StateTransition 确定
+- 单调递增版本号
 
-5.5 tier1 当前状态与缺口（1.x 路线）
+验证目标（1.x）：
 
-  已完成：
-  - ✅ pure.rs 纯逻辑抽离（7 个纯函数）
-  - ✅ 5 条不变量定义 + 运行时检查 + 单元测试
-  - ✅ Kani feature flag + 占位桩框架
+- history 只增长，不修改/删除已追加的 Fact
+- version 只递增，不回退
+- current_snapshot 始终与 history 重放结果一致
 
-  缺口（1.x）：
-  - ⏳ 5 个 Kani proof 实现（当前仅占位桩）
-  - ⏳ FactsLog append-only 形式化证明
-  - ⏳ WAL 持久化一致性证明
-  - ⏳ max_rounds 终止性证明（bounded model checking）
+  5.5 tier1 当前状态与缺口（1.x 路线）
 
-5.6 ReactorStateAbstract 完整设计（tier1 Kani 抽象模型，1.x 路线）
+已完成：
 
-  本节为 tier1 反应器提供与第 8 章（tier0 ExecuteTransition.tla）和
-  §6.5（tier2 AuditorChain.tla）对称的完整抽象模型设计。
-  虽然 tier1 是 1.x 路线（不阻塞 1.0），但设计在此完整给出，
-  确保 1.x 路线实现时无设计缺口。
+- ✅ pure.rs 纯逻辑抽离（7 个纯函数）
+- ✅ 5 条不变量定义 + 运行时检查 + 单元测试
+- ✅ Kani feature flag + 占位桩框架
 
-  本节是附录 A 中 L1-1~L1-5 harness 伪码的**前置设计**：
-  附录 A 给出"验证什么"（证明义务），本节给出"如何建模"（抽象结构）。
+缺口（1.x）：
 
-  5.6.1 为什么 tier1 需要抽象模型
+- ⏳ 5 个 Kani proof 实现（当前仅占位桩）
+- ⏳ FactsLog append-only 形式化证明
+- ⏳ WAL 持久化一致性证明
+- ⏳ max_rounds 终止性证明（bounded model checking）
+
+  5.6 ReactorStateAbstract 完整设计（tier1 Kani 抽象模型，1.x 路线）
+
+本节为 tier1 反应器提供与第 8 章（tier0 ExecuteTransition.tla）和
+§6.5（tier2 AuditorChain.tla）对称的完整抽象模型设计。
+虽然 tier1 是 1.x 路线（不阻塞 1.0），但设计在此完整给出，
+确保 1.x 路线实现时无设计缺口。
+
+本节是附录 A 中 L1-1~L1-5 harness 伪码的**前置设计**：
+附录 A 给出"验证什么"（证明义务），本节给出"如何建模"（抽象结构）。
+
+5.6.1 为什么 tier1 需要抽象模型
 
     tier1-reactor/src/state.rs:15-77 的 ReactorState 含 12 个字段，
     其中 6 个字段使 Kani 无法直接验证（同 tier0 的 BTreeMap 限制）：
@@ -488,7 +517,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     用 bool 抽象 payload 的 __io_result__ 存在性，
     保留所有与 5 条不变式相关的结构。
 
-  5.6.2 被验证代码的精确控制流分析
+5.6.2 被验证代码的精确控制流分析
 
     5.6.2.1 next_step 控制流（pure.rs:90-134）
 
@@ -544,7 +573,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       关键观察：5 条不变量**只依赖计数和标志**，不依赖 BTreeMap/Vec 的具体内容。
       这是抽象可行的根本原因——用定长数组 + bool 替代集合，保留计数语义。
 
-  5.6.3 抽象策略
+5.6.3 抽象策略
 
     5.6.3.1 被精确建模（影响不变量验证）
 
@@ -587,7 +616,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       若不变量在所有非确定性分支下保持，则在真实行为下也保持。
       这是抽象解释（abstract interpretation）的标准 soundness 条件。
 
-  5.6.4 完整 ReactorStateAbstract 设计
+5.6.4 完整 ReactorStateAbstract 设计
 
     5.6.4.1 常量与类型定义
 
@@ -913,7 +942,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       }
       ```
 
-  5.6.5 5 条不变式的 Kani harness 设计
+5.6.5 5 条不变式的 Kani harness 设计
 
     每条不变式对应一个 #[kani::proof] 函数，结构为：
       1. 生成符号化初始状态（any()）
@@ -1000,7 +1029,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       }
       ```
 
-  5.6.6 Soundness 论证（抽象模型正确性证明）
+5.6.6 Soundness 论证（抽象模型正确性证明）
 
     【定理】ReactorStateAbstract 是 ReactorState 的 sound over-approximation。
 
@@ -1074,7 +1103,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       3. queue_len 的有界抽象：Q_QUEUE=2 不覆盖队列长度 > 2 的场景。
          缓解：proptest 覆盖长队列场景。
 
-  5.6.7 状态空间分析
+5.6.7 状态空间分析
 
     5.6.7.1 单状态变量状态空间
 
@@ -1120,7 +1149,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       实际 BMC 开销 ≈ 8 × 单步验证开销 ≈ 8 × 秒级 = 分钟级。
       若 TIMEOUT，降级为 ReactorLoop.tla（见 §5.7）。
 
-  5.6.8 代码到抽象模型的精确映射表
+5.6.8 代码到抽象模型的精确映射表
 
       | Rust 代码位置 | Rust 行为 | 抽象模型 | 映射关系 |
       |---|---|---|---|
@@ -1150,11 +1179,11 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
 
 5.7 ReactorLoop.tla 设计草案（L1-5 备选方案）
 
-  本节为 L1-5 终止性证明的 TLA+ 备选方案。
-  当 Kani BMC（§5.6.5.5）因 unwind 层数过大而 TIMEOUT 时，
-  降级为 TLA+ 状态机验证（同 tier0 L0-6 策略）。
+本节为 L1-5 终止性证明的 TLA+ 备选方案。
+当 Kani BMC（§5.6.5.5）因 unwind 层数过大而 TIMEOUT 时，
+降级为 TLA+ 状态机验证（同 tier0 L0-6 策略）。
 
-  5.7.1 为什么需要 ReactorLoop.tla
+5.7.1 为什么需要 ReactorLoop.tla
 
     L1-5 终止性的 Kani BMC 在 unwind=8 时可能 TIMEOUT（§5.6.7.4 估算分钟级）。
     若 TIMEOUT，需 TLA+ 兜底，因为：
@@ -1166,7 +1195,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     T3-5 任务中，若 cargo kani --harness max_rounds_termination TIMEOUT，
     则启动 ReactorLoop.tla 实现。
 
-  5.7.2 完整 TLA+ Spec 设计
+5.7.2 完整 TLA+ Spec 设计
 
     5.7.2.1 模块与常量
 
@@ -1298,7 +1327,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
         Q_MAX = 2
         K_PENDING = 2
 
-  5.7.3 有限模型边界（诚实声明）
+5.7.3 有限模型边界（诚实声明）
 
     5.7.3.1 有限模型参数
 
@@ -1338,7 +1367,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       - execute_transition 内部正确性（由 tier0 L0-6~L0-9 证）
       - 队列长度 > 2 的场景（需增大 Q_MAX 或 proptest 补充）
 
-  5.7.4 与 tier0 ExecuteTransition.tla 的对比
+5.7.4 与 tier0 ExecuteTransition.tla 的对比
 
       | 维度 | tier0 ExecuteTransition | tier1 ReactorLoop |
       |---|---|---|
@@ -1349,66 +1378,72 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       | 1.0 角色 | ✅ 阻塞 | ❌ 1.x 路线（L1-5 备选）|
       | 触发条件 | Phase 1 必须 | 仅 L1-5 Kani TIMEOUT 时 |
 
-----------------------------------------------------------------
-六、tier2-governance 验证目标（1.x 路线，不阻塞 1.0）
-----------------------------------------------------------------
+---
+
+## 六、tier2-governance 验证目标（1.x 路线，不阻塞 1.0）
 
 6.1 审计链哈希验证（P1-5）
 
-  tier2-governance/src/auditor.rs:319 实现 verify() 方法，基于 blake3 哈希链：
+tier2-governance/src/auditor.rs:322 实现 verify() 方法，基于 blake3 哈希链：
 
-  算法（auditor.rs doc comment L12-15）：
-  - last_hash 初始为 "genesis"
-  - 每个事实的链哈希 = blake3(prev_hash + fact_hash)
-  - 该链哈希作为下一条目的 prev_hash
+算法（auditor.rs doc comment L12-15）：
 
-  verify() 签名：`pub fn verify(&self) -> bool`
+- last_hash 初始为 "genesis"
+- 每个事实的链哈希 = blake3(prev_hash + fact_hash)
+- 该链哈希作为下一条目的 prev_hash
 
-  验证目标（1.x）：
-  - 任何对历史 Fact 的修改都会导致哈希链断裂
-  - verify() 能检测篡改
-  - 哈希链不可伪造（已知 prev_hash 无法构造有效链）
+verify() 签名：`pub fn verify(&self) -> bool`
 
-  验证方法（1.x）：
-  - proptest：随机篡改任意条目，验证 verify() 返回 false
-  - 对抗测试：尝试构造碰撞（blake3 抗碰撞作为密码学假设）
+验证目标（1.x）：
 
-6.2 哈希链不可篡改性
+- 任何对历史 Fact 的修改都会导致哈希链断裂
+- verify() 能检测篡改
+- 哈希链不可伪造（已知 prev_hash 无法构造有效链）
 
-  验证目标：攻击者无法在不知道完整链的情况下修改任意条目而不被检测。
+验证方法（1.x）：
 
-  形式化表述：
-  ∀ i, j (i < j): 修改 entries[i] 的内容 → verify() 返回 false
-  除非同时重新计算 entries[i..j] 的所有哈希
+- proptest：随机篡改任意条目，验证 verify() 返回 false
+- 对抗测试：尝试构造碰撞（blake3 抗碰撞作为密码学假设）
+
+  6.2 哈希链不可篡改性
+
+验证目标：攻击者无法在不知道完整链的情况下修改任意条目而不被检测。
+
+形式化表述：
+∀ i, j (i < j): 修改 entries[i] 的内容 → verify() 返回 false
+除非同时重新计算 entries[i..j] 的所有哈希
 
 6.3 审计重放确定性（P1-6）
 
-  验证目标：重放 FactsLog 的历史 Fact 序列，始终产生相同的最终状态。
+验证目标：重放 FactsLog 的历史 Fact 序列，始终产生相同的最终状态。
 
-  这连接了 tier1（FactsLog）和 tier2（Auditor）：
-  - 从 FactsLog 读取历史 → 重放 → 得到快照
-  - 快照必须与 current_snapshot 一致
+这连接了 tier1（FactsLog）和 tier2（Auditor）：
 
-6.4 tier2 当前状态与缺口（1.x 路线）
+- 从 FactsLog 读取历史 → 重放 → 得到快照
+- 快照必须与 current_snapshot 一致
 
-  已完成：
-  - ✅ blake3 哈希链实现（auditor.rs）
-  - ✅ verify() 方法实现（L319）
-  - ✅ auto_verify 自动验证配置（P06）
-  - ✅ WAL 持久化（auditor.rs with_wal_path）
+  6.4 tier2 当前状态与缺口（1.x 路线）
 
-  缺口（1.x）：
-  - ⏳ 哈希链完整性的 proptest
-  - ⏳ 篡改可检测性证明
-  - ⏳ 审计重放确定性的形式化验证
+已完成：
 
-6.5 AuditorChain.tla 状态机验证设计（1.x 路线，完整设计）
+- ✅ blake3 哈希链实现（auditor.rs）
+- ✅ verify() 方法实现（L322）
+- ✅ auto_verify 自动验证配置（P06）
+- ✅ WAL 持久化（auditor.rs with_wal_path）
 
-  本节为 tier2 审计链提供与第 8 章（tier0 ExecuteTransition.tla）对称的
-  完整 TLA+ 设计。虽然 tier2 是 1.x 路线（不阻塞 1.0），但设计在此完整
-  给出，确保 Phase 4 实现时无设计缺口。
+缺口（1.x）：
 
-  6.5.1 为什么 tier2 需要 TLA+
+- ⏳ 哈希链完整性的 proptest
+- ⏳ 篡改可检测性证明
+- ⏳ 审计重放确定性的形式化验证
+
+  6.5 AuditorChain.tla 状态机验证设计（1.x 路线，完整设计）
+
+本节为 tier2 审计链提供与第 8 章（tier0 ExecuteTransition.tla）对称的
+完整 TLA+ 设计。虽然 tier2 是 1.x 路线（不阻塞 1.0），但设计在此完整
+给出，确保 Phase 4 实现时无设计缺口。
+
+6.5.1 为什么 tier2 需要 TLA+
 
     auditor.rs 的 verify() 和 audit_new() 是状态机：
     - audit_new：从 fact_stream 取下一批 fact，追加 entry，更新 last_hash
@@ -1426,7 +1461,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     TLA+ 只证明：给定 H 是抗碰撞的（假设），则篡改可检测。
     即 TLA+ 证明的是"结构性质"，密码学性质由 blake3 学术审计背书。
 
-  6.5.2 被验证代码的精确控制流分析
+6.5.2 被验证代码的精确控制流分析
 
     6.5.2.1 audit_new 控制流（auditor.rs:210-281）
 
@@ -1444,7 +1479,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       6. if should_auto_verify() → verify()
       7. return count
 
-    6.5.2.2 verify 控制流（auditor.rs:319-336）
+    6.5.2.2 verify 控制流（auditor.rs:322-339）
 
       1. prev_hash = "genesis"
       2. for entry in entries:
@@ -1463,7 +1498,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
         last_hash = H(e_n.prev_hash, e_n.content_hash)  (n ≥ 1)
         last_hash = "genesis"                            (n = 0)
 
-  6.5.3 抽象策略
+6.5.3 抽象策略
 
     6.5.3.1 被精确建模（影响哈希链结构）
 
@@ -1501,7 +1536,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       【诚实声明】TLC 无法穷举所有 256-bit 哈希值，只验证有限 HashSet
       上的结构性质。blake3 的真实抗碰撞性由学术审计背书（见 §6.6）。
 
-  6.5.4 完整 TLA+ Spec 设计
+6.5.4 完整 TLA+ Spec 设计
 
     以下为 AuditorChain.tla 的完整设计（伪 TLA+ 语法，Phase 4 实现时
     转为精确 TLA+ 语法）。
@@ -1603,7 +1638,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
         /\ UNCHANGED <<entries, last_hash, fact_stream, audited_count>>
 
       (* 子动作 5: Verify → VerifyLoop 或 Done（验证循环）*)
-      (* 对应 auditor.rs:319-336 verify() *)
+      (* 对应 auditor.rs:322-339 verify() *)
       (* 用辅助变量 verify_idx（隐藏，用 audited_count 复用或新增）*)
       (* 为清晰起见，这里用独立验证状态机描述 verify 的语义 *)
       VerifyStep ==
@@ -1684,7 +1719,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
              ELSE IF h1 = "h1" ∧ h2 = ch0 THEN "h3"
              ELSE "h4"]
 
-  6.5.5 代码到 Spec 的精确映射表
+6.5.5 代码到 Spec 的精确映射表
 
       | Rust 代码位置 | Rust 行为 | TLA+ 建模 | 映射关系 |
       |---|---|---|---|
@@ -1703,7 +1738,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       - 哈希计算：抽象（blake3 → H，结构性质不依赖具体哈希）
       - 篡改检测：100% 精确映射（TamperOneEntry 覆盖单点篡改）
 
-  6.5.6 有限模型边界（诚实声明）
+6.5.6 有限模型边界（诚实声明）
 
     6.5.6.1 有限模型参数
 
@@ -1746,7 +1781,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       - ∀ N > 4 的归纳证明（需 TLAPS，未来工作）
       - 多点共谋篡改（TamperDetection 只覆盖单点；多点依赖抗碰撞）
 
-  6.5.7 与 tier0 ExecuteTransition.tla 的对比
+6.5.7 与 tier0 ExecuteTransition.tla 的对比
 
       | 维度 | tier0 ExecuteTransition | tier2 AuditorChain |
       |---|---|---|
@@ -1758,7 +1793,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       | 状态空间 | ~10^10（需 symmetry） | ~10^9（需 constraint） |
       | 密码学依赖 | 无 | blake3 抗碰撞（外部假设） |
 
-  6.5.8 AuditorChain.tla 落地计划（Phase 4 详细任务）
+6.5.8 AuditorChain.tla 落地计划（Phase 4 详细任务）
 
       交付物清单：
       1. tier2-governance/tla/AuditorChain.tla（完整 spec + 4 不变式）
@@ -1791,216 +1826,211 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     缓解：blake3 输出 256-bit，碰撞复杂度 2^128（生日攻击），
     在可预见算力下不可行。若量子计算成熟，需迁移到抗量子哈希。
 
-----------------------------------------------------------------
-七、跨层端到端不变量（1.x 路线）
-----------------------------------------------------------------
+---
+
+## 七、跨层端到端不变量（1.x 路线）
 
 7.1 因果链完整性（CausalChainAcyclic）
 
-  验证目标：每个 Fact 的 cause（因果父）指向一个真实存在的 FactId，
-  且因果链不成环。
+验证目标：每个 Fact 的 cause（因果父）指向一个真实存在的 FactId，
+且因果链不成环。
 
-  这连接了 tier1（Fact 生成）和 tier2（审计链构建）：
-  - tier1 生成 Fact 时记录 cause（Fact::StateTransition.cause / Fact::IoRequest.cause）
-  - tier2 审计时 extract_cause(fact) 提取 cause，构建 AuditEntry.cause
+这连接了 tier1（Fact 生成）和 tier2（审计链构建）：
+
+- tier1 生成 Fact 时记录 cause（Fact::StateTransition.cause / Fact::IoRequest.cause）
+- tier2 审计时 extract_cause(fact) 提取 cause，构建 AuditEntry.cause
 
   7.1.1 形式化定义
 
-    设 FactsLog.history = [f_1, f_2, ..., f_n]，每个 f_i 有：
-      id(f_i) = FactId(i)
-      cause(f_i) ∈ FactId ∪ {None}
+  设 FactsLog.history = [f_1, f_2, ..., f_n]，每个 f_i 有：
+  id(f_i) = FactId(i)
+  cause(f_i) ∈ FactId ∪ {None}
 
-    因果关系图 G = (V, E)：
-      V = { id(f_i) : i ∈ 1..n }
-      E = { (id(f_i), cause(f_i)) : cause(f_i) ≠ None }
+  因果关系图 G = (V, E)：
+  V = { id(f_i) : i ∈ 1..n }
+  E = { (id(f_i), cause(f_i)) : cause(f_i) ≠ None }
 
-    不变量 CausalChainAcyclic：
-      G 是有向无环图（DAG），即不存在 i_1, i_2, ..., i_k 使得
-      (id(f_{i_1}), id(f_{i_2})), (id(f_{i_2}), id(f_{i_3})), ...,
-      (id(f_{i_{k-1}}), id(f_{i_k})), (id(f_{i_k}), id(f_{i_1})) ∈ E
+  不变量 CausalChainAcyclic：
+  G 是有向无环图（DAG），即不存在 i*1, i_2, ..., i_k 使得
+  (id(f*{i*1}), id(f*{i*2})), (id(f*{i*2}), id(f*{i*3})), ...,
+  (id(f*{i*{k-1}}), id(f*{i*k})), (id(f*{i*k}), id(f*{i_1})) ∈ E
 
-    不变量 CausalChainAnchored（锚定）：
-      ∀ f_i: cause(f_i) = None ∨ cause(f_i) ∈ V
-      （每个 cause 指向已存在的 FactId，或为 None）
+  不变量 CausalChainAnchored（锚定）：
+  ∀ f_i: cause(f_i) = None ∨ cause(f_i) ∈ V
+  （每个 cause 指向已存在的 FactId，或为 None）
 
   7.1.2 完整 CausalChain.tla Spec 设计
 
-    以下为 CausalChain.tla 的完整设计（伪 TLA+ 语法，Phase 5 实现时
-    转为精确 TLA+ 语法）。与 §6.5.4 AuditorChain.tla 和 §8.4
-    ExecuteTransition.tla 对称的完整模块设计。
+  以下为 CausalChain.tla 的完整设计（伪 TLA+ 语法，Phase 5 实现时
+  转为精确 TLA+ 语法）。与 §6.5.4 AuditorChain.tla 和 §8.4
+  ExecuteTransition.tla 对称的完整模块设计。
 
-    7.1.2.1 模块与常量
+  7.1.2.1 模块与常量
 
-      ---- MODULE CausalChain ----
-      EXTENDS Naturals, Sequences, FiniteSets, TLC
+        ---- MODULE CausalChain ----
+        EXTENDS Naturals, Sequences, FiniteSets, TLC
 
-      CONSTANTS
-        N_MAX,           (* 最大 Fact 数，实例化 = 5 *)
-        FactIdSet        (* 有限 FactId 集合，如 {1, 2, 3, 4, 5} *)
+        CONSTANTS
+          N_MAX,           (* 最大 Fact 数，实例化 = 5 *)
+          FactIdSet        (* 有限 FactId 集合，如 {1, 2, 3, 4, 5} *)
 
-      ASSUME N_MAX = 5 /\
-             Cardinality(FactIdSet) = 5
+        ASSUME N_MAX = 5 /\
+               Cardinality(FactIdSet) = 5
 
-    7.1.2.2 抽象数据类型
+  7.1.2.2 抽象数据类型
 
-      (* 抽象 Fact：只保留 id 和 cause（因果父），忽略其他字段 *)
-      (* cause = 0 表示 None（无因果父，即根因）*)
-      (* cause ∈ FactIdSet 表示有因果父 *)
-      FactIdWithNone == FactIdSet ∪ {0}
+        (* 抽象 Fact：只保留 id 和 cause（因果父），忽略其他字段 *)
+        (* cause = 0 表示 None（无因果父，即根因）*)
+        (* cause ∈ FactIdSet 表示有因果父 *)
+        FactIdWithNone == FactIdSet ∪ {0}
 
-      Fact == [
-        id: FactIdSet,
-        cause: FactIdWithNone    (* 0 = None, 否则指向 FactIdSet *)
-      ]
+        Fact == [
+          id: FactIdSet,
+          cause: FactIdWithNone    (* 0 = None, 否则指向 FactIdSet *)
+        ]
 
-      (* 因果图 G = (V, E) *)
-      (* V = { f.id : f ∈ history } *)
-      (* E = { ⟨f.id, f.cause⟩ : f ∈ history /\ f.cause ≠ 0 } *)
+        (* 因果图 G = (V, E) *)
+        (* V = { f.id : f ∈ history } *)
+        (* E = { ⟨f.id, f.cause⟩ : f ∈ history /\ f.cause ≠ 0 } *)
 
-    7.1.2.3 状态变量
+  7.1.2.3 状态变量
 
-      VARIABLES
-        history,         (* Seq(Fact)，Fact 历史（只增长）*)
-        pc               (* 程序计数器 *)
+        VARIABLES
+          history,         (* Seq(Fact)，Fact 历史（只增长）*)
+          pc               (* 程序计数器 *)
 
-      PCType == {"Init", "AppendLoop", "AppendFact", "Done"}
+        PCType == {"Init", "AppendLoop", "AppendFact", "Done"}
 
-    7.1.2.4 Init 谓词
+  7.1.2.4 Init 谓词
 
-      Init ==
-        /\ pc = "Init"
-        /\ history = <<>>
-        /\ pc' = "AppendLoop"
-        /\ UNCHANGED history
+        Init ==
+          /\ pc = "Init"
+          /\ history = <<>>
+          /\ pc' = "AppendLoop"
+          /\ UNCHANGED history
 
-    7.1.2.5 Next 动作（3 个子动作）
+  7.1.2.5 Next 动作（3 个子动作）
 
-      (* 子动作 1: AppendLoop → AppendFact 或 Done *)
-      AppendLoopStep ==
-        /\ pc = "AppendLoop"
-        /\ IF Len(history) < N_MAX
-           THEN /\ pc' = "AppendFact"
-                /\ UNCHANGED history
-           ELSE /\ pc' = "Done"
-                /\ UNCHANGED history
+        (* 子动作 1: AppendLoop → AppendFact 或 Done *)
+        AppendLoopStep ==
+          /\ pc = "AppendLoop"
+          /\ IF Len(history) < N_MAX
+             THEN /\ pc' = "AppendFact"
+                  /\ UNCHANGED history
+             ELSE /\ pc' = "Done"
+                  /\ UNCHANGED history
 
-      (* 子动作 2: AppendFact → AppendLoop（追加一条 Fact）*)
-      (* 对应 tier1 facts_log.rs append() *)
-      (* 关键约束：cause 必须指向已存在的 FactId 或为 0（None）*)
-      AppendFactStep ==
-        /\ pc = "AppendFact"
-        /\ Len(history) < N_MAX
-        /\ LET new_id == CHOOSE i ∈ FactIdSet : i ∉ {f.id : f ∈ history}
-              (* cause 非确定性选择：0（None）或已存在的 FactId *)
-              new_cause ∈ FactIdWithNone
-              new_fact == [id |-> new_id, cause |-> new_cause]
-           IN
-           /\ history' = Append(history, new_fact)
-           /\ pc' = "AppendLoop"
+        (* 子动作 2: AppendFact → AppendLoop（追加一条 Fact）*)
+        (* 对应 tier1 facts_log.rs append() *)
+        (* 关键约束：cause 必须指向已存在的 FactId 或为 0（None）*)
+        AppendFactStep ==
+          /\ pc = "AppendFact"
+          /\ Len(history) < N_MAX
+          /\ LET new_id == CHOOSE i ∈ FactIdSet : i ∉ {f.id : f ∈ history}
+                (* cause 非确定性选择：0（None）或已存在的 FactId *)
+                new_cause ∈ FactIdWithNone
+                new_fact == [id |-> new_id, cause |-> new_cause]
+             IN
+             /\ history' = Append(history, new_fact)
+             /\ pc' = "AppendLoop"
 
-      (* 子动作 3: Done（验证阶段，由不变式覆盖）*)
-      DoneStep ==
-        /\ pc = "Done"
-        /\ UNCHANGED <<history, pc>>
+        (* 子动作 3: Done（验证阶段，由不变式覆盖）*)
+        DoneStep ==
+          /\ pc = "Done"
+          /\ UNCHANGED <<history, pc>>
 
-      Next ==
-        \/ AppendLoopStep
-        \/ AppendFactStep
-        \/ DoneStep
+        Next ==
+          \/ AppendLoopStep
+          \/ AppendFactStep
+          \/ DoneStep
 
-      vars == <<history, pc>>
-      Spec == Init /\ [][Next]_vars
+        vars == <<history, pc>>
+        Spec == Init /\ [][Next]_vars
 
-    7.1.2.6 辅助函数：因果图与传递闭包
+  7.1.2.6 辅助函数：因果图与传递闭包
 
-      (* 因果图的顶点集 *)
-      CausalVertices(history) ==
-        { f.id : f ∈ history }
+        (* 因果图的顶点集 *)
+        CausalVertices(history) ==
+          { f.id : f ∈ history }
 
-      (* 因果图的边集 *)
-      CausalEdges(history) ==
-        { ⟨f.id, f.cause⟩ : f ∈ history /\ f.cause ≠ 0 }
+        (* 因果图的边集 *)
+        CausalEdges(history) ==
+          { ⟨f.id, f.cause⟩ : f ∈ history /\ f.cause ≠ 0 }
 
-      (* 传递闭包（有限集合上，用不动点迭代计算）*)
-      (* E+ = 最小不动点：E ∪ {⟨a,c⟩ : ⟨a,b⟩ ∈ E+ ∧ ⟨b,c⟩ ∈ E } *)
-      TransitiveClosure(E) ==
-        LET RECURSIVE TC(_)
-            TC(S) ==
-              LET S' == S ∪ { ⟨a, c⟩ : ⟨a, b⟩ ∈ S, ⟨b, c⟩ ∈ E }
-              IN  IF S' = S THEN S ELSE TC(S')
-        IN TC(E)
+        (* 传递闭包（有限集合上，用不动点迭代计算）*)
+        (* E+ = 最小不动点：E ∪ {⟨a,c⟩ : ⟨a,b⟩ ∈ E+ ∧ ⟨b,c⟩ ∈ E } *)
+        TransitiveClosure(E) ==
+          LET RECURSIVE TC(_)
+              TC(S) ==
+                LET S' == S ∪ { ⟨a, c⟩ : ⟨a, b⟩ ∈ S, ⟨b, c⟩ ∈ E }
+                IN  IF S' = S THEN S ELSE TC(S')
+          IN TC(E)
 
-    7.1.2.7 2 个不变式（完整 TLA+ 表达式）
+  7.1.2.7 2 个不变式（完整 TLA+ 表达式）
 
-      (* I1: CausalChainAcyclic —— 因果链无环 *)
-      (* 不存在 v 使 ⟨v, v⟩ ∈ E+（传递闭包无自环）*)
-      CausalChainAcyclicInvariant ==
-        LET E == CausalEdges(history)
-            E+ == TransitiveClosure(E)
-        IN ∀ v ∈ CausalVertices(history): ⟨v, v⟩ ∉ E+
+        (* I1: CausalChainAcyclic —— 因果链无环 *)
+        (* 不存在 v 使 ⟨v, v⟩ ∈ E+（传递闭包无自环）*)
+        CausalChainAcyclicInvariant ==
+          LET E == CausalEdges(history)
+              E+ == TransitiveClosure(E)
+          IN ∀ v ∈ CausalVertices(history): ⟨v, v⟩ ∉ E+
 
-      (* I2: CausalChainAnchored —— cause 锚定到已存在 Fact *)
-      (* 每个 cause = 0（None）或 cause ∈ V（已存在的 FactId）*)
-      CausalChainAnchoredInvariant ==
-        LET V == CausalVertices(history)
-        IN ∀ f ∈ history: f.cause = 0 \/ f.cause ∈ V
+        (* I2: CausalChainAnchored —— cause 锚定到已存在 Fact *)
+        (* 每个 cause = 0（None）或 cause ∈ V（已存在的 FactId）*)
+        CausalChainAnchoredInvariant ==
+          LET V == CausalVertices(history)
+          IN ∀ f ∈ history: f.cause = 0 \/ f.cause ∈ V
 
-    7.1.2.8 TLC 配置文件（CausalChain.cfg）
+  7.1.2.8 TLC 配置文件（CausalChain.cfg）
 
-      SPECIFICATION Spec
+        SPECIFICATION Spec
 
-      INVARIANTS
-        CausalChainAcyclicInvariant
-        CausalChainAnchoredInvariant
+        INVARIANTS
+          CausalChainAcyclicInvariant
+          CausalChainAnchoredInvariant
 
-      CONSTANTS
-        N_MAX = 5
-        FactIdSet = {1, 2, 3, 4, 5}
+        CONSTANTS
+          N_MAX = 5
+          FactIdSet = {1, 2, 3, 4, 5}
 
-    7.1.2.9 有限模型边界（诚实声明）
+  7.1.2.9 有限模型边界（诚实声明）
 
-      | 参数 | 值 | 对应 Rust | 理由 |
-      |---|---|---|---|
-      | N_MAX | 5 | Vec 无硬限制 | 5 条足以构造 5 节点环和 5 层链 |
-      | FactIdSet | 5 | u64 FactId | 5 个 ID 足以验证环检测 |
+        | 参数 | 值 | 对应 Rust | 理由 |
+        |---|---|---|---|
+        | N_MAX | 5 | Vec 无硬限制 | 5 条足以构造 5 节点环和 5 层链 |
+        | FactIdSet | 5 | u64 FactId | 5 个 ID 足以验证环检测 |
 
-      状态空间估算：
-        | history | 6^5 × 5! ≈ 上限过大 |
-      需用 state constraint 限制 history 为有效序列（无重复 id）。
-      预期 TLC 在 1 小时内完成（带 constraint）。
+        状态空间估算：
+          | history | 6^5 × 5! ≈ 上限过大 |
+        需用 state constraint 限制 history 为有效序列（无重复 id）。
+        预期 TLC 在 1 小时内完成（带 constraint）。
 
-      ✅ TLC 验证：
-      - 5 个 Fact 的所有可能 cause 组合的因果图保持无环
-      - cause 始终锚定到已存在 FactId 或 None
+        ✅ TLC 验证：
+        - 5 个 Fact 的所有可能 cause 组合的因果图保持无环
+        - cause 始终锚定到已存在 FactId 或 None
 
-      ❌ TLC 不验证：
-      - ∀ N > 5 的归纳证明（需 TLAPS，未来工作）
-      - cause 链的语义正确性（只验证结构无环）
+        ❌ TLC 不验证：
+        - ∀ N > 5 的归纳证明（需 TLAPS，未来工作）
+        - cause 链的语义正确性（只验证结构无环）
 
   7.1.3 验证策略
 
-    主方案：proptest + 图论分析
-      - 随机生成 FactsLog（200 case，含随机 cause 链）
-      - 构建因果图 G，用拓扑排序检测环
-      - 验证 CausalChainAcyclic ∧ CausalChainAnchored
+  主方案：proptest + 图论分析 - 随机生成 FactsLog（200 case，含随机 cause 链）- 构建因果图 G，用拓扑排序检测环 - 验证 CausalChainAcyclic ∧ CausalChainAnchored
 
-    备选方案：TLA+（Phase 5）
-      - CausalChain.tla spec，有限模型 FactIdSet={1..5}
-      - 验证 audit_new 后因果图保持无环
-      - 依赖 auditor.rs causal_chain() 的 while 循环终止（无环 ⟹ 终止）
+  备选方案：TLA+（Phase 5）- CausalChain.tla spec，有限模型 FactIdSet={1..5} - 验证 audit_new 后因果图保持无环 - 依赖 auditor.rs causal_chain() 的 while 循环终止（无环 ⟹ 终止）
 
-    关键依赖：tier1 必须保证 cause 指向已存在 Fact（否则因果链断裂）
-    实现位置：tier1 facts_log.rs append() 时校验 cause 存在性
+  关键依赖：tier1 必须保证 cause 指向已存在 Fact（否则因果链断裂）
+  实现位置：tier1 facts_log.rs append() 时校验 cause 存在性
 
-7.2 时间旅行一致性（ReplayDeterminism）
+  7.2 时间旅行一致性（ReplayDeterminism）
 
-  EvoRule 支持从任意历史版本重放（read_from(from_version)）。
+EvoRule 支持从任意历史版本重放（read_from(from_version)）。
 
-  验证目标：从版本 V 重放，得到的中间状态与当时的实际状态一致。
+验证目标：从版本 V 重放，得到的中间状态与当时的实际状态一致。
 
-  这是 EvoRule "时间旅行调试器"功能的正确性基础。
+这是 EvoRule "时间旅行调试器"功能的正确性基础。
 
-  7.2.1 形式化定义
+7.2.1 形式化定义
 
     设 FactsLog.history = [f_1, ..., f_n]，version(f_i) 单调递增。
 
@@ -2015,7 +2045,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       ∀ v ≤ current_version: Snapshot(history, v) = 实际执行时记录的 σ_v
       （重放快照与当时实际快照一致）
 
-  7.2.2 完整 ReplayDeterminism.tla Spec 设计
+7.2.2 完整 ReplayDeterminism.tla Spec 设计
 
     以下为 ReplayDeterminism.tla 的完整设计（伪 TLA+ 语法，Phase 5 实现时
     转为精确 TLA+ 语法）。
@@ -2219,7 +2249,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       - ∀ N > 4 的归纳证明（需 TLAPS，未来工作）
       - JsonValue 的具体内容（抽象为 StateSet）
 
-  7.2.3 验证策略
+7.2.3 验证策略
 
     主方案：proptest + 集成测试
       - 随机生成 FactsLog，执行得到 snapshots
@@ -2231,7 +2261,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       - tier1 FactsLog append-only（L1-4，Kani 证）
       - tier1 next_step 的确定性（payload 更新不依赖时间/随机）
 
-  7.2.4 时间旅行的"现在状态一致性"
+7.2.4 时间旅行的"现在状态一致性"
 
     除历史重放外，还需验证"从版本 V 重放到 current"的一致性：
 
@@ -2244,10 +2274,10 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
 
 7.3 审计链与 FactsLog 同步（AuditFactsLogSync）
 
-  验证目标：tier2 Auditor.entries 与 tier1 FactsLog.history 一一对应，
-  无遗漏、无多余。
+验证目标：tier2 Auditor.entries 与 tier1 FactsLog.history 一一对应，
+无遗漏、无多余。
 
-  7.3.1 形式化定义
+7.3.1 形式化定义
 
     设 FactsLog.history = [f_1, ..., f_n]
     设 Auditor.entries = [e_1, ..., e_m]
@@ -2259,7 +2289,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     不变量 AuditProgressMonotonic：
       Auditor.last_audited_version 单调递增，且 ≤ FactsLog.version()
 
-  7.3.2 完整 AuditFactsLogSync.tla Spec 设计
+7.3.2 完整 AuditFactsLogSync.tla Spec 设计
 
     以下为 AuditFactsLogSync.tla 的完整设计（伪 TLA+ 语法，Phase 5 实现时
     转为精确 TLA+ 语法）。此 spec 验证 tier2 Auditor.entries 与
@@ -2422,24 +2452,22 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       - content_hash/prev_hash 的正确性（由 AuditorChain.tla 证）
       - ∀ N > 4 的归纳证明（需 TLAPS，未来工作）
 
-  7.3.3 验证策略
-    - 集成测试：audit_new 后校验 entries 与 history 一一对应
-    - proptest：随机 append Fact → audit_new → 校验同步
+7.3.3 验证策略 - 集成测试：audit_new 后校验 entries 与 history 一一对应 - proptest：随机 append Fact → audit_new → 校验同步
 
 7.4 端到端不变量总结
 
-  | 不变量 | 涉及层 | 验证方法 | 优先级 | 1.0 角色 |
-  |---|---|---|---|---|
-  | CausalChainAcyclic | tier1→tier2 | proptest + 图论 | P1 | 1.x |
-  | CausalChainAnchored | tier1 | proptest + cause 校验 | P1 | 1.x |
-  | ReplayDeterminism | tier1→tier2 | proptest + 集成测试 | P1 | 1.x |
-  | ReplayConsistency | tier1→tier2 | proptest + 集成测试 | P1 | 1.x |
-  | ForwardReplay | tier1 | proptest + 幺半群论证 | P2 | 1.x |
-  | AuditFactsLogSync | tier1↔tier2 | 集成测试 | P1 | 1.x |
-  | AuditProgressMonotonic | tier1↔tier2 | 集成测试 | P1 | 1.x |
-  | 时间旅行正确性 | tier1→tier2 | 集成测试 + 属性测试 | P2 | 1.x |
+| 不变量                 | 涉及层      | 验证方法              | 优先级 | 1.0 角色 |
+| ---------------------- | ----------- | --------------------- | ------ | -------- |
+| CausalChainAcyclic     | tier1→tier2 | proptest + 图论       | P1     | 1.x      |
+| CausalChainAnchored    | tier1       | proptest + cause 校验 | P1     | 1.x      |
+| ReplayDeterminism      | tier1→tier2 | proptest + 集成测试   | P1     | 1.x      |
+| ReplayConsistency      | tier1→tier2 | proptest + 集成测试   | P1     | 1.x      |
+| ForwardReplay          | tier1       | proptest + 幺半群论证 | P2     | 1.x      |
+| AuditFactsLogSync      | tier1↔tier2 | 集成测试              | P1     | 1.x      |
+| AuditProgressMonotonic | tier1↔tier2 | 集成测试              | P1     | 1.x      |
+| 时间旅行正确性         | tier1→tier2 | 集成测试 + 属性测试   | P2     | 1.x      |
 
-  7.5 跨层验证的依赖关系
+7.5 跨层验证的依赖关系
 
     跨层不变量依赖单层不变量成立：
 
@@ -2460,28 +2488,29 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     但其依赖链清晰：1.0 完成 tier0 TLA+ + tier1 Kani 后，
     跨层验证的"地基"就绪，1.x 可逐步构建。
 
-----------------------------------------------------------------
-八、TLA+ 状态机验证设计（1.0 门槛核心，完整设计）
-----------------------------------------------------------------
+---
+
+## 八、TLA+ 状态机验证设计（1.0 门槛核心，完整设计）
 
 8.1 为什么需要 TLA+
 
-  Kani 无法验证 execute_transition 的状态机性质，因为：
-  - execute_transition 内部操作 BTreeMap（Kani 无法建模内部循环）
-  - 终止性/确定性是状态机性质（Kani 不擅长）
-  - 深度强制涉及递归调用栈（Kani 建模开销大）
+Kani 无法验证 execute_transition 的状态机性质，因为：
 
-  TLA+ 是 Leslie Lamport 设计的形式化规范语言，TLC 是其有界模型
-  检测器。AWS S3/DynamoDB、Alibaba XiangBai、Microsoft Azure 均用
-  TLA+ 验证核心分布式协议。EvoRule 用 TLA+ 验证 Kani 无法覆盖的
-  状态机性质，并通过 defunctionalization 将递归抽象为有限状态。
+- execute_transition 内部操作 BTreeMap（Kani 无法建模内部循环）
+- 终止性/确定性是状态机性质（Kani 不擅长）
+- 深度强制涉及递归调用栈（Kani 建模开销大）
+
+TLA+ 是 Leslie Lamport 设计的形式化规范语言，TLC 是其有界模型
+检测器。AWS S3/DynamoDB、Alibaba XiangBai、Microsoft Azure 均用
+TLA+ 验证核心分布式协议。EvoRule 用 TLA+ 验证 Kani 无法覆盖的
+状态机性质，并通过 defunctionalization 将递归抽象为有限状态。
 
 8.2 被验证代码的精确控制流分析
 
-  在设计 TLA+ spec 前，必须精确理解被验证代码的控制流。
-  以下是对 transition.rs / executor.rs / domain.rs 的控制流分析：
+在设计 TLA+ spec 前，必须精确理解被验证代码的控制流。
+以下是对 transition.rs / executor.rs / domain.rs 的控制流分析：
 
-  8.2.1 execute_transition 控制流（transition.rs:135-186）
+8.2.1 execute_transition 控制流（transition.rs:135-186）
 
     0. 终止性检查：if core_eval.len() > 64 → return Err(TooManyTransformRules)
     1. 构造 __exec__ 上下文 {instruction, payload, queue}
@@ -2494,7 +2523,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
        提取 new_queue = state.__exec__.queue
     4. return Ok(State{new_payload, new_queue})
 
-  8.2.2 execute_meta_instruction 控制流（executor.rs:112-129）
+8.2.2 execute_meta_instruction 控制流（executor.rs:112-129）
 
     instr_type = instr["type"]
     match instr_type:
@@ -2504,7 +2533,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       "io_request" → exec_io_request(instr, state) → IoRequired
       _            → Err(UnknownMetaInstruction)
 
-  8.2.3 exec_branch 控制流（executor.rs:290-321）
+8.2.3 exec_branch 控制流（executor.rs:290-321）
 
     1. if depth >= 64 → return Err(NestingTooDeep)    ← 深度检查
     2. domain_result = evaluate_domain(domain, state)  ← 域评估
@@ -2516,7 +2545,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
            IoRequired{...}      → return Ok(IoRequired)  (传播)
     5. return Ok(State(state))
 
-  8.2.4 evaluate_domain 控制流（domain.rs:70-91）
+8.2.4 evaluate_domain 控制流（domain.rs:70-91）
 
     evaluate_domain_inner(domain, state, depth=0):
       1. if depth > 64 → return false                  ← 深度检查
@@ -2529,7 +2558,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
            "not"         → evaluate_not (递归, depth+1)
            _             → false
 
-  8.2.5 三条深度上界的精确位置
+8.2.5 三条深度上界的精确位置
 
     | 上界 | 值 | 检查位置 | 比较运算 | 违反后果 |
     |---|---|---|---|---|
@@ -2544,10 +2573,10 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
 
 8.3 抽象策略（Abstraction Strategy）
 
-  TLA+ spec 不逐行复制 Rust 代码，而是做精确抽象。
-  以下是被建模和被抽象的元素：
+TLA+ spec 不逐行复制 Rust 代码，而是做精确抽象。
+以下是被建模和被抽象的元素：
 
-  8.3.1 被精确建模（影响控制流）
+8.3.1 被精确建模（影响控制流）
 
     | Rust 结构 | TLA+ 建模 | 理由 |
     |---|---|---|
@@ -2558,7 +2587,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     | 三条深度检查 | 三个 IF 判断 | 决定错误行为 |
     | error 传播 | pc → Error 转移 | 决定终止性 |
 
-  8.3.2 被抽象（不影响控制流验证目标）
+8.3.2 被抽象（不影响控制流验证目标）
 
     | Rust 结构 | TLA+ 抽象 | 理由 |
     |---|---|---|
@@ -2569,7 +2598,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     | push 队列操作 | 抽象函数 ApplyPush(queue, instrs) | 队列操作不影响控制流 |
     | String 解析 | 不建模（有限 KeySet） | String 建模开销大 |
 
-  8.3.3 defunctionalization：递归 → 栈
+8.3.3 defunctionalization：递归 → 栈
 
     Rust 的 exec_branch 是递归的：
       exec_branch(depth=0) → execute_meta_instruction(depth=1) → exec_branch(depth=1) → ...
@@ -2589,411 +2618,412 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
 
 8.4 完整 TLA+ Spec 设计
 
-  以下为 ExecuteTransition.tla 的完整设计（伪 TLA+ 语法，Phase 1 实现时
-  转为精确 TLA+ 语法）。
+以下为 ExecuteTransition.tla 的完整设计（伪 TLA+ 语法，Phase 1 实现时
+转为精确 TLA+ 语法）。
 
-  8.4.1 模块与常量
+8.4.1 模块与常量
 
-  ---- MODULE ExecuteTransition ----
-  EXTENDS Naturals, Sequences, FiniteSets, TLC
+---- MODULE ExecuteTransition ----
+EXTENDS Naturals, Sequences, FiniteSets, TLC
 
-  CONSTANTS
-    N_MAX,           (* core_eval 最大长度，实例化 = 3 *)
-    D_MAX,           (* 最大 branch 递归深度，实例化 = 3（对应 MAX_BRANCH_DEPTH=64）*)
-    D_DOM_MAX,       (* 最大 domain 递归深度，实例化 = 3（对应 MAX_DOMAIN_DEPTH=64）*)
-    KeySet,          (* 有限 key 集合，如 {"x", "y", "counter"} *)
-    ValueSet,        (* 有限 value 集合，如 {-1, 0, 1, 42} *)
-    InstrTypeSet,    (* {"set", "push", "branch", "io_request"} *)
-    DomainTypeSet,   (* {"eq", "lt", "exists", "instruction", "all", "not"} *)
-    OpSet,           (* {"set", "add", "sub"} *)
-    IoTypeSet        (* {"call_llm", "call_external", "query_db"} *)
+CONSTANTS
+N*MAX, (* core*eval 最大长度，实例化 = 3 *)
+D*MAX, (* 最大 branch 递归深度，实例化 = 3（对应 MAX*BRANCH_DEPTH=64）*)
+D*DOM_MAX, (* 最大 domain 递归深度，实例化 = 3（对应 MAX*DOMAIN_DEPTH=64）*)
+KeySet, (_ 有限 key 集合，如 {"x", "y", "counter"} _)
+ValueSet, (_ 有限 value 集合，如 {-1, 0, 1, 42} _)
+InstrTypeSet, (_ {"set", "push", "branch", "io_request"} _)
+DomainTypeSet, (_ {"eq", "lt", "exists", "instruction", "all", "not"} _)
+OpSet, (_ {"set", "add", "sub"} _)
+IoTypeSet (_ {"call_llm", "call_external", "query_db"} _)
 
-  ASSUME N_MAX = 3 /\ D_MAX = 3 /\ D_DOM_MAX = 3 /\
-         Cardinality(KeySet) <= 4 /\
-         Cardinality(ValueSet) <= 5
+ASSUME N_MAX = 3 /\ D_MAX = 3 /\ D_DOM_MAX = 3 /\
+ Cardinality(KeySet) <= 4 /\
+ Cardinality(ValueSet) <= 5
 
-  8.4.2 抽象数据类型
+8.4.2 抽象数据类型
 
-  (* Obj: 抽象 JSON 对象 = Key → Value 的部分函数 *)
-  Obj == [KeySet -> ValueSet]
+(_ Obj: 抽象 JSON 对象 = Key → Value 的部分函数 _)
+Obj == [KeySet -> ValueSet]
 
-  (* SubInstr: 抽象子指令（branch 内的指令）*)
-  SubInstr == [type: InstrTypeSet, params: Obj]
+(_ SubInstr: 抽象子指令（branch 内的指令）_)
+SubInstr == [type: InstrTypeSet, params: Obj]
 
-  (* Rule: core_eval 中的规则 *)
-  Rule == SubInstr  (* 结构相同 *)
+(_ Rule: core_eval 中的规则 _)
+Rule == SubInstr (_ 结构相同 _)
 
-  (* CoreEval: 规则列表 *)
-  CoreEval == Seq(Rule)
+(_ CoreEval: 规则列表 _)
+CoreEval == Seq(Rule)
 
-  (* 抽象操作函数（不建模内部，只声明签名）*)
-  ApplySet(state: Obj, attr: KeySet, op: OpSet, val: ValueSet) : Obj
-    (* 抽象：返回新 Obj，具体逻辑由 Kani 验证算术 *)
-  ApplyPush(queue: Seq(Rule), instrs: Seq(Rule)) : Seq(Rule)
-    (* 抽象：返回新 queue *)
-  DomainEval(domain: Obj, state: Obj) : BOOLEAN
-    (* 抽象：返回 domain 评估结果 *)
-  Lookup(state: Obj, path: STRING) : ValueSet
-    (* 抽象：路径解析，TLC 用有限 key 覆盖 *)
+(_ 抽象操作函数（不建模内部，只声明签名）_)
+ApplySet(state: Obj, attr: KeySet, op: OpSet, val: ValueSet) : Obj
+(_ 抽象：返回新 Obj，具体逻辑由 Kani 验证算术 _)
+ApplyPush(queue: Seq(Rule), instrs: Seq(Rule)) : Seq(Rule)
+(_ 抽象：返回新 queue _)
+DomainEval(domain: Obj, state: Obj) : BOOLEAN
+(_ 抽象：返回 domain 评估结果 _)
+Lookup(state: Obj, path: STRING) : ValueSet
+(_ 抽象：路径解析，TLC 用有限 key 覆盖 _)
 
-  (* 栈帧：defunctionalize branch 递归 *)
-  Frame == [
-    remaining: Seq(SubInstr),   (* 剩余子指令 *)
-    depth: 0..D_MAX,            (* 该帧深度 *)
-    return_i: 0..N_MAX          (* 返回后的外层 i *)
-  ]
+(_ 栈帧：defunctionalize branch 递归 _)
+Frame == [
+remaining: Seq(SubInstr), (* 剩余子指令 *)
+depth: 0..D_MAX, (* 该帧深度 *)
+return_i: 0..N_MAX (* 返回后的外层 i *)
+]
 
-  (* 转换结果 *)
-  ResultType == {"none", "state", "io_required", "error"}
-  TransitionResult ==
-    [type: ResultType,
-     new_payload: Obj,           (* type="state" 时有效 *)
-     new_queue: Seq(Rule),       (* type="state" 时有效 *)
-     io_type: IoTypeSet,         (* type="io_required" 时有效 *)
-     error: STRING]              (* type="error" 时有效 *)
+(_ 转换结果 _)
+ResultType == {"none", "state", "io*required", "error"}
+TransitionResult ==
+[type: ResultType,
+new_payload: Obj, (* type="state" 时有效 _)
+new_queue: Seq(Rule), (_ type="state" 时有效 _)
+io_type: IoTypeSet, (_ type="io*required" 时有效 *)
+error: STRING] (\_ type="error" 时有效 \_)
 
-  8.4.3 状态变量
+8.4.3 状态变量
 
-  VARIABLES
-    pc,              (* 程序计数器 *)
-    i,               (* 外层循环索引 0..N_MAX *)
-    depth,           (* 当前 branch 嵌套深度 0..D_MAX+1 *)
-    domDepth,        (* 当前 domain 递归深度 0..D_DOM_MAX+1（MAX_DOMAIN_DEPTH 对应）*)
-    state,           (* 抽象状态 Obj *)
-    core_eval,       (* 输入：规则列表（CONSTANT，不变）*)
-    stack,           (* branch 调用栈 Seq(Frame) *)
-    result,          (* 转换结果 *)
-    io_requested     (* IoRequired 是否被请求 *)
+VARIABLES
+pc, (_ 程序计数器 _)
+i, (_ 外层循环索引 0..N_MAX _)
+depth, (_ 当前 branch 嵌套深度 0..D_MAX+1 _)
+domDepth, (_ 当前 domain 递归深度 0..D_DOM_MAX+1（MAX_DOMAIN_DEPTH 对应）_)
+state, (_ 抽象状态 Obj _)
+core*eval, (* 输入：规则列表（CONSTANT，不变）_)
+stack, (_ branch 调用栈 Seq(Frame) _)
+result, (_ 转换结果 _)
+io_requested (_ IoRequired 是否被请求 \_)
 
-  (* PCType 含 ExecSubRule（子指令分派）和 DomainDepthCheck（域深度检查）*)
-  PCType == {"Init", "LengthCheck", "Loop", "ExecRule",
-             "BranchDepthCheck", "BranchDomain", "BranchBody",
-             "ExecSubRule", "DomainDepthCheck", "DomainEval",
-             "IoReturn", "ExtractResult", "Done", "Error"}
+(_ PCType 含 ExecSubRule（子指令分派）和 DomainDepthCheck（域深度检查）_)
+PCType == {"Init", "LengthCheck", "Loop", "ExecRule",
+"BranchDepthCheck", "BranchDomain", "BranchBody",
+"ExecSubRule", "DomainDepthCheck", "DomainEval",
+"IoReturn", "ExtractResult", "Done", "Error"}
 
-  8.4.4 Init 谓词
+8.4.4 Init 谓词
 
-  Init ==
-    /\ pc = "Init"
-    /\ i = 0
-    /\ depth = 0
-    /\ domDepth = 0
-    /\ state ∈ Obj          (* 非确定性初始状态，TLC 穷举 *)
-    /\ core_eval ∈ CoreEval  (* 非确定性输入，TLC 穷举 *)
-    /\ stack = <<>>
-    /\ result = [type |-> "none"]
-    /\ io_requested = FALSE
+Init ==
+/\ pc = "Init"
+/\ i = 0
+/\ depth = 0
+/\ domDepth = 0
+/\ state ∈ Obj (_ 非确定性初始状态，TLC 穷举 _)
+/\ core*eval ∈ CoreEval (* 非确定性输入，TLC 穷举 \_)
+/\ stack = <<>>
+/\ result = [type |-> "none"]
+/\ io_requested = FALSE
 
-  8.4.5 Next 动作（11 个子动作）
+8.4.5 Next 动作（11 个子动作）
 
-  (* ── 辅助函数 ── *)
+(_ ── 辅助函数 ── _)
 
-  (* GetBranchInstrs: 从 branch 指令中提取子指令序列 *)
-  (* 对应 executor.rs:304 branch_instrs = instr["on_true"] 或 instr["on_false"] *)
-  (* domain_result 由 DomainEval 抽象决定，TLC 穷举两种可能 *)
-  GetBranchInstrs(rule, domain_result) ==
-    IF domain_result = TRUE
-    THEN rule.on_true    (* 抽象：rule 含 on_true/on_false 字段（Seq(SubInstr)）*)
-    ELSE rule.on_false
+(_ GetBranchInstrs: 从 branch 指令中提取子指令序列 _)
+(_ 对应 executor.rs:304 branch_instrs = instr["on_true"] 或 instr["on_false"] _)
+(_ domain_result 由 DomainEval 抽象决定，TLC 穷举两种可能 _)
+GetBranchInstrs(rule, domain*result) ==
+IF domain_result = TRUE
+THEN rule.on_true (* 抽象：rule 含 on*true/on_false 字段（Seq(SubInstr)）*)
+ELSE rule.on_false
 
-  (* PopHeadFromStackFrame: 从栈顶帧弹出第一条子指令，返回剩余帧 *)
-  PopHeadFromStackFrame(frame) ==
-    [frame EXCEPT !.remaining = Tail(frame.remaining)]
+(_ PopHeadFromStackFrame: 从栈顶帧弹出第一条子指令，返回剩余帧 _)
+PopHeadFromStackFrame(frame) ==
+[frame EXCEPT !.remaining = Tail(frame.remaining)]
 
-  (* 子动作 1: Init → LengthCheck *)
-  InitStep ==
-    /\ pc = "Init"
-    /\ pc' = "LengthCheck"
-    /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
+(_ 子动作 1: Init → LengthCheck _)
+InitStep ==
+/\ pc = "Init"
+/\ pc' = "LengthCheck"
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 
-  (* 子动作 2: LengthCheck → Loop 或 Error（MAX_TRANSFORM_RULES 检查）*)
-  LengthCheckStep ==
-    /\ pc = "LengthCheck"
-    /\ IF Len(core_eval) > N_MAX
-       THEN /\ pc' = "Error"
-            /\ result' = [type |-> "error", error |-> "TooManyTransformRules"]
-            /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, io_requested>>
-       ELSE /\ pc' = "Loop"
-            /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
+(_ 子动作 2: LengthCheck → Loop 或 Error（MAX_TRANSFORM_RULES 检查）_)
+LengthCheckStep ==
+/\ pc = "LengthCheck"
+/\ IF Len(core_eval) > N_MAX
+THEN /\ pc' = "Error"
+/\ result' = [type |-> "error", error |-> "TooManyTransformRules"]
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, io_requested>>
+ELSE /\ pc' = "Loop"
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 
-  (* 子动作 3: Loop → ExecRule 或 ExtractResult *)
-  LoopStep ==
-    /\ pc = "Loop"
-    /\ IF i >= Len(core_eval)
-       THEN /\ pc' = "ExtractResult"
-            /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
-       ELSE /\ pc' = "ExecRule"
-            /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
+(_ 子动作 3: Loop → ExecRule 或 ExtractResult _)
+LoopStep ==
+/\ pc = "Loop"
+/\ IF i >= Len(core_eval)
+THEN /\ pc' = "ExtractResult"
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
+ELSE /\ pc' = "ExecRule"
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 
-  (* 子动作 4: ExecRule → 执行规则 i，按指令类型分派 *)
-  (* 对应 transition.rs:158-167 + executor.rs:122-128 的 match 分派 *)
-  ExecRuleStep ==
-    /\ pc = "ExecRule"
-    /\ i < Len(core_eval)
-    /\ LET rule == core_eval[i + 1]   (* TLA+ Seq 从 1 开始 *)
-       IN
-       CASE rule.type = "io_request"
-         -> /\ pc' = "IoReturn"
-            /\ result' = [type |-> "io_required",
-                          io_type |-> rule.io_type]
-            /\ io_requested' = TRUE
-            /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack>>
-       [] rule.type = "branch"
-         -> /\ pc' = "BranchDepthCheck"
-            /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
-       [] rule.type ∈ {"set", "push"}
-         -> (* 非递归指令：应用抽象函数并继续循环 *)
-            /\ pc' = "Loop"
-            /\ i' = i + 1
-            /\ state' = ApplySet(state, rule.attr, rule.op, rule.val)
-            /\ UNCHANGED <<depth, domDepth, core_eval, stack, result, io_requested>>
+(_ 子动作 4: ExecRule → 执行规则 i，按指令类型分派 _)
+(_ 对应 transition.rs:158-167 + executor.rs:122-128 的 match 分派 _)
+ExecRuleStep ==
+/\ pc = "ExecRule"
+/\ i < Len(core*eval)
+/\ LET rule == core_eval[i + 1] (* TLA+ Seq 从 1 开始 _)
+IN
+CASE rule.type = "io_request"
+-> /\ pc' = "IoReturn"
+/\ result' = [type |-> "io_required",
+io_type |-> rule.io_type]
+/\ io_requested' = TRUE
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack>>
+[] rule.type = "branch"
+-> /\ pc' = "BranchDepthCheck"
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
+[] rule.type ∈ {"set", "push"}
+-> (_ 非递归指令：应用抽象函数并继续循环 \_)
+/\ pc' = "Loop"
+/\ i' = i + 1
+/\ state' = ApplySet(state, rule.attr, rule.op, rule.val)
+/\ UNCHANGED <<depth, domDepth, core_eval, stack, result, io_requested>>
 
-  (* 子动作 5: BranchDepthCheck → DomainDepthCheck 或 Error *)
-  (* MAX_BRANCH_DEPTH 检查，对应 executor.rs:295 if depth >= 64 *)
-  BranchDepthCheckStep ==
-    /\ pc = "BranchDepthCheck"
-    /\ IF depth >= D_MAX     (* 注意：Rust 用 >=，executor.rs:295 *)
-       THEN /\ pc' = "Error"
-            /\ result' = [type |-> "error", error |-> "NestingTooDeep"]
-            /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, io_requested>>
-       ELSE /\ pc' = "DomainDepthCheck"
-            /\ domDepth' = 0    (* 重置 domain 深度计数器 *)
-            /\ UNCHANGED <<i, depth, state, core_eval, stack, result, io_requested>>
+(_ 子动作 5: BranchDepthCheck → DomainDepthCheck 或 Error _)
+(_ MAX_BRANCH_DEPTH 检查，对应 executor.rs:295 if depth >= 64 _)
+BranchDepthCheckStep ==
+/\ pc = "BranchDepthCheck"
+/\ IF depth >= D*MAX (* 注意：Rust 用 >=，executor.rs:295 _)
+THEN /\ pc' = "Error"
+/\ result' = [type |-> "error", error |-> "NestingTooDeep"]
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, io_requested>>
+ELSE /\ pc' = "DomainDepthCheck"
+/\ domDepth' = 0 (_ 重置 domain 深度计数器 \_)
+/\ UNCHANGED <<i, depth, state, core_eval, stack, result, io_requested>>
 
-  (* 子动作 6: DomainDepthCheck → DomainEval 或 BranchDomain *)
-  (* MAX_DOMAIN_DEPTH 检查，对应 domain.rs:76 if depth > 64 *)
-  (* 注意：Rust 用 > （大于），domain.rs:76；与 branch 的 >= 不同 *)
-  DomainDepthCheckStep ==
-    /\ pc = "DomainDepthCheck"
-    /\ IF domDepth > D_DOM_MAX     (* Rust 用 >，domain.rs:76 *)
-       THEN (* domain 深度超限：evaluate_domain 返回 false *)
-            (* branch 取 on_false 分支 *)
-            /\ pc' = "BranchDomain"
-            /\ domDepth' = 0
-            /\ UNCHANGED <<i, depth, state, core_eval, stack, result, io_requested>>
-       ELSE /\ pc' = "DomainEval"
-            /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
+(_ 子动作 6: DomainDepthCheck → DomainEval 或 BranchDomain _)
+(_ MAX_DOMAIN_DEPTH 检查，对应 domain.rs:76 if depth > 64 _)
+(_ 注意：Rust 用 > （大于），domain.rs:76；与 branch 的 >= 不同 _)
+DomainDepthCheckStep ==
+/\ pc = "DomainDepthCheck"
+/\ IF domDepth > D*DOM_MAX (* Rust 用 >，domain.rs:76 _)
+THEN (_ domain 深度超限：evaluate*domain 返回 false *)
+(_ branch 取 on_false 分支 _)
+/\ pc' = "BranchDomain"
+/\ domDepth' = 0
+/\ UNCHANGED <<i, depth, state, core_eval, stack, result, io_requested>>
+ELSE /\ pc' = "DomainEval"
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 
-  (* 子动作 7: DomainEval → BranchDomain（域评估，抽象）*)
-  (* 对应 executor.rs:304 evaluate_domain(domain, state) *)
-  (* DomainEval 是抽象函数，TLC 穷举 TRUE/FALSE 两种结果 *)
-  DomainEvalStep ==
-    /\ pc = "DomainEval"
-    /\ pc' = "BranchDomain"
-    /\ domDepth' = 0    (* domain 评估完成，重置 *)
-    /\ UNCHANGED <<i, depth, state, core_eval, stack, result, io_requested>>
+(_ 子动作 7: DomainEval → BranchDomain（域评估，抽象）_)
+(_ 对应 executor.rs:304 evaluate_domain(domain, state) _)
+(_ DomainEval 是抽象函数，TLC 穷举 TRUE/FALSE 两种结果 _)
+DomainEvalStep ==
+/\ pc = "DomainEval"
+/\ pc' = "BranchDomain"
+/\ domDepth' = 0 (_ domain 评估完成，重置 _)
+/\ UNCHANGED <<i, depth, state, core_eval, stack, result, io_requested>>
 
-  (* 子动作 8: BranchDomain → BranchBody（进入 branch 体）*)
-  (* 对应 executor.rs:310-317 的 for sub_instr 循环 *)
-  BranchDomainStep ==
-    /\ pc = "BranchDomain"
-    /\ depth' = depth + 1   (* 进入 branch，深度 +1 *)
-    /\ LET rule == core_eval[i + 1]
-           domain_result == DomainEval(rule.domain, state)  (* 抽象，TLC 穷举 *)
-           branch_instrs == GetBranchInstrs(rule, domain_result)
-       IN
-       /\ stack' = Append(stack,
-            [remaining |-> branch_instrs,
-             depth |-> depth + 1,
-             return_i |-> i])
-       /\ pc' = "BranchBody"
-    /\ UNCHANGED <<i, domDepth, state, core_eval, result, io_requested>>
+(_ 子动作 8: BranchDomain → BranchBody（进入 branch 体）_)
+(_ 对应 executor.rs:310-317 的 for sub_instr 循环 _)
+BranchDomainStep ==
+/\ pc = "BranchDomain"
+/\ depth' = depth + 1 (_ 进入 branch，深度 +1 _)
+/\ LET rule == core*eval[i + 1]
+domain_result == DomainEval(rule.domain, state) (* 抽象，TLC 穷举 \_)
+branch_instrs == GetBranchInstrs(rule, domain_result)
+IN
+/\ stack' = Append(stack,
+[remaining |-> branch_instrs,
+depth |-> depth + 1,
+return_i |-> i])
+/\ pc' = "BranchBody"
+/\ UNCHANGED <<i, domDepth, state, core_eval, result, io_requested>>
 
-  (* 子动作 9: BranchBody → ExecSubRule/Loop/IoReturn（执行子指令）*)
-  BranchBodyStep ==
-    /\ pc = "BranchBody"
-    /\ IF Len(stack) = 0
-       THEN (* 栈空，branch 完成 *)
-            /\ pc' = "Loop"
-            /\ i' = i + 1
-            /\ depth' = depth - 1
-            /\ UNCHANGED <<domDepth, state, core_eval, stack, result, io_requested>>
-       ELSE LET frame == Head(stack) IN
-            IF Len(frame.remaining) = 0
-            THEN (* 当前帧子指令执行完，pop *)
-                 /\ stack' = Tail(stack)
-                 /\ depth' = depth - 1
-                 /\ pc' = IF Len(Tail(stack)) = 0 THEN "Loop" ELSE "BranchBody"
-                 /\ i' = IF Len(Tail(stack)) = 0 THEN i + 1 ELSE i
-                 /\ UNCHANGED <<domDepth, state, core_eval, result, io_requested>>
-            ELSE IF io_requested
-            THEN (* IoRequired 传播，清栈返回 *)
-                 /\ pc' = "IoReturn"
-                 /\ stack' = <<>>
-                 /\ UNCHANGED <<i, depth, domDepth, state, core_eval, result, io_requested>>
-            ELSE (* 执行下一条子指令 *)
-                 /\ pc' = "ExecSubRule"
-                 /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
+(_ 子动作 9: BranchBody → ExecSubRule/Loop/IoReturn（执行子指令）_)
+BranchBodyStep ==
+/\ pc = "BranchBody"
+/\ IF Len(stack) = 0
+THEN (_ 栈空，branch 完成 _)
+/\ pc' = "Loop"
+/\ i' = i + 1
+/\ depth' = depth - 1
+/\ UNCHANGED <<domDepth, state, core*eval, stack, result, io_requested>>
+ELSE LET frame == Head(stack) IN
+IF Len(frame.remaining) = 0
+THEN (* 当前帧子指令执行完，pop _)
+/\ stack' = Tail(stack)
+/\ depth' = depth - 1
+/\ pc' = IF Len(Tail(stack)) = 0 THEN "Loop" ELSE "BranchBody"
+/\ i' = IF Len(Tail(stack)) = 0 THEN i + 1 ELSE i
+/\ UNCHANGED <<domDepth, state, core_eval, result, io_requested>>
+ELSE IF io_requested
+THEN (_ IoRequired 传播，清栈返回 _)
+/\ pc' = "IoReturn"
+/\ stack' = <<>>
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, result, io_requested>>
+ELSE (_ 执行下一条子指令 \_)
+/\ pc' = "ExecSubRule"
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 
-  (* 子动作 10: ExecSubRule → BranchBody/Loop/IoReturn（子指令分派）*)
-  (* 对应 executor.rs:311 execute_meta_instruction(sub_instr, state, depth+1) *)
-  ExecSubRuleStep ==
-    /\ pc = "ExecSubRule"
-    /\ Len(stack) > 0
-    /\ LET frame == Head(stack)
-           sub_instr == Head(frame.remaining)
-           remaining' == Tail(frame.remaining)
-       IN
-       CASE sub_instr.type = "io_request"
-         -> /\ pc' = "IoReturn"
-            /\ result' = [type |-> "io_required",
-                          io_type |-> sub_instr.io_type]
-            /\ io_requested' = TRUE
-            /\ stack' = <<>>    (* 清栈 *)
-            /\ UNCHANGED <<i, depth, domDepth, state, core_eval>>
-       [] sub_instr.type = "branch"
-         -> /\ pc' = "BranchDepthCheck"
-            /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
-       [] sub_instr.type ∈ {"set", "push"}
-         -> (* 非递归子指令：应用并更新栈顶帧 *)
-            /\ state' = ApplySet(state, sub_instr.attr, sub_instr.op, sub_instr.val)
-            /\ stack' = Append(Tail(stack),
-                 [remaining |-> remaining',
-                  depth |-> frame.depth,
-                  return_i |-> frame.return_i])
-            /\ pc' = IF Len(remaining') = 0
-                     THEN IF Len(Tail(stack)) = 0 THEN "Loop" ELSE "BranchBody"
-                     ELSE "BranchBody"
-            /\ i' = IF Len(remaining') = 0 /\ Len(Tail(stack)) = 0
-                    THEN i + 1 ELSE i
-            /\ depth' = IF Len(remaining') = 0 /\ Len(Tail(stack)) = 0
-                        THEN depth - 1 ELSE depth
-            /\ UNCHANGED <<domDepth, core_eval, result, io_requested>>
+(_ 子动作 10: ExecSubRule → BranchBody/Loop/IoReturn（子指令分派）_)
+(_ 对应 executor.rs:311 execute_meta_instruction(sub_instr, state, depth+1) _)
+ExecSubRuleStep ==
+/\ pc = "ExecSubRule"
+/\ Len(stack) > 0
+/\ LET frame == Head(stack)
+sub*instr == Head(frame.remaining)
+remaining' == Tail(frame.remaining)
+IN
+CASE sub_instr.type = "io_request"
+-> /\ pc' = "IoReturn"
+/\ result' = [type |-> "io_required",
+io_type |-> sub_instr.io_type]
+/\ io_requested' = TRUE
+/\ stack' = <<>> (* 清栈 _)
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval>>
+[] sub_instr.type = "branch"
+-> /\ pc' = "BranchDepthCheck"
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
+[] sub_instr.type ∈ {"set", "push"}
+-> (_ 非递归子指令：应用并更新栈顶帧 \_)
+/\ state' = ApplySet(state, sub_instr.attr, sub_instr.op, sub_instr.val)
+/\ stack' = Append(Tail(stack),
+[remaining |-> remaining',
+depth |-> frame.depth,
+return_i |-> frame.return_i])
+/\ pc' = IF Len(remaining') = 0
+THEN IF Len(Tail(stack)) = 0 THEN "Loop" ELSE "BranchBody"
+ELSE "BranchBody"
+/\ i' = IF Len(remaining') = 0 /\ Len(Tail(stack)) = 0
+THEN i + 1 ELSE i
+/\ depth' = IF Len(remaining') = 0 /\ Len(Tail(stack)) = 0
+THEN depth - 1 ELSE depth
+/\ UNCHANGED <<domDepth, core_eval, result, io_requested>>
 
-  (* 子动作 11: IoReturn → Done *)
-  IoReturnStep ==
-    /\ pc = "IoReturn"
-    /\ pc' = "Done"
-    /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
+(_ 子动作 11: IoReturn → Done _)
+IoReturnStep ==
+/\ pc = "IoReturn"
+/\ pc' = "Done"
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 
-  (* 子动作 12: ExtractResult → Done *)
-  ExtractResultStep ==
-    /\ pc = "ExtractResult"
-    /\ pc' = "Done"
-    /\ result' = [type |-> "state",
-                  new_payload |-> state,
-                  new_queue |-> <<>>]
-    /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, io_requested>>
+(_ 子动作 12: ExtractResult → Done _)
+ExtractResultStep ==
+/\ pc = "ExtractResult"
+/\ pc' = "Done"
+/\ result' = [type |-> "state",
+new_payload |-> state,
+new_queue |-> <<>>]
+/\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, io_requested>>
 
-  (* Next: 所有子动作的析取 *)
-  Next ==
-    \/ InitStep
-    \/ LengthCheckStep
-    \/ LoopStep
-    \/ ExecRuleStep
-    \/ BranchDepthCheckStep
-    \/ DomainDepthCheckStep
-    \/ DomainEvalStep
-    \/ BranchDomainStep
-    \/ BranchBodyStep
-    \/ ExecSubRuleStep
-    \/ IoReturnStep
-    \/ ExtractResultStep
+(_ Next: 所有子动作的析取 _)
+Next ==
+\/ InitStep
+\/ LengthCheckStep
+\/ LoopStep
+\/ ExecRuleStep
+\/ BranchDepthCheckStep
+\/ DomainDepthCheckStep
+\/ DomainEvalStep
+\/ BranchDomainStep
+\/ BranchBodyStep
+\/ ExecSubRuleStep
+\/ IoReturnStep
+\/ ExtractResultStep
 
-  (* Spec: Init ∧ □[Next]_vars *)
-  vars == <<pc, i, depth, domDepth, state, core_eval, stack, result, io_requested>>
-  Spec == Init /\ [][Next]_vars
+(_ Spec: Init ∧ □[Next]\_vars _)
+vars == <<pc, i, depth, domDepth, state, core_eval, stack, result, io_requested>>
+Spec == Init /\ [][Next]\_vars
 
-  8.4.6 5 个不变式（完整 TLA+ 表达式）
+8.4.6 5 个不变式（完整 TLA+ 表达式）
 
-  (* I1: Termination —— 状态机总是到达 Done 或 Error *)
-  (* TLC 验证：所有可达状态满足 pc ∈ {Done, Error} ∨ ENABLED Next *)
-  (* 等价：无死锁状态（非终止状态必有动作可执行）*)
-  TerminationInvariant ==
-    pc ∈ {"Done", "Error"} \/ ENABLED Next
+(_ I1: Termination —— 状态机总是到达 Done 或 Error _)
+(_ TLC 验证：所有可达状态满足 pc ∈ {Done, Error} ∨ ENABLED Next _)
+(_ 等价：无死锁状态（非终止状态必有动作可执行）_)
+TerminationInvariant ==
+pc ∈ {"Done", "Error"} \/ ENABLED Next
 
-  (* I2: Determinism —— 确定性 *)
-  (* 任意状态最多有一个子动作 enabled *)
-  (* TLC 验证：对每对子动作 a, b，a ≠ b ⇒ ¬(ENABLED a ∧ ENABLED b) *)
-  DeterminismInvariant ==
-    ∀ a ∈ {InitStep, LengthCheckStep, LoopStep, ExecRuleStep,
-            BranchDepthCheckStep, DomainDepthCheckStep, DomainEvalStep,
-            BranchDomainStep, BranchBodyStep, ExecSubRuleStep,
-            IoReturnStep, ExtractResultStep} :
-      ∀ b ∈ {InitStep, LengthCheckStep, LoopStep, ExecRuleStep,
-              BranchDepthCheckStep, DomainDepthCheckStep, DomainEvalStep,
-              BranchDomainStep, BranchBodyStep, ExecSubRuleStep,
-              IoReturnStep, ExtractResultStep} :
-        a ≠ b ⇒ ¬(ENABLED a ∧ ENABLED b)
+(_ I2: Determinism —— 确定性 _)
+(_ 任意状态最多有一个子动作 enabled _)
+(_ TLC 验证：对每对子动作 a, b，a ≠ b ⇒ ¬(ENABLED a ∧ ENABLED b) _)
+DeterminismInvariant ==
+∀ a ∈ {InitStep, LengthCheckStep, LoopStep, ExecRuleStep,
+BranchDepthCheckStep, DomainDepthCheckStep, DomainEvalStep,
+BranchDomainStep, BranchBodyStep, ExecSubRuleStep,
+IoReturnStep, ExtractResultStep} :
+∀ b ∈ {InitStep, LengthCheckStep, LoopStep, ExecRuleStep,
+BranchDepthCheckStep, DomainDepthCheckStep, DomainEvalStep,
+BranchDomainStep, BranchBodyStep, ExecSubRuleStep,
+IoReturnStep, ExtractResultStep} :
+a ≠ b ⇒ ¬(ENABLED a ∧ ENABLED b)
 
-  (* I3: DepthEnforcement —— 双深度硬上界强制（核心价值）*)
-  (* branch depth 永远 ≤ D_MAX，domain depth 永远 ≤ D_DOM_MAX+1 *)
-  (* 除非已经报错（pc ∈ {Error}）*)
-  (* 注意：这验证了 MAX_BRANCH_DEPTH + MAX_DOMAIN_DEPTH 的强制 *)
-  (*   branch 用 >=（executor.rs:295），domain 用 >（domain.rs:76）*)
-  DepthEnforcementInvariant ==
-    pc ∈ {"Error"} \/ (depth ≤ D_MAX /\ domDepth ≤ D_DOM_MAX + 1)
+(_ I3: DepthEnforcement —— 双深度硬上界强制（核心价值）_)
+(_ branch depth 永远 ≤ D_MAX，domain depth 永远 ≤ D_DOM_MAX+1 _)
+(_ 除非已经报错（pc ∈ {Error}）_)
+(_ 注意：这验证了 MAX_BRANCH_DEPTH + MAX_DOMAIN_DEPTH 的强制 _)
+(_ branch 用 >=（executor.rs:295），domain 用 >（domain.rs:76）_)
+DepthEnforcementInvariant ==
+pc ∈ {"Error"} \/ (depth ≤ D_MAX /\ domDepth ≤ D_DOM_MAX + 1)
 
-  (* I4: IoEarlyReturn —— I/O 提前返回语义 *)
-  (* 一旦 io_requested = TRUE，pc 必须走向 IoReturn 或 Done *)
-  IoEarlyReturnInvariant ==
-    io_requested ⇒ pc ∈ {"IoReturn", "Done"}
+(_ I4: IoEarlyReturn —— I/O 提前返回语义 _)
+(_ 一旦 io_requested = TRUE，pc 必须走向 IoReturn 或 Done _)
+IoEarlyReturnInvariant ==
+io_requested ⇒ pc ∈ {"IoReturn", "Done"}
 
-  (* I5: LoopProgress —— 循环推进 *)
-  (* 每次从 Loop 出发，i 递增或 pc 改变（不会空转）*)
-  (* TLC 验证：LoopStep 的 Next 后继中 i' > i ∨ pc' ≠ "Loop" *)
-  LoopProgressInvariant ==
-    pc = "Loop" ⇒
-      ∀ next_state : (Next(state, next_state) ⇒
-        (next_state.pc ≠ "Loop" \/ next_state.i > i))
+(_ I5: LoopProgress —— 循环推进 _)
+(_ 每次从 Loop 出发，i 递增或 pc 改变（不会空转）_)
+(_ TLC 验证：LoopStep 的 Next 后继中 i' > i ∨ pc' ≠ "Loop" _)
+LoopProgressInvariant ==
+pc = "Loop" ⇒
+∀ next_state : (Next(state, next_state) ⇒
+(next_state.pc ≠ "Loop" \/ next_state.i > i))
 
-  8.4.7 TLC 配置文件（ExecuteTransition.cfg）
+8.4.7 TLC 配置文件（ExecuteTransition.cfg）
 
-  SPECIFICATION Spec
+SPECIFICATION Spec
 
-  INVARIANTS
-    TerminationInvariant
-    DeterminismInvariant
-    DepthEnforcementInvariant
-    IoEarlyReturnInvariant
-    LoopProgressInvariant
+INVARIANTS
+TerminationInvariant
+DeterminismInvariant
+DepthEnforcementInvariant
+IoEarlyReturnInvariant
+LoopProgressInvariant
 
-  CONSTANTS
-    N_MAX = 3
-    D_MAX = 3
-    D_DOM_MAX = 3
-    KeySet = {"x", "y", "counter", "result"}
-    ValueSet = {-1, 0, 1, 42, 100}
-    InstrTypeSet = {"set", "push", "branch", "io_request"}
-    DomainTypeSet = {"eq", "lt", "exists", "instruction", "all", "not"}
-    OpSet = {"set", "add", "sub"}
-    IoTypeSet = {"call_llm", "call_external", "query_db"}
+CONSTANTS
+N_MAX = 3
+D_MAX = 3
+D_DOM_MAX = 3
+KeySet = {"x", "y", "counter", "result"}
+ValueSet = {-1, 0, 1, 42, 100}
+InstrTypeSet = {"set", "push", "branch", "io_request"}
+DomainTypeSet = {"eq", "lt", "exists", "instruction", "all", "not"}
+OpSet = {"set", "add", "sub"}
+IoTypeSet = {"call_llm", "call_external", "query_db"}
 
 8.5 代码到 Spec 的精确映射表
 
-  为确保 TLA+ spec 忠实反映 Rust 代码，以下为逐行映射：
+为确保 TLA+ spec 忠实反映 Rust 代码，以下为逐行映射：
 
-  | Rust 代码位置 | Rust 行为 | TLA+ 建模 | 映射关系 |
-  |---|---|---|---|
-  | transition.rs:144-148 | if core_eval.len() > 64 → TooManyTransformRules | LengthCheckStep: IF Len > N_MAX → Error | 精确映射（64→N_MAX 抽象） |
-  | transition.rs:152 | build_exec_state | Init: state ∈ Obj | 抽象（不建模 BTreeMap） |
-  | transition.rs:158 | for transform_rule in core_eval | LoopStep + i 计数器 | 精确映射 |
-  | transition.rs:159 | execute_meta_instruction(rule, state, 0)? | ExecRuleStep | 精确映射（depth=0） |
-  | transition.rs:162 | MetaInstructionResult::State → state = new_state | ExecRuleStep: state' = ApplySet(...) | 抽象（set/push 用抽象函数） |
-  | transition.rs:165-167 | IoRequired → return Ok(IoRequired) | ExecRuleStep: pc' = IoReturn | 精确映射 |
-  | transition.rs:173-179 | 提取 new_payload/new_queue | ExtractResultStep | 精确映射 |
-  | executor.rs:122-128 | match instr_type 分派 | ExecRuleStep: CASE rule.type | 精确映射 |
-  | executor.rs:295-297 | if depth >= 64 → NestingTooDeep | BranchDepthCheckStep: IF depth >= D_MAX → Error | 精确映射（64→D_MAX，>= 运算一致） |
-  | executor.rs:304 | evaluate_domain(domain, state) | DomainDepthCheckStep + DomainEvalStep + BranchDomainStep | 精确映射（域评估前先检查深度） |
-  | executor.rs:310-317 | for sub_instr + IoRequired 传播 | BranchBodyStep + ExecSubRuleStep + 栈帧 | 精确映射（defunctionalization） |
-  | executor.rs:311 | execute_meta_instruction(sub, state, depth+1) | ExecSubRuleStep: CASE sub_instr.type | 精确映射（子指令分派→栈） |
-  | domain.rs:76 | if depth > 64 → return false | DomainDepthCheckStep: IF domDepth > D_DOM_MAX → on_false | 精确映射（64→D_DOM_MAX，> 运算一致） |
-  | executor.rs:306 | branch_key = on_true/on_false | GetBranchInstrs(rule, domain_result) | 精确映射 |
+| Rust 代码位置         | Rust 行为                                        | TLA+ 建模                                                | 映射关系                             |
+| --------------------- | ------------------------------------------------ | -------------------------------------------------------- | ------------------------------------ |
+| transition.rs:144-148 | if core_eval.len() > 64 → TooManyTransformRules  | LengthCheckStep: IF Len > N_MAX → Error                  | 精确映射（64→N_MAX 抽象）            |
+| transition.rs:152     | build_exec_state                                 | Init: state ∈ Obj                                        | 抽象（不建模 BTreeMap）              |
+| transition.rs:158     | for transform_rule in core_eval                  | LoopStep + i 计数器                                      | 精确映射                             |
+| transition.rs:159     | execute_meta_instruction(rule, state, 0)?        | ExecRuleStep                                             | 精确映射（depth=0）                  |
+| transition.rs:162     | MetaInstructionResult::State → state = new_state | ExecRuleStep: state' = ApplySet(...)                     | 抽象（set/push 用抽象函数）          |
+| transition.rs:165-167 | IoRequired → return Ok(IoRequired)               | ExecRuleStep: pc' = IoReturn                             | 精确映射                             |
+| transition.rs:173-179 | 提取 new_payload/new_queue                       | ExtractResultStep                                        | 精确映射                             |
+| executor.rs:122-128   | match instr_type 分派                            | ExecRuleStep: CASE rule.type                             | 精确映射                             |
+| executor.rs:295-297   | if depth >= 64 → NestingTooDeep                  | BranchDepthCheckStep: IF depth >= D_MAX → Error          | 精确映射（64→D_MAX，>= 运算一致）    |
+| executor.rs:304       | evaluate_domain(domain, state)                   | DomainDepthCheckStep + DomainEvalStep + BranchDomainStep | 精确映射（域评估前先检查深度）       |
+| executor.rs:310-317   | for sub_instr + IoRequired 传播                  | BranchBodyStep + ExecSubRuleStep + 栈帧                  | 精确映射（defunctionalization）      |
+| executor.rs:311       | execute_meta_instruction(sub, state, depth+1)    | ExecSubRuleStep: CASE sub_instr.type                     | 精确映射（子指令分派→栈）            |
+| domain.rs:76          | if depth > 64 → return false                     | DomainDepthCheckStep: IF domDepth > D_DOM_MAX → on_false | 精确映射（64→D_DOM_MAX，> 运算一致） |
+| executor.rs:306       | branch_key = on_true/on_false                    | GetBranchInstrs(rule, domain_result)                     | 精确映射                             |
 
-  映射保真度总结：
-  - 控制流：100% 精确映射（所有 if/for/match 都有对应 TLA+ 动作）
-  - 深度检查：100% 精确映射（三条上界 + 比较运算一致：
-    TRANSFORM_RULES 用 >、BRANCH_DEPTH 用 >=、DOMAIN_DEPTH 用 >）
-  - I/O 语义：100% 精确映射（IoRequired 提前返回，ExecRuleStep 和 ExecSubRuleStep 均覆盖）
-  - 子指令分派：100% 精确映射（ExecSubRuleStep 覆盖 branch 内子指令的 set/push/branch/io_request 分派）
-  - 数据操作：抽象（ApplySet/DomainEval 用抽象函数，不建模内部）
+映射保真度总结：
 
-8.5bis TLA+ 抽象 Soundness 论证（精化关系）
+- 控制流：100% 精确映射（所有 if/for/match 都有对应 TLA+ 动作）
+- 深度检查：100% 精确映射（三条上界 + 比较运算一致：
+  TRANSFORM_RULES 用 >、BRANCH_DEPTH 用 >=、DOMAIN_DEPTH 用 >）
+- I/O 语义：100% 精确映射（IoRequired 提前返回，ExecRuleStep 和 ExecSubRuleStep 均覆盖）
+- 子指令分派：100% 精确映射（ExecSubRuleStep 覆盖 branch 内子指令的 set/push/branch/io_request 分派）
+- 数据操作：抽象（ApplySet/DomainEval 用抽象函数，不建模内部）
 
-  本节论证 TLA+ spec 的抽象是 sound 的：即 TLA+ 验证的性质能迁移到 Rust 代码。
-  这是形式化验证的核心可信链环节——如果抽象不 sound，TLC PASS 不意味着 Rust 正确。
+  8.5bis TLA+ 抽象 Soundness 论证（精化关系）
 
-  8.5bis.1 精化关系定义（Refinement Relation）
+本节论证 TLA+ spec 的抽象是 sound 的：即 TLA+ 验证的性质能迁移到 Rust 代码。
+这是形式化验证的核心可信链环节——如果抽象不 sound，TLC PASS 不意味着 Rust 正确。
+
+8.5bis.1 精化关系定义（Refinement Relation）
 
     定义抽象关系 R ⊆ RustState × TLAState：
 
@@ -3013,7 +3043,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
            （抽象：64→3，性质"depth 不超限"保持）
          - Rust domDepth (实际 MAX_DOMAIN_DEPTH=64) ↔ TLA domDepth ≤ D_DOM_MAX+1=4
 
-  8.5bis.2 抽象函数的 Soundness（保守过近似）
+8.5bis.2 抽象函数的 Soundness（保守过近似）
 
     TLA+ 用抽象函数替代 Rust 内部逻辑。Soundness 要求：
     抽象函数是 Rust 逻辑的**保守过近似**（over-approximation），
@@ -3053,7 +3083,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
 
     结论：5 个性质全部是控制流性质，Soundness 定理适用。
 
-  8.5bis.3 有限模型的 Soundness（N_MAX=3 vs MAX=64）
+8.5bis.3 有限模型的 Soundness（N_MAX=3 vs MAX=64）
 
     TLA+ 用 N_MAX=3/D_MAX=3/D_DOM_MAX=3 抽象 Rust 的 MAX_*=64。
     Soundness 论证：
@@ -3081,7 +3111,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     形式化的 ∀N 归纳证明需 TLAPS，标注为未来工作（见附录 TLAPS 证明义务）。
     但归纳结构清晰，人工 review 可验证其正确性。
 
-  8.5bis.4 Soundness 结论
+8.5bis.4 Soundness 结论
 
     | 环节 | Soundness 保障 | 形式化程度 |
     |---|---|---|
@@ -3102,7 +3132,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
 
 8.6 有限模型边界（诚实声明）
 
-  8.6.1 有限模型参数
+8.6.1 有限模型参数
 
     | 参数 | 值 | 对应 Rust 常量 | 理由 |
     |---|---|---|---|
@@ -3114,7 +3144,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     | InstrTypeSet | 4 种 | 6 种元指令 | 覆盖 set/push/branch/io_request |
     | DomainTypeSet | 6 种 | 6 种域类型 | 全覆盖 eq/lt/exists/instruction/all/not |
 
-  8.6.2 状态空间估算
+8.6.2 状态空间估算
 
     | 维度 | 可能值数 | 理由 |
     |---|---|---|
@@ -3137,7 +3167,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
 
     预期 TLC 可在 30 分钟内完成（4 核 8GB Linux runner）。
 
-  8.6.2bis TLC 状态空间优化策略（Phase 1 实现指南）
+8.6.2bis TLC 状态空间优化策略（Phase 1 实现指南）
 
     上述状态空间 ~2.8×10^10 对 TLC 偏大。以下为三级优化策略，
     Phase 1 实现时按优先级依次尝试，直到 TLC 可在 30 分钟内完成。
@@ -3216,7 +3246,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       - 超时则 CI warn（allow_failure: true），不阻塞合并
       - Phase 1 完成后改为阻塞
 
-  8.6.3 验证覆盖范围（诚实声明）
+8.6.3 验证覆盖范围（诚实声明）
 
     ✅ TLC 验证（有限模型穷举）：
     - N_MAX=3, D_MAX=3, D_DOM_MAX=3 的所有可能输入组合
@@ -3235,7 +3265,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     - 算术完备性（由 Kani 覆盖）
     - BTreeMap 操作正确性（由 proptest 覆盖）
 
-  8.6.4 与 Kani 的互补关系
+8.6.4 与 Kani 的互补关系
 
     | 验证维度 | Kani 覆盖 | TLA+ 覆盖 | 组合 |
     |---|---|---|---|
@@ -3252,35 +3282,32 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
 
 8.7 TLA+ 落地计划（Phase 1 详细任务）
 
-  交付物清单：
-  1. tier0-tcb/tla/ExecuteTransition.tla（完整 spec + 5 不变式）
-  2. tier0-tcb/tla/ExecuteTransition.cfg（TLC 配置）
-  3. tier0-tcb/tla/README.md（TLA+ 使用说明）
-  4. TLC 验证报告（5 不变式 PASS，无死锁）
-  5. .gitee-ci/validate.yml 增加 TLA+ 检查步骤
-  6. VERSION_STRATEGY §4.4 修订（见 §11.4）
-  7. 白皮书 v0.4（第 8 章状态更新为 ✅ PASS）
+交付物清单：
 
-  验证命令：
-    cd tier0-tcb/tla
-    java -jar tla2tools.jar TLC -config ExecuteTransition.cfg ExecuteTransition.tla
+1. tier0-tcb/tla/ExecuteTransition.tla（完整 spec + 5 不变式）
+2. tier0-tcb/tla/ExecuteTransition.cfg（TLC 配置）
+3. tier0-tcb/tla/README.md（TLA+ 使用说明）
+4. TLC 验证报告（5 不变式 PASS，无死锁）
+5. .gitee-ci/validate.yml 增加 TLA+ 检查步骤
+6. VERSION_STRATEGY §4.4 修订（见 §11.4）
+7. 白皮书 v0.4（第 8 章状态更新为 ✅ PASS）
 
-  通过标准：
-    - Model checking completed. No error has been found.
-    - 5 invariants PASS
-    - 0 deadlocks
-    - 状态空间 < 10^8（否则需优化模型）
+验证命令：
+cd tier0-tcb/tla
+java -jar tla2tools.jar TLC -config ExecuteTransition.cfg ExecuteTransition.tla
+
+通过标准：- Model checking completed. No error has been found. - 5 invariants PASS - 0 deadlocks - 状态空间 < 10^8（否则需优化模型）
 
 8.7bis TLAPS 未来工作证明义务规格（∀N 归纳证明）
 
-  本节定义 TLAPS（TLA+ Proof System）的证明义务，作为 TLC 有限模型验证的
-  补充。TLC 验证有限模型（N ≤ N_MAX），TLAPS 验证 ∀N 的归纳证明。
+本节定义 TLAPS（TLA+ Proof System）的证明义务，作为 TLC 有限模型验证的
+补充。TLC 验证有限模型（N ≤ N_MAX），TLAPS 验证 ∀N 的归纳证明。
 
-  【诚实声明】TLAPS 是未来工作（post-1.0），不阻塞 1.0 发布。
-  1.0 门槛只要求 TLC 有限模型 PASS（见 §11.4 修订点 3）。
-  TLAPS 的价值是将"有限模型验证"升级为"全量数学证明"。
+【诚实声明】TLAPS 是未来工作（post-1.0），不阻塞 1.0 发布。
+1.0 门槛只要求 TLC 有限模型 PASS（见 §11.4 修订点 3）。
+TLAPS 的价值是将"有限模型验证"升级为"全量数学证明"。
 
-  8.7bis.1 为什么需要 TLAPS
+8.7bis.1 为什么需要 TLAPS
 
     TLC 是有界模型检测器（bounded model checker）：
     - 验证 N ≤ N_MAX 的所有状态（如 N_MAX=3 的 execute_transition）
@@ -3297,7 +3324,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     TLC 无法穷举 N=64 的状态空间（37^64 ≈ 10^100）。
     TLAPS 用数学归纳法证明 ∀N 的不变量，无需穷举。
 
-  8.7bis.2 TLAPS 证明义务清单
+8.7bis.2 TLAPS 证明义务清单
 
     每个 TLA+ spec 对应一组 TLAPS 证明义务（proof obligations）。
     证明义务的结构：定理（Theorem）+ 证明（Proof）。
@@ -3383,7 +3410,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       证明策略：对 history 长度归纳
         Snapshot 是 fold Apply，Apply 是确定函数，fold 保持确定性
 
-  8.7bis.3 TLAPS 证明策略总览
+8.7bis.3 TLAPS 证明策略总览
 
     | 义务 | 证明策略 | 关键引理 | 难度 |
     |---|---|---|---|
@@ -3392,7 +3419,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     | TO-8 | 对 round 归纳 | RoundProgress | 低 |
     | TO-9~TO-10 | 反证法 + 归纳 | 锚定 + fold 确定性 | 中 |
 
-  8.7bis.4 TLAPS 落地计划（post-1.0，未来工作）
+8.7bis.4 TLAPS 落地计划（post-1.0，未来工作）
 
     阶段 TL-1：TLAPS 工具链引入
       - 安装 TLAPS（tlapm）
@@ -3415,7 +3442,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
 
     总工作量：~25 人天（post-1.0，不阻塞 1.0）
 
-  8.7bis.5 TLAPS 与 TLC 的关系（诚实声明）
+8.7bis.5 TLAPS 与 TLC 的关系（诚实声明）
 
     | 维度 | TLC（有限模型） | TLAPS（全量证明） |
     |---|---|---|
@@ -3433,175 +3460,180 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     但 TLAPS 的维护成本高（每次 spec 变更需同步更新 proof），
     故推迟到 post-1.0，当 EvoRule 被用于金融/医疗等高 assurance 场景时再引入。
 
-----------------------------------------------------------------
-九、工具链与配置
-----------------------------------------------------------------
+---
+
+## 九、工具链与配置
 
 9.1 Kani 版本与 nightly
 
-  当前工具链（以 kani_proofs.rs 实测为准）：
-  - Kani 0.67.0
-  - nightly-2025-11-21
-  - CBMC 后端
+当前工具链（以 kani_proofs.rs 实测为准）：
 
-  【诚实声明】Kani 版本三处不一致：
-  - tier0-tcb/docs/KANI.md：0.50.0（过时）
-  - tier0-tcb/CHANGELOG.md：0.65.0（过时）
-  - tier0-tcb/tests/kani_proofs.rs：0.67.0（最新，实测版本）
+- Kani 0.67.0
+- nightly-2025-11-21
+- CBMC 后端
 
-  Phase 0 统一为 0.67.0。
+【诚实声明】Kani 版本三处不一致：
 
-  安装：
-  ```bash
-  # Kani 需要 Linux 环境（WSL/Docker）
-  cargo install --locked kani-verifier --version 0.67.0
-  kani --version  # 确认 0.67.0
-  ```
+- tier0-tcb/docs/KANI.md：0.50.0（过时）
+- tier0-tcb/CHANGELOG.md：0.65.0（过时）
+- tier0-tcb/tests/kani_proofs.rs：0.67.0（最新，实测版本）
 
-  注意：Kani 不支持 Windows 原生，需在 WSL2 或 Docker 中运行。
-  当前 Windows 环境只能跑 cargo test + cargo clippy，Kani proof
-  需在 Linux 环境验证。
+Phase 0 统一为 0.67.0。
+
+安装：
+
+```bash
+# Kani 需要 Linux 环境（WSL/Docker）
+cargo install --locked kani-verifier --version 0.67.0
+kani --version  # 确认 0.67.0
+```
+
+注意：Kani 不支持 Windows 原生，需在 WSL2 或 Docker 中运行。
+当前 Windows 环境只能跑 cargo test + cargo clippy，Kani proof
+需在 Linux 环境验证。
 
 9.2 TLA+ 工具链（Phase 1 引入）
 
-  - TLA+ Toolbox（IDE）或命令行 TLC2
-  - Java 11+ 运行时
-  - 跨平台（Windows/Linux/MacOS 均可）
+- TLA+ Toolbox（IDE）或命令行 TLC2
+- Java 11+ 运行时
+- 跨平台（Windows/Linux/MacOS 均可）
 
-  安装：
-  ```bash
-  # 下载 TLA+ 工具
-  wget https://github.com/tlaplus/tlaplus/releases/latest/tla2tools.jar
-  java -jar tla2tools.jar TLC ExecuteTransition.tla
-  ```
+安装：
+
+```bash
+# 下载 TLA+ 工具
+wget https://github.com/tlaplus/tlaplus/releases/latest/tla2tools.jar
+java -jar tla2tools.jar TLC ExecuteTransition.tla
+```
 
 9.3 CI 集成（完整配置设计）
 
-  Gitee CI: .gitee-ci/validate.yml
+Gitee CI: .gitee-ci/validate.yml
 
-  CI 流水线设计（每次 push / PR 触发）：
+CI 流水线设计（每次 push / PR 触发）：
 
-  ┌─ Job 1: rust-check（Windows runner，日常开发）──────────┐
-  │ 1. cargo fmt --check                                     │
-  │ 2. cargo clippy --all-targets -- -D warnings             │
-  │ 3. cargo test --workspace                                │
-  │ 4. cargo build -p tier0-tcb   (T4-T14 gate PASSED)       │
-  │ 5. cargo build -p tier1-reactor (G8 gate PASSED)         │
-  │ 6. cargo build -p tier2-governance (G8 gate PASSED)      │
-  └──────────────────────────────────────────────────────────┘
+┌─ Job 1: rust-check（Windows runner，日常开发）──────────┐
+│ 1. cargo fmt --check │
+│ 2. cargo clippy --all-targets -- -D warnings │
+│ 3. cargo test --workspace │
+│ 4. cargo build -p tier0-tcb (T4-T14 gate PASSED) │
+│ 5. cargo build -p tier1-reactor (G8 gate PASSED) │
+│ 6. cargo build -p tier2-governance (G8 gate PASSED) │
+└──────────────────────────────────────────────────────────┘
 
-  ┌─ Job 2: kani-check（Linux runner，Phase 0 后）──────────┐
-  │ 1. cargo install --locked kani-verifier --version 0.67.0 │
-  │ 2. cargo kani -p tier0-tcb                                │
-  │    (5 个 proof，4 PASS + 1 待验证)                        │
-  │ 通过条件: 0 verification failures                         │
-  └──────────────────────────────────────────────────────────┘
+┌─ Job 2: kani-check（Linux runner，Phase 0 后）──────────┐
+│ 1. cargo install --locked kani-verifier --version 0.67.0 │
+│ 2. cargo kani -p tier0-tcb │
+│ (5 个 proof，4 PASS + 1 待验证) │
+│ 通过条件: 0 verification failures │
+└──────────────────────────────────────────────────────────┘
 
-  ┌─ Job 3: tla-check（Linux runner，Phase 1 后）───────────┐
-  │ 1. wget tla2tools.jar (固定版本，缓存)                    │
-  │ 2. cd tier0-tcb/tla                                       │
-  │ 3. java -jar tla2tools.jar TLC ExecuteTransition.tla     │
-  │ 通过条件: "Model checking completed. No error has been    │
-  │           found." + 5 invariants PASS + 0 deadlocks       │
-  └──────────────────────────────────────────────────────────┘
+┌─ Job 3: tla-check（Linux runner，Phase 1 后）───────────┐
+│ 1. wget tla2tools.jar (固定版本，缓存) │
+│ 2. cd tier0-tcb/tla │
+│ 3. java -jar tla2tools.jar TLC ExecuteTransition.tla │
+│ 通过条件: "Model checking completed. No error has been │
+│ found." + 5 invariants PASS + 0 deadlocks │
+└──────────────────────────────────────────────────────────┘
 
-  ┌─ Job 4: security-check（Linux runner，Phase 2 后）──────┐
-  │ 1. cargo audit                                            │
-  │ 通过条件: 0 高危漏洞                                      │
-  └──────────────────────────────────────────────────────────┘
+┌─ Job 4: security-check（Linux runner，Phase 2 后）──────┐
+│ 1. cargo audit │
+│ 通过条件: 0 高危漏洞 │
+└──────────────────────────────────────────────────────────┘
 
-  CI 配置文件模板（.gitee-ci/validate.yml）：
+CI 配置文件模板（.gitee-ci/validate.yml）：
 
-  ```yaml
-  # Phase 1 后的完整 CI 配置
-  stages:
-    - rust-check
-    - kani-check
-    - tla-check
-    - security-check
+```yaml
+# Phase 1 后的完整 CI 配置
+stages:
+  - rust-check
+  - kani-check
+  - tla-check
+  - security-check
 
-  rust-check:
-    stage: rust-check
-    script:
-      - cargo fmt --check
-      - cargo clippy --all-targets -- -D warnings
-      - cargo test --workspace
-      - cargo build -p tier0-tcb
-      - cargo build -p tier1-reactor
-      - cargo build -p tier2-governance
-    rules:
-      - if: $CI_PIPELINE_SOURCE == "push"
-      - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+rust-check:
+  stage: rust-check
+  script:
+    - cargo fmt --check
+    - cargo clippy --all-targets -- -D warnings
+    - cargo test --workspace
+    - cargo build -p tier0-tcb
+    - cargo build -p tier1-reactor
+    - cargo build -p tier2-governance
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
-  kani-check:
-    stage: kani-check
-    image: rust:nightly-2025-11-21
-    script:
-      - cargo install --locked kani-verifier --version 0.67.0
-      - cargo kani -p tier0-tcb
-    rules:
-      - if: $CI_PIPELINE_SOURCE == "push"
-      - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    allow_failure: true  # Phase 0 期间允许失败，Phase 1 后改 false
+kani-check:
+  stage: kani-check
+  image: rust:nightly-2025-11-21
+  script:
+    - cargo install --locked kani-verifier --version 0.67.0
+    - cargo kani -p tier0-tcb
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  allow_failure: true # Phase 0 期间允许失败，Phase 1 后改 false
 
-  tla-check:
-    stage: tla-check
-    image: openjdk:11-slim
-    script:
-      - wget -q https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
-      - cd tier0-tcb/tla
-      - java -jar ../../tla2tools.jar TLC -config ExecuteTransition.cfg ExecuteTransition.tla
-    rules:
-      - if: $CI_PIPELINE_SOURCE == "push"
-        changes:
-          - tier0-tcb/tla/**/*
-          - tier0-tcb/src/transition.rs
-          - tier0-tcb/src/executor.rs
-      - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    allow_failure: true  # Phase 1 期间允许失败，Phase 1 完成后改 false
+tla-check:
+  stage: tla-check
+  image: openjdk:11-slim
+  script:
+    - wget -q https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+    - cd tier0-tcb/tla
+    - java -jar ../../tla2tools.jar TLC -config ExecuteTransition.cfg ExecuteTransition.tla
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+      changes:
+        - tier0-tcb/tla/**/*
+        - tier0-tcb/src/transition.rs
+        - tier0-tcb/src/executor.rs
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  allow_failure: true # Phase 1 期间允许失败，Phase 1 完成后改 false
 
-  security-check:
-    stage: security-check
-    script:
-      - cargo install cargo-audit
-      - cargo audit
-    rules:
-      - if: $CI_PIPELINE_SOURCE == "schedule"  # 每周定时
-  ```
+security-check:
+  stage: security-check
+  script:
+    - cargo install cargo-audit
+    - cargo audit
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" # 每周定时
+```
 
-  CI 失败处理策略：
-  - rust-check 失败 → 阻塞合并（硬门控）
-  - kani-check 失败 → Phase 0 期间 warn，Phase 1 后阻塞
-  - tla-check 失败 → Phase 1 期间 warn，Phase 1 完成后阻塞
-  - security-check 失败 → 立即通知维护者
+CI 失败处理策略：
 
-9.4 验证命令速查
+- rust-check 失败 → 阻塞合并（硬门控）
+- kani-check 失败 → Phase 0 期间 warn，Phase 1 后阻塞
+- tla-check 失败 → Phase 1 期间 warn，Phase 1 完成后阻塞
+- security-check 失败 → 立即通知维护者
 
-  ```bash
-  # 日常开发（Windows 可用）
-  cargo test -p tier0-tcb                    # 全部测试
-  cargo test -p tier0-tcb --test proptest_props  # 仅 proptest
-  cargo clippy -p tier0-tcb --all-targets    # lint
+  9.4 验证命令速查
 
-  # Kani 验证（需 Linux）
-  cargo kani -p tier0-tcb                    # 全部 proof
-  cargo kani -p tier0-tcb --harness verify_set_integer_safety  # 单个 proof
+```bash
+# 日常开发（Windows 可用）
+cargo test -p tier0-tcb                    # 全部测试
+cargo test -p tier0-tcb --test proptest_props  # 仅 proptest
+cargo clippy -p tier0-tcb --all-targets    # lint
 
-  # TLA+ 验证（Phase 1 后，跨平台）
-  cd tier0-tcb/tla
-  java -jar tla2tools.jar TLC ExecuteTransition.tla
+# Kani 验证（需 Linux）
+cargo kani -p tier0-tcb                    # 全部 proof
+cargo kani -p tier0-tcb --harness verify_set_integer_safety  # 单个 proof
 
-  # 编译时门控
-  cargo build -p tier0-tcb   # 查看 T4-T14 gate PASSED
-  cargo build -p tier1-reactor  # 查看 G8 gate PASSED
-  ```
+# TLA+ 验证（Phase 1 后，跨平台）
+cd tier0-tcb/tla
+java -jar tla2tools.jar TLC ExecuteTransition.tla
+
+# 编译时门控
+cargo build -p tier0-tcb   # 查看 T4-T14 gate PASSED
+cargo build -p tier1-reactor  # 查看 G8 gate PASSED
+```
 
 9.5 Kani 能力边界形式化分析
 
-  为理解为什么 Kani 无法验证 EvoRule 核心逻辑，以下是对 Kani 工具链
-  能力边界的形式化分析。
+为理解为什么 Kani 无法验证 EvoRule 核心逻辑，以下是对 Kani 工具链
+能力边界的形式化分析。
 
-  9.5.1 Kani 工作原理
+9.5.1 Kani 工作原理
 
     Kani 将 Rust 代码编译为 GOTO 程序（CBMC 中间表示），然后：
     1. 对所有执行路径进行符号执行
@@ -3612,7 +3644,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     - Kani 默认 unwind bound = 10
     - 可通过 #[kani::unwind(N)] 或 --default-unwind N 调整
 
-  9.5.2 BTreeMap 建模开销形式化分析
+9.5.2 BTreeMap 建模开销形式化分析
 
     9.5.2.1 BTreeMap 内部结构（alloc::collections::btree::node）
 
@@ -3727,7 +3759,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
 
       这解释了为什么 L0-1/L0-2/L0-3（纯算术/Array）PASS，而 BTreeMap 路径全 TIMEOUT。
 
-  9.5.3 String 建模开销分析
+9.5.3 String 建模开销分析
 
     Rust 的 String 是 Vec<u8> + 堆分配。Kani 对堆分配建模需要：
     1. 符号化堆地址
@@ -3743,7 +3775,7 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     对于路径解析，即使输入是字面量，Kani 也可能不做常量折叠，
     导致状态空间爆炸。
 
-  9.5.4 Kani 适用边界总结
+9.5.4 Kani 适用边界总结
 
     ✅ Kani 擅长（EvoRule 已用）：
     | 数据类型 | 操作 | 开销 | 实测 |
@@ -3769,53 +3801,53 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
     解决方案：TLA+ 用 defunctionalization 将 BTreeMap 抽象为 Obj 函数，
     绕过 Kani 的 BTreeMap 建模限制。
 
-----------------------------------------------------------------
-十、已知限制与风险
-----------------------------------------------------------------
+---
+
+## 十、已知限制与风险
 
 10.1 Kani 工具链限制
 
-  | 限制 | 影响 | 应对 |
-  |---|---|---|
-  | BTreeMap 内部循环 unwind bound 不足 | evaluate_domain 的 Object 操作 TIMEOUT | 改用 proptest 替代 |
-  | String 堆分配建模开销大 | parse_path_segments 可能 TIMEOUT | proptest 保底 + proof 待验证 |
-  | 不支持 async/tokio | 无法直接验证 reactor 主循环 | pure.rs 抽离纯逻辑 |
-  | 不支持 Instant::now() | 无法验证时间戳逻辑 | register_io_request_pure 抽象时间 |
-  | 不支持 Windows | 开发环境无法跑 Kani | WSL2/Docker + CI Linux runner |
+| 限制                                | 影响                                   | 应对                              |
+| ----------------------------------- | -------------------------------------- | --------------------------------- |
+| BTreeMap 内部循环 unwind bound 不足 | evaluate_domain 的 Object 操作 TIMEOUT | 改用 proptest 替代                |
+| String 堆分配建模开销大             | parse_path_segments 可能 TIMEOUT       | proptest 保底 + proof 待验证      |
+| 不支持 async/tokio                  | 无法直接验证 reactor 主循环            | pure.rs 抽离纯逻辑                |
+| 不支持 Instant::now()               | 无法验证时间戳逻辑                     | register_io_request_pure 抽象时间 |
+| 不支持 Windows                      | 开发环境无法跑 Kani                    | WSL2/Docker + CI Linux runner     |
 
 10.2 TLA+ 工具链限制（Phase 1 后）
 
-  | 限制 | 影响 | 应对 |
-  |---|---|---|
-  | TLC 是有界模型 | 仅证 n≤3, d≤3 有限模型 | 诚实声明；∀N 需 TLAPS（未来工作） |
-  | 不建模 BTreeMap 内部 | state 用抽象 Obj 函数 | defunctionalization 抽象 |
-  | 不建模任意字符串 | 有限 KeySet/ValueSet | 覆盖核心控制流，非数据流 |
+| 限制                 | 影响                   | 应对                              |
+| -------------------- | ---------------------- | --------------------------------- |
+| TLC 是有界模型       | 仅证 n≤3, d≤3 有限模型 | 诚实声明；∀N 需 TLAPS（未来工作） |
+| 不建模 BTreeMap 内部 | state 用抽象 Obj 函数  | defunctionalization 抽象          |
+| 不建模任意字符串     | 有限 KeySet/ValueSet   | 覆盖核心控制流，非数据流          |
 
 10.3 验证覆盖率风险
 
-  | 风险 | 影响 | 缓解 |
-  |---|---|---|
-  | FFI unsafe 未验证 | C 互操作边界可能有 UB | 集成测试覆盖 + 最小化 unsafe 范围 |
-  | blake3 外部依赖未验证 | 哈希算法正确性依赖第三方 | blake3 已有学术审计 + 广泛使用 |
-  | serde 序列化未验证 | 反序列化可能有意外行为 | 输入校验 + 模糊测试（未来） |
-  | 业务规则不可验证 | core_eval.json 的逻辑正确性 | 文档 + 类型约束 + 用户测试 |
+| 风险                  | 影响                        | 缓解                              |
+| --------------------- | --------------------------- | --------------------------------- |
+| FFI unsafe 未验证     | C 互操作边界可能有 UB       | 集成测试覆盖 + 最小化 unsafe 范围 |
+| blake3 外部依赖未验证 | 哈希算法正确性依赖第三方    | blake3 已有学术审计 + 广泛使用    |
+| serde 序列化未验证    | 反序列化可能有意外行为      | 输入校验 + 模糊测试（未来）       |
+| 业务规则不可验证      | core_eval.json 的逻辑正确性 | 文档 + 类型约束 + 用户测试        |
 
 10.4 长期演进风险
 
-  - Kani 版本升级可能改变验证结果（新版本可能修复/引入问题）
-  - nightly Rust 滚动可能破坏 Kani 兼容性
-  - 形式化证明的维护成本（代码改了要重跑证明）
+- Kani 版本升级可能改变验证结果（新版本可能修复/引入问题）
+- nightly Rust 滚动可能破坏 Kani 兼容性
+- 形式化证明的维护成本（代码改了要重跑证明）
 
-  缓解：CI 中固定 Kani 版本 + nightly 日期，升级时全量重验。
+缓解：CI 中固定 Kani 版本 + nightly 日期，升级时全量重验。
 
-----------------------------------------------------------------
-十一、验证路线图（完整任务分解）
-----------------------------------------------------------------
+---
 
-  路线图与版本策略对齐（VERSION_STRATEGY §4.4 的 1.0 门槛）。
-  基于用户决策 D1（TLA+ 纳入 1.0）/ D2（tier0 达标即可升 1.0）。
+## 十一、验证路线图（完整任务分解）
 
-  11.1 任务依赖图与工作量估算
+路线图与版本策略对齐（VERSION_STRATEGY §4.4 的 1.0 门槛）。
+基于用户决策 D1（TLA+ 纳入 1.0）/ D2（tier0 达标即可升 1.0）。
+
+11.1 任务依赖图与工作量估算
 
     11.1.1 任务依赖图（DAG）
 
@@ -3920,292 +3952,270 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
         M4 (Phase 4 完成): tier2 审计链 TLA+ PASS        [1.x]
         M5 (Phase 5 完成): 跨层不变量 + 第三方审计       [1.x]
 
-  ============ 1.0 阻塞阶段（Phase 0-2）============
+============ 1.0 阻塞阶段（Phase 0-2）============
 
-  11.2 Phase 0-2 详细任务分解（1.0 阻塞）
+11.2 Phase 0-2 详细任务分解（1.0 阻塞）
 
-  Phase 0：诚实化（0.1.0 → 0.2.0，2-3 周）
-  ─────────────────────────────────────
-  目标：消除早期虚假声称，统一工具链版本
+Phase 0：诚实化（0.1.0 → 0.2.0，2-3 周）
+─────────────────────────────────────
+目标：消除早期虚假声称，统一工具链版本
 
-  任务 T0-1：白皮书 v0.2 诚实化 ✅ 已完成
-    文件: 本白皮书
-    改动: 全篇重写，删除虚假声称，修正数字，新增 TLA+ 章节
-    验证: grep 检查无 "execute_transition ✅ Kani PASS" 等虚假声称
-    DoD:  附录 F 对齐表 18 条全部对齐 ✅
+任务 T0-1：白皮书 v0.2 诚实化 ✅ 已完成
+文件: 本白皮书
+改动: 全篇重写，删除虚假声称，修正数字，新增 TLA+ 章节
+验证: grep 检查无 "execute_transition ✅ Kani PASS" 等虚假声称
+DoD: 附录 F 对齐表全部对齐 ✅（v0.2.0 时 18 条，v0.3.0 扩展至 30 条）
 
-  任务 T0-2：Kani 版本三处统一为 0.67.0
-    文件: tier0-tcb/docs/KANI.md (0.50.0 → 0.67.0)
-          tier0-tcb/CHANGELOG.md (0.65.0 → 0.67.0)
-          tier0-tcb/tests/kani_proofs.rs (已是 0.67.0，无需改)
-    改动: 替换版本号字符串
-    验证: Select-String 检查三处均为 0.67.0
-    DoD:  三处版本号一致
+任务 T0-2：Kani 版本三处统一为 0.67.0
+文件: tier0-tcb/docs/KANI.md (0.50.0 → 0.67.0)
+tier0-tcb/CHANGELOG.md (0.65.0 → 0.67.0)
+tier0-tcb/tests/kani_proofs.rs (已是 0.67.0，无需改)
+改动: 替换版本号字符串
+验证: Select-String 检查三处均为 0.67.0
+DoD: 三处版本号一致
 
-  任务 T0-3：verify_transition_bounded 重命名
-    文件: tier0-tcb/tests/kani_proofs.rs
-          tier0-tcb/Cargo.toml [package.metadata.kani] proofs 列表
-    改动: verify_transition_bounded → verify_jsonvalue_array_safety
-          更新函数注释，说明实际验证的是 JsonValue Array 构造器
-    验证: cargo kani --harness verify_jsonvalue_array_safety PASS
-    DoD:  函数名名副其实，Cargo.toml 列表同步
+任务 T0-3：verify_transition_bounded 重命名
+文件: tier0-tcb/tests/kani_proofs.rs
+tier0-tcb/Cargo.toml [package.metadata.kani] proofs 列表
+改动: verify_transition_bounded → verify_jsonvalue_array_safety
+更新函数注释，说明实际验证的是 JsonValue Array 构造器
+验证: cargo kani --harness verify_jsonvalue_array_safety PASS
+DoD: 函数名名副其实，Cargo.toml 列表同步
 
-  任务 T0-4：rust-toolchain.toml pin nightly
-    文件: tier0-tcb/rust-toolchain.toml (新建)
-    改动: channel = "nightly-2025-11-21"
-    验证: cargo +nightly-2025-11-21 build 成功
-    DoD:  nightly 版本固定
+任务 T0-4：rust-toolchain.toml pin nightly
+文件: tier0-tcb/rust-toolchain.toml (新建)
+改动: channel = "nightly-2025-11-21"
+验证: cargo +nightly-2025-11-21 build 成功
+DoD: nightly 版本固定
 
-  交付物：白皮书 v0.2 + Kani 版本统一 + L0-5 重命名
+交付物：白皮书 v0.2 + Kani 版本统一 + L0-5 重命名
 
-  Phase 1：TLA+ 落地（0.2.0 → 0.4.0，4-6 周）⚠️ 1.0 关键阻塞
-  ─────────────────────────────────────
-  目标：TLA+ 证 execute_transition 状态机性质，修订 §4.4
+Phase 1：TLA+ 落地（0.2.0 → 0.4.0，4-6 周）⚠️ 1.0 关键阻塞
+─────────────────────────────────────
+目标：TLA+ 证 execute_transition 状态机性质，修订 §4.4
 
-  任务 T1-1：编写 ExecuteTransition.tla spec
-    文件: tier0-tcb/tla/ExecuteTransition.tla (新建)
-    改动: 按第 8 章 §8.4 设计实现完整 TLA+ spec
-          - 8 个状态变量 (pc/i/depth/state/core_eval/stack/result/io_requested)
-          - 9 个子动作 (InitStep...ExtractResultStep)
-          - 5 个不变式
-    验证: TLA+ Parser 无语法错误
-    DoD:  .tla 文件语法正确，可被 TLC 加载
+任务 T1-1：编写 ExecuteTransition.tla spec
+文件: tier0-tcb/tla/ExecuteTransition.tla (新建)
+改动: 按第 8 章 §8.4 设计实现完整 TLA+ spec - 8 个状态变量 (pc/i/depth/state/core_eval/stack/result/io_requested) - 9 个子动作 (InitStep...ExtractResultStep) - 5 个不变式
+验证: TLA+ Parser 无语法错误
+DoD: .tla 文件语法正确，可被 TLC 加载
 
-  任务 T1-2：编写 ExecuteTransition.cfg TLC 配置
-    文件: tier0-tcb/tla/ExecuteTransition.cfg (新建)
-    改动: 按第 8 章 §8.4.7 配置
-          - SPECIFICATION Spec
-          - 5 个 INVARIANTS
-          - CONSTANTS 实例化 (N_MAX=3, D_MAX=3, 等)
-    验证: TLC 能读取配置
-    DoD:  配置文件可被 TLC 加载
+任务 T1-2：编写 ExecuteTransition.cfg TLC 配置
+文件: tier0-tcb/tla/ExecuteTransition.cfg (新建)
+改动: 按第 8 章 §8.4.7 配置 - SPECIFICATION Spec - 5 个 INVARIANTS - CONSTANTS 实例化 (N_MAX=3, D_MAX=3, 等)
+验证: TLC 能读取配置
+DoD: 配置文件可被 TLC 加载
 
-  任务 T1-3：TLC 模型检测 PASS
-    环境: Linux (WSL2/Docker/CI runner)
-    命令: cd tier0-tcb/tla && java -jar tla2tools.jar TLC ExecuteTransition.tla
-    验证: 5 个不变式全部 PASS，0 deadlocks
-    DoD:  TLC 报告 "Model checking completed. No error has been found."
-          状态空间 < 10^8
+任务 T1-3：TLC 模型检测 PASS
+环境: Linux (WSL2/Docker/CI runner)
+命令: cd tier0-tcb/tla && java -jar tla2tools.jar TLC ExecuteTransition.tla
+验证: 5 个不变式全部 PASS，0 deadlocks
+DoD: TLC 报告 "Model checking completed. No error has been found."
+状态空间 < 10^8
 
-  任务 T1-4：CI 集成 TLA+ 检测
-    文件: .gitee-ci/validate.yml
-    改动: 新增 tla-check job (Linux runner)
-          - 下载 tla2tools.jar
-          - 运行 TLC
-          - 失败则 CI 红
-    验证: PR 触发 CI，tla-check job PASS
-    DoD:  每次 PR 自动跑 TLC
+任务 T1-4：CI 集成 TLA+ 检测
+文件: .gitee-ci/validate.yml
+改动: 新增 tla-check job (Linux runner) - 下载 tla2tools.jar - 运行 TLC - 失败则 CI 红
+验证: PR 触发 CI，tla-check job PASS
+DoD: 每次 PR 自动跑 TLC
 
-  任务 T1-5：修订 VERSION_STRATEGY §4.4
-    文件: VERSION_STRATEGY.md
-    改动: 见 §11.4 修订全文
-    验证: 文档审查
-    DoD:  §4.4 门槛从"Kani 证明"扩展为"Kani + TLA+ 证明"
+任务 T1-5：修订 VERSION_STRATEGY §4.4
+文件: VERSION_STRATEGY.md
+改动: 见 §11.4 修订全文
+验证: 文档审查
+DoD: §4.4 门槛从"Kani 证明"扩展为"Kani + TLA+ 证明"
 
-  任务 T1-6：白皮书 v0.4 更新
-    文件: 本白皮书
-    改动: 第 8 章状态从"⏳ Phase 1 待实现"更新为"✅ TLC PASS"
-          附录 A L0-6~L0-9 状态更新为 ✅
-    验证: 附录 F 对齐表更新
-    DoD:  白皮书 v0.4 发布
+任务 T1-6：白皮书 v0.4 更新
+文件: 本白皮书
+改动: 第 8 章状态从"⏳ Phase 1 待实现"更新为"✅ TLC PASS"
+附录 A L0-6~L0-9 状态更新为 ✅
+验证: 附录 F 对齐表更新
+DoD: 白皮书 v0.4 发布
 
-  交付物：ExecuteTransition.tla 可运行 + 5 不变式 PASS + §4.4 修订 + CI 集成
+交付物：ExecuteTransition.tla 可运行 + 5 不变式 PASS + §4.4 修订 + CI 集成
 
-  Phase 2：1.0 收尾（0.4.0 → 1.0.0，4-6 周）
-  ─────────────────────────────────────
-  目标：tier0 三层验证矩阵完整 + 安全审计 + 1.0 发布
+Phase 2：1.0 收尾（0.4.0 → 1.0.0，4-6 周）
+─────────────────────────────────────
+目标：tier0 三层验证矩阵完整 + 安全审计 + 1.0 发布
 
-  任务 T2-1：tier0 proptest 补充到 25+
-    文件: tier0-tcb/tests/proptest_props.rs
-    改动: 新增 6+ proptest（覆盖 push 确定性/branch 对称性等）
-    验证: cargo test --test proptest_props PASS
-    DoD:  proptest 数量 ≥ 25
+任务 T2-1：tier0 proptest 补充到 25+
+文件: tier0-tcb/tests/proptest_props.rs
+改动: 新增 6+ proptest（覆盖 push 确定性/branch 对称性等）
+验证: cargo test --test proptest_props PASS
+DoD: proptest 数量 ≥ 25
 
-  任务 T2-2：verify_path_no_panic Kani 环境验证
-    环境: Linux (WSL2/Docker)
-    命令: cargo kani --harness verify_path_no_panic
-    验证: PASS 或确认 TIMEOUT
-    DoD:  若 PASS → 保留；若 TIMEOUT → 删除，L0-10 proptest 保底
+任务 T2-2：verify_path_no_panic Kani 环境验证
+环境: Linux (WSL2/Docker)
+命令: cargo kani --harness verify_path_no_panic
+验证: PASS 或确认 TIMEOUT
+DoD: 若 PASS → 保留；若 TIMEOUT → 删除，L0-10 proptest 保底
 
-  任务 T2-3：安全审计文档
-    文件: docs/security/SECURITY_AUDIT_v0.1.0.md
-          docs/security/THREAT_MODEL.md
-    改动: 内部 self-audit + 威胁模型
-    验证: 核心维护者 review
-    DoD:  文档完成 + 1 名独立 reviewer 签字
+任务 T2-3：安全审计文档
+文件: docs/security/SECURITY_AUDIT_v1.0.0.md
+docs/security/THREAT_MODEL.md
+改动: 内部 self-audit + 威胁模型
+验证: 核心维护者 review
+DoD: 文档完成 + 1 名独立 reviewer 签字
 
-  任务 T2-4：cargo audit
-    命令: cargo audit
-    验证: 0 高危漏洞
-    DoD:  cargo audit 报告 0 高危
+任务 T2-4：cargo audit
+命令: cargo audit
+验证: 0 高危漏洞
+DoD: cargo audit 报告 0 高危
 
-  任务 T2-5：1.0 发布
-    文件: CHANGELOG.md / VERSION_STRATEGY.md / Cargo.toml (版本号)
-    改动: 版本号 0.x → 1.0.0，CHANGELOG 写"为什么 stable"
-    验证: §4.4 全部门槛达标
-    DoD:  git tag v1.0.0 + Gitee release
+任务 T2-5：1.0 发布
+文件: CHANGELOG.md / VERSION_STRATEGY.md / Cargo.toml (版本号)
+改动: 版本号 0.x → 1.0.0，CHANGELOG 写"为什么 stable"
+验证: §4.4 全部门槛达标
+DoD: git tag v1.0.0 + Gitee release
 
-  交付物：VERSION_STRATEGY §4.4 全部门槛达标 + 白皮书 v1.0 正式版
+交付物：VERSION_STRATEGY §4.4 全部门槛达标 + 白皮书 v1.0 正式版
 
-  ============ 1.0 后阶段（Phase 3-5，1.x 路线）============
+============ 1.0 后阶段（Phase 3-5，1.x 路线）============
 
-  11.3 Phase 3-5 详细任务分解（1.x 路线，不阻塞 1.0）
+11.3 Phase 3-5 详细任务分解（1.x 路线，不阻塞 1.0）
 
-  Phase 3：tier1 验证（1.0.0 → 1.2.0，4-6 周）
-  ─────────────────────────────────────
-  目标：tier1 反应器的 5 条结构性不变量被 Kani 证明
+Phase 3：tier1 验证（1.0.0 → 1.2.0，4-6 周）
+─────────────────────────────────────
+目标：tier1 反应器的 5 条结构性不变量被 Kani 证明
 
-  任务 T3-0：tier1 抽象状态机模型（前置，策略 A）
-    文件: tier1-reactor/src/pure_abstract.rs (新建)
-    改动: 实现 ReactorStateAbstract（用定长数组替代 BTreeMap/HashSet）
-          - pending_requests: [Option<FactId>; 2]
-          - pending_io_count: 0..=2
-          - has_io_result: bool（抽象 __io_result__ 存在性）
-          - queue: [Option<JsonValue>; 2]
-          - next_step_abstract / apply_*_abstract 抽象实现
-          - soundness 论证文档
-    验证: 抽象模型与真实 ReactorState 的 diff 对照 review
-    DoD:  抽象模型通过单元测试 + soundness 论证文档完成
-    工作量: 5 人天
+任务 T3-0：tier1 抽象状态机模型（前置，策略 A）
+文件: tier1-reactor/src/pure*abstract.rs (新建)
+改动: 实现 ReactorStateAbstract（用定长数组替代 BTreeMap/HashSet）- pending_requests: [Option<FactId>; 2] - pending_io_count: 0..=2 - has_io_result: bool（抽象 **io_result** 存在性）- queue: [Option<JsonValue>; 2] - next_step_abstract / apply*\*\_abstract 抽象实现 - soundness 论证文档
+验证: 抽象模型与真实 ReactorState 的 diff 对照 review
+DoD: 抽象模型通过单元测试 + soundness 论证文档完成
+工作量: 5 人天
 
-  任务 T3-1：L1-1 invariant_io_count_consistency 实现
-    文件: tier1-reactor/src/pure.rs kani_proofs
-    改动: 替换占位桩 _kani_placeholder，按附录 A L1-1 harness 伪码实现
-    依赖: T3-0
-    DoD:  cargo kani -p tier1-reactor --harness invariant_io_count_consistency PASS
-    工作量: 2 人天
+任务 T3-1：L1-1 invariant_io_count_consistency 实现
+文件: tier1-reactor/src/pure.rs kani_proofs
+改动: 替换占位桩 \_kani_placeholder，按附录 A L1-1 harness 伪码实现
+依赖: T3-0
+DoD: cargo kani -p tier1-reactor --harness invariant_io_count_consistency PASS
+工作量: 2 人天
 
-  任务 T3-2：L1-2 invariant_io_recovery_iff_result 实现
-    依赖: T3-0
-    DoD:  cargo kani --harness invariant_io_recovery_iff_result PASS
-    工作量: 2 人天
+任务 T3-2：L1-2 invariant_io_recovery_iff_result 实现
+依赖: T3-0
+DoD: cargo kani --harness invariant_io_recovery_iff_result PASS
+工作量: 2 人天
 
-  任务 T3-3：L1-3 invariant_version_monotonic 实现
-    改动: 策略 B 纯算术，无需 T3-0
-    DoD:  cargo kani --harness invariant_version_monotonic PASS
-    工作量: 1 人天（最易，同 L0-1）
+任务 T3-3：L1-3 invariant_version_monotonic 实现
+改动: 策略 B 纯算术，无需 T3-0
+DoD: cargo kani --harness invariant_version_monotonic PASS
+工作量: 1 人天（最易，同 L0-1）
 
-  任务 T3-4：L1-4 FactsLog append-only 证明
-    依赖: T3-0
-    DoD:  Kani proof PASS
-    工作量: 2 人天
+任务 T3-4：L1-4 FactsLog append-only 证明
+依赖: T3-0
+DoD: Kani proof PASS
+工作量: 2 人天
 
-  任务 T3-5：L1-5 max_rounds 终止性证明
-    依赖: T3-1~T3-4（需前序不变量保证）
-    改动: 主方案 Kani BMC（unwind=8）；若失败则备选 ReactorLoop.tla
-    DoD:  Kani proof PASS 或 ReactorLoop.tla TLC PASS
-    工作量: 5 人天（含 TLA+ 备选）
+任务 T3-5：L1-5 max_rounds 终止性证明
+依赖: T3-1~T3-4（需前序不变量保证）
+改动: 主方案 Kani BMC（unwind=8）；若失败则备选 ReactorLoop.tla
+DoD: Kani proof PASS 或 ReactorLoop.tla TLC PASS
+工作量: 5 人天（含 TLA+ 备选）
 
-  交付物：tier1 抽象模型 + 5 个 Kani proof PASS（或 TLA+ 兜底）
+交付物：tier1 抽象模型 + 5 个 Kani proof PASS（或 TLA+ 兜底）
 
-  Phase 4：tier2 验证（1.2.0 → 1.4.0，4-6 周）
-  ─────────────────────────────────────
-  目标：审计链完整性被形式化验证
+Phase 4：tier2 验证（1.2.0 → 1.4.0，4-6 周）
+─────────────────────────────────────
+目标：审计链完整性被形式化验证
 
-  任务 T4-0：AuditorChain.tla 实现（前置）
-    文件: tier2-governance/tla/AuditorChain.tla (新建)
-          tier2-governance/tla/AuditorChain.cfg (新建)
-    改动: 按第 6.5 节设计实现完整 TLA+ spec
-          - 5 个状态变量 (entries/last_hash/fact_stream/audited_count/pc)
-          - 5 个子动作 (InitStep...VerifyStep)
-          - 4 个不变式 (GenesisAnchor/HashChainLink/LastHashConsistency/TamperDetection)
-    验证: TLC 4 不变式 PASS，0 deadlocks
-    DoD:  TLC 报告 "Model checking completed. No error has been found."
-    工作量: 5 人天
+任务 T4-0：AuditorChain.tla 实现（前置）
+文件: tier2-governance/tla/AuditorChain.tla (新建)
+tier2-governance/tla/AuditorChain.cfg (新建)
+改动: 按第 6.5 节设计实现完整 TLA+ spec - 5 个状态变量 (entries/last_hash/fact_stream/audited_count/pc) - 5 个子动作 (InitStep...VerifyStep) - 4 个不变式 (GenesisAnchor/HashChainLink/LastHashConsistency/TamperDetection)
+验证: TLC 4 不变式 PASS，0 deadlocks
+DoD: TLC 报告 "Model checking completed. No error has been found."
+工作量: 5 人天
 
-  任务 T4-1：L2-1 哈希链完整性 proptest
-    文件: tier2-governance/tests/hash_chain_proptest.rs (新建)
-    依赖: T4-0（TLA+ 验证结构性质，proptest 补充真实 blake3）
-    DoD:  cargo test hash_chain_integrity PASS (200 case)
-    工作量: 2 人天
+任务 T4-1：L2-1 哈希链完整性 proptest
+文件: tier2-governance/tests/hash_chain_proptest.rs (新建)
+依赖: T4-0（TLA+ 验证结构性质，proptest 补充真实 blake3）
+DoD: cargo test hash_chain_integrity PASS (200 case)
+工作量: 2 人天
 
-  任务 T4-2：L2-2 篡改可检测性 proptest
-    依赖: T4-0
-    DoD:  cargo test tamper_detection PASS (200 case)
-    工作量: 2 人天
+任务 T4-2：L2-2 篡改可检测性 proptest
+依赖: T4-0
+DoD: cargo test tamper_detection PASS (200 case)
+工作量: 2 人天
 
-  任务 T4-3：L2-3 审计重放确定性 proptest
-    依赖: T4-0
-    DoD:  cargo test replay_determinism PASS (200 case)
-    工作量: 2 人天
+任务 T4-3：L2-3 审计重放确定性 proptest
+依赖: T4-0
+DoD: cargo test replay_determinism PASS (200 case)
+工作量: 2 人天
 
-  交付物：AuditorChain.tla + 3 个 proptest PASS
+交付物：AuditorChain.tla + 3 个 proptest PASS
 
-  Phase 5：跨层 + 第三方审计（1.4.0+）
-  ─────────────────────────────────────
-  目标：跨层不变量验证 + 触发第三方审计
+Phase 5：跨层 + 第三方审计（1.4.0+）
+─────────────────────────────────────
+目标：跨层不变量验证 + 触发第三方审计
 
-  任务 T5-1：因果链完整性跨层验证
-  任务 T5-2：时间旅行一致性验证
-  任务 T5-3：审计链与 FactsLog 同步验证
+任务 T5-1：因果链完整性跨层验证
+任务 T5-2：时间旅行一致性验证
+任务 T5-3：审计链与 FactsLog 同步验证
 
-  第三方审计触发条件（VERSION_STRATEGY §4.5）：
-  1.0 之后，满足任一条件时启动第三方付费审计：
-  - 付费 B 端合同 ≥ ¥50 万/年
-  - C 端 ARR ≥ ¥100 万
-  - 外部融资 ≥ A 轮
-  - 服务 ≥ 1 家金融/医疗/政府
-  - 发现严重 CVE（CVSS ≥ 7.0）
-  - 核心维护者手动决定
+第三方审计触发条件（VERSION_STRATEGY §4.5）：
+1.0 之后，满足任一条件时启动第三方付费审计：
+
+- 付费 B 端合同 ≥ ¥50 万/年
+- C 端 ARR ≥ ¥100 万
+- 外部融资 ≥ A 轮
+- 服务 ≥ 1 家金融/医疗/政府
+- 发现严重 CVE（CVSS ≥ 7.0）
+- 核心维护者手动决定
 
   11.4 VERSION_STRATEGY §4.4 修订全文
 
-  【修订时机】Phase 1 TLA+ 落地后（TLC 5 不变式 PASS 后）
-  【修订理由】TLA+ 纳入 1.0 门槛（用户决策 D1）
+【修订时机】Phase 1 TLA+ 落地后（TLC 5 不变式 PASS 后）
+【修订理由】TLA+ 纳入 1.0 门槛（用户决策 D1）
 
-  ─── 原文（VERSION_STRATEGY.md §4.4 当前版本）───
+─── 原文（VERSION_STRATEGY.md §4.4 当前版本）───
 
-  | **Kani 形式化验证** | ✅ tier0 核心不变式被 Kani 证明(不止 stub) |
+| **Kani 形式化验证** | ✅ tier0 核心不变式被 Kani 证明(不止 stub) |
 
-  ─── 修订后（Phase 1 完成后）───
+─── 修订后（Phase 1 完成后）───
 
-  | **形式化验证** | ✅ tier0 核心不变式被 Kani 算术证明 + TLA+ 状态机证明（不止 stub） |
+| **形式化验证** | ✅ tier0 核心不变式被 Kani 算术证明 + TLA+ 状态机证明（不止 stub） |
 
-  ─── 修订详情 ───
+─── 修订详情 ───
 
-  修订点 1：门槛名称
-    原："Kani 形式化验证"
-    新："形式化验证"
-    理由：门槛不再只要求 Kani，而是 Kani + TLA+ 组合
+修订点 1：门槛名称
+原："Kani 形式化验证"
+新："形式化验证"
+理由：门槛不再只要求 Kani，而是 Kani + TLA+ 组合
 
-  修订点 2：证明要求
-    原："tier0 核心不变式被 Kani 证明(不止 stub)"
-    新："tier0 核心不变式被 Kani 算术证明 + TLA+ 状态机证明（不止 stub）"
-    理由：明确两层证明义务
-      - Kani 证算术完备性（i64 不溢出，L0-1/L0-2/L0-3）
-      - TLA+ 证状态机性质（终止性/确定性/深度强制，L0-6/L0-7/L0-8/L0-9）
+修订点 2：证明要求
+原："tier0 核心不变式被 Kani 证明(不止 stub)"
+新："tier0 核心不变式被 Kani 算术证明 + TLA+ 状态机证明（不止 stub）"
+理由：明确两层证明义务 - Kani 证算术完备性（i64 不溢出，L0-1/L0-2/L0-3）- TLA+ 证状态机性质（终止性/确定性/深度强制，L0-6/L0-7/L0-8/L0-9）
 
-  修订点 3：1.0 门槛达标条件
-    达标需同时满足：
-    1. Kani proof 4+ PASS（L0-1/L0-2/L0-3 + L0-4 或 L0-5 重命名后）
-    2. TLA+ TLC 5 不变式 PASS（L0-6/L0-7/L0-8/L0-9 + LoopProgress）
-    3. proptest 19+ PASS（L0-10/L0-11/L0-12）
-    4. build.rs 门控全部 PASSED（L0-13/L0-14/L0-15）
+修订点 3：1.0 门槛达标条件
+达标需同时满足：1. Kani proof 4+ PASS（L0-1/L0-2/L0-3 + L0-4 或 L0-5 重命名后）2. TLA+ TLC 5 不变式 PASS（L0-6/L0-7/L0-8/L0-9 + LoopProgress）3. proptest 19+ PASS（L0-10/L0-11/L0-12）4. build.rs 门控全部 PASSED（L0-13/L0-14/L0-15）
 
-  ─── 不修订的部分 ───
+─── 不修订的部分 ───
 
-  §4.4 其他门槛不变：
-  - 写真实 LLM handler ✅
-  - 写真实 tool handler ✅
-  - 0 warnings ✅
-  - E2E 测试 ✅
-  - API 稳定性承诺 ✅
-  - 完整文档 ✅
-  - 性能基准 ✅
-  - 安全审计 ✅
-  - 1 个 reference 实现 ✅
+§4.4 其他门槛不变：
 
-  §4.5 第三方审计触发条件不变（1.0 后按条件触发）
+- 写真实 LLM handler ✅
+- 写真实 tool handler ✅
+- 0 warnings ✅
+- E2E 测试 ✅
+- API 稳定性承诺 ✅
+- 完整文档 ✅
+- 性能基准 ✅
+- 安全审计 ✅
+- 1 个 reference 实现 ✅
 
-  11.5 安全审计文档设计大纲（T2-3 前置设计）
+§4.5 第三方审计触发条件不变（1.0 后按条件触发）
+
+11.5 安全审计文档设计大纲（T2-3 前置设计）
 
     本节定义 T2-3 任务（安全审计文档）的完整章节结构，
     确保 Phase 2 实现时无设计缺口。两份文档分别覆盖
     "安全审计"（已发现的问题与验证）和"威胁模型"（可能的攻击与防御）。
 
-    11.5.1 SECURITY_AUDIT_v0.1.0.md 章节结构
+    11.5.1 SECURITY_AUDIT_v1.0.0.md 章节结构
 
-      文件：docs/security/SECURITY_AUDIT_v0.1.0.md
+      文件：docs/security/SECURITY_AUDIT_v1.0.0.md
       目标：内部 self-audit，记录 1.0.0 发布前的安全状态
       DoD：文档完成 + 1 名独立 reviewer 签字
 
@@ -4419,592 +4429,585 @@ Kani 的正交互补，证状态机性质（终止性/确定性/深度强制）�
       - SECURITY_AUDIT_v1.0.0.md：2 人天（self-audit + 签署流程）
       - 总计：5 人天（与 §11.1.2 估算一致）
 
-----------------------------------------------------------------
-附录 A：证明义务完整清单（L0-* 注册表，含形式化定义）
-----------------------------------------------------------------
+---
 
-  【设计原则】每个证明义务有唯一 ID，不可漂移。每个义务包含：
-  - Pre：前置条件（验证假设）
-  - Post：后置条件（被证明的性质）
-  - 工具：验证工具
-  - 策略：验证方法
-  - DoD：完成定义（什么算"通过"）
-  - 状态：✅ PASS / 🔧 待验证 / ⏳ 待实现 / ❌ 虚假（需修复）
+## 附录 A：证明义务完整清单（L0-\* 注册表，含形式化定义）
 
-  ==================== tier0（1.0 阻塞）====================
+【设计原则】每个证明义务有唯一 ID，不可漂移。每个义务包含：
 
-  L0-1: i64 加法不溢出
-  ─────────────────────────────────────
-  Pre:  ∀ a, b ∈ i64  (全 2^64 × 2^64 组合)
-  Post: checked_add(a, b) 不 panic
-        ∃ r: checked_add(a, b) = Some(r) ∨ None
-        (Some 当 a+b ∈ i64 范围；None 当溢出)
-  工具: Kani 0.67.0
-  策略: #[kani::proof] verify_set_integer_safety
-        用 kani::any() 生成符号 a, b，验证 checked_add 不 panic
-  DoD:  cargo kani --harness verify_set_integer_safety PASS (0 failures)
-  状态: ✅ PASS (0.16s, 0/41 failed)
-  代码: tests/kani_proofs.rs verify_set_integer_safety
+- Pre：前置条件（验证假设）
+- Post：后置条件（被证明的性质）
+- 工具：验证工具
+- 策略：验证方法
+- DoD：完成定义（什么算"通过"）
+- 状态：✅ PASS / 🔧 待验证 / ⏳ 待实现 / ❌ 虚假（需修复）
 
-  L0-2: i64 减法不下溢
-  ─────────────────────────────────────
-  Pre:  ∀ a, b ∈ i64
-  Post: checked_sub(a, b) 不 panic
-        ∃ r: checked_sub(a, b) = Some(r) ∨ None
-  工具: Kani 0.67.0
-  策略: #[kani::proof] verify_set_sub_safety
-  DoD:  cargo kani --harness verify_set_sub_safety PASS (0 failures)
-  状态: ✅ PASS (0.17s, 0/41 failed)
-  代码: tests/kani_proofs.rs verify_set_sub_safety
+==================== tier0（1.0 阻塞）====================
 
-  L0-3: JsonValue 构造/访问一致性
-  ─────────────────────────────────────
-  Pre:  ∀ v ∈ i64
-  Post: JsonValue::Integer(v).as_i64() = Some(v)
-        (构造与访问互逆)
-  工具: Kani 0.67.0
-  策略: #[kani::proof] verify_value_roundtrip
-  DoD:  cargo kani --harness verify_value_roundtrip PASS
-  状态: ✅ PASS (0.15s, 0/377 failed, 7 unreachable)
-  代码: tests/kani_proofs.rs verify_value_roundtrip
+L0-1: i64 加法不溢出
+─────────────────────────────────────
+Pre: ∀ a, b ∈ i64 (全 2^64 × 2^64 组合)
+Post: checked_add(a, b) 不 panic
+∃ r: checked_add(a, b) = Some(r) ∨ None
+(Some 当 a+b ∈ i64 范围；None 当溢出)
+工具: Kani 0.67.0
+策略: #[kani::proof] verify_set_integer_safety
+用 kani::any() 生成符号 a, b，验证 checked_add 不 panic
+DoD: cargo kani --harness verify_set_integer_safety PASS (0 failures)
+状态: ✅ PASS (0.16s, 0/41 failed)
+代码: tests/kani_proofs.rs verify_set_integer_safety
 
-  L0-4: resolve_path 对 Array 返回确定结果
-  ─────────────────────────────────────
-  Pre:  state = Array([Integer(kani::any())])
-        path ∈ {"x", "", "0"} (固定字面量)
-  Post: resolve_path(state, path).is_none() = true
-        (Array 上访问字段名/空串/数字字段均返回 None)
-  工具: Kani 0.67.0（可能 TIMEOUT，proptest 保底）
-  策略: #[kani::proof] verify_path_no_panic + kani::assert
-        若 Kani TIMEOUT，则删除 proof，L0-10 proptest 保底
-  DoD:  cargo kani --harness verify_path_no_panic PASS
-        或 proptest resolve_path_never_panics_arbitrary_path PASS
-  状态: 🔧 待验证（已加 assert，需 Linux 环境跑 Kani）
-  代码: tests/kani_proofs.rs verify_path_no_panic
+L0-2: i64 减法不下溢
+─────────────────────────────────────
+Pre: ∀ a, b ∈ i64
+Post: checked_sub(a, b) 不 panic
+∃ r: checked_sub(a, b) = Some(r) ∨ None
+工具: Kani 0.67.0
+策略: #[kani::proof] verify_set_sub_safety
+DoD: cargo kani --harness verify_set_sub_safety PASS (0 failures)
+状态: ✅ PASS (0.17s, 0/41 failed)
+代码: tests/kani_proofs.rs verify_set_sub_safety
 
-  L0-5: ❌ 虚假（Phase 0 重命名）
-  ─────────────────────────────────────
-  原声称: execute_transition 确定性 ✅ Kani PASS
-  现实: verify_transition_bounded 从未调用 execute_transition
-        只测了 JsonValue::empty_object() 和 Array 构造器
-  处理: Phase 0 重命名为 verify_jsonvalue_array_safety
-        真实的 execute_transition 确定性由 L0-7 (TLA+) 验证
-  状态: ❌ 虚假，已修复
-  代码: tests/kani_proofs.rs verify_transition_bounded (待重命名)
+L0-3: JsonValue 构造/访问一致性
+─────────────────────────────────────
+Pre: ∀ v ∈ i64
+Post: JsonValue::Integer(v).as_i64() = Some(v)
+(构造与访问互逆)
+工具: Kani 0.67.0
+策略: #[kani::proof] verify_value_roundtrip
+DoD: cargo kani --harness verify_value_roundtrip PASS
+状态: ✅ PASS (0.15s, 0/377 failed, 7 unreachable)
+代码: tests/kani_proofs.rs verify_value_roundtrip
 
-  L0-6: execute_transition 状态机终止性（有限模型）
-  ─────────────────────────────────────
-  Pre:  core_eval ∈ CoreEval (N_MAX=3, 有限模型)
-        state ∈ Obj (KeySet=4, ValueSet=5, 有限模型)
-  Post: execute_transition 总是在有限步内到达 Done 或 Error
-        ∀ reachable_state: pc ∈ {Done, Error} ∨ ENABLED Next
-        (无死锁状态)
-  工具: TLA+ TLC
-  策略: TerminationInvariant + TLC 穷举所有可达状态
-  DoD:  TLC 报告 "No error has been found" + 0 deadlocks
-  状态: ⏳ Phase 1 待实现
-  spec: tier0-tcb/tla/ExecuteTransition.tla TerminationInvariant
+L0-4: resolve_path 对 Array 返回确定结果
+─────────────────────────────────────
+Pre: state = Array([Integer(kani::any())])
+path ∈ {"x", "", "0"} (固定字面量)
+Post: resolve_path(state, path).is_none() = true
+(Array 上访问字段名/空串/数字字段均返回 None)
+工具: Kani 0.67.0（可能 TIMEOUT，proptest 保底）
+策略: #[kani::proof] verify_path_no_panic + kani::assert
+若 Kani TIMEOUT，则删除 proof，L0-10 proptest 保底
+DoD: cargo kani --harness verify_path_no_panic PASS
+或 proptest resolve_path_never_panics_arbitrary_path PASS
+状态: 🔧 待验证（已加 assert，需 Linux 环境跑 Kani）
+代码: tests/kani_proofs.rs verify_path_no_panic
 
-  L0-7: execute_transition 确定性（有限模型）
-  ─────────────────────────────────────
-  Pre:  同 L0-6
-  Post: 相同输入恒产生相同输出
-        ∀ s: |{s' : Next(s, s')}| ≤ 1
-        (每个状态最多一个后继)
-  工具: TLA+ TLC
-  策略: DeterminismInvariant + TLC 验证无两个子动作同时 enabled
-  DoD:  TLC 报告 DeterminismInvariant PASS
-  状态: ⏳ Phase 1 待实现
-  spec: tier0-tcb/tla/ExecuteTransition.tla DeterminismInvariant
+L0-5: ❌ 虚假（Phase 0 重命名）
+─────────────────────────────────────
+原声称: execute_transition 确定性 ✅ Kani PASS
+现实: verify_transition_bounded 从未调用 execute_transition
+只测了 JsonValue::empty_object() 和 Array 构造器
+处理: Phase 0 重命名为 verify_jsonvalue_array_safety
+真实的 execute_transition 确定性由 L0-7 (TLA+) 验证
+状态: ❌ 虚假，已修复
+代码: tests/kani_proofs.rs verify_transition_bounded (待重命名)
 
-  L0-8: 递归深度硬上界强制（TLA+ 核心价值）
-  ─────────────────────────────────────
-  Pre:  同 L0-6
-        D_MAX=3 (对应 MAX_BRANCH_DEPTH=64)
-  Post: depth 永不超过 D_MAX，除非已报错
-        ∀ reachable_state: pc ∈ {Error} ∨ depth ≤ D_MAX
-        (违反深度 → NestingTooDeep 错误，不继续执行)
-  工具: TLA+ TLC
-  策略: DepthEnforcementInvariant + TLC 穷举
-  DoD:  TLC 报告 DepthEnforcementInvariant PASS
-  状态: ⏳ Phase 1 待实现
-  spec: tier0-tcb/tla/ExecuteTransition.tla DepthEnforcementInvariant
+L0-6: execute_transition 状态机终止性（有限模型）
+─────────────────────────────────────
+Pre: core_eval ∈ CoreEval (N_MAX=3, 有限模型)
+state ∈ Obj (KeySet=4, ValueSet=5, 有限模型)
+Post: execute_transition 总是在有限步内到达 Done 或 Error
+∀ reachable_state: pc ∈ {Done, Error} ∨ ENABLED Next
+(无死锁状态)
+工具: TLA+ TLC
+策略: TerminationInvariant + TLC 穷举所有可达状态
+DoD: TLC 报告 "No error has been found" + 0 deadlocks
+状态: ⏳ Phase 1 待实现
+spec: tier0-tcb/tla/ExecuteTransition.tla TerminationInvariant
 
-  L0-9: IoRequired 提前返回语义
-  ─────────────────────────────────────
-  Pre:  同 L0-6
-  Post: 一旦 io_requested = TRUE，pc 必走向 IoReturn → Done
-        ∀ reachable_state: io_requested ⇒ pc ∈ {IoReturn, Done}
-        (I/O 请求立即返回，不继续执行后续指令)
-  工具: TLA+ TLC
-  策略: IoEarlyReturnInvariant + TLC 穷举
-  DoD:  TLC 报告 IoEarlyReturnInvariant PASS
-  状态: ⏳ Phase 1 待实现
-  spec: tier0-tcb/tla/ExecuteTransition.tla IoEarlyReturnInvariant
+L0-7: execute_transition 确定性（有限模型）
+─────────────────────────────────────
+Pre: 同 L0-6
+Post: 相同输入恒产生相同输出
+∀ s: |{s' : Next(s, s')}| ≤ 1
+(每个状态最多一个后继)
+工具: TLA+ TLC
+策略: DeterminismInvariant + TLC 验证无两个子动作同时 enabled
+DoD: TLC 报告 DeterminismInvariant PASS
+状态: ⏳ Phase 1 待实现
+spec: tier0-tcb/tla/ExecuteTransition.tla DeterminismInvariant
 
-  L0-10: resolve_path 任意输入不 panic
-  ─────────────────────────────────────
-  Pre:  ∀ path ∈ [a-z0-9.]{0,20} (随机生成 200 case)
-        ∀ state ∈ {Object, Array} (两种结构)
-  Post: resolve_path(state, path) 不 panic
-        (返回 Option<&JsonValue>，None 或 Some)
-  工具: proptest
-  策略: resolve_path_never_panics_arbitrary_path (200 case)
-  DoD:  cargo test resolve_path_never_panics PASS (200/200)
-  状态: ✅ PASS (200 case)
-  代码: tests/proptest_props.rs resolve_path_never_panics_arbitrary_path
+L0-8: 递归深度硬上界强制（TLA+ 核心价值）
+─────────────────────────────────────
+Pre: 同 L0-6
+D_MAX=3 (对应 MAX_BRANCH_DEPTH=64)
+Post: depth 永不超过 D_MAX，除非已报错
+∀ reachable_state: pc ∈ {Error} ∨ depth ≤ D_MAX
+(违反深度 → NestingTooDeep 错误，不继续执行)
+工具: TLA+ TLC
+策略: DepthEnforcementInvariant + TLC 穷举
+DoD: TLC 报告 DepthEnforcementInvariant PASS
+状态: ⏳ Phase 1 待实现
+spec: tier0-tcb/tla/ExecuteTransition.tla DepthEnforcementInvariant
 
-  L0-11: evaluate_domain 任意输入不 panic
-  ─────────────────────────────────────
-  Pre:  ∀ domain_type ∈ {eq,lt,exists,instruction,all,not,unknown}
-        ∀ state ∈ {Object, Array}
-        ∀ 字段缺失组合
-        ∀ 嵌套深度 0..20
-  Post: evaluate_domain(domain, state) 不 panic
-        始终返回 bool (true 或 false)
-  工具: proptest
-  策略: domain_eval_never_panics_arbitrary_type (200 case)
-        domain_eval_nested_never_panics (200 case)
-  DoD:  cargo test domain_eval_never_panics PASS (200/200)
-        cargo test domain_eval_nested_never_panics PASS (200/200)
-  状态: ✅ PASS (200 case × 2)
-  代码: tests/proptest_props.rs
+L0-9: IoRequired 提前返回语义
+─────────────────────────────────────
+Pre: 同 L0-6
+Post: 一旦 io_requested = TRUE，pc 必走向 IoReturn → Done
+∀ reachable_state: io_requested ⇒ pc ∈ {IoReturn, Done}
+(I/O 请求立即返回，不继续执行后续指令)
+工具: TLA+ TLC
+策略: IoEarlyReturnInvariant + TLC 穷举
+DoD: TLC 报告 IoEarlyReturnInvariant PASS
+状态: ⏳ Phase 1 待实现
+spec: tier0-tcb/tla/ExecuteTransition.tla IoEarlyReturnInvariant
 
-  L0-12: execute_transition 任意输入不 panic
-  ─────────────────────────────────────
-  Pre:  ∀ core_eval ∈ 任意规则组合 (含畸形指令)
-        ∀ instruction ∈ {noop, increment, unknown, 畸形}
-        ∀ payload ∈ {Object, Array, Integer, String, Null, Bool}
-  Post: execute_transition 不 panic
-        返回 Ok(State) | Ok(IoRequired) | Err(TcbError)
-  工具: proptest
-  策略: execute_transition_arbitrary_type_no_panic (200 case)
-        execute_transition_malformed_instruction_no_panic (200 case)
-  DoD:  cargo test execute_transition_arbitrary_type_no_panic PASS
-        cargo test execute_transition_malformed_instruction_no_panic PASS
-  状态: ✅ PASS (200 case × 2)
-  代码: tests/proptest_props.rs
+L0-10: resolve_path 任意输入不 panic
+─────────────────────────────────────
+Pre: ∀ path ∈ [a-z0-9.]{0,20} (随机生成 200 case)
+∀ state ∈ {Object, Array} (两种结构)
+Post: resolve_path(state, path) 不 panic
+(返回 Option<&JsonValue>，None 或 Some)
+工具: proptest
+策略: resolve_path_never_panics_arbitrary_path (200 case)
+DoD: cargo test resolve_path_never_panics PASS (200/200)
+状态: ✅ PASS (200 case)
+代码: tests/proptest_props.rs resolve_path_never_panics_arbitrary_path
 
-  L0-13: 无 HashMap/HashSet（确定性迭代）
-  ─────────────────────────────────────
-  Pre:  tier0-tcb/src/**/*.rs (非 test 代码)
-  Post: 源码中无 "HashMap" 或 "HashSet" 字符串
-        (保证 BTreeMap 的确定性迭代顺序)
-  工具: build.rs T8 门控
-  策略: 编译时字节串匹配，违规 compile_error!
-  DoD:  cargo build -p tier0-tcb 成功 (T8 gate PASSED)
-  状态: ✅ 强制 (编译时)
-  代码: tier0-tcb/build.rs T8
+L0-11: evaluate_domain 任意输入不 panic
+─────────────────────────────────────
+Pre: ∀ domain_type ∈ {eq,lt,exists,instruction,all,not,unknown}
+∀ state ∈ {Object, Array}
+∀ 字段缺失组合
+∀ 嵌套深度 0..20
+Post: evaluate_domain(domain, state) 不 panic
+始终返回 bool (true 或 false)
+工具: proptest
+策略: domain_eval_never_panics_arbitrary_type (200 case)
+domain_eval_nested_never_panics (200 case)
+DoD: cargo test domain_eval_never_panics PASS (200/200)
+cargo test domain_eval_nested_never_panics PASS (200/200)
+状态: ✅ PASS (200 case × 2)
+代码: tests/proptest_props.rs
 
-  L0-14: 无 unwrap/expect（非 test 代码不 panic）
-  ─────────────────────────────────────
-  Pre:  tier0-tcb/src/**/*.rs (非 #[cfg(test)] 代码)
-  Post: 源码中无 ".unwrap()" 或 ".expect(" 字符串
-        (所有错误通过 Result 返回)
-  工具: build.rs T9 门控
-  策略: 编译时字节串匹配，#[cfg(test)] 豁免
-  DoD:  cargo build -p tier0-tcb 成功 (T9 gate PASSED)
-  状态: ✅ 强制 (编译时，test 代码豁免)
-  代码: tier0-tcb/build.rs T9
+L0-12: execute_transition 任意输入不 panic
+─────────────────────────────────────
+Pre: ∀ core_eval ∈ 任意规则组合 (含畸形指令)
+∀ instruction ∈ {noop, increment, unknown, 畸形}
+∀ payload ∈ {Object, Array, Integer, String, Null, Bool}
+Post: execute_transition 不 panic
+返回 Ok(State) | Ok(IoRequired) | Err(TcbError)
+工具: proptest
+策略: execute_transition_arbitrary_type_no_panic (200 case)
+execute_transition_malformed_instruction_no_panic (200 case)
+DoD: cargo test execute_transition_arbitrary_type_no_panic PASS
+cargo test execute_transition_malformed_instruction_no_panic PASS
+状态: ✅ PASS (200 case × 2)
+代码: tests/proptest_props.rs
 
-  L0-15: 无 unsafe（内存安全）
-  ─────────────────────────────────────
-  Pre:  tier0-tcb/src/**/*.rs (全部代码，含 test)
-  Post: 源码中无 "unsafe" 关键字
-        (#![forbid(unsafe_code)] + build.rs T10 双重保证)
-  工具: build.rs T10 门控 + #![forbid(unsafe_code)]
-  策略: 编译时字节串匹配 + Rust 编译器 forbid
-  DoD:  cargo build -p tier0-tcb 成功 (T10 gate PASSED)
-  状态: ✅ 强制 (编译时，全局，含 test)
-  代码: tier0-tcb/build.rs T10 + src/lib.rs #![forbid(unsafe_code)]
+L0-13: 无 HashMap/HashSet（确定性迭代）
+─────────────────────────────────────
+Pre: tier0-tcb/src/\*_/_.rs (非 test 代码)
+Post: 源码中无 "HashMap" 或 "HashSet" 字符串
+(保证 BTreeMap 的确定性迭代顺序)
+工具: build.rs T8 门控
+策略: 编译时字节串匹配，违规 compile_error!
+DoD: cargo build -p tier0-tcb 成功 (T8 gate PASSED)
+状态: ✅ 强制 (编译时)
+代码: tier0-tcb/build.rs T8
 
-  ==================== tier1（1.x 路线，不阻塞 1.0）====================
+L0-14: 无 unwrap/expect（非 test 代码不 panic）
+─────────────────────────────────────
+Pre: tier0-tcb/src/\*_/_.rs (非 #[cfg(test)] 代码)
+Post: 源码中无 ".unwrap()" 或 ".expect(" 字符串
+(所有错误通过 Result 返回)
+工具: build.rs T9 门控
+策略: 编译时字节串匹配，#[cfg(test)] 豁免
+DoD: cargo build -p tier0-tcb 成功 (T9 gate PASSED)
+状态: ✅ 强制 (编译时，test 代码豁免)
+代码: tier0-tcb/build.rs T9
 
-  ─── tier1 Kani 建模策略（L1-* 前置设计）───
+L0-15: 无 unsafe（内存安全）
+─────────────────────────────────────
+Pre: tier0-tcb/src/\*_/_.rs (全部代码，含 test)
+Post: 源码中无 "unsafe" 关键字
+(#![forbid(unsafe_code)] + build.rs T10 双重保证)
+工具: build.rs T10 门控 + #![forbid(unsafe_code)]
+策略: 编译时字节串匹配 + Rust 编译器 forbid
+DoD: cargo build -p tier0-tcb 成功 (T10 gate PASSED)
+状态: ✅ 强制 (编译时，全局，含 test)
+代码: tier0-tcb/build.rs T10 + src/lib.rs #![forbid(unsafe_code)]
 
-  【诚实声明】tier1 的 ReactorState 比 tier0 更难被 Kani 验证：
-    - payload: JsonValue::Object(BTreeMap)        ← Kani 无法建模（同 tier0）
-    - queue: VecDeque<JsonValue>                   ← Kani 可建模小规模
-    - pending_requests: HashSet<FactId>            ← Kani 无法建模（hash 随机性）
-    - pending_io_timestamps: BTreeMap<FactId, Instant> ← Kani 无法建模
-    - pending_io_types: BTreeMap<FactId, IoType>   ← Kani 无法建模
-    - pending_io_instructions: BTreeMap<FactId, JsonValue> ← Kani 无法建模
+==================== tier1（1.x 路线，不阻塞 1.0）====================
 
-  结论：直接对 ReactorState 跑 Kani 会 100% TIMEOUT（比 tier0 更严重）。
-  故 L1-* 采用 **抽象状态机模型 (Abstract ReactorState)** 策略：
+─── tier1 Kani 建模策略（L1-\* 前置设计）───
 
-  策略 A（主）：抽象状态机模型
-    - 构造 ReactorStateAbstract：用定长数组替代 BTreeMap/HashSet
-      pending_requests: [Option<FactId>; K]   (K=2，有限)
-      pending_io_count: 0..=K
-      payload: 用 Option<JsonValue> 抽象 "__io_result__" 字段（只验证此字段存在性）
-      queue: 用 [Option<JsonValue>; Q] 抽象 (Q=2)
-    - 实现 AbstractTrait: next_step_abstract / apply_*_abstract
-    - Kani 验证抽象模型的不变量保持
-    - 论证抽象 soundness：抽象保留了被验证性质的必要结构
+【诚实声明】tier1 的 ReactorState 比 tier0 更难被 Kani 验证：- payload: JsonValue::Object(BTreeMap) ← Kani 无法建模（同 tier0）- queue: VecDeque<JsonValue> ← Kani 可建模小规模 - pending_requests: HashSet<FactId> ← Kani 无法建模（hash 随机性）- pending_io_timestamps: BTreeMap<FactId, Instant> ← Kani 无法建模 - pending_io_types: BTreeMap<FactId, IoType> ← Kani 无法建模 - pending_io_instructions: BTreeMap<FactId, JsonValue> ← Kani 无法建模
 
-  策略 B（辅）：纯算术子证明
-    - 对不含集合操作的纯算术性质（如 version u64 单调），直接 Kani 验证
-    - 不需要抽象，因 version 是 u64 标量
+结论：直接对 ReactorState 跑 Kani 会 100% TIMEOUT（比 tier0 更严重）。
+故 L1-\* 采用 **抽象状态机模型 (Abstract ReactorState)** 策略：
 
-  策略 C（保底）：proptest + TLA+
-    - 若策略 A 的 soundness 论证不足，降级为 proptest 保底 + tier1 TLA+ spec
-    - tier1 TLA+ spec（ReactorLoop.tla）作为 Phase 3 备选
+策略 A（主）：抽象状态机模型 - 构造 ReactorStateAbstract：用定长数组替代 BTreeMap/HashSet
+pending*requests: [Option<FactId>; K] (K=2，有限)
+pending_io_count: 0..=K
+payload: 用 Option<JsonValue> 抽象 "**io_result**" 字段（只验证此字段存在性）
+queue: 用 [Option<JsonValue>; Q] 抽象 (Q=2) - 实现 AbstractTrait: next_step_abstract / apply*\*\_abstract - Kani 验证抽象模型的不变量保持 - 论证抽象 soundness：抽象保留了被验证性质的必要结构
 
-  【风险登记】
-    - R-L1-1：策略 A 的抽象 soundness 需人工论证，可能遗漏
-      缓解：抽象模型 review + 与真实代码 diff 对照
-    - R-L1-2：K=2 的有限模型可能无法覆盖边界（如 3 个并发 I/O）
-      缓解：proptest 补充大规模随机测试
-    - R-L1-3：HashSet→数组的抽象丢失了去重语义
-      缓解：在抽象模型中显式建模 insert 的去重逻辑
+策略 B（辅）：纯算术子证明 - 对不含集合操作的纯算术性质（如 version u64 单调），直接 Kani 验证 - 不需要抽象，因 version 是 u64 标量
 
-  L1-1: I/O 计数一致性
-  ─────────────────────────────────────
-  Pre:  reactor 执行 next_step 前 invariant #1 成立
-        pending_io_count == pending_requests.len() == pending_io_timestamps.len()
-  Post: next_step 后 invariant #1 仍成立
-  工具: Kani 0.67.0（策略 A 抽象模型）
-  被验证函数: pure.rs next_step (L90-134) + invariants.rs check_io_count_consistency (L138-148)
-  建模挑战:
-    - pending_requests: HashSet → 无法直接 Kani
-    - pending_io_timestamps: BTreeMap → 无法直接 Kani
-    - next_step 的 StateChanged 分支不修改 pending_io_*（只 clear_io_result）
-    - IoRequired 分支调用方注册（pure.rs 内 push_front，不修改 pending_*）
-  抽象策略（策略 A）:
-    - pending_requests 抽象为 [Option<FactId>; 2]，len = 计数 Some 的个数
-    - pending_io_timestamps 抽象为 [Option<FactId>; 2]，同上
-    - pending_io_count 抽象为 0..=2 的 Nat
-    - 验证：next_step 后 pending_io_count' == count_some(pending_requests')
-                    == count_some(pending_io_timestamps')
-  harness 伪码:
-    #[kani::proof]
-    fn invariant_io_count_consistency() {
-        let mut state = ReactorStateAbstract::any();  // 符号化初始状态
-        kani::assume(state.invariant_1_holds());       // Pre: #1 成立
-        let core_eval = &[];  // 空规则或符号化
-        let _ = next_step_abstract(&mut state);
-        kani::assert(state.invariant_1_holds(),        // Post: #1 仍成立
-            "io count consistency preserved");
-    }
-  状态空间:
-    - pending_io_count: 3 值 (0,1,2)
-    - pending_requests: 3^2 = 9 (每个 slot Option<FactId>)
-    - pending_io_timestamps: 3^2 = 9
-    - queue: 3^2 = 9
-    - 总计: 3 × 9 × 9 × 9 ≈ 2000 状态（Kani 可处理）
-  DoD:  cargo kani -p tier1-reactor --harness invariant_io_count_consistency PASS
-  状态: ⏳ 1.x 待实现（当前仅占位桩 _kani_placeholder）
-  代码: tier1-reactor/src/pure.rs kani_proofs (待实现) + 抽象模型模块
+策略 C（保底）：proptest + TLA+ - 若策略 A 的 soundness 论证不足，降级为 proptest 保底 + tier1 TLA+ spec - tier1 TLA+ spec（ReactorLoop.tla）作为 Phase 3 备选
 
-  L1-2: io_recovery ⟺ result 双向蕴含
-  ─────────────────────────────────────
-  Pre:  reactor 执行 next_step 前 invariant #2+#4 成立
-        io_recovery=true ⟺ payload.__io_result__ 存在
-  Post: next_step 后双向蕴含仍成立
-  工具: Kani 0.67.0（策略 A 抽象模型）
-  被验证函数: pure.rs next_step (L99-133, clear_io_result at L110) + invariants.rs check_io_recovery_consistency
-  建模挑战:
-    - payload.__io_result__ 是 BTreeMap 字段存在性检查 → 无法直接 Kani
-    - next_step 的 StateChanged 分支：if io_recovery → clear_io_result + io_recovery=false
-    - apply_io_response 分支：inject_io_result + io_recovery=true
-  抽象策略（策略 A）:
-    - payload 抽象为 has_io_result: bool（只保留 __io_result__ 存在性）
-    - io_recovery: bool
-    - 验证两条蕴含：
-      (a) io_recovery'=true ⇒ has_io_result'=true
-      (b) has_io_result'=true ⇒ io_recovery'=true
-  harness 伪码:
-    #[kani::proof]
-    fn invariant_io_recovery_iff_result() {
-        let mut state = ReactorStateAbstract::any();
-        kani::assume(state.io_recovery == state.has_io_result);  // Pre
-        let _ = next_step_abstract(&mut state);
-        kani::assert(state.io_recovery == state.has_io_result,   // Post
-            "io_recovery iff result preserved");
-    }
-  状态空间: bool × bool × (queue/pending 抽象) ≈ 4 × 2000 = 8000 状态
-  DoD:  cargo kani --harness invariant_io_recovery_iff_result PASS
-  状态: ⏳ 1.x 待实现
-  关键风险: clear_io_result 的语义必须在抽象模型中精确还原
+【风险登记】- R-L1-1：策略 A 的抽象 soundness 需人工论证，可能遗漏
+缓解：抽象模型 review + 与真实代码 diff 对照 - R-L1-2：K=2 的有限模型可能无法覆盖边界（如 3 个并发 I/O）
+缓解：proptest 补充大规模随机测试 - R-L1-3：HashSet→数组的抽象丢失了去重语义
+缓解：在抽象模型中显式建模 insert 的去重逻辑
 
-  L1-3: version 单调递增
-  ─────────────────────────────────────
-  Pre:  reactor 执行 next_step 前 version >= prev_version
-  Post: next_step 后 version' >= version
-        (版本号不回退)
-  工具: Kani 0.67.0（策略 B 纯算术，无需抽象）
-  被验证函数: pure.rs next_step (L113 bump_version) + invariants.rs check_version_monotonic
-  建模挑战: 无（version/prev_version 是 u64 标量，Kani 擅长）
-  策略 B 直接验证:
-    - 符号化 version: u64, prev_version: u64
-    - assume version >= prev_version
-    - 模拟 bump_version: version' = version.saturating_add(1); prev_version' = version
-    - assert version' >= prev_version'
-  harness 伪码:
-    #[kani::proof]
-    fn invariant_version_monotonic() {
-        let version: u64 = kani::any();
-        let prev_version: u64 = kani::any();
-        kani::assume(version >= prev_version);
-        let new_version = version.saturating_add(1);
-        let new_prev = version;
-        kani::assert(new_version >= new_prev, "version monotonic");
-    }
-  状态空间: 2^64 × 2^64（Kani 符号化，不穷举，等价已证 L0-1）
-  DoD:  cargo kani --harness invariant_version_monotonic PASS
-  状态: ⏳ 1.x 待实现（最容易实现，纯算术）
-  注: 此 proof 与 L0-1 (i64 checked_add) 同类，Kani 必通过
+L1-1: I/O 计数一致性
+─────────────────────────────────────
+Pre: reactor 执行 next*step 前 invariant #1 成立
+pending_io_count == pending_requests.len() == pending_io_timestamps.len()
+Post: next_step 后 invariant #1 仍成立
+工具: Kani 0.67.0（策略 A 抽象模型）
+被验证函数: pure.rs next_step (L90-134) + invariants.rs check_io_count_consistency (L138-148)
+建模挑战: - pending_requests: HashSet → 无法直接 Kani - pending_io_timestamps: BTreeMap → 无法直接 Kani - next_step 的 StateChanged 分支不修改 pending_io*_（只 clear*io_result）- IoRequired 分支调用方注册（pure.rs 内 push_front，不修改 pending*_）
+抽象策略（策略 A）: - pending*requests 抽象为 [Option<FactId>; 2]，len = 计数 Some 的个数 - pending_io_timestamps 抽象为 [Option<FactId>; 2]，同上 - pending_io_count 抽象为 0..=2 的 Nat - 验证：next_step 后 pending_io_count' == count_some(pending_requests')
+== count_some(pending_io_timestamps')
+harness 伪码: #[kani::proof]
+fn invariant_io_count_consistency() {
+let mut state = ReactorStateAbstract::any(); // 符号化初始状态
+kani::assume(state.invariant_1_holds()); // Pre: #1 成立
+let core_eval = &[]; // 空规则或符号化
+let * = next_step_abstract(&mut state);
+kani::assert(state.invariant_1_holds(), // Post: #1 仍成立
+"io count consistency preserved");
+}
+状态空间: - pending_io_count: 3 值 (0,1,2) - pending_requests: 3^2 = 9 (每个 slot Option<FactId>) - pending_io_timestamps: 3^2 = 9 - queue: 3^2 = 9 - 总计: 3 × 9 × 9 × 9 ≈ 2000 状态（Kani 可处理）
+DoD: cargo kani -p tier1-reactor --harness invariant_io_count_consistency PASS
+状态: ⏳ 1.x 待实现（当前仅占位桩 \_kani_placeholder）
+代码: tier1-reactor/src/pure.rs kani_proofs (待实现) + 抽象模型模块
 
-  L1-4: FactsLog append-only
-  ─────────────────────────────────────
-  Pre:  history 是当前 Fact 序列
-  Post: 任何操作后 history' ⊇ history
-        (历史只增长，不修改/删除)
-  工具: Kani 0.67.0（策略 A 抽象 + 策略 C 保底）
-  被验证函数: tier1 facts_log.rs append() + pure.rs 不直接触及 history
-  建模挑战:
-    - history: Vec<Fact> → Kani 可建模小规模，但 Fact 含 JsonValue(BTreeMap)
-    - append 操作的"不修改已有元素"是 ∀ 量化性质
-  抽象策略（策略 A）:
-    - history 抽象为 [Option<FactId>; N]（N=3，只保留 FactId）
-    - append(idx) → history'[idx] = Some(id), history'[0..idx] = history[0..idx]
-    - 验证：∀ i < len(history): history'[i] == history[i]
-  harness 伪码:
-    #[kani::proof]
-    #[kani::unwind(3)]
-    fn facts_log_append_only() {
-        let mut log = FactsLogAbstract::any();  // 3-slot 数组
-        let orig = log.clone();
-        let fact_id: u64 = kani::any();
-        log.append_abstract(fact_id);
-        for i in 0..orig.len() {
-            kani::assert(log.get(i) == orig.get(i), "append preserves history");
-        }
-    }
-  状态空间: 3^3 × 2^64 ≈ Kani 可处理（符号化 fact_id）
-  DoD:  Kani proof PASS
-  状态: ⏳ 1.x 待实现
-  关键风险: Vec→数组抽象需保留长度语义；Fact 的 JsonValue 字段被忽略
+L1-2: io*recovery ⟺ result 双向蕴含
+─────────────────────────────────────
+Pre: reactor 执行 next_step 前 invariant #2+#4 成立
+io_recovery=true ⟺ payload.**io_result** 存在
+Post: next_step 后双向蕴含仍成立
+工具: Kani 0.67.0（策略 A 抽象模型）
+被验证函数: pure.rs next_step (L99-133, clear_io_result at L110) + invariants.rs check_io_recovery_consistency
+建模挑战: - payload.**io_result** 是 BTreeMap 字段存在性检查 → 无法直接 Kani - next_step 的 StateChanged 分支：if io_recovery → clear_io_result + io_recovery=false - apply_io_response 分支：inject_io_result + io_recovery=true
+抽象策略（策略 A）: - payload 抽象为 has_io_result: bool（只保留 **io_result** 存在性）- io_recovery: bool - 验证两条蕴含：
+(a) io_recovery'=true ⇒ has_io_result'=true
+(b) has_io_result'=true ⇒ io_recovery'=true
+harness 伪码: #[kani::proof]
+fn invariant_io_recovery_iff_result() {
+let mut state = ReactorStateAbstract::any();
+kani::assume(state.io_recovery == state.has_io_result); // Pre
+let * = next_step_abstract(&mut state);
+kani::assert(state.io_recovery == state.has_io_result, // Post
+"io_recovery iff result preserved");
+}
+状态空间: bool × bool × (queue/pending 抽象) ≈ 4 × 2000 = 8000 状态
+DoD: cargo kani --harness invariant_io_recovery_iff_result PASS
+状态: ⏳ 1.x 待实现
+关键风险: clear_io_result 的语义必须在抽象模型中精确还原
 
-  L1-5: max_rounds 终止性
-  ─────────────────────────────────────
-  Pre:  max_rounds ∈ ℕ (有限上界)
-        reactor 在 max_rounds 内必须到达 stable 或 error
-  Post: ∀ round < max_rounds: pc ≠ Stable ⇒ round' > round
-        (每轮推进，有限步终止)
-  工具: Kani BMC (有界模型检测) + 策略 C（TLA+ 备选）
-  被验证函数: reactor 主循环（非 pure.rs，需抽象）
-  建模挑战:
-    - 主循环含 I/O、tokio、tracing → pure.rs 未抽离
-    - 终止性是状态机性质（Kani 不擅长，同 tier0 L0-6）
-  策略:
-    - 主方案：Kani BMC，unwind = max_rounds，验证有限步内 pc ∈ {Stable, Error}
-    - 备选方案：ReactorLoop.tla（TLA+ spec，证 ∀ round 推进）
-    - 终止性依赖：queue 每轮递减（next_step pop 一条）或 IoRequired break
-  harness 伪码:
-    #[kani::proof]
-    #[kani::unwind(8)]  // max_rounds = 8
-    fn max_rounds_termination() {
-        let mut state = ReactorStateAbstract::any();
-        let core_eval = &[];
-        for round in 0..8 {
-            if state.is_stable_abstract() { break; }  // 队列空 + 无 pending
-            let outcome = next_step_abstract(&mut state);
-            match outcome {
-                Some(StepOutcome::StateChanged) => continue,
-                Some(StepOutcome::IoRequired { .. }) => break,  // I/O 挂起
-                Some(StepOutcome::TcbError(_)) => break,         // 错误终止
-                None => break,                                    // 队列空
-            }
-        }
-        kani::assert(state.is_stable_abstract() || state.is_terminated(),
-            "reactor terminates within max_rounds");
-    }
-  状态空间: 8 轮 × 2000 状态/轮 ≈ 16000 状态（Kani BMC 可处理）
-  DoD:  Kani proof PASS（或 ReactorLoop.tla TLC PASS）
-  状态: ⏳ 1.x 待实现
-  关键风险: 队列可能被 push 增长（next_step 内 push_front IoRequired），
-           需论证 max_rounds 上界覆盖最坏情况；若不可证则需 TLA+
+L1-3: version 单调递增
+─────────────────────────────────────
+Pre: reactor 执行 next_step 前 version >= prev_version
+Post: next_step 后 version' >= version
+(版本号不回退)
+工具: Kani 0.67.0（策略 B 纯算术，无需抽象）
+被验证函数: pure.rs next_step (L113 bump_version) + invariants.rs check_version_monotonic
+建模挑战: 无（version/prev_version 是 u64 标量，Kani 擅长）
+策略 B 直接验证: - 符号化 version: u64, prev_version: u64 - assume version >= prev_version - 模拟 bump_version: version' = version.saturating_add(1); prev_version' = version - assert version' >= prev_version'
+harness 伪码: #[kani::proof]
+fn invariant_version_monotonic() {
+let version: u64 = kani::any();
+let prev_version: u64 = kani::any();
+kani::assume(version >= prev_version);
+let new_version = version.saturating_add(1);
+let new_prev = version;
+kani::assert(new_version >= new_prev, "version monotonic");
+}
+状态空间: 2^64 × 2^64（Kani 符号化，不穷举，等价已证 L0-1）
+DoD: cargo kani --harness invariant_version_monotonic PASS
+状态: ⏳ 1.x 待实现（最容易实现，纯算术）
+注: 此 proof 与 L0-1 (i64 checked_add) 同类，Kani 必通过
 
-  ─── tier1 验证成熟度评估 ───
+L1-4: FactsLog append-only
+─────────────────────────────────────
+Pre: history 是当前 Fact 序列
+Post: 任何操作后 history' ⊇ history
+(历史只增长，不修改/删除)
+工具: Kani 0.67.0（策略 A 抽象 + 策略 C 保底）
+被验证函数: tier1 facts_log.rs append() + pure.rs 不直接触及 history
+建模挑战: - history: Vec<Fact> → Kani 可建模小规模，但 Fact 含 JsonValue(BTreeMap) - append 操作的"不修改已有元素"是 ∀ 量化性质
+抽象策略（策略 A）: - history 抽象为 [Option<FactId>; N]（N=3，只保留 FactId）- append(idx) → history'[idx] = Some(id), history'[0..idx] = history[0..idx] - 验证：∀ i < len(history): history'[i] == history[i]
+harness 伪码: #[kani::proof] #[kani::unwind(3)]
+fn facts_log_append_only() {
+let mut log = FactsLogAbstract::any(); // 3-slot 数组
+let orig = log.clone();
+let fact_id: u64 = kani::any();
+log.append_abstract(fact_id);
+for i in 0..orig.len() {
+kani::assert(log.get(i) == orig.get(i), "append preserves history");
+}
+}
+状态空间: 3^3 × 2^64 ≈ Kani 可处理（符号化 fact_id）
+DoD: Kani proof PASS
+状态: ⏳ 1.x 待实现
+关键风险: Vec→数组抽象需保留长度语义；Fact 的 JsonValue 字段被忽略
 
-  | Proof | 策略 | Kani 可行性 | 实现难度 | 风险 |
-  |---|---|---|---|---|
-  | L1-1 | A 抽象 | 中 | 中 | R-L1-1 soundness |
-  | L1-2 | A 抽象 | 中 | 中 | clear_io_result 语义 |
-  | L1-3 | B 纯算术 | 高 | 低 | 无（同 L0-1） |
-  | L1-4 | A 抽象 | 中 | 中 | Vec→数组语义 |
-  | L1-5 | C BMC/TLA+ | 低 | 高 | 队列增长 vs max_rounds |
+L1-5: max*rounds 终止性
+─────────────────────────────────────
+Pre: max_rounds ∈ ℕ (有限上界)
+reactor 在 max_rounds 内必须到达 stable 或 error
+Post: ∀ round < max_rounds: pc ≠ Stable ⇒ round' > round
+(每轮推进，有限步终止)
+工具: Kani BMC (有界模型检测) + 策略 C（TLA+ 备选）
+被验证函数: reactor 主循环（非 pure.rs，需抽象）
+建模挑战: - 主循环含 I/O、tokio、tracing → pure.rs 未抽离 - 终止性是状态机性质（Kani 不擅长，同 tier0 L0-6）
+策略: - 主方案：Kani BMC，unwind = max_rounds，验证有限步内 pc ∈ {Stable, Error} - 备选方案：ReactorLoop.tla（TLA+ spec，证 ∀ round 推进）- 终止性依赖：queue 每轮递减（next_step pop 一条）或 IoRequired break
+harness 伪码: #[kani::proof] #[kani::unwind(8)] // max_rounds = 8
+fn max_rounds_termination() {
+let mut state = ReactorStateAbstract::any();
+let core_eval = &[];
+for round in 0..8 {
+if state.is_stable_abstract() { break; } // 队列空 + 无 pending
+let outcome = next_step_abstract(&mut state);
+match outcome {
+Some(StepOutcome::StateChanged) => continue,
+Some(StepOutcome::IoRequired { .. }) => break, // I/O 挂起
+Some(StepOutcome::TcbError(*)) => break, // 错误终止
+None => break, // 队列空
+}
+}
+kani::assert(state.is_stable_abstract() || state.is_terminated(),
+"reactor terminates within max_rounds");
+}
+状态空间: 8 轮 × 2000 状态/轮 ≈ 16000 状态（Kani BMC 可处理）
+DoD: Kani proof PASS（或 ReactorLoop.tla TLC PASS）
+状态: ⏳ 1.x 待实现
+关键风险: 队列可能被 push 增长（next_step 内 push_front IoRequired），
+需论证 max_rounds 上界覆盖最坏情况；若不可证则需 TLA+
 
-  【诚实结论】tier1 的 5 个 proof 中，仅 L1-3 可直接 Kani 验证（纯算术）。
-  L1-1/L1-2/L1-4 需抽象模型，soundness 需人工论证。L1-5 可能需 TLA+ 兜底。
-  这与 tier0 现状一致：BTreeMap/HashSet 是 Kani 的结构性障碍。
+─── tier1 验证成熟度评估 ───
 
-  ==================== tier2（1.x 路线，不阻塞 1.0）====================
+| Proof | 策略       | Kani 可行性 | 实现难度 | 风险                   |
+| ----- | ---------- | ----------- | -------- | ---------------------- |
+| L1-1  | A 抽象     | 中          | 中       | R-L1-1 soundness       |
+| L1-2  | A 抽象     | 中          | 中       | clear_io_result 语义   |
+| L1-3  | B 纯算术   | 高          | 低       | 无（同 L0-1）          |
+| L1-4  | A 抽象     | 中          | 中       | Vec→数组语义           |
+| L1-5  | C BMC/TLA+ | 低          | 高       | 队列增长 vs max_rounds |
 
-  L2-1: 哈希链完整性
-  ─────────────────────────────────────
-  Pre:  auditor.entries 是有效哈希链
-        entries[0].prev_hash = "genesis"
-        entries[i].prev_hash = blake3(entries[i-1].prev_hash + entries[i-1].fact_hash)
-  Post: verify() = true
-        (链未被篡改)
-  工具: proptest
-  策略: 构造有效链 → verify() = true (200 case)
-  DoD:  cargo test hash_chain_integrity PASS
-  状态: ⏳ 1.x 待实现
+【诚实结论】tier1 的 5 个 proof 中，仅 L1-3 可直接 Kani 验证（纯算术）。
+L1-1/L1-2/L1-4 需抽象模型，soundness 需人工论证。L1-5 可能需 TLA+ 兜底。
+这与 tier0 现状一致：BTreeMap/HashSet 是 Kani 的结构性障碍。
 
-  L2-2: 篡改可检测性
-  ─────────────────────────────────────
-  Pre:  entries 是有效哈希链
-        篡改 entries[i] 的内容 (i 随机)
-  Post: verify() = false
-        (篡改被检测)
-  工具: proptest
-  策略: 构造有效链 → 随机篡改一条 → verify() = false (200 case)
-  DoD:  cargo test tamper_detection PASS
-  状态: ⏳ 1.x 待实现
+==================== tier2（1.x 路线，不阻塞 1.0）====================
 
-  L2-3: 审计重放确定性
-  ─────────────────────────────────────
-  Pre:  FactsLog 是完整历史
-  Post: replay(FactsLog) 总是产生相同快照
-        ∀ replay1, replay2: replay1(FactsLog) = replay2(FactsLog)
-  工具: proptest
-  策略: 随机历史 → 两次重放 → 比较快照一致 (200 case)
-  DoD:  cargo test replay_determinism PASS
-  状态: ⏳ 1.x 待实现
+L2-1: 哈希链完整性
+─────────────────────────────────────
+Pre: auditor.entries 是有效哈希链
+entries[0].prev_hash = "genesis"
+entries[i].prev_hash = blake3(entries[i-1].prev_hash + entries[i-1].fact_hash)
+Post: verify() = true
+(链未被篡改)
+工具: proptest
+策略: 构造有效链 → verify() = true (200 case)
+DoD: cargo test hash_chain_integrity PASS
+状态: ⏳ 1.x 待实现
 
-----------------------------------------------------------------
-附录 B：术语表
-----------------------------------------------------------------
+L2-2: 篡改可检测性
+─────────────────────────────────────
+Pre: entries 是有效哈希链
+篡改 entries[i] 的内容 (i 随机)
+Post: verify() = false
+(篡改被检测)
+工具: proptest
+策略: 构造有效链 → 随机篡改一条 → verify() = false (200 case)
+DoD: cargo test tamper_detection PASS
+状态: ⏳ 1.x 待实现
 
-  TCB       Trusted Computing Base，可信计算基
-  Kani      Rust 形式化验证工具（基于 CBMC）
-  CBMC      C Bounded Model Checker，有界模型检测器
-  TLA+      Leslie Lamport 设计的形式化规范语言
-  TLC       TLA+ 模型检测器（有界模型，穷举有限状态空间）
-  TLAPS     TLA+ Proof System（定理证明，数学 ∀N 归纳）
-  proptest  Rust 属性测试框架
-  FactsLog  EvoRule 的 append-only 事实审计链
-  blake3    密码学哈希函数（抗碰撞、抗原像）
-  G8 门控   编译时架构守卫（控制流不得硬编码，tier1/tier2 build.rs 强制）
-  T4-T14    tier0 build.rs 编译时门控（I/O/时间/随机/容器/unsafe/float/async 禁用）
-  pure.rs   tier1 的纯逻辑抽离层（为 Kani 验证准备）
-  defunctionalization  将递归抽象为 depth 计数器（TLA+ 技术）
-  不变量    Invariant，在所有状态下恒成立的性质
-  有界模型  Bounded Model Checking，在有限步内穷尽验证
+L2-3: 审计重放确定性
+─────────────────────────────────────
+Pre: FactsLog 是完整历史
+Post: replay(FactsLog) 总是产生相同快照
+∀ replay1, replay2: replay1(FactsLog) = replay2(FactsLog)
+工具: proptest
+策略: 随机历史 → 两次重放 → 比较快照一致 (200 case)
+DoD: cargo test replay_determinism PASS
+状态: ⏳ 1.x 待实现
 
-----------------------------------------------------------------
-附录 C：相关文档索引
-----------------------------------------------------------------
+---
 
-  - VERSION_STRATEGY.md §4.4             1.0 升级门槛
-  - VERSION_STRATEGY.md §4.5             第三方审计触发条件
-  - tier0-tcb/docs/KANI.md               tier0 Kani 使用指南
-  - tier0-tcb/tests/kani_proofs.rs       tier0 Kani proof 源码（5 个）
-  - tier0-tcb/tests/proptest_props.rs    tier0 proptest 源码（19 个）
-  - tier0-tcb/build.rs                   tier0 编译时门控（T4-T14）
-  - tier1-reactor/build.rs               tier1 编译时门控（G8）
-  - tier2-governance/build.rs            tier2 编译时门控（G8）
-  - tier1-reactor/src/pure.rs            tier1 纯逻辑验证准备层（1 个占位桩）
-  - tier1-reactor/src/invariants.rs      tier1 5 条不变量定义
-  - tier2-governance/src/auditor.rs      tier2 审计链实现（verify() at L319）
+## 附录 B：术语表
 
-----------------------------------------------------------------
-附录 D：Kani proof 详解（tests/kani_proofs.rs）
-----------------------------------------------------------------
+按四类组织，每条标注首次定义或详解章节，便于交叉查阅。
 
-  | # | Proof 函数 | 验证目标 | 状态 | 诚实说明 |
-  |---|---|---|---|---|
-  | 1 | verify_value_roundtrip | JsonValue Integer 构造/访问一致性 | ✅ PASS | 验证 Rust 标准库，非 EvoRule 核心 |
-  | 2 | verify_path_no_panic | resolve_path 对 Array 不 panic | 🔧 待验证 | 加了 assert，proptest 保底 |
-  | 3 | verify_set_integer_safety | i64 checked_add 不溢出 | ✅ PASS | 验证 Rust 标准库，等价于 EvoRule add 路径 |
-  | 4 | verify_set_sub_safety | i64 checked_sub 不下溢 | ✅ PASS | 验证 Rust 标准库，等价于 EvoRule sub 路径 |
-  | 5 | verify_transition_bounded | ~~execute_transition 确定性~~ | ❌ 名不副实 | 从未调用 execute_transition，只测 empty_object()；Phase 0 重命名 |
+### B.1 验证工具
 
-  【关键诚实点】5 个 proof 中，#1/#3/#4 验证 Rust 标准库原语，
-  #2 验证 EvoRule 的 path 模块（但 Kani 可能 TIMEOUT），
-  #5 是虚假声称（名不副实）。
+| 术语     | 释义                                                      | 详解章节      |
+| -------- | --------------------------------------------------------- | ------------- |
+| Kani     | Rust 形式化验证工具（基于 CBMC，符号执行 + 有界模型检测） | §3.2, §9.1    |
+| CBMC     | C Bounded Model Checker，有界模型检测器（Kani 后端）      | §3.2          |
+| TLA+     | Leslie Lamport 设计的形式化规范语言                       | §3.3, §8.1    |
+| TLC      | TLA+ 模型检测器（有界模型，穷举有限状态空间）             | §3.3, §8.6    |
+| TLAPS    | TLA+ Proof System（定理证明，数学 ∀N 归纳）               | §3.3, §8.7bis |
+| proptest | Rust 属性测试框架（随机输入 + 自动缩小反例）              | §3.4, 附录 E  |
+| nightly  | Rust nightly 工具链（Kani 依赖的 nightly 编译器）         | §9.1          |
+| blake3   | 密码学哈希函数（抗碰撞、抗原像，tier2 审计链用）          | §6.6          |
 
-  EvoRule 核心逻辑（execute_transition/evaluate_domain 端到端）的
-  Kani 覆盖率为 0%，根因是 BTreeMap 建模限制。这部分由 TLA+ 接管。
+### B.2 核心概念
 
-----------------------------------------------------------------
-附录 E：proptest 详解（tests/proptest_props.rs）
-----------------------------------------------------------------
+| 术语                | 释义                                                                  | 详解章节        |
+| ------------------- | --------------------------------------------------------------------- | --------------- |
+| TCB                 | Trusted Computing Base，可信计算基（tier0 全部代码）                  | §1.2            |
+| 确定性              | Determinism，相同输入恒产相同输出（无隐式状态/时间/随机）             | §1.1, §2.1      |
+| 终止性              | Termination，执行在有限步内结束（max_steps/MAX_TRANSFORM_RULES 保证） | §1.1, §2.1      |
+| 不变量              | Invariant，在所有可达状态下恒成立的性质                               | §2.1, §5.2      |
+| 有界模型            | Bounded Model Checking，在有限步/有限状态内穷尽验证                   | §3.3, §8.6      |
+| 状态空间            | State Space，所有可达状态的集合大小（影响验证可行性）                 | §5.6, §8.6      |
+| Soundness           | 健全性，抽象模型证明的性质在真实代码中仍成立                          | §5.6.5, §8.5bis |
+| 精化关系            | Refinement，抽象模型 ⟹ 真实代码的行为包含关系                         | §8.5bis         |
+| 抽象模型            | Abstract Model，用有限数据结构替代复杂类型以适配 Kani                 | §5.6, §8.3      |
+| defunctionalization | 去函数化，将递归调用抽象为 depth 计数器（TLA+ 技术）                  | §6.2, §8.3      |
+| 因果链              | Causal Chain，Fact 间 cause 字段构成的偏序关系                        | §7.1            |
+| 时间旅行            | Time Travel，通过 FactsLog 重放恢复任意历史状态                       | §7.2            |
 
-  19 个 proptest，分 5 类（每属性 200 case）：
+### B.3 数据结构与代码符号
 
-  1. JsonValue roundtrip（5 个）：
-     - jsonvalue_integer_roundtrip
-     - jsonvalue_bool_roundtrip
-     - jsonvalue_string_roundtrip
-     - jsonvalue_from_conversions
-     - jsonvalue_object_keys_present
+| 术语                 | 释义                                                                              | 详解章节   |
+| -------------------- | --------------------------------------------------------------------------------- | ---------- |
+| fact                 | EvoRule 的原子通信单元（7 变体：Command/StateTransition/IoRequest 等）            | §1.3, §6.4 |
+| FactId               | 事实唯一标识符（u64 newtype，全局单调递增）                                       | §5.6       |
+| FactsLog             | EvoRule 的 append-only 事实审计链（只追加、不删除、不篡改）                       | §1.3, §5.4 |
+| append-only          | 只追加模式，FactsLog 的核心保证（不可删除/篡改历史）                              | §5.4       |
+| payload              | 当前业务状态（JsonValue，由 core_eval 规则转换）                                  | §1.3       |
+| core_eval            | 规则引擎核心配置（JSON，定义 transform/branch/io_request 规则）                   | §1.3, §4.1 |
+| 哈希链               | Hash Chain，每条目含前一条目的哈希，篡改任一条目即断裂                            | §6.2       |
+| io_recovery          | I/O 恢复标志（IoResponse 到达后置 true，重执行后清 **io_result**）                | §5.2       |
+| bump_version         | 版本号递增方法（version += 1 且同步更新 prev_version）                            | §5.6       |
+| ReactorStateAbstract | ReactorState 的 Kani 抽象模型（定长数组替代 BTreeMap）                            | §5.6       |
+| pure.rs              | tier1 纯逻辑抽离层（无 I/O/async/tracing，为 Kani 验证准备）                      | §5.1       |
+| build.rs             | 编译时门控脚本（tier0/tier1/tier2 各自强制架构约束）                              | §3.5       |
+| G8 门控              | 编译时架构守卫（控制流指令名不得硬编码为字符串字面量）                            | §1.3, §3.5 |
+| T4-T14               | tier0 build.rs 编译时门控集（禁 I/O/时间/随机/HashMap/unwrap/unsafe/float/async） | §3.5       |
+| MAX_TRANSFORM_RULES  | core_eval transform 规则数上限（64，保证终止性）                                  | §3.5, §4.1 |
+| MAX_DOMAIN_DEPTH     | 域表达式嵌套深度上限（64）                                                        | §3.5       |
+| MAX_BRANCH_DEPTH     | branch 指令嵌套深度上限（64）                                                     | §3.5       |
 
-  2. 路径解析（3 个）：
-     - resolve_path_deterministic
-     - resolve_path_nested_consistent
-     - resolve_path_missing_returns_none
+### B.4 TLA+ 规格模块
 
-  3. 域比较对称性（3 个）：
-     - domain_eq_self_consistent
-     - domain_lt_gt_inverse
-     - domain_ge_uses_not_lt
+| 术语                  | 释义                                            | 详解章节 |
+| --------------------- | ----------------------------------------------- | -------- |
+| ExecuteTransition.tla | tier0 execute_transition 的 TLA+ 状态机规格     | §8.4     |
+| AuditorChain.tla      | tier2 审计链哈希完整性的 TLA+ 规格              | §6.5     |
+| CausalChain.tla       | 跨层因果链无环性的 TLA+ 规格                    | §7.1.2   |
+| ReplayDeterminism.tla | 跨层时间旅行重放确定性的 TLA+ 规格              | §7.2.2   |
+| AuditFactsLogSync.tla | 跨层审计链与 FactsLog 同步的 TLA+ 规格          | §7.3.2   |
+| ReactorLoop.tla       | tier1 反应器主循环的 TLA+ 规格（L1-5 备选方案） | §5.7     |
 
-  4. 状态转换数学律（3 个）：
-     - execute_transition_increment_deterministic
-     - execute_transition_increment_correctness
-     - execute_transition_increment_zero_delta_is_identity
+---
 
-  5. 健壮性：任意输入不 panic（5 个）：
-     - resolve_path_never_panics_arbitrary_path
-     - domain_eval_never_panics_arbitrary_type
-     - domain_eval_nested_never_panics
-     - execute_transition_arbitrary_type_no_panic
-     - execute_transition_malformed_instruction_no_panic
+## 附录 C：相关文档索引
 
-----------------------------------------------------------------
-附录 F：声称 vs 现实对齐表（防漂移）
-----------------------------------------------------------------
+- VERSION_STRATEGY.md §4.4 1.0 升级门槛
+- VERSION_STRATEGY.md §4.5 第三方审计触发条件
+- tier0-tcb/docs/KANI.md tier0 Kani 使用指南
+- tier0-tcb/tests/kani_proofs.rs tier0 Kani proof 源码（5 个）
+- tier0-tcb/tests/proptest_props.rs tier0 proptest 源码（19 个）
+- tier0-tcb/build.rs tier0 编译时门控（T4-T14）
+- tier1-reactor/build.rs tier1 编译时门控（G8）
+- tier2-governance/build.rs tier2 编译时门控（G8）
+- tier1-reactor/src/pure.rs tier1 纯逻辑验证准备层（1 个占位桩）
+- tier1-reactor/src/invariants.rs tier1 5 条不变量定义
+- tier2-governance/src/auditor.rs tier2 审计链实现（verify() at L322）
 
-  本附录防止白皮书再次出现虚假声称。
-  每条声称必须与代码现实对齐。
+---
 
-  | # | 白皮书声称 | 代码现实 | 对齐状态 |
-  |---|---|---|---|
-  | 1 | tier0 有 5 个 Kani proof | Cargo.toml proofs 列表 5 个 | ✅ 对齐 |
-  | 2 | proof 在 tests/kani_proofs.rs | 实际路径 tests/kani_proofs.rs | ✅ 对齐 |
-  | 3 | 4/5 Kani proof PASS | 4 PASS + 1 待验证 | ✅ 对齐 |
-  | 4 | verify_transition_bounded 名不副实 | 从未调用 execute_transition | ✅ 诚实标注 |
-  | 5 | TcbError 10 变体 | error.rs 10 个变体 | ✅ 对齐 |
-  | 6 | JsonValue 6 变体 | value.rs 6 个变体 | ✅ 对齐 |
-  | 7 | 19 个 proptest | proptest_props.rs 19 个 | ✅ 对齐 |
-  | 8 | tier1 有 1 个占位桩 | pure.rs:299 _kani_placeholder | ✅ 诚实标注 |
-  | 9 | tier1 有 0 个真实 proof | pure.rs 无 #[kani::proof] | ✅ 诚实标注 |
-  | 10 | tier0 build.rs 实现 T4-T14 | build.rs FORBIDDEN 数组 | ✅ 对齐 |
-  | 11 | G8 在 tier1/tier2 build.rs 强制 | tier1/tier2 build.rs L39-41 | ✅ 对齐 |
-  | 12 | blake3 哈希链 | auditor.rs doc comment + use crate::hash | ✅ 对齐 |
-  | 13 | verify() 在 auditor.rs:319 | pub fn verify(&self) -> bool | ✅ 对齐 |
-  | 14 | Kani 版本三处不一致 | KANI.md=0.50/CHANGELOG=0.65/proofs=0.67 | ✅ 诚实标注 |
-  | 15 | MAX_TRANSFORM_RULES=64 | transition.rs:38 | ✅ 对齐 |
-  | 16 | 三条深度上界均=64 | transition/executor/domain | ✅ 对齐 |
-  | 17 | execute_transition 确定性由 TLA+ 证 | TLA+ 待实现 | ✅ 诚实标注 |
-  | 18 | TLC 是有界模型(n≤3) | 诚实声明 ∀N 需 TLAPS | ✅ 诚实标注 |
-  | 19 | §5.6 ReactorStateAbstract 完整设计 | 设计完成（字段/函数/soundness/状态空间），代码未实现 | ✅ 诚实标注（设计 vs 实现）|
-  | 20 | §5.6 ReactorStateAbstract 状态空间=2916 | 3×9×9×2×2×3=2916（K=2,Q=2）| ✅ 对齐（算术验证）|
-  | 21 | §5.6 Soundness 论证（引理 1+2+定理） | over-approximation 论证，缺口诚实标注 | ✅ 诚实标注（含 3 个缺口）|
-  | 22 | §5.7 ReactorLoop.tla 设计草案 | L1-5 备选方案，仅 Kani TIMEOUT 时启用 | ✅ 诚实标注（条件触发）|
-  | 23 | §7.1.2 CausalChain.tla 完整 spec | 设计完成（含传递闭包/2 不变式/cfg），代码未实现 | ✅ 诚实标注（设计 vs 实现）|
-  | 24 | §7.2.2 ReplayDeterminism.tla 完整 spec | 设计完成（含 Snapshot/3 不变式/cfg），代码未实现 | ✅ 诚实标注（设计 vs 实现）|
-  | 25 | §7.3.2 AuditFactsLogSync.tla 完整 spec | 设计完成（含 2 不变式/cfg），代码未实现 | ✅ 诚实标注（设计 vs 实现）|
-  | 26 | §8.7bis TLAPS 证明义务 TO-1~TO-10 | post-1.0 未来工作，不阻塞 1.0 | ✅ 诚实标注（未来工作）|
-  | 27 | §11.5 安全审计文档大纲 | SECURITY_AUDIT + THREAT_MODEL 章节结构，文档未实现 | ✅ 诚实标注（大纲 vs 文档）|
-  | 28 | §11 编号 11.1-11.5 连续 | 格式统一（11.4 从---分隔改为缩进子节）| ✅ 对齐 |
-  | 29 | ReactorState 12 字段 | state.rs:15-77 实际 12 个字段 | ✅ 对齐 |
-  | 30 | next_step 3 分支（State/IoRequired/Error）| pure.rs:100-133 match 3 分支 | ✅ 对齐 |
+## 附录 D：Kani proof 详解（tests/kani_proofs.rs）
+
+| #   | Proof 函数                | 验证目标                          | 状态        | 诚实说明                                                         |
+| --- | ------------------------- | --------------------------------- | ----------- | ---------------------------------------------------------------- |
+| 1   | verify_value_roundtrip    | JsonValue Integer 构造/访问一致性 | ✅ PASS     | 验证 Rust 标准库，非 EvoRule 核心                                |
+| 2   | verify_path_no_panic      | resolve_path 对 Array 不 panic    | 🔧 待验证   | 加了 assert，proptest 保底                                       |
+| 3   | verify_set_integer_safety | i64 checked_add 不溢出            | ✅ PASS     | 验证 Rust 标准库，等价于 EvoRule add 路径                        |
+| 4   | verify_set_sub_safety     | i64 checked_sub 不下溢            | ✅ PASS     | 验证 Rust 标准库，等价于 EvoRule sub 路径                        |
+| 5   | verify_transition_bounded | ~~execute_transition 确定性~~     | ❌ 名不副实 | 从未调用 execute_transition，只测 empty_object()；Phase 0 重命名 |
+
+【关键诚实点】5 个 proof 中，#1/#3/#4 验证 Rust 标准库原语，
+#2 验证 EvoRule 的 path 模块（但 Kani 可能 TIMEOUT），
+#5 是虚假声称（名不副实）。
+
+EvoRule 核心逻辑（execute_transition/evaluate_domain 端到端）的
+Kani 覆盖率为 0%，根因是 BTreeMap 建模限制。这部分由 TLA+ 接管。
+
+---
+
+## 附录 E：proptest 详解（tests/proptest_props.rs）
+
+19 个 proptest，分 5 类（每属性 200 case）：
+
+1. JsonValue roundtrip（5 个）：
+   - jsonvalue_integer_roundtrip
+   - jsonvalue_bool_roundtrip
+   - jsonvalue_string_roundtrip
+   - jsonvalue_from_conversions
+   - jsonvalue_object_keys_present
+
+2. 路径解析（3 个）：
+   - resolve_path_deterministic
+   - resolve_path_nested_consistent
+   - resolve_path_missing_returns_none
+
+3. 域比较对称性（3 个）：
+   - domain_eq_self_consistent
+   - domain_lt_gt_inverse
+   - domain_ge_uses_not_lt
+
+4. 状态转换数学律（3 个）：
+   - execute_transition_increment_deterministic
+   - execute_transition_increment_correctness
+   - execute_transition_increment_zero_delta_is_identity
+
+5. 健壮性：任意输入不 panic（5 个）：
+   - resolve_path_never_panics_arbitrary_path
+   - domain_eval_never_panics_arbitrary_type
+   - domain_eval_nested_never_panics
+   - execute_transition_arbitrary_type_no_panic
+   - execute_transition_malformed_instruction_no_panic
+
+---
+
+## 附录 F：声称 vs 现实对齐表（防漂移）
+
+本附录防止白皮书再次出现虚假声称。
+每条声称必须与代码现实对齐。
+
+| #   | 白皮书声称                                 | 代码现实                                             | 对齐状态                    |
+| --- | ------------------------------------------ | ---------------------------------------------------- | --------------------------- |
+| 1   | tier0 有 5 个 Kani proof                   | Cargo.toml proofs 列表 5 个                          | ✅ 对齐                     |
+| 2   | proof 在 tests/kani_proofs.rs              | 实际路径 tests/kani_proofs.rs                        | ✅ 对齐                     |
+| 3   | 4/5 Kani proof PASS                        | 4 PASS + 1 待验证                                    | ✅ 对齐                     |
+| 4   | verify_transition_bounded 名不副实         | 从未调用 execute_transition                          | ✅ 诚实标注                 |
+| 5   | TcbError 10 变体                           | error.rs 10 个变体                                   | ✅ 对齐                     |
+| 6   | JsonValue 6 变体                           | value.rs 6 个变体                                    | ✅ 对齐                     |
+| 7   | 19 个 proptest                             | proptest_props.rs 19 个                              | ✅ 对齐                     |
+| 8   | tier1 有 1 个占位桩                        | pure.rs:300 \_kani_placeholder                       | ✅ 诚实标注                 |
+| 9   | tier1 有 0 个真实 proof                    | pure.rs 无 #[kani::proof]                            | ✅ 诚实标注                 |
+| 10  | tier0 build.rs 实现 T4-T14                 | build.rs FORBIDDEN 数组                              | ✅ 对齐                     |
+| 11  | G8 在 tier1/tier2 build.rs 强制            | tier1 L39-41 / tier2 L42-44                          | ✅ 对齐                     |
+| 12  | blake3 哈希链                              | auditor.rs doc comment + use crate::hash             | ✅ 对齐                     |
+| 13  | verify() 在 auditor.rs:322                 | pub fn verify(&self) -> bool                         | ✅ 对齐                     |
+| 14  | Kani 版本三处不一致                        | KANI.md=0.50/CHANGELOG=0.65/proofs=0.67              | ✅ 诚实标注                 |
+| 15  | MAX_TRANSFORM_RULES=64                     | transition.rs:38                                     | ✅ 对齐                     |
+| 16  | 三条深度上界均=64                          | transition/executor/domain                           | ✅ 对齐                     |
+| 17  | execute_transition 确定性由 TLA+ 证        | TLA+ 待实现                                          | ✅ 诚实标注                 |
+| 18  | TLC 是有界模型(n≤3)                        | 诚实声明 ∀N 需 TLAPS                                 | ✅ 诚实标注                 |
+| 19  | §5.6 ReactorStateAbstract 完整设计         | 设计完成（字段/函数/soundness/状态空间），代码未实现 | ✅ 诚实标注（设计 vs 实现） |
+| 20  | §5.6 ReactorStateAbstract 状态空间=2916    | 3×9×9×2×2×3=2916（K=2,Q=2）                          | ✅ 对齐（算术验证）         |
+| 21  | §5.6 Soundness 论证（引理 1+2+定理）       | over-approximation 论证，缺口诚实标注                | ✅ 诚实标注（含 3 个缺口）  |
+| 22  | §5.7 ReactorLoop.tla 设计草案              | L1-5 备选方案，仅 Kani TIMEOUT 时启用                | ✅ 诚实标注（条件触发）     |
+| 23  | §7.1.2 CausalChain.tla 完整 spec           | 设计完成（含传递闭包/2 不变式/cfg），代码未实现      | ✅ 诚实标注（设计 vs 实现） |
+| 24  | §7.2.2 ReplayDeterminism.tla 完整 spec     | 设计完成（含 Snapshot/3 不变式/cfg），代码未实现     | ✅ 诚实标注（设计 vs 实现） |
+| 25  | §7.3.2 AuditFactsLogSync.tla 完整 spec     | 设计完成（含 2 不变式/cfg），代码未实现              | ✅ 诚实标注（设计 vs 实现） |
+| 26  | §8.7bis TLAPS 证明义务 TO-1~TO-10          | post-1.0 未来工作，不阻塞 1.0                        | ✅ 诚实标注（未来工作）     |
+| 27  | §11.5 安全审计文档大纲                     | SECURITY_AUDIT + THREAT_MODEL 章节结构，文档未实现   | ✅ 诚实标注（大纲 vs 文档） |
+| 28  | §11 编号 11.1-11.5 连续                    | 格式统一（11.4 从---分隔改为缩进子节）               | ✅ 对齐                     |
+| 29  | ReactorState 12 字段                       | state.rs:15-77 实际 12 个字段                        | ✅ 对齐                     |
+| 30  | next_step 3 分支（State/IoRequired/Error） | pure.rs:100-133 match 3 分支                         | ✅ 对齐                     |
 
 ================================================================
 文档结束
