@@ -37,17 +37,17 @@
 
 ### 边界判断
 
-| 想法 | 决策 |
-|---|---|
-| "加个新 transform 指令" | 看是否 TCB 原语级,否则放 application |
-| "加个 Prometheus 指标" | 放 evorule-application(可观测性是应用层) |
-| "优化 reactor 并发" | evorule 核心(性能优化) ✅ |
-| "做个 web 仪表盘" | D:\evorule-application\ ❌ |
-| "加个新 LLM provider" | evo-agent ❌ |
-| "加个 SQLite 集成" | 看是 TCB 还是应用,大部分情况放 application |
-| "加新 Kani proof" | evorule 核心 ✅ |
-| "加 README 章节" | evorule 核心 ✅ |
-| "修 bug" | evorule 核心 ✅ |
+| 想法                    | 决策                                       |
+| ----------------------- | ------------------------------------------ |
+| "加个新 transform 指令" | 看是否 TCB 原语级,否则放 application       |
+| "加个 Prometheus 指标"  | 放 evorule-application(可观测性是应用层)   |
+| "优化 reactor 并发"     | evorule 核心(性能优化) ✅                  |
+| "做个 web 仪表盘"       | D:\evorule-application\ ❌                 |
+| "加个新 LLM provider"   | evo-agent ❌                               |
+| "加个 SQLite 集成"      | 看是 TCB 还是应用,大部分情况放 application |
+| "加新 Kani proof"       | evorule 核心 ✅                            |
+| "加 README 章节"        | evorule 核心 ✅                            |
+| "修 bug"                | evorule 核心 ✅                            |
 
 ## 改动前检查表
 
@@ -72,24 +72,29 @@
 - 升 1.0 条件:见 [VERSION_STRATEGY.md §4.4](VERSION_STRATEGY.md)
 - 第三方安全审计触发条件:见 [VERSION_STRATEGY.md §4.5](VERSION_STRATEGY.md)(VERSION_STRATEGY v1.1)
 - 协议:AGPL-3.0-or-later(代码)+ CC0-1.0(`core_eval.json`)
-- 内部审计:见 [文档/security/SECURITY_AUDIT_v0.1.0.md](文档/security/SECURITY_AUDIT_v0.1.0.md)(待写)
+- 内部审计:见 [docs/security/SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md)(P0 全修复,P1 4 项 HIGH 待公网部署前修复)
 
 ## 内部约定
 
 - **"文档/" 永不发布**(.gitignore 已保护)
 - 中文为主,英文为辅
 - 测试要能跑(`cargo test --workspace` 通过是底线)
-- 提交前跑 `validate-all.ps1`(5 个 validate-*.ps1 脚本)
-- CI 配在 `.gitee-ci/validate.yml`
+- 提交前跑 `validate-all.ps1`(5 个 validate-\*.ps1 脚本)
+- CI 配在 `.gitee-ci/validate.yml`(Gitee 主仓库)+ `.github/workflows/`(ci.yml/release.yml/kani.yml/mutants.yml,GitHub 镜像)
 
 ## 已知坑
 
-- PowerShell 5.1 + 无 BOM UTF-8 文件 = GBK 误读。**用 `add-spdx-safe.ps1` 加 SPDX 头,不要用 `Get-Content -Raw`**
-- 集成测试(`tests/integration_test.rs`)需要 mock LLM 才能跑(目前 3 个 FAIL 是 pre-existing,不是这次回归)
+- PowerShell 5.1 + 无 BOM UTF-8 文件 = GBK 误读。**用 `add-spdx-safe.ps1` 加 SPDX 头,不要用 `Get-Content -Raw`**。服务器中文日志乱码也是此因,用 `pwsh` 或 `chcp 65001` 可缓解
+- PowerShell 通过 cmd 调用时 `$` 变量会被外层 shell 吞掉(如 `powershell -Command "$h=@{}"` 失败)。**复杂脚本写 `.ps1` 文件再用 `-File` 执行**
+- `cargo run` 在 sandbox 下输出的 exe 不在 `target/release/`,而在 `.build/rust/release/`。**用 `cargo run` 直接运行,不要手动找 exe**
+- 二进制名用连字符(`evorule-server`),源文件名用下划线(`evorule_server.rs`)。**`--bin evorule-server`(连字符),文件引用 `bin/evorule_server.rs`(下划线)**
+- evorule-server 默认监听 `0.0.0.0:18080`(非 loopback)。**测试时加 `--addr 127.0.0.1:18080`**
+- 集成测试(`tests/integration_test.rs`)的 3 个 mock-LLM FAIL **已修复**(2026-07-20)
 - tier1/ffi.rs 允许 unsafe(标了 `#![allow(unsafe_code)]`),其他 crate 必须 `#![forbid(unsafe_code)]`
 
 ## 下次开会看什么
 
 - [ ] 战略方向 STRATEGIC_DIRECTION.md 有没有过时
-- [ ] 当前在做的 P0 进展
+- [ ] P1 安全修复进展(H6 SSRF / H7 SQL / H8 CORS / H9 DB URL)——公网部署前必修
+- [ ] 0.2.0 上下文架构启动(evo-agent MemoryManager + fact log 索引)
 - [ ] 下一个应用的时间旅行调试器设计稿

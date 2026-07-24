@@ -169,27 +169,27 @@ industries).
 
 ### 4.2 信任级别定义
 
-| 级别                     | 含义                  | EvoRule 例子                                                 |
-| ------------------------ | --------------------- | ------------------------------------------------------------ |
-| **🔴 UNTRUSTED**         | 任何输入都视为攻击    | LLM 响应、用户输入的 JSON、外部 HTTP 响应、CLI args          |
-| **🟡 SEMI-TRUSTED**      | 默认信,但要验证       | 配置文件、WAL 文件、build artifact、docs.rs / crates.io      |
-| **🟢 TRUSTED**           | 系统内部代码,认证通过 | tier0-tcb / tier1-reactor / tier2-governance 自身            |
-| **🟢 FORMALLY VERIFIED** | 数学证明正确          | tier0-tcb 5 个 Kani proofs(3 个是 stub,见 SECURITY_AUDIT L9) |
+| 级别                     | 含义                  | EvoRule 例子                                                                     |
+| ------------------------ | --------------------- | -------------------------------------------------------------------------------- |
+| **🔴 UNTRUSTED**         | 任何输入都视为攻击    | LLM 响应、用户输入的 JSON、外部 HTTP 响应、CLI args                              |
+| **🟡 SEMI-TRUSTED**      | 默认信,但要验证       | 配置文件、WAL 文件、build artifact、docs.rs / crates.io                          |
+| **🟢 TRUSTED**           | 系统内部代码,认证通过 | tier0-tcb / tier1-reactor / tier2-governance 自身                                |
+| **🟢 FORMALLY VERIFIED** | 数学证明正确          | tier0-tcb 5 个 Kani proofs(4 PASS + 1 TIMEOUT,见 SECURITY_AUDIT L9)+ 19 proptest |
 
 ### 4.3 信任边界清单
 
-| #       | 边界                                        | 方向 | 当前认证                                                                        | 威胁等级                                          | 详见      |
-| ------- | ------------------------------------------- | ---- | ------------------------------------------------------------------------------- | ------------------------------------------------- | --------- | --------- | --------- |
-| **B1**  | User → evo-agent CLI                        | 入   | 无(local process)                                                               | 🟢 LOW                                            | §6.1      |
-| **B2**  | evo-agent → evorule-server (HTTP localhost) | 出   | 🟢 **Bearer token**(`--auth-token` / `EVORULE_AUTH_TOKEN`,M1 closed 2026-07-20) | 🟢 LOW (default dev mode = no auth, with warning) | \*        | 🟡 MEDIUM | §6.1,§7.1 |
-| **B3**  | evo-agent → LLM provider (HTTPS)            | 出   | Bearer token                                                                    | 🟢 LOW(env)                                       | §6.1,§7.2 |
-| **B4**  | evo-agent → External HTTP (HTTPS)           | 出   | 无,但有 SSRF 防护                                                               | 🟢 LOW                                            | §6.1,§7.3 |
-| **B5**  | evorule-server → filesystem (state/)        | 出   | local process                                                                   | 🟢 LOW                                            | §6.2,§7.4 |
-| **B6**  | tier2-governance → tier1-reactor            | 内   | Rust 类型系统 + Kani                                                            | 🟢 LOW                                            | §6.2      |
-| **B7**  | tier1-reactor → tier0-tcb                   | 内   | Rust 类型系统 + Kani                                                            | 🟢 LOW                                            | §6.2,§6.3 |
-| **B8**  | Browser → evorule-server (/debugger/)       | 入   | 🟢 **Bearer token (M1 closed 2026-07-20)**                                      | 🟢 LOW                                            | 🟡 MEDIUM | §6.4,§7.5 |
-| **B9**  | LLM Provider → evo-agent                    | 入   | HTTPS + cert                                                                    | 🟢 LOW                                            | §6.1,§7.2 |
-| **B10** | 共享 facts cross-session                    | 内   | fact 引用 + causable                                                            | 🟡 MEDIUM(M3)                                     | §6.2,§7.6 |
+| #       | 边界                                        | 方向 | 当前认证                                                                                                                           | 威胁等级                                                       | 详见      |
+| ------- | ------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | --------- |
+| **B1**  | User → evo-agent CLI                        | 入   | 无(local process)                                                                                                                  | 🟢 LOW                                                         | §6.1      |
+| **B2**  | evo-agent → evorule-server (HTTP localhost) | 出   | � **Bearer token**(opt-in,`--auth-token`/`EVORULE_AUTH_TOKEN`;M1 middleware 已实现 2026-07-20,**默认禁用**,非 loopback 启动时警告) | � MEDIUM(默认无 auth;Dockerfile 默认 `0.0.0.0:18080` 无 token) | §6.1,§7.1 |
+| **B3**  | evo-agent → LLM provider (HTTPS)            | 出   | Bearer token                                                                                                                       | 🟢 LOW(env)                                                    | §6.1,§7.2 |
+| **B4**  | evo-agent → External HTTP (HTTPS)           | 出   | 无,但 evo-agent `http_get` 工具有 SSRF 防护(注意:tier2 `http_handler` **无** SSRF 防护,见 §6.2)                                    | 🟢 LOW(evo-agent) / 🟡 MEDIUM(tier2 http_handler)              | §6.1,§7.3 |
+| **B5**  | evorule-server → filesystem (state/)        | 出   | local process                                                                                                                      | 🟢 LOW                                                         | §6.2,§7.4 |
+| **B6**  | tier2-governance → tier1-reactor            | 内   | Rust 类型系统 + Kani                                                                                                               | 🟢 LOW                                                         | §6.2      |
+| **B7**  | tier1-reactor → tier0-tcb                   | 内   | Rust 类型系统 + Kani                                                                                                               | 🟢 LOW                                                         | §6.2,§6.3 |
+| **B8**  | Browser → evorule-server (/debugger/)       | 入   | � **Bearer token**(opt-in,M1 middleware 2026-07-20;**默认禁用**;CORS `permissive`)                                                 | 🟡 MEDIUM(默认无 auth + CORS 全开放 = CSRF 风险)               | §6.4,§7.5 |
+| **B9**  | LLM Provider → evo-agent                    | 入   | HTTPS + cert                                                                                                                       | 🟢 LOW                                                         | §6.1,§7.2 |
+| **B10** | 共享 facts cross-session                    | 内   | fact 引用 + causable                                                                                                               | 🟡 MEDIUM(M3)                                                  | §6.2,§7.6 |
 
 ---
 
@@ -331,19 +331,22 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ### 6.2 evorule-server / tier1-reactor / tier2-governance(机制层)
 
-| STRIDE | 威胁                             | 当前 mitigation                                    | 残留风险        |
-| ------ | -------------------------------- | -------------------------------------------------- | --------------- |
-| **S**  | Localhost 进程假冒 user 调 API   | 🟢 M1 closed (Bearer token optional, with warning) | 🟢 LOW          |
-| **T**  | 攻击者改 WAL 文件                | blake3 链 verify 失败 → 拒绝                       | 🟢 LOW(M2 done) |
-| **T**  | 攻击者改 fact                    | 同上(每个 fact 都有 hash)                          | 🟢 LOW          |
-| **T**  | 攻击者改 core_eval.json          | build.rs 编译时门禁                                | 🟢 LOW          |
-| **R**  | Admin 删 audit log 后否认        | blake3 链 verify 失败 → 不可逆                     | 🟢 LOW          |
-| **I**  | localhost 攻击者读所有 session   | 🟢 M1 closed (需要 `--auth-token` 才有写读权限)    | 🟢 LOW          |
-| **D**  | 提交超大 payload                 | 1MB body limit                                     | 🟢 LOW          |
-| **D**  | 并发洪泛                         | 1000 并发上限                                      | 🟢 LOW          |
-| **D**  | SSE 连接耗尽                     | 100 SSE 上限                                       | 🟢 LOW          |
-| **E**  | 攻击者通过 io_request 调任意 RPC | io_type 白名单(`call_external` / `call_service`)   | 🟢 LOW          |
-| **E**  | 跨 session 读其他 session 数据   | session_id 校验                                    | 🟢 LOW          |
+| STRIDE | 威胁                                                                      | 当前 mitigation                                                                                        | 残留风险                            |
+| ------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| **S**  | Localhost 进程假冒 user 调 API                                            | � M1 PARTIAL(Bearer token middleware 已实现 2026-07-20,**默认禁用**;非 loopback 启动时警告)            | � MEDIUM(默认无 auth)               |
+| **T**  | 攻击者改 WAL 文件                                                         | blake3 链 verify 失败 → 拒绝                                                                           | 🟢 LOW(M2 done)                     |
+| **T**  | 攻击者改 fact                                                             | 同上(每个 fact 都有 hash)                                                                              | 🟢 LOW                              |
+| **T**  | 攻击者改 core_eval.json                                                   | build.rs 编译时门禁                                                                                    | 🟢 LOW                              |
+| **R**  | Admin 删 audit log 后否认                                                 | blake3 链 verify 失败 → 不可逆                                                                         | 🟢 LOW                              |
+| **I**  | localhost 攻击者读所有 session                                            | � M1 PARTIAL(需显式 `--auth-token` 才启用 auth;默认禁用时所有 localhost 进程可读)                      | � MEDIUM(默认无 auth)               |
+| **D**  | 提交超大 payload                                                          | 1MB body limit                                                                                         | 🟢 LOW                              |
+| **D**  | 并发洪泛                                                                  | 1000 并发上限                                                                                          | 🟢 LOW                              |
+| **D**  | SSE 连接耗尽                                                              | 100 SSE 上限                                                                                           | 🟢 LOW                              |
+| **E**  | 攻击者通过 io_request 调任意 RPC                                          | io_type 白名单(`call_external` / `call_service`)                                                       | 🟢 LOW                              |
+| **E**  | 跨 session 读其他 session 数据                                            | session_id 校验                                                                                        | 🟢 LOW                              |
+| **I**  | 通过 `http_get` io_request 触发 SSRF(访问内网/云元数据 `169.254.169.254`) | ⚠️ **tier2 `http_handler` 无 SSRF 防护**(接受任意 URL;evo-agent 的 `http_get` 工具有防护但 tier2 没有) | 🔴 **HIGH**(P1,2026-07-25 审计发现) |
+| **E**  | 通过 `query_db` io_request 执行任意 SQL(`DROP TABLE`/`ATTACH`)            | ⚠️ **tier2 `db_handler` 无 SQL 语句白名单**(参数化防注入,但语句本身无限制)                             | 🔴 **HIGH**(P1,2026-07-25 审计发现) |
+| **T**  | CORS `permissive` 允许任意 Origin 携带凭证访问 API                        | ⚠️ **tier2 `server.rs` 用 `CorsLayer::permissive()`**                                                  | 🟡 MEDIUM(P1,公网部署前必修)        |
 
 ### 6.3 tier0-tcb(TCB,formally verified 目标)
 
@@ -357,14 +360,14 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ### 6.4 time-travel-debugger(应用层,Browser)
 
-| STRIDE | 威胁                                | 当前 mitigation                             | 残留风险                               |
-| ------ | ----------------------------------- | ------------------------------------------- | -------------------------------------- | -------- |
-| **S**  | 攻击者用 XSS 假冒 user              | CSP(plan) + 5 原则之"可选"(用户能选 viewer) | 🟢 LOW (M1 间接缓解 — 需 Bearer token) | M1 间接) |
-| **T**  | 攻击者改 debugger.html              | 单 HTML 文件本地化,无 build,用户能 diff     | 🟢 LOW                                 |
-| **R**  | 攻击者改 UI 不留痕                  | UI 不写 fact log(只读)                      | 🟢 LOW                                 |
-| **I**  | 同源攻击读其他 session data         | **🟡 M1**(server 无 auth)                   | 🟡 MEDIUM (M1)                         |
-| **D**  | 拖时间滑块触发 10 万 rewind         | virtual scrolling + debounce                | 🟡 LOW (R6)                            |
-| **E**  | 攻击者通过 debugger 改 server state | debugger 只读 + fork 显式确认               | 🟢 LOW                                 |
+| STRIDE | 威胁                                | 当前 mitigation                                      | 残留风险                               |
+| ------ | ----------------------------------- | ---------------------------------------------------- | -------------------------------------- |
+| **S**  | 攻击者用 XSS 假冒 user              | CSP(plan) + 5 原则之"可选"(用户能选 viewer)          | 🟡 MEDIUM(M1 默认禁用,XSS 可窃 token)  |
+| **T**  | 攻击者改 debugger.html              | 单 HTML 文件本地化,无 build,用户能 diff              | 🟢 LOW                                 |
+| **R**  | 攻击者改 UI 不留痕                  | UI 不写 fact log(只读)                               | 🟢 LOW                                 |
+| **I**  | 同源攻击读其他 session data         | 🟡 M1 PARTIAL(server 默认无 auth)+ CORS `permissive` | 🔴 HIGH(默认配置下 CSRF 可行,01.md H8) |
+| **D**  | 拖时间滑块触发 10 万 rewind         | virtual scrolling + debounce                         | 🟡 LOW (R6)                            |
+| **E**  | 攻击者通过 debugger 改 server state | debugger 只读 + fork 显式确认                        | 🟢 LOW                                 |
 
 ### 6.5 evorule-cli(独立二进制,无 AI)
 
@@ -404,8 +407,8 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 ├── 路径 B: 通过 API 写假 fact
 │   │
 │   ├── B1: localhost 进程能调 /api/command
-│   │   └── 防御: M1 — 无认证
-│   │   → 残留风险:🟡 MEDIUM
+│   │   └── 防御: M1 PARTIAL — Bearer token middleware 已实现,但**默认禁用**
+│   │   → 残留风险:🟡 MEDIUM(默认无 auth 时 localhost 任意进程可调)
 │   │
 │   ├── B2: 通过 io_response 篡改已发请求
 │   │   └── 防御: 校验 fact id 在 transactions 中
@@ -606,18 +609,18 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 ├── 路径 B: CSRF
 │   │
 │   ├── B1: 恶意网站让 user 浏览器调 localhost:8080
-│   │   └── 防御: M1 — 无认证 + same-origin
-│   │   → 残留风险:🟡 MEDIUM (M1)
+│   │   └── 防御: M1 PARTIAL — Bearer token(opt-in,默认禁用)+ CORS `permissive`(全开放)
+│   │   → 残留风险:� HIGH(默认无 auth + CORS permissive = CSRF 可行,01.md H8)
 │   │
 │   └── B2: 攻击者诱导 user 调 write API
 │       └── 防御: 同上
-│       → 残留风险:🟡 MEDIUM
+│       → 残留风险:� HIGH
 │
 └── 路径 C: 信息泄露
     │
     ├── C1: 攻击者用同源 trick 读其他 session
-    │   └── 防御: M1 — server 无 session ownership
-    │   → 残留风险:🟡 MEDIUM
+    │   └── 防御: M1 PARTIAL — server 默认无 auth + 无 session ownership
+    │   → 残留风险:🟡 MEDIUM(启用 auth 后降为 LOW)
     │
     └── C2: 攻击者改 UI 隐藏 verify 失败
         └── 防御: 用户能 curl /audit/verify 独立 verify
@@ -654,37 +657,44 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ## 8. Mitigation 映射表(Threat → Control → Test)
 
-| 威胁                        | Mitigation                                                      | 已实现?            | 验证方法             | 漏洞编号   |
-| --------------------------- | --------------------------------------------------------------- | ------------------ | -------------------- | ---------- |
-| M1 localhost 无认证         | 短:require loopback;中:Bearer token;长:Unix socket + permission | ❌ 0.2.0           | integration test     | M1         |
-| M3 tool call 不写 fact      | 把 call_service 写进 facts_log                                  | ❌ 0.2.0           | integration test     | M3         |
-| M4 tools 字段未校验         | from_definition 早失败                                          | ✅ 已实现          | unit test            | M4 已 done |
-| L1 zip-slip                 | tar 显式 reject `..`                                            | ❌ 0.2.0           | unit test            | L1         |
-| L2 xargs chain              | 文档化                                                          | ❌ 0.2.0           | docs                 | L2         |
-| L3 DNS rebinding            | resolve 后再 validate IP                                        | ❌ 0.2.0           | unit test            | L3         |
-| L4 TOCTOU                   | 同 L3                                                           | ❌ 0.2.0           | unit test            | L4         |
-| L5 168 warnings             | `cargo fix --lib`                                               | ❌ 0.2.0           | `cargo build 0 warn` | L5         |
-| L9 Kani proofs              | 4/5 PASS + 19 proptest done; 1 proof + tier1 remaining          | 🟡 0.2.0 (partial) | `kani verify`        | L9 partial |
-| **M2 blake3 链**            | tier2-governance/auditor.rs                                     | ✅ **DONE**        | unit test            | M2 closed  |
-| SSRF blocklist              | 硬编码 IP 段                                                    | ✅ done            | unit test            | n/a        |
-| 3-layer model               | 6 工具统一                                                      | ✅ done            | unit test            | n/a        |
-| workdir sandbox             | canonicalize                                                    | ✅ done            | unit test            | n/a        |
-| `#![forbid(unsafe_code)]`   | 全栈                                                            | ✅ done            | `cargo build`        | n/a        |
-| `core_eval.json` 编译时门禁 | build.rs                                                        | ✅ done            | unit test            | n/a        |
-| `WAL fsync`                 | `wal_fsync` 开关                                                | ✅ done            | unit test            | n/a        |
-| `audit_verify` HTTP 端点    | server.rs                                                       | ✅ done            | unit test            | n/a        |
+| 威胁                        | Mitigation                                                                                                                              | 已实现?                                                               | 验证方法             | 漏洞编号   |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | -------------------- | ---------- |
+| M1 localhost 无认证         | Bearer token middleware(`auth.rs` 已实现 2026-07-20);**默认禁用**,opt-in via `--auth-token`/`EVORULE_AUTH_TOKEN`;非 loopback 启动时警告 | 🟡 PARTIAL(middleware 已实现,默认禁用;0.2.0 改默认启用或 Docker 强制) | integration test     | M1         |
+| M3 tool call 不写 fact      | ✅ **DONE**(corr.2 修正:tool calls 已作为 `Fact::IoRequest{io_type:"call_service"}` 写入 fact log,paired with `Fact::IoResponse`)       | ✅ 已实现                                                             | integration test     | M3 closed  |
+| M4 tools 字段未校验         | from_definition 早失败                                                                                                                  | ✅ 已实现                                                             | unit test            | M4 已 done |
+| L1 zip-slip                 | tar 显式 reject `..`                                                                                                                    | ❌ 0.2.0                                                              | unit test            | L1         |
+| L2 xargs chain              | 文档化                                                                                                                                  | ❌ 0.2.0                                                              | docs                 | L2         |
+| L3 DNS rebinding            | resolve 后再 validate IP                                                                                                                | ❌ 0.2.0                                                              | unit test            | L3         |
+| L4 TOCTOU                   | 同 L3                                                                                                                                   | ❌ 0.2.0                                                              | unit test            | L4         |
+| L5 168 warnings             | `cargo fix --lib`                                                                                                                       | ❌ 0.2.0                                                              | `cargo build 0 warn` | L5         |
+| L9 Kani proofs              | 4/5 PASS + 19 proptest done; 1 proof + tier1 remaining                                                                                  | 🟡 0.2.0 (partial)                                                    | `kani verify`        | L9 partial |
+| **M2 blake3 链**            | tier2-governance/auditor.rs                                                                                                             | ✅ **DONE**                                                           | unit test            | M2 closed  |
+| SSRF blocklist(evo-agent)   | 硬编码 IP 段(evo-agent `http_get` 工具)                                                                                                 | ✅ done(evo-agent)                                                    | unit test            | n/a        |
+| **tier2 http_handler SSRF** | ⚠️ **缺失**(tier2 `http_handler` 接受任意 URL,无 IP/scheme 校验)                                                                        | ❌ P1(0.1.1 前修)                                                     | integration test     | 01.md H6   |
+| **tier2 db_handler SQL**    | ⚠️ **缺失**(无 SQL 语句白名单,可 `DROP TABLE`/`ATTACH`)                                                                                 | ❌ P1(0.1.1 前修)                                                     | integration test     | 01.md H7   |
+| **tier2 CORS permissive**   | ⚠️ `CorsLayer::permissive()`(server.rs:2081)                                                                                            | ❌ P1(公网部署前修)                                                   | integration test     | 01.md H8   |
+| 3-layer model               | 6 工具统一(evo-agent)                                                                                                                   | ✅ done                                                               | unit test            | n/a        |
+| workdir sandbox             | canonicalize(evo-agent)                                                                                                                 | ✅ done                                                               | unit test            | n/a        |
+| `#![forbid(unsafe_code)]`   | 全栈(tier1 `ffi.rs` 局部豁免,AGENTS.md 已记录)                                                                                          | ✅ done                                                               | `cargo build`        | n/a        |
+| `core_eval.json` 编译时门禁 | build.rs                                                                                                                                | ✅ done                                                               | unit test            | n/a        |
+| `WAL fsync`                 | `wal_fsync` 开关                                                                                                                        | ✅ done                                                               | unit test            | n/a        |
+| `audit_verify` HTTP 端点    | server.rs                                                                                                                               | ✅ done                                                               | unit test            | n/a        |
 
 ---
 
 ## 9. 残留风险(Residual Risks)
 
-### 9.1 MEDIUM(0.2.0 必须修)
+### 9.1 MEDIUM-HIGH(0.1.1 / 0.2.0 必须修)
 
-| #         | 残留风险                  | 用户影响                              | 缓解(短期)                                 |
-| --------- | ------------------------- | ------------------------------------- | ------------------------------------------ |
-| M1        | localhost 进程能假冒 user | 共享机器上其他 user 能读全部 session  | 0.2.0 加 Bearer token;0.3.0 加 Unix socket |
-| M3        | tool call 不写 fact log   | 合规 reviewer 看不到 LLM 调过什么工具 | 0.2.0 写                                   |
-| M4 (done) | ✅                        | ✅                                    | ✅                                         |
+| #            | 残留风险                                   | 用户影响                                                 | 缓解(短期)                                                         |
+| ------------ | ------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------ |
+| M1 (partial) | localhost 进程能假冒 user(**默认无 auth**) | 共享机器上其他 user 能读全部 session                     | ✅ middleware 已实现(2026-07-20);⚠️ 0.2.0 改默认启用或 Docker 强制 |
+| M3 (closed)  | ✅ 已修复(误报)                            | ✅                                                       | ✅ tool calls 已写入 fact log(correction 2026-07-20)               |
+| M4 (done)    | ✅                                         | ✅                                                       | ✅                                                                 |
+| **01.md H6** | tier2 `http_handler` 无 SSRF 防护          | 能提交 `IoRequest::HTTP_GET` 的调用方可访问内网/云元数据 | 0.1.1 加 URL scheme + IP 白名单(P1)                                |
+| **01.md H7** | tier2 `db_handler` 允许任意 SQL            | 可执行 `DROP TABLE`/`ATTACH DATABASE`                    | 0.1.1 加 SQL 语句类型白名单(P1)                                    |
+| **01.md H8** | tier2 CORS `permissive()`                  | 任意 Origin 携带凭证访问 API = CSRF 风险                 | 0.1.1 改为可配置白名单(P1,公网部署前必修)                          |
+| **01.md H9** | tier2 `db_handler` URL 静默回退            | 无效 URL 静默用默认配置,数据可能写入意外位置             | 0.1.1 `parse()` 失败返回 `Err`(P1)                                 |
 
 ### 9.2 LOW(0.2.0 nice-to-have)
 
@@ -696,7 +706,7 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 - L6(3 integration test):mock LLM
 - L7(17 中文乱码):PS 5.1 GBK 坑
 - L8(`cargo audit`):跑
-- L9(Kani stubs):写实
+- L9(Kani 1 TIMEOUT):等 Kani 0.68+ 修复
 - L10(独立 reviewer):招
 - L11(prometheus 依赖):删
 
@@ -712,18 +722,20 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ## 10. 验收标准(Definition of Done — v0.2.0 之前)
 
-| Gate                     | 当前               | 目标                                                  |
-| ------------------------ | ------------------ | ----------------------------------------------------- |
-| **M1 closed**            | ❌                 | ✅ Bearer token on /api/\* (loopback 可豁免)          |
-| **M3 closed**            | ❌                 | ✅ tool call 落 fact log,call_service 作为新 FactType |
-| **THREAT_MODEL.md**      | 🟡 draft(本文件)   | 🟢 released + reviewer-signed                         |
-| **SECURITY_AUDIT 0.2.0** | 0.1.0(corr. 1)     | 0.2.0 with M1/M3 closed                               |
-| **`cargo audit`**        | ❌ not run         | ✅ 0 high-severity                                    |
-| **168 warnings**         | ❌                 | ✅ 0 warnings OR documented exceptions                |
-| **3 integration test**   | ❌                 | ✅ mock LLM,pass                                      |
-| **17 中文乱码**          | ❌                 | ✅ 重写 + UTF-8 no BOM                                |
-| **5 Kani proofs**        | 🟡 5 stubs(2 真实) | 🟢 5 真实 proofs                                      |
-| **独立 reviewer**        | ❌                 | ✅ 1 个 reviewer sign-off                             |
+| Gate                     | 当前                                     | 目标                                                  |
+| ------------------------ | ---------------------------------------- | ----------------------------------------------------- |
+| **M1 closed**            | 🟡 PARTIAL(middleware 已实现,默认禁用)   | ✅ Bearer token 默认启用 on /api/\* (loopback 可豁免) |
+| **M3 closed**            | ✅ 已修复(误报,tool calls 已入 fact log) | ✅                                                    |
+| **01.md P0 修复**        | ✅ 5/5 已修复(2026-07-25)                | ✅ panic!/Box::leak/Docker root/版本号/lockfile       |
+| **01.md P1 修复**        | ❌ SSRF/SQL/CORS/DB URL/FFI              | ✅ 公网部署前必修                                     |
+| **THREAT_MODEL.md**      | 🟡 draft(本文件,2026-07-25 更新)         | 🟢 released + reviewer-signed                         |
+| **SECURITY_AUDIT 0.2.0** | 0.1.0(corr. 6)                           | 0.2.0 with M1 默认启用 + P1 closed                    |
+| **`cargo audit`**        | ❌ not run                               | ✅ 0 high-severity                                    |
+| **168 warnings**         | ❌                                       | ✅ 0 warnings OR documented exceptions                |
+| **3 integration test**   | ❌                                       | ✅ mock LLM,pass                                      |
+| **17 中文乱码**          | ❌                                       | ✅ 重写 + UTF-8 no BOM                                |
+| **5 Kani proofs**        | 🟡 4 PASS + 1 TIMEOUT + 19 proptest      | 🟢 5 真实 proofs(等 Kani 0.68+ 修复 TIMEOUT)          |
+| **独立 reviewer**        | ❌                                       | ✅ 1 个 reviewer sign-off                             |
 
 ---
 
@@ -769,13 +781,14 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ## 13. Change Log
 
-| Version               | Date       | Change                                                                                                                                                                                                         |
-| --------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0.2.0-draft           | 2026-07-20 | Initial expansion from SECURITY_AUDIT v0.1.0 §3. 7 attack trees, 6 components analyzed, 4 medium + 11 low risks documented.                                                                                    |
-| 0.2.0-draft (corr. 1) | 2026-07-20 | **M1 closed**: HTTP API Bearer token middleware + startup warning on non-loopback without `--auth-token`. Boundary B2/B8 updated from MEDIUM to LOW. M3 closed (false alarm — tool calls already in fact log). |
-| 0.2.0-draft (corr. 2) | 2026-07-23 | **L9 partially resolved**: Kani proofs improved from 5 stubs to 4/5 PASS + 19 proptest. Deleted `verify_domain_boolean` (BTreeMap issue → proptest). Improved `verify_path_no_panic` (4 assert added). See [白皮书](../../文档/kani/02_形式化验证白皮书.txt). Also: `cargo fmt` 25 diffs → 0; 720 workspace tests pass. |
-| (planned 0.2.0)       | 2026-08    | Add M1/M3 mitigation sections after fixes land.                                                                                                                                                                |
-| (planned 1.0)         | 2026-12    | Independent reviewer sign-off; full attack tree per finding closed.                                                                                                                                            |
+| Version               | Date       | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.2.0-draft           | 2026-07-20 | Initial expansion from SECURITY_AUDIT v0.1.0 §3. 7 attack trees, 6 components analyzed, 4 medium + 11 low risks documented.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 0.2.0-draft (corr. 1) | 2026-07-20 | **M1 closed**: HTTP API Bearer token middleware + startup warning on non-loopback without `--auth-token`. Boundary B2/B8 updated from MEDIUM to LOW. M3 closed (false alarm — tool calls already in fact log).                                                                                                                                                                                                                                                                                                                                                                                 |
+| 0.2.0-draft (corr. 2) | 2026-07-23 | **L9 partially resolved**: Kani proofs improved from 5 stubs to 4/5 PASS + 19 proptest. Deleted `verify_domain_boolean` (BTreeMap issue → proptest). Improved `verify_path_no_panic` (4 assert added). See [白皮书](../../文档/kani/02_形式化验证白皮书.txt). Also: `cargo fmt` 25 diffs → 0; 720 workspace tests pass.                                                                                                                                                                                                                                                                        |
+| 0.2.0-draft (corr. 3) | 2026-07-25 | **基于 01.md 代码审计的重大修正**:(a) M1 状态从"closed"修正为"PARTIAL"——auth middleware 已实现但**默认禁用**(opt-in via `--auth-token`),Dockerfile 默认 `0.0.0.0:18080` 无 token;§4.3 B2/B8 表格格式修复 + 威胁等级从 LOW 修正为 MEDIUM;(b) §6.2 新增 3 行 tier2 STRIDE 威胁:`http_handler` 无 SSRF 防护(HIGH)、`db_handler` 允许任意 SQL(HIGH)、CORS `permissive`(MEDIUM);(c) §7.1/§7.5 攻击树 M1 状态修正;(d) §8 Mitigation 表新增 tier2 SSRF/SQL/CORS 行 + M3 状态修正为 closed;(e) §9.1 新增 01.md H6-H9 P1 残留风险;(f) §10 验收标准新增 P0/P1 gate;(g) §6.4 XSS 风险从 LOW 升为 MEDIUM。 |
+| (planned 0.2.0)       | 2026-08    | Add M1/M3 mitigation sections after fixes land.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| (planned 1.0)         | 2026-12    | Independent reviewer sign-off; full attack tree per finding closed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ---
 

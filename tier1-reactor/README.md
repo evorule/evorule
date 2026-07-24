@@ -2,9 +2,13 @@
 
 > EvoRule 三层架构的 Tier 1 反应式执行器 —— 事实驱动的状态转换引擎。
 
-- **版本**:v0.1.0-alpha.1
+- **版本**:v0.1.0
 - **依赖**:tier0-tcb (路径依赖)
 - **协议**:AGPL-3.0-or-later
+- **测试**:`cargo test` 全部 PASS(含 `complex_rule_test` / `reactor_test` / `ffi_test` 等)
+- **build.rs 编译时门禁**:F11 禁止 `unwrap`/`expect`/`panic!`/`debug_assert!`(非测试代码),G8 控制流白盒化,PASSED
+- **`unsafe`**:`#![forbid(unsafe_code)]`(`ffi.rs` 局部豁免 `#![allow(unsafe_code)]`,FFI 边界,已文档化)
+- **P0 修复(2026-07-25)**:`Box::leak` 内存泄漏已修复(`IoType::parse` 返回 `Option`);锁中毒改为 `e.into_inner()` 恢复(非 panic)
 
 ## 设计原则
 
@@ -59,34 +63,35 @@ while let Ok(fact) = rx.recv().await {
 
 ### Reactor
 
-| 方法 | 说明 |
-|------|------|
-| `Reactor::builder(core_eval)` | 创建反应器构建器 |
-| `builder.max_rounds(n)` | 设置最大执行轮数 |
-| `builder.build()` | 构建反应器实例 |
-| `reactor.spawn()` | 启动反应器，返回通道和句柄 |
+| 方法                          | 说明                       |
+| ----------------------------- | -------------------------- |
+| `Reactor::builder(core_eval)` | 创建反应器构建器           |
+| `builder.max_rounds(n)`       | 设置最大执行轮数           |
+| `builder.build()`             | 构建反应器实例             |
+| `reactor.spawn()`             | 启动反应器，返回通道和句柄 |
 
 ### ReactorHandle (调试 API)
 
-| 方法 | 说明 |
-|------|------|
-| `handle.pause()` | 暂停执行 |
-| `handle.resume()` | 恢复执行 |
-| `handle.step(n)` | 执行 n 步后暂停 |
-| `handle.is_paused()` | 查询是否暂停 |
+| 方法                     | 说明             |
+| ------------------------ | ---------------- |
+| `handle.pause()`         | 暂停执行         |
+| `handle.resume()`        | 恢复执行         |
+| `handle.step(n)`         | 执行 n 步后暂停  |
+| `handle.is_paused()`     | 查询是否暂停     |
 | `handle.current_queue()` | 获取当前队列内容 |
-| `handle.pending_io()` | 获取待处理 I/O |
+| `handle.pending_io()`    | 获取待处理 I/O   |
 
 ### Fact 类型
 
-| 类型 | 说明 |
-|------|------|
-| `Fact::Command` | 用户命令 |
-| `Fact::Stable` | 稳定状态 |
-| `Fact::Error` | 错误 |
-| `Fact::IoRequest` | I/O 请求 |
-| `Fact::IoResponse` | I/O 响应 |
-| `Fact::PayloadUpdate` | 负载更新 |
+| 类型                    | 说明                                          |
+| ----------------------- | --------------------------------------------- |
+| `Fact::Command`         | 用户命令（触发执行）                          |
+| `Fact::StateTransition` | 状态转换（反应器自动产生，携带 cause 因果链） |
+| `Fact::Stable`          | 稳定状态（队列空 + 无 pending I/O）           |
+| `Fact::Error`           | 错误（超时 / TCB 错误 / 队列溢出）            |
+| `Fact::IoRequest`       | I/O 请求（TCB 产生，治理层消费）              |
+| `Fact::IoResponse`      | I/O 响应（治理层产生，反应器消费）            |
+| `Fact::PayloadUpdate`   | 负载更新（治理层注入）                        |
 
 ## C FFI 接口
 
