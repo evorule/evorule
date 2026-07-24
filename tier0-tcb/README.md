@@ -70,7 +70,7 @@
   真元指令是 TCB 内部机制,io_request 是 TCB → 反应器的**跨界通信协议**。
   但又不能完全不算(它在 `core_eval.json` 里跟 set / push / branch 一样
   写出来),所以"半个"。
-- **不能成为第 4 个真元指令**的原因:TIER0_SPEC.md §T1 禁止 —
+- **不能成为第 4 个真元指令**的原因:TCB_SPEC.md §T1 禁止 —
   "指令集有限性 = 确定性来源"。`io_request` 作为"半个"被允许,因为
   它**不影响 TCB 内部状态**(payload / queue 不变),只产生对外信号 —
   TCB 的纯函数语义被完整保留。
@@ -558,7 +558,7 @@ pub enum TcbError {
 
 `verify_path_no_panic` 当前被 proptest
 [`resolve_path_never_panics_arbitrary_path`](tests/proptest_props.rs)
-保底覆盖;在 `TIER0_SPEC.md` 中记录了 Kani 工具链对该 proof 的限制及未来版本的重启计划。
+保底覆盖;在 `TCB_SPEC.md` 中记录了 Kani 工具链对该 proof 的限制及未来版本的重启计划。
 
 ---
 
@@ -567,7 +567,7 @@ pub enum TcbError {
 `tier0-tcb` 的源码审计通过以下方式进行:
 
 1. **build.rs 编译时门禁** — 14 条 redline (T1-T14) 强制,
-   详见 [`TIER0_SPEC.md`](TIER0_SPEC.md)。
+   详见 [`TCB_SPEC.md`](TCB_SPEC.md)。
 2. **形式化验证** — Kani 5 proof, 4/5 PASS(见第八节)。
 3. **属性测试** — proptest 19 / 0 / 0(详见
    [`tests/proptest_props.rs`](tests/proptest_props.rs))。
@@ -596,9 +596,8 @@ pub enum TcbError {
 2. **tier2-governance** — 治理层
    - I/O 订阅者机制 / 审计日志 / HTTP API
 
-详细设计见根 [`README.md`](../../README.md) 三层架构章节 +
-[`GATE_REFERENCE.md`](../../GATE_REFERENCE.md)(G8 / F11 / §5.2 等
-跨模块约束总览)。
+详细设计见根 [`README.md`](../README.md) 三层架构章节
+(G8 / F11 / §5.2 等跨模块约束总览)。
 
 ---
 
@@ -609,9 +608,7 @@ pub enum TcbError {
 
 实际权威源:
 
-- `tier0-tcb/TIER0_SPEC.md` — 本模块 14 条 redline (T1-T14)
-- [`../../GATE_REFERENCE.md`](../../GATE_REFERENCE.md) — G8 / F11 / §5.2
-  跨模块 gate 约束总览(项目级,commit 进 git)
+- `tier0-tcb/TCB_SPEC.md` — 本模块 14 条 redline (T1-T14)
 - `tier1-reactor/REACTOR_SPEC.md` — 反应器机制-策略分离
 - `tier2-governance/GOVERNANCE_SPEC.md` — 治理层机制-策略分离
 

@@ -98,4 +98,4 @@ CI 超时: 1440 min (24h)。如需加速, 改 workflow 矩阵跑单个 proof。
 ## 📖 延伸阅读
 
 - [Kani 官方文档](https://model-checking.github.io/kani/)
-- [tier0-tcb 测试策略](../TEST_REPORT.md)
+- tier0-tcb 测试策略(待创建)

@@ -92,7 +92,7 @@ reflects the CLI's role as a thin transport wrapper.
 
 See also:
 
-- `../tier0-tcb/TIER0_SPEC.md` — TCB-level redlines
+- `../tier0-tcb/TCB_SPEC.md` — TCB-level redlines
 - `../tier1-reactor/REACTOR_SPEC.md` — reactor governance rules
 - `../tier2-governance/GOVERNANCE_SPEC.md` — governance layer rules
 - `../../GATE_REFERENCE.md` (if present) — project-wide gate index

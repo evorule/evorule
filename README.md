@@ -639,7 +639,7 @@ evorule diff before.log after.log # 对比两个 fact log
 
 ## 协议
 
-[AGPL-3.0](LICENSE) — 详见 [`docs/oss_strategy.md`](docs/oss_strategy.md)(待发布)。
+[AGPL-3.0](LICENSE) — 详见 `docs/oss_strategy.md`(待发布)。
 
 > 这是**整个 EvoRule 生态**的协议,不只是 evorule 单独。
 > 我们的立场是"不白送":大厂 fork 之后想"卖闭源 SaaS"也得开源他们的服务。
@@ -649,7 +649,7 @@ evorule diff before.log after.log # 对比两个 fact log
 
 ## 贡献
 
-欢迎 PR、Issue、Discussion。但请先读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [`docs/constitution.md`](docs/constitution.md)(待发布)。
+欢迎 PR、Issue、Discussion。但请先读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 `docs/constitution.md`(待发布)。
 
 特别欢迎:
 
