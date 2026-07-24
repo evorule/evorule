@@ -154,7 +154,7 @@ EvoRule 的"代码"和"宪法"采用**不同协议**:
 - **销售咨询**: evorulelab@gmail.com
 - **技术支持**: evorulelab@gmail.com(同邮箱)
 - **官方网站**: https://gitee.com/evo-rule-lab/evorule
-- **Gitee 组织**: https://gitee.com/evorulelab
+- **Gitee 组织**: https://gitee.com/evo-rule-lab
 
 ---
 

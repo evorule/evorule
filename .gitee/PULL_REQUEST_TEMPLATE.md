@@ -99,7 +99,7 @@
 
 ---
 
-**Reviewer**:@evorulelab/maintainers
+**Reviewer**:@evo-rule-lab/maintainers
 
 **说明**:
 - 普通 bug 修复:勾"通用项"中相关行 + "测试"行
