@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+﻿// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! 状态转换核心 - 执行 `core_eval` transform 列表，产生新状态或 I/O 请求
@@ -28,6 +28,14 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 
 use alloc::vec::Vec;
+
+/// `core_eval` transform 规则数量上限
+///
+/// 终止性保证（SPEC T6：`max_steps` 是硬上界，溢出显式报错）。
+/// 防止恶意或误构造的超长 `core_eval` 导致 `execute_transition`
+/// 迭代时间不可控。与 `MAX_DOMAIN_DEPTH` / `MAX_BRANCH_DEPTH` 一致取 64，
+/// 对当前 `core_eval.json`（20 条规则）留有 3× headroom。
+pub const MAX_TRANSFORM_RULES: usize = 64;
 
 /// 状态转换结果
 #[derive(Debug, Clone, PartialEq)]
@@ -76,6 +84,7 @@ pub enum TransitionResult {
 ///
 /// # Errors
 ///
+/// - `TcbError::TooManyTransformRules`：`core_eval` 规则数超过 `MAX_TRANSFORM_RULES`（64）
 /// - `TcbError::InvalidState`：状态结构异常（`__exec__.payload` 不存在）
 /// - `TcbError::PathResolutionFailed`：`core_eval` 中路径解析失败
 ///
@@ -132,6 +141,12 @@ pub fn execute_transition(
 
     queue: &[JsonValue],
 ) -> Result<TransitionResult, TcbError> {
+    // 0. 终止性检查：core_eval 规则数不得超过 MAX_TRANSFORM_RULES（SPEC T6）
+
+    if core_eval.len() > MAX_TRANSFORM_RULES {
+        return Err(TcbError::TooManyTransformRules);
+    }
+
     // 1. 构造 __exec__ 上下文
 
     let exec_state = build_exec_state(instruction, payload, queue);
@@ -1173,6 +1188,112 @@ mod tests {
         let result = execute_transition(&core_eval, &instruction, &payload, &[]);
 
         assert!(matches!(result, Err(TcbError::MissingField(_))));
+    }
+
+    // ===== N-02: MAX_TRANSFORM_RULES 限制测试 =====
+
+    #[test]
+
+    fn test_execute_transition_rejects_too_many_transform_rules() {
+        // 测试 N-02：core_eval 规则数超过 MAX_TRANSFORM_RULES 应返回 TooManyTransformRules
+
+        let instruction = make_instruction("noop", &[]);
+
+        let payload = make_payload(0);
+
+        // 构造 MAX_TRANSFORM_RULES + 1 条 noop 规则（all([]) 兜底，空 on_true）
+
+        let catch_all = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("branch")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    (
+                        "domain",
+                        JsonValue::object_from_pairs(&[
+                            ("type", JsonValue::string("all")),
+                            ("inner", JsonValue::empty_array()),
+                        ]),
+                    ),
+                    ("on_true", JsonValue::array(vec![])),
+                ]),
+            ),
+        ]);
+
+        let core_eval: Vec<JsonValue> = (0..=MAX_TRANSFORM_RULES)
+            .map(|_| catch_all.clone())
+            .collect();
+
+        assert!(core_eval.len() > MAX_TRANSFORM_RULES);
+
+        let result = execute_transition(&core_eval, &instruction, &payload, &[]);
+
+        assert!(
+            matches!(result, Err(TcbError::TooManyTransformRules)),
+            "expected TooManyTransformRules, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+
+    fn test_execute_transition_accepts_exactly_max_transform_rules() {
+        // 测试 N-02：core_eval 规则数正好等于 MAX_TRANSFORM_RULES 应正常执行
+
+        let instruction = make_instruction("noop", &[]);
+
+        let payload = make_payload(42);
+
+        // 构造 MAX_TRANSFORM_RULES 条 all([]) 兜底规则（不修改状态）
+
+        let catch_all = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("branch")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    (
+                        "domain",
+                        JsonValue::object_from_pairs(&[
+                            ("type", JsonValue::string("all")),
+                            ("inner", JsonValue::empty_array()),
+                        ]),
+                    ),
+                    ("on_true", JsonValue::array(vec![])),
+                ]),
+            ),
+        ]);
+
+        let core_eval: Vec<JsonValue> = (0..MAX_TRANSFORM_RULES)
+            .map(|_| catch_all.clone())
+            .collect();
+
+        assert_eq!(core_eval.len(), MAX_TRANSFORM_RULES);
+
+        let result = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
+
+        match result {
+            TransitionResult::State { new_payload, .. } => {
+                // 状态应保持不变
+                assert_eq!(new_payload.get("x"), Some(&JsonValue::Integer(42)));
+            }
+            _ => panic!("expected State"),
+        }
+    }
+
+    #[test]
+
+    fn test_execute_transition_empty_core_eval_still_allowed() {
+        // 测试 N-02：空 core_eval 仍应被允许（边界情况，0 <= MAX_TRANSFORM_RULES）
+
+        let instruction = make_instruction("noop", &[]);
+
+        let payload = make_payload(42);
+
+        let core_eval: Vec<JsonValue> = vec![];
+
+        let result = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
+
+        assert!(matches!(result, TransitionResult::State { .. }));
     }
 
     // ===== C-02: all([]) 兜底规则测试 =====

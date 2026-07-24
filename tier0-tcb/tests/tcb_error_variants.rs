@@ -3,7 +3,7 @@
 //! error.rs mod tests 只验证 Display + PartialEq，本文件验证每个 `TcbError` 变体
 //! 都能被真实执行路径触发（而非仅构造）。
 //!
-//! ## 覆盖矩阵 (9 variants, 13 tests)
+//! ## 覆盖矩阵 (10 variants, 14 tests)
 //!
 //! | # | Variant | Trigger path |
 //! |---|---|---|
@@ -16,12 +16,13 @@
 //! | 7 | `NestingTooDeep` | 65 层嵌套 branch |
 //! | 8 | `EmptyInstructionList` | `exec_push` params.instructions 为空 |
 //! | 9 | `IntegerOverflow` | `exec_set` add `i64::MAX` + 1 / sub `i64::MIN` - 1 |
+//! | 10 | `TooManyTransformRules` | `execute_transition` 入口 core_eval.len() > 64 |
 //!
-//! 所有测试通过公共入口 `execute_meta_instruction` 触发。
+//! 所有测试通过公共入口 `execute_meta_instruction` / `execute_transition` 触发。
 
 use std::collections::BTreeMap;
 use tier0_tcb::executor::execute_meta_instruction;
-use tier0_tcb::{JsonValue, TcbError};
+use tier0_tcb::{execute_transition, JsonValue, TcbError, MAX_TRANSFORM_RULES};
 
 // =============================================================================
 // Test helpers (类似 executor.rs mod tests 中的 helper，独立于该模块)
@@ -364,5 +365,45 @@ fn trigger_integer_overflow_on_sub_min() {
     match result {
         Err(TcbError::IntegerOverflow) => {}
         other => panic!("expected IntegerOverflow, got {other:?}"),
+    }
+}
+
+// =============================================================================
+// 10. TooManyTransformRules
+// =============================================================================
+
+#[test]
+fn trigger_too_many_transform_rules() {
+    // core_eval 含 MAX_TRANSFORM_RULES + 1 条规则 → 超限
+    // 用 all([]) 兜底规则填充（不修改状态，仅占位）
+    let catch_all = JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string("branch")),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                (
+                    "domain",
+                    JsonValue::object_from_pairs(&[
+                        ("type", JsonValue::string("all")),
+                        ("inner", JsonValue::empty_array()),
+                    ]),
+                ),
+                ("on_true", JsonValue::array(vec![])),
+            ]),
+        ),
+    ]);
+
+    let core_eval: Vec<JsonValue> = (0..=MAX_TRANSFORM_RULES)
+        .map(|_| catch_all.clone())
+        .collect();
+    assert_eq!(core_eval.len(), MAX_TRANSFORM_RULES + 1);
+
+    let instr = JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))]);
+    let payload = payload_int(0);
+
+    let result = execute_transition(&core_eval, &instr, &payload, &[]);
+    match result {
+        Err(TcbError::TooManyTransformRules) => {}
+        other => panic!("expected TooManyTransformRules, got {other:?}"),
     }
 }

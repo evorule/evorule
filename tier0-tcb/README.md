@@ -5,7 +5,7 @@
 - **版本**:v0.1.0-alpha.1
 - **定位**:纯函数 + 确定性 + 永不 panic
 - **外部依赖**:0
-- **测试**:`cargo test` 215 PASS / 0 failed(157 单元 + 4 个 proptest 段共 58 = `integration_end_to_end` 4 + `panic_free` 22 + `proptest_props` 19 + `tcb_error_variants` 13)
+- **测试**:`cargo test` 239 PASS / 0 failed(160 单元 + 62 集成 + 17 doc = `complex_branch_test` 3 + `integration_end_to_end` 4 + `panic_free` 22 + `proptest_props` 19 + `tcb_error_variants` 14)
 - **Clippy**:零警告(`deny(unwrap_used/expect_used/indexing_slicing/panic)`)
 - **形式化验证**:Kani 5 proof, 4/5 PASS
 - **build.rs 编译时门禁**:14 条 redline (T1-T14) 编译期强制,PASSED
@@ -52,10 +52,10 @@
 
 | 元指令       | 作用                                                 | 真元指令? | 是否修改状态 |
 | ------------ | ---------------------------------------------------- | --------- | ------------ |
-| `set`        | 修改 payload 中某字段（支持 `set`/`add`/`sub` 操作） | ✅ 真      | 是           |
-| `push`       | 将指令列表推入 queue 前端                            | ✅ 真      | 是           |
-| `branch`     | 按域条件执行 `on_true` 或 `on_false` 子指令列表      | ✅ 真      | 视子指令而定 |
-| `io_request` | 产生 I/O 请求信号（不修改任何状态）                  | 🟡 半      | **否**        |
+| `set`        | 修改 payload 中某字段（支持 `set`/`add`/`sub` 操作） | ✅ 真     | 是           |
+| `push`       | 将指令列表推入 queue 前端                            | ✅ 真     | 是           |
+| `branch`     | 按域条件执行 `on_true` 或 `on_false` 子指令列表      | ✅ 真     | 视子指令而定 |
+| `io_request` | 产生 I/O 请求信号（不修改任何状态）                  | 🟡 半     | **否**       |
 
 **为什么是 3.5,不是 4?**
 
@@ -256,6 +256,7 @@ transition.rs （状态转换，依赖 executor/path/value）
 - `execute_transition`：唯一公开的状态转换 API
 - 构建 `__exec__` 上下文（包含 `instruction`/`payload`/`queue`）
 - 迭代 `core_eval` transform 列表，检测 `IoRequired` 信号
+- `MAX_TRANSFORM_RULES = 64`：`core_eval` 规则数上限（SPEC T6 终止性保证）
 - `TransitionResult` 枚举：`State { new_payload, new_queue }` | `IoRequired { io_type, params }`
 
 #### [tests/kani_proofs.rs](file:///d:/evorule/tier0-tcb/tests/kani_proofs.rs) — Kani 验证
@@ -265,10 +266,10 @@ transition.rs （状态转换，依赖 executor/path/value）
 | Proof 函数                  | 验证目标                                                       |
 | --------------------------- | -------------------------------------------------------------- |
 | `verify_value_roundtrip`    | JsonValue 构造与访问一致性                                     |
-| `verify_path_no_panic`      | 路径解析对 Array 状态不 panic 且返回预期结果(已加 assert)     |
-| `verify_set_integer_safety` | 整数 `i64::checked_add` 行为正确                              |
+| `verify_path_no_panic`      | 路径解析对 Array 状态不 panic 且返回预期结果(已加 assert)      |
+| `verify_set_integer_safety` | 整数 `i64::checked_add` 行为正确                               |
 | `verify_transition_bounded` | JsonValue 状态遍历不 panic,execute_transition 内部状态机可终止 |
-| `verify_set_sub_safety`     | 整数 `i64::checked_sub` 行为正确                              |
+| `verify_set_sub_safety`     | 整数 `i64::checked_sub` 行为正确                               |
 
 ---
 
@@ -280,7 +281,7 @@ transition.rs （状态转换，依赖 executor/path/value）
 # 编译
 cargo build
 
-# 运行全部 97 单元测试 + 14 proptest
+# 运行全部测试（160 单元 + 62 集成 + 17 doc）
 cargo test
 
 # Clippy 检查（零警告）
@@ -410,14 +411,15 @@ match result {
 
 ## 五、公开 API
 
-仅公开 3 个核心类型 + 1 个入口函数：
+仅公开 3 个核心类型 + 1 个入口函数 + 1 个常量：
 
-| API                                                    | 说明                              |
-| ------------------------------------------------------ | --------------------------------- |
-| `JsonValue`                                            | 确定性 JSON 数据模型              |
-| `TcbError`                                             | 错误类型（9 个变体，永不 panic）  |
-| `execute_transition(core_eval, instr, payload, queue)` | 状态转换入口函数                  |
-| `TransitionResult`                                     | 转换结果：`State` 或 `IoRequired` |
+| API                                                    | 说明                                  |
+| ------------------------------------------------------ | ------------------------------------- |
+| `JsonValue`                                            | 确定性 JSON 数据模型                  |
+| `TcbError`                                             | 错误类型（10 个变体，永不 panic）     |
+| `execute_transition(core_eval, instr, payload, queue)` | 状态转换入口函数                      |
+| `TransitionResult`                                     | 转换结果：`State` 或 `IoRequired`     |
+| `MAX_TRANSFORM_RULES`                                  | `core_eval` 规则数上限（64，SPEC T6） |
 
 ### `TcbError` 变体
 
@@ -432,6 +434,7 @@ pub enum TcbError {
     NestingTooDeep,                 // branch 嵌套超 64 层
     EmptyInstructionList,           // 指令列表为空
     IntegerOverflow,                // 整数运算溢出
+    TooManyTransformRules,          // core_eval 规则数超 64 条（SPEC T6）
 }
 ```
 
@@ -545,13 +548,13 @@ pub enum TcbError {
 
 `#[cfg(kani)]` 门控的 `proofs.rs` 仅在 Kani 工具链下编译,常规 `cargo build` / `cargo test` / `cargo clippy` 不编译。
 
-| Proof                       | 验证目标                                                       | 状态     |
-| --------------------------- | -------------------------------------------------------------- | -------- |
-| `verify_value_roundtrip`    | `JsonValue::Integer(n).as_i64() == Some(n)` 对任意 `i64` 成立   | ✅ PASS  |
-| `verify_path_no_panic`      | 路径解析对 Array 状态不 panic                                  | ⚠️ 工具链 |
-| `verify_set_integer_safety` | `i64::checked_add` 上溢返回 None                                | ✅ PASS  |
-| `verify_transition_bounded` | JsonValue 状态遍历不 panic                                      | ✅ PASS  |
-| `verify_set_sub_safety`     | `i64::checked_sub` 下溢返回 None                                | ✅ PASS  |
+| Proof                       | 验证目标                                                      | 状态      |
+| --------------------------- | ------------------------------------------------------------- | --------- |
+| `verify_value_roundtrip`    | `JsonValue::Integer(n).as_i64() == Some(n)` 对任意 `i64` 成立 | ✅ PASS   |
+| `verify_path_no_panic`      | 路径解析对 Array 状态不 panic                                 | ⚠️ 工具链 |
+| `verify_set_integer_safety` | `i64::checked_add` 上溢返回 None                              | ✅ PASS   |
+| `verify_transition_bounded` | JsonValue 状态遍历不 panic                                    | ✅ PASS   |
+| `verify_set_sub_safety`     | `i64::checked_sub` 下溢返回 None                              | ✅ PASS   |
 
 `verify_path_no_panic` 当前被 proptest
 [`resolve_path_never_panics_arbitrary_path`](tests/proptest_props.rs)
@@ -576,10 +579,10 @@ pub enum TcbError {
 
 ### 10.1 非阻塞遗留事项
 
-| 编号 | 事项                       | 状态     | 说明                                                       |
-| ---- | -------------------------- | -------- | ---------------------------------------------------------- |
-| N-01 | Kani `verify_path_no_panic` | TIMEOUT | Kani 工具链 alloc std unwind bound 限制,等 0.68+ 修 |
-| N-02 | `MAX_TRANSFORM_RULES` 限制 | 待办     | `execute_transition` 对 `core_eval` 长度无限制              |
+| 编号 | 事项                        | 状态      | 说明                                                                                                                |
+| ---- | --------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- |
+| N-01 | Kani `verify_path_no_panic` | TIMEOUT   | Kani 工具链 alloc std unwind bound 限制,等 0.68+ 修                                                                 |
+| N-02 | `MAX_TRANSFORM_RULES` 限制  | ✅ 已完成 | `execute_transition` 入口检查 `core_eval.len() ≤ 64`,超限返回 `TcbError::TooManyTransformRules`(SPEC T6 终止性保证) |
 
 ### 10.2 后续 Tier 路线
 

@@ -33,6 +33,9 @@ Thumbs.db
 # Trae 临时文件
 .trae/
 
+# 门控日志目录（开发过程中的临时文件，不应 commit）
+.gate-logs/
+
 # === 2026-07-14 首次 git init 补充 ===
 
 # Windows 构建产物 (probe.exe / probe.pdb 等)

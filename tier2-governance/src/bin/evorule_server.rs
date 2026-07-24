@@ -173,11 +173,7 @@ fn load_config_file(path: &Option<PathBuf>) -> FileConfig {
 /// 所有字段均可通过 CLI 参数、环境变量（前缀 `EVORULE_`）或 JSON 配置文件提供。
 /// 优先级：CLI > 环境变量 > 配置文件 > 内置默认值。
 #[derive(Parser, Debug)]
-#[command(
-    name = "evorule-server",
-    version,
-    about = "EvoRule 治理层 HTTP 服务"
-)]
+#[command(name = "evorule-server", version, about = "EvoRule 治理层 HTTP 服务")]
 struct Cli {
     /// JSON 配置文件路径（P2-9，可选，例: ./evorule.json）
     #[arg(long, env = "EVORULE_CONFIG")]
@@ -463,11 +459,11 @@ async fn log_cleanup_task(log_dir: PathBuf, max_days: u32, max_size_mb: u64) {
         log_files.sort_by(|a, b| {
             a.metadata()
                 .and_then(|m| m.modified())
-                .unwrap_or_else(|_| std::time::SystemTime::UNIX_EPOCH)
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
                 .cmp(
                     &b.metadata()
                         .and_then(|m| m.modified())
-                        .unwrap_or_else(|_| std::time::SystemTime::UNIX_EPOCH),
+                        .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
                 )
         });
 
