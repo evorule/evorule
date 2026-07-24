@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # validate-changelog.ps1
 # VERSION_STRATEGY.md 4.5
 # Check: each project CHANGELOG has section for current version + release-mode has no [Unreleased]

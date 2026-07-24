@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # validate-version.ps1
 # VERSION_STRATEGY.md 2.1, 3.2
 # Check: SemVer format + cross-project MAJOR sync + mechanism MINOR <= dependent MINOR
@@ -62,6 +62,21 @@ foreach ($name in $projects.Keys) {
         $failed = $true
     } else {
         Write-Host "[OK]   $name : $v" -ForegroundColor Green
+    }
+}
+
+# 1b. npm lockfile version consistency (防止 v6.0.0 残留)
+# 注意：PowerShell 5.1 的 ConvertFrom-Json 对无 BOM UTF-8 文件可能误读（AGENTS.md 已知坑），
+# 改用 Get-JsonVersion 正则提取，避免编码问题。
+$npmLockfile = Join-Path $evoruleRoot "sdk\typescript\package-lock.json"
+if ($null -ne $npmLockfile -and $npmLockfile -ne '' -and (Test-Path $npmLockfile)) {
+    $lockVersion = Get-JsonVersion $npmLockfile
+    $pkgVersion = $versions['sdk-typescript']
+    if ($lockVersion -and $pkgVersion -and $lockVersion -ne $pkgVersion) {
+        Write-Host "[FAIL] sdk-typescript lockfile: version '$lockVersion' != package.json '$pkgVersion'" -ForegroundColor Red
+        $failed = $true
+    } elseif ($lockVersion -and $pkgVersion) {
+        Write-Host "[OK]   sdk-typescript lockfile: $lockVersion (matches package.json)" -ForegroundColor Green
     }
 }
 

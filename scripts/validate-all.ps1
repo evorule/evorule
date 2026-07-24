@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # validate-all.ps1
 # One-shot runner for all VERSION_STRATEGY validation scripts
 # Usage: pwsh scripts/validate-all.ps1 [-AllowUnreleased]

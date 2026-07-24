@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # validate-release.ps1
 # VERSION_STRATEGY.md 4.5, 10.1
 # Release-time check: git tag matches + pre-release identifier + tag format
