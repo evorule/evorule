@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "EvoRule CLI - 本地 JSON 规则执行工具,面向合规刚需用户(零网络,零 telemetry,musl 静态链接)"
 license = "AGPL-3.0-or-later"
-repository = "https://gitee.com/evorulelab/evorule"
+repository = "https://gitee.com/evo-rule-lab/evorule"
 publish = false  # Internal binary, not on crates.io
 
 [[bin]]

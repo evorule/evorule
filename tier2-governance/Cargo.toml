@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "EvoRule 治理层 - I/O 订阅者、审计链、HTTP API"
 license = "AGPL-3.0-or-later"
-repository = "https://gitee.com/evorulelab/evorule"
+repository = "https://gitee.com/evo-rule-lab/evorule"
 publish = false
 
 [dependencies]

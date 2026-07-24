@@ -157,7 +157,7 @@ EvoRule 战略上服务三类用户,**优先级递进**:
 
 ## 反馈渠道
 
-- **Gitee Issue**:https://gitee.com/evorulelab/evorule/issues(主渠道)
+- **Gitee Issue**:https://gitee.com/evo-rule-lab/evorule/issues(主渠道)
 - **邮箱**:evorulelab@gmail.com
 - **安全漏洞**:见 [SECURITY.md](SECURITY.md)
 

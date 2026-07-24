@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["tier0-tcb", "tier1-reactor", "tier2-governance", "evorule-cli"]
+members = ["tier0-tcb", "tier1-reactor", "tier2-governance", "evorule-cli", "examples/reactive_researcher"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 authors = ["EvoRule Project"]
-repository = "https://gitee.com/evorulelab/evorule"
+repository = "https://gitee.com/evo-rule-lab/evorule"
 
 [profile.release]
 opt-level = 3

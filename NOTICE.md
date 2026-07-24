@@ -51,4 +51,4 @@ EvoRule 的核心设计原则:
 - **作者**: EvoRule Project
 - **邮箱**: evorulelab@gmail.com
 - **组织**: [EvoRule Lab](https://gitee.com/evorulelab)
-- **Gitee**: https://gitee.com/evorulelab/evorule
+- **Gitee**: https://gitee.com/evo-rule-lab/evorule
