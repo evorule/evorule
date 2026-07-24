@@ -224,15 +224,18 @@ impl Auditor {
             let fact_id = fact.id();
             let fact_type = fact.type_name();
             let logical_time = self.clock.tick();
-            let content_hash = hash::fact_hash(fact).unwrap_or_else(|e| {
-                tracing::error!(
-                    事实ID = ?fact_id,
-                    事实类型 = %fact_type,
-                    错误 = %e,
-                    "审计器: 事实哈希计算失败，无法处理损坏数据"
-                );
-                panic!("事实哈希计算失败，事实 {}: {}", fact_id, e);
-            });
+            let content_hash = match hash::fact_hash(fact) {
+                Ok(h) => h,
+                Err(e) => {
+                    tracing::error!(
+                        事实ID = ?fact_id,
+                        事实类型 = %fact_type,
+                        错误 = %e,
+                        "审计器: 事实哈希计算失败，跳过损坏事实"
+                    );
+                    continue;
+                }
+            };
             let prev_hash = self.last_hash.clone();
             let cause = extract_cause(fact);
 

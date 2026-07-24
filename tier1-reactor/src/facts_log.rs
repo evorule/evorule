@@ -97,10 +97,7 @@ pub struct FactsLog {
 
 impl std::fmt::Debug for FactsLog {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         f.debug_struct("FactsLog")
             .field("version", &inner.version)
             .field("history_len", &inner.history.len())
@@ -130,10 +127,7 @@ impl FactsLog {
     pub fn with_initial_payload(payload: JsonValue) -> Self {
         let log = Self::new();
         {
-            let mut inner = log
-                .inner
-                .write()
-                .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+            let mut inner = log.inner.write().unwrap_or_else(|e| e.into_inner());
             inner.current_snapshot = payload;
         }
         log
@@ -144,10 +138,7 @@ impl FactsLog {
     /// 设置初始 payload 和版本号，但不增加版本计数。
     /// 这用于从父会话 fork 时继承状态。
     pub fn set_initial_state(&self, payload: JsonValue, version: u64) {
-        let mut inner = self
-            .inner
-            .write()
-            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.current_snapshot = payload;
         inner.version = version;
         inner.last_stable_version = version;
@@ -263,10 +254,7 @@ impl FactsLog {
         let records = read_wal(&path).map_err(|e| FactsLogError::WalError(e.to_string()))?;
         let log = Self::new();
         {
-            let mut inner = log
-                .inner
-                .write()
-                .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+            let mut inner = log.inner.write().unwrap_or_else(|e| e.into_inner());
             for (version_before, fact) in records {
                 inner.history.push((version_before, fact.clone()));
                 match &fact {
@@ -438,10 +426,7 @@ impl FactsLog {
 
     /// 读取当前快照 (payload, queue, version)
     pub fn snapshot(&self) -> (JsonValue, Vec<JsonValue>, u64) {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         (
             inner.current_snapshot.clone(),
             inner.current_queue.clone(),
@@ -454,10 +439,7 @@ impl FactsLog {
     /// 返回所有 `version_before >= from_version` 的事实。
     /// 如果 `from_version` 为 0，返回完整历史。
     pub fn read_from(&self, from_version: u64) -> Vec<Fact> {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner
             .history
             .iter()
@@ -468,17 +450,14 @@ impl FactsLog {
 
     /// 返回当前版本号
     pub fn version(&self) -> u64 {
-        self.inner
-            .read()
-            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"))
-            .version
+        self.inner.read().unwrap_or_else(|e| e.into_inner()).version
     }
 
     /// 返回最后稳定版本号
     pub fn last_stable_version(&self) -> u64 {
         self.inner
             .read()
-            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"))
+            .unwrap_or_else(|e| e.into_inner())
             .last_stable_version
     }
 
@@ -486,17 +465,14 @@ impl FactsLog {
     pub fn history_len(&self) -> usize {
         self.inner
             .read()
-            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"))
+            .unwrap_or_else(|e| e.into_inner())
             .history
             .len()
     }
 
     /// 返回完整历史（用于全量审计）
     pub fn history(&self) -> Vec<Fact> {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.history.iter().map(|(_, f)| f.clone()).collect()
     }
 
@@ -507,10 +483,7 @@ impl FactsLog {
     ///
     /// 与 `history()` 的区别：保留版本号信息，供时间机器按版本范围过滤。
     pub fn history_with_versions(&self) -> Vec<(u64, Fact)> {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.history.iter().map(|(v, f)| (*v, f.clone())).collect()
     }
 
@@ -522,10 +495,7 @@ impl FactsLog {
     /// 用于 Portal API 的 recent_triggers 等只需最近 N 条的场景。
     /// 若 `n >= history.len()`，返回全部历史（等价于 `history_with_versions()`）。
     pub fn history_last_with_versions(&self, n: usize) -> Vec<(u64, Fact)> {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         let history = &inner.history;
         let start = history.len().saturating_sub(n);
         history[start..]
@@ -550,10 +520,7 @@ impl FactsLog {
     /// // 返回所有 path 以 "agent_researcher.shared" 开头的 PayloadUpdate
     /// ```
     pub fn facts_by_path_prefix(&self, prefix: &str) -> Vec<(u64, Fact)> {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner
             .history
             .iter()
@@ -574,10 +541,7 @@ impl FactsLog {
     /// 调用方必须确保此时没有其他线程正在访问此 FactsLog
     /// （即 `is_reusable()` 返回 `true`）。
     pub fn reset(&self) {
-        let mut inner = self
-            .inner
-            .write()
-            .unwrap_or_else(|_| panic!("FactsLog lock poisoned"));
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.history.clear();
         inner.current_snapshot = JsonValue::empty_object();
         inner.current_queue.clear();

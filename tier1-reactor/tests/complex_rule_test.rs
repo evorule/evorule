@@ -102,7 +102,8 @@ async fn test_vip_order_processing() {
                       {
                         "type": "io_request",
                         "params": {
-                          "io_type": "notify_vip",
+                          "io_type": "call_service",
+                          "service_name": "notify_vip",
                           "prompt": "VIP 客户享受 9 折优惠"
                         }
                       }

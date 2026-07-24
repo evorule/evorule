@@ -446,11 +446,12 @@ mod tests {
 
     #[test]
     fn test_validate_unknown_instruction_type() {
+        // v0.1.0: IoType::parse 对未知类型返回 None, 验证器正确拒绝
         let validator = RuleValidator::new(make_core_eval());
         let instr = make_instruction("unknown_type", &[]);
         let result = validator.validate_instruction(&instr);
-        assert!(result.valid);
-        assert!(result.errors.is_empty());
+        assert!(!result.valid);
+        assert!(!result.errors.is_empty());
     }
 
     #[test]
@@ -473,6 +474,7 @@ mod tests {
 
     #[test]
     fn test_validate_sequence_with_invalid() {
+        // v0.1.0: 未知指令类型使整个序列验证失败
         let validator = RuleValidator::new(make_core_eval());
         let instructions = vec![
             make_instruction(
@@ -485,8 +487,8 @@ mod tests {
             make_instruction("unknown_type", &[]),
         ];
         let result = validator.validate_sequence(&instructions);
-        assert!(result.valid);
-        assert!(result.errors.is_empty());
+        assert!(!result.valid);
+        assert!(!result.errors.is_empty());
     }
 
     #[test]

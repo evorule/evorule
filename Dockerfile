@@ -66,6 +66,11 @@ COPY --from=builder /usr/local/bin/evorule-server /usr/local/bin/evorule-server
 COPY tier0-tcb/core_eval.json /etc/evorule/core_eval.json
 COPY rules/ /etc/evorule/rules/
 
+# 创建非 root 用户（安全：容器逃逸时不获得 root 权限）
+RUN useradd -r -u 1000 -m -d /home/evorule -s /usr/sbin/nologin evorule \
+    && mkdir -p /data \
+    && chown -R evorule:evorule /data /etc/evorule
+
 # 数据卷（数据库 + memory handler）
 VOLUME ["/data"]
 
@@ -78,5 +83,7 @@ ENV EVORULE_RULES_DIR=/etc/evorule/rules
 ENV EVORULE_DB_PATH=/data/evorule.db
 ENV EVORULE_MEMORY_DIR=/data/memory
 ENV EVORULE_LOG_LEVEL=info
+
+USER 1000
 
 ENTRYPOINT ["evorule-server"]

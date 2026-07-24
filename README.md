@@ -12,7 +12,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 ---
 
-> ## ⚠️ v0.1.0-alpha.1 — First Public Preview (2026-07-20)
+> ## ⚠️ v0.1.0 — First Public Release (2026-07-24)
 >
 > 这是 EvoRule **第一个公开基座**,**不是 production-ready**。
 >
@@ -463,7 +463,7 @@ cargo test -p tier0-tcb --test proptest_props
 
 ## 已知限制 & 路线图
 
-### 0.1.0-alpha.1 限制
+### 0.1.0 限制
 
 - 🟡 Kani proof 4/5 PASS + 19 proptest(详见 [`tier0-tcb/TIER0_SPEC.md`](tier0-tcb/TIER0_SPEC.md))
 - ⚠️ Hot reload 仅支持业务规则 JSON,内核改动仍需重启
@@ -660,7 +660,7 @@ evorule diff before.log after.log # 对比两个 fact log
 ```bibtex
 @software{evorule,
   title = {EvoRule: A JSON-Data-Set Execution Engine with Append-Only Facts Log},
-  version = {0.1.0-alpha.1},
+  version = {0.1.0},
   year = {2026},
   url = {https://github.com/evorule/evorule},
   license = {AGPL-3.0}
