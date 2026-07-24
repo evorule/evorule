@@ -28,7 +28,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 >
 > **诚实记账**:见 [STATUS.md](STATUS.md)
 > **路线图**:见 [ROADMAP.md](ROADMAP.md)
-> **发版计划**:见 [docs/PLAN_v0.1.0-alpha.md](docs/PLAN_v0.1.0-alpha.md)
+> **安全审计**:见 [docs/security/SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md)
 >
 > **使用风险自负**。issue / PR 欢迎,但不保证响应时间。
 
@@ -117,7 +117,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 ┌──────────────────────────────────────────────────────────────────────┐
 │  tier2-governance (JSON I/O & HTTP)                                   │
 │  ─ 接受 JSON 命令 → 派发 JSON I/O → 写 JSON 状态                     │
-│  ─ 暴露 JSON HTTP API(19 端点) + JSON SSE 事件流                     │
+│  ─ 暴露 JSON HTTP API(40+ 端点) + JSON SSE 事件流                     │
 │  ─ 接受 hot reload JSON 规则(不重启)                                 │
 ├──────────────────────────────────────────────────────────────────────┤
 │  tier1-reactor (JSON 事件循环)                                        │
@@ -128,9 +128,10 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 ├──────────────────────────────────────────────────────────────────────┤
 │  tier0-tcb (JSON 状态机)                                              │
 │  ─ JsonValue:JSON 的内存表示                                          │
-│  ─ execute_transition(state_json, fact_json) → (new_state_json, new_fact_json) │
+│  ─ execute_transition(core_eval, instruction, payload, queue) → TransitionResult │
 │  ─ 4 个元指令:set / push / branch / io_request                        │
-│  ─ 7 个域类型:Boolean / Integer / Decimal / String / Array / Object / Null │
+│  ─ 6 个基本域类型:eq / lt / exists / instruction / all / not          │
+│  ─ JsonValue 6 变体:Null / Bool / Integer / String / Array / Object   │
 │  ─ 零外部依赖 · no_std 兼容 · Kani 可验证                            │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -154,10 +155,10 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 ### 1. 启动(用内置宪法)
 
 ```bash
-git clone https://github.com/evorule/evorule
+git clone https://gitee.com/evorulelab/evorule
 cd evorule
 cargo build --bin evorule-server
-./target/debug/evorule_server --addr 127.0.0.1:18080
+./target/debug/evorule-server --addr 127.0.0.1:18080
 # 默认加载 ./tier0-tcb/core_eval.json(宪法)
 # 默认监听 ./rules 目录(业务规则,可热重载)
 ```
@@ -252,7 +253,7 @@ curl -N http://127.0.0.1:18080/api/sessions/$SESSION_ID/events
 curl http://127.0.0.1:18080/api/sessions/$SESSION_ID/replay | jq
 
 # 回滚到 version 1(都是 JSON)
-curl -X POST http://127.0.0.1:18080/api/sessions/$SESSION_ID/rewind/1 | jq
+curl http://127.0.0.1:18080/api/sessions/$SESSION_ID/rewind/1 | jq
 
 # 对比两个 JSON 版本的 payload 差异
 curl "http://127.0.0.1:18080/api/sessions/$SESSION_ID/diff?a=1&b=3" | jq
@@ -277,11 +278,11 @@ curl "http://127.0.0.1:18080/api/sessions/$SESSION_ID/diff?a=1&b=3" | jq
 **它只做一件事:**
 
 ```rust
-use tier0_tcb::{execute_transition, JsonValue};
+use tier0_tcb::{execute_transition, JsonValue, TransitionResult};
 
-// 给定 (state_json, fact_json) → 产生 (new_state_json, new_fact_json)
-let result = execute_transition(&state, &fact)?;
-//          ↑ JSON in                    ↑ JSON out
+// 给定 (core_eval, instruction, payload, queue) → 产生 State 或 IoRequired
+let result = execute_transition(&core_eval, &instruction, &payload, &queue)?;
+//          ↑ JSON 规则      ↑ JSON 命令   ↑ JSON 状态  ↑ JSON 队列  ↑ JSON out
 ```
 
 **4 个元指令(不可扩展):** 全部用 JSON 表达
@@ -291,9 +292,14 @@ let result = execute_transition(&state, &fact)?;
 - `branch` — 条件分支(组成 sequence / while_loop)
 - `io_request` — 发起外部 JSON I/O
 
-**7 个域类型(G11 不可扩展):**
+**6 个基本域类型(G11 不可扩展):**
 
-- `Boolean` / `Integer` / `Decimal` / `String` / `Array` / `Object` / `Null`
+- `eq` / `lt` / `exists` / `instruction` / `all` / `not`
+- 派生域类型(由 `core_eval.json` 组合):`gt` / `ne` / `ge` / `le` / `or`
+
+**JsonValue 6 变体(无 Float,形式化友好):**
+
+- `Null` / `Bool` / `Integer(i64)` / `String` / `Array` / `Object(BTreeMap)`
 
 ### tier1-reactor —— JSON 事件循环
 
@@ -330,7 +336,7 @@ loop {
 
 **职责:** 把 JSON 暴露给外部世界。
 
-- **JSON HTTP API** (axum) — 23 个端点,全是 JSON in / JSON out
+- **JSON HTTP API** (axum) — 40+ 个端点,全是 JSON in / JSON out
 - **JSON SSE 事件流** — `data: {...}\n\n`,每行一个 JSON
 - **JSON I/O handlers** — `db_handler` / `http_handler` / `memory_handler`,全部接 JSON、产 JSON
 - **JSON Auditor** — 基于 FactsLog 算 JSON 摘要 + BLAKE3 哈希链
@@ -367,7 +373,7 @@ loop {
 
 ## API 概览
 
-23 个端点,全部 `JSON → JSON`。
+40+ 个端点,全部 `JSON → JSON`。下方列主要端点,完整列表见 [`tier2-governance/README.md`](tier2-governance/README.md)。
 
 | 类别     | 端点                                         | 说明                 |
 | -------- | -------------------------------------------- | -------------------- |
@@ -377,7 +383,7 @@ loop {
 | 会话     | `GET /api/sessions/{id}/state`               | 读取 JSON 状态       |
 | 事件     | `GET /api/sessions/{id}/events`              | 订阅 JSON SSE        |
 | 时间机器 | `GET /api/sessions/{id}/replay`              | 回放 JSON Fact 流    |
-| 时间机器 | `POST /api/sessions/{id}/rewind/{v}`         | 回滚到 version v     |
+| 时间机器 | `GET /api/sessions/{id}/rewind/{v}`          | 回滚到 version v     |
 | 时间机器 | `GET /api/sessions/{id}/diff?a=&b=`          | 对比两版本 JSON 差异 |
 | 审计     | `GET /api/sessions/{id}/audit`               | 查询 JSON 审计报告   |
 | 审计     | `GET /api/sessions/{id}/audit/verify`        | 校验 JSON 审计链     |
@@ -429,7 +435,7 @@ cargo test -p tier0-tcb --test proptest_props
 - `verify_set_sub_safety` — set 减法安全性 ✅ PASS
 - `verify_transition_bounded` — 状态转换有界 ✅ PASS
 
-> 🟡 **4/5 PASS + 19 proptest**。详见 [`tier0-tcb/TIER0_SPEC.md`](tier0-tcb/TIER0_SPEC.md)。
+> 🟡 **4/5 PASS + 19 proptest**。详见 [`tier0-tcb/TCB_SPEC.md`](tier0-tcb/TCB_SPEC.md)。
 
 ---
 
@@ -465,7 +471,7 @@ cargo test -p tier0-tcb --test proptest_props
 
 ### 0.1.0 限制
 
-- 🟡 Kani proof 4/5 PASS + 19 proptest(详见 [`tier0-tcb/TIER0_SPEC.md`](tier0-tcb/TIER0_SPEC.md))
+- 🟡 Kani proof 4/5 PASS + 19 proptest(详见 [`tier0-tcb/TCB_SPEC.md`](tier0-tcb/TCB_SPEC.md))
 - ⚠️ Hot reload 仅支持业务规则 JSON,内核改动仍需重启
 - ⚠️ Cluster 模式(多反应器 JSON 同步语义有限)
 - ⚠️ JSON 表达力有限(无 Lambda,无复杂类型推导) —— 这是边界,不是 bug
@@ -499,7 +505,7 @@ evorule/
 │       ├── value.rs                  # JsonValue
 │       ├── transition.rs             # execute_transition
 │       ├── path.rs                   # JSON 路径解析
-│       ├── domain.rs                 # 7 个域类型
+│       ├── domain.rs                 # 6 个基本域类型
 │       ├── error.rs                  # TcbError
 │       ├── executor.rs
 │       └── proofs.rs                 # Kani 验证(5 个 proof, 4/5 PASS)
@@ -540,9 +546,10 @@ evorule/
 │       ├── shared_facts_log.rs
 │       └── bin/evorule_server.rs     # 独立二进制
 │
-├── 文档/                              # 25+ 份内部设计文档
+├── 文档/                              # 内部设计文档(.gitignore 保护,不发布)
 ├── monitoring/                       # Prometheus + Grafana 配置
-├── .github/workflows/                # CI
+├── .gitee-ci/                        # CI(Gitee 主仓库)
+├── .github/workflows/                # CI(GitHub 镜像)
 ├── sdk/
 │   └── typescript/                   # TypeScript SDK
 └── Cargo.lock
@@ -625,7 +632,7 @@ evorule diff before.log after.log # 对比两个 fact log
 
 - [evo-agent](https://github.com/evorule/evo-agent) — AI Agent 编排层,在 EvoRule 之上实现 LLM + 工具 + 记忆闭环(LLM 输出也是 JSON)
 - [evorule-cli](evorule-cli/) — 单文件 CLI,圈 2 合规刚需场景(医疗/律所/金融/政务),musl 静态链接、零网络、可重现
-- [evorule/sdk/typescript](sdk/typescript) — TypeScript SDK,完整封装 19 个 JSON HTTP 端点
+- [evorule/sdk/typescript](sdk/typescript) — TypeScript SDK,封装核心 JSON HTTP 端点
 - [evorule/sdk/python](sdk/python) — Python SDK(规划中)
 
 ---
@@ -642,7 +649,7 @@ evorule diff before.log after.log # 对比两个 fact log
 
 ## 贡献
 
-欢迎 PR、Issue、Discussion。但请先读 [CONTRIBUTING.md](CONTRIBUTING.md)(待发布) 和 [`docs/constitution.md`](docs/constitution.md)(待发布)。
+欢迎 PR、Issue、Discussion。但请先读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [`docs/constitution.md`](docs/constitution.md)(待发布)。
 
 特别欢迎:
 
@@ -662,7 +669,7 @@ evorule diff before.log after.log # 对比两个 fact log
   title = {EvoRule: A JSON-Data-Set Execution Engine with Append-Only Facts Log},
   version = {0.1.0},
   year = {2026},
-  url = {https://github.com/evorule/evorule},
+  url = {https://gitee.com/evorulelab/evorule},
   license = {AGPL-3.0}
 }
 ```
