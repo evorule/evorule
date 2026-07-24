@@ -759,7 +759,7 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 - [`D:\evo-agent\DESIGN_PRINCIPLES.md`](../../evo-agent/DESIGN_PRINCIPLES.md) — 5 设计原则
 - [`D:\evorule-application\STRATEGIC_DIRECTION.md`](../../evorule-application/STRATEGIC_DIRECTION.md) — 战略方向
 - [`D:\evorule-application\time-travel-debugger\DESIGN.md`](../../evorule-application/time-travel-debugger/DESIGN.md) — debugger 设计
-- [`D:\evorule\VERSION_STRATEGY.md`](../../evorule/VERSION_STRATEGY.md) §4.4-§4.5 — 审计门槛
+- [`D:\evorule\VERSION_STRATEGY.md`](../../VERSION_STRATEGY.md) §4.4-§4.5 — 审计门槛
 
 ### 12.2 外部方法学
 
