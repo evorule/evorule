@@ -2,7 +2,7 @@
  * @file evorule.h
  * @brief evorule C FFI 接口定义
  *
- * TheEquation 反应式执行器 - 事实驱动的状态转换引擎
+ * EvoRule 反应式执行器 - 事实驱动的状态转换引擎
  *
  * # 使用示例
  * ```c

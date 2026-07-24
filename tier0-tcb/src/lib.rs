@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+﻿// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! `TheEquation` TCB Core - 纯计算内核
+//! `EvoRule` TCB Core - 纯计算内核
 //!
 //! # 设计原则
 //! - 零依赖（`#![no_std]` 兼容）
@@ -53,5 +53,5 @@ pub mod value;
 
 // 核心类型重导出（仅公开稳定的 API）
 pub use error::TcbError;
-pub use transition::{execute_transition, TransitionResult};
+pub use transition::{execute_transition, TransitionResult, MAX_TRANSFORM_RULES};
 pub use value::JsonValue;

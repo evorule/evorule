@@ -82,7 +82,6 @@ const SHUTDOWN_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 /// **为什么用 JSON?**
 /// EvoRule 的核心理念是"只接受和运行 JSON 数据集"。
 /// 配置文件虽然不是业务规则,但也应该是 JSON,以保持原则一致性。
-/// v6.0 之前使用 TOML,v6.1 起迁移到 JSON。
 #[derive(Debug, Default, serde::Deserialize)]
 struct FileConfig {
     #[serde(default)]
@@ -177,7 +176,7 @@ fn load_config_file(path: &Option<PathBuf>) -> FileConfig {
 #[command(
     name = "evorule-server",
     version,
-    about = "TheEquation 治理层 HTTP 服务"
+    about = "EvoRule 治理层 HTTP 服务"
 )]
 struct Cli {
     /// JSON 配置文件路径（P2-9，可选，例: ./evorule.json）
