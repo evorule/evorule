@@ -35,14 +35,14 @@
 - 宪法(public domain,CC0-1.0):鼓励广泛采用,任何人都可以基于宪法实现兼容引擎
 - 这把"标准"和"实现"分开,类似 HTTP 规范(W3C 公共)vs Apache HTTP Server(版权)
 
-## 设计哲学来源
+## 设计原则
 
-EvoRule 的设计原则继承自早期 Python 版本 **evorule-core v0.2.0-beta**(2026-05-18):
+EvoRule 的核心设计原则:
 - 规则即数据(可读、可审计、可序列化)
 - 自解释引擎(解释器本身也是可被审计的规则)
 - 完全可追溯(每次状态变化留下因果链)
 - 零隐藏逻辑(解释器可读 + 可审计)
-- 不可变状态(基于 frozendict/不可变数据结构)
+- 不可变状态(基于不可变数据结构)
 - 确定性执行(相同输入 = 永远相同输出)
 
 ## 联系信息
@@ -52,7 +52,3 @@ EvoRule 的设计原则继承自早期 Python 版本 **evorule-core v0.2.0-beta*
 - **邮箱**: evorulelab@gmail.com
 - **组织**: [EvoRule Lab](https://gitee.com/evorulelab)
 - **Gitee**: https://gitee.com/evorulelab/evorule
-
----
-
-本声明遵循 evorule-core-backup 的发布原则。
