@@ -972,7 +972,7 @@ mod tests {
 
         // 场景1：queue_len = 0（< 1000，规则通过，无违规）
         let state = ReactorState::new();
-        let violations = check_semantic_invariants(&state, &[rule.clone()]);
+        let violations = check_semantic_invariants(&state, std::slice::from_ref(&rule));
         assert!(violations.is_empty());
 
         // 场景2：queue_len = 1000（>= 1000，规则失败，违规）
@@ -980,7 +980,7 @@ mod tests {
         for _ in 0..1000 {
             state2.push_back(JsonValue::String("x".to_string()));
         }
-        let violations2 = check_semantic_invariants(&state2, &[rule]);
+        let violations2 = check_semantic_invariants(&state2, std::slice::from_ref(&rule));
         assert_eq!(violations2.len(), 1);
         assert_eq!(violations2[0].rule_id, "queue-bounded");
     }
@@ -1004,13 +1004,13 @@ mod tests {
 
         // 场景1：fresh state，pending_io_count=0 → 通过
         let state = ReactorState::new();
-        let violations = check_semantic_invariants(&state, &[rule.clone()]);
+        let violations = check_semantic_invariants(&state, std::slice::from_ref(&rule));
         assert!(violations.is_empty());
 
         // 场景2：注册一个 I/O 请求，pending_io_count=1 → 违规
         let mut state2 = ReactorState::new();
         state2.register_io_request(FactId(1), crate::fact::IoType::CALL_EXTERNAL);
-        let violations2 = check_semantic_invariants(&state2, &[rule]);
+        let violations2 = check_semantic_invariants(&state2, std::slice::from_ref(&rule));
         assert_eq!(violations2.len(), 1);
     }
 
@@ -1131,16 +1131,16 @@ mod tests {
 
         // 场景1：有 __io_result__ 且 io_recovery=true → 通过
         let state1 = make_state(payload_with_io_result(), true);
-        assert!(check_semantic_invariants(&state1, &[rule.clone()]).is_empty());
+        assert!(check_semantic_invariants(&state1, std::slice::from_ref(&rule)).is_empty());
 
         // 场景2：有 __io_result__ 但 io_recovery=false → 违规
         let state2 = make_state(payload_with_io_result(), false);
-        let v = check_semantic_invariants(&state2, &[rule.clone()]);
+        let v = check_semantic_invariants(&state2, std::slice::from_ref(&rule));
         assert_eq!(v.len(), 1);
 
         // 场景3：无 __io_result__，io_recovery=false → 通过（前件为假）
         let state3 = make_state(empty_payload(), false);
-        assert!(check_semantic_invariants(&state3, &[rule]).is_empty());
+        assert!(check_semantic_invariants(&state3, std::slice::from_ref(&rule)).is_empty());
     }
 
     // ===== Display 测试 =====

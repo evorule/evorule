@@ -143,8 +143,9 @@ if (Test-Path $contribPath) {
     }
 }
 
-# 4c. CHANGELOG.md first entry version must be > canonical (next version)
+# 4c. CHANGELOG.md first entry version must be >= canonical
 # The first "## [...] - X.Y.Z" line in CHANGELOG is the latest/unreleased version
+# For initial release, first entry == canonical is OK; otherwise first entry > canonical
 $changelogPath = "$evoruleRoot\CHANGELOG.md"
 if (Test-Path $changelogPath) {
     $changelogContent = [System.IO.File]::ReadAllText($changelogPath, [System.Text.Encoding]::UTF8)
@@ -157,9 +158,11 @@ if (Test-Path $changelogPath) {
             if ($canonicalVersion -match '^(\d+)\.(\d+)') {
                 $canMajor = [int]$Matches[1]
                 $canMinor = [int]$Matches[2]
-                if ($unMajor -lt $canMajor -or ($unMajor -eq $canMajor -and $unMinor -le $canMinor)) {
-                    Write-Host "[FAIL] CHANGELOG first entry '$unreleasedVersion' <= current '$canonicalVersion'" -ForegroundColor Red
+                if ($unMajor -lt $canMajor -or ($unMajor -eq $canMajor -and $unMinor -lt $canMinor)) {
+                    Write-Host "[FAIL] CHANGELOG first entry '$unreleasedVersion' < current '$canonicalVersion'" -ForegroundColor Red
                     $failed = $true
+                } elseif ($unMajor -eq $canMajor -and $unMinor -eq $canMinor) {
+                    Write-Host "[OK]   CHANGELOG first entry = $unreleasedVersion (initial release)" -ForegroundColor Green
                 } else {
                     Write-Host "[OK]   CHANGELOG first entry = $unreleasedVersion (> $canonicalVersion)" -ForegroundColor Green
                 }

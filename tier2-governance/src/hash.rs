@@ -499,7 +499,7 @@ mod tests {
 
     #[test]
     fn test_fact_hash_snapshot() {
-        let test_facts = vec![
+        let test_facts = [
             Fact::Command {
                 id: FactId(1),
                 instruction: JsonValue::empty_object(),

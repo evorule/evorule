@@ -1675,7 +1675,7 @@ mod tests {
         let compressed = auditor.export_compressed().unwrap();
 
         // 空审计器也能正常压缩（gzip 头 + 空 entries 数组）
-        assert!(compressed.len() > 0);
+        assert!(!compressed.is_empty());
 
         // 解压后应为有效 JSON
         let log2 = make_facts_log();

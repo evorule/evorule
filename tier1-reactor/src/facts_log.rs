@@ -1401,7 +1401,7 @@ mod tests {
                 id: FactId(i as u64 + 1),
                 instruction: JsonValue::object_from_pairs(&[(
                     "data",
-                    JsonValue::string(&"x".repeat(50)),
+                    JsonValue::string("x".repeat(50)),
                 )]),
             })
             .unwrap();
@@ -1446,7 +1446,7 @@ mod tests {
                 id: FactId(i as u64 + 1),
                 instruction: JsonValue::object_from_pairs(&[(
                     "data",
-                    JsonValue::string(&"x".repeat(30)),
+                    JsonValue::string("x".repeat(30)),
                 )]),
             })
             .unwrap();
@@ -1505,7 +1505,7 @@ mod tests {
                 id: FactId(i as u64 + 1),
                 instruction: JsonValue::object_from_pairs(&[(
                     "data",
-                    JsonValue::string(&"x".repeat(100)),
+                    JsonValue::string("x".repeat(100)),
                 )]),
             })
             .unwrap();
@@ -1561,7 +1561,7 @@ mod tests {
                     id: FactId(i as u64 + 2),
                     instruction: JsonValue::object_from_pairs(&[(
                         "data",
-                        JsonValue::string(&"x".repeat(50)),
+                        JsonValue::string("x".repeat(50)),
                     )]),
                 })
                 .unwrap();

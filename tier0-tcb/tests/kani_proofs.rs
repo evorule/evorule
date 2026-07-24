@@ -75,9 +75,9 @@
 //! - **i64 减法不下溢**（`verify_set_sub_safety`）
 //! - **JsonValue 状态遍历不 panic**（`verify_value_roundtrip` + `verify_transition_bounded`）
 
+use alloc::vec;
 use tier0_tcb::path::resolve_path;
 use tier0_tcb::JsonValue;
-use alloc::vec;
 
 /// 验证 JsonValue 的构造与访问一致性
 ///

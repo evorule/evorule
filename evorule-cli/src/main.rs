@@ -358,7 +358,7 @@ fn replay_facts(fact_log: &Path) -> ExitCode {
     };
 
     println!("=== Replaying {} ===", fact_log.display());
-    for (_i, line) in content.lines().enumerate() {
+    for line in content.lines() {
         if line.trim().is_empty() {
             continue;
         }

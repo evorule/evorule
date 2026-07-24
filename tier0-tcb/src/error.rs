@@ -57,6 +57,13 @@ pub enum TcbError {
 
     /// 整数运算溢出（`add`/`sub` 超出 i64 范围）
     IntegerOverflow,
+
+    /// `core_eval` transform 规则数量超限（最大 64 条）
+    ///
+    /// 终止性保证（SPEC T6：`max_steps` 是硬上界，溢出显式报错）。
+    /// 防止恶意或误构造的超长 `core_eval` 导致 `execute_transition`
+    /// 迭代时间不可控。
+    TooManyTransformRules,
 }
 
 impl core::fmt::Display for TcbError {
@@ -71,6 +78,9 @@ impl core::fmt::Display for TcbError {
             TcbError::NestingTooDeep => write!(f, "branch nesting depth exceeds limit (64)"),
             TcbError::EmptyInstructionList => write!(f, "empty instruction list"),
             TcbError::IntegerOverflow => write!(f, "integer arithmetic overflow"),
+            TcbError::TooManyTransformRules => {
+                write!(f, "core_eval transform rules exceed limit (64)")
+            }
         }
     }
 }
@@ -92,7 +102,7 @@ mod tests {
     use alloc::format;
     use alloc::string::ToString;
 
-    /// 验证 Display 实现对 9 个 variant 各自输出正确字符串
+    /// 验证 Display 实现对 10 个 variant 各自输出正确字符串
     #[test]
     fn test_display_all_variants() {
         assert_eq!(
@@ -128,6 +138,10 @@ mod tests {
             format!("{}", TcbError::IntegerOverflow),
             "integer arithmetic overflow"
         );
+        assert_eq!(
+            format!("{}", TcbError::TooManyTransformRules),
+            "core_eval transform rules exceed limit (64)"
+        );
     }
 
     /// Debug trait 派生自 `PartialEq`, 验证 `PartialEq` 行为
@@ -137,5 +151,10 @@ mod tests {
         assert_ne!(TcbError::InvalidState, TcbError::InvalidType);
         assert_eq!(TcbError::MissingField("x"), TcbError::MissingField("x"));
         assert_ne!(TcbError::MissingField("x"), TcbError::MissingField("y"));
+        assert_eq!(
+            TcbError::TooManyTransformRules,
+            TcbError::TooManyTransformRules
+        );
+        assert_ne!(TcbError::TooManyTransformRules, TcbError::NestingTooDeep);
     }
 }
