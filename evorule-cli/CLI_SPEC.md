@@ -84,10 +84,11 @@ disable permanently.**
 
 ## Origin
 
-The G8 / F11 constraints derive from `文档/01_设计方案.txt` §0 and
-§16.2 (the project-internal design history, not committed). The
-*simplified* gate (G8 + F11, no §5.2) reflects the CLI's role as a
-thin transport wrapper.
+The G8 / F11 constraints are shared with `tier1-reactor` and
+`tier2-governance` (see [`../tier1-reactor/REACTOR_SPEC.md`](../tier1-reactor/REACTOR_SPEC.md)
+and [`../tier2-governance/GOVERNANCE_SPEC.md`](../tier2-governance/GOVERNANCE_SPEC.md)
+for the deeper motivation). The *simplified* gate (G8 + F11, no §5.2)
+reflects the CLI's role as a thin transport wrapper.
 
 See also:
 

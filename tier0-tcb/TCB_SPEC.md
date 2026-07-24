@@ -22,7 +22,7 @@ TCB 只允许包含以下内容：
 2. **6 个域类型的评估逻辑**：
    - `Eq`、`Lt`、`Exists`、`InstructionEq`、`All`、`Not`
 
-3. **TheEquation 循环**：`while` 循环反复应用 `core.eval` 规则，直到指令变为 `noop`
+3. **主循环**:`while` 循环反复应用 `core.eval` 规则,直到指令变为 `noop`
 
 4. **基础设施**：
    - `JsonValue` 枚举（`Null`、`Bool`、`Integer`、`String`、`Array`、`Object`）
@@ -102,7 +102,7 @@ TCB 的 `build.rs` 在**所有构建模式（debug/release）**下扫描源码�
 | `value.rs` | ~60 | **517** | 576 | 1093 | 8.6× | JsonValue + BTreeMap,5 种值类型 |
 | `error.rs` | ~10 | **79** | 56 | 135 | 7.9× | TcbError 枚举 + 错误消息 |
 | `lib.rs` | — | **61** | 0 | 61 | — | 模块声明 + 类型重导出 |
-| `transition.rs` | — | **195** | 1129 | 1324 | — | TheEquation 主循环 + 状态转换 |
+| `transition.rs` | — | **195** | 1129 | 1324 | — | 主循环 + 状态转换 |
 | **TCB 核心(7 文件)** | **~235** | **1559** | **4183** | **5742** | **6.6×** | 零依赖,无状态 |
 
 **实际核心 1559 行,目标 235 行,差距 6.6×,原因**:
