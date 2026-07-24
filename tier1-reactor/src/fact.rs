@@ -39,16 +39,17 @@ impl IoType {
     /// 从字符串解析 I/O 类型
     ///
     /// 与 core_eval.json 的 io_type 字段对应。
-    /// 阶段6：未知类型不再返回 None，而是创建自定义 IoType。
+    /// 未知类型返回 None（v0.1.0：不再用 Box::leak 创建自定义类型，避免内存泄漏）。
+    /// 自定义 IoType 支持将在 v0.2.0 通过 Arc<str> 实现。
     pub fn parse(s: &str) -> Option<Self> {
-        Some(match s {
-            "call_external" => IoType("call_external"),
-            "query_db" => IoType("query_db"),
-            "http_get" => IoType("http_get"),
-            "save_memory" => IoType("save_memory"),
-            "call_service" => IoType("call_service"),
-            _ => IoType(Box::leak(s.to_string().into_boxed_str())),
-        })
+        match s {
+            "call_external" => Some(IoType("call_external")),
+            "query_db" => Some(IoType("query_db")),
+            "http_get" => Some(IoType("http_get")),
+            "save_memory" => Some(IoType("save_memory")),
+            "call_service" => Some(IoType("call_service")),
+            _ => None,
+        }
     }
 
     /// 转为字符串
@@ -326,18 +327,10 @@ mod tests {
 
     #[test]
     fn test_io_type_parse_unknown() {
-        assert!(IoType::parse("unknown").is_some());
-        if let Some(parsed) = IoType::parse("unknown") {
-            assert_eq!(parsed.as_str(), "unknown");
-        }
-        assert!(IoType::parse("").is_some());
-        if let Some(parsed) = IoType::parse("") {
-            assert_eq!(parsed.as_str(), "");
-        }
-        assert!(IoType::parse("CALL_LLM").is_some());
-        if let Some(parsed) = IoType::parse("CALL_LLM") {
-            assert_eq!(parsed.as_str(), "CALL_LLM");
-        }
+        // v0.1.0: 未知类型返回 None（不再 Box::leak 创建自定义类型）
+        assert!(IoType::parse("unknown").is_none());
+        assert!(IoType::parse("").is_none());
+        assert!(IoType::parse("CALL_LLM").is_none());
     }
 
     #[test]

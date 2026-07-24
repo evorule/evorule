@@ -20,7 +20,7 @@
 # Contributing to EvoRule
 
 **Project**: EvoRule — Reactive Execution Engine
-**Version**: 0.1.0-alpha.1
+**Version**: 0.1.0
 **Last updated**: 2026-07-19
 
 > 🇨🇳 **中文版贡献指南见 [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md)。**
@@ -87,7 +87,7 @@ GitHub Issues for international contributors.
 
 - OS: [e.g. Windows 11 / Ubuntu 22.04]
 - Rust: [e.g. 1.74]
-- evorule version: [e.g. 0.1.0-alpha.1]
+- evorule version: [e.g. 0.1.0]
 
 **Steps to reproduce**:
 

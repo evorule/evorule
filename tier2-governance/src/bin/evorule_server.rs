@@ -805,14 +805,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         {
             use tokio::signal::unix::{signal, SignalKind};
-            let mut sigterm = signal(SignalKind::terminate())
-                .unwrap_or_else(|e| panic!("install SIGTERM handler: {}", e));
-            tokio::select! {
-                _ = tokio::signal::ctrl_c() => {
-                    info!("收到 SIGINT (Ctrl+C) 信号，开始优雅退出...");
+            match signal(SignalKind::terminate()) {
+                Ok(mut sigterm) => {
+                    tokio::select! {
+                        _ = tokio::signal::ctrl_c() => {
+                            info!("收到 SIGINT (Ctrl+C) 信号，开始优雅退出...");
+                        }
+                        _ = sigterm.recv() => {
+                            info!("收到 SIGTERM 信号，开始优雅退出...");
+                        }
+                    }
                 }
-                _ = sigterm.recv() => {
-                    info!("收到 SIGTERM 信号，开始优雅退出...");
+                Err(e) => {
+                    tracing::warn!(错误 = %e, "SIGTERM handler 安装失败，仅监听 SIGINT");
+                    let _ = tokio::signal::ctrl_c().await;
+                    info!("收到 SIGINT (Ctrl+C) 信号，开始优雅退出...");
                 }
             }
         }

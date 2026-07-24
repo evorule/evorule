@@ -46,6 +46,7 @@ const FORBIDDEN: &[(&str, &str)] = &[
     ("F11-debug_assert", "debug_assert!"),
     ("F11-unwrap", ".unwrap("),
     ("F11-expect", ".expect("),
+    ("F11-panic", "panic!("),
     // §5.2: 业务术语不得硬编码在 Rust 中
     ("S5.2-math_rule", "\"math_rule\""),
     ("S5.2-physics_rule", "\"physics_rule\""),

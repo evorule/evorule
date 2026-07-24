@@ -101,10 +101,7 @@ impl SharedFactsLog {
         value: JsonValue,
         source_session_id: u64,
     ) -> Result<u64, FactsLogError> {
-        let mut inner = self
-            .inner
-            .write()
-            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
 
         let fact_id = FactId(inner.next_fact_id);
         inner.next_fact_id = inner
@@ -128,10 +125,7 @@ impl SharedFactsLog {
     ///
     /// 返回所有路径以指定前缀开头的共享事实。
     pub fn facts_by_path_prefix(&self, prefix: &str) -> Vec<SharedFact> {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
 
         inner
             .facts_log
@@ -163,10 +157,7 @@ impl SharedFactsLog {
     /// # 返回
     /// 来源会话 ID，如果找不到则返回 None
     pub fn source_session_id(&self, fact_id: FactId) -> Option<u64> {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.fact_sources.get(&fact_id).copied()
     }
 
@@ -178,10 +169,7 @@ impl SharedFactsLog {
     /// # 返回
     /// 完整的共享事实信息，如果找不到则返回 None
     pub fn fact_by_id(&self, fact_id: FactId) -> Option<SharedFact> {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
 
         let source_session_id = *inner.fact_sources.get(&fact_id)?;
 
@@ -204,19 +192,13 @@ impl SharedFactsLog {
 
     /// 返回当前版本号
     pub fn version(&self) -> u64 {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.facts_log.version()
     }
 
     /// 返回历史记录数量
     pub fn history_len(&self) -> usize {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.facts_log.history_len()
     }
 
@@ -224,28 +206,19 @@ impl SharedFactsLog {
     ///
     /// 用于追踪共享事实的消费关系，支持跨会话因果追溯。
     pub fn record_used_at_startup(&self, session_id: u64, fact_ids: &[FactId]) {
-        let mut inner = self
-            .inner
-            .write()
-            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.used_at_startup.insert(session_id, fact_ids.to_vec());
     }
 
     /// 查询会话启动时使用的事实 ID
     pub fn get_used_at_startup(&self, session_id: u64) -> Option<Vec<FactId>> {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.used_at_startup.get(&session_id).cloned()
     }
 
     /// 查询使用指定事实的所有会话
     pub fn get_sessions_using_fact(&self, fact_id: FactId) -> Vec<u64> {
-        let inner = self
-            .inner
-            .read()
-            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner
             .used_at_startup
             .iter()
@@ -256,10 +229,7 @@ impl SharedFactsLog {
 
     /// 重置 SharedFactsLog 到初始状态
     pub fn reset(&self) {
-        let mut inner = self
-            .inner
-            .write()
-            .unwrap_or_else(|_| panic!("SharedFactsLog lock poisoned"));
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.facts_log.reset();
         inner.next_fact_id = 1;
         inner.fact_sources.clear();

@@ -332,12 +332,12 @@ mod tests {
         )]);
 
         let p = IoTimeoutPolicy::from_json(&json);
-        assert_eq!(p.override_count(), 2); // call_external 和 unknown_type 都被识别
+        // v0.1.0: unknown_type 被静默跳过（IoType::parse 对未知类型返回 None）
+        assert_eq!(p.override_count(), 1); // 仅 call_external 被识别
         let t = p.threshold_for(IoType::CALL_EXTERNAL);
         assert_eq!(t.warn, Duration::from_secs(60));
-        let unknown_type = IoType::parse("unknown_type").unwrap();
-        let t = p.threshold_for(unknown_type);
-        assert_eq!(t.warn, Duration::from_secs(1));
+        // unknown_type 不在策略中，应回退到 default
+        assert!(IoType::parse("unknown_type").is_none());
     }
 
     #[test]

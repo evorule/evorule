@@ -682,12 +682,23 @@ impl Reactor {
                         };
                         Self::emit_fact(&self.facts_log, &event_tx, fact);
                     }
-                    Ok(TransitionResult::IoRequired { io_type, params }) => {
+                    Ok(TransitionResult::IoRequired { io_type: io_type_str, params }) => {
                         let id = id_gen.next_id();
-                        let io_type =
-                            IoType::parse(&io_type).ok_or(ReactorError::InvalidState {
-                                field: "unknown io_type",
-                            })?;
+                        // 未知 io_type：发送 Fact::Error 而非静默退出（避免调用方超时等待）
+                        let io_type = match IoType::parse(&io_type_str) {
+                            Some(t) => t,
+                            None => {
+                                state.phase = ReactorPhase::Error;
+                                let msg = format!("Unknown io_type: {}", io_type_str);
+                                tracing::error!(phase = %state.phase.as_str(), "{}", msg);
+                                let fact = Fact::Error { id, message: msg };
+                                Self::emit_fact(&self.facts_log, &event_tx, fact);
+                                // 长驻模式：不退出，继续执行队列中剩余指令。
+                                // 若队列已空，外层循环的稳定检测会自动发射 Stable。
+                                state.phase = ReactorPhase::Idle;
+                                continue 'main;
+                            }
+                        };
                         state.register_io_request(id, io_type);
                         // BUG 修复：缓存触发 I/O 的原指令，IoResponse 到达后重新推送回队列，
                         // 使 core_eval.json 中的 exists(__io_result__) 双路径生效：
