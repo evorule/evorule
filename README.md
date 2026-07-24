@@ -467,7 +467,7 @@ cargo test -p tier0-tcb --test proptest_props
 
 - 🟡 Kani proof 4/5 PASS + 19 proptest(详见 [`tier0-tcb/TIER0_SPEC.md`](tier0-tcb/TIER0_SPEC.md))
 - ⚠️ Hot reload 仅支持业务规则 JSON,内核改动仍需重启
-- ⚠️ Cluster 模式仍在早期(多反应器 JSON 同步语义有限)
+- ⚠️ Cluster 模式(多反应器 JSON 同步语义有限)
 - ⚠️ JSON 表达力有限(无 Lambda,无复杂类型推导) —— 这是边界,不是 bug
 
 ### 路线图
