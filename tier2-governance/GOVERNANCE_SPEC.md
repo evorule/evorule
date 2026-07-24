@@ -3,10 +3,7 @@
 > **The constitutional source for `tier2-governance/build.rs` compile-time gate.**
 >
 > This file is committed to git so the constraints are visible to anyone who
-> clones the repo. The deeper design discussion lives in
-> `文档/01_设计方案.txt` (which is intentionally **not** committed — it is
-> internal design history). Where this file conflicts with `01_设计方案.txt`,
-> **this file is the operative authority** for the build gate.
+> clones the repo. **This file is the sole operative authority** for the build gate.
 >
 > `tier2-governance` shares the G8 / F11 / §5.2 constraint family with
 > `tier1-reactor` (see `../tier1-reactor/REACTOR_SPEC.md` for the deeper
