@@ -189,7 +189,7 @@ curl http://127.0.0.1:18081/api/sessions/1/audit
 
 ## 🙏 致谢
 
-感谢所有给 EvoRule 提过建议、报过 bug、问过问题的早期用户。
+感谢所有给 EvoRule 提过建议、报过 bug、问过问题的用户。
 虽然 alpha 阶段我们响应不及时,但每个 issue 都会看。
 
 ---

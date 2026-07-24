@@ -77,7 +77,7 @@
 **环境**:
 - OS: [e.g. Windows 11 / Ubuntu 22.04]
 - Rust: [e.g. 1.74]
-- evorule 版本: [e.g. v6.0.0]
+- evorule 版本: [e.g. v0.1.0]
 
 **复现步骤**:
 1. ...

@@ -81,7 +81,7 @@ GitHub Issues for international contributors.
 **Environment**:
 - OS: [e.g. Windows 11 / Ubuntu 22.04]
 - Rust: [e.g. 1.74]
-- evorule version: [e.g. v6.0.0]
+- evorule version: [e.g. v0.1.0]
 
 **Steps to reproduce**:
 1. ...
