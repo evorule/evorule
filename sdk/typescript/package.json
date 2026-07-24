@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "TypeScript SDK for evorule-server (HTTP API + SSE 事件流)",
   "license": "AGPL-3.0",
-  "author": "TheEquation",
+  "author": "EvoRule Project",
   "type": "module",
   "main": "../../.build/typescript/index.js",
   "types": "../../.build/typescript/index.d.ts",

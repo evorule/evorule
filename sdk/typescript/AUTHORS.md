@@ -25,22 +25,19 @@ EvoRule 项目是一个集体努力,旨在构建一个**只接受和运行 JSON 
 
 ## 项目创始人和主要作者
 
-- **TheEquation Project / EvoRule Project**
+- **EvoRule Project**
   角色:创始人、架构设计、`core_eval.json`(宪法)作者
   邮箱:evorulelab@gmail.com
-  首次贡献:2025 年(早期 Python 版本)/ 2026 年(Rust 重写)
 
-## 设计哲学来源
+## 设计原则
 
-EvoRule Rust 版本的设计原则继承自早期 Python 版本 **evorule-core v0.2.0-beta**:
+EvoRule 的核心设计原则:
 - 规则即数据
 - 自解释引擎
 - 完全可追溯
 - 零隐藏逻辑
 - 不可变状态
 - 确定性执行
-
-该早期版本由 **DAMU ZHENG** 主要开发,作为 EvoRule 的"宪法来源"。
 
 ## 核心贡献者
 
@@ -58,7 +55,6 @@ EvoRule Rust 版本的设计原则继承自早期 Python 版本 **evorule-core v
 
 ## 致谢
 
-- 早期 evorule-core-backup(Python 版本)的开发者,提供了设计蓝图
 - Rust 社区,特别是 Kani 验证团队、Tokio 团队、axum 团队
 - 所有提供 issue、PR、discussion 的贡献者
 
@@ -83,7 +79,3 @@ EvoRule 项目遵循其自身哲学的精神 —— 贡献的价值基于**内�
 **EvoRule Project**
 *规则互联网*
 2026 年
-
----
-
-**本作者列表遵循 evorule-core-backup 的发布风格。**

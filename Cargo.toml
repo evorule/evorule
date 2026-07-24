@@ -6,7 +6,7 @@ members = ["tier0-tcb", "tier1-reactor", "tier2-governance", "evorule-cli"]
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
-authors = ["TheEquation Project"]
+authors = ["EvoRule Project"]
 repository = "https://gitee.com/evorulelab/evorule"
 
 [profile.release]
