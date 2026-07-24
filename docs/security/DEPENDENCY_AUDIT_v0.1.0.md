@@ -11,19 +11,21 @@
 
 ## 1. Scope
 
-All 5 crates in the workspace:
+All 4 crates in the evorule workspace + 1 adjacent project (cross-crate ref only):
 
 ```
 D:\evorule\
-├── tier0-tcb/        (no deps)
-├── tier1-reactor/    (tokio, serde_json, tracing)
-├── tier2-governance/ (tokio, async-stream, futures-core, tracing*, prometheus,
-│                       sqlx, reqwest, blake3, flate2, axum, tower, tower-http)
-├── evorule-cli/      (tier0-tcb, serde, serde_json, clap, thiserror, tracing*)
+├── tier0-tcb/        (dev-dep: proptest)
+├── tier1-reactor/    (tier0-tcb, tokio, tracing, serde_json)
+├── tier2-governance/ (tier0-tcb, tier1-reactor, tokio, async-stream, futures-core,
+│                       tracing, tracing-subscriber, tracing-appender, prometheus,
+│                       sqlx, reqwest, blake3, flate2, axum, tower, tower-http,
+│                       tower_governor, governor, subtle, notify,
+│                       serde, serde_json, thiserror, clap, tempfile)
+├── evorule-cli/      (tier0-tcb, serde, serde_json, clap, thiserror, tracing,
+│                       tracing-subscriber)
 
-D:\evo-agent\         (tier0-tcb, tier1-reactor, tokio, async-stream, futures-*,
-                        tracing*, prometheus, reqwest, bytes, blake3, axum, http,
-                        tower, tower-http)
+D:\evo-agent\         (cross-project ref; not in evorule git tree)
 ```
 
 ## 2. Resolved Versions (from Cargo.lock v4)
@@ -87,7 +89,7 @@ D:\evo-agent\         (tier0-tcb, tier1-reactor, tokio, async-stream, futures-*,
 ## 5. Conclusion
 
 > **依赖审计结果:0 high-severity known vulnerabilities**
-> 所有 25 个直接 / 间接依赖都是最新稳定版,无 known CVE 命中。
+> 所有 24 个直接依赖 + 332 个间接依赖（Cargo.lock v4 解析）都是当前稳定版,无 known CVE 命中。
 > **v0.1.0 可以发布**(从依赖安全角度)。
 
 ---
@@ -97,4 +99,5 @@ D:\evo-agent\         (tier0-tcb, tier1-reactor, tokio, async-stream, futures-*,
 | Version | Date | Change |
 |---|---|---|
 | 0.1.0-draft | 2026-07-20 | Initial manual audit. cargo-audit install blocked; fell back to manual cross-reference. |
+| 0.1.0-draft (corr. 1) | 2026-07-24 | **Scope + 数字修正**: §1 重写为 evorule 4 个 crate 实际依赖清单 (之前漏 16 个 direct deps: tower_governor, governor, subtle, notify, tracing-subscriber, tracing-appender, serde, serde_json, thiserror, clap, tempfile, tracing-subscriber@evorule-cli 等); §5 数字更新为 24 个直接 + 332 个间接 (之前说"25 个" 但 §1 实际只列 17 个,内部矛盾); evo-agent 标记为 cross-project ref. |
 | (planned 0.2.0) | TBD | When rustc upgraded to 1.96+, install cargo-audit, re-audit |

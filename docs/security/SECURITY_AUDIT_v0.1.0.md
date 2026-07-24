@@ -35,7 +35,7 @@ circulation among security-conscious users (compliance, regulated industries).
 | **Medium-severity issues**                  | 0 ✅ (M1, M2, M3, M4 all closed 2026-07-20)                                                                                                                                          |
 | **Low-severity issues**                     | 11 (see §6)                                                                                                                                                                          |
 | **`cargo audit` result**                    | ⚠️ NOT YET RUN (required for 1.0.0)                                                                                                                                                  |
-| **Kani formal proofs**                      | 🟡 5 proofs: 4 PASS + 1 improved (pending Kani env verification) + 19 proptest. See [白皮书](../../文档/kani/02_形式化验证白皮书.txt). L9 partially resolved (2026-07-23).           |
+| **Kani formal proofs**                      | 🟡 5 proofs: 4 PASS + 1 TIMEOUT (verify_path_no_panic, Kani 0.65/0.67 工具链 unwind bound bug, 等 0.68+ 修复) + 19 proptest. 详见 `tier0-tcb/tests/kani_proofs.rs` + `tier0-tcb/tests/proptest_props.rs`. |
 | **Cryptographic chain (blake3 hash chain)** | ✅ **IMPLEMENTED** in `tier2-governance/auditor.rs` + `hash.rs` (WAL persistence + `audit_verify()` endpoint) — _correction: initial draft incorrectly marked M2 as NOT IMPLEMENTED_ |
 | **Threat model document**                   | 🟡 DRAFT — [`THREAT_MODEL.md`](THREAT_MODEL.md) written 2026-07-20 (35 KB, 14 sections, 7 attack trees); reviewer-signed version required for 1.0.0                                  |
 | **Independent reviewer sign-off**           | 🔴 NOT YET APPOINTED (required for 1.0.0)                                                                                                                                            |
@@ -87,8 +87,8 @@ evo-agent/
 1. **Code review**: Manual review of TCB, builtin_tools, CLI, and config modules.
 2. **Threat walk-through**: STRIDE-style per-component analysis.
 3. **Tool inspection**: 3-layer model coverage of all 6 builtin tools.
-4. **Build verification**: `cargo check --workspace` 0 errors, 168 warnings
-   (all `missing_docs`, not security).
+4. **Build verification**: `cargo check --workspace` 0 errors, 0 `missing_docs` warnings
+   (workspace-wide fmt + clippy clean as of 2026-07-23).
 5. **Manual testing** (CLI smoke): `help` / `list` / `tools list|show` /
    `validate` / `config` / `run` (bridge). All return correct exit codes
    and never execute unsafe operations without explicit user command.
@@ -99,7 +99,7 @@ evo-agent/
 - ❌ **Not a compliance certification** — SOC 2 / ISO 27001 / 等保 2.0
   certification is out of scope; this document is the prerequisite only
 - ❌ **Not a substitute for the threat model document** (`THREAT_MODEL.md`,
-  not yet written)
+  draft written 2026-07-20; independent reviewer sign-off still pending)
 - ❌ **Not a substitute for third-party audit** (§4.5 of VERSION_STRATEGY;
   not required until triggers are met)
 
@@ -153,7 +153,7 @@ evo-agent/
 | Threat                     | Where                        | Current Mitigation                                                                       | Residual Risk                     |
 | -------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------- |
 | **Spoofing**               | LLM API key                  | env vars only; never logged                                                              | 🟢 LOW                            |
-| **Spoofing**               | evorule-server               | no auth (localhost-only)                                                                 | 🟡 **MEDIUM** (M1)                |
+| **Spoofing**               | evorule-server               | Bearer token middleware (M1, 2026-07-20 closed) + loopback-only default       | 🟢 LOW (M1 closed)                |
 | **Tampering**              | facts log                    | blake3 hash chain + WAL persistence + `audit_verify()` endpoint; chain is tamper-evident | 🟢 **LOW** (M2 **DONE** — see §4) |
 | **Tampering**              | core_eval.json               | build.rs compile-time gate                                                               | 🟢 LOW                            |
 | **Repudiation**            | tool calls                   | not logged to facts yet                                                                  | 🟡 **MEDIUM** (M3)                |
@@ -172,7 +172,7 @@ evo-agent/
 | 2   | Malicious `agents/*.json` in shared repo                                | MEDIUM     | MEDIUM | `validate` subcommand checks schema           | Tool name validation could be stricter (M4) |
 | 3   | Compromised LLM response tries `http_get` to cloud metadata             | MEDIUM     | HIGH   | SSRF blocklist (169.254.0.0/16)               | None — verified by code review              |
 | 4   | Compromised rule tries to overwrite audit log                           | LOW        | HIGH   | audit log path is server-side, not in workdir | None                                        |
-| 5   | Attacker on localhost sends malicious `/api/sessions` request           | MEDIUM     | HIGH   | evorule-server has no auth (M1)               | **Needs auth**                              |
+| 5   | Attacker on localhost sends malicious `/api/sessions` request           | LOW        | HIGH   | Bearer token middleware (M1, 2026-07-20 closed) + loopback-only default | loopback binding as defense-in-depth |
 
 ---
 
@@ -316,7 +316,7 @@ ReDoS risk.
 | L6     | 3 pre-existing integration tests fail (no LLM mock)                                                                                                                                                                                              | evo-agent            | 1 week                     |
 | L7     | 17 files with garbled Chinese comments (PS 5.1 GBK issue)                                                                                                                                                                                        | evo-agent            | 1 day                      |
 | L8     | `cargo audit` not yet run (required for 1.0.0)                                                                                                                                                                                                   | both projects        | 1 day                      |
-| ~~L9~~ | ~~Kani proofs are 5 stubs~~ → **PARTIALLY RESOLVED** (2026-07-23): 4/5 PASS + 19 proptest added. `verify_path_no_panic` improved (4 `kani::assert` added), pending Kani env verification. See [白皮书](../../文档/kani/02_形式化验证白皮书.txt). | evorule tier0-tcb    | remaining: 1 proof + tier1 |
+| ~~L9~~ | ~~Kani proofs are 5 stubs~~ → **PARTIALLY RESOLVED** (2026-07-23): 4/5 PASS + 19 proptest added. `verify_path_no_panic` improved (4 `kani::assert` added), but now TIMEOUT on Kani 0.65/0.67 (toolchain unwind bound bug, awaiting 0.68+ fix). Proofs: `verify_value_roundtrip` (JsonValue roundtrip), `verify_set_integer_safety` (i64 checked_add), `verify_set_sub_safety` (i64 checked_sub), `verify_transition_bounded` (transition terminations), `verify_path_no_panic` (TIMEOUT). 详见 `tier0-tcb/tests/kani_proofs.rs`. | evorule tier0-tcb    | remaining: 1 TIMEOUT + tier1 proptest-only |
 | L10    | 1 independent reviewer not yet appointed                                                                                                                                                                                                         | n/a                  | n/a                        |
 | L11    | `prometheus` dep unused (pre-existing)                                                                                                                                                                                                           | evo-agent            | 30 min                     |
 
@@ -352,8 +352,9 @@ We will not only document gaps; we also want to celebrate what works:
     (医疗 / 律所 / 金融) and it's **deliverable today**.
 12. **Kani formal proofs are real** (L9 partial ✅, 2026-07-23) — 4/5
     proofs PASS (integer overflow, state transition, type safety) +
-    19 proptest covering path/domain/transition robustness. See
-    [形式化验证白皮书](../../文档/kani/02_形式化验证白皮书.txt).
+    19 proptest covering path/domain/transition robustness. 1 proof
+    (`verify_path_no_panic`) TIMEOUT on Kani 0.65/0.67 due to toolchain
+    unwind bound bug, awaiting Kani 0.68+ fix. Proof source: `tier0-tcb/tests/kani_proofs.rs`.
 13. **Zero `cargo fmt` diffs** (2026-07-23) — workspace-wide format
     compliance; 720 tests pass; zero clippy warnings.
 
@@ -400,7 +401,9 @@ should not be cited as evidence of security in customer-facing materials.**
 | 0.1.0-draft (corr. 1) | 2026-07-20 | **Correction**: M2 (blake3 hash chain) is **IMPLEMENTED** in `tier2-governance/auditor.rs` + `hash.rs`, not NOT IMPLEMENTED as initially stated. Discovered during time-travel-debugger design review. Medium count: 4 → 3. Verdict upgraded.                                                                                                                                                                                                                                          |
 | 0.1.0-draft (corr. 2) | 2026-07-20 | **Correction**: M1 (HTTP auth) and M3 (tool call fact log) closed. M1 fixed by adding Bearer token middleware + startup warning when binding to non-loopback without --auth-token. M3 was a false alarm — tool calls already persisted as `Fact::IoRequest{io_type:"call_service",params:{tool_name,args}}` paired with `Fact::IoResponse{request_id,result,error}`. Medium count: 3 → 1 (M4 only).                                                                                    |
 | 0.1.0-draft (corr. 3) | 2026-07-20 | **Correction**: M4 (agent.json tools validation) was already closed by `AgentRunner::from_definition` doing `tool_handler.has_tool()` check earlier in the session. All 4 medium-severity issues now closed. **0 medium-severity issues remaining.** v0.1.0 is on track for 1.0.0.                                                                                                                                                                                                     |
-| 0.1.0-draft (corr. 4) | 2026-07-23 | **Update**: Kani formal proofs significantly improved. Deleted `verify_domain_boolean` (BTreeMap modeling issue, replaced by 2 proptest). Improved `verify_path_no_panic` (added 4 `kani::assert`). Added 5 proptest total (14→19). Result: 4/5 PASS + 1 pending Kani env verification. L9 partially resolved. Also: `cargo fmt` issues fixed workspace-wide (25 diffs → 0). `cargo test --workspace` 720 tests pass. See [形式化验证白皮书](../../文档/kani/02_形式化验证白皮书.txt). |     |
+| 0.1.0-draft (corr. 4) | 2026-07-23 | **Update**: Kani formal proofs significantly improved. Deleted `verify_domain_boolean` (BTreeMap modeling issue, replaced by 2 proptest). Improved `verify_path_no_panic` (added 4 `kani::assert`). Added 5 proptest total (14→19). Result: 4/5 PASS + 1 pending Kani env verification. L9 partially resolved. Also: `cargo fmt` issues fixed workspace-wide (25 diffs → 0). `cargo test --workspace` 720 tests pass. |
+| 0.1.0-draft (corr. 5) | 2026-07-24 | **Internal consistency + link fixes**: (a) L156 STRIDE row clarified that M1 (Bearer token auth) is closed; (b) L175 attack scenario #5 downgraded MEDIUM→LOW post-M1; (c) L101 §1.4 clarified `THREAT_MODEL.md` is drafted (independent reviewer still pending); (d) L90 build verification updated (0 missing_docs warnings as of 2026-07-23); (e) L38/L319/L356/L403 Kani 引用改为指向 `tier0-tcb/tests/kani_proofs.rs` (替代失效的内部白皮书链接); (f) L9 row + §7 item 12 expanded with specific proof names and TIMEOUT reason. |
+| 0.1.0-draft (corr. 6) | 2026-07-24 | **N-02 增补 (Tier0 终止性增强)**: tier0-tcb 新增 `MAX_TRANSFORM_RULES = 64` 硬上界 (守 SPEC T6 `max_steps` 终止性保证) + 新 `TcbError::TooManyTransformRules` 变体 (第 10 个) + `lib.rs` 重新导出. 集成测试 `tests/tcb_error_variants.rs` 新增 `trigger_too_many_transform_rules` 用例. TCB 变体数 9→10. 集成测试通过率 219→239. 本审计的 §1.3 / §4 / §6 反映 v0.1.0+corrc.6 状态. |
 
 ---
 
