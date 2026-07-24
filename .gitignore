@@ -54,10 +54,13 @@ kani-results/
 *.kani
 .kani-logs/
 
-# 文档目录 (暂不提交, 待整理) - USER 规则 2026-07-15: 内部文件, 永不 commit
-文档/
-**/文档/
-**/文档/**
+# 内部中文设计文档
+# 物理位置: D:\_PRIVATE_zh_docs\ (evorule 仓外)
+# 访问入口: D:\evorule\_PRIVATE_zh_docs\ (NTFS junction)
+# 防止 commit + 防误删 + 防误发布
+_PRIVATE_zh_docs/
+**/_PRIVATE_zh_docs/
+**/_PRIVATE_zh_docs/**
 
 # === SDK 构建产物 (Python / TypeScript) ===
 __pycache__/
