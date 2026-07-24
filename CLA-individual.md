@@ -190,7 +190,7 @@
 - **项目**: EvoRule
 - **版权人**: EvoRule Project
 - **邮箱**: evorulelab@gmail.com
-- **Gitee**: https://gitee.com/evorulelab/evorule
+- **Gitee**: https://gitee.com/evo-rule-lab/evorule
 
 ---
 

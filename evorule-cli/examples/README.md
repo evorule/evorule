@@ -60,4 +60,4 @@ evorule run ./rules/ --payload-file payload.json -o fact.log
 
 ## 反馈
 
-如果某个规则有 bug 或想加新的合规场景,在 [Gitee issue](https://gitee.com/evorulelab/evorule/issues) 提。
+如果某个规则有 bug 或想加新的合规场景,在 [Gitee issue](https://gitee.com/evo-rule-lab/evorule/issues) 提。
