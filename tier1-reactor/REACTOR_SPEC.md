@@ -1,81 +1,136 @@
-Tier-1（治理层/反应器）和 Tier-2（I/O 处理/API）的编程规范，严格遵循 **`Governance实施防漂移标准.md`**，并由 `governance_core_build.rs` 在编译期强制检查。
+# Tier 1 (Reactor) — 形式化规范
 
-这套规范的核心试金石是**“机制-策略分离原则”**：
-
-> **如果业务需求变了，这行代码需要改吗？**
->
-> - **需要改** → 这是**策略**（业务逻辑），**必须**放在 JSON 数据中。
-> - **不需要改** → 这是**机制**（执行框架），**允许**写在 Rust 中。
-
-基于此原则，具体到代码层面，划分非常明确：
+> **适用范围**: tier1-reactor
+> **协议**: AGPL-3.0-or-later
+> **状态**: 权威 (本文档是 `build.rs` 编译时门禁的依据)
+> **跨模块设计**: 见 `_PRIVATE_zh_docs/ARCHITECTURE/00-design.md` (G1-G8 / F1-F11 统一编号体系)
 
 ---
 
-### ✅ 允许在 Rust（治理层/反应器）中做的事情（“机制”）
+## 核心原则
 
-这些属于系统的“骨架”或“管道”，不包含业务意图，允许编写 Rust 代码：
+> **反应器是机制, 业务是策略。** 如果业务需求变了, 这行 Rust 代码不变。
 
-1. **流程编排与路由**（`orchestrator.rs`, `io_dispatcher.rs`, `server.rs`）：
-   - 拆分事件队列、调用 TCB 单步执行、接收 Fact 并分发。
-   - 将 HTTP 请求体解析为 `Fact::Command`（仅做格式转换，不做业务判断）。
-   - 根据 `IoType` 枚举路由到具体的 Handler（路由是机制，路由的目标是策略）。
-2. **数据加载与结构转换**（`rule_loader.rs`, `compiler.rs`, `FactsLog`）：
-   - 从文件系统读取 JSON 并反序列化。
-   - 将 JSON 规则树转换为内部指令结构（纯粹的格式映射，无校验逻辑）。
-   - 追加式日志的读写、版本号的单调递增（日志存储是机制）。
-3. **审计与哈希框架**（`auditor.rs`, `hash.rs`, `clock.rs`）：
-   - 记录 TCB 返回的 `before`/`after` 快照（只记录，不判断内容）。
-   - 计算 BLAKE3 哈希、维护逻辑时钟（审计工具是机制）。
-4. **反应器生命周期控制**（`reactor.rs`, `stable_detector.rs`）：
-   - 控制 `max_rounds` 循环、检测版本号是否变动（循环控制是机制）。
-   - **注意**：稳定检测的逻辑（版本号比较）是纯算法机制，但**稳定阈值（如 3 次）** 是策略，必须来自 JSON 配置，不得硬编码。
-5. **纯 I/O 传输**（`llm_handler.rs`, `db_handler.rs`）：
-   - 接收 `params`（来自 `Fact::IoRequest`），构造标准的 HTTP/TCP 请求发送出去。
-   - 接收网络响应，原样封装为 `Fact::IoResponse` 返回。
+这套规范的核心试金石是**"机制-策略分离原则"**:
+
+> **如果业务需求变了, 这行代码需要改吗?**
+> - **需要改** → 这是**策略** (业务逻辑), **必须**放在 JSON 数据中
+> - **不需要改** → 这是**机制** (执行框架), **允许**写在 Rust 中
 
 ---
 
-### ❌ 绝对禁止在 Rust 治理层做的事情（“策略”）
+## 一、允许在 Rust (反应器) 中做的事情 ("机制")
 
-这些是业务逻辑或业务数据，一旦写在 Rust 中即构成“漂移”，`build.rs` 会直接拦截编译：
+以下属于系统的"骨架"或"管道", 不包含业务意图, 允许编写 Rust 代码:
 
-1. **硬编码业务指令类型或阈值**（违反 F1, F2）：
-   - ❌ `if instruction_type == "math_rule" { ... }`
-   - ❌ `if score > 80 { ... }`（阈值必须在 JSON 中）
-   - _例外_：`io_dispatcher.rs` 中的 `match io_type { IoType::CallLlm => ... }` 是允许的（这是路由机制，不是业务判断）。
-2. **拼接动态字符串模板**（违反 F3, F4）：
-   - ❌ `format!("请总结：{}", content)` （Prompt 模板属于业务策略）
-   - ❌ `format!("SELECT * FROM users WHERE id={}", id)` （SQL 语句必须参数化，来自 JSON）
-3. **硬编码权限或角色判断**（违反 F5）：
-   - ❌ `if user.role == "admin" { ... }`（权限映射必须在 `auth_config.json` 中）
-4. **在 Rust 中对规则列表进行过滤或排序**（违反 F6）：
-   - ❌ `rules.iter().filter(|r| r.type == "active").collect()`
-   - _允许_：读取文件后按文件名排序（为确保确定性），但业务过滤条件必须在 JSON 中。
-5. **包含业务术语的字符串字面量**（违反 §5.2 黑名单）：
-   - ❌ `"math_rule"`, `"physics_rule"`, `"admin"`, `"teacher"`, `"summarize"`, `"call_external"` 等出现在 Rust 字符串中（除非是 dispatcher 的枚举匹配）。
-6. **复杂的嵌套逻辑或长函数**（违反 F8, F9）：
-   - ❌ `if/else` 嵌套超过 **2 层**。
-   - ❌ 单个函数超过 **50 行**（暗示内部嵌入了业务逻辑）。
-7. **跨 Handler 相互调用**（违反 F10）：
-   - ❌ `llm_handler` 调用 `db_handler` 的方法（Handler 必须独立，只负责自己的 I/O 类型）。
-8. **使用 `debug_assert!`, `unwrap()`, `expect()`**（违反 F11 & 安全要求）：
-   - ❌ 这些会导致 Panic 或 Debug/Release 行为不一致，必须使用 `?` 操作符返回确定性的 `Err`。
+### 1.1 反应器生命周期控制 (`reactor.rs`, `stable_detector.rs`)
+- 控制 `max_rounds` 循环、检测版本号是否变动 (循环控制是机制)
+- **注意**: 稳定检测的逻辑 (版本号比较) 是纯算法机制, 但**稳定阈值** (如 3 次) 是策略, 必须来自 JSON 配置, 不得硬编码
+
+### 1.2 数据加载与结构转换 (`wal.rs`, `facts_log.rs`, `rule_validator.rs`, `rule_safety.rs`)
+- 从文件系统读取 JSON 并反序列化
+- 将 JSON 规则树转换为内部指令结构 (纯粹的格式映射, 无校验逻辑)
+- 追加式日志的读写、版本号的单调递增 (日志存储是机制)
+
+### 1.3 事实与状态管理 (`fact.rs`, `state.rs`, `channel.rs`, `phase.rs`)
+- Fact 的构造、传递、状态机管理
+- 通道发送/接收逻辑 (数据管道)
+- 阶段 (phase) 切换控制
+
+### 1.4 不变性与验证 (`invariants.rs`, `semantic_invariants.rs`, `pure.rs`)
+- 不变量检查 (纯算法, 无业务判断)
+- 语义不变量验证
+- 纯函数标记
+
+### 1.5 调试与可观测性 (`debug_control.rs`, `metrics.rs`, `time_machine.rs`)
+- 调试控制开关
+- 指标收集 (机制, 非业务数据)
+- 时间旅行调试 (状态快照回放)
+
+### 1.6 I/O 超时策略 (`io_timeout_policy.rs`)
+- 超时控制 (机制, 阈值来自 JSON)
+
+### 1.7 错误处理 (`error.rs`)
+- 错误类型定义与传播
+
+### 1.8 FFI 接口 (`ffi.rs`)
+- C FFI 暴露 (阶段9, 可选 feature)
 
 ---
 
-### 🆕 V5.0 架构下的特别补充（反应器模式）
+## 二、绝对禁止在 Rust 反应器做的事情 ("策略")
 
-在最新的 **V5.0（反应式数据执行器）** 架构中，上述规范依然**完全适用**，且新增了以下映射：
+这些是业务逻辑或业务数据, 一旦写在 Rust 中即构成"漂移", `build.rs` 会直接拦截编译:
 
-- **允许（机制）**：编写 `ReactiveEngine` 的循环逻辑、`FactsLog` 的追加逻辑、`FactSubmitter` 的通道发送逻辑。这些是“数据管道”。
-- **禁止（策略）**：在反应器循环中判断“如果遇到某种特定 Command 则延迟 5 秒”或“如果是数学规则则优先处理”——这些必须是业务数据，要么在 `core_eval.json` 中，要么在业务规则 JSON 中，要么由 `IoSubscriber` 根据参数执行，但**绝不能**写在 `reactor.rs` 的 Rust 匹配分支中。
+| 编号 | 禁止项 | 示例 | 执行层 |
+| :--- | :--- | :--- | :--- |
+| **G7/G8** | 控制流指令名硬编码 | `"conditional"` / `"while_loop"` / `"sequence"` 出现在 Rust 字符串中 | L1 (build.rs) |
+| **G1** (= F11) | panic-prone 构造 | `debug_assert!` / `.unwrap(` / `.expect(` | L1 (build.rs) |
+| **§5.2** | 业务术语字符串字面量 | `"math_rule"` / `"admin"` / `"summarize"` 等 | L1 (build.rs) |
+| **F1** | 硬编码业务指令类型 | `if instruction_type == "math_rule"` | L1 (§5.2 覆盖) |
+| **F2** | 硬编码数字阈值 | `if score > 80` | L3 (review) |
+| **F3** | 动态 prompt 拼接 | `format!("请总结：{}", content)` | L3 (review) |
+| **F4** | 动态 SQL 拼接 | `format!("SELECT * FROM users WHERE id={}", id)` | L3 (review) |
+| **F5** | 硬编码权限/角色判断 | `if user.role == "admin"` | L1 (§5.2 覆盖) |
+| **F6** | Rust 中过滤/排序规则列表 | `rules.iter().filter(\|r\| r.type == "active")` | L3 (review) |
+| **F7/F8** | if/else 嵌套 > 2 层 | — | L2 (clippy cognitive_complexity) |
+| **F9** | 函数 > 50 行 | — | L2 (clippy too_many_lines) |
+| **F10** | 跨 Handler 互调 | handler A 调 handler B 的方法 | L3 (review) |
 
 ---
 
-### 📋 强制执行机制
+## 三、§5.2 业务术语表
 
-除了代码审查外，各层 crate 的 `build.rs` 会在编译时自动扫描源码，一旦发现上述禁止模式，构建将**直接失败**并提示违规详情（行号、违背条款）。若遇紧急调试需要，可临时设置环境变量 `EVORULE_SKIP_GATE=1` 跳过（仅限本地开发，严禁带入 CI/CD）。
+以下术语**不得**作为字符串字面量出现在 tier1-reactor 的 Rust 源码中
+(豁免: `#[cfg(test)]` 测试模块 + `src/fact.rs` 中的 IoType 枚举映射):
 
-**总结口诀**：
+| 术语 | 类别 | 替代方案 |
+| :--- | :--- | :--- |
+| `math_rule` | 业务规则 | 放 `core_eval.json` |
+| `physics_rule` | 业务规则 | 放 `core_eval.json` |
+| `summarize` | prompt | 用模板变量 |
+| `admin` | 角色 | 放权限配置 |
+| `teacher` | 角色 | 放权限配置 |
+| `call_external` | I/O 指令 | 放 IoType 枚举 (fact.rs) |
+| `call_service` | I/O 指令 | 放 IoType 枚举 (fact.rs) |
 
-> **写 Rust 只写“怎么跑”（循环、路由、存日志），不写“跑什么”（阈值、模板、权限表）。凡是要根据业务变的值，统统放进 JSON。**
+---
+
+## 四、编译时门禁 (build.rs)
+
+**build.rs 扫描的 13 个模式**:
+
+| 规则 | 模式 | 数量 |
+| :--- | :--- | :--- |
+| G7/G8 (控制流硬编码) | `"conditional"`, `"while_loop"`, `"sequence"` | 3 |
+| G1/F11 (panic-prone) | `debug_assert!`, `.unwrap(`, `.expect(` | 3 |
+| §5.2 (业务术语) | `"math_rule"`, `"physics_rule"`, `"summarize"`, `"admin"`, `"teacher"`, `"call_external"`, `"call_service"` | 7 |
+
+**豁免**:
+- `#[cfg(test)] mod tests { ... }` 测试模块 — 测试 fixture 可构造这些字符串
+- 注释 (`//`, `///`, `//!`, `/* */`) — 文档可自由提及
+- `src/fact.rs` (G8/§5.2 模式) — IoType/ControlFlowType 枚举映射的唯一真值来源
+
+**紧急跳过**: `EVORULE_SKIP_GATE=1 cargo build` (须有书面理由, 永不永久禁用)
+
+---
+
+## 五、跨模块引用
+
+- **G1-G8** (全局门): 见 `_PRIVATE_zh_docs/ARCHITECTURE/00-design.md` §2.1
+- **F1-F11** (模块门): 见 `00-design.md` §2.2
+- **T1** (tier0 指令集有限性): 见 `../tier0-tcb/TCB_SPEC.md` §一
+- **D1-D10** (数据流约束): 见 `00-design.md` §2.4
+
+tier2-governance 的 `GOVERNANCE_SPEC.md` 与本文档**结构相同** (G8 + F11 + §5.2),
+这是有意的双层一致 (避免 tier1/tier2 走偏)。
+
+---
+
+## 总结口诀
+
+> **写 Rust 只写"怎么跑" (循环、路由、存日志), 不写"跑什么" (阈值、模板、权限表)。凡是要根据业务变的值, 统统放进 JSON。**
+
+---
+
+**这份规范是 tier1-reactor 代码的权威标准。如有新增需求, 必须先更新这份规范, 再修改代码。**

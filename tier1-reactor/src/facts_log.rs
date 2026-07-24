@@ -1410,12 +1410,13 @@ mod tests {
 
         drop(log);
 
+        let file_stem = path.file_stem().unwrap().to_string_lossy().to_string();
         let files = std::fs::read_dir(path.parent().unwrap()).unwrap();
         let wal_files: Vec<_> = files
             .filter_map(|e| {
                 let e = e.unwrap();
                 let name = e.file_name().to_string_lossy().to_string();
-                if name.contains("rotation_create") {
+                if name.starts_with(&file_stem) {
                     Some(name)
                 } else {
                     None
@@ -1464,11 +1465,12 @@ mod tests {
             assert_eq!(history_after[i].id(), history_before[i].id());
         }
 
+        let file_stem = path.file_stem().unwrap().to_string_lossy().to_string();
         let files = std::fs::read_dir(path.parent().unwrap()).unwrap();
         for e in files {
             let e = e.unwrap();
             let name = e.file_name().to_string_lossy().to_string();
-            if name.contains("rotation_recover") {
+            if name.starts_with(&file_stem) {
                 let _ = std::fs::remove_file(e.path());
             }
         }
@@ -1514,12 +1516,13 @@ mod tests {
 
         drop(log);
 
+        let file_stem = path.file_stem().unwrap().to_string_lossy().to_string();
         let files = std::fs::read_dir(path.parent().unwrap()).unwrap();
         let wal_files: Vec<_> = files
             .filter_map(|e| {
                 let e = e.unwrap();
                 let name = e.file_name().to_string_lossy().to_string();
-                if name.contains("rotation_zero") {
+                if name.starts_with(&file_stem) {
                     Some(name)
                 } else {
                     None
@@ -1573,11 +1576,12 @@ mod tests {
         let recovered2 = FactsLog::recover(&path).unwrap();
         assert_eq!(recovered2.history_len(), 21);
 
+        let file_stem = path.file_stem().unwrap().to_string_lossy().to_string();
         let files = std::fs::read_dir(path.parent().unwrap()).unwrap();
         for e in files {
             let e = e.unwrap();
             let name = e.file_name().to_string_lossy().to_string();
-            if name.contains("rotation_after_recovery") {
+            if name.starts_with(&file_stem) {
                 let _ = std::fs::remove_file(e.path());
             }
         }
