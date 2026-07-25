@@ -410,20 +410,7 @@ git push gitee main --tags  # 同步到 Gitee
 
 ### 9.3 SDK 发版
 
-```bash
-# TypeScript SDK
-cd sdk/typescript
-npm version 0.2.0  # 自动改 package.json + git tag
-npm run build
-npm test
-npm publish
-
-# Python SDK
-cd sdk/python
-# pyproject.toml 手动改
-python -m build
-twine upload dist/*
-```
+SDK 在 v0.2.0+ 计划, 届时作为独立仓发布 (D:\evorule-sdk), 详见独立仓 README.
 
 ### 9.4 发布频率建议
 

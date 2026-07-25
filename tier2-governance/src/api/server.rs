@@ -1990,8 +1990,7 @@ impl GovernanceServer {
             .route("/api/health", get(health))
             .route("/api/health/liveness", get(liveness))
             .route("/api/health/readiness", get(readiness))
-            .route("/metrics", get(metrics_handler))
-            .nest_service("/debugger", tower_http::services::ServeDir::new("sdk/web"));
+            .route("/metrics", get(metrics_handler));
 
         // 受保护路由（需认证）
         let protected_routes = Router::new()

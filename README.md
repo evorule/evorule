@@ -16,6 +16,19 @@
 
 _规则不言语。它们只运行。而我们是首批见证者。_
 
+<br>
+
+[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](Cargo.toml)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+[![Kani](https://img.shields.io/badge/Kani-4_of_5_PASS-blue.svg)](tier0-tcb/tests/kani_proofs.rs)
+[![Gitee Stars](https://gitee.com/evo-rule-lab/evorule/badge/star.svg?theme=dark)](https://gitee.com/evo-rule-lab/evorule/stargazers)
+
+[快速开始](#快速开始) ·
+[核心特性](#核心特性) ·
+[架构概览](#架构json-在哪里流动) ·
+[API](#api-概览) ·
+[路线图](#已知限制--路线图)
+
 </div>
 
 ---
@@ -43,21 +56,9 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 ---
 
----
-
-> **EvoRule 只接受和运行 JSON 数据集。** 规则、知识、状态、事件——一切都是 JSON。由此带来的透明、可解释、可审计是必然属性,不是附加特性。其余的一切,都是为这一件事服务的工具。
-
-[![Rust](https://img.shields.io/badge/rust-1.74%2B-orange.svg)](https://www.rust-lang.org)
-[![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
-[![core_eval.json: CC0-1.0](https://img.shields.io/badge/core_eval.json-CC0%201.0-lightgrey.svg)](https://creativecommons.org/publicdomain/zero/1.0/)
-[![Kani](https://img.shields.io/badge/Kani-4_of_5_PASS-blue.svg)](tier0-tcb/tests/kani_proofs.rs)
-[![TLA+](https://img.shields.io/badge/TLA%2B-5_invariants_PASS-blue.svg)](tier0-tcb/tla/ExecuteTransition.tla)
-[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](Cargo.toml)
-
----
-
 > 🇨🇳 **本仓库为 EvoRule 中文版,主仓库发布在 [Gitee](https://gitee.com/evo-rule-lab/evorule)。**
-> 文档/issue/PR 优先在 Gitee 处理。GitHub 镜像仅供国际用户参考。
+>
+> 文档 / issue / PR 优先在 Gitee 处理。GitHub 镜像仅供国际用户参考。
 
 ---
 
@@ -71,6 +72,28 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 它不发明新的 DSL,也不把规则"编译"成代码,更不让业务逻辑藏在某个 `.py` / `.ts` 文件里。
 它只做一件事:**接受 JSON,执行 JSON,产生 JSON 事实账本。**
+
+---
+
+## 📑 目录
+
+- [核心特性](#核心特性)
+- [架构概览](#架构json-在哪里流动)
+- [快速开始](#快速开始)
+- [核心组件](#核心组件)
+  - [tier0-tcb —— JSON 状态机](#tier0-tcb--json-状态机)
+  - [tier1-reactor —— JSON 事件循环](#tier1-reactor--json-事件循环)
+  - [tier2-governance —— JSON I/O & HTTP](#tier2-governance--json-io--http)
+- [API 概览](#api-概览)
+- [测试与验证](#测试)
+- [设计哲学](#设计哲学evorule-不是什么以及是什么)
+- [路线图](#已知限制--路线图)
+- [目录结构](#目录结构)
+- [依赖关系](#依赖关系关键)
+- [evorule CLI](#衍生工具evorule-cli圈-2-合规刚需)
+- [相关项目](#相关项目)
+- [协议](#协议)
+- [贡献指南](#贡献)
 
 ---
 
@@ -116,6 +139,30 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 ---
 
 ## 架构:JSON 在哪里流动
+
+### 三层架构一览
+
+**🔝 tier2-governance — JSON I/O & HTTP**
+
+- 40+ JSON HTTP API + JSON SSE 事件流
+- 接受 hot reload JSON 规则（不重启）
+- JSON Auditor + BLAKE3 哈希链
+
+**🔄 tier1-reactor — JSON 事件循环**
+
+- append-only JSONL 事实账本
+- JSON 时间机器：replay / rewind / fork / diff
+- 稳定检测：队列空 + 无挂起 JSON I/O
+
+**🔐 tier0-tcb — JSON 状态机**
+
+- `execute_transition()` — 纯计算，无副作用
+- 4 个元指令：set / push / branch / io_request
+- 零外部依赖 · no_std 兼容 · Kani 可验证
+
+---
+
+### 详细架构图
 
 ```text
                         ┌─────────────────────────────┐
@@ -172,7 +219,7 @@ cargo build --bin evorule-server
 ./target/debug/evorule-server --addr 127.0.0.1:18080
 # 默认加载 ./tier0-tcb/core_eval.json(宪法)
 # 默认监听 ./rules 目录(业务规则,可热重载)
-```text
+```
 
 > 想用自定义宪法?`--core_eval /path/to/your/core.json`
 > 想换业务规则目录?`--rules_dir /path/to/your/rules`
@@ -227,7 +274,7 @@ cargo build --bin evorule-server
 
 ### 3. 用 JSON 提交命令
 
-```bash
+````bash
 # 1. 创建会话
 SESSION_ID=$(curl -s -X POST http://127.0.0.1:18080/api/sessions | jq -r .session_id)
 
@@ -244,7 +291,7 @@ curl -X POST http://127.0.0.1:18080/api/sessions/$SESSION_ID/command \
 # 4. 读取 JSON 状态
 curl http://127.0.0.1:18080/api/sessions/$SESSION_ID/state
 # → {"payload":{"x":5},"queue":[],"version":3}
-```text
+```
 
 ### 4. 订阅 JSON 事件流
 
@@ -253,13 +300,13 @@ curl -N http://127.0.0.1:18080/api/sessions/$SESSION_ID/events
 # → data: {"type":"Command","id":1,"instruction":{...}}
 # → data: {"type":"PayloadUpdate","id":2,"path":"x","value":0}
 # → data: {"type":"Stable","id":3,"final_snapshot":{"x":0}}
-```
+````
 
 **从头到尾,所有数据都是 JSON。**
 
 ### 5. 时间机器(回放 + 回滚)
 
-```bash
+````bash
 # 回放全部 JSON Fact
 curl http://127.0.0.1:18080/api/sessions/$SESSION_ID/replay | jq
 
@@ -268,7 +315,7 @@ curl http://127.0.0.1:18080/api/sessions/$SESSION_ID/rewind/1 | jq
 
 # 对比两个 JSON 版本的 payload 差异
 curl "http://127.0.0.1:18080/api/sessions/$SESSION_ID/diff?a=1&b=3" | jq
-```text
+```
 
 ---
 
@@ -294,7 +341,7 @@ use tier0_tcb::{execute_transition, JsonValue, TransitionResult};
 // 给定 (core_eval, instruction, payload, queue) → 产生 State 或 IoRequired
 let result = execute_transition(&core_eval, &instruction, &payload, &queue)?;
 //          ↑ JSON 规则      ↑ JSON 命令   ↑ JSON 状态  ↑ JSON 队列  ↑ JSON out
-```
+````
 
 **4 个元指令(不可扩展):** 全部用 JSON 表达
 
@@ -327,7 +374,7 @@ loop {
     // 5. emit — 广播 JSON event 到订阅者
     // 6. log — JSON 追加到 FactsLog(JSONL)
 }
-```bash
+```
 
 **JSON Fact 枚举(7 个变体,固定不变):**
 
@@ -404,9 +451,9 @@ SDK 客户端:
 
 | 语言       | 状态                     | 仓库                                              |
 | ---------- | ------------------------ | ------------------------------------------------- |
-| TypeScript | ✅ 已就位                | [`sdk/typescript/`](sdk/typescript/)              |
-| Python     | 🚧 规划中                | —                                                 |
-| Go         | 🚧 规划中                | —                                                 |
+| TypeScript | 🚧 v0.2.0+ 计划          | 独立仓 (v0.1.0 暂未发布)                          |
+| Python     | 🚧 v0.2.0+ 计划          | 独立仓 (v0.1.0 暂未发布)                          |
+| Go         | 🚧 v0.2.0+ 计划          | 独立仓 (v0.1.0 暂未发布)                          |
 | Rust       | ✅ 通过 `reqwest` 直接调 | [evo-agent](https://github.com/evorule/evo-agent) |
 
 ---
@@ -436,7 +483,7 @@ cargo kani -p tier0-tcb
 
 # 跑 19 个 proptest(Windows 可用)
 cargo test -p tier0-tcb --test proptest_props
-```text
+```
 
 当前已就位的 5 个 proof(都是为"JSON 状态机正确"服务):
 
@@ -501,8 +548,7 @@ cargo test -p tier0-tcb --test proptest_props
 
 ## 目录结构
 
-```
-
+```text
 evorule/
 ├── Cargo.toml                        # workspace 配置
 ├── Cargo.lock
@@ -562,11 +608,8 @@ evorule/
 ├── monitoring/                       # Prometheus + Grafana 配置
 ├── .gitee-ci/                        # CI(Gitee 主仓库)
 ├── .github/workflows/                # CI(GitHub 镜像)
-├── sdk/
-│   └── typescript/                   # TypeScript SDK
 └── Cargo.lock
-
-```toml
+```
 
 ---
 
@@ -631,7 +674,7 @@ evorule validate ./rules/         # 校验 JSON 规则 schema
 evorule run ./rules/ -o fact.log  # 执行 + 输出 fact log(JSONL)
 evorule replay fact.log           # 重放 fact log(pretty-print)
 evorule diff before.log after.log # 对比两个 fact log
-```text
+```
 
 **30 秒给监管严格行业讲清楚**:
 
@@ -645,8 +688,6 @@ evorule diff before.log after.log # 对比两个 fact log
 
 - [evo-agent](https://github.com/evorule/evo-agent) — AI Agent 编排层,在 EvoRule 之上实现 LLM + 工具 + 记忆闭环(LLM 输出也是 JSON)
 - [evorule-cli](evorule-cli/) — 单文件 CLI,圈 2 合规刚需场景(医疗/律所/金融/政务),musl 静态链接、零网络、可重现
-- [evorule/sdk/typescript](sdk/typescript) — TypeScript SDK,封装核心 JSON HTTP 端点
-- [evorule/sdk/python](sdk/python) — Python SDK(规划中)
 
 ---
 
@@ -689,6 +730,16 @@ evorule diff before.log after.log # 对比两个 fact log
 
 ---
 
+<div align="center">
+
 **"JSON in, JSON out, JSON forever."**
 
-**透明、可解释、可审计——不是特性,是 JSON 表达的必然属性。**
+**透明、可解释、可审计——不是特性，是 JSON 表达的必然属性。**
+
+<br>
+
+[⭐ 点个 Star 支持我们](https://gitee.com/evo-rule-lab/evorule/stargazers) ·
+[💬 发起讨论](https://gitee.com/evo-rule-lab/evorule/issues) ·
+[🔧 提交 PR](https://gitee.com/evo-rule-lab/evorule/pulls)
+
+</div>
