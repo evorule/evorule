@@ -13,7 +13,7 @@
 
 All 4 crates in the evorule workspace + 1 adjacent project (cross-crate ref only):
 
-```
+```yaml
 D:\evorule\
 ├── tier0-tcb/        (dev-dep: proptest)
 ├── tier1-reactor/    (tier0-tcb, tokio, tracing, serde_json)

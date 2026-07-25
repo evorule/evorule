@@ -1,5 +1,9 @@
 //! tier0-tcb v0.1.0-alpha.1 -- End-to-End Integration Test
 //!
+//! 测试代码豁免 L2 clippy panic/expect_used (L1 build.rs 门禁已守 G1 panic-prone)。
+#![allow(clippy::panic, clippy::expect_used)]
+//!
+//!
 //! 自动化 version of `examples/end_to_end.rs`. 加载真 `core_eval.json`
 //! (宪法) -> 解析为 `JsonValue` -> 通过 `execute_transition()` 跑业务指令
 //! -> 验证状态正确改变。所有断言在 `cargo test` 中跑。

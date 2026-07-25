@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 # evorule-cli — Module Specification
 
 > **The constitutional source for `evorule-cli/build.rs` compile-time gate.**

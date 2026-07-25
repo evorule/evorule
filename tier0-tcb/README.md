@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 # tier0-tcb
 
 > EvoRule 三层架构的 Tier 0 可信计算基 (Trusted Computing Base) ——零依赖、`no_std` 兼容的纯计算内核。
@@ -17,7 +25,7 @@
 
 `tier0-tcb` 是 EvoRule 三层架构的最底层:
 
-```
+```text
 ┌─────────────────────────────────────────────┐
 │  tier2-governance  治理层（I/O 订阅者/审计/API） │
 ├─────────────────────────────────────────────┤
@@ -121,7 +129,7 @@
     ]
   }
 }
-```
+```text
 
 **兜底规则**：最后一条规则用 `all([])`（空列表为真）匹配所有未识别指令，作为 noop 处理。
 
@@ -140,6 +148,7 @@
 I/O 请求**不在顶层检查指令类型**，而是通过 `core_eval.json` 中的 `io_request` 元指令触发信号，沿调用链传播：
 
 ```
+
 core_eval.json (transform 列表)
     ↓
 execute_transition (迭代 transform)
@@ -151,7 +160,8 @@ exec_io_request → 返回 MetaInstructionResult::IoRequired
 exec_branch 传播 IoRequired（立即返回，不继续执行后续子指令）
     ↓
 execute_transition 检测 IoRequired → 返回 TransitionResult::IoRequired
-```
+
+```text
 
 这确保 `core_eval.json` **完全控制 I/O 映射**——新增 I/O 类型只需修改 JSON，无需改 TCB 代码。
 
@@ -160,12 +170,14 @@ execute_transition 检测 IoRequired → 返回 TransitionResult::IoRequired
 I/O 指令映射采用**双路径模式**——通过 `exists(__exec__.payload.__io_result__)` 域条件区分首次执行和恢复执行：
 
 ```
+
 首次执行（__io_result__ 不存在）：
   instruction(call_external) → branch(exists(__io_result__)=false) → io_request → IoRequired
 
 恢复执行（__io_result__ 已注入）：
   instruction(call_external) → branch(exists(__io_result__)=true) → set(llm_response, __io_result__) → State
-```
+
+```text
 
 **业务字段命名约定**：
 
@@ -188,6 +200,7 @@ I/O 指令映射采用**双路径模式**——通过 `exists(__exec__.payload._
 ## 三、模块结构
 
 ```
+
 tier0-tcb/
 ├── Cargo.toml             # 零依赖配置 + Kani metadata
 ├── build.rs               # 编译时门禁（core_eval.json 结构校验）
@@ -201,11 +214,13 @@ tier0-tcb/
 │   ├── transition.rs      # execute_transition：状态转换入口
 │   └── proofs.rs          # Kani proof stubs（#[cfg(kani)] 门控）
 └── audit/                 # 源码审计报告（00-10）
-```
+
+```text
 
 ### 模块依赖关系
 
 ```
+
 value.rs （基础类型）
    ↑
 error.rs （错误类型）
@@ -217,7 +232,8 @@ domain.rs （域评估，依赖 path/value）
 executor.rs （元指令执行器，依赖 domain/path/value）
    ↑
 transition.rs （状态转换，依赖 executor/path/value）
-```
+
+```bash
 
 ### 模块说明
 
@@ -343,7 +359,7 @@ match result {
         // 由上层反应器执行 I/O
     }
 }
-```
+```text
 
 ### 4.3 I/O 请求示例
 
@@ -405,7 +421,7 @@ match result {
     }
     _ => panic!("expected IoRequired"),
 }
-```
+```text
 
 ---
 
@@ -454,7 +470,7 @@ pub enum TcbError {
   "metadata": { ... },
   "transform": [ ... ]
 }
-```
+```text
 
 `transform` 是一个有序的元指令列表（通常为 `branch`），TCB 按顺序执行，遇到 `IoRequired` 立即返回。
 

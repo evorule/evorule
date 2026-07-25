@@ -10,6 +10,7 @@
 | [`law-firm/`](law-firm/) | 律所合规部 / 案件管理 | 律师执业规范 / 客户保密 / GDPR Art.30 |
 
 每个目录都包含:
+
 - `rules/*.json` —— 3 条核心合规规则(开箱即用)
 - `payload.example.json` —— 一份真实场景的初始数据
 - `README.md` —— **30 秒使用说明 + 监管对话脚本**

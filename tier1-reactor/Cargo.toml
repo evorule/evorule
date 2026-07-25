@@ -4,9 +4,13 @@ version = "0.1.0"
 edition = "2021"
 description = "EvoRule 反应式执行器 - 事实驱动的状态转换引擎"
 license = "AGPL-3.0-or-later"
-repository = "https://gitee.com/evorulelab/evorule"
+repository = "https://gitee.com/evo-rule-lab/evorule"
 publish = false
 
+
+
+[lints]
+workspace = true
 [dependencies]
 tier0-tcb = { path = "../tier0-tcb" }
 tokio = { version = "1.0", features = ["sync", "rt", "rt-multi-thread", "time", "macros"] }

@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 # `evorule` CLI
 
 **本地 JSON 规则执行工具,面向"圈 2 合规刚需"用户**(医疗/律所/金融/政务等隐私敏感行业)。
@@ -40,7 +48,7 @@ evorule replay /var/log/evorule-fact.log
 
 # 6) 监管检查?导出 fact log
 cat /var/log/evorule-fact.log
-```
+```text
 
 ## 编译(开发者)
 
@@ -67,7 +75,7 @@ bash build-musl.sh
 bash build-musl.sh --target aarch64-unknown-linux-musl
 # 产物: $TARGET_DIR/aarch64-unknown-linux-musl/release/evorule
 #   1.4 MB,静态链接,stripped
-```
+```text
 
 ### 可重现构建(reproducible build)
 
@@ -79,6 +87,7 @@ bash build-musl.sh --target x86_64-unknown-linux-musl --repro
 ```
 
 **原理**:
+
 - `SOURCE_DATE_EPOCH=1700000000` 固定所有时间戳
 - `CARGO_INCREMENTAL=0` 强制全量构建
 - `RUSTFLAGS=-Wl,--build-id=none` 去掉 linker 随机 build-id
@@ -95,7 +104,7 @@ ELF 64-bit LSB pie executable, x86-64, ... static-pie linked, ...
 
 $ ldd evorule
         statically linked
-```
+```bash
 
 ### Windows 开发构建(交叉到 MSVC)
 
@@ -113,9 +122,10 @@ REM 产物: .build\rust\release\evorule.exe
 
 ```bash
 evorule validate ./rules/
-```
+```text
 
 输出:
+
 - `[OK] transform[N]: type='branch'` —— 合法 type
 - `[WARN] transform[N]: unknown type 'X'` —— 未知 type(警告不阻断)
 - `[ERROR] transform[N]: missing 'type' field` —— 缺少 type 字段(阻断)
@@ -123,6 +133,7 @@ evorule validate ./rules/
 合法 type 白名单:`branch`, `set`, `push`, `io_request`, `noop`, `instruction`, `all`, `exists`
 
 退出码:
+
 - 0 = 全部通过(有警告也可)
 - 1 = 有错误
 
@@ -147,13 +158,15 @@ evorule run ./rules/ -o ./fact.log
 ```
 
 输出示例(JSON Lines):
+
 ```json
 {"step":1,"type":"state_transition","new_payload":{"x":10}}
 {"step":2,"type":"io_required","io_type":"query_db","params":{"query":"SELECT 1"}}
 {"total_steps":2,"type":"final","final_payload":{"x":10}}
-```
+```text
 
 退出码:
+
 - 0 = 正常结束
 - 1 = 加载或执行错误
 
@@ -168,7 +181,8 @@ evorule replay ./fact.log
 ```
 
 输出:
-```
+
+```text
 === Replaying ./fact.log ===
 [   1] state_transition
 [   2] io_required
@@ -183,17 +197,22 @@ evorule replay ./fact.log
 
 ```bash
 evorule diff ./before.log ./after.log
-```
+```text
 
 输出:
+
 ```
+
 === Diff ./before.log <-> ./after.log ===
 Only in A (2):
-  - {"step":1,"type":"state_transition",...}
-  - ...
+
+- {"step":1,"type":"state_transition",...}
+- ...
 Only in B (1):
-  + {"step":1,"type":"state_transition",...}
-```
+
+- {"step":1,"type":"state_transition",...}
+
+```bash
 
 如果完全相同,输出 `(identical)`。
 
@@ -212,6 +231,7 @@ evorule-cli 的 `build.rs` 强制执行 G8 + F11 + §5.2,**与 tier1-reactor / t
 任何违规立即 `exit(1)`,违规行号 + 标签全打印。
 
 **紧急跳过**(不推荐):
+
 ```bash
 EVORULE_SKIP_GATE=1 cargo build
 ```
@@ -221,6 +241,7 @@ EVORULE_SKIP_GATE=1 cargo build
 JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 **示例**:`rules/my-rule.json`:
+
 ```json
 {
   "transform": [
@@ -245,11 +266,12 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
     }
   ]
 }
-```
+```text
 
 **多文件**:`run` 会自动合并目录下所有 `*.json` 文件的 `transform` 数组。
 
 **两种支持的格式**:
+
 - `{"transform": [...]}` —— 标准格式
 - `{"transforms": [...]}` —— 别名(同义)
 - 单个对象(无 transform 数组)—— 当作 1 条 transform
@@ -260,6 +282,7 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 > "把你公司的合规规则写成一个 JSON 文件,放到本地文件夹。
 > 运行 `evorule run ./rules/`,它会:
+>
 > 1. 执行你的规则
 > 2. 记录每一步到本地 fact log(JSON Lines)
 > 3. **不会联网,不会上报,不会 AI 决策**
@@ -268,6 +291,7 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 > 6. 供应链可信?同源码两次构建 SHA256 一致,监管可独立复现"
 
 **对比 Excel 宏 / VBA**:
+
 | 维度 | Excel 宏 | evorule |
 |---|---|---|
 | 规则格式 | 散在各个 cell | 集中 JSON,版本控制友好 |
@@ -291,6 +315,7 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 | 用户规则文件 | 用户自备 | - |
 
 **目标交付命令**:
+
 ```bash
 # Linux x86_64 圈 2 用户
 wget https://gitee.com/evorulelab/evorule/releases/download/v0.1.0/evorule-x86_64
@@ -317,10 +342,12 @@ bash tests/e2e.sh
 # 显式指定
 bash tests/e2e.sh .build/rust/x86_64-unknown-linux-musl/release/evorule
 bash tests/e2e.sh .build/rust/aarch64-unknown-linux-musl/release/evorule
-```
+```text
 
 输出示例:
+
 ```
+
 ok 1 - --version exits 0
 ok 2 - validate valid rule exits 0
 ok 3 - validate invalid rule exits 1
@@ -332,8 +359,10 @@ ok 10 - run -o writes valid JSONL
 ok 11-12 - replay normal / missing
 ok 13-14 - diff identical / different
 ok 15 - all fact log lines are valid JSON
+
 # tests 15 | passed 15 | failed 0
-```
+
+```text
 
 **aarch64 验证**:用 `qemu-user-static` 模拟跑(不需要真 ARM 机器):
 
@@ -358,6 +387,7 @@ bash tests/e2e.sh .build/rust/aarch64-unknown-linux-musl/release/evorule
 每套 3 条核心规则(覆盖 访问审计 / 权限检查 / 隐私脱敏),复制整个目录到 `/etc/your-rules/` 即可落地。
 
 **30 秒试用**:
+
 ```bash
 cd examples/hospital/
 evorule validate ./rules/

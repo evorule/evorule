@@ -1,3 +1,6 @@
+
+// 测试代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 //! 速率限制集成测试（030 文档回归测试）
 //!
 //! 验证 `--no-rate-limit` 标志的端到端行为：

@@ -1,5 +1,9 @@
 //! tier0-tcb v0.1.0 -- End-to-End Demo
 //!
+//! examples 是 Cargo 演示代码, 允许使用 panic/expect (L1 build.rs 门禁已守生产代码 G1)。
+#![allow(clippy::panic, clippy::expect_used)]
+//!
+//!
 //! ## 目的
 //!
 //! 验证 v3.0 设计初衷"用户只写 JSON, 一键运行, 无需编译"的 TCB 层可行性:

@@ -1,7 +1,6 @@
 <!--
-  Copyright 2026 EvoRule Project
-
-  SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC0-1.0
+Benchmark reports are public artifacts; we release them under CC0 for maximum transparency and reproducibility.
 -->
 
 # 实验 1.3:blake3 哈希链吞吐量
@@ -49,7 +48,7 @@ hasher.update(current_meta.as_bytes());   // 元数据
 hasher.update(&(i as u64).to_le_bytes()); // logical_time
 let result = hasher.finalize();
 current_hash = *result.as_bytes();        // 更新链
-```
+```text
 
 ---
 
@@ -58,21 +57,25 @@ current_hash = *result.as_bytes();        // 更新链
 ### 3.1 1MB content,10000 entries(默认)
 
 ```
+
 Raw blake3:     1060018 hashes/sec, 1035.2 MB/s
 Audit chain:    993611 entries/sec
 Unique content: 1045380 entries/sec
 Audit chain overhead: 1.07x
 Cache-cold overhead:  0.95x
-```
+
+```text
 
 ### 3.2 关键解读
 
 **1.07x overhead** 意味着:
+
 - 加 prev_hash (32 bytes) 进 blake3 几乎免费
 - blake3 内部 SIMD 优化非常高效
 - 审计链的"防篡改"特性**不损失性能**
 
 **0.95x cold vs raw** 意味着:
+
 - 现代 CPU L1/L2 cache 极快
 - 不同 content 没显著降低吞吐
 - 真实业务(每条 fact 内容不同)也能跑满
@@ -96,6 +99,7 @@ Cache-cold overhead:  0.95x
 **0 性能损耗**。blake3 链式哈希 ≈ 原始 blake3 的 1/0.95 = 1.05 倍时间(可忽略)。
 
 合规用户可以放心:
+
 - 每条事实都进 blake3 链
 - 不需要权衡"审计 vs 性能"
 - 即时验证(随机抽 1 条 entry,沿链回溯 0.01s 验完)
@@ -136,6 +140,7 @@ cd D:\evorule
 ```
 
 预期:
+
 - 10000 entries: ~10ms (raw 1M/sec, chain 1M/sec)
 - 末哈希稳定(每次 run 都一样)
 

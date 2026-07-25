@@ -23,7 +23,7 @@
 **生效日期**: 2026-07-19
 
 > ⚠️ **重要提示**:**本文档为商业许可协议的摘要版本**,完整法律文本需通过正式渠道获取并签署。
-> 如需获取完整的商业许可协议,请联系:evorulelab@gmail.com
+> 如需获取完整的商业许可协议,请联系:<evorulelab@gmail.com>
 
 ---
 
@@ -91,11 +91,12 @@ EvoRule Project(以下简称"许可方")授予您(以下简称"被许可方")**�
 | 永久 + 维护 | 永久 + 年费 15-20% | 永久 + 年费 15-20% | 永久 + 年费 15-20% |
 
 **优惠**:
+
 - 教育机构 — 优惠价格
 - 政府/非营利 — **免费申请**,见 [FREE_COMMERCIAL_LICENSE.md](FREE_COMMERCIAL_LICENSE.md)
 - 开源项目 — 维持 AGPL-3.0 即可,无需商业许可
 
-**联系方式**: evorulelab@gmail.com(主题加 `[Commercial License]`)
+**联系方式**: <evorulelab@gmail.com>(主题加 `[Commercial License]`)
 
 ---
 
@@ -216,8 +217,8 @@ EvoRule Project(以下简称"许可方")授予您(以下简称"被许可方")**�
 ## 联系信息
 
 **许可方**: EvoRule Project
-**邮箱**: evorulelab@gmail.com
-**网站**: https://gitee.com/evo-rule-lab/evorule
+**邮箱**: <evorulelab@gmail.com>
+**网站**: <https://gitee.com/evo-rule-lab/evorule>
 
 **被许可方**: ________________________
 **联系人**: ________________________

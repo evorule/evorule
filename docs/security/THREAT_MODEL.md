@@ -105,7 +105,7 @@ industries).
 
 ### 4.1 边界图(DFD Level 0)
 
-```
+```text
                               UNTRUSTED
                                   │
    ┌──────────────────────────────┼──────────────────────────────┐
@@ -197,7 +197,7 @@ industries).
 
 ### 5.1 写路径(Write Path)
 
-```
+```text
 User / LLM
     │
     │ (1) submit_command (JSON instruction)
@@ -240,7 +240,7 @@ User / LLM
 
 ### 5.2 读路径(Read Path)
 
-```
+```text
 User / Debugger / evo-agent
     │
     │ (1) GET /api/sessions/{id}/replay
@@ -271,7 +271,7 @@ User / Debugger
 
 ### 5.3 AI 工具调用路径(Prompt Injection 攻击面)
 
-```
+```text
 LLM response (B9, UNTRUSTED input)
     │
     │ "I want to call tool X with args Y"
@@ -386,7 +386,7 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ### 7.1 攻击 1:本地恶意用户篡改 audit log(M1, M2)
 
-```
+```text
 根目标: 篡改 audit log 后骗监管 / 内部审计
 │
 ├── 路径 A: 直接改 disk 上的 WAL 文件
@@ -435,7 +435,7 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ### 7.2 攻击 2:恶意 LLM 响应导致数据泄露
 
-```
+```text
 根目标: LLM 响应让 evo-agent 把 user 私有数据发给 attacker
 │
 ├── 路径 A: 通过 http_get 发内网
@@ -501,7 +501,7 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ### 7.3 攻击 3:Prompt Injection 触发不可逆操作
 
-```
+```text
 根目标: LLM 响应被注入,触发 candidate tool(rm -rf 等)
 │
 ├── 路径 A: candidate 工具自动批准
@@ -549,7 +549,7 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ### 7.4 攻击 4:DoS(evorule-server 跑不动)
 
-```
+```text
 根目标: 让 evorule-server 跑不动 / 跑慢
 │
 ├── 路径 A: 大量小请求
@@ -589,7 +589,7 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ### 7.5 攻击 5:UI 层注入(time-travel-debugger)
 
-```
+```text
 根目标: 通过 debugger UI 改 server state / 读其他用户数据
 │
 ├── 路径 A: XSS 注入
@@ -629,7 +629,7 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 
 ### 7.6 攻击 6:共享 facts 投毒(M3)
 
-```
+```text
 根目标: 投毒 shared.* namespace,让其他 session 读假 fact
 │
 ├── 路径 A: 写 shared.*
@@ -766,15 +766,15 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 - **STRIDE** — Microsoft threat modeling
 - **Attack Trees** — Schneier, 1999
 - **PASTA** — Process for Attack Simulation and Threat Analysis
-- **OWASP Top 10 for LLM Applications** — https://owasp.org/www-project-top-10-for-large-language-model-applications/
+- **OWASP Top 10 for LLM Applications** — <https://owasp.org/www-project-top-10-for-large-language-model-applications/>
 - **NIST SP 800-30** — Risk Assessment Guide
-- **MITRE ATT&CK** — https://attack.mitre.org/
+- **MITRE ATT&CK** — <https://attack.mitre.org/>
 
 ### 12.3 工具
 
 - **`cargo audit`** — Rust 依赖漏洞扫描
 - **`cargo deny`** — license + advisory 检查
-- **Kani** — Rust 模型检查器(https://github.com/model-checking/kani)
+- **Kani** — Rust 模型检查器(<https://github.com/model-checking/kani>)
 - **Miri** — Rust undefined behavior 检测
 
 ---

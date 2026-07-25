@@ -15,7 +15,7 @@
 **生效日期**: 2026-07-19
 
 > ⚠️ **重要提示**:本协议是法律文件,影响您的版权与专利权。签署前请仔细阅读。如有疑问,请咨询专业律师。
-> 贡献者也可联系 evorulelab@gmail.com 获取澄清。
+> 贡献者也可联系 <evorulelab@gmail.com> 获取澄清。
 
 ---
 
@@ -87,7 +87,7 @@
 - 您对贡献的所有权发生变化(如公司重组、版权转让)
 - 您的贡献的来源发生变化
 
-通知方式:evorulelab@gmail.com(主题加 `[CLA Notice]`)
+通知方式:<evorulelab@gmail.com>(主题加 `[CLA Notice]`)
 
 ## 7. 协议性质与变更
 
@@ -141,14 +141,17 @@
 ## 提交方式
 
 **方式 1(推荐):首次 PR 时声明**
+
 - 在首个 PR 的描述中包含:
   > "I have read and agree to the EvoRule Individual CLA v1.0."
 
 **方式 2:邮件签署**
+
 - 下载本文件,填写并签名后发送至:
-  - **邮箱**: evorulelab@gmail.com(主题加 `[CLA Individual]`)
+  - **邮箱**: <evorulelab@gmail.com>(主题加 `[CLA Individual]`)
 
 **方式 3:Gitee 在线签署**
+
 - 在 Gitee 仓库的 CLA 机器人提示下,点击"我同意"。
 
 ---
@@ -177,7 +180,7 @@
 
 ### Q4:公司贡献怎么处理?
 
-**A**: 公司贡献者需要签署 **Corporate CLA**(待发布,联系 evorulelab@gmail.com)。
+**A**: 公司贡献者需要签署 **Corporate CLA**(待发布,联系 <evorulelab@gmail.com>)。
 
 ### Q5:CLA 适用所有贡献吗?
 
@@ -189,8 +192,8 @@
 
 - **项目**: EvoRule
 - **版权人**: EvoRule Project
-- **邮箱**: evorulelab@gmail.com
-- **Gitee**: https://gitee.com/evo-rule-lab/evorule
+- **邮箱**: <evorulelab@gmail.com>
+- **Gitee**: <https://gitee.com/evo-rule-lab/evorule>
 
 ---
 

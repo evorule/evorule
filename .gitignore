@@ -108,3 +108,9 @@ docs/benchmarks/server_help.txt
 docs/benchmarks/*.log
 docs/benchmarks/*_dump.json
 find_p2.ps1
+
+# === 2026-07-25 TLA+ 形式化验证 ===
+# tla2tools.jar 由 CI 下载，不 commit 到仓库（2.2MB 二进制）
+tier0-tcb/tla/tla2tools.jar
+# TLC 模型检测的临时状态文件
+tier0-tcb/tla/states/

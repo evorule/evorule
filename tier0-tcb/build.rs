@@ -28,7 +28,7 @@
 //! 跳过必须临时且有书面理由, 永不永久禁用。
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 /// 禁止模式: (标签, 字节子串)
@@ -320,16 +320,6 @@ fn is_test_tolerant(label: &str) -> bool {
     )
 }
 
-fn count_rs_files(dir: &Path) -> usize {
-    fs::read_dir(dir)
-        .map(|it| {
-            it.flatten()
-                .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("rs"))
-                .count()
-        })
-        .unwrap_or(0)
-}
-
 fn main() -> ExitCode {
     if std::env::var("EVORULE_SKIP_GATE").is_ok() {
         println!("cargo:warning=tier0-tcb compile-time gate SKIPPED via EVORULE_SKIP_GATE");
@@ -403,10 +393,10 @@ fn main() -> ExitCode {
     }
 
     if violations.is_empty() {
-        println!(
-            "cargo:warning=tier0-tcb compile-time gate PASSED ({} .rs files scanned)",
-            count_rs_files(&src_dir)
-        );
+        // Gate passed silently — success is the default expected state, not a warning.
+        // SKIP path still emits cargo:warning (skipping a security gate is noteworthy).
+        // FAILURE path uses eprintln! (loud, visible on build failure).
+        // Gate execution is verifiable by build success (gate failure → build failure).
         return ExitCode::SUCCESS;
     }
 

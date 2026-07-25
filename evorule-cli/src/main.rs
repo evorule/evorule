@@ -219,6 +219,8 @@ fn parse_initial_payload(s: Option<&str>) -> Result<TcbValue, String> {
 }
 
 /// run: 执行规则,输出 fact log
+// CLI 命令 dispatch, 多 mode 分支 + IO 错误处理。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+#[allow(clippy::cognitive_complexity)]
 fn run_rules(
     rules_dir: &Path,
     payload_str: Option<&str>,
@@ -425,6 +427,8 @@ const VALID_TRANSFORM_TYPES: &[&str] = &[
 ];
 
 /// validate: schema 校验
+// 验证规则链, 多校验项条件分支。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+#[allow(clippy::cognitive_complexity)]
 fn validate_rules(rules_dir: &Path) -> ExitCode {
     if !rules_dir.exists() {
         error!("Rules directory does not exist: {}", rules_dir.display());

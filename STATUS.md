@@ -108,7 +108,12 @@
 
 ### 还没写
 
-- ✅ **L9 Kani 部分真实证明** — 5 proof, 4/5 PASS(`verify_value_roundtrip` / `verify_set_integer_safety` / `verify_transition_bounded` / `verify_set_sub_safety`);剩余 1 个 `verify_path_no_panic` 因 Kani 工具链对 `BTreeMap` 内部 `correct_childrens_parent_links` 与 `memcmp` 的默认 unwind bound 不够而 5min TIMEOUT,改由 proptest `resolve_path_never_panics_arbitrary_path` 保底覆盖,等 Kani 0.68+ 修复。原 `verify_domain_boolean` 已删除(改由 proptest `domain_eval_never_panics_arbitrary_type` 替代)
+- ✅ **L9 Kani 部分真实证明** — 5 proof, 4/5 PASS
+  - 4 PASS: `verify_value_roundtrip` / `verify_set_integer_safety` / `verify_transition_bounded` / `verify_set_sub_safety`
+  - 剩余 1 个 `verify_path_no_panic` 因 Kani 工具链对 `BTreeMap` 内部 `correct_childrens_parent_links` 与 `memcmp` 的默认 unwind bound 不够而 5min TIMEOUT
+  - 改由 proptest `resolve_path_never_panics_arbitrary_path` 保底覆盖，等 Kani 0.68+ 修复
+  - 原 `verify_domain_boolean` 已删除(改由 proptest `domain_eval_never_panics_arbitrary_type` 替代)
+
 - ❌ **cargo-audit 自动跑** — `kstring@2.0.4` 要求 rustc 1.96,本机 1.92,装不上
 - ❌ **第三方代码 review** — 团队之外没人看过
 - ❌ **3 个 mock-LLM integration test** — **已修** ✅(2026-07-20)

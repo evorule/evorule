@@ -1,20 +1,6 @@
 <!--
-  Copyright 2026 EvoRule Project
-
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU Affero General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU Affero General Public License for more details.
-
-  You should have received a copy of the GNU Affero General Public License
-  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-  SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC0-1.0
+Security disclosure procedures are public knowledge; we release them under CC0 so everyone knows how to report vulnerabilities safely.
 -->
 
 # 安全漏洞报告政策
@@ -31,11 +17,13 @@
 | `< v0.1.0-alpha.1` | ❌ Unsupported | 公开仓库之前的 commit 不维护 |
 
 **alpha 阶段承诺**:
+
 - Critical / High 漏洞:60 天内修
 - Medium / Low 漏洞:推迟到 0.2.0
 - 安全公告:修完后 30 天内公开披露(经协调)
 
 **1.0.0 之后承诺**(届时更新本文档):
+
 - Critical:7 天
 - High:30 天
 - Medium:90 天
@@ -49,7 +37,7 @@
 
 ### 📧 联系方式
 
-- **邮箱**: evorulelab@gmail.com(主题加 `[SECURITY]`)
+- **邮箱**: <evorulelab@gmail.com>(主题加 `[SECURITY]`)
 - **Gitee 私信**: 维护者(@evorulelab)
 - **加密**: 当前未提供 PGP 公钥(如有需要可联系)
 
@@ -105,7 +93,7 @@ EvoRule 涉及一些需要特别注意的安全边界:
 **重要提示**: 请勿在公共论坛、社交媒体或 issue tracker 中公开未修复的安全漏洞。
 
 **作者**: EvoRule Project
-**邮箱**: evorulelab@gmail.com
+**邮箱**: <evorulelab@gmail.com>
 
 ---
 

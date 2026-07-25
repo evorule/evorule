@@ -3,6 +3,9 @@
 //! 测试流程：
 //! 1. 加载 JSON 规则文件（通过 serde_json 解析）
 //! 2. 通过 reactor 执行指令
+
+// 测试代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 //! 3. 检查审计链中的 Fact 记录
 //! 4. 验证执行结果
 
@@ -51,6 +54,8 @@ fn load_json_rule(json_str: &str) -> Vec<JsonValue> {
 
 /// 测试场景 1: VIP 客户订单处理
 #[tokio::test]
+// 端到端测试场景, 161 行 fixture (规则 + 执行 + 断言)。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+#[allow(clippy::too_many_lines)]
 async fn test_vip_order_processing() {
     // JSON 规则：电商订单处理（遵循 TCB 的 I/O 两阶段模式）
     // 阶段 1：检查 is_vip，如果存在且 __io_result__ 不存在，则发起 I/O

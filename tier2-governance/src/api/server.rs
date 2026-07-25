@@ -1971,6 +1971,8 @@ impl GovernanceServer {
     /// `per_second` 是令牌桶补充周期（秒），每周期补充 `burst_size` 个令牌。
     /// 持续速率 = burst_size / per_second（req/s）。
     /// burst_size 同时是桶的最大容量（突发上限）。
+    // axum Router 多 route 集中配置, 拆函数需共享 AppState。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+    #[allow(clippy::too_many_lines)]
     pub fn build_router(&self) -> Router {
         let auth = self.auth.clone();
 
@@ -2158,6 +2160,7 @@ pub fn resolve_governor_config(
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+    #![allow(clippy::panic, clippy::expect_used)]
     use super::*;
 
     // ===== resolve_governor_config 单元测试 =====

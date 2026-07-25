@@ -1,5 +1,10 @@
 //! Panic-free contract tests for tier0-tcb v0.1.0-alpha.1.
 //!
+//! 文件名虽含 "panic_free", 但测试本身用 `panic!` 报告"违反 panic-free 合约" 的反向断言。
+//! 测试代码豁免 L2 clippy panic (L1 build.rs 门禁已守 G1 panic-prone)。
+#![allow(clippy::panic, clippy::expect_used)]
+//!
+//!
 //! # Goal
 //!
 //! For every public API function, verify it **NEVER panics** on any input.

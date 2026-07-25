@@ -229,6 +229,8 @@ pub fn fact_to_json(fact: &Fact) -> serde_json::Value {
 ///
 /// 反序列化带 `type` 鉴别字段的 JSON 对象。任何字段缺失或类型不匹配
 /// 均返回 `WalError::InvalidFact`，调用方可决定跳过该行或中止恢复。
+// 7 种 Fact 变体扁平 match, 拆函数需共享中间变量。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+#[allow(clippy::too_many_lines)]
 pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
     let obj = v
         .as_object()
@@ -667,6 +669,7 @@ pub fn read_wal<P: AsRef<Path>>(path: P) -> Result<Vec<(u64, Fact)>, WalError> {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+    #![allow(clippy::panic, clippy::expect_used)]
     use super::*;
     use crate::fact::{Fact, FactId, IoType};
     use tier0_tcb::JsonValue;

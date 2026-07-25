@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 # Mutation Testing 指南 (cargo-mutants)
 
 [tier0-tcb](../) 的测试**真的能抓 bug**吗？mutation testing 给答案。
@@ -5,12 +13,14 @@
 ## 🎯 原理
 
 cargo-mutants 自动在源代码中注入微小改动 ("mutant")：
-- `>=` → `>` 
+
+- `>=` → `>`
 - `+` → `-`
 - `true` → `false`
 - 删一行、删一个分支、改一个常量...
 
 每个 mutant 都跑完整测试套件：
+
 - **CAUGHT** (抓到): 测试失败 → 测试有效 ✓
 - **MISSED** (漏过): 测试通过 → 测试有盲区 ⚠
 - **TIMEOUT**: mutant 死循环/超时
@@ -100,6 +110,7 @@ start tier0-tcb/mutants.out/mutants.html
    - 等价 mutant (mutant 行为不变): 接受，标 EQUIVALENT
    - 真盲区: 加测试
 3. **加测试**:
+
    ```rust
    #[test]
    fn regression_for_<function>_<mutation>() {
@@ -107,11 +118,13 @@ start tier0-tcb/mutants.out/mutants.html
        // 验证期望行为
    }
    ```
+
 4. **重跑**: 验证 mutant 现在被 CAUGHT
 
 ## 📊 CI
 
 `.github/workflows/mutants.yml`:
+
 - **Schedule**: 每周日 00:00 UTC (夜间跑)
 - **Manual**: workflow_dispatch
 - **Timeout**: 12h/job (GitHub Actions max)

@@ -16,6 +16,7 @@
 **修订记录**: 1.0 → 1.1(2026-07-20),§4.4 校准安全审计门槛,新增 §4.5 第三方审计触发条件
 **适用范围**: EvoRule 生态所有项目
 **配套文档**:
+
 - [README.md](README.md) — 项目总览
 - [CHANGELOG.md](CHANGELOG.md) — 当前变更日志模板
 - [CONTRIBUTING.md](CONTRIBUTING.md) — 贡献流程
@@ -62,7 +63,7 @@ EvoRule 全生态采用 **[SemVer 2.0.0](https://semver.org/lang/zh-CN/)** 作�
 
 ### 2.1 版本号格式
 
-```
+```text
 主版本号.次版本号.修订号[-预发布标识]
 
 例:1.2.3, 1.2.3-rc.1, 1.2.3-alpha
@@ -101,12 +102,13 @@ EvoRule 生态分为**三大类项目**,不同类别的版本策略不同。
 
 ### 3.2 跨类别版本同步规则
 
-```
+```text
 机制层(MAJOR) == 应用层(MAJOR) == SDK(MAJOR)    ← 必须一致
 机制层(MINOR) >= 应用层(MINOR) >= SDK(MINOR)    ← 至少同步
 ```
 
 **具体规则**:
+
 1. **MAJOR 跨类别必须一致** — 比如机制层升 1.0 时,应用层和 SDK 也必须升 1.0
 2. **MINOR 跨类别至少同步** — 机制层 1.2 时,应用层和 SDK 至少 1.2(可以更高)
 3. **PATCH 跨类别独立** — 每个项目可以有自己的 patch 号
@@ -129,6 +131,7 @@ EvoRule 生态分为**三大类项目**,不同类别的版本策略不同。
 ### 4.1 0.1.0 的意义
 
 **0.1.0 = 项目重启 / 公开起点**。表示:
+
 - 代码**初步可运行**
 - 核心 API 已定义
 - **不稳定** — API 可能随时变
@@ -136,7 +139,7 @@ EvoRule 生态分为**三大类项目**,不同类别的版本策略不同。
 
 ### 4.2 0.x 阶段的版本演进
 
-```
+```text
 0.1.0 (起点) → 0.2.0 → 0.3.0 → ... → 0.9.0 → 1.0.0 (稳定)
 ```
 
@@ -193,6 +196,7 @@ EvoRule 生态分为**三大类项目**,不同类别的版本策略不同。
 | **奇安信/绿盟等国内** | 国产化合规 | ¥10-30 万 | B 端/政府 |
 
 > **不要做** 的事:
+>
 > - ❌ 在没触发上述条件时主动做(浪费钱)
 > - ❌ 把"准备第三方审计"作为不发版的理由(本末倒置)
 > - ❌ 用"我们已通过 XX 审计"作为营销话术,除非报告公开展示
@@ -204,6 +208,7 @@ EvoRule 生态分为**三大类项目**,不同类别的版本策略不同。
 ### 4.6 0.x 阶段的 CHANGELOG
 
 每个 0.x 版本必须在 CHANGELOG 里有**独立的章节**:
+
 ```markdown
 ## [0.2.0] - 2026-08-15
 
@@ -215,7 +220,7 @@ EvoRule 生态分为**三大类项目**,不同类别的版本策略不同。
 
 ### 🐛 修复
 - ...
-```
+```rust
 
 **绝不允许**用 `[Unreleased]` 占位发布版本。
 
@@ -226,6 +231,7 @@ EvoRule 生态分为**三大类项目**,不同类别的版本策略不同。
 ### 5.1 升 1.0 之后
 
 1.0 之后,**严格遵守 SemVer 2.0**:
+
 - MAJOR 升级 = 有破坏性变更
 - MINOR 升级 = 仅向后兼容的新功能
 - PATCH 升级 = 仅向后兼容的 bug 修复
@@ -298,12 +304,14 @@ SDK 版本 = 它依赖的**机制层**版本(不是应用层)。
 ### 7.2 异步发布
 
 SDK 可以**晚于** evorule 机制层发布,但**版本号必须对齐**:
+
 - evorule 0.5.0 发布后,SDK 0.5.0 必须**在 7 天内**发布
 - 否则 evorule 0.6.0 推迟
 
 ### 7.3 evo-agent 独立版本
 
 evo-agent 是**应用层**,版本可以独立:
+
 - 但 MAJOR 必须跟机制层一致(见 §3.2)
 - 比如:evorule 1.0 + evo-agent 1.0,但 evo-agent 可以停在 1.2,evorule 1.3
 
@@ -351,6 +359,7 @@ build/
 ### 8.4 我们的当前实践
 
 ⚠️ **现状不一致**:
+
 - `D:\evorule\.gitignore` 第 9 行:`Cargo.lock`
 - 这对 `tier2-governance`(有 binary)来说是**错误的**
 
@@ -397,7 +406,7 @@ git tag v0.2.0
 # 5. push
 git push origin main --tags
 git push gitee main --tags  # 同步到 Gitee
-```
+```text
 
 ### 9.3 SDK 发版
 
@@ -430,7 +439,7 @@ twine upload dist/*
 
 ### 10.1 git tag 格式
 
-```
+```text
 v0.1.0
 v0.2.0
 v1.0.0
@@ -473,7 +482,8 @@ v1.0.0-rc.1
 
 ### Q4: Cargo.lock 改了会导致什么?
 
-**A**: 
+**A**:
+
 - **lib-only 项目**:不 commit,所以用户拉时 cargo 自动 resolve 新的 dep 版本(可能 API 变化)
 - **binary 项目**:commit,锁定 build,确保可复现
 
@@ -482,6 +492,7 @@ EvoRule 关键是 **tier2-governance**(有 binary `evorule-server`)。它的 Car
 ### Q5: 怎么从 0.x 升 1.0?
 
 **A**: 当**所有升 1.0 的条件**(§4.4)满足时:
+
 1. 写 `1.0.0` 章节的 CHANGELOG,重点写"为什么 stable"
 2. 跑完整发版流程(§9.1 checklist)
 3. 写 `MIGRATION_GUIDE_0_to_1.md`(0.x → 1.0 迁移)
@@ -490,7 +501,8 @@ EvoRule 关键是 **tier2-governance**(有 binary `evorule-server`)。它的 Car
 
 ### Q6: 如果有紧急 hotfix 怎么办?
 
-**A**: 
+**A**:
+
 - **0.x 阶段**:从 main 拉 hotfix 分支,改完直接发,版本号 PATCH
 - **1.x 阶段**:同样 PATCH,但必须从最新 stable tag 拉 hotfix 分支(不要从 dev 拉)
 
@@ -521,8 +533,8 @@ EvoRule 关键是 **tier2-governance**(有 binary `evorule-server`)。它的 Car
 **本版本策略基于 [SemVer 2.0](https://semver.org/lang/zh-CN/)、[Keep a Changelog](https://keepachangelog.com/)、[Conventional Commits](https://www.conventionalcommits.org/) 等社区最佳实践,结合 EvoRule 生态"机制 vs 应用分离"的设计原则定制。**
 
 **作者**: EvoRule Project
-**邮箱**: evorulelab@gmail.com
-**Gitee**: https://gitee.com/evorulelab/evorule
+**邮箱**: <evorulelab@gmail.com>
+**Gitee**: <https://gitee.com/evorulelab/evorule>
 
 ---
 

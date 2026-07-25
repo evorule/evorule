@@ -128,6 +128,7 @@ impl<T> std::fmt::Debug for ObjectPool<T> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
     use super::*;
 
     #[test]

@@ -1,7 +1,6 @@
 <!--
-  Copyright 2026 EvoRule Project
-
-  SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC0-1.0
+Benchmark reports are public artifacts; we release them under CC0 for maximum transparency and reproducibility.
 -->
 
 # 实验 1.2:evorule-server 吞吐量基准
@@ -24,6 +23,7 @@
 | **混合负载** | — | 994,230 ops / 60s | 5 sessions × 60s 持续 |
 
 **关键结论**:
+
 - evorule-server **真实能力** ~16K-63K ops/s,比默认限速 200/s 高 80-300 倍
 - 200 req/s 是**生产安全护栏**(防滥用),不是 evorule 能力上限
 - 单实例 evorule-server 在 localhost 跑出 **63K burst / 17K sustained**
@@ -37,15 +37,17 @@
 `D:\evorule\tier2-governance\examples\bench_throughput.rs` — Rust benchmark 二进制
 
 支持参数:
+
 ```bash
 bench_throughput <num_sessions> <cmds_per_session> <concurrency> [delay_us]
-```
+```text
 
 ### 2.2 关键修改
 
 **a) 加 `--no-rate-limit` CLI flag** — 阶段 1.2 发现 server 默认 200 req/s 限速 (P1-4 安全措施)会卡住 benchmark。
 
 修改:`D:\evorule\tier2-governance\src\bin\evorule_server.rs` + `D:\evorule\tier2-governance\src\api\server.rs`
+
 - `GovernanceServer` 增加 `rate_limit_per_sec` 和 `rate_limit_burst` 字段
 - `--no-rate-limit` 设为 0 → 内部映射为 `1_000_000` burst 实质无限制
 - 默认保持 200 req/s(生产安全)
@@ -67,6 +69,7 @@ bench_throughput <num_sessions> <cmds_per_session> <concurrency> [delay_us]
 ### 3.1 场景 A:突发吞吐(50 sessions × 100 cmds)
 
 ```
+
 [Phase 1] Creating 50 sessions...
 [OK] 50 sessions in 0.01s (7268 sessions/sec)
 
@@ -75,7 +78,8 @@ bench_throughput <num_sessions> <cmds_per_session> <concurrency> [delay_us]
 
 [Phase 3] 500 state reads (concurrency=10)...
 [OK] 500 reads in 0.01s (50318 reads/sec, 0.0ms/read)
-```
+
+```text
 
 | 指标 | 数值 |
 |---|---|
@@ -87,9 +91,11 @@ bench_throughput <num_sessions> <cmds_per_session> <concurrency> [delay_us]
 ### 3.2 场景 B:持续 60 秒
 
 ```
+
 [Phase 4] Sustained load (60s)...
 [OK] 994230 ops in 60.0s (16570 ops/sec sustained)
-```
+
+```text
 
 | 指标 | 数值 |
 |---|---|
@@ -100,10 +106,12 @@ bench_throughput <num_sessions> <cmds_per_session> <concurrency> [delay_us]
 ### 3.3 场景 C:混合(更小规模,验证代码路径)
 
 ```
+
 Sessions: 10 × 10 cmds × concurrency=5
 [OK] 100 commands in 0.00s (35167 cmds/sec, 0.0ms/cmd)
 [OK] 100 reads in 0.00s (52676 reads/sec, 0.0ms/read)
-```
+
+```text
 
 ---
 
@@ -112,6 +120,7 @@ Sessions: 10 × 10 cmds × concurrency=5
 ### 4.1 限速是"护栏"不是"上限"
 
 server 启动时 hardcoded 200 req/s 限速(P1-4),这是**防滥用**的:
+
 - 防止单一客户端挤占 server 资源
 - 防止恶意 DoS
 - 防止下游(DB / external)被冲爆
@@ -166,6 +175,7 @@ $env:EVORULE_BENCH_SUSTAINED=1
 ```
 
 预期:
+
 - 突发 50×100×10: 63K cmds/s
 - 持续 60s: 16K ops/s
 

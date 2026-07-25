@@ -49,6 +49,7 @@ EvoRule 采用 **AGPL-3.0-or-later 许可证** 作为基础开源协议,以确�
 | **非营利组织** | 依据《慈善法》或《民办非企业单位登记管理暂行条例》注册的基金会、社会团体、社会服务机构等,且**年度检查合格、未被列入异常名录** | 非营利组织法人登记证书及近一年度工作报告或审计报告 |
 
 > ⚠️ **排除项**:
+>
 > - 任何形式的商业公司(有限责任公司、股份有限公司、合伙企业等)
 > - 政府或学术机构设立的**营利性子公司或附属企业**
 > - 个人开发者(个人应直接遵循 AGPL-3.0 开源协议,无需申请)
@@ -60,11 +61,13 @@ EvoRule 采用 **AGPL-3.0-or-later 许可证** 作为基础开源协议,以确�
 3. **不提供商业化 SaaS**:不得向外部商业客户提供基于 EvoRule 的云服务并从中直接获利
 
 > ✅ **允许的示例**:
+>
 > - 某市政府使用 EvoRule 构建行政审批规则引擎,免费向市民提供在线办理服务
 > - 某大学实验室使用 EvoRule 进行规则合成研究,并将修改后的代码用于内部教学
 > - 某非营利医疗援助组织使用 EvoRule 处理患者数据匹配规则,不向患者收费
 >
 > ❌ **禁止的示例**:
+>
 > - 某国资背景的云服务商使用 EvoRule 搭建风控平台,并向银行客户按次收费
 > - 某大学科技园将其校内孵化的软件产品以 EvoRule 为基础,授权给企业使用并收费
 
@@ -110,7 +113,7 @@ EvoRule 采用 **AGPL-3.0-or-later 许可证** 作为基础开源协议,以确�
 | 学术机构 | 办学许可证 / 事业单位法人证书 | 近一年非营利审计报告 |
 | 非营利组织 | 非营利组织法人登记证书 | 年检合格证明、免税资格证明 |
 
-> 如材料涉密,可联系 evorulelab@gmail.com(主题加 `[Confidential]`)获取保密提交方式。
+> 如材料涉密,可联系 <evorulelab@gmail.com>(主题加 `[Confidential]`)获取保密提交方式。
 
 ### 步骤 2:在线提交申请
 
@@ -187,9 +190,10 @@ EvoRule Project 审核团队将在 10 个工作日内:
 ## 七、咨询与联系
 
 **疑问咨询**:
-- 📧 邮箱:evorulelab@gmail.com(主题加 `[Free Commercial License]`)
-- 🌐 Gitee Issues:https://gitee.com/evorulelab/evorule/issues
-- 📞 商务电话(工作日 10:00-17:00):联系 evorulelab@gmail.com 获取
+
+- 📧 邮箱:<evorulelab@gmail.com>(主题加 `[Free Commercial License]`)
+- 🌐 Gitee Issues:<https://gitee.com/evorulelab/evorule/issues>
+- 📞 商务电话(工作日 10:00-17:00):联系 <evorulelab@gmail.com> 获取
 
 ---
 

@@ -95,7 +95,7 @@ EvoRule 采用**双轨许可模式**,为不同用户提供灵活选择:
 | 教育机构 | 优惠价格 | 学校和科研机构 |
 | 非营利组织 | **免费**(申请) | 见 [FREE_COMMERCIAL_LICENSE.md](FREE_COMMERCIAL_LICENSE.md) |
 
-**联系方式**: evorulelab@gmail.com
+**联系方式**: <evorulelab@gmail.com>
 
 ---
 
@@ -109,6 +109,7 @@ EvoRule 的"代码"和"宪法"采用**不同协议**:
 | `core_eval.json`(宪法) | **CC0 1.0 公共领域** | 解释器规范,任何人都可自由实现 |
 
 **战略意义**:
+
 - 代码 AGPL-3.0:阻止大厂"白嫖 fork 后卖闭源 SaaS"
 - 宪法 CC0:鼓励广泛采用,任何人都可以基于宪法实现兼容的 EvoRule 引擎
 - 这把"标准"和"实现"分开,类似 HTTP 规范(W3C 公共)vs Apache HTTP Server(版权)
@@ -132,6 +133,7 @@ EvoRule 的"代码"和"宪法"采用**不同协议**:
 ### Q4: 商业许可是永久的还是订阅制?
 
 **A**: 我们提供两种选项:
+
 - **永久许可** — 一次性付费,永久使用该版本
 - **订阅许可** — 年费制,包含所有更新和技术支持
 
@@ -151,10 +153,10 @@ EvoRule 的"代码"和"宪法"采用**不同协议**:
 
 ## 联系方式
 
-- **销售咨询**: evorulelab@gmail.com
-- **技术支持**: evorulelab@gmail.com(同邮箱)
-- **官方网站**: https://gitee.com/evo-rule-lab/evorule
-- **Gitee 组织**: https://gitee.com/evo-rule-lab
+- **销售咨询**: <evorulelab@gmail.com>
+- **技术支持**: <evorulelab@gmail.com>(同邮箱)
+- **官方网站**: <https://gitee.com/evo-rule-lab/evorule>
+- **Gitee 组织**: <https://gitee.com/evo-rule-lab>
 
 ---
 

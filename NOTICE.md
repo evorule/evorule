@@ -31,6 +31,7 @@
 | **`core_eval.json`** | **CC0 1.0 公共领域** | EvoRule 宪法(解释器规范)—— 任何人都可以自由实现兼容的 EvoRule 引擎,无需保留版权声明 |
 
 **协议分离的战略意义**:
+
 - 代码(copyleft,AGPL-3.0):保护 EvoRule 当前实现,阻止大厂"白嫖 fork 后卖闭源 SaaS"
 - 宪法(public domain,CC0-1.0):鼓励广泛采用,任何人都可以基于宪法实现兼容引擎
 - 这把"标准"和"实现"分开,类似 HTTP 规范(W3C 公共)vs Apache HTTP Server(版权)
@@ -38,6 +39,7 @@
 ## 设计原则
 
 EvoRule 的核心设计原则:
+
 - 规则即数据(可读、可审计、可序列化)
 - 自解释引擎(解释器本身也是可被审计的规则)
 - 完全可追溯(每次状态变化留下因果链)
@@ -49,6 +51,6 @@ EvoRule 的核心设计原则:
 
 - **项目**: EvoRule — 反应式执行引擎
 - **作者**: EvoRule Project
-- **邮箱**: evorulelab@gmail.com
+- **邮箱**: <evorulelab@gmail.com>
 - **组织**: [EvoRule Lab](https://gitee.com/evo-rule-lab)
-- **Gitee**: https://gitee.com/evo-rule-lab/evorule
+- **Gitee**: <https://gitee.com/evo-rule-lab/evorule>

@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 # Tier 1 (Reactor) — 形式化规范
 
 > **适用范围**: tier1-reactor
@@ -14,6 +22,7 @@
 这套规范的核心试金石是**"机制-策略分离原则"**:
 
 > **如果业务需求变了, 这行代码需要改吗?**
+>
 > - **需要改** → 这是**策略** (业务逻辑), **必须**放在 JSON 数据中
 > - **不需要改** → 这是**机制** (执行框架), **允许**写在 Rust 中
 
@@ -24,36 +33,44 @@
 以下属于系统的"骨架"或"管道", 不包含业务意图, 允许编写 Rust 代码:
 
 ### 1.1 反应器生命周期控制 (`reactor.rs`, `stable_detector.rs`)
+
 - 控制 `max_rounds` 循环、检测版本号是否变动 (循环控制是机制)
 - **注意**: 稳定检测的逻辑 (版本号比较) 是纯算法机制, 但**稳定阈值** (如 3 次) 是策略, 必须来自 JSON 配置, 不得硬编码
 
 ### 1.2 数据加载与结构转换 (`wal.rs`, `facts_log.rs`, `rule_validator.rs`, `rule_safety.rs`)
+
 - 从文件系统读取 JSON 并反序列化
 - 将 JSON 规则树转换为内部指令结构 (纯粹的格式映射, 无校验逻辑)
 - 追加式日志的读写、版本号的单调递增 (日志存储是机制)
 
 ### 1.3 事实与状态管理 (`fact.rs`, `state.rs`, `channel.rs`, `phase.rs`)
+
 - Fact 的构造、传递、状态机管理
 - 通道发送/接收逻辑 (数据管道)
 - 阶段 (phase) 切换控制
 
 ### 1.4 不变性与验证 (`invariants.rs`, `semantic_invariants.rs`, `pure.rs`)
+
 - 不变量检查 (纯算法, 无业务判断)
 - 语义不变量验证
 - 纯函数标记
 
 ### 1.5 调试与可观测性 (`debug_control.rs`, `metrics.rs`, `time_machine.rs`)
+
 - 调试控制开关
 - 指标收集 (机制, 非业务数据)
 - 时间旅行调试 (状态快照回放)
 
 ### 1.6 I/O 超时策略 (`io_timeout_policy.rs`)
+
 - 超时控制 (机制, 阈值来自 JSON)
 
 ### 1.7 错误处理 (`error.rs`)
+
 - 错误类型定义与传播
 
 ### 1.8 FFI 接口 (`ffi.rs`)
+
 - C FFI 暴露 (阶段9, 可选 feature)
 
 ---
@@ -107,6 +124,7 @@
 | §5.2 (业务术语) | `"math_rule"`, `"physics_rule"`, `"summarize"`, `"admin"`, `"teacher"`, `"call_external"`, `"call_service"` | 7 |
 
 **豁免**:
+
 - `#[cfg(test)] mod tests { ... }` 测试模块 — 测试 fixture 可构造这些字符串
 - 注释 (`//`, `///`, `//!`, `/* */`) — 文档可自由提及
 - `src/fact.rs` (G8/§5.2 模式) — IoType/ControlFlowType 枚举映射的唯一真值来源

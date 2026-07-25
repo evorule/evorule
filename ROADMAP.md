@@ -54,7 +54,12 @@
 ### 还不行的(诚实记账)
 
 - ❌ **第三方安全审计** — 已完成内部自审(P0 5 项全修复,P1 4 项 HIGH 待公网部署前修复),1.0 之前不做第三方
-- 🟡 **L9 Kani 部分真实证明** — 5 proof, 4/5 PASS + 19 proptest(2026-07-23 更新, Kani 0.67.0);4 PASS(i64 加/减不上溢、JsonValue 类型安全、状态转换有界);1 个 verify_path_no_panic 因 Kani 工具链 alloc std unwind bound 限制 TIMEOUT(改由 proptest `resolve_path_never_panics_arbitrary_path` 保底);删除 verify_domain_boolean(改由 proptest `domain_eval_never_panics_arbitrary_type` 替代);新增 5 个 proptest。详见 [`tier0-tcb/TCB_SPEC.md`](tier0-tcb/TCB_SPEC.md)
+- 🟡 **L9 Kani 部分真实证明** — 5 proof, 4/5 PASS + 19 proptest(2026-07-23 更新, Kani 0.67.0)
+  - 4 PASS(i64 加/减不上溢、JsonValue 类型安全、状态转换有界)
+  - 1 个 verify_path_no_panic 因 Kani 工具链 alloc std unwind bound 限制 TIMEOUT(改由 proptest `resolve_path_never_panics_arbitrary_path` 保底)
+  - 删除 verify_domain_boolean(改由 proptest `domain_eval_never_panics_arbitrary_type` 替代)
+  - 新增 5 个 proptest。详见 [`tier0-tcb/TCB_SPEC.md`](tier0-tcb/TCB_SPEC.md)
+
 - ❌ **公开 demo 视频** — 有评估文档,没 GIF/视频
 - ❌ **依赖自动审计** — cargo-audit 装不上(rustc 1.92 vs kstring 1.96 要求)
 - ❌ **应用层 killer app** — 时间旅行调试器在 0.2.0 之后
@@ -141,7 +146,7 @@ EvoRule 战略上服务三类用户,**优先级递进**:
 
 ## 时间表(总览)
 
-```
+```text
 2026-07 ──── 2026-09 ──── 2026-11 ──── 2027-01 ──── 2027-Q2
 │           │            │            │            │
 0.1.0       0.2.0        0.3.0        0.4.0        1.0.0
@@ -157,8 +162,8 @@ EvoRule 战略上服务三类用户,**优先级递进**:
 
 ## 反馈渠道
 
-- **Gitee Issue**:https://gitee.com/evo-rule-lab/evorule/issues(主渠道)
-- **邮箱**:evorulelab@gmail.com
+- **Gitee Issue**:<https://gitee.com/evo-rule-lab/evorule/issues(主渠道)>
+- **邮箱**:<evorulelab@gmail.com>
 - **安全漏洞**:见 [SECURITY.md](SECURITY.md)
 
 ---

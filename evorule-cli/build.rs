@@ -63,7 +63,13 @@ fn main() {
         return;
     }
 
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let manifest_dir = if let Ok(s) = std::env::var("CARGO_MANIFEST_DIR") {
+        s
+    } else {
+        eprintln!("==== evorule-cli compile-time gate FAILED ====");
+        eprintln!("CARGO_MANIFEST_DIR not set");
+        std::process::exit(1);
+    };
     let src_path = Path::new(&manifest_dir).join("src").join("main.rs");
 
     let src = match fs::read_to_string(&src_path) {
@@ -95,10 +101,10 @@ fn main() {
     }
 
     if violations.is_empty() {
-        println!(
-            "cargo:warning=evorule-cli compile-time gate PASSED ({} lines scanned, G8/F11 enforced)",
-            src_stripped.lines().count()
-        );
+        // Gate passed silently — success is the default expected state, not a warning.
+        // SKIP path still emits cargo:warning (skipping a security gate is noteworthy).
+        // FAILURE path uses eprintln! (loud, visible on build failure).
+        // Gate execution is verifiable by build success (gate failure → build failure).
     } else {
         eprintln!("==== evorule-cli compile-time gate FAILED ====");
         eprintln!("Forbidden patterns in {}:", src_path.display());
