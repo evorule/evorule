@@ -30,8 +30,8 @@
 
 ```bash
 # 1) 下载(根据 CPU 架构选)
-wget https://gitee.com/evorulelab/evorule/releases/download/v0.1.0/evorule-x86_64
-wget https://gitee.com/evorulelab/evorule/releases/download/v0.1.0/evorule-aarch64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.0/evorule-x86_64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.0/evorule-aarch64
 
 # 2) 验证(可选,确认下载完整)
 sha256sum -c evorule-x86_64.sha256
@@ -318,13 +318,13 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 ```bash
 # Linux x86_64 圈 2 用户
-wget https://gitee.com/evorulelab/evorule/releases/download/v0.1.0/evorule-x86_64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.0/evorule-x86_64
 chmod +x evorule-x86_64
 ./evorule-x86_64 validate /etc/company-rules/
 ./evorule-x86_64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 
 # Linux aarch64 圈 2 用户 (AWS Graviton / RPi)
-wget https://gitee.com/evorulelab/evorule/releases/download/v0.1.0/evorule-aarch64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.0/evorule-aarch64
 chmod +x evorule-aarch64
 ./evorule-aarch64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 ```
@@ -431,6 +431,22 @@ evorule run ./rules/ --payload-file payload.example.json
 
 ## 配套工具
 
-- **`evorule-server`** —— HTTP + SSE 服务的二进制(D:\evorule\tier2-governance\)
+- **`evorule-server`** —— HTTP + SSE 服务的二进制([`../tier2-governance/`](../tier2-governance/))
 - **`core_eval.json`** —— 宪法文件(默认在 `tier0-tcb/core_eval.json`)
 - **evorule-application/time-travel-debugger** —— 后续做(可视化版 replay)
+
+---
+
+## 参见(项目级治理文档)
+
+- [根 `README.md`](../README.md) —— EvoRule 主入口
+- [`CONTRIBUTING.md`](../CONTRIBUTING.md) —— 贡献流程
+- [`CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md) —— 社区行为准则
+- [`CLA-individual.md`](../CLA-individual.md) —— 个人贡献者许可协议
+- [`ROADMAP.md`](../ROADMAP.md) —— 路线图
+- [`STATUS.md`](../STATUS.md) —— v0.1.0 真实状态记账
+- [`VERSION_STRATEGY.md`](../VERSION_STRATEGY.md) —— 版本号标准
+- [`docs/constitution.md`](../docs/constitution.md) —— EvoRule 宪法(价值观与原则)
+- [`docs/oss_strategy.md`](../docs/oss_strategy.md) —— 开源治理策略(AGPL-3.0 解释 + 商业 license 路径)
+- [`docs/security/SECURITY_AUDIT_v0.1.0.md`](../docs/security/SECURITY_AUDIT_v0.1.0.md) —— v0.1.0 安全审计
+- [`docs/security/THREAT_MODEL.md`](../docs/security/THREAT_MODEL.md) —— 威胁模型

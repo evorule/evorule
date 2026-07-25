@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 # 律所合规规则样例(律师执业规范 / 客户保密)
 
 > 适用对象:律所合规部 / 案件管理 / 监管对接人

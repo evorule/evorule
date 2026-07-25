@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 # evorule 圈 2 样例规则
 
 > 给合规刚需用户(医院、律所、金融、政务等)**开箱即用**的 JSON 规则集。

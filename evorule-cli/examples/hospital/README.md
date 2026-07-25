@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 # 医院合规规则样例(HIPAA / 等保 2.0)
 
 > 适用对象:医院信息科 / 病案室 / 合规官
