@@ -445,7 +445,7 @@ loop {
 | 时间机器 | `GET /api/sessions/{id}/diff?a=&b=`          | 对比两版本 JSON 差异 |
 | 审计     | `GET /api/sessions/{id}/audit`               | 查询 JSON 审计报告   |
 | 审计     | `GET /api/sessions/{id}/audit/verify`        | 校验 JSON 审计链     |
-| 健康     | `GET /api/health` / `liveness` / `readiness` | K8s JSON 探针        |
+| 健康     | `GET /api/health` / `/api/health/liveness` / `/api/health/readiness` | K8s JSON 探针        |
 
 SDK 客户端:
 
