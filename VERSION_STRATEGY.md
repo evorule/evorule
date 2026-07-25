@@ -98,29 +98,31 @@ EvoRule 生态分为**三大类项目**,不同类别的版本策略不同。
 |---|---|---|---|
 | **机制层** | 核心反应式执行引擎 | 提供底层确定性 / 可审计保证 | `evorule`(含 tier0/tier1/tier2) |
 | **应用层** | 业务编排 / LLM Agent | 在机制层之上构建 | `evo-agent` |
+| **工具** | 单文件 CLI / 调试器 | 把机制层暴露给终端用户 | `evorule-cli` |
 | **客户端** | SDK / 库 | 让外部应用集成机制层 | `@evorule/sdk`(TS), `evorule`(Py) |
 
 ### 3.2 跨类别版本同步规则
 
 ```text
-机制层(MAJOR) == 应用层(MAJOR) == SDK(MAJOR)    ← 必须一致
-机制层(MINOR) >= 应用层(MINOR) >= SDK(MINOR)    ← 至少同步
+机制层(MAJOR) == 应用层(MAJOR) == 工具(MAJOR) == SDK(MAJOR)    ← 必须一致
+机制层(MINOR) >= 应用层(MINOR) >= 工具(MINOR) >= SDK(MINOR)    ← 至少同步
 ```
 
 **具体规则**:
 
-1. **MAJOR 跨类别必须一致** — 比如机制层升 1.0 时,应用层和 SDK 也必须升 1.0
-2. **MINOR 跨类别至少同步** — 机制层 1.2 时,应用层和 SDK 至少 1.2(可以更高)
+1. **MAJOR 跨类别必须一致** — 比如机制层升 1.0 时,应用层、工具、SDK 也必须升 1.0
+2. **MINOR 跨类别至少同步** — 机制层 1.2 时,应用层、工具、SDK 至少 1.2(可以更高)
 3. **PATCH 跨类别独立** — 每个项目可以有自己的 patch 号
 
-### 3.3 当前项目版本(2026-07-20)
+### 3.3 当前项目版本(2026-07-25)
 
 | 项目 | 类型 | 当前版本 | 备注 |
 |---|---|---|---|
 | `evorule` | 机制层 | 0.1.0 | 含 tier0/tier1/tier2 三个 crate |
+| `evorule-cli` | 工具 | 0.1.0 | 圈 2 终端用户 CLI,随 evorule workspace 一起发布 |
 | `evo-agent` | 应用层 | 0.1.0 | 独立 crate,path dep evorule |
-| `@evorule/sdk` | 客户端 (TS) | 0.1.0 | npm 包 |
-| `evorule` | 客户端 (Py) | 0.1.0 | PyPI 包 |
+| `@evorule/sdk` | 客户端 (TS) | 0.1.0 | npm 包(v0.2.0+ 计划) |
+| `evorule` | 客户端 (Py) | 0.1.0 | PyPI 包(v0.2.0+ 计划) |
 
 **所有项目统一 0.1.0** — 这是项目重启的统一基线。
 
