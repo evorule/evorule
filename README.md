@@ -25,6 +25,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 > | 第三方安全审计                     | ❌ **不做**(1.0 之前)         |
 > | 公开 demo 视频                     | ❌ **缺**                     |
 > | L9 Kani 真实证明                   | 🟡 **4/5 PASS + 19 proptest** |
+> | TLA+ 状态机验证                    | ✅ **5 不变式 PASS (TLC)**    |
 >
 > **诚实记账**:见 [STATUS.md](STATUS.md)
 > **路线图**:见 [ROADMAP.md](ROADMAP.md)
@@ -42,11 +43,12 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![core_eval.json: CC0-1.0](https://img.shields.io/badge/core_eval.json-CC0%201.0-lightgrey.svg)](https://creativecommons.org/publicdomain/zero/1.0/)
 [![Kani](https://img.shields.io/badge/Kani-4_of_5_PASS-blue.svg)](tier0-tcb/tests/kani_proofs.rs)
+[![TLA+](https://img.shields.io/badge/TLA%2B-5_invariants_PASS-blue.svg)](tier0-tcb/tla/ExecuteTransition.tla)
 [![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](Cargo.toml)
 
 ---
 
-> 🇨🇳 **本仓库为 EvoRule 中文版,主仓库发布在 [Gitee](https://gitee.com/evorulelab/evorule)。**
+> 🇨🇳 **本仓库为 EvoRule 中文版,主仓库发布在 [Gitee](https://gitee.com/evo-rule-lab/evorule)。**
 > 文档/issue/PR 优先在 Gitee 处理。GitHub 镜像仅供国际用户参考。
 
 ---
@@ -97,7 +99,8 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 | 🔒 **确定性执行**          | 给定 JSON 输入 → 必然 JSON 输出,无歧义                                                      |
 | ⛓ **JSON 因果链**          | 每个 JSON 状态变化都有 `cause` 指向父 JSON                                                  |
 | ⏪ **JSON 时间机器**       | `replay` / `rewind` / `fork` / `diff` —— 任何 JSON 历史点都能重活                           |
-| ✅ **Kani 形式化验证**     | JSON 状态机的核心不变式被证明,而非靠 review                                                 |
+| ✅ **Kani 形式化验证**     | JSON 状态机的核心算术不变式被 Kani 证明,而非靠 review                                       |
+| ✅ **TLA+ 状态机验证**     | JSON 状态机的控制流性质(终止性/确定性/深度强制)被 TLA+ TLC 证明                             |
 | 🧱 **三层架构**            | tier0 = JSON 状态机 / tier1 = JSON 事件循环 / tier2 = JSON HTTP                             |
 | 🤖 **AI Agent 编排**       | 通过独立的 [evo-agent](https://github.com/evorule/evo-agent) 把 LLM 输出(也是 JSON)接入     |
 | 🏥 **单文件 CLI 落地圈 2** | [`evorule-cli/`](evorule-cli/) —— musl 静态链接,1.6 MB,零网络零遥测,直接给医疗/律所合规官用 |
@@ -155,7 +158,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 ### 1. 启动(用内置宪法)
 
 ```bash
-git clone https://gitee.com/evorulelab/evorule
+git clone https://gitee.com/evo-rule-lab/evorule
 cd evorule
 cargo build --bin evorule-server
 ./target/debug/evorule-server --addr 127.0.0.1:18080
@@ -433,7 +436,7 @@ cargo test -p tier0-tcb --test proptest_props
 - `verify_path_no_panic` — JSON 路径解析永不 panic(已加 4 个 `kani::assert`,待 Kani 环境验证)
 - `verify_set_integer_safety` — 整数 set 安全性 ✅ PASS
 - `verify_set_sub_safety` — set 减法安全性 ✅ PASS
-- `verify_transition_bounded` — 状态转换有界 ✅ PASS
+- `verify_jsonvalue_array_safety` — JsonValue Array 构造器安全性 ✅ PASS
 
 > 🟡 **4/5 PASS + 19 proptest**。详见 [`tier0-tcb/TCB_SPEC.md`](tier0-tcb/TCB_SPEC.md)。
 
@@ -639,7 +642,7 @@ evorule diff before.log after.log # 对比两个 fact log
 
 ## 协议
 
-[AGPL-3.0](LICENSE) — 详见 `docs/oss_strategy.md`(待发布)。
+[AGPL-3.0](LICENSE) — 详见 [`docs/oss_strategy.md`](docs/oss_strategy.md)。
 
 > 这是**整个 EvoRule 生态**的协议,不只是 evorule 单独。
 > 我们的立场是"不白送":大厂 fork 之后想"卖闭源 SaaS"也得开源他们的服务。
@@ -649,7 +652,7 @@ evorule diff before.log after.log # 对比两个 fact log
 
 ## 贡献
 
-欢迎 PR、Issue、Discussion。但请先读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 `docs/constitution.md`(待发布)。
+欢迎 PR、Issue、Discussion。但请先读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [`docs/constitution.md`](docs/constitution.md)。
 
 特别欢迎:
 
@@ -669,7 +672,7 @@ evorule diff before.log after.log # 对比两个 fact log
   title = {EvoRule: A JSON-Data-Set Execution Engine with Append-Only Facts Log},
   version = {0.1.0},
   year = {2026},
-  url = {https://gitee.com/evorulelab/evorule},
+  url = {https://gitee.com/evo-rule-lab/evorule},
   license = {AGPL-3.0}
 }
 ```
