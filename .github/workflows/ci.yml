@@ -37,50 +37,6 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-  # ===== TypeScript SDK 检查 =====
-  ts-check:
-    name: TypeScript SDK
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 安装 Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: sdk/typescript/package-lock.json
-
-      - name: 安装依赖
-        working-directory: sdk/typescript
-        run: npm ci
-
-      - name: TypeScript 类型检查
-        working-directory: sdk/typescript
-        run: npm run typecheck
-
-  # ===== Python SDK 检查 =====
-  py-check:
-    name: Python SDK
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 安装 Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: sdk/python/pyproject.toml
-
-      - name: 安装依赖
-        working-directory: sdk/python
-        run: pip install -e .
-
-      - name: Python 语法检查
-        working-directory: sdk/python
-        run: python -m py_compile evorule/*.py
-
   # ===== Rust 单元 + 集成测试 =====
   test:
     name: Rust Tests

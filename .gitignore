@@ -74,9 +74,10 @@ __pycache__/
 .coverage
 htmlcov/
 
-# === 未完成的 SDK (0.1.0 不发布,待 0.2.0+ 成熟后再加入) ===
-sdk/go/
-sdk/java/
+# === SDK 已物理分离到独立仓 (v0.2.0+ 计划) ===
+# 旧位置 sdk/go/ + sdk/java/ 已迁出
+# sdk/go/
+# sdk/java/
 
 node_modules/
 dist/

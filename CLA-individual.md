@@ -23,7 +23,6 @@
 
 - **"项目"** 指 **EvoRule**(反应式执行引擎)及其所有相关代码仓库,包括但不限于:
   - `evorule`(主仓库,本仓库)
-  - `evorule/sdk/typescript`(TypeScript SDK)
   - `evo-agent`(独立 Agent 编排仓库,evorule 生态的一部分)
   - 未来可能增加的关联仓库
 - **"贡献"** 指您(贡献者)提交给项目的任何源代码、文档、测试用例、补丁、翻译、示例或其他材料,通过 Pull Request / Merge Request / Issue / Email / 任何其他渠道提交。
