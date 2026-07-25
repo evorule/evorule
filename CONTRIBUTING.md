@@ -102,7 +102,7 @@ GitHub Issues for international contributors.
 
 **Logs / screenshots**:
 [Paste server startup log or curl output]
-```
+```text
 
 ---
 
@@ -129,11 +129,14 @@ Also use Issues with the `enhancement` label.
 2. **Create a branch**: `git checkout -b feature/your-feature-name`
 3. **Write code + write tests** — coverage must not drop
 4. **Local validation**:
+
    ```bash
    cargo check --workspace
    cargo test --workspace
    cargo clippy --workspace -- -D warnings   # 0 warnings required
-   ```
+
+```text
+
 5. **Push**: `git push origin feature/your-feature-name`
 6. **Open PR** on Gitee (or GitHub), fill in the PR template
 7. **Sign CLA** (see below)
@@ -144,13 +147,15 @@ Also use Issues with the `enhancement` label.
 Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
+
 feat(tier0): add Kani proof for set_integer_safety
 fix(db): adapt to sqlx 0.8 API
 docs(readme): distinguish constitution from business rules
 chore(deps): upgrade tokio to 1.40
 refactor(reactor): split stable_detector module
 test(e2e): add core constitution smoke test
-```
+
+```text
 
 ### Branch naming
 
@@ -167,7 +172,7 @@ test(e2e): add core constitution smoke test
 **All contributions must include a CLA**. The bot will check automatically on PR.
 
 - Individual contributors: [CLA-individual.md](CLA-individual.md) (to be published)
-- Corporate contributors: contact evorulelab@gmail.com
+- Corporate contributors: contact <evorulelab@gmail.com>
 
 **Why CLA?**
 
@@ -255,8 +260,8 @@ All `.rs` files must include the SPDX header:
 
 ## 📞 Contact
 
-- **Gitee**: https://gitee.com/evorulelab/evorule/issues
-- **Email**: evorulelab@gmail.com
+- **Gitee**: <https://gitee.com/evorulelab/evorule/issues>
+- **Email**: <evorulelab@gmail.com>
 - **Org**: [EvoRule Lab](https://gitee.com/evorulelab)
 
 ---

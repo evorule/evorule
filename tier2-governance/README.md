@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 # tier2-governance
 
 > EvoRule 三层架构的 Tier 2 治理层 —— I/O 订阅者、审计链、HTTP API。
@@ -22,7 +30,7 @@
 
 ## 模块结构
 
-```
+```text
 src/
 ├── api/                    # HTTP API (axum 0.8)
 │   ├── auth.rs             #   Bearer token 认证中间件(opt-in,默认禁用)

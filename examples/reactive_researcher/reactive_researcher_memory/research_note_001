@@ -1,0 +1,1 @@
+[dry-run LLM] 关于 '请用三句话总结 EvoRule 框架的设计哲学' 的研究结论: EvoRule 通过三层架构(tier0 TCB / tier1 reactor / tier2 governance) 实现事实驱动的确定性执行。TCB 保持 no_std + forbid(unsafe_code), 所有 I/O 经 Fact 通道异步外挂,核心可形式化验证。

@@ -124,8 +124,8 @@ let result = runner.run_with_replay("...", |version| {
 ## ⚠️ 不接受的 issue 类型
 
 - **安全问题** → 走 [SECURITY.md](../SECURITY.md),**不要**在 issue 里公开
-- **功能咨询** → 用 Discussion(Gitee 暂未开,请用邮件 evorulelab@gmail.com)
-- **HR / 商业合作** → 邮件 evorulelab@gmail.com
+- **功能咨询** → 用 Discussion(Gitee 暂未开,请用邮件 <evorulelab@gmail.com>)
+- **HR / 商业合作** → 邮件 <evorulelab@gmail.com>
 - **无关推广** → 直接 close
 
 ---

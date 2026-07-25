@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 <div align="center">
 
 <img src="logo.png" alt="EvoRule Logo" width="140">
@@ -109,7 +117,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 ## 架构:JSON 在哪里流动
 
-```
+```text
                         ┌─────────────────────────────┐
                         │  EvoRule 宪法(core_eval.json) │
                         │  内置 · 不可热重载            │
@@ -164,7 +172,7 @@ cargo build --bin evorule-server
 ./target/debug/evorule-server --addr 127.0.0.1:18080
 # 默认加载 ./tier0-tcb/core_eval.json(宪法)
 # 默认监听 ./rules 目录(业务规则,可热重载)
-```
+```text
 
 > 想用自定义宪法?`--core_eval /path/to/your/core.json`
 > 想换业务规则目录?`--rules_dir /path/to/your/rules`
@@ -236,7 +244,7 @@ curl -X POST http://127.0.0.1:18080/api/sessions/$SESSION_ID/command \
 # 4. 读取 JSON 状态
 curl http://127.0.0.1:18080/api/sessions/$SESSION_ID/state
 # → {"payload":{"x":5},"queue":[],"version":3}
-```
+```text
 
 ### 4. 订阅 JSON 事件流
 
@@ -260,7 +268,7 @@ curl http://127.0.0.1:18080/api/sessions/$SESSION_ID/rewind/1 | jq
 
 # 对比两个 JSON 版本的 payload 差异
 curl "http://127.0.0.1:18080/api/sessions/$SESSION_ID/diff?a=1&b=3" | jq
-```
+```text
 
 ---
 
@@ -319,7 +327,7 @@ loop {
     // 5. emit — 广播 JSON event 到订阅者
     // 6. log — JSON 追加到 FactsLog(JSONL)
 }
-```
+```bash
 
 **JSON Fact 枚举(7 个变体,固定不变):**
 
@@ -428,7 +436,7 @@ cargo kani -p tier0-tcb
 
 # 跑 19 个 proptest(Windows 可用)
 cargo test -p tier0-tcb --test proptest_props
-```
+```text
 
 当前已就位的 5 个 proof(都是为"JSON 状态机正确"服务):
 
@@ -494,6 +502,7 @@ cargo test -p tier0-tcb --test proptest_props
 ## 目录结构
 
 ```
+
 evorule/
 ├── Cargo.toml                        # workspace 配置
 ├── Cargo.lock
@@ -556,7 +565,8 @@ evorule/
 ├── sdk/
 │   └── typescript/                   # TypeScript SDK
 └── Cargo.lock
-```
+
+```toml
 
 ---
 
@@ -621,7 +631,7 @@ evorule validate ./rules/         # 校验 JSON 规则 schema
 evorule run ./rules/ -o fact.log  # 执行 + 输出 fact log(JSONL)
 evorule replay fact.log           # 重放 fact log(pretty-print)
 evorule diff before.log after.log # 对比两个 fact log
-```
+```text
 
 **30 秒给监管严格行业讲清楚**:
 

@@ -33,6 +33,7 @@
 ❌ **不要把业务逻辑塞进 tier0-tcb**
 
 **理由**:
+
 - TCB 越大,越难形式化验证
 - TCB 变更 = 宪法变更,需要重新过门禁
 - 业务逻辑应作为 JSON 数据加载,通过 tier1/tier2 处理
@@ -43,6 +44,7 @@
 ❌ **不要在 evorule 内嵌 LLM / 业务规则 / 工作流**
 
 **理由**:
+
 - 机制层可独立验证(无业务污染)
 - 应用层可独立演化(LLM 升级不需改 evorule)
 - 契约通过 HTTP + JSON 公开,可跨语言调用
@@ -53,6 +55,7 @@
 ❌ **不要在系统内部引入非 JSON 数据结构(如 binary / protobuf / msgpack)**
 
 **理由**:
+
 - 透明性、可解释性、可审计性的源头是 JSON
 - git diff = 审计,grep = 查询,JSONL = 时间机器
 - 业务可读、可写、可版本控制
@@ -63,6 +66,7 @@
 ❌ **不要引入"无 cause 的内部状态变更"**
 
 **理由**:
+
 - rewind / replay / diff 的基础是因果链
 - 审计、调试、争议解决全部依赖因果链
 
@@ -73,6 +77,7 @@
 使用 [Gitee Issues](https://gitee.com/evorulelab/evorule/issues)。
 
 **报告模板**:
+
 ```markdown
 **环境**:
 - OS: [e.g. Windows 11 / Ubuntu 22.04]
@@ -91,7 +96,7 @@
 
 **日志/截图**:
 [粘贴 server 启动日志或 curl 输出]
-```
+```text
 
 ---
 
@@ -100,6 +105,7 @@
 也用 [Gitee Issues](https://gitee.com/evorulelab/evorule/issues),标签 `enhancement`。
 
 **建议模板**:
+
 ```markdown
 **问题**: 现有方案的不足
 **建议方案**: 简要描述
@@ -117,11 +123,14 @@
 2. **创建分支**:`git checkout -b feature/your-feature-name`
 3. **写代码 + 写测试** — 测试覆盖率不掉
 4. **本地验证**:
+
    ```bash
    cargo check --workspace
    cargo test --workspace
    cargo clippy --workspace -- -D warnings   # 0 warnings 才能合
-   ```
+
+```text
+
 5. **推送**:`git push origin feature/your-feature-name`
 6. **创建 PR** 到 Gitee,填写 PR 模板
 7. **CLA 签署**(见下)
@@ -132,13 +141,15 @@
 使用 [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
+
 feat(tier0): 新增 Kani proof for set_integer_safety
 fix(db): 修复 sqlx 0.8 API 适配
 docs(readme): 区分宪法 vs 业务规则
 chore(deps): 升级 tokio 到 1.40
 refactor(reactor): 拆分 stable_detector 模块
 test(e2e): 添加宪法核心冒烟测试
-```
+
+```text
 
 ### 分支命名
 
@@ -155,9 +166,10 @@ test(e2e): 添加宪法核心冒烟测试
 **所有贡献必须签署 CLA**。提交 PR 时,机器人会自动检查。
 
 - 个人贡献者:[CLA-individual.md](CLA-individual.md)(待发布)
-- 企业贡献者:请联系 evorulelab@gmail.com
+- 企业贡献者:请联系 <evorulelab@gmail.com>
 
 **为什么需要 CLA?**
+
 - 保护项目可商业化(参考 [DUAL_LICENSE.md](DUAL_LICENSE.md))
 - 避免贡献者版权纠纷
 - AGPL-3.0 之外的商业许可需要 CLA 配合
@@ -175,6 +187,7 @@ test(e2e): 添加宪法核心冒烟测试
 ### 端到端测试
 
 启动 evorule-server,跑通 5 个核心场景:
+
 1. 健康检查
 2. 会话生命周期
 3. set + increment + state(宪法核心)
@@ -241,8 +254,8 @@ cargo kani -p tier0-tcb --features kani
 
 ## 📞 联系方式
 
-- **Gitee**: https://gitee.com/evorulelab/evorule/issues
-- **邮箱**: evorulelab@gmail.com
+- **Gitee**: <https://gitee.com/evorulelab/evorule/issues>
+- **邮箱**: <evorulelab@gmail.com>
 - **组织**: [EvoRule Lab](https://gitee.com/evorulelab)
 
 ---

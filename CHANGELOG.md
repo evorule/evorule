@@ -112,8 +112,8 @@
 ---
 
 **作者**: EvoRule Project
-**邮箱**: evorulelab@gmail.com
-**Gitee**: https://gitee.com/evorulelab/evorule
+**邮箱**: <evorulelab@gmail.com>
+**Gitee**: <https://gitee.com/evorulelab/evorule>
 
 ---
 

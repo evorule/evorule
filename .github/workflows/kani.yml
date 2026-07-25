@@ -2,11 +2,11 @@
 # GitHub Actions: Kani 形式化验证
 #
 # Kani 验证 tier0-tcb/tests/kani_proofs.rs 中的 5 个 proof:
-#   1. verify_value_roundtrip     - JsonValue 构造/访问一致性
-#   2. verify_path_no_panic       - 路径解析对任意输入不 panic
-#   3. verify_set_integer_safety  - 整数加法不溢出
-#   4. verify_set_sub_safety      - 整数减法不溢出
-#   5. verify_transition_bounded  - 状态转换有界
+#   1. verify_value_roundtrip       - JsonValue 构造/访问一致性
+#   2. verify_path_no_panic         - 路径解析对任意输入不 panic
+#   3. verify_set_integer_safety    - 整数加法不溢出
+#   4. verify_jsonvalue_array_safety - JsonValue Array 构造器安全性
+#   5. verify_set_sub_safety        - 整数减法不溢出
 #
 # 单个 proof 跑 1min - 24h 不等. 当前 workflow 跑全部 proofs.
 # 如需加速, 可改为单 proof 矩阵并行.
@@ -18,38 +18,39 @@ on:
   push:
     branches: [main]
     paths:
-      - 'tier0-tcb/src/**'
-      - 'tier0-tcb/Cargo.toml'
-      - '.github/workflows/kani.yml'
+      - "tier0-tcb/src/**"
+      - "tier0-tcb/Cargo.toml"
+      - ".github/workflows/kani.yml"
   pull_request:
     paths:
-      - 'tier0-tcb/src/**'
-      - 'tier0-tcb/Cargo.toml'
-      - '.github/workflows/kani.yml'
+      - "tier0-tcb/src/**"
+      - "tier0-tcb/Cargo.toml"
+      - ".github/workflows/kani.yml"
   workflow_dispatch:
     inputs:
       proof:
-        description: 'Specific proof to verify (default: all)'
+        description: "Specific proof to verify (default: all)"
         required: false
-        default: ''
+        default: ""
 
 env:
   CARGO_TERM_COLOR: always
-  KANI_VERSION: '0.50.0'
+  KANI_VERSION: "0.67.0"
 
 jobs:
   kani-verify:
     runs-on: ubuntu-22.04
-    timeout-minutes: 1440  # 24h per proof budget
+    timeout-minutes: 1440 # 24h per proof budget
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain (nightly, Kani 0.67.0 requires nightly)
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: nightly-2025-11-21
+          components: rustfmt, clippy
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -76,7 +77,7 @@ jobs:
             echo "==> Running specific proof: ${{ inputs.proof }}"
             cargo kani --proof "${{ inputs.proof }}" --output-format=terse
           else
-            echo "==> Running all 6 proofs (estimated 30min - 24h)"
+            echo "==> Running all 5 proofs (estimated 30min - 24h)"
             cargo kani --output-format=terse
           fi
 

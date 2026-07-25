@@ -1,12 +1,6 @@
 <!--
-  Copyright 2026 EvoRule Project
-
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU Affero General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC0-1.0
+Open source strategy documents define the rules of engagement for the community; they are public norms, not proprietary assets.
 -->
 
 # EvoRule 开源战略
@@ -15,6 +9,7 @@
 **生效日期**: 2026-07-25
 **适用范围**: EvoRule 生态所有项目
 **配套文档**:
+
 - [LICENSE](../LICENSE) — AGPL-3.0 法律文本
 - [DUAL_LICENSE.md](../DUAL_LICENSE.md) — 双轨许可机制
 - [FREE_COMMERCIAL_LICENSE.md](../FREE_COMMERCIAL_LICENSE.md) — 免费商业豁免
@@ -40,12 +35,12 @@
 
 大厂 fork 之后想"卖闭源 SaaS"也得开源他们的服务。内部用 AGPL 管不到（也没必要），但 fork 这个行为本身 = 我们的胜利。
 
-| 场景 | 我们的态度 | 协议工具 |
-|------|-----------|----------|
-| 个人学习、研究、内部使用 | 免费，随便用 | AGPL 不限制 |
-| 开源项目集成 | 免费，但你也得开源 | AGPL 传染性 |
-| 公益/学术机构 | 免费，可闭源 | 免费商业豁免 |
-| 商业公司闭源 SaaS | 付费，买商业许可 | 商业许可 |
+| 场景                     | 我们的态度         | 协议工具     |
+| ------------------------ | ------------------ | ------------ |
+| 个人学习、研究、内部使用 | 免费，随便用       | AGPL 不限制  |
+| 开源项目集成             | 免费，但你也得开源 | AGPL 传染性  |
+| 公益/学术机构            | 免费，可闭源       | 免费商业豁免 |
+| 商业公司闭源 SaaS        | 付费，买商业许可   | 商业许可     |
 
 ---
 
@@ -53,13 +48,13 @@
 
 ### 2.1 与其他许可证的对比
 
-| 许可证 | SaaS 需要开源吗？ | 传染性 | 适合我们吗？ | 原因 |
-|--------|-------------------|--------|-------------|------|
-| MIT / Apache-2.0 | ❌ 不需要 | 无 | ❌ | 大厂直接 fork 改个名字卖闭源 SaaS，白送 |
-| GPL-3.0 | ❌ 不需要（仅分发触发） | 强 | ❌ | 有 SaaS loophole，网络服务不算"分发" |
-| LGPL-3.0 | ❌ 不需要 | 弱 | ❌ | 既有 SaaS loophole，传染性又弱 |
-| BSL / SSPL | ✅ 需要（但不是 OSI 认证） | 自定义 | ❌ | SSPL 不是开源协议，BSL 最终转开源但时间不可控 |
-| **AGPL-3.0** | ✅ 需要（网络用户也有获取源码的权利） | 强 | ✅ | OSI 认证的开源协议，封死 SaaS loophole |
+| 许可证           | SaaS 需要开源吗？                     | 传染性 | 适合我们吗？ | 原因                                          |
+| ---------------- | ------------------------------------- | ------ | ------------ | --------------------------------------------- |
+| MIT / Apache-2.0 | ❌ 不需要                             | 无     | ❌           | 大厂直接 fork 改个名字卖闭源 SaaS，白送       |
+| GPL-3.0          | ❌ 不需要（仅分发触发）               | 强     | ❌           | 有 SaaS loophole，网络服务不算"分发"          |
+| LGPL-3.0         | ❌ 不需要                             | 弱     | ❌           | 既有 SaaS loophole，传染性又弱                |
+| BSL / SSPL       | ✅ 需要（但不是 OSI 认证）            | 自定义 | ❌           | SSPL 不是开源协议，BSL 最终转开源但时间不可控 |
+| **AGPL-3.0**     | ✅ 需要（网络用户也有获取源码的权利） | 强     | ✅           | OSI 认证的开源协议，封死 SaaS loophole        |
 
 ### 2.2 AGPL-3.0 的关键条款
 
@@ -84,14 +79,14 @@
 
 EvoRule 不是一个项目，是一个生态。不同层级的协议策略不同：
 
-| 层级 | 项目 | 许可证 | 理由 |
-|------|------|--------|------|
-| **核心** | evorule (tier0/tier1/tier2) | **AGPL-3.0-or-later** | 核心引擎，必须保护不被白嫖 |
-| **AI 编排** | evo-agent | **AGPL-3.0-or-later** | 应用层，与核心紧密绑定 |
-| **SDK** | TypeScript SDK | **MIT**（待确认） | 鼓励集成，越多人用越好，SDK 本身不是核心价值 |
-| **SDK** | Python SDK（规划中） | **MIT**（待确认） | 同上 |
-| **宪法** | `core_eval.json` | **CC0-1.0** | "宪法属于全人类"，规则本身不应受版权限制 |
-| **文档** | 所有文档 | **CC0-1.0**（建议） | 知识自由传播 |
+| 层级        | 项目                        | 许可证                | 理由                                         |
+| ----------- | --------------------------- | --------------------- | -------------------------------------------- |
+| **核心**    | evorule (tier0/tier1/tier2) | **AGPL-3.0-or-later** | 核心引擎，必须保护不被白嫖                   |
+| **AI 编排** | evo-agent                   | **AGPL-3.0-or-later** | 应用层，与核心紧密绑定                       |
+| **SDK**     | TypeScript SDK              | **MIT**（待确认）     | 鼓励集成，越多人用越好，SDK 本身不是核心价值 |
+| **SDK**     | Python SDK（规划中）        | **MIT**（待确认）     | 同上                                         |
+| **宪法**    | `core_eval.json`            | **CC0-1.0**           | "宪法属于全人类"，规则本身不应受版权限制     |
+| **文档**    | 所有文档                    | **CC0-1.0**（建议）   | 知识自由传播                                 |
 
 ### 3.1 为什么 SDK 用 MIT？
 
@@ -109,7 +104,7 @@ SDK 是"胶水层"，价值在于降低集成门槛。如果 SDK 也是 AGPL，�
 
 这里只讲战略逻辑：
 
-```
+```text
                     ┌─────────────────────┐
                     │    AGPL-3.0 开源     │
                     │   （免费，但要开源）  │
@@ -119,7 +114,7 @@ SDK 是"胶水层"，价值在于降低集成门槛。如果 SDK 也是 AGPL，�
                ▼               ▼               ▼
         个人/内部用       开源项目         公益/学术
        （不受影响）    （AGPL 兼容）    （免费商业豁免）
-                                                      
+
                     ┌─────────────────────┐
                     │     商业许可         │
                     │   （付费，可闭源）    │
@@ -154,6 +149,7 @@ SDK 是"胶水层"，价值在于降低集成门槛。如果 SDK 也是 AGPL，�
 ### Q: 我可以基于 EvoRule 做商业产品吗？
 
 **可以，两种选择：**
+
 1. 你的产品也开源（AGPL-3.0 兼容）—— 免费
 2. 你的产品闭源 —— 购买商业许可
 
@@ -170,6 +166,7 @@ SDK 是"胶水层"，价值在于降低集成门槛。如果 SDK 也是 AGPL，�
 ### Q: 未来会换许可证吗？
 
 不会轻易换。如果要换，需要：
+
 - 所有版权持有者同意（当前：Mr. DAMU ZHENG）
 - 不影响已发布版本的许可证
 - 提前 6 个月公告

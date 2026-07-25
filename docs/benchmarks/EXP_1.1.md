@@ -1,7 +1,6 @@
 <!--
-  Copyright 2026 EvoRule Project
-
-  SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC0-1.0
+Benchmark reports are public artifacts; we release them under CC0 for maximum transparency and reproducibility.
 -->
 
 # 实验 1.1:evorule-server 端点冒烟测试(35/35)
@@ -31,6 +30,7 @@
 ## 2. 端点覆盖清单(35 个)
 
 ### 2.1 健康检查(3/3)
+
 | 端点 | 状态 | 备注 |
 |---|---|---|
 | `GET /api/health` | 200 | `{"success":true,"message":"ok"}` |
@@ -38,17 +38,20 @@
 | `GET /api/health/readiness` | 200 | `{"success":true,"message":"ready"}` |
 
 ### 2.2 会话(2/2)
+
 | 端点 | 状态 | 备注 |
 |---|---|---|
 | `POST /api/sessions` | 200 | `{"session_id": N}` |
 | `GET /api/sessions` | 200 | 列表 |
 
 ### 2.3 命令(1/1)
+
 | 端点 | 状态 | 备注 |
 |---|---|---|
 | `POST /api/sessions/{id}/command` | 200 | set 指令正常 |
 
 ### 2.4 State / Payload(3/3)
+
 | 端点 | 状态 | 备注 |
 |---|---|---|
 | `GET /api/sessions/{id}/state` | 200 | |
@@ -56,17 +59,20 @@
 | `POST /api/sessions/{id}/payload` | 200 | PayloadUpdate |
 
 ### 2.5 Facts(2/2)
+
 | 端点 | 状态 | 备注 |
 |---|---|---|
 | `GET /api/sessions/{id}/facts` | 200 | |
 | `GET /api/sessions/{id}/facts?prefix=test` | 200 | |
 
 ### 2.6 History(1/1)
+
 | 端点 | 状态 |
 |---|---|
 | `GET /api/sessions/{id}/history` | 200 |
 
 ### 2.7 Audit 链(6/6)
+
 | 端点 | 状态 | 备注 |
 |---|---|---|
 | `GET /api/sessions/{id}/audit` | 200 | 6 entries |
@@ -78,6 +84,7 @@
 | `POST /api/sessions/{id}/audit/import/compressed` | 200 | 验证后 verify_ok: true |
 
 ### 2.8 Time Machine(4/4)
+
 | 端点 | 状态 |
 |---|---|
 | `GET /api/sessions/{id}/replay` | 200 |
@@ -86,6 +93,7 @@
 | `POST /api/sessions/fork/{id}?version=0` | 200 |
 
 ### 2.9 Debug(3/3)
+
 | 端点 | 状态 |
 |---|---|
 | `GET /api/sessions/{id}/debug/phase` | 200 |
@@ -93,6 +101,7 @@
 | `GET /api/sessions/{id}/debug/pending_io` | 200 |
 
 ### 2.10 Shared Facts(4/4)
+
 | 端点 | 状态 | 备注 |
 |---|---|---|
 | `GET /api/shared/facts` | 200 | |
@@ -101,17 +110,20 @@
 | `GET /api/shared/facts/1/used_by` | 200 |  |
 
 ### 2.11 Used at Startup(2/2)
+
 | 端点 | 状态 |
 |---|---|
 | `GET /api/sessions/{id}/used_at_startup` | 200 |
 | `POST /api/sessions/{id}/used_at_startup` | 200 |
 
 ### 2.12 SSE Events(1/1)
+
 | 端点 | 状态 | 备注 |
 |---|---|---|
 | `GET /api/sessions/{id}/events` | 200 | text/event-stream,2s 内连接保持 |
 
 ### 2.13 Metrics & Debugger UI(2/2)
+
 | 端点 | 状态 | 备注 |
 |---|---|---|
 | `GET /metrics` | 200 | Prometheus 格式 |
@@ -139,6 +151,7 @@
 ### 3.3 GZIP 端点的客户端陷阱
 
 服务端正确返回 `Content-Type: application/gzip` + `Content-Disposition: attachment`,但:
+
 - `Invoke-WebRequest` 会自动解压,gzip magic 丢失
 - `curl.exe -o file` 保存原始字节,正确
 
@@ -198,6 +211,7 @@ cd D:\evorule
 ```
 
 预期输出:
+
 - Pass: 35 / Fail: 0 / Total: 35
 - Elapsed: ~3s
 - GZIP magic OK

@@ -380,10 +380,10 @@ fn main() -> ExitCode {
     }
 
     if violations.is_empty() {
-        println!(
-            "cargo:warning={crate_name} compile-time gate PASSED ({} .rs files scanned, G8 enforced)",
-            files.len()
-        );
+        // Gate passed silently — success is the default expected state, not a warning.
+        // SKIP path still emits cargo:warning (skipping a security gate is noteworthy).
+        // FAILURE path uses eprintln! (loud, visible on build failure).
+        // Gate execution is verifiable by build success (gate failure → build failure).
         return ExitCode::SUCCESS;
     }
 

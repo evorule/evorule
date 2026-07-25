@@ -1,5 +1,11 @@
 //! P0 #5: 每个 `TcbError` 变体的执行路径触发测试
 //!
+//! 测试中 `panic!` 用于断言错误变体被正确触发, `expect()` 用于加载测试 fixture 资源。
+//! 这些 panic-prone 构造在测试里是合法 Rust 模式, L1 build.rs 门禁已守 G1 (panic-prone),
+//! 这里豁免 L2 clippy 检查 (测试代码豁免是 Cargo 惯例)。
+#![allow(clippy::panic, clippy::expect_used)]
+//!
+//!
 //! error.rs mod tests 只验证 Display + PartialEq，本文件验证每个 `TcbError` 变体
 //! 都能被真实执行路径触发（而非仅构造）。
 //!

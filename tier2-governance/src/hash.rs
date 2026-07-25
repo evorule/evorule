@@ -98,6 +98,8 @@ fn tcb_to_serde(value: &JsonValue) -> serde_json::Value {
 /// 1. 序列化格式不受 Rust 版本或 Debug 实现变更影响
 /// 2. 字段顺序固定且可预测
 /// 3. 跨版本兼容性有保障
+// 7 种 Fact 变体扁平 match + 嵌套, 拆函数需共享中间变量。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+#[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
 pub fn fact_to_stable_json(fact: &tier1_reactor::Fact) -> Result<serde_json::Value, HashError> {
     let fact_type = fact.type_name();
     let fact_id = fact.id();
@@ -307,6 +309,8 @@ pub fn fact_hash(fact: &tier1_reactor::Fact) -> Result<String, HashError> {
 /// 始终返回 `true`：本函数仅以 Fact 列表为输入，按上述算法自洽地重算链式哈希，
 /// 用作审计链计算入口。空列表视为完整（`true`）。
 /// 与 [`crate::auditor::Auditor::verify`] 配合可对照已存储的 `prev_hash` 做完整性校验。
+// 链式哈希 + 多 early return, 拆函数需共享迭代器。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+#[allow(clippy::cognitive_complexity)]
 pub fn verify_hash_chain(facts: &[tier1_reactor::Fact]) -> bool {
     let fact_count = facts.len();
 
@@ -381,6 +385,7 @@ pub fn verify_hash_chain(facts: &[tier1_reactor::Fact]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
     use super::*;
     use tier0_tcb::JsonValue;
     use tier1_reactor::{Fact, FactId, IoType};

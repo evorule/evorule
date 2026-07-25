@@ -382,6 +382,8 @@ impl Reactor {
     /// - `MaxRoundsExceeded`：发射 Error → 清空队列 → 重置 steps → 发射 Stable → 继续
     /// - `TcbError`：发射 Error → 继续（队列空时由稳定检测自动发射 Stable）
     /// - `ChannelClosed`（所有 command_tx 被丢弃）：优雅退出 `Ok(())`
+    // 反应器主循环: 多 match 分支 + 嵌套 if, 拆函数影响接口稳定性。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+    #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
     async fn run(
         self,
         mut cmd_rx: FactReceiver,
@@ -996,6 +998,8 @@ impl Reactor {
     }
 
     /// 处理 Fact（仅更新状态，不执行 TCB）
+    // 7 种 Fact 变体 match, 拆函数需暴露内部状态。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+    #[allow(clippy::cognitive_complexity)]
     fn handle_fact(state: &mut ReactorState, fact: Fact) -> Result<(), ReactorError> {
         match fact {
             Fact::Command { id: _, instruction } => {
@@ -1378,6 +1382,7 @@ impl ReactorHandle {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+    #![allow(clippy::panic, clippy::expect_used)]
     use super::*;
 
     #[test]

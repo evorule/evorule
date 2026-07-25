@@ -11,6 +11,10 @@ publish = false  # Internal binary, not on crates.io
 name = "evorule"  # 用户友好名(不是包名 evorule-cli)
 path = "src/main.rs"
 
+
+
+[lints]
+workspace = true
 [dependencies]
 # Core: only depend on tier0-tcb (pure Rust, no_std-friendly, no C deps)
 tier0-tcb = { path = "../tier0-tcb" }

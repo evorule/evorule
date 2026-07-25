@@ -1,20 +1,6 @@
 <!--
-  Copyright 2026 EvoRule Project
-
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU Affero General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU Affero General Public License for more details.
-
-  You should have received a copy of the GNU Affero General Public License
-  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-  SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC0-1.0
+Code of Conduct documents are community norms; we release them under CC0 for maximum adoption and reuse.
 -->
 
 # 贡献者公约
@@ -55,7 +41,7 @@
 
 ## 强制执行
 
-可以通过 evorulelab@gmail.com 联系项目团队来报告辱骂、骚扰或其他不可接受的行为。所有投诉都将被审查和调查,并将根据情况作出必要和适当的回应。项目团队有义务对事件的报告者保密。具体执行政策的更多细节可能会单独发布。
+可以通过 <evorulelab@gmail.com> 联系项目团队来报告辱骂、骚扰或其他不可接受的行为。所有投诉都将被审查和调查,并将根据情况作出必要和适当的回应。项目团队有义务对事件的报告者保密。具体执行政策的更多细节可能会单独发布。
 
 不善意遵守或执行本行为准则的项目维护者可能会面临项目领导层确定的临时或永久性后果。
 

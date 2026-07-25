@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! 反应器集群 - 多 reactor 协作原语（阶段8：第六组）
@@ -898,6 +898,7 @@ impl ReactorCluster {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+    #![allow(clippy::panic, clippy::expect_used)]
     use super::*;
     use std::collections::BTreeMap;
     use std::time::Duration;

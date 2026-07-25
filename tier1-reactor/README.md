@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 # tier1-reactor
 
 > EvoRule 三层架构的 Tier 1 反应式执行器 —— 事实驱动的状态转换引擎。

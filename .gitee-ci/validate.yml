@@ -6,6 +6,7 @@
 
 stages:
   - validate
+  - tla-check
 
 variables:
   GIT_DEPTH: "20"
@@ -52,3 +53,21 @@ validate-tag:
 #   rules:
 #     - changes:
 #         - "**"
+
+# 4. TLA+ 形式式验证（Phase 1 引入，设计文档 EVORULE_FORMAL_VERTIFICATION_PLAN.md §9.3）
+#    验证 tier0 execute_transition 状态机 5 个不变式
+#    通过条件: TLC 报告 "Model checking completed. No error has been found."
+tla-check:
+  stage: tla-check
+  image: openjdk:17-slim
+  script:
+    - cd tier0-tcb/tla
+    - wget -q https://github.com/tlaplus/tlaplus/releases/latest/download/tla2tools.jar
+    - java -XX:+UseParallelGC -cp tla2tools.jar tlc2.TLC -config ExecuteTransition.cfg ExecuteTransition
+  rules:
+    - changes:
+        - tier0-tcb/tla/**/*
+        - tier0-tcb/src/transition.rs
+        - tier0-tcb/src/executor.rs
+        - .gitee-ci/validate.yml
+  allow_failure: true # Phase 1 完成后改 false

@@ -59,7 +59,7 @@ DB URL 静默回退),**公网部署前必须修复**。v0.1.0 仅适用于 local
 
 ### 1.1 In-Scope Components
 
-```
+```text
 evorule/
 ├── tier0-tcb/             (TCB, ~1500 LOC, 4 Kani PASS + 1 TIMEOUT + 19 proptest)
 ├── tier1-reactor/         (Reactor + FactsLog, 19 files)
@@ -110,7 +110,7 @@ evo-agent/
 
 ## 2. Trust Boundaries
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ Host (User's machine)                                                   │
 │                                                                         │

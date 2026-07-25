@@ -1,3 +1,6 @@
+
+// 测试代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
@@ -25,7 +28,7 @@
 //! - `verify_value_roundtrip`：JsonValue 的构造与访问一致性
 //! - `verify_path_no_panic`：路径解析对任意输入永不 panic
 //! - `verify_set_integer_safety`：整数运算不溢出（溢出返回错误而非 panic）
-//! - `verify_transition_bounded`：状态转换在有限步内完成
+//! - `verify_jsonvalue_array_safety`：JsonValue Array 构造器安全性
 //! - `verify_set_sub_safety`：整数减法运算不下溢
 //!
 //! 原有 `verify_domain_boolean` 已移除（2026-07-23）：evaluate_domain 必然操作
@@ -56,7 +59,7 @@
 //! | `verify_value_roundtrip` | ✅ PASS | 0.15s | 0/377 failed (7 unreachable) |
 //! | `verify_path_no_panic` | 🔧 已改进 | — | 加 assert，待 Kani 验证；proptest 保底 |
 //! | `verify_set_integer_safety` | ✅ PASS | 0.16s | 0/41 failed |
-//! | `verify_transition_bounded` | ✅ PASS | 0.29s | 0/436 failed (9 unreachable) |
+//! | `verify_jsonvalue_array_safety` | ✅ PASS | 0.29s | 0/436 failed (9 unreachable) |
 //! | `verify_set_sub_safety` | ✅ PASS | 0.17s | 0/41 failed |
 //! | ~~`verify_domain_boolean`~~ | 🗑️ 已移除 | — | 改用 proptest 替代（见下） |
 //!
@@ -73,7 +76,7 @@
 //! 当前 4/5 已建立核心证明：
 //! - **i64 加法不上溢**（`verify_set_integer_safety`）
 //! - **i64 减法不下溢**（`verify_set_sub_safety`）
-//! - **JsonValue 状态遍历不 panic**（`verify_value_roundtrip` + `verify_transition_bounded`）
+//! - **JsonValue 状态遍历不 panic**（`verify_value_roundtrip` + `verify_jsonvalue_array_safety`）
 
 use alloc::vec;
 use tier0_tcb::path::resolve_path;
@@ -180,8 +183,8 @@ fn verify_set_integer_safety() {
 /// 上 unwind bound 100 不够。这是 Kani 工具链限制，不是 evorule 代码问题。
 /// 完整证明待 Kani alloc 优化后补全。
 #[kani::proof]
-fn verify_transition_bounded() {
-    // 测 JsonValue 状态遍历不 panic — 这是"状态转换"的最低保证
+fn verify_jsonvalue_array_safety() {
+    // 测 JsonValue Array 构造器安全性 — 验证 Array 类型的构造与访问不 panic
     let arr = JsonValue::Array(vec![JsonValue::Integer(kani::any())]);
     kani::assert(arr.as_array().is_some(), "as_array on Array works");
     kani::assert(arr.is_array(), "is_array on Array works");

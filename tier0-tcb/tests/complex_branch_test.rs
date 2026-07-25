@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
+#![allow(clippy::panic, clippy::expect_used)]
 //! 复杂分支逻辑测试 - 电商订单处理场景
 //!
 //! 测试场景：
@@ -16,12 +17,12 @@
 //!     - 触发 I/O：库存预警
 
 #![allow(clippy::unwrap_used)]
-#![allow(clippy::panic)]
 #![allow(clippy::indexing_slicing)]
 
 use tier0_tcb::{execute_transition, JsonValue, TransitionResult};
 
 /// 构造电商订单处理的 core_eval 规则
+#[allow(clippy::too_many_lines)]
 fn order_processing_core_eval() -> Vec<JsonValue> {
     vec![
         // 规则 1: 匹配 process_order 指令

@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 # Tier 2 (Governance) — 形式化规范
 
 > **适用范围**: tier2-governance
@@ -48,6 +56,7 @@ EVORULE_SKIP_GATE=1 cargo build
 ## 二、允许在 Rust (治理层) 中做的事情 ("机制")
 
 ### 2.1 HTTP API 暴露 (`api/`)
+
 - `api/portal.rs` — 门户 API (会话管理、规则提交)
 - `api/session.rs` — 会话生命周期
 - `api/server.rs` — HTTP 服务器配置
@@ -56,21 +65,25 @@ EVORULE_SKIP_GATE=1 cargo build
 - `api/mod.rs` — 模块声明
 
 ### 2.2 I/O 路由与 Handler (`io_dispatcher.rs`, `io_handler.rs`, `io_subscriber.rs`, `io_handlers/`)
+
 - 根据 `IoType` 枚举路由到具体 Handler (路由是机制, 路由目标是策略)
 - `io_handlers/db_handler.rs` — 数据库 I/O
 - `io_handlers/http_handler.rs` — HTTP I/O (LLM 调用等)
 - `io_handlers/memory_handler.rs` — 内存 I/O (测试用)
 
 ### 2.3 审计与哈希 (`auditor.rs`, `hash.rs`, `clock.rs`)
+
 - 记录 TCB 返回的 `before`/`after` 快照 (只记录, 不判断内容)
 - 计算 BLAKE3 哈希、维护逻辑时钟 (审计工具是机制)
 
 ### 2.4 共享状态与集群 (`shared_facts_log.rs`, `cluster.rs`, `object_pool.rs`)
+
 - 共享 fact log (跨会话/跨节点)
 - 集群协调框架
 - 对象池 (性能优化)
 
 ### 2.5 指标 (`metrics.rs`)
+
 - Prometheus 指标暴露 (可观测性是应用层机制)
 
 ---
@@ -97,6 +110,7 @@ tier2-governance/build.rs 跟 tier1-reactor/build.rs **结构相同** (13 模式
 这是有意的双层一致 (避免 tier1/tier2 走偏)。
 
 **关键一致性要求**:
+
 - FORBIDDEN 数组: 13 模式完全相同
 - `strip_test_mod` 函数: 实现方式相同
 - `fact.rs` 豁免: **两者都必须包含** (G8/§5.2 模式在 fact.rs 中豁免)

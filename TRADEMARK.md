@@ -74,6 +74,7 @@ EvoRule Project 拥有以下商标(统称"EvoRule 商标"):
 - "EvoRule 兼容"(配 EvoRule Logo)
 
 **前提**:
+
 - ✅ Logo 不得修改
 - ✅ 必须清晰说明"兼容"而非"官方"
 - ✅ 不得暗示官方认证或背书
@@ -142,7 +143,7 @@ EvoRule Project 拥有以下商标(统称"EvoRule 商标"):
 | 注册包含 "evorule" 的域名 | 必需 |
 | 培训/咨询业务使用 "EvoRule 认证" 等术语 | 必需 |
 
-**联系方式**:evorulelab@gmail.com(主题加 `[Trademark]`)
+**联系方式**:<evorulelab@gmail.com>(主题加 `[Trademark]`)
 
 ---
 
@@ -185,6 +186,7 @@ EvoRule Project 拥有以下商标(统称"EvoRule 商标"):
 ## 与 EvoRule 兼容的实现(基于 CC0 宪法)
 
 由于 `core_eval.json` 采用 **CC0 1.0 公共领域**,您可以基于它实现自己的 EvoRule 兼容引擎。**但**:
+
 - ✅ 可以称为 "EvoRule-compatible Engine"
 - ✅ 可以引用 EvoRule 宪法
 - ❌ **不得**称自己的实现为 "EvoRule"(品牌专属)
@@ -196,9 +198,9 @@ EvoRule Project 拥有以下商标(统称"EvoRule 商标"):
 
 ## 联系方式
 
-- **商标使用许可申请**:evorulelab@gmail.com(主题加 `[Trademark]`)
-- **侵权举报**:evorulelab@gmail.com(主题加 `[Trademark Violation]`)
-- **官方网站**:https://gitee.com/evo-rule-lab/evorule
+- **商标使用许可申请**:<evorulelab@gmail.com>(主题加 `[Trademark]`)
+- **侵权举报**:<evorulelab@gmail.com>(主题加 `[Trademark Violation]`)
+- **官方网站**:<https://gitee.com/evo-rule-lab/evorule>
 
 ---
 

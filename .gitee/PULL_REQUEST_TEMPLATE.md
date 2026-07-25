@@ -1,4 +1,12 @@
 <!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
+<!--
   EvoRule / Evo-Agent Pull Request Template
   对应 VERSION_STRATEGY.md 的人类审查项
   机械可验的项已交给 CI,本模板只覆盖人审项
@@ -102,6 +110,7 @@
 **Reviewer**:@evo-rule-lab/maintainers
 
 **说明**:
+
 - 普通 bug 修复:勾"通用项"中相关行 + "测试"行
 - 版本号变更:**所有**"通用项"必填
 - 升 1.0:额外勾"升 1.0 时"全部

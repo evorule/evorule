@@ -1,3 +1,6 @@
+
+// 测试代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 //! SSE 事件流集成测试
 //!
 //! 验证 Phase 6B 的实时事件流功能：

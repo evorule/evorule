@@ -1,7 +1,6 @@
 <!--
-  Copyright 2026 EvoRule Project
-
-  SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC0-1.0
+Benchmark reports are public artifacts; we release them under CC0 for maximum transparency and reproducibility.
 -->
 
 # 实验 1.5:并发 session 测试(100 sessions)
@@ -23,6 +22,7 @@
 | State read | 24,642-57,831 /s | — | 1000 reads / 17ms |
 
 **关键结论**:
+
 - **100 并发 sessions 不降速** — 跟 5 sessions 的 16,570 ops/sec 持平
 - server 并发架构(每个 session 独立 reactor + tokio)扩展性 **线性**
 - 单实例 evorule-server 可稳定支撑 **~16K ops/sec 持续**,**~55K ops/sec 突发**
@@ -36,6 +36,7 @@
 `bench_throughput <num_sessions> <cmds_per_session> <concurrency>`
 
 3 个 phase:
+
 - Phase 1: 串行创建 N sessions
 - Phase 2: 50 个 worker 并发对 N 个 session 各发 M cmds
 - Phase 3: 50 worker 并发读 10 × N 个 state
@@ -50,6 +51,7 @@ server 默认 200 req/s(P1-4 限速),并发测试用 `--no-rate-limit` 绕过。
 ### 2.3 服务端并发架构(回顾)
 
 每个 session 独立:
+
 - `Reactor` 主循环(drain → stable → block → execute)
 - `FactsLog`(独立 append-only log)
 - `command_tx` / `event_tx` channels
@@ -63,7 +65,7 @@ server 默认 200 req/s(P1-4 限速),并发测试用 `--no-rate-limit` 绕过。
 
 ### 3.1 突发:100 sessions × 100 cmds × 50 concurrent
 
-```
+```text
 [Phase 1] Creating 100 sessions...
 [OK] 100 sessions in 0.01s (7131 sessions/sec)
 
@@ -83,7 +85,7 @@ server 默认 200 req/s(P1-4 限速),并发测试用 `--no-rate-limit` 绕过。
 
 ### 3.2 持续:100 sessions × 60s
 
-```
+```text
 [Phase 4] Sustained load (60s)...
 [OK] 986872 ops in 60.0s (16448 ops/sec sustained)
 ```
@@ -112,6 +114,7 @@ server 默认 200 req/s(P1-4 限速),并发测试用 `--no-rate-limit` 绕过。
 evorule 用 per-session reactor 隔离,每个 session 独立事件循环。N 个 sessions 并发 = N 个 reactor 并行,不需要全局锁。
 
 **证据**:
+
 - 5 sessions sustained: 16,570 ops/sec
 - 100 sessions sustained: 16,448 ops/sec
 - 差异 < 1%(在测试误差范围内)
@@ -136,6 +139,7 @@ evorule 用 per-session reactor 隔离,每个 session 独立事件循环。N 个
 | **每 session 吞吐** | 164 ops/s | 单 session 1 秒 164 条,够用 |
 
 **16K ops/s 对合规用户意味着**:
+
 - 假设 1 业务事实 = 1 op
 - 1 天(86400 秒) × 16K = **13.8 亿事实/天**
 - 即 5 亿事实/年,远超中小机构合规需求
@@ -143,6 +147,7 @@ evorule 用 per-session reactor 隔离,每个 session 独立事件循环。N 个
 ### 4.4 server 限速的影响
 
 server 默认 200 req/s 限速。生产环境启用限速,意味着:
+
 - 单 IP 客户端最多 200 req/s
 - 多 IP 客户端(不同用户)各自 200 req/s
 - 50 用户 × 200 req/s = 10K req/s ≈ 持续吞吐
@@ -170,6 +175,7 @@ $env:EVORULE_BENCH_SUSTAINED=1
 ```
 
 预期:
+
 - 突发 10000 ops in ~180ms = 55K ops/s
 - 持续 60s = 16K ops/s
 

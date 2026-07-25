@@ -1,7 +1,6 @@
 <!--
-  Copyright 2026 EvoRule Project
-
-  SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: CC0-1.0
+Benchmark reports are public artifacts; we release them under CC0 for maximum transparency and reproducibility.
 -->
 
 # 实验 1.4:长 session 稳定性(10000 facts)
@@ -37,11 +36,13 @@
 ### 2.2 evorule 指令格式(本次发现)
 
 **之前我用的格式(WRONG)**:
+
 ```json
 {"type":"set","params":{"path":"foo","value":"bar"}}
-```
+```text
 
 **reactor 期望的格式(CORRECT)**:
+
 ```json
 {"type":"set","params":{"attr":"foo","operation":"set","value":"bar"}}
 ```
@@ -57,6 +58,7 @@
 ### 3.1 🐛 API 不上报指令错误(用户体验问题)
 
 **Bug 描述**:
+
 - 客户端发错格式的指令 → API 返回 200 OK
 - Reactor 静默创建 Error entry
 - API 响应 body 只有 `{success: true, fact_id: 40003}`
@@ -65,6 +67,7 @@
 **根因**:`session_command` handler 接受任何 JSON,塞到 channel,reactor 自己处理。**没有预先 validation**。
 
 **影响**:
+
 - 客户端调试困难
 - "silent failure" 是反原则(违反 5 原则之"透明")
 - 0.1 阶段 **接受**(defer 到 0.2.0)
@@ -73,6 +76,7 @@
 ### 3.2 ⚠️ O(n²) 快照内存(性能瓶颈)
 
 **Bug 描述**:
+
 - reactor 给每个 StateTransition 存**完整 payload 快照**
 - 10000 facts × 平均 12.5 KB 累积 payload = **~125 MB 快照**
 - 实测 +518 MB(包含 audit chain、command queue、blake3 hashes)
@@ -81,11 +85,13 @@
 **根因**:`FactsLog::append` 中 `StateTransition` 包含 `new_payload: JsonValue` 的全量数据。
 
 **影响**:
+
 - 100K facts → ~50 GB 内存(不可用)
 - 1M facts → 实际崩溃
 - **0.2.0 必须修**
 
 **修复方向**:
+
 - (a) 增量快照(只存 diff)
 - (b) 周期快照(每 N 条一个 full snapshot,中间存 diff)
 - (c) 压缩 payload snapshot(zstd / lz4)
@@ -93,6 +99,7 @@
 ### 3.3 📏 1MB 请求体限制(导入限制)
 
 **Bug 描述**:
+
 - `RequestBodyLimitLayer::new(MAX_REQUEST_BODY_BYTES = 1 MB)`
 - 大 session 的 compressed export 也超 1MB
 - 实验中 1.05 MB export > 1 MB limit,**import 被服务端拒**
@@ -100,10 +107,12 @@
 **根因**:硬编码常量,无 CLI 调整
 
 **影响**:
+
 - 大 session 没法用 import endpoint
 - 备份/恢复受限
 
 **修复方向**:
+
 - 0.2.0:分块导入(每块 < 1MB)
 - 或:`--max-request-body=N` CLI flag
 
@@ -127,7 +136,7 @@
 
 ### 5.1 Phase 1:fire 10000 cmds
 
-```
+```text
 [OK] 10000 commands in 0.77s (13010 cmds/sec)
 ```
 
@@ -135,29 +144,31 @@
 
 ### 5.2 Phase 2:audit chain
 
-```
+```text
 [OK] Audit chain: 5934 entries, last_hash=f82a575f561b0bd4
 [OK] Audit chain integrity: valid=true
 ```
 
 5934 entries < 10000,因为:
+
 - entries coalesce(连续的 set 不都产生 StateTransition)
 - 部分 entries 合并到 stable 周期内
 
 ### 5.3 Phase 3:payload
 
-```
+```text
 [OK] Payload: ~25179 bytes (1594 keys)
 ```
 
 **只有 1594 keys,不是 10000**。这又是一个有意思的发现:
+
 - 10000 cmds 应该创建 10000 keys
 - 实际只有 1594 — 多数 set 被 coalesce(同一 attribute 的连续 set 只保留最后一个)
 - 这是**好事**:避免 payload 无限膨胀
 
 ### 5.4 Phase 4:内存
 
-```
+```text
 [OK] Server RSS: 532.8 MB (Δ +518.8 MB, 54397 bytes/fact)
 [WARN] Memory per fact > 2KB, possible leak
 ```
@@ -166,7 +177,7 @@
 
 ### 5.5 Phase 5:export/import
 
-```
+```text
 [OK] Compressed export: 1049850 bytes (gzip_magic=true)
 [SKIP] Compressed import: 1049850 bytes > 1048576 body limit (1MB)
 ```
@@ -214,6 +225,7 @@ cd D:\evorule
 ```
 
 预期:
+
 - 10000 cmds in < 1s
 - 5934 entries, valid=true
 - 1594 payload keys

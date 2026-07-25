@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 ================================================================
 EvoRule 形式化验证白皮书
 EvoRule Formal Verification Whitepaper
@@ -434,7 +442,8 @@ tier1-reactor/src/pure.rs 将反应器主循环中不含 I/O、不含 tokio、
 | 5   | pending_io>0 ∧ queue空 ∧ io_recovery=true ∧ 无 result ⇒ 冲突              | check_no_recovery_conflict    | RecoveryWhileAwaitingIo |
 
 注：#2 和 #4 合为双向蕴含（io_recovery ⟺ **io_result** 存在）。
-#5 为弱约束（仅当四个条件同时满足才违规）。
+
+# 5 为弱约束（仅当四个条件同时满足才违规）。
 
 5.3 Kani 证明桩（当前状态：1 个占位桩，0 个真实 proof）
 
@@ -2630,12 +2639,12 @@ CONSTANTS
 N*MAX, (* core*eval 最大长度，实例化 = 3 *)
 D*MAX, (* 最大 branch 递归深度，实例化 = 3（对应 MAX*BRANCH_DEPTH=64）*)
 D*DOM_MAX, (* 最大 domain 递归深度，实例化 = 3（对应 MAX*DOMAIN_DEPTH=64）*)
-KeySet, (_ 有限 key 集合，如 {"x", "y", "counter"} _)
+KeySet, (_有限 key 集合，如 {"x", "y", "counter"} _)
 ValueSet, (_ 有限 value 集合，如 {-1, 0, 1, 42} _)
 InstrTypeSet, (_ {"set", "push", "branch", "io_request"} _)
 DomainTypeSet, (_ {"eq", "lt", "exists", "instruction", "all", "not"} _)
 OpSet, (_ {"set", "add", "sub"} _)
-IoTypeSet (_ {"call_llm", "call_external", "query_db"} _)
+IoTypeSet (_ {"call_llm", "call_external", "query_db"}_)
 
 ASSUME N_MAX = 3 /\ D_MAX = 3 /\ D_DOM_MAX = 3 /\
  Cardinality(KeySet) <= 4 /\
@@ -2643,58 +2652,58 @@ ASSUME N_MAX = 3 /\ D_MAX = 3 /\ D_DOM_MAX = 3 /\
 
 8.4.2 抽象数据类型
 
-(_ Obj: 抽象 JSON 对象 = Key → Value 的部分函数 _)
+(_Obj: 抽象 JSON 对象 = Key → Value 的部分函数_)
 Obj == [KeySet -> ValueSet]
 
-(_ SubInstr: 抽象子指令（branch 内的指令）_)
+(_SubInstr: 抽象子指令（branch 内的指令）_)
 SubInstr == [type: InstrTypeSet, params: Obj]
 
-(_ Rule: core_eval 中的规则 _)
+(_Rule: core_eval 中的规则 _)
 Rule == SubInstr (_ 结构相同 _)
 
-(_ CoreEval: 规则列表 _)
+(_CoreEval: 规则列表_)
 CoreEval == Seq(Rule)
 
-(_ 抽象操作函数（不建模内部，只声明签名）_)
+(_抽象操作函数（不建模内部，只声明签名）_)
 ApplySet(state: Obj, attr: KeySet, op: OpSet, val: ValueSet) : Obj
-(_ 抽象：返回新 Obj，具体逻辑由 Kani 验证算术 _)
+(_抽象：返回新 Obj，具体逻辑由 Kani 验证算术 _)
 ApplyPush(queue: Seq(Rule), instrs: Seq(Rule)) : Seq(Rule)
 (_ 抽象：返回新 queue _)
 DomainEval(domain: Obj, state: Obj) : BOOLEAN
 (_ 抽象：返回 domain 评估结果 _)
 Lookup(state: Obj, path: STRING) : ValueSet
-(_ 抽象：路径解析，TLC 用有限 key 覆盖 _)
+(_ 抽象：路径解析，TLC 用有限 key 覆盖_)
 
-(_ 栈帧：defunctionalize branch 递归 _)
+(_栈帧：defunctionalize branch 递归_)
 Frame == [
-remaining: Seq(SubInstr), (* 剩余子指令 *)
+remaining: Seq(SubInstr), (*剩余子指令 *)
 depth: 0..D_MAX, (* 该帧深度 *)
-return_i: 0..N_MAX (* 返回后的外层 i *)
+return_i: 0..N_MAX (* 返回后的外层 i*)
 ]
 
-(_ 转换结果 _)
+(_转换结果_)
 ResultType == {"none", "state", "io*required", "error"}
 TransitionResult ==
 [type: ResultType,
 new_payload: Obj, (* type="state" 时有效 _)
 new_queue: Seq(Rule), (_ type="state" 时有效 _)
-io_type: IoTypeSet, (_ type="io*required" 时有效 *)
+io_type: IoTypeSet, (_ type="io*required" 时有效*)
 error: STRING] (\_ type="error" 时有效 \_)
 
 8.4.3 状态变量
 
 VARIABLES
-pc, (_ 程序计数器 _)
+pc, (_程序计数器 _)
 i, (_ 外层循环索引 0..N_MAX _)
 depth, (_ 当前 branch 嵌套深度 0..D_MAX+1 _)
 domDepth, (_ 当前 domain 递归深度 0..D_DOM_MAX+1（MAX_DOMAIN_DEPTH 对应）_)
-state, (_ 抽象状态 Obj _)
+state, (_抽象状态 Obj _)
 core*eval, (* 输入：规则列表（CONSTANT，不变）_)
 stack, (_ branch 调用栈 Seq(Frame) _)
 result, (_ 转换结果 _)
 io_requested (_ IoRequired 是否被请求 \_)
 
-(_ PCType 含 ExecSubRule（子指令分派）和 DomainDepthCheck（域深度检查）_)
+(_PCType 含 ExecSubRule（子指令分派）和 DomainDepthCheck（域深度检查）_)
 PCType == {"Init", "LengthCheck", "Loop", "ExecRule",
 "BranchDepthCheck", "BranchDomain", "BranchBody",
 "ExecSubRule", "DomainDepthCheck", "DomainEval",
@@ -2707,7 +2716,7 @@ Init ==
 /\ i = 0
 /\ depth = 0
 /\ domDepth = 0
-/\ state ∈ Obj (_ 非确定性初始状态，TLC 穷举 _)
+/\ state ∈ Obj (_非确定性初始状态，TLC 穷举_)
 /\ core*eval ∈ CoreEval (* 非确定性输入，TLC 穷举 \_)
 /\ stack = <<>>
 /\ result = [type |-> "none"]
@@ -2715,27 +2724,27 @@ Init ==
 
 8.4.5 Next 动作（11 个子动作）
 
-(_ ── 辅助函数 ── _)
+(_── 辅助函数 ──_)
 
-(_ GetBranchInstrs: 从 branch 指令中提取子指令序列 _)
+(_GetBranchInstrs: 从 branch 指令中提取子指令序列 _)
 (_ 对应 executor.rs:304 branch_instrs = instr["on_true"] 或 instr["on_false"] _)
-(_ domain_result 由 DomainEval 抽象决定，TLC 穷举两种可能 _)
+(_ domain_result 由 DomainEval 抽象决定，TLC 穷举两种可能_)
 GetBranchInstrs(rule, domain*result) ==
 IF domain_result = TRUE
 THEN rule.on_true (* 抽象：rule 含 on*true/on_false 字段（Seq(SubInstr)）*)
 ELSE rule.on_false
 
-(_ PopHeadFromStackFrame: 从栈顶帧弹出第一条子指令，返回剩余帧 _)
+(_PopHeadFromStackFrame: 从栈顶帧弹出第一条子指令，返回剩余帧_)
 PopHeadFromStackFrame(frame) ==
 [frame EXCEPT !.remaining = Tail(frame.remaining)]
 
-(_ 子动作 1: Init → LengthCheck _)
+(_子动作 1: Init → LengthCheck_)
 InitStep ==
 /\ pc = "Init"
 /\ pc' = "LengthCheck"
 /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 
-(_ 子动作 2: LengthCheck → Loop 或 Error（MAX_TRANSFORM_RULES 检查）_)
+(_子动作 2: LengthCheck → Loop 或 Error（MAX_TRANSFORM_RULES 检查）_)
 LengthCheckStep ==
 /\ pc = "LengthCheck"
 /\ IF Len(core_eval) > N_MAX
@@ -2745,7 +2754,7 @@ THEN /\ pc' = "Error"
 ELSE /\ pc' = "Loop"
 /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 
-(_ 子动作 3: Loop → ExecRule 或 ExtractResult _)
+(_子动作 3: Loop → ExecRule 或 ExtractResult_)
 LoopStep ==
 /\ pc = "Loop"
 /\ IF i >= Len(core_eval)
@@ -2754,8 +2763,8 @@ THEN /\ pc' = "ExtractResult"
 ELSE /\ pc' = "ExecRule"
 /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 
-(_ 子动作 4: ExecRule → 执行规则 i，按指令类型分派 _)
-(_ 对应 transition.rs:158-167 + executor.rs:122-128 的 match 分派 _)
+(_子动作 4: ExecRule → 执行规则 i，按指令类型分派 _)
+(_ 对应 transition.rs:158-167 + executor.rs:122-128 的 match 分派_)
 ExecRuleStep ==
 /\ pc = "ExecRule"
 /\ i < Len(core*eval)
@@ -2777,8 +2786,8 @@ io_type |-> rule.io_type]
 /\ state' = ApplySet(state, rule.attr, rule.op, rule.val)
 /\ UNCHANGED <<depth, domDepth, core_eval, stack, result, io_requested>>
 
-(_ 子动作 5: BranchDepthCheck → DomainDepthCheck 或 Error _)
-(_ MAX_BRANCH_DEPTH 检查，对应 executor.rs:295 if depth >= 64 _)
+(_子动作 5: BranchDepthCheck → DomainDepthCheck 或 Error _)
+(_ MAX_BRANCH_DEPTH 检查，对应 executor.rs:295 if depth >= 64_)
 BranchDepthCheckStep ==
 /\ pc = "BranchDepthCheck"
 /\ IF depth >= D*MAX (* 注意：Rust 用 >=，executor.rs:295 _)
@@ -2789,7 +2798,7 @@ ELSE /\ pc' = "DomainDepthCheck"
 /\ domDepth' = 0 (_ 重置 domain 深度计数器 \_)
 /\ UNCHANGED <<i, depth, state, core_eval, stack, result, io_requested>>
 
-(_ 子动作 6: DomainDepthCheck → DomainEval 或 BranchDomain _)
+(_子动作 6: DomainDepthCheck → DomainEval 或 BranchDomain _)
 (_ MAX_DOMAIN_DEPTH 检查，对应 domain.rs:76 if depth > 64 _)
 (_ 注意：Rust 用 > （大于），domain.rs:76；与 branch 的 >= 不同 _)
 DomainDepthCheckStep ==
@@ -2803,8 +2812,8 @@ THEN (_ domain 深度超限：evaluate*domain 返回 false *)
 ELSE /\ pc' = "DomainEval"
 /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 
-(_ 子动作 7: DomainEval → BranchDomain（域评估，抽象）_)
-(_ 对应 executor.rs:304 evaluate_domain(domain, state) _)
+(_子动作 7: DomainEval → BranchDomain（域评估，抽象）_)
+(_对应 executor.rs:304 evaluate_domain(domain, state) _)
 (_ DomainEval 是抽象函数，TLC 穷举 TRUE/FALSE 两种结果 _)
 DomainEvalStep ==
 /\ pc = "DomainEval"
@@ -2812,8 +2821,8 @@ DomainEvalStep ==
 /\ domDepth' = 0 (_ domain 评估完成，重置 _)
 /\ UNCHANGED <<i, depth, state, core_eval, stack, result, io_requested>>
 
-(_ 子动作 8: BranchDomain → BranchBody（进入 branch 体）_)
-(_ 对应 executor.rs:310-317 的 for sub_instr 循环 _)
+(_子动作 8: BranchDomain → BranchBody（进入 branch 体）_)
+(_对应 executor.rs:310-317 的 for sub_instr 循环 _)
 BranchDomainStep ==
 /\ pc = "BranchDomain"
 /\ depth' = depth + 1 (_ 进入 branch，深度 +1 _)
@@ -2828,11 +2837,11 @@ return_i |-> i])
 /\ pc' = "BranchBody"
 /\ UNCHANGED <<i, domDepth, state, core_eval, result, io_requested>>
 
-(_ 子动作 9: BranchBody → ExecSubRule/Loop/IoReturn（执行子指令）_)
+(_子动作 9: BranchBody → ExecSubRule/Loop/IoReturn（执行子指令）_)
 BranchBodyStep ==
 /\ pc = "BranchBody"
 /\ IF Len(stack) = 0
-THEN (_ 栈空，branch 完成 _)
+THEN (_栈空，branch 完成_)
 /\ pc' = "Loop"
 /\ i' = i + 1
 /\ depth' = depth - 1
@@ -2854,8 +2863,8 @@ ELSE (_ 执行下一条子指令 \_)
 /\ pc' = "ExecSubRule"
 /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 
-(_ 子动作 10: ExecSubRule → BranchBody/Loop/IoReturn（子指令分派）_)
-(_ 对应 executor.rs:311 execute_meta_instruction(sub_instr, state, depth+1) _)
+(_子动作 10: ExecSubRule → BranchBody/Loop/IoReturn（子指令分派）_)
+(_对应 executor.rs:311 execute_meta_instruction(sub_instr, state, depth+1) _)
 ExecSubRuleStep ==
 /\ pc = "ExecSubRule"
 /\ Len(stack) > 0
@@ -2889,13 +2898,13 @@ THEN i + 1 ELSE i
 THEN depth - 1 ELSE depth
 /\ UNCHANGED <<domDepth, core_eval, result, io_requested>>
 
-(_ 子动作 11: IoReturn → Done _)
+(_子动作 11: IoReturn → Done_)
 IoReturnStep ==
 /\ pc = "IoReturn"
 /\ pc' = "Done"
 /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 
-(_ 子动作 12: ExtractResult → Done _)
+(_子动作 12: ExtractResult → Done_)
 ExtractResultStep ==
 /\ pc = "ExtractResult"
 /\ pc' = "Done"
@@ -2904,7 +2913,7 @@ new_payload |-> state,
 new_queue |-> <<>>]
 /\ UNCHANGED <<i, depth, domDepth, state, core_eval, stack, io_requested>>
 
-(_ Next: 所有子动作的析取 _)
+(_Next: 所有子动作的析取_)
 Next ==
 \/ InitStep
 \/ LengthCheckStep
@@ -2919,21 +2928,21 @@ Next ==
 \/ IoReturnStep
 \/ ExtractResultStep
 
-(_ Spec: Init ∧ □[Next]\_vars _)
+(_Spec: Init ∧ □[Next]\_vars_)
 vars == <<pc, i, depth, domDepth, state, core_eval, stack, result, io_requested>>
 Spec == Init /\ [][Next]\_vars
 
 8.4.6 5 个不变式（完整 TLA+ 表达式）
 
-(_ I1: Termination —— 状态机总是到达 Done 或 Error _)
+(_I1: Termination —— 状态机总是到达 Done 或 Error _)
 (_ TLC 验证：所有可达状态满足 pc ∈ {Done, Error} ∨ ENABLED Next _)
 (_ 等价：无死锁状态（非终止状态必有动作可执行）_)
 TerminationInvariant ==
 pc ∈ {"Done", "Error"} \/ ENABLED Next
 
-(_ I2: Determinism —— 确定性 _)
+(_I2: Determinism —— 确定性 _)
 (_ 任意状态最多有一个子动作 enabled _)
-(_ TLC 验证：对每对子动作 a, b，a ≠ b ⇒ ¬(ENABLED a ∧ ENABLED b) _)
+(_ TLC 验证：对每对子动作 a, b，a ≠ b ⇒ ¬(ENABLED a ∧ ENABLED b)_)
 DeterminismInvariant ==
 ∀ a ∈ {InitStep, LengthCheckStep, LoopStep, ExecRuleStep,
 BranchDepthCheckStep, DomainDepthCheckStep, DomainEvalStep,
@@ -2945,22 +2954,22 @@ BranchDomainStep, BranchBodyStep, ExecSubRuleStep,
 IoReturnStep, ExtractResultStep} :
 a ≠ b ⇒ ¬(ENABLED a ∧ ENABLED b)
 
-(_ I3: DepthEnforcement —— 双深度硬上界强制（核心价值）_)
-(_ branch depth 永远 ≤ D_MAX，domain depth 永远 ≤ D_DOM_MAX+1 _)
-(_ 除非已经报错（pc ∈ {Error}）_)
-(_ 注意：这验证了 MAX_BRANCH_DEPTH + MAX_DOMAIN_DEPTH 的强制 _)
-(_ branch 用 >=（executor.rs:295），domain 用 >（domain.rs:76）_)
+(_I3: DepthEnforcement —— 双深度硬上界强制（核心价值）_)
+(_branch depth 永远 ≤ D_MAX，domain depth 永远 ≤ D_DOM_MAX+1_)
+(_除非已经报错（pc ∈ {Error}）_)
+(_注意：这验证了 MAX_BRANCH_DEPTH + MAX_DOMAIN_DEPTH 的强制_)
+(_branch 用 >=（executor.rs:295），domain 用 >（domain.rs:76）_)
 DepthEnforcementInvariant ==
 pc ∈ {"Error"} \/ (depth ≤ D_MAX /\ domDepth ≤ D_DOM_MAX + 1)
 
-(_ I4: IoEarlyReturn —— I/O 提前返回语义 _)
+(_I4: IoEarlyReturn —— I/O 提前返回语义 _)
 (_ 一旦 io_requested = TRUE，pc 必须走向 IoReturn 或 Done _)
 IoEarlyReturnInvariant ==
 io_requested ⇒ pc ∈ {"IoReturn", "Done"}
 
-(_ I5: LoopProgress —— 循环推进 _)
+(_I5: LoopProgress —— 循环推进 _)
 (_ 每次从 Loop 出发，i 递增或 pc 改变（不会空转）_)
-(_ TLC 验证：LoopStep 的 Next 后继中 i' > i ∨ pc' ≠ "Loop" _)
+(_TLC 验证：LoopStep 的 Next 后继中 i' > i ∨ pc' ≠ "Loop"_)
 LoopProgressInvariant ==
 pc = "Loop" ⇒
 ∀ next_state : (Next(state, next_state) ⇒
@@ -4079,8 +4088,16 @@ Phase 3：tier1 验证（1.0.0 → 1.2.0，4-6 周）
 目标：tier1 反应器的 5 条结构性不变量被 Kani 证明
 
 任务 T3-0：tier1 抽象状态机模型（前置，策略 A）
-文件: tier1-reactor/src/pure*abstract.rs (新建)
-改动: 实现 ReactorStateAbstract（用定长数组替代 BTreeMap/HashSet）- pending_requests: [Option<FactId>; 2] - pending_io_count: 0..=2 - has_io_result: bool（抽象 **io_result** 存在性）- queue: [Option<JsonValue>; 2] - next_step_abstract / apply*\*\_abstract 抽象实现 - soundness 论证文档
+文件: tier1-reactor/src/pure\*abstract.rs (新建)
+改动: 实现 ReactorStateAbstract（用定长数组替代 BTreeMap/HashSet）
+
+- pending_requests: [Option\<FactId\>; 2]
+- pending_io_count: 0..=2
+- has_io_result: bool（抽象 **io_result** 存在性）
+- queue: [Option\<JsonValue\>; 2]
+- next_step_abstract / apply\*\_abstract 抽象实现
+- soundness 论证文档
+
 验证: 抽象模型与真实 ReactorState 的 diff 对照 review
 DoD: 抽象模型通过单元测试 + soundness 论证文档完成
 工作量: 5 人天
@@ -4633,16 +4650,27 @@ DoD: cargo build -p tier0-tcb 成功 (T10 gate PASSED)
 
 ─── tier1 Kani 建模策略（L1-\* 前置设计）───
 
-【诚实声明】tier1 的 ReactorState 比 tier0 更难被 Kani 验证：- payload: JsonValue::Object(BTreeMap) ← Kani 无法建模（同 tier0）- queue: VecDeque<JsonValue> ← Kani 可建模小规模 - pending_requests: HashSet<FactId> ← Kani 无法建模（hash 随机性）- pending_io_timestamps: BTreeMap<FactId, Instant> ← Kani 无法建模 - pending_io_types: BTreeMap<FactId, IoType> ← Kani 无法建模 - pending_io_instructions: BTreeMap<FactId, JsonValue> ← Kani 无法建模
+【诚实声明】tier1 的 ReactorState 比 tier0 更难被 Kani 验证：
+
+- payload: JsonValue::Object(BTreeMap) ← Kani 无法建模（同 tier0）
+- queue: VecDeque\<JsonValue\> ← Kani 可建模小规模
+- pending_requests: HashSet\<FactId\> ← Kani 无法建模（hash 随机性）
+- pending_io_timestamps: BTreeMap\<FactId, Instant\> ← Kani 无法建模
+- pending_io_types: BTreeMap\<FactId, IoType\> ← Kani 无法建模
+- pending_io_instructions: BTreeMap\<FactId, JsonValue\> ← Kani 无法建模
 
 结论：直接对 ReactorState 跑 Kani 会 100% TIMEOUT（比 tier0 更严重）。
 故 L1-\* 采用 **抽象状态机模型 (Abstract ReactorState)** 策略：
 
 策略 A（主）：抽象状态机模型 - 构造 ReactorStateAbstract：用定长数组替代 BTreeMap/HashSet
-pending*requests: [Option<FactId>; K] (K=2，有限)
+pending\*requests: [Option<FactId>; K] (K=2，有限)
 pending_io_count: 0..=K
 payload: 用 Option<JsonValue> 抽象 "**io_result**" 字段（只验证此字段存在性）
-queue: 用 [Option<JsonValue>; Q] 抽象 (Q=2) - 实现 AbstractTrait: next_step_abstract / apply*\*\_abstract - Kani 验证抽象模型的不变量保持 - 论证抽象 soundness：抽象保留了被验证性质的必要结构
+queue: 用 [Option\<JsonValue\>; Q] 抽象 (Q=2)
+
+- 实现 AbstractTrait: next_step_abstract / apply\*\_abstract
+- Kani 验证抽象模型的不变量保持
+- 论证抽象 soundness：抽象保留了被验证性质的必要结构
 
 策略 B（辅）：纯算术子证明 - 对不含集合操作的纯算术性质（如 version u64 单调），直接 Kani 验证 - 不需要抽象，因 version 是 u64 标量
 
@@ -4655,27 +4683,32 @@ queue: 用 [Option<JsonValue>; Q] 抽象 (Q=2) - 实现 AbstractTrait: next_step
 
 L1-1: I/O 计数一致性
 ─────────────────────────────────────
-Pre: reactor 执行 next*step 前 invariant #1 成立
+Pre: reactor 执行 next\*step 前 invariant #1 成立
 pending_io_count == pending_requests.len() == pending_io_timestamps.len()
 Post: next_step 后 invariant #1 仍成立
 工具: Kani 0.67.0（策略 A 抽象模型）
 被验证函数: pure.rs next_step (L90-134) + invariants.rs check_io_count_consistency (L138-148)
-建模挑战: - pending_requests: HashSet → 无法直接 Kani - pending_io_timestamps: BTreeMap → 无法直接 Kani - next_step 的 StateChanged 分支不修改 pending_io*_（只 clear*io_result）- IoRequired 分支调用方注册（pure.rs 内 push_front，不修改 pending*_）
-抽象策略（策略 A）: - pending*requests 抽象为 [Option<FactId>; 2]，len = 计数 Some 的个数 - pending_io_timestamps 抽象为 [Option<FactId>; 2]，同上 - pending_io_count 抽象为 0..=2 的 Nat - 验证：next_step 后 pending_io_count' == count_some(pending_requests')
-== count_some(pending_io_timestamps')
-harness 伪码: #[kani::proof]
-fn invariant_io_count_consistency() {
-let mut state = ReactorStateAbstract::any(); // 符号化初始状态
-kani::assume(state.invariant_1_holds()); // Pre: #1 成立
-let core_eval = &[]; // 空规则或符号化
-let * = next_step_abstract(&mut state);
-kani::assert(state.invariant_1_holds(), // Post: #1 仍成立
-"io count consistency preserved");
-}
-状态空间: - pending_io_count: 3 值 (0,1,2) - pending_requests: 3^2 = 9 (每个 slot Option<FactId>) - pending_io_timestamps: 3^2 = 9 - queue: 3^2 = 9 - 总计: 3 × 9 × 9 × 9 ≈ 2000 状态（Kani 可处理）
-DoD: cargo kani -p tier1-reactor --harness invariant_io_count_consistency PASS
-状态: ⏳ 1.x 待实现（当前仅占位桩 \_kani_placeholder）
-代码: tier1-reactor/src/pure.rs kani_proofs (待实现) + 抽象模型模块
+建模挑战:
+
+- pending_requests: HashSet → 无法直接 Kani
+- pending_io_timestamps: BTreeMap → 无法直接 Kani
+- next*step 的 StateChanged 分支不修改 pending_io\**（只 clear\*io_result）
+- IoRequired 分支调用方注册（pure.rs 内 push*front，不修改 pending\**）
+  抽象策略（策略 A）: - pending*requests 抽象为 [Option<FactId>; 2]，len = 计数 Some 的个数 - pending_io_timestamps 抽象为 [Option<FactId>; 2]，同上 - pending_io_count 抽象为 0..=2 的 Nat - 验证：next_step 后 pending_io_count' == count_some(pending_requests')
+  == count_some(pending_io_timestamps')
+  harness 伪码: #[kani::proof]
+  fn invariant_io_count_consistency() {
+  let mut state = ReactorStateAbstract::any(); // 符号化初始状态
+  kani::assume(state.invariant_1_holds()); // Pre: #1 成立
+  let core_eval = &[]; // 空规则或符号化
+  let* = next_step_abstract(&mut state);
+  kani::assert(state.invariant_1_holds(), // Post: #1 仍成立
+  "io count consistency preserved");
+  }
+  状态空间: - pending_io_count: 3 值 (0,1,2) - pending_requests: 3^2 = 9 (每个 slot Option<FactId>) - pending_io_timestamps: 3^2 = 9 - queue: 3^2 = 9 - 总计: 3 × 9 × 9 × 9 ≈ 2000 状态（Kani 可处理）
+  DoD: cargo kani -p tier1-reactor --harness invariant_io_count_consistency PASS
+  状态: ⏳ 1.x 待实现（当前仅占位桩 \_kani_placeholder）
+  代码: tier1-reactor/src/pure.rs kani_proofs (待实现) + 抽象模型模块
 
 L1-2: io*recovery ⟺ result 双向蕴含
 ─────────────────────────────────────
@@ -4692,7 +4725,7 @@ harness 伪码: #[kani::proof]
 fn invariant_io_recovery_iff_result() {
 let mut state = ReactorStateAbstract::any();
 kani::assume(state.io_recovery == state.has_io_result); // Pre
-let * = next_step_abstract(&mut state);
+let* = next_step_abstract(&mut state);
 kani::assert(state.io_recovery == state.has_io_result, // Post
 "io_recovery iff result preserved");
 }
@@ -4928,8 +4961,10 @@ DoD: cargo test replay_determinism PASS
 | 5   | verify_transition_bounded | ~~execute_transition 确定性~~     | ❌ 名不副实 | 从未调用 execute_transition，只测 empty_object()；Phase 0 重命名 |
 
 【关键诚实点】5 个 proof 中，#1/#3/#4 验证 Rust 标准库原语，
-#2 验证 EvoRule 的 path 模块（但 Kani 可能 TIMEOUT），
-#5 是虚假声称（名不副实）。
+
+# 2 验证 EvoRule 的 path 模块（但 Kani 可能 TIMEOUT），
+
+# 5 是虚假声称（名不副实）。
 
 EvoRule 核心逻辑（execute_transition/evaluate_domain 端到端）的
 Kani 覆盖率为 0%，根因是 BTreeMap 建模限制。这部分由 TLA+ 接管。

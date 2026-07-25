@@ -1,3 +1,11 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+-->
+
 # Tier 0 (TCB) — 形式化规范
 
 > **适用范围**: tier0-tcb
@@ -51,6 +59,7 @@ TCB 的全部"智能"是一个 while 循环：反复应用 `core.eval` 规则，
 | **G2** (= T10) | 禁止 `unsafe` 关键字 | 可能引入内存非确定行为 |
 
 **强制要求**:
+
 - 必用 `?` 运算符传播 `Result`
 - 必用 `checked_add` / `checked_sub` 显式溢出处理
 - 源码含 `#![forbid(unsafe_code)]`, 编译器级别禁止 unsafe
@@ -89,6 +98,7 @@ TCB 的全部"智能"是一个 while 循环：反复应用 `core.eval` 规则，
 | T14 (线程/异步) | `std::thread`, `tokio::`, `async`, `await`, `spawn(` | 5 |
 
 **build.rs 守不住的 (靠 L3 code review)**:
+
 - T1 / T2 (需 trait impl / enum 变体计数, 需 AST 分析)
 - T3 (运行时行为, 无法静态查)
 - T7 (需接口特征检测)

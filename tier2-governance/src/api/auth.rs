@@ -138,6 +138,7 @@ pub async fn auth_middleware(
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+    #![allow(clippy::panic, clippy::expect_used)]
     use super::*;
 
     #[test]

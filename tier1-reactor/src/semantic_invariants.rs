@@ -350,6 +350,7 @@ fn compile_not(raw: &JsonValue) -> Result<JsonValue, SemanticInvariantError> {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+    #![allow(clippy::panic, clippy::expect_used)]
     use super::*;
     use crate::fact::FactId;
     use crate::phase::ReactorPhase;

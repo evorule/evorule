@@ -76,6 +76,8 @@ pub struct Metrics {
 
 impl Metrics {
     /// 创建并注册所有指标
+    // 多指标注册 + 错误处理, 拆函数需共享 registry 状态。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+    #[allow(clippy::too_many_lines)]
     pub fn new() -> Result<Self, MetricsError> {
         let registry = Registry::new();
 
@@ -263,6 +265,7 @@ pub type SharedMetrics = Arc<Metrics>;
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+    #![allow(clippy::panic, clippy::expect_used)]
     use super::*;
 
     fn make_metrics() -> Metrics {
