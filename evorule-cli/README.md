@@ -359,8 +359,12 @@ ok 10 - run -o writes valid JSONL
 ok 11-12 - replay normal / missing
 ok 13-14 - diff identical / different
 ok 15 - all fact log lines are valid JSON
+ok 16 - validate hospital example rules
+ok 17 - validate law-firm example rules
+ok 18 - hospital example runs with payload
+ok 19 - law-firm example runs with payload
 
-# tests 15 | passed 15 | failed 0
+# tests 19 | passed 19 | failed 0
 
 ```text
 
@@ -409,7 +413,7 @@ evorule run ./rules/ --payload-file payload.example.json
 - ✅ 0 系统依赖(musl 静态)x2 架构 ✓
 - ✅ 1.6 MB 单文件 ✓
 - ✅ G8 门控 ✓
-- ✅ e2e 测试 15/15 ✓
+- ✅ e2e 测试 19/19 ✓
 - ✅ 可重现构建 ✓
 - ✅ 可重现构建 ✓
 
