@@ -170,7 +170,7 @@ CLI 参数、环境变量(`EVORULE_` 前缀)、JSON 配置文件(`--config`)三�
 
 ### ⚠️ 已知风险(P1,公网部署前必修)
 
-> 详见 [`docs/security/SECURITY_AUDIT_v0.1.0.md`](../docs/security/SECURITY_AUDIT_v0.1.0.md) corr.7 + [`_PRIVATE_zh_docs/审计/01.md`](../_PRIVATE_zh_docs/审计/01.md)
+> 详见 [`docs/security/SECURITY_AUDIT_v0.1.0.md`](../docs/security/SECURITY_AUDIT_v0.1.0.md) corr.7
 
 | 编号 | 问题 | 风险 | 修复计划 |
 |------|------|------|---------|

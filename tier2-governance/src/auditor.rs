@@ -207,7 +207,7 @@ impl Auditor {
     ///
     /// # 返回值
     /// 本次新增的审计条目数量。
-    // 审计遍历 + 哈希 + append 多步串联, 拆函数需共享 self 状态。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+    // 审计遍历 + 哈希 + append 多步串联, 拆函数需共享 self 状态。详见 GATE_REFERENCE.md §六(豁免索引)
     #[allow(clippy::cognitive_complexity)]
     pub fn audit_new(&mut self) -> usize {
         // P06: 计数始终递增（按调用次数，而非新事实数），用于自动验证间隔控制

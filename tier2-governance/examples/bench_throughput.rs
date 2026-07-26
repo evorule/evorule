@@ -1,5 +1,5 @@
 
-// examples 演示代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+// examples 演示代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 GATE_REFERENCE.md §六(豁免索引)
 #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used, clippy::too_many_lines, clippy::cognitive_complexity)]
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project

@@ -11,7 +11,7 @@
 > **适用范围**: tier0-tcb
 > **协议**: AGPL-3.0-or-later
 > **状态**: 权威 (本文档是 `build.rs` 编译时门禁的唯一依据)
-> **跨模块设计**: 见 `_PRIVATE_zh_docs/ARCHITECTURE/00-design.md` (G1-G8 / T1-T14 / D1-D10 统一编号体系)
+> **跨模块设计**: 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)
 
 ---
 
@@ -167,9 +167,9 @@ TCB 的全部"智能"是一个 while 循环：反复应用 `core.eval` 规则，
 ## 编号映射
 
 本文档的 T1-T14 与全局 G1-G8 的映射关系, 见
-`_PRIVATE_zh_docs/ARCHITECTURE/00-design.md` §11.3 编号映射表。
+[GATE_REFERENCE.md](../../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)。
 
-**权威顺序**: 若本文档与 `00-design.md` 冲突, 以 `00-design.md` 为准。
+**权威顺序**: 若本文档与 GATE_REFERENCE.md 冲突, 以 GATE_REFERENCE.md 为准。
 
 ---
 

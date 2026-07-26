@@ -11,7 +11,7 @@
 > **适用范围**: tier2-governance
 > **协议**: AGPL-3.0-or-later
 > **状态**: 权威 (本文档是 `build.rs` 编译时门禁的依据)
-> **跨模块设计**: 见 `_PRIVATE_zh_docs/ARCHITECTURE/00-design.md` (G1-G8 / F1-F11 统一编号体系)
+> **跨模块设计**: 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)
 
 ---
 
@@ -96,9 +96,9 @@ EVORULE_SKIP_GATE=1 cargo build
 
 ## 四、跨模块引用
 
-- **G1-G8** (全局门): 见 `_PRIVATE_zh_docs/ARCHITECTURE/00-design.md` §2.1
-- **F1-F11** (模块门): 见 `00-design.md` §2.2
-- **D1-D10** (数据流约束): 见 `00-design.md` §2.4
+- **G1-G8** (全局门): 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §四
+- **F1-F11** (模块门): 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §二.2 + §五.3
+- **D1-D10** (数据流约束): 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §四
 - **T1** (tier0 指令集有限性): 见 `../tier0-tcb/TCB_SPEC.md` §一
 - **tier1 双层一致**: 见 `../tier1-reactor/REACTOR_SPEC.md`
 

@@ -218,7 +218,7 @@ impl IoSubscriber {
     /// 对瞬时错误（超时/连接/5xx）执行指数退避重试，最多 `MAX_RETRIES` 次：
     /// 200ms → 400ms → 800ms。客户端错误（参数缺失/4xx/工具未找到）不重试。
     /// 重试耗尽后回写最终错误 `IoResponse`，让反应器恢复而非永久阻塞。
-    // IO dispatch + 重试 + 错误回写多分支, 拆函数需共享 self/cmd 状态。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+    // IO dispatch + 重试 + 错误回写多分支, 拆函数需共享 self/cmd 状态。详见 GATE_REFERENCE.md §六(豁免索引)
     #[allow(clippy::cognitive_complexity)]
     async fn dispatch_and_respond(
         &mut self,

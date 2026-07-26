@@ -362,7 +362,7 @@ Fact #2: content_hash = blake3(content_2)
 
 ### 5.4 已知 P1 HIGH 漏洞(公网部署前必修)
 
-基于 2026-07-25 代码审计([`01.md`](../../_PRIVATE_zh_docs/审计/01.md) H6-H9),tier2-governance 存在 4 项 P1 HIGH 漏洞。
+基于 2026-07-25 代码审计 (H6-H9),tier2-governance 存在 4 项 P1 HIGH 漏洞。
 **这些漏洞不阻塞 1.0.0 tag(1.0.0 仍是"开发完成"而非"生产就绪"),但必须在公网部署前修复,且需在 CHANGELOG 显著标注**:
 
 | ID     | 漏洞                        | 位置                               | 影响                                                                    | 修复计划                            |

@@ -1,7 +1,7 @@
 //! tier0-tcb compile-time gate (L1 字面量门禁)
 //!
 //! 强制执行 TCB_SPEC.md 的 T4-T14 + G1/G2 规则 (见 §五 编译时门禁)。
-//! 跨模块设计见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md (G1-G8 / T1-T14 统一编号)。
+//! 跨模块设计见 ../../GATE_REFERENCE.md §四(跨模块门控图)+ §五(SPEC 章节编号映射)。
 //!
 //! # 扫描的 23 个模式
 //!

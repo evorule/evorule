@@ -1,7 +1,7 @@
 //! tier1-reactor compile-time gate (L1 字面量门禁)
 //!
 //! 强制执行 REACTOR_SPEC.md 的 G7/G8 + G1(F11) + §5.2 规则。
-//! 跨模块设计见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md (G1-G8 / F1-F11 统一编号)。
+//! 跨模块设计见 ../../GATE_REFERENCE.md §四(跨模块门控图)+ §五(SPEC 章节编号映射)。
 //!
 //! # 扫描的 13 个模式
 //!

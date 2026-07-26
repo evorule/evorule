@@ -31,7 +31,7 @@ circulation among security-conscious users (compliance, regulated industries).
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Overall risk level**                      | 🟡 **MEDIUM** (acceptable for 0.x personal/trial; **公网部署前必修 P1**)                                                                                                                                  |
 | **Critical vulnerabilities**                | ✅ 0 (P0 全部修复 2026-07-25: panic!门禁/Box::leak/Docker root/版本号/lockfile)                                                                                                                           |
-| **High-severity issues**                    | 🔴 **4 known** (P1 未修复: tier2 SSRF/SQL/CORS/DB URL,见 [`01.md`](../../_PRIVATE_zh_docs/审计/01.md) H6-H9,公网部署前必修)                                                                               |
+| **High-severity issues**                    | 🔴 **4 known** (P1 未修复: tier2 SSRF/SQL/CORS/DB URL,H6-H9,公网部署前必修)                                                                               |
 | **Medium-severity issues**                  | 🟡 1 (M1 PARTIAL: auth middleware 已实现但默认禁用)                                                                                                                                                       |
 | **Low-severity issues**                     | 11 (see §6)                                                                                                                                                                                               |
 | **`cargo audit` result**                    | ⚠️ NOT YET RUN (required for 1.0.0)                                                                                                                                                                       |
@@ -48,7 +48,7 @@ Tool calls are persisted to the fact log as
 `IoRequest{io_type:"call_service",params:{tool_name,args}}` (M3 closed). Agent
 definition `tools` field is validated at runner construction (M4 closed).
 
-**⚠️ 2026-07-25 更新**: [`01.md`](../../_PRIVATE_zh_docs/审计/01.md) 代码审计发现
+**⚠️ 2026-07-25 更新**: 代码审计发现
 tier2-governance 存在 **4 个 HIGH 级 P1 问题**(SSRF 防护缺失/任意 SQL/CORS permissive/
 DB URL 静默回退),**公网部署前必须修复**。v0.1.0 仅适用于 localhost 个人试用与内网
 合规 PoC,不可直接暴露公网。P0(panic!门禁/Box::leak/Docker root/版本号)已全部修复。
@@ -333,7 +333,7 @@ We will not only document gaps; we also want to celebrate what works:
 2. **Workdir sandbox** is consistent across 4 file-touching tools — no
    way to escape without code change.
 3. **SSRF blocklist is hardcoded** (evo-agent `http_get` 工具) — not a config option (no "I disabled it").
-   ⚠️ 注意:此防护**仅限 evo-agent**;tier2-governance 的 `http_handler` **无 SSRF 防护**(见 §3.1 + [`01.md`](../../_PRIVATE_zh_docs/审计/01.md) H6,公网部署前必修)。
+   ⚠️ 注意:此防护**仅限 evo-agent**;tier2-governance 的 `http_handler` **无 SSRF 防护**(见 §3.1 + H6,公网部署前必修)。
 4. **`blocked` is enforced regardless of `approved=true`** — even user
    approval cannot bypass the hard floor.
 5. **No shell metacharacters** in `shell_exec` — `;`, `|`, `&`, `$`, `` ` ``
@@ -408,7 +408,7 @@ should not be cited as evidence of security in customer-facing materials.**
 | 0.1.0-draft (corr. 4) | 2026-07-23 | **Update**: Kani formal proofs significantly improved. Deleted `verify_domain_boolean` (BTreeMap modeling issue, replaced by 2 proptest). Improved `verify_path_no_panic` (added 4 `kani::assert`). Added 5 proptest total (14→19). Result: 4/5 PASS + 1 pending Kani env verification. L9 partially resolved. Also: `cargo fmt` issues fixed workspace-wide (25 diffs → 0). `cargo test --workspace` 720 tests pass.                                                                                                                                                                                                                                                           |
 | 0.1.0-draft (corr. 5) | 2026-07-24 | **Internal consistency + link fixes**: (a) L156 STRIDE row clarified that M1 (Bearer token auth) is closed; (b) L175 attack scenario #5 downgraded MEDIUM→LOW post-M1; (c) L101 §1.4 clarified `THREAT_MODEL.md` is drafted (independent reviewer still pending); (d) L90 build verification updated (0 missing_docs warnings as of 2026-07-23); (e) L38/L319/L356/L403 Kani 引用改为指向 `tier0-tcb/tests/kani_proofs.rs` (替代失效的内部白皮书链接); (f) L9 row + §7 item 12 expanded with specific proof names and TIMEOUT reason.                                                                                                                                           |
 | 0.1.0-draft (corr. 6) | 2026-07-24 | **N-02 增补 (Tier0 终止性增强)**: tier0-tcb 新增 `MAX_TRANSFORM_RULES = 64` 硬上界 (守 SPEC T6 `max_steps` 终止性保证) + 新 `TcbError::TooManyTransformRules` 变体 (第 10 个) + `lib.rs` 重新导出. 集成测试 `tests/tcb_error_variants.rs` 新增 `trigger_too_many_transform_rules` 用例. TCB 变体数 9→10. 集成测试通过率 219→239. 本审计的 §1.3 / §4 / §6 反映 v0.1.0+corrc.6 状态.                                                                                                                                                                                                                                                                                              |
-| 0.1.0-draft (corr. 7) | 2026-07-25 | **基于 [`01.md`](../../_PRIVATE_zh_docs/审计/01.md) 代码审计的重大修正**:(a) Executive Summary 更新:Critical 0→✅0(P0 修复)、High 0→🔴4(P1: SSRF/SQL/CORS/DB URL)、Medium 0→🟡1(M1 PARTIAL);(b) §3.1 STRIDE:Spoofing(evorule-server)从"🟢 LOW (M1 closed)"修正为"🟡 MEDIUM (M1 PARTIAL 默认禁用)";Repudiation(tool calls)从"🟡 MEDIUM (M3)"修正为"🟢 LOW (M3 closed)";Information disclosure(http_get)新增 tier2 http_handler 无 SSRF 防护说明;(c) §3.2 攻击场景 #5 likelihood LOW→MEDIUM;(d) Verdict 新增 P1 公网部署警告;(e) 与 [`THREAT_MODEL.md`](THREAT_MODEL.md) corr.3 对齐。**P0 全部修复**(panic!门禁 26 处/Box::leak/Docker root `USER 1000`/版本号 0.1.0/lockfile)。 |
+| 0.1.0-draft (corr. 7) | 2026-07-25 | **基于代码审计的重大修正**:(a) Executive Summary 更新:Critical 0→✅0(P0 修复)、High 0→🔴4(P1: SSRF/SQL/CORS/DB URL)、Medium 0→🟡1(M1 PARTIAL);(b) §3.1 STRIDE:Spoofing(evorule-server)从"🟢 LOW (M1 closed)"修正为"🟡 MEDIUM (M1 PARTIAL 默认禁用)";Repudiation(tool calls)从"🟡 MEDIUM (M3)"修正为"🟢 LOW (M3 closed)";Information disclosure(http_get)新增 tier2 http_handler 无 SSRF 防护说明;(c) §3.2 攻击场景 #5 likelihood LOW→MEDIUM;(d) Verdict 新增 P1 公网部署警告;(e) 与 [`THREAT_MODEL.md`](THREAT_MODEL.md) corr.3 对齐。**P0 全部修复**(panic!门禁 26 处/Box::leak/Docker root `USER 1000`/版本号 0.1.0/lockfile)。 |
 
 ---
 

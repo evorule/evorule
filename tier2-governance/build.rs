@@ -1,7 +1,7 @@
 //! tier2-governance compile-time gate (L1 字面量门禁)
 //!
 //! 强制执行 GOVERNANCE_SPEC.md 的 G7/G8 + G1(F11) + §5.2 规则。
-//! 跨模块设计见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md (G1-G8 / F1-F11 统一编号)。
+//! 跨模块设计见 ../../GATE_REFERENCE.md §四(跨模块门控图)+ §五(SPEC 章节编号映射)。
 //!
 //! **与 tier1-reactor/build.rs 结构完全相同** (13 模式 + fact.rs 豁免),
 //! 这是有意的双层一致 (避免 tier1/tier2 走偏)。
