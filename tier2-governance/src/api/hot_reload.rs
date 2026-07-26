@@ -97,7 +97,7 @@ pub fn load_core_eval(path: &PathBuf) -> Result<Vec<JsonValue>, HotReloadError> 
 ///
 /// 通过在沙箱 payload 上预执行所有支持的指令类型，验证 core_eval 的 transform 列表是否有效。
 /// 这确保热重载的配置不会导致反应器运行时崩溃。
-// 沙箱预执行所有指令类型, 拆函数需共享 core_eval/registry 状态。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+// 沙箱预执行所有指令类型, 拆函数需共享 core_eval/registry 状态。详见 GATE_REFERENCE.md §六(豁免索引)
 #[allow(clippy::too_many_lines)]
 pub fn validate_core_eval(core_eval: &[JsonValue]) -> ValidationResult {
     let mut result = ValidationResult {
@@ -324,7 +324,7 @@ impl HotReloader {
         let tx_clone = tx.clone();
         let config_path_for_closure = config_path.clone();
 
-        // notify watcher 回调分支多 (Ok/Err + 多种 Event), 拆函数需闭包捕获。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+        // notify watcher 回调分支多 (Ok/Err + 多种 Event), 拆函数需闭包捕获。详见 GATE_REFERENCE.md §六(豁免索引)
         #[allow(clippy::cognitive_complexity)]
         let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
             if let Ok(event) = res {

@@ -76,7 +76,7 @@ pub struct Metrics {
 
 impl Metrics {
     /// 创建并注册所有指标
-    // 多指标注册 + 错误处理, 拆函数需共享 registry 状态。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+    // 多指标注册 + 错误处理, 拆函数需共享 registry 状态。详见 GATE_REFERENCE.md §六(豁免索引)
     #[allow(clippy::too_many_lines)]
     pub fn new() -> Result<Self, MetricsError> {
         let registry = Registry::new();

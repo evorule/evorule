@@ -131,7 +131,7 @@ struct FileLogConfig {
 /// 加载 JSON 配置文件
 ///
 /// 文件不存在时返回空配置（不报错，允许纯 CLI 启动）。
-// 配置加载多分支 (YAML/JSON/env), 拆函数需共享路径状态。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+// 配置加载多分支 (YAML/JSON/env), 拆函数需共享路径状态。详见 GATE_REFERENCE.md §六(豁免索引)
 #[allow(clippy::cognitive_complexity)]
 fn load_config_file(path: &Option<PathBuf>) -> FileConfig {
     match path {
@@ -432,7 +432,7 @@ fn init_logging(level: &str, format: &str, log_file: Option<&PathBuf>) {
     }
 }
 
-// 日志清理任务多分支, 拆函数需共享任务状态。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+// 日志清理任务多分支, 拆函数需共享任务状态。详见 GATE_REFERENCE.md §六(豁免索引)
 #[allow(clippy::cognitive_complexity)]
 async fn log_cleanup_task(log_dir: PathBuf, max_days: u32, max_size_mb: u64) {
     let interval = Duration::from_secs(3600);
@@ -546,7 +546,7 @@ async fn log_cleanup_task(log_dir: PathBuf, max_days: u32, max_size_mb: u64) {
 }
 
 #[tokio::main]
-// 主函数集成所有子命令 + 启动流程, 268 行是当前架构必要。详见 _PRIVATE_zh_docs/ARCHITECTURE/00-design.md §7.3
+// 主函数集成所有子命令 + 启动流程, 268 行是当前架构必要。详见 GATE_REFERENCE.md §六(豁免索引)
 #[allow(clippy::too_many_lines)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
