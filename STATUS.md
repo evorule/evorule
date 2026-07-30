@@ -4,8 +4,12 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# EvoRule 当前状态(2026-07-25)
+# EvoRule 当前状态(2026-07-30)
 
+> **🟢 Released**:v0.1.0 已于 2026-07-30 发布到 crates.io,四 crate 同步上线:
+>
+> - [evorule-tcb](https://crates.io/crates/evorule-tcb) · [evorule-reactor](https://crates.io/crates/evorule-reactor) · [evorule-governance](https://crates.io/crates/evorule-governance) · [evorule-cli](https://crates.io/crates/evorule-cli)
+>
 > **TL;DR**:v0.1.0 公开基座。**能用,但有 caveat**。
 >
 > 这是面向**外部读者**的诚实记账。我们知道自己能跑什么、不能跑什么。
@@ -53,7 +57,8 @@
 - [x] **musl static** — x86_64 + aarch64,reproducible(SHA256 验证)
 - [x] **Payload via file** — `--payload-file` 解决 PowerShell `"` 误读
 
-> **HTTP API 端点 / 调试器 UI / 指标 / evorule-server 二进制** 已归应用层，见 evorule-application 仓。
+> **HTTP API 端点 / 指标 / evorule-server 二进制** 已归应用层，见 evorule-server 独立仓。
+> **调试器 UI / 业务规则模板 / 可视化仪表盘** 已归应用层，见 evorule-application 仓。
 > **evo-agent 内置工具集**（file_read / shell_exec / http_get 等）已归 agent 层，见 evo-agent 仓。
 
 ### 安全(自评,未独立审计)
@@ -120,9 +125,7 @@
 ### 阶段 1(1-2 周) — 验证 + 性能基准
 
 - [ ] 性能基准(并发 session / 长 session / 压缩吞吐量)
-- [ ] 跨平台冷启动(Linux / WSL)
-- [ ] 性能基准评估报告（仓内 L3 文档，不对外发布）
-- [ ] evorule-server musl release 端到端测试 — 见 evorule-application 仓
+- [ ] evorule-server musl release 端到端测试 — 见 evorule-server 独立仓
 
 ### 阶段 2(4-6 周) — 上下文架构
 
@@ -149,7 +152,9 @@
 **0.1.0 期间**:
 
 - 我们**能跑** CLI + 3 个 lib crate（evorule-tcb / evorule-reactor / evorule-governance）
-- **evorule-server / HTTP API / 调试器 UI / evo-agent 工具集** → 请使用 evorule-application 仓 + evo-agent 仓
+- **evorule-server（HTTP API + 认证 + 指标 + 热重载）** → 请使用 evorule-server 独立仓
+- **调试器 UI / 业务规则模板 / 可视化仪表盘** → 请使用 evorule-application 仓
+- **evo-agent 工具集（file_read/shell_exec/http_get 等）** → 请使用 evo-agent 仓
 - 我们**不能**承诺 API 稳定
 - 我们**不修**新发现的安全问题(除非 critical)
 - 我们**鼓励** 提 issue / 提 PR,但**不承诺响应时间**
@@ -161,4 +166,4 @@
 ---
 
 **最后更新**:2026-07-30
-**下次更新**:v0.1.0 首发 tag 后
+**下次更新**:v0.2.0 质量硬化阶段

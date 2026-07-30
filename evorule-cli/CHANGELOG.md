@@ -167,7 +167,7 @@ src/
 ### 已知限制(0.1.0)
 
 - ❌ 无 I/O handler(`io_request` 会产生 IoRequest fact + Error fact,不实际执行 I/O)
-- ❌ 无 HTTP API(那是 `evorule-server` 的事,在 `evorule-governance`)
+- ❌ 无 HTTP API(那是 `evorule-server` 独立仓的事,evorule 核心仓纯 lib + 本地 CLI)
 - ❌ 无配置文件(后续加 `.evorule.toml`)
 - ❌ 无 hot-reload(后续加)
 

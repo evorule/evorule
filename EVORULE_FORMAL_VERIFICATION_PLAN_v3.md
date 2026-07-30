@@ -133,9 +133,9 @@ pub enum JsonValue {
 
 | 层                            | 范围        | 说明                                                       |
 | ----------------------------- | ----------- | ---------------------------------------------------------- |
-| evorule-tcb                     | ✅ 核心验证 | core_eval 执行引擎、路径解析、状态转换                     |
-| evorule-reactor                 | ✅ 核心验证 | 反应器主循环、FactsLog、WAL、cause 队列、I/O 双路径        |
-| evorule-governance              | ✅ 核心验证 | 审计链、rewind、SessionManager、IoDispatcher、IoSubscriber |
+| evorule-tcb                   | ✅ 核心验证 | core_eval 执行引擎、路径解析、状态转换                     |
+| evorule-reactor               | ✅ 核心验证 | 反应器主循环、FactsLog、WAL、cause 队列、I/O 双路径        |
+| evorule-governance            | ✅ 核心验证 | 审计链、rewind、SessionManager、IoDispatcher、IoSubscriber |
 | evorule-server（应用层）      | ❌ 不在范围 | HTTP API、SSE 流、认证中间件、Prometheus 指标展示          |
 | evorule-io-handlers（应用层） | ❌ 不在范围 | DbHandler、HttpHandler、MemoryHandler 具体实现             |
 | evorule-cli（工具层）         | ❌ 不在范围 | CLI 参数解析、输出格式化                                   |
@@ -846,21 +846,22 @@ evorule-governance/
 
 ### 9.3 v3.1 架构迁移备注（2026-07-20）
 
-**背景**：v3.0 发布后，项目完成了"机制-策略分离"架构迁移（H5），
-原 evorule-governance 中的 HTTP API、SSE、Prometheus 指标、认证中间件等应用层功能
-已迁移至 **evorule-application 仓**（evorule-server / evorule-io-handlers 子项目）。
+**背景**：v3.0 发布后，项目完成了两轮"机制-策略分离"架构迁移：
+
+1. H5：原 evorule-governance 中的 HTTP API、SSE、Prometheus 指标、认证中间件等应用层功能先迁至 evorule-application 仓；
+2. 走神 9：再从 evorule-application 仓迁出成立 **evorule-server 独立仓**（evorule-server + evorule-io-handlers + 7 个配套 lib crate）。
 
 **对验证范围的影响**：
 
-| 项目                                   | v3.0 归属        | v3.1 归属                     | 说明                                         |
-| -------------------------------------- | ---------------- | ----------------------------- | -------------------------------------------- |
+| 项目                                   | v3.0 归属          | v3.1 归属                     | 说明                                         |
+| -------------------------------------- | ------------------ | ----------------------------- | -------------------------------------------- |
 | HTTP API（axum 路由）                  | evorule-governance | evorule-server（应用层）      | 不在形式化验证范围                           |
-| SSE 事件流序列化                       | tier2（P1-12）   | 应用层（P1-12 重分类）        | 核心验证 Fact 正确性，传输格式由集成测试覆盖 |
-| Prometheus metrics 展示                | tier2            | evorule-server（应用层）      | 核心层仅保留 IoMetrics trait 接口            |
-| Bearer Token 认证                      | tier2            | evorule-server（应用层）      | 由独立安全审计覆盖                           |
-| 具体 I/O Handler（DB/HTTP/Memory）     | tier2            | evorule-io-handlers（应用层） | 核心层验证 IoHandler trait 语义              |
-| IoDispatcher / IoSubscriber            | tier2            | tier2（保留）                 | 机制层框架，属核心验证范围                   |
-| SessionManager / Auditor / TimeMachine | tier2            | tier2（保留）                 | 核心机制，属验证范围                         |
+| SSE 事件流序列化                       | tier2（P1-12）     | 应用层（P1-12 重分类）        | 核心验证 Fact 正确性，传输格式由集成测试覆盖 |
+| Prometheus metrics 展示                | tier2              | evorule-server（应用层）      | 核心层仅保留 IoMetrics trait 接口            |
+| Bearer Token 认证                      | tier2              | evorule-server（应用层）      | 由独立安全审计覆盖                           |
+| 具体 I/O Handler（DB/HTTP/Memory）     | tier2              | evorule-io-handlers（应用层） | 核心层验证 IoHandler trait 语义              |
+| IoDispatcher / IoSubscriber            | tier2              | tier2（保留）                 | 机制层框架，属核心验证范围                   |
+| SessionManager / Auditor / TimeMachine | tier2              | tier2（保留）                 | 核心机制，属验证范围                         |
 
 **核心层不变的验证目标**：
 

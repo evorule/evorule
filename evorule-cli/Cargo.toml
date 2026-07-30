@@ -11,7 +11,8 @@ description = "EvoRule CLI - Local JSON rule executor for compliance-critical us
 readme = "README.md"
 documentation = "https://docs.rs/evorule-cli"
 # L0 合规核定位：零网络、零 telemetry、纯本地执行。面向政府/军工/医疗/金融/法律合规刚需场景
-# 需要全功能版本（HTTP API 调用/规则脚手架/evorule-server 启动）请安装 evorule-app-cli（见 evorule-application 仓）
+# 需要远程 HTTP API 交互（发送 session 命令 / 拉 SSE 事件）见 evorule-server 独立仓（提供官方 HTTP server 实现）
+# 需要规则脚手架 / 行业模板 / 可视化仪表盘 / 全量 CLI 工具见 evorule-application 仓
 keywords = ["cli", "deterministic", "audit", "compliance", "rules-engine"]
 categories = [
     "command-line-utilities",

@@ -119,8 +119,9 @@
 
 ### 走神 9 拆分（机制-应用边界清理）
 
-- **evorule 仓独立 release** — 不绑 application/agent 仓；HTTP API / io_handlers / 认证中间件全部归 evorule-application 仓
-- **H5 迁移落地** — `evorule-server` 与 `io_handlers` 从 evorule-governance 迁至 evorule-application 仓；evorule-governance 现为纯机制层库（IoDispatcher 框架 + IoHandler trait re-export）
+- **evorule 仓独立 release** — 不绑 application/agent 仓；HTTP API / io_handlers / 认证中间件归 evorule-server 独立仓；可视化 / 业务模板归 evorule-application 仓
+- **H5 迁移落地** — `evorule-server` 与 `io_handlers` 从 evorule-governance 迁出；evorule-governance 现为纯机制层库（IoDispatcher 框架 + IoHandler trait re-export）
+- **走神 9 二次拆分落地** — `evorule-server` 与 `io_handlers` 从 evorule-application 仓再次迁出，成立 **evorule-server 独立仓**（9 个子 crate：server + io_handlers + auth + metrics + hot_reload + time_machine + debug_control + rule_tools + semantic_invariants）；evorule-application 仓回归纯可视化/业务模板定位
 - **README 定位调整** — 叙事调整为"通用反应式执行引擎"
 - **SDK 全部外移** — TypeScript/Python/Go/Java SDK 迁移到独立仓 evorule-sdk
 - **evorule-cli 业务规则模板外移**（2026-07-30）— `evorule-cli/examples/hospital/` + `evorule-cli/examples/law-firm/` 两套行业规则集（HIPAA / 律所合规）共 10 个文件，按 `AGENTS.md` 边界判断表「evorule-cli 加规则模板 = 业务内容，不是机制，放 evorule-application ❌」迁移至兄弟仓 `evorule-application/examples/evorule-cli/`；evorule 核心仓 `evorule-cli/examples/` 仅保留机制层最小化演示 README 与 tests/fixtures 用例

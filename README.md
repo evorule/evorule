@@ -139,7 +139,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 | 🐛 **调试器级控制**    | `pause` / `step` / `resume` / `break` — 像 GDB 一样调试执行（**应用层实现**，见 [evorule-application](../evorule-application/core/debug_control/)） |
 | 🔗 **多反应器协作**    | `join` / `channel` / `shared_facts_space` — 构建分布式反应式系统（**路线图规划**，v0.1.0 未实现）                                                   |
 | ✅ **Kani 形式化验证** | JSON 状态机核心不变式被 Kani 证明，而非靠 review                                                                                                    |
-| ✅ **TLA+ 状态机验证** | JSON 状态机控制流性质被 TLA+ TLC 证明（[验证报告](evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)）                                                       |
+| ✅ **TLA+ 状态机验证** | JSON 状态机控制流性质被 TLA+ TLC 证明（[验证报告](evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)）                                                     |
 | 🧱 **三层架构**        | tier0 = JSON 状态机 / tier1 = JSON 事件循环 / tier2 = 治理机制（HTTP API 在应用层）                                                                 |
 | 🤖 **AI Agent 基座**   | 通过独立的 [evo-agent](https://github.com/evorule/evo-agent) 把 LLM 输出（也是 JSON）接入                                                           |
 | 🏥 **单文件 CLI 落地** | [`evorule-cli/`](evorule-cli/) — musl 静态链接，零网络零遥测，直接给合规官用                                                                        |
@@ -227,7 +227,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 > **两条路径**：
 >
 > - **核心库（Rust）**：直接嵌入到你的 Rust 项目中，作为执行引擎使用（见下方）
-> - **HTTP API（应用层）**：作为独立服务运行，通过 HTTP API 交互（见 [evorule-server](../evorule-application/core/evorule-server/)）
+> - **HTTP API（应用层）**：作为独立服务运行，通过 HTTP API 交互（见 [evorule-server 独立仓](https://gitee.com/evo-rule-lab/evorule-server)）
 
 ### 方式一：核心库（3 行代码起步）
 
@@ -288,18 +288,18 @@ assert!(history.len() >= 2, "至少有 Command + StateTransition");
 
 #### 1. 启动(用内置宪法)
 
-> **注意**：evorule-server 属于应用层，**不在核心仓 workspace 中**。需单独克隆 `evorule-application` 仓。
+> **注意**：evorule-server 属于应用层，**不在核心仓 workspace 中**。需单独克隆 `evorule-server` 独立仓。
 
 ```bash
-# 1. 克隆核心仓 + 应用层仓
+# 1. 克隆核心仓 + evorule-server 独立仓（放同级目录）
 git clone https://gitee.com/evo-rule-lab/evorule
-git clone https://gitee.com/evo-rule-lab/evorule-application
+git clone https://gitee.com/evo-rule-lab/evorule-server
 
-# 2. 在应用层目录构建并启动 evorule-server
-cd evorule-application/core/evorule-server
-cargo run -- --addr 127.0.0.1:18080
-# 默认加载 ../../../evorule/evorule-tcb/core_eval.json(宪法)
-# 默认监听 ./rules 目录(业务规则,可热重载)
+# 2. 在 evorule-server 仓顶层构建并启动
+cd evorule-server
+cargo run --bin evorule-server -- --addr 127.0.0.1:18080
+# 配置文件 / core_eval.json / 规则目录路径通过 CLI 参数或 EVORULE_* 环境变量指定
+# 详见 evorule-server 仓 README.md
 ```
 
 > 想用自定义宪法?`--core_eval /path/to/your/core.json`
@@ -529,7 +529,7 @@ loop {
 文件:`evorule-governance/src/`
 
 **职责:** 核心治理机制 — 审计、会话管理、I/O 调度框架。
-**注意**: HTTP API、SSE 事件流、具体 I/O Handler 实现等**应用层功能**已迁移至 `evorule-application/core/evorule-server/` 和 `evorule-application/core/io_handlers/`。
+**注意**: HTTP API、SSE 事件流、具体 I/O Handler 实现等**应用层功能**已迁移至 [evorule-server 独立仓](https://gitee.com/evo-rule-lab/evorule-server)（`core/io_handlers/` + `evorule-server/`）。
 
 - **JSON Auditor** — 基于 FactsLog 算 JSON 摘要 + BLAKE3 哈希链
 - **⏪ 时间机器** — replay / rewind / fork / diff（机制层实现）
@@ -569,11 +569,11 @@ loop {
 
 ## API 概览
 
-> **注意**：以下 HTTP API 属于**应用层**，已迁移至 [`evorule-application/core/evorule-server/`](../evorule-application/core/evorule-server/)。
+> **注意**：以下 HTTP API 属于**应用层**，已迁移至 [evorule-server 独立仓](https://gitee.com/evo-rule-lab/evorule-server)。
 > 核心层（tier0/tier1/tier2）提供 Rust 库 API，HTTP API 是应用层对核心层的封装。
 
 40+ 个端点，全部 `JSON → JSON`。
-下方列主要端点，完整列表见 `evorule-application/core/evorule-server/` 文档。
+下方列主要端点，完整列表见 [evorule-server 仓](https://gitee.com/evo-rule-lab/evorule-server) 文档。
 
 | 类别        | 端点                                         | 说明              |
 | ----------- | -------------------------------------------- | ----------------- |

@@ -95,7 +95,7 @@ jobs:
         run: cargo test --workspace --all-features
 
   # ===== 编译验证 =====
-  # H5: evorule-server 已迁至 evorule-application/core/evorule-server/(应用层独立 crate)
+  # H5 + 走神 9: evorule-server 已迁至 evorule-server 独立仓(顶层 crate，不再在 evorule-application/)
   # 核心 evorule workspace 不再包含 evorule-server bin,此 job 改为编译核心 workspace 全部
   build-bin:
     name: Build core workspace
@@ -126,11 +126,11 @@ jobs:
           if-no-files-found: warn
 
   # ===== E2E 测试 =====
-  # H5: evorule-server 已迁至 evorule-application/core/evorule-server/(应用层独立 crate)
-  # E2E 测试需要 evorule-server 二进制,应在 evorule-application 仓库的 CI 中运行
-  # 此 job 暂时禁用,待 evorule-application CI 建立后迁移
+  # H5 + 走神 9: evorule-server 已迁至 evorule-server 独立仓(顶层 crate)
+  # E2E 测试需要 evorule-server 二进制,应在 evorule-server 独立仓的 CI 中运行
+  # 此 job 暂时禁用,待 evorule-server 仓 CI 建立后迁移
   e2e:
-    name: E2E Tests (disabled - moved to evorule-application)
+    name: E2E Tests (disabled - moved to evorule-server)
     runs-on: ubuntu-latest
     if: false # H5: 暂时禁用,待 evorule-application CI 建立
     needs: [build-bin]

@@ -15,11 +15,11 @@ env:
 
 jobs:
   # ===== 多平台二进制构建 =====
-  # H5 迁移后状态（2026-07-28 更新）：
-  # - evorule-server 已迁至 evorule-application/core/evorule-server/（应用层独立 crate）
-  # - evorule 仓本身 publish = false（不发布到 crates.io）
-  # - evorule-cli 是用户内部工具，永不发布
-  # - 因此 evorule 仓的 release workflow **整体不再适用**
+  # H5 + 走神 9 迁移后状态（2026-07-30 更新）：
+  # - evorule-server 已两次外迁，最终在 evorule-server 独立仓（顶层独立 crate）
+  # - evorule 仓本身 publish = false（不发布到 crates.io），但四个子 crate 各自独立 publish
+  # - evorule-cli：已发布到 crates.io，用户用 `cargo install evorule-cli` 获取
+  # - 因此 evorule 仓的 release workflow **整体不再适用**，evorule-server 多平台构建在 evorule-server 独立仓 release workflow
   #
   # 真正的 release 流程应在 evorule-application 仓执行：
   #   - crates.io 发布：evorule-application

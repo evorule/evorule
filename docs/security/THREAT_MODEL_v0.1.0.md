@@ -21,8 +21,8 @@
 >
 > - 生态全栈旧版（已废弃）→ [`THREAT_MODEL.md`](THREAT_MODEL.md)（2026-07-20，覆盖 evorule + evo-agent + application）
 > - evo-agent 应用层威胁模型 → 见 evo-agent 仓安全文档
-> - evorule-server / io_handlers 应用层威胁模型 → 见 evorule-application 仓安全文档
-> - evorule-application 应用层威胁模型 → 见 evorule-application 仓安全文档
+> - evorule-server / io_handlers 应用层威胁模型 → 见 evorule-server 独立仓安全文档
+> - evorule-application 应用层威胁模型（可视化 UI / 业务模板 / 仪表盘） → 见 evorule-application 仓安全文档
 
 ---
 
@@ -63,13 +63,13 @@
 
 ### 2.2 "Framework vs Application" 解耦(走神 9 后)
 
-| 层                                                  | 威胁模型重点                           | 所在仓库            |
-| --------------------------------------------------- | -------------------------------------- | ------------------- |
-| **evorule 机制层** (evorule-tcb/reactor/governance) | 完整性、确定性、形式化验证、可审计性   | **evorule**(本文档) |
-| **evorule-cli**                                     | 静态二进制、无网络、reproducible build | **evorule**(本文档) |
-| **evorule-server / io_handlers / portal**           | HTTP API、认证、CORS、SSRF、SQL        | evorule-application |
-| **evo-agent 应用层**                                | 工具权限、LLM prompt injection、SSRF   | evo-agent           |
-| **time-travel-debugger**                            | UI 注入、CSRF、来源验证                | evorule-application |
+| 层                                                  | 威胁模型重点                           | 所在仓库                 |
+| --------------------------------------------------- | -------------------------------------- | ------------------------ |
+| **evorule 机制层** (evorule-tcb/reactor/governance) | 完整性、确定性、形式化验证、可审计性   | **evorule**(本文档)      |
+| **evorule-cli**                                     | 静态二进制、无网络、reproducible build | **evorule**(本文档)      |
+| **evorule-server / io_handlers**                    | HTTP API、认证、CORS、SSRF、SQL        | evorule-server（独立仓） |
+| **evo-agent 应用层**                                | 工具权限、LLM prompt injection、SSRF   | evo-agent                |
+| **time-travel-debugger / portal / 业务模板**        | UI 注入、CSRF、来源验证                | evorule-application      |
 
 **应用层破坏,不会污染机制层**(机制层 100% 独立)。这降低了风险半径。
 
@@ -170,7 +170,7 @@ evorule-reactor/evorule-governance 的 Rust 代码只允许**机制**(orchestrat
 
 > **已迁出的边界**(走神 9 后不在 evorule 仓):
 > B1(user→evo-agent CLI)、B2(evo-agent→evorule-server HTTP)、B3/B4(evo-agent→LLM/external HTTP)、
-> B8(browser→evorule-server /debugger/)、B9(LLM→evo-agent)→ 见 evo-agent / evorule-application 威胁模型。
+> B8(browser→evorule-server /debugger/)、B9(LLM→evo-agent)→ 见 evo-agent / evorule-server / evorule-application 威胁模型。
 
 ---
 
@@ -250,8 +250,8 @@ User / Application (via evorule-cli 或 lib)
 User / Application
 ```
 
-> **注**:HTTP `/api/sessions/{id}/replay` 端点不在 evorule 仓(在 evorule-application 的 evorule-server)。
-> evorule 仓仅提供 Rust lib API(`pub use`)供 application 层调用。
+> **注**:HTTP `/api/sessions/{id}/replay` 端点不在 evorule 仓(在 evorule-server 独立仓)。
+> evorule 仓仅提供 Rust lib API(`pub use`)供应用层调用。
 
 ---
 
@@ -403,7 +403,7 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 ```
 
 > **注**:原 v0.1.0 攻击树中"路径 A: 大量小请求 / 1000 SSE 长连接"(HTTP rate limit / MAX_SSE_CONNECTIONS)
-> 已随 evorule-server 迁出 evorule 仓,见 evorule-application 威胁模型。
+> 已随 evorule-server 迁出 evorule 仓,见 evorule-server 独立仓威胁模型。
 
 ### 7.3 攻击 3:共享 facts 投毒(M3)
 
