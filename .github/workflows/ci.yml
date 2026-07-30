@@ -37,10 +37,46 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  # ===== 文档安全 + 版本一致性（治理方案 048 v1.0 阶段 3.3 同步 Gitee CI） =====
+  docs-check:
+    name: Doc safety + version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 检查 Python 版本
+        run: python3 --version
+
+      # VERSION_STRATEGY 基线四件套
+      - name: validate-version.ps1（文档硬编码版号对齐 Cargo.toml）
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/validate-version.ps1
+      - name: validate-changelog.ps1
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/validate-changelog.ps1
+      - name: validate-license.ps1（SPDX 头 + LICENSE 文件）
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/validate-license.ps1
+      - name: validate-cargolock.ps1
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/validate-cargolock.ps1
+
+      # 治理方案阶段 6 门禁收敛 · 强阻塞
+      # 5 类检查：R-门控1 staged文档泄露 / R3 L1私有路径泄露 / L1不提L2L3 / 交叉引用完整性 / DOCS_INDEX索引存在性
+      # 任何 FAIL 立即阻断 PR；若属误报在 check_doc_safety.py 的白名单常量中追加例外。
+      - name: check_doc_safety.py（私有路径泄露 + L1→L2/L3 跨界引用 + 交叉引用完整性 + DOCS_INDEX 索引存在性）
+        run: python3 scripts/check_doc_safety.py --skip-git
+
   # ===== Rust 单元 + 集成测试 =====
   test:
     name: Rust Tests
     runs-on: ubuntu-latest
+    needs: [lint, docs-check]
     steps:
       - uses: actions/checkout@v4
 
@@ -59,8 +95,10 @@ jobs:
         run: cargo test --workspace --all-features
 
   # ===== 编译验证 =====
+  # H5: evorule-server 已迁至 evorule-application/core/evorule-server/(应用层独立 crate)
+  # 核心 evorule workspace 不再包含 evorule-server bin,此 job 改为编译核心 workspace 全部
   build-bin:
-    name: Build evorule-server
+    name: Build core workspace
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,20 +114,25 @@ jobs:
       - name: Rust 缓存
         uses: Swatinem/rust-cache@v2
 
-      - name: 编译 evorule-server (release)
-        run: cargo build --release --bin evorule-server
+      - name: 编译核心 workspace (release)
+        run: cargo build --release --workspace
 
-      - name: 上传二进制产物
+      - name: 上传 evorule-cli 二进制产物
         uses: actions/upload-artifact@v4
         with:
-          name: evorule-server-linux-x86_64
-          path: target/release/evorule-server
+          name: evorule-cli-linux-x86_64
+          path: target/release/evorule
           retention-days: 7
+          if-no-files-found: warn
 
   # ===== E2E 测试 =====
+  # H5: evorule-server 已迁至 evorule-application/core/evorule-server/(应用层独立 crate)
+  # E2E 测试需要 evorule-server 二进制,应在 evorule-application 仓库的 CI 中运行
+  # 此 job 暂时禁用,待 evorule-application CI 建立后迁移
   e2e:
-    name: E2E Tests
+    name: E2E Tests (disabled - moved to evorule-application)
     runs-on: ubuntu-latest
+    if: false # H5: 暂时禁用,待 evorule-application CI 建立
     needs: [build-bin]
     steps:
       - uses: actions/checkout@v4

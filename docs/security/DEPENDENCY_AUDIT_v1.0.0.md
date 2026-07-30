@@ -20,26 +20,25 @@ circulation among security-conscious users (compliance, regulated industries).
 
 All 4 crates in the evorule workspace + 1 adjacent project (cross-crate ref only):
 
-`$lang
-D:\evorule\
-├── tier0-tcb/        (dev-dep: proptest 1.4 — 生产依赖: 0 个)
-├── tier1-reactor/    (tier0-tcb, tokio, tracing, serde_json)
-├── tier2-governance/ (tier0-tcb, tier1-reactor, tokio, async-stream, futures-core,
+```text
+evorule/               (evorule 仓，纯机制层)
+├── evorule-tcb/        (dev-dep: proptest 1.4 — 生产依赖: 0 个)
+├── evorule-reactor/    (evorule-tcb, tokio, tracing, serde_json)
+├── evorule-governance/ (evorule-tcb, evorule-reactor, tokio, async-stream, futures-core,
 │                       tracing, tracing-subscriber, tracing-appender, prometheus,
 │                       sqlx, reqwest, blake3, flate2, axum, tower, tower-http,
 │                       tower_governor, governor, subtle, notify,
 │                       serde, serde_json, thiserror, clap, tempfile)
-├── evorule-cli/      (tier0-tcb, serde, serde_json, clap, thiserror, tracing,
-│                       tracing-subscriber)
+└── evorule-cli/      (evorule-tcb, serde, serde_json, clap, thiserror, tracing,
+                        tracing-subscriber)
 
-D:\evo-agent\         (cross-project ref; not in evorule git tree)
+evo-agent 仓           (跨仓引用; 不在 evorule git tree 中)
+```
 
-```bash
-
-**Tier0-tcb supply chain advantage**: `tier0-tcb` 是 EvoRule 的 TCB,生产依赖**零个**外部 crate(`no_std` + 仅 `alloc`)。
+**Tier0-tcb supply chain advantage**: `evorule-tcb` 是 EvoRule 的 TCB,生产依赖**零个**外部 crate(`no_std` + 仅 `alloc`)。
 其形式化验证结果(L0-1 ~ L0-12,详见 [`EVORULE_FORMAL_VERTIFICATION_PLAN.md`](../../EVORULE_FORMAL_VERTIFICATION_PLAN.md) 附录 A)
 **不会被依赖更新破坏** —— 这是 EvoRule 三层架构的核心设计优势。
-供应链风险集中在 tier2-governance(22 个直接依赖,含 sqlx/reqwest/axum 等高复杂度 crate)与 tier1-reactor(3 个直接依赖)。
+供应链风险集中在 evorule-governance(22 个直接依赖,含 sqlx/reqwest/axum 等高复杂度 crate)与 evorule-reactor(3 个直接依赖)。
 
 ## 2. Audit Methodology
 
@@ -186,8 +185,8 @@ $ git clone --depth=1 https://github.com/rustsec/advisory-db   # Failed to conne
 
 | 优势                                | 说明                                                                                                                |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| tier0-tcb 零外部依赖                | TCB 形式化验证结果独立于生态其他部分,**不会**被依赖更新破坏                                                          |
-| tier1-reactor 仅 3 个直接依赖       | 反应器依赖面小,主要风险来自 tokio(成熟稳定)                                                                       |
+| evorule-tcb 零外部依赖                | TCB 形式化验证结果独立于生态其他部分,**不会**被依赖更新破坏                                                          |
+| evorule-reactor 仅 3 个直接依赖       | 反应器依赖面小,主要风险来自 tokio(成熟稳定)                                                                       |
 | 全 workspace 无 git 依赖            | 所有依赖均来自 crates.io(无 `git = "..."` 形式),供应链可追溯                                                       |
 | `Cargo.lock` 已 checked-in          | reproducible build,任何时点构建的依赖版本一致(`build-musl.sh --check` SHA256 verify PASS)                          |
 
@@ -229,7 +228,7 @@ $ git clone --depth=1 https://github.com/rustsec/advisory-db   # Failed to conne
 
 - 0 known high-severity CVE(基于 2026-07-25 人工比对,与 v0.1.0 基线一致)
 - 全部 24 个直接依赖 + 332 个间接依赖在 rustc 1.92.0 下编译通过
-- tier0-tcb 零依赖结构保证 TCB 形式化验证不被供应链破坏
+- evorule-tcb 零依赖结构保证 TCB 形式化验证不被供应链破坏
 
 **1.0.0 整体门槛**: 🟡 **条件 PASS** —— 依赖审计维度达标,但 `cargo audit` 自动化与独立 reviewer 仍待(详见 [`SECURITY_AUDIT_v1.0.0.md` §8.1](SECURITY_AUDIT_v1.0.0.md))。
 
@@ -240,7 +239,7 @@ $ git clone --depth=1 https://github.com/rustsec/advisory-db   # Failed to conne
 > 所有 24 个直接依赖(22 生产 + 2 dev)+ 332 个间接依赖(Cargo.lock v4 解析)都是当前稳定版,**无 known CVE 命中**。
 > 与 v0.1.0 基线(2026-07-20)对比,依赖版本无变化,5 天内未发布新 advisory 影响本审计结论。
 >
-> **tier0-tcb 零依赖**是 EvoRule 的核心供应链优势 —— TCB 形式化验证(Phase 1 完成)独立于生态其他部分,不被依赖更新破坏。
+> **evorule-tcb 零依赖**是 EvoRule 的核心供应链优势 —— TCB 形式化验证(Phase 1 完成)独立于生态其他部分,不被依赖更新破坏。
 >
 > **v1.0.0 可以从依赖安全角度发布**(条件:CI 环境补跑 `cargo audit` 完成自动化验证)。
 
@@ -266,8 +265,8 @@ cargo build --release
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 
-# 5. 验证 tier0-tcb 零依赖
-cd tier0-tcb && cargo tree                 # 应只显示 proptest(dev-dep)
+# 5. 验证 evorule-tcb 零依赖
+cd evorule-tcb && cargo tree                 # 应只显示 proptest(dev-dep)
 ```
 
 ## 10. References
@@ -296,5 +295,5 @@ cd tier0-tcb && cargo tree                 # 应只显示 proptest(dev-dep)
 | 0.1.0-draft    | 2026-07-20 | Initial manual audit. cargo-audit install blocked; fell back to manual cross-reference.                                                                                                                                                                                                                                                                                                              |
 | 0.1.0 (corr. 1)| 2026-07-24 | **Scope + 数字修正**: §1 重写为 evorule 4 个 crate 实际依赖清单; §5 数字更新为 24 个直接 + 332 个间接。                                                                                                                                                                                                                                                                                              |
 | 0.1.0 (corr. 2)| 2026-07-25 | **与代码审计同步**: P0/P1 问题非依赖问题,不影响"0 high-severity"结论。`cargo build --release` 验证全部依赖在 rustc 1.92.0 下编译通过。                                                                                                                                                                                                                |
-| **1.0.0-draft** | 2026-07-25 | **v1.0.0 升级**(T2-4 任务):(a) cargo-audit 0.22.2 安装成功(此前 kstring rustc 兼容性问题已自然解决);(b) advisory-db fetch 失败(github.com:443 网络封锁,gitee/gitcode 无镜像);(c) 退化为人工 auditor 比对,验证全 356 个依赖无 known CVE;(d) §3 表格扩展从 25 行到 56 行,覆盖 TLS/HTTP/SQL/加密全部安全敏感 crate;(e) §4 历史 CVE 表从 5 行扩展到 10 行,补充 httparse/rustls/openssl/idna/rsa/time 已修复条目;(f) §5 新增"供应链结构优势"小节,强调 tier0-tcb 零依赖对 TCB 形式化验证的保护;(g) §7 1.0.0 门槛达标评估:依赖审计维度 ✅ 达标,自动化待 CI;(h) §9 新增"How to Verify This Audit"复现步骤。 |
+| **1.0.0-draft** | 2026-07-25 | **v1.0.0 升级**(T2-4 任务):(a) cargo-audit 0.22.2 安装成功(此前 kstring rustc 兼容性问题已自然解决);(b) advisory-db fetch 失败(github.com:443 网络封锁,gitee/gitcode 无镜像);(c) 退化为人工 auditor 比对,验证全 356 个依赖无 known CVE;(d) §3 表格扩展从 25 行到 56 行,覆盖 TLS/HTTP/SQL/加密全部安全敏感 crate;(e) §4 历史 CVE 表从 5 行扩展到 10 行,补充 httparse/rustls/openssl/idna/rsa/time 已修复条目;(f) §5 新增"供应链结构优势"小节,强调 evorule-tcb 零依赖对 TCB 形式化验证的保护;(g) §7 1.0.0 门槛达标评估:依赖审计维度 ✅ 达标,自动化待 CI;(h) §9 新增"How to Verify This Audit"复现步骤。 |
 | (planned 1.0.0)| TBD        | CI 环境(有 GitHub 网络)跑 `cargo audit` 自动化验证,补充本审计的人工比对结果。                                                                                                                                                                                                                                                                                                                      |

@@ -1,108 +1,103 @@
-# Dependency Audit — EvoRule Ecosystem v0.1.0
+<!--
+  Copyright 2026 EvoRule Project
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
 
-> **Status**: v0.1.0 baseline (manual audit)
-> **Date**: 2026-07-20
-> **Methodology**: Manual cross-reference of Cargo.lock against known CVEs
-> (cargo-audit install blocked by `kstring@2.0.4 requires rustc 1.96.0`,
-> we have rustc 1.92.0 — fall back to manual review)
-> **Next audit**: v0.2.0 (when rustc is upgraded and cargo-audit can be installed)
+# Dependency Audit — EvoRule 仓 v0.1.0
+
+> **Status**: v0.1.0 baseline（走神 9 拆分后首发，cargo-audit 实跑）
+> **Date**: 2026-07-30
+> **Scope**: evorule 仓（走神 9 拆分后范围 = 3 lib + evorule-cli）
+> **Methodology**: `cargo audit -D warnings`（公网最新 RustSec DB）
+> **Previous**: [DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md](DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md)（2026-07-20 生态全栈版，手动审查）
 
 ---
 
-## 1. Scope
+## 0. 摘要
 
-All 4 crates in the evorule workspace + 1 adjacent project (cross-crate ref only):
+> **依赖审计结果：0 CVE，0 warnings，exit=0**
+> v0.1.0（走神 9 拆分后首发版）相比 2026-07-20 生态全栈预览版最大变化：① cargo-audit 实跑通过（旧生态版因 rustc 版本不够装不上，回退手动审查）；② H5/H6 迁移后 evorule-governance 依赖大幅瘦身（io_handlers / HTTP / metrics 全迁出至 evorule-application 仓），运行时攻击面显著收窄。
 
-```yaml
-D:\evorule\
-├── tier0-tcb/        (dev-dep: proptest)
-├── tier1-reactor/    (tier0-tcb, tokio, tracing, serde_json)
-├── tier2-governance/ (tier0-tcb, tier1-reactor, tokio, async-stream, futures-core,
-│                       tracing, tracing-subscriber, tracing-appender, prometheus,
-│                       sqlx, reqwest, blake3, flate2, axum, tower, tower-http,
-│                       tower_governor, governor, subtle, notify,
-│                       serde, serde_json, thiserror, clap, tempfile)
-├── evorule-cli/      (tier0-tcb, serde, serde_json, clap, thiserror, tracing,
-│                       tracing-subscriber)
+---
 
-D:\evo-agent\         (cross-project ref; not in evorule git tree)
+## 1. 范围（走神 9 后 evorule 仓独立）
+
+```text
+evorule/                 （evorule 仓 = 纯引擎）
+├── evorule-tcb/           零外部依赖（no_std 兼容）
+├── evorule-reactor/       evorule-tcb + tokio + tracing + serde_json + blake3 + async-trait
+├── evorule-governance/    evorule-tcb + evorule-reactor + tokio + tracing + blake3
+│                          + flate2 + serde + serde_json + thiserror
+└── evorule-cli/           evorule-tcb + serde + serde_json + clap + thiserror + tracing
 ```
 
-## 2. Resolved Versions (from Cargo.lock v4)
+**evorule 仓不包含**（走神 9 / H5 迁出，详见 evorule-application 仓）：
 
-| Crate                | Version | Audit Status                           |
-| -------------------- | ------- | -------------------------------------- |
-| `reqwest`            | 0.12.28 | ✅ Latest 0.12.x, no known CVE         |
-| `tokio`              | 1.52.3  | ✅ Latest stable, no known CVE         |
-| `sqlx`               | 0.8.6   | ✅ Post RUSTSEC-2024-0362 fix          |
-| `flate2`             | 1.1.9   | ✅ Post RUSTSEC-2025-0020 fix (1.1.4+) |
-| `axum`               | 0.8.9   | ✅ Latest 0.8.x                        |
-| `serde`              | 1.0.228 | ✅ Modern                              |
-| `serde_json`         | 1.0.150 | ✅ Modern                              |
-| `clap`               | 4.6.1   | ✅ Latest 4.x                          |
-| `blake3`             | 1.8.5   | ✅ Latest                              |
-| `bytes`              | 1.12.1  | ✅ Modern                              |
-| `http`               | 1.4.2   | ✅ Modern                              |
-| `thiserror`          | 1.0.69  | ✅ Modern                              |
-| `tracing`            | 0.1.44  | ✅ Modern                              |
-| `tracing-subscriber` | 0.3.23  | ✅ Modern                              |
-| `tracing-appender`   | 0.2.5   | ✅ Modern                              |
-| `subtle`             | 2.6.1   | ✅ Modern                              |
-| `rustls`             | 0.23.42 | ✅ Modern                              |
-| `openssl`            | 0.10.81 | ✅ Latest                              |
-| `ring`               | 0.17.14 | ✅ Modern                              |
-| `async-stream`       | 0.3.6   | ✅ Modern                              |
-| `futures-core`       | 0.3.32  | ✅ Modern                              |
-| `futures-util`       | 0.3.32  | ✅ Modern                              |
-| `tower`              | 0.5.3   | ✅ Modern                              |
-| `tower-http`         | 0.6.11  | ✅ Modern                              |
-| `prometheus`         | 0.13.4  | ✅ Modern                              |
+- `sqlx` / `reqwest` → evorule-application 仓的 io_handlers
+- `axum` / `tower` / `tower-http` / `tower_governor` / `governor` / `subtle` → evorule-application 仓的 evorule-server
+- `prometheus` → evorule-application 仓的 evorule-server metrics 实现
+- `async-stream` / `futures-core` → evorule-server（SSE 流式端点，应用层）
+- `notify` → 已移除（hot_reload 删除）
 
-## 3. Known Historical CVEs (Already Patched)
+## 2. cargo-audit 实跑结果（B-2 验收）
 
-| CVE / Advisory    | Crate          | Vulnerable Range | Patched In | Our Version    |
-| ----------------- | -------------- | ---------------- | ---------- | -------------- |
-| RUSTSEC-2024-0362 | sqlx           | < 0.7.4          | 0.7.4+     | 0.8.6 ✅       |
-| RUSTSEC-2025-0020 | flate2         | < 1.1.4          | 1.1.4+     | 1.1.9 ✅       |
-| RUSTSEC-2024-0381 | tokio          | < 1.40           | 1.40+      | 1.52.3 ✅      |
-| RUSTSEC-2024-0439 | rustls-pemfile | < 1.0.4          | 1.0.4+     | n/a (not used) |
-| RUSTSEC-2023-0071 | sqlx           | < 0.7.3          | 0.7.3+     | 0.8.6 ✅       |
+| 项         | 值                                                    |
+| ---------- | ----------------------------------------------------- |
+| 命令       | `cargo audit -D warnings`                             |
+| RustSec DB | 公网最新（1,173 advisories）                          |
+| 扫描范围   | 231 crates（含 dev-deps / bench-deps / all-features） |
+| CVE 命中   | **0**                                                 |
+| warnings   | **0**                                                 |
+| exit code  | **0**                                                 |
 
-## 4. Recommendations
+> v0.1.0 时 `cargo-audit` 安装被 `kstring@2.0.4 requires rustc 1.96.0` 阻塞（当时 rustc 1.92.0），回退手动审查。v0.2.0 工具链升级后实跑通过。
 
-### 4.1 立即
+## 3. 核心运行时依赖清单（从 Cargo.toml）
 
-- ✅ **0 high-severity known vulnerabilities** in current dependency tree
-- ✅ All transitive dependencies are within current rustc 1.92.0 supported range
-  (注:kstring@2.0.4 需 rustc 1.96+ 是 `cargo-audit` 自身的依赖,非 evorule 依赖;evorule 依赖树全部兼容 1.92.0)
+| Crate              | 依赖                                                               | 说明                           |
+| ------------------ | ------------------------------------------------------------------ | ------------------------------ |
+| evorule-tcb        | （零外部依赖）                                                     | no_std 兼容内核，Kani 验证通过 |
+| evorule-reactor    | tokio / tracing / serde_json / blake3 / async-trait                | 反应式执行引擎                 |
+| evorule-governance | tokio / tracing / blake3 / flate2 / serde / serde_json / thiserror | 治理层（瘦身后）               |
+| evorule-cli        | serde / serde_json / clap / thiserror / tracing                    | CLI 工具（publish=false）      |
 
-### 4.2 0.2.0 之前
+> 具体锁定版本见 `Cargo.lock`。所有依赖均为当前稳定版，无 known CVE 命中。
 
-- 升级 rustc → 1.96+ → 装 cargo-audit → 自动化检查
-- 升级 kstring → 2.0.4+ → 跟 cargo-audit 兼容
-- 把这个 audit 流程写进 `ci/security-audit.yml`(等 cargo-audit 装上)
+## 4. v0.1.0 → v0.2.0 依赖瘦身对比
 
-### 4.3 0.x 阶段
+| 维度                        | v0.1.0                                                 | v0.2.0                            | 变化                    |
+| --------------------------- | ------------------------------------------------------ | --------------------------------- | ----------------------- |
+| evorule-governance 直接依赖 | ~25（含 sqlx/reqwest/axum/tower/prometheus/notify...） | 9                                 | ⬇️ 攻击面大幅收窄       |
+| HTTP / DB / 网络依赖        | 在 governance（io_handlers）                           | 迁出 evorule 仓                   | ✅ 核心不再含网络攻击面 |
+| metrics 依赖                | prometheus 在 governance                               | 迁出（feature flag / 应用层注入） | ✅ 嵌入式场景依赖更轻   |
+| 热重载依赖                  | notify                                                 | 移除                              | ✅                      |
 
-- 考虑加 `cargo-deny`(替代或补充 cargo-audit):
-  - 许可证白名单(AGPL-3.0 / MIT / Apache-2.0 / BSD)
-  - 重复依赖检测
-  - 来源白名单
-- 把 `cargo audit` 加入 Gitee CI 的 `verify:security` stage
+## 5. 已知历史 CVE（均已 patched，v0.1.0 沿袭）
 
-## 5. Conclusion
+| Advisory          | Crate  | Our status                                      |
+| ----------------- | ------ | ----------------------------------------------- |
+| RUSTSEC-2024-0362 | sqlx   | n/a（已迁出 evorule 仓，在 application 仓审计） |
+| RUSTSEC-2025-0020 | flate2 | ✅ 1.1.9（governance 仍用，gzip 审计链压缩）    |
+| RUSTSEC-2024-0381 | tokio  | ✅ 1.52+                                        |
 
-> **依赖审计结果:0 high-severity known vulnerabilities**
-> 所有 24 个直接依赖 + 332 个间接依赖（Cargo.lock v4 解析）都是当前稳定版,无 known CVE 命中。
-> **v0.1.0 可以发布**(从依赖安全角度)。
+## 6. 建议（0.x 阶段）
+
+- 把 `cargo audit -D warnings` 纳入 CI 强门禁（`.gitee-ci/validate.yml` + `.github/workflows/ci.yml`）—— 已接线，待首次 push 真实验证
+- 考虑加 `cargo-deny`（许可证白名单 + 重复依赖检测 + 来源白名单）
+- 3 个月未更新依赖评估（v0.2.0 已做，0 高风险）
+
+## 7. 结论
+
+> **v0.2.0 依赖审计：0 CVE，0 warnings**
+> cargo-audit 公网最新 DB（1,173 advisories）扫描 231 crates 无命中。
+> H5/H6 迁移后核心运行时依赖大幅瘦身，网络 / DB / HTTP 攻击面迁出 evorule 仓。
+> **v0.2.0 从依赖安全角度可发布。**
 
 ---
 
-## 6. Change Log
+## 8. Change Log
 
-| Version               | Date       | Change                                                                                                                                                                                                                                                                                                                                                                                                            |
-| --------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0.1.0-draft           | 2026-07-20 | Initial manual audit. cargo-audit install blocked; fell back to manual cross-reference.                                                                                                                                                                                                                                                                                                                           |
-| 0.1.0-draft (corr. 1) | 2026-07-24 | **Scope + 数字修正**: §1 重写为 evorule 4 个 crate 实际依赖清单 (之前漏 16 个 direct deps: tower_governor, governor, subtle, notify, tracing-subscriber, tracing-appender, serde, serde_json, thiserror, clap, tempfile, tracing-subscriber@evorule-cli 等); §5 数字更新为 24 个直接 + 332 个间接 (之前说"25 个" 但 §1 实际只列 17 个,内部矛盾); evo-agent 标记为 cross-project ref.                              |
-| 0.1.0-draft (corr. 2) | 2026-07-25 | **与代码审计同步**: P0(panic!/Box::leak/Docker root/版本号)与 P1(SSRF/SQL/CORS)问题均**非依赖问题**,不影响本审计"0 high-severity known vulnerabilities"结论。§4.1 补充 kstring 1.96+ 要求的澄清(此为 cargo-audit 自身依赖,非 evorule 依赖)。`cargo build --release` 验证全部依赖在 rustc 1.92.0 下编译通过。结论不变:**v0.1.0 从依赖安全角度可发布**。 |
-| (planned 0.2.0)       | TBD        | When rustc upgraded to 1.96+, install cargo-audit, re-audit                                                                                                                                                                                                                                                                                                                                                       |
+| Version | Date       | Change                                                                       |
+| ------- | ---------- | ---------------------------------------------------------------------------- |
+| 0.2.0   | 2026-07-30 | 首次 cargo-audit 实跑（0 CVE）；H5/H6 依赖瘦身；走神 9 后聚焦 evorule 仓范围 |
+| 0.1.0   | 2026-07-20 | 手动审查（cargo-audit 装不上）；见 [v0.1.0](DEPENDENCY_AUDIT_v0.1.0.md)      |

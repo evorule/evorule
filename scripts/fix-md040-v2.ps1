@@ -115,7 +115,7 @@ function Process-File {
 
 # Find all .md files with MD040 errors by running markdownlint
 Write-Host "Scanning for MD040 errors..."
-$lintOutput = npx --yes markdownlint-cli "$RootDir\docs\**\*.md" "$RootDir\*.md" "$RootDir\tier0-tcb\**\*.md" "$RootDir\tier1-reactor\**\*.md" "$RootDir\tier2-governance\**\*.md" "$RootDir\evorule-cli\**\*.md" "$RootDir\.gitee\*.md" --ignore "**/node_modules/**" --ignore "_PRIVATE_zh_docs/**" --ignore ".trae/**" --ignore ".gate-logs/**" 2>&1 | Out-String
+$lintOutput = npx --yes markdownlint-cli "$RootDir\docs\**\*.md" "$RootDir\*.md" "$RootDir\evorule-tcb\**\*.md" "$RootDir\evorule-reactor\**\*.md" "$RootDir\evorule-governance\**\*.md" "$RootDir\evorule-cli\**\*.md" "$RootDir\.gitee\*.md" --ignore "**/node_modules/**" --ignore "_PRIVATE_zh_docs/**" --ignore ".trae/**" --ignore ".gate-logs/**" 2>&1 | Out-String
 
 $filesToFix = @{}
 foreach ($line in ($lintOutput -split "`n")) {

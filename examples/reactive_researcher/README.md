@@ -6,9 +6,9 @@
 
 本示例是 EvoRule 1.0.0 发布的 §4.4 门槛之一("1 reference 实现")。它演示:
 
-- 如何用 `tier0-tcb` 的 `core_eval.json` 驱动规则引擎
-- 如何用 `tier1-reactor` 的 `Reactor` 构建事实驱动执行器
-- 如何用 `tier2-governance` 的 `IoHandler` trait 和 `MemoryHandler` 实现 I/O 外挂
+- 如何用 `evorule-tcb` 的 `core_eval.json` 驱动规则引擎
+- 如何用 `evorule-reactor` 的 `Reactor` 构建事实驱动执行器
+- 如何用 `evorule-governance` 的 `IoHandler` trait 和 `MemoryHandler` 实现 I/O 外挂
 - 如何通过 Fact 通道(command / event)在用户、反应器、I/O 订阅者之间通信
 - 如何读取 `FactsLog` 审计链,展示事实驱动可审计性
 
@@ -16,7 +16,7 @@
 
 ```
                               ┌─────────────────────────────┐
-                              │   tier1-reactor::Reactor     │
+                              │   evorule-reactor::Reactor     │
                               │   (执行 core_eval.json 规则)  │
                               └──────────┬──────────────────┘
                                          │
@@ -83,7 +83,7 @@ Get-Content .\examples\reactive_researcher\reactive_researcher_memory\research_n
 
 | 参数 | 环境变量 | 默认值 | 说明 |
 |------|----------|--------|------|
-| `--core-eval` | `EVORULE_CORE_EVAL` | `<manifest>/../../tier0-tcb/core_eval.json` | core_eval.json 路径 |
+| `--core-eval` | `EVORULE_CORE_EVAL` | `<manifest>/../../evorule-tcb/core_eval.json` | core_eval.json 路径 |
 | `--memory-dir` | `EVORULE_MEMORY_DIR` | `<manifest>/reactive_researcher_memory` | Memory 持久化目录 |
 | `--llm-mode` | `EVORULE_LLM_MODE` | `dry-run` | LLM 模式:`dry-run` 或 `live` |
 | `--llm-url` | `EVORULE_LLM_URL` | (无) | live 模式下的 LLM API URL(OpenAI 兼容) |
@@ -188,7 +188,7 @@ IoType::CALL_SERVICE => self.my_handler.execute(&params).await,
 ### AGENTS.md 合规
 
 本示例严格遵守 `AGENTS.md`:
-- ✅ **不修改任何核心 crate**(`tier0-tcb` / `tier1-reactor` / `tier2-governance` 源码零改动)
+- ✅ **不修改任何核心 crate**(`evorule-tcb` / `evorule-reactor` / `evorule-governance` 源码零改动)
 - ✅ 所有自定义代码(`LlmHandler` / `ExampleSubscriber`)都在 example 包内
 - ✅ 通过公共 API 组合使用,展示框架的可扩展性
 - ✅ 不引入新工具 / 新 UI / 新 HTTP 路由(属于 `evorule-application` 范畴)

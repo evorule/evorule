@@ -102,7 +102,7 @@ const aClass = [
   { file: 'docs/benchmarks/EXP_1.3.md', desc: 'Benchmark reports are public artifacts; we release them under CC0 for maximum transparency and reproducibility.' },
   { file: 'docs/benchmarks/EXP_1.4.md', desc: 'Benchmark reports are public artifacts; we release them under CC0 for maximum transparency and reproducibility.' },
   { file: 'docs/benchmarks/EXP_1.5.md', desc: 'Benchmark reports are public artifacts; we release them under CC0 for maximum transparency and reproducibility.' },
-  { file: 'tier0-tcb/tla/TLC_VERIFICATION_REPORT.md', desc: 'Formal verification reports are public artifacts; we release them under CC0 for maximum transparency and reproducibility.' },
+  { file: 'evorule-tcb/tla/TLC_VERIFICATION_REPORT.md', desc: 'Formal verification reports are public artifacts; we release them under CC0 for maximum transparency and reproducibility.' },
 ];
 
 // B-class: add AGPL SPDX header
@@ -110,18 +110,18 @@ const bClass = [
   'README.md',
   'AGENTS.md',
   'evorule-cli/CLI_SPEC.md',
-  'tier0-tcb/docs/KANI.md',
-  'tier0-tcb/docs/MUTANTS.md',
-  'tier1-reactor/README.md',
-  'tier2-governance/README.md',
+  'evorule-tcb/docs/KANI.md',
+  'evorule-tcb/docs/MUTANTS.md',
+  'evorule-reactor/README.md',
+  'evorule-governance/README.md',
   'evorule-cli/README.md',
   'evorule-cli/CHANGELOG.md',
   '.gitee/PULL_REQUEST_TEMPLATE.md',
-  'tier0-tcb/TCB_SPEC.md',
-  'tier1-reactor/REACTOR_SPEC.md',
-  'tier2-governance/GOVERNANCE_SPEC.md',
+  'evorule-tcb/TCB_SPEC.md',
+  'evorule-reactor/REACTOR_SPEC.md',
+  'evorule-governance/GOVERNANCE_SPEC.md',
   'EVORULE_FORMAL_VERTIFICATION_PLAN.md',
-  'tier0-tcb/README.md',
+  'evorule-tcb/README.md',
 ];
 
 console.log('=== A-Class: Converting to CC0 ===');

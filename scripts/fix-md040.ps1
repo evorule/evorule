@@ -98,7 +98,7 @@ function Process-File {
 $totalFixed = 0
 
 $targetFiles = @(
-    "tier0-tcb/tla/TLC_VERIFICATION_REPORT.md",
+    "evorule-tcb/tla/TLC_VERIFICATION_REPORT.md",
     "docs/security/SECURITY_AUDIT_v1.0.0.md",
     "docs/security/SECURITY_AUDIT_v0.1.0.md",
     "docs/benchmarks/EXP_1.5.md",
@@ -114,8 +114,8 @@ $targetFiles = @(
     "evorule-cli/README.md",
     "docs/benchmarks/EXP_1.2.md",
     "docs/benchmarks/EXP_1.3.md",
-    "tier0-tcb/README.md",
-    "tier2-governance/README.md"
+    "evorule-tcb/README.md",
+    "evorule-governance/README.md"
 )
 
 foreach ($relPath in $targetFiles) {

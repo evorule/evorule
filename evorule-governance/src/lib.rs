@@ -1,0 +1,70 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 EvoRule Project
+// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+//! EvoRule 治理层 - I/O 订阅者、审计链、规则验证、时间机器
+//!
+//! # 定位
+//! evorule-governance 是三层架构的最上层（纯机制层库）：
+//! - 订阅 evorule-reactor 的 event broadcast 通道，过滤 `IoRequest` 事实
+//! - 通过 IoDispatcher 框架分发 I/O（**具体 HTTP/SQLite/Memory Handler 实现已迁至 evorule-application 仓**）
+//! - 基于 `FactsLog` 构建审计链（BLAKE3 哈希 + 逻辑时钟）
+//! - 提供规则验证器（RuleValidator）+ 时间机器（TimeMachine: replay / rewind / fork / diff）
+//! - 提供 SessionManager：会话管理器（机制层，管理反应器实例生命周期）
+//!
+//! **H5/H6 迁移后不再包含**：HTTP API、SSE、Prometheus metrics、Bearer 认证、具体 I/O Handler 实现。
+//! 上述应用层功能全部位于 evorule-application 仓（core/evorule-server/ + core/io_handlers/）。
+//!
+//! # 设计原则
+//! - **不染指控制流**：治理层完全不知道 `conditional`/`while_loop`/`sequence` 的存在
+//! - **I/O 外挂**：仅定义 IoHandler trait + IoDispatcher 框架（机制），零业务逻辑侵入；具体实现在 application 仓注入
+//! - **事实总线**：所有组件通过 Fact 通信，无直接函数调用
+//!
+//! # 模块结构
+//! - `io_handler` — IoHandler trait + IoResult（机制定义，应用层注入实现）
+//! - `io_dispatcher` — Enum Dispatch（I/O 分发框架）
+//! - `io_subscriber` — 订阅 IoRequest → 分发 → 回写 IoResponse
+//! - `auditor` — 基于 FactsLog 的审计链
+//! - `hash` — BLAKE3 哈希
+//! - `clock` — 逻辑时钟
+//! - `session` — 会话管理器（机制层，管理反应器实例生命周期）
+//! - `rule_validation` — 规则 JSON Schema 验证器（tier0 core_eval.json）
+//! - `time_machine` — 时间机器：replay / rewind / fork / diff
+//! - `shared_facts_log` — 跨 session 共享 FactsLog 包装
+//! - `metrics` — IoMetrics trait（机制层接口，Prometheus 实现在 evorule-application 仓）
+// cluster 已移除（多 reactor 协作原语，应用层功能，后续在 evorule-application 实现）
+// api, io_handlers, bin 目录已全部迁移至 evorule-application 仓（H5/H6 边界清理）
+
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+
+// H6: api 模块已迁移到 evorule-application/core/evorule-server/src/api/
+// 核心层不再包含 HTTP API 代码（机制-策略分离）
+pub mod auditor;
+pub mod clock;
+pub mod hash;
+pub mod io_dispatcher;
+pub mod io_handler;
+// H5: io_handlers 模块已迁移到 evorule-application/core/io_handlers/(应用层)
+// 具体 handler 实现(DbHandler/HttpHandler/MemoryHandler)不再属于核心
+pub mod io_subscriber;
+pub mod metrics;
+// object_pool 已移除（性能优化，非核心功能）
+pub mod rule_validation;
+// H6: session 模块从 api/ 提升到顶层（机制层，管理反应器实例生命周期）
+pub mod session;
+pub mod shared_facts_log;
+pub mod time_machine;
+
+// 公开 API 重导出
+// H6: AppState/GovernanceApi/GovernanceServer/SessionApi 已迁移到应用层（不再从核心导出）
+pub use auditor::{Auditor, LoadError};
+pub use clock::LogicalClock;
+// cluster 已移除（多 reactor 协作原语，应用层功能）
+pub use hash::content_hash;
+pub use io_dispatcher::{IoDispatcher, IoDispatcherBuilder};
+pub use io_handler::{IoHandler, IoResult};
+pub use io_subscriber::IoSubscriber;
+pub use metrics::{noop_metrics, IoMetrics, NoOpMetrics, SharedMetrics};
+pub use session::{Session, SessionError, SessionId, SessionManager};
+// ObjectPool 已移除（性能优化，非核心功能）
+pub use shared_facts_log::{SharedFact, SharedFactsLog};

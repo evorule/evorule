@@ -15,11 +15,10 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use tier0_tcb::JsonValue;
-use tier1_reactor::serde_to_tcb;
-use tier1_reactor::{EventReceiver, Fact, FactId, FactIdGenerator, IoType, Reactor};
-use tier2_governance::io_handler::{IoHandler, IoResult};
-use tier2_governance::io_handlers::memory_handler::MemoryHandler;
+use async_trait::async_trait;
+use evorule_tcb::JsonValue;
+use evorule_reactor::serde_to_tcb;
+use evorule_reactor::{EventReceiver, Fact, FactId, FactIdGenerator, IoHandler, IoResult, IoType, Reactor};
 use tokio::time::timeout;
 
 /// 测试用 LLM 响应(确定性,用于断言)
@@ -30,12 +29,64 @@ const TEST_LLM_RESPONSE: &str =
 const TEST_MEMORY_KEY: &str = "test_research_note_001";
 
 // ============================================================================
+// H5: MemoryHandler 内联实现(从 evorule-application/core/io_handlers 迁出)
+// ============================================================================
+
+/// 文件系统键值存储(测试用,简化版)
+struct MemoryHandler {
+    base_dir: PathBuf,
+}
+
+impl MemoryHandler {
+    fn new(base_dir: PathBuf) -> Self {
+        Self { base_dir }
+    }
+
+    fn resolve_path(&self, key: &str) -> PathBuf {
+        let safe_key = key.replace(['/', '\\'], "_").replace("..", "_");
+        self.base_dir.join(safe_key)
+    }
+}
+
+#[async_trait]
+impl IoHandler for MemoryHandler {
+    async fn execute(&self, params: &JsonValue) -> IoResult {
+        let key = params
+            .get("key")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing required param: key".to_string())?;
+        let path = self.resolve_path(key);
+
+        if let Some(value) = params.get("value") {
+            let content = value
+                .as_str()
+                .ok_or_else(|| "param 'value' must be a string".to_string())?;
+            if let Some(parent) = path.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| format!("create dir failed: {e}"))?;
+            }
+            tokio::fs::write(&path, content)
+                .await
+                .map_err(|e| format!("write file failed: {e}"))?;
+            Ok(JsonValue::Bool(true))
+        } else {
+            let content = tokio::fs::read_to_string(&path)
+                .await
+                .map_err(|e| format!("read file failed: {e}"))?;
+            Ok(JsonValue::String(content))
+        }
+    }
+}
+
+// ============================================================================
 // 测试用 handler 与 subscriber(内联,不依赖 main.rs 的私有项)
 // ============================================================================
 
 /// 测试用 LLM handler:返回确定性 canned 响应
 struct TestLlmHandler;
 
+#[async_trait]
 impl IoHandler for TestLlmHandler {
     async fn execute(&self, params: &JsonValue) -> IoResult {
         // 验证 prompt 参数确实传递到了 handler
@@ -63,7 +114,7 @@ impl TestSubscriber {
         }
     }
 
-    async fn run(mut self, mut event_rx: EventReceiver, command_tx: tier1_reactor::FactSender) {
+    async fn run(mut self, mut event_rx: EventReceiver, command_tx: evorule_reactor::FactSender) {
         while let Ok(fact) = event_rx.recv().await {
             if let Fact::IoRequest {
                 id,
@@ -103,7 +154,7 @@ impl TestSubscriber {
 /// 加载 core_eval.json
 fn load_core_eval() -> Vec<JsonValue> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = manifest_dir.join("../../tier0-tcb/core_eval.json");
+    let path = manifest_dir.join("../../evorule-tcb/core_eval.json");
     let json_str = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("读取 core_eval.json 失败 ({:?}): {e}", path));
     let json: serde_json::Value = serde_json::from_str(&json_str).expect("解析 core_eval.json 失败");

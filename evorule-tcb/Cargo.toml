@@ -1,0 +1,96 @@
+[package]
+name = "evorule-tcb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "Zero-dependency deterministic computation kernel for compliance-critical applications"
+readme = "README.md"
+documentation = "https://docs.rs/evorule-tcb"
+keywords = ["deterministic", "audit", "rules-engine", "no-std", "compliance"]
+categories = ["data-structures", "embedded", "no-std", "encoding"]
+# 发布到 crates.io 时排除开发产物/形式化验证资产（下游依赖消费者不需要）
+exclude = [
+    "install_llvm_cov_log.txt",  # llvm-cov 安装日志
+    "install_log.txt",           # 工具安装日志
+    "rust-toolchain.toml",       # 开发工具链固定（下游用自身工具链）
+    "coq/",                      # Coq 形式化验证资产
+    "tla/",                      # TLA+ 模型 + tla2tools.jar
+    "docs/",                     # KANI/MUTANTS 验证文档
+    "verification/",             # Kani 证明 + proptest 属性测试源码（下游不需要）
+    "benches/",                  # Criterion 性能基准源码（dev-only）
+    "tla_quint.sh",              # TLA+ 模型运行脚本
+    "KANI_VERIFICATION_PLAN.md", # Kani 验证计划文档
+    "proptest-regressions/",     # proptest 回归测试用例缓存
+    "**/*.log",                  # 各类运行日志
+]
+
+[lib]
+crate-type = ["rlib"]
+
+
+[lints]
+workspace = true
+[dependencies]
+# 零外部依赖。`no_std` 兼容，可选启用 `std` 以获得 `std::error::Error` 实现。
+# Kani 验证通过 `kani cargo build` 注入 --cfg kani，无需声明 crate 依赖。
+
+[features]
+default = []
+# 启用后为 TcbError 实现 std::error::Error（供 std 环境消费者使用）
+std = []
+# Kani 形式化验证（通过 kani 工具链注入 --cfg kani）
+kani = []
+
+[dev-dependencies]
+# 单元测试 + proptest (属性测试, 用于补充 random fuzz-style 覆盖)
+proptest = "1.4"
+# 性能基准(criterion) — 041 §8 性能基线建立 / v0.2.0 计划
+# 仅 dev 依赖,不进入 release 产物。benches/ 目录是 Rust 官方位置。
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "execute_transition"
+path = "benches/execute_transition.rs"
+harness = false
+
+[[bench]]
+name = "jsonvalue_ops"
+path = "benches/jsonvalue_ops.rs"
+harness = false
+
+[[bench]]
+name = "path_resolve"
+path = "benches/path_resolve.rs"
+harness = false
+
+# 形式化验证相关测试目标(位于 verification/ 目录,非默认 tests/ 目录)
+# kani_proofs: Kani 形式化验证 proofs(#![cfg(kani)] 门控,普通 cargo test 下为空)
+[[test]]
+name = "kani_proofs"
+path = "verification/kani_proofs.rs"
+
+# proptest_props: proptest 属性测试
+[[test]]
+name = "proptest_props"
+path = "verification/proptest_props.rs"
+
+
+[package.metadata.kani]
+proofs = [
+    "verify_value_roundtrip",
+    "verify_path_no_panic",
+    "verify_set_integer_safety",
+    "verify_set_sub_safety",
+    "verify_jsonvalue_array_safety",
+    "verify_resolve_path_object_kani",    # P0-3 新增
+    "verify_evaluate_domain_eq_kani",     # P0-4a (从 P0-4 拆分,避免 CBMC 状态爆炸)
+    "verify_evaluate_domain_lt_kani",     # P0-4b (从 P0-4 拆分)
+    "verify_evaluate_domain_exists_kani", # P0-4c (从 P0-4 拆分)
+    "verify_execute_transition_kani",     # P0-5 新增
+    "verify_termination_kani",            # P0-7 新增
+    "verify_depth_enforcement_kani",      # P0-8 新增
+]

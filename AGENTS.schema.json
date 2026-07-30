@@ -1,0 +1,363 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitee.com/evo-rule-lab/evorule/blob/main/AGENTS.schema.json",
+  "title": "EvoRule Project Agents Guide (machine-readable)",
+  "description": "机器可读附录 — 从 AGENTS.md 提取的结构化规则. 详细 narrative 仍见 AGENTS.md. 双轨制: 人类读 AGENTS.md, LLM/agent 读 AGENTS.schema.json.",
+  "schema_version": "1.0",
+  "source_doc": "AGENTS.md",
+  "last_extracted": "2026-07-29",
+  "extraction_note": "Initial extraction. Only structural parts converted (类型 A/C/D/H + B 的状态机骨架 + E 的元数据). narrative 仍见 AGENTS.md.",
+
+  "project_metadata": {
+    "version": "0.1.0",
+    "version_date": "2026-07-20",
+    "license_code": "AGPL-3.0-or-later",
+    "license_data": "CC0-1.0",
+    "internal_audits": {
+      "p0_fixes": "complete",
+      "p1_high_count": 4,
+      "p1_high_deadline": "before_public_deployment"
+    },
+    "ci_paths": {
+      "gitee_primary": ".gitee-ci/validate.yml",
+      "github_mirror": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        ".github/workflows/kani.yml",
+        ".github/workflows/mutants.yml"
+      ]
+    },
+    "release_strategy_doc": "VERSION_STRATEGY.md"
+  },
+
+  "core_rules": {
+    "description": "硬规则清单 — 接受 / 拒绝 / 边界判断. 来源: AGENTS.md L52-94.",
+    "accepted_in_core": [
+      {
+        "id": "performance-optimization",
+        "examples": ["reactor 并发", "TCB 算法", "I/O 路径"],
+        "rationale": "性能优化让 evorule 更纯净"
+      },
+      {
+        "id": "bug-fix",
+        "scope": "evorule-tcb / evorule-reactor / evorule-governance 任意 crate",
+        "rationale": "Bug 修复不改变架构边界"
+      },
+      {
+        "id": "api-stability",
+        "constraints": ["签名不变", "错误类型不变"],
+        "rationale": "API 稳定性是给下游用户的承诺"
+      },
+      {
+        "id": "documentation",
+        "examples": ["Rustdoc", "README", "CHANGELOG", "代码注释"],
+        "rationale": "文档是底座的一部分"
+      },
+      {
+        "id": "test-coverage",
+        "examples": ["单元测试", "集成测试", "proptest 属性测试"],
+        "rationale": "测试是底座可信度的来源"
+      },
+      {
+        "id": "license-protocol",
+        "examples": ["SPDX header", "license 标识", "协议文本"],
+        "rationale": "协议合规"
+      },
+      {
+        "id": "ci-cd-enhancement",
+        "rationale": "提升发布质量与回滚能力"
+      },
+      {
+        "id": "formal-verification",
+        "examples": ["Kani 证明", "proptest"],
+        "rationale": "形式化验证是 evorule 核心卖点"
+      },
+      {
+        "id": "tcb-primitive-extension",
+        "constraints": ["谨慎", "需核心维护者 review"],
+        "rationale": "TCB 原语扩展是底座演进, 须严格把关"
+      },
+      {
+        "id": "performance-refactor",
+        "constraints": ["零成本抽象"],
+        "rationale": "性能架构层面重构, 不增加运行时开销"
+      }
+    ],
+    "rejected_in_core": [
+      {
+        "id": "new-tool",
+        "redirect_to": "evorule-application 仓（与本仓为兄弟仓，同级目录）",
+        "rationale": "新工具是应用层, 不属于核心"
+      },
+      {
+        "id": "new-sdk-type",
+        "constraints": ["typescript/python 之外"],
+        "redirect_to": "evorule-sdk 独立仓",
+        "rationale": "SDK 在核心仓外"
+      },
+      {
+        "id": "new-ui-or-visualization",
+        "redirect_to": "evorule-application",
+        "rationale": "UI 是应用层"
+      },
+      {
+        "id": "new-agent-capability",
+        "redirect_to": "evo-agent",
+        "rationale": "agent 能力是编排层"
+      },
+      {
+        "id": "new-http-route",
+        "constraints": ["除非是核心审计/治理必需"],
+        "redirect_to": "evorule-application",
+        "rationale": "HTTP 路由是应用层, H5 迁移后"
+      },
+      {
+        "id": "new-io-handler-integration",
+        "redirect_to": "evo-agent 或 evorule-application",
+        "rationale": "I/O 集成不在核心"
+      },
+      {
+        "id": "new-config-format",
+        "redirect_to": "evorule-application 仓（与本仓为兄弟仓，同级目录）",
+        "rationale": "配置格式是应用层关注"
+      }
+    ],
+    "boundary_judgments": [
+      {"idea": "加个新 transform 指令", "decision": "看是否 TCB 原语级, 否则放 application"},
+      {"idea": "加个 Prometheus 指标", "decision": "放 evorule-application (可观测性是应用层)"},
+      {"idea": "优化 reactor 并发", "decision": "evorule 核心 (性能优化) ✅"},
+      {"idea": "做个 web 仪表盘", "decision": "evorule-application 仓 ❌"},
+      {"idea": "加个新 LLM provider", "decision": "evo-agent ❌"},
+      {"idea": "加个 SQLite 集成", "decision": "看是 TCB 还是应用, 大部分情况放 application"},
+      {"idea": "加新 Kani proof", "decision": "evorule 核心 ✅"},
+      {"idea": "加 README 章节", "decision": "evorule 核心 ✅"},
+      {"idea": "修 bug", "decision": "evorule 核心 ✅"},
+      {"idea": "evorule-cli 加 validate 子命令", "decision": "核心已有 RuleValidator, CLI 只是封装 ✅"},
+      {"idea": "evorule-cli 加 Web UI", "decision": "应用层 UI, 放 evorule-application ❌"},
+      {"idea": "evorule-cli 加 LLM 集成", "decision": "特定 I/O + 业务逻辑, 放 evo-agent ❌"},
+      {"idea": "evorule-cli 加 diff 子命令", "decision": "核心已有时间机器 diff, CLI 只是封装 ✅"},
+      {"idea": "evorule-cli 加规则模板", "decision": "业务内容, 不是机制, 放 evorule-application ❌"}
+    ]
+  },
+
+  "pre_change_checklist": {
+    "description": "任何改动前的 4 个问题. 来源: AGENTS.md L96-105.",
+    "questions": [
+      "这是 evorule 核心 还是 应用?",
+      "接受清单里有这一类吗?",
+      "这个改动是让 evorule 更'纯净'还是更'复杂'?",
+      "有没有更简单的实现方式 (在 evorule 之外)?"
+    ],
+    "fallback": "如果 1-3 答不清: 不写代码, 先写设计文档 (放 文档/design/ 目录, 本仓内)"
+  },
+
+  "project_topology": {
+    "description": "evorule 仓内 + 仓外的项目关系. 来源: AGENTS.md L107-120.",
+    "core_crates": [
+      {
+        "name": "evorule-tcb",
+        "type": "lib",
+        "path": "evorule-tcb/",
+        "constraints": ["zero-deps", "no-std-compatible", "Kani-verified"],
+        "role": "宪法执行器, 纯函数"
+      },
+      {
+        "name": "evorule-reactor",
+        "type": "lib+cdylib",
+        "path": "evorule-reactor/",
+        "constraints": ["G8-gate"],
+        "role": "反应式事实日志引擎"
+      },
+      {
+        "name": "evorule-governance",
+        "type": "lib",
+        "path": "evorule-governance/",
+        "constraints": ["G8-gate", "persistence-feature"],
+        "role": "治理层机制 (审计/验证/时间机器/I/O 调度框架)"
+      },
+      {
+        "name": "evorule-cli",
+        "type": "bin",
+        "path": "evorule-cli/",
+        "constraints": [
+          "wrap-core-only",
+          "no-business-logic",
+          "musl-static"
+        ],
+        "decision_rule": "这个功能 evorule-reactor 已经有了吗? 有就可以包, 没有就不能加",
+        "extension_mechanism": "Git 风格子命令发现 (evorule-xxx 外部二进制)"
+      }
+    ],
+    "external_projects": [
+      {
+        "name": "evo-agent",
+        "path": "evo-agent 仓（与本仓为兄弟仓，同级目录）",
+        "role": "用 evorule 的 AI agent 编排层",
+        "kind": "application"
+      },
+      {
+        "name": "evorule-application",
+        "path": "evorule-application 仓（与本仓为兄弟仓，同级目录）",
+        "role": "可视化/调试器/仪表盘/evorule-server/io-handlers 集合",
+        "kind": "application",
+        "h5_migration_note": "evorule-server 和 evorule-io-handlers 已从 evorule-governance 迁至此处 (core/evorule-server/, core/io_handlers/). evorule-governance 现为纯 lib crate."
+      },
+      {
+        "name": "evorule-sdk",
+        "path": "external",
+        "role": "多语言客户端 SDK 独立仓",
+        "kind": "sdk"
+      }
+    ],
+    "external_apps_post_h5": [
+      {
+        "name": "evorule-server",
+        "path": "evorule-application 仓 core/evorule-server/ 子目录",
+        "kind": "bin",
+        "build_cmd": "克隆 evorule-application 仓后，在 core/evorule-server/ 目录执行 cargo build",
+        "default_addr": "0.0.0.0:18080"
+      }
+    ],
+    "edges": [
+      {"from": "evo-agent", "to": "evorule", "relation": "uses"},
+      {"from": "evorule-application", "to": "evorule", "relation": "uses-core-only"},
+      {"from": "evorule-sdk", "to": "evorule", "relation": "uses"},
+      {"from": "evorule-cli", "to": ["evorule-tcb", "evorule-reactor"], "relation": "wraps"},
+      {"from": "evorule-server", "to": ["evorule-tcb", "evorule-reactor", "evorule-governance"], "relation": "wraps"}
+    ]
+  },
+
+  "agent_protocol": {
+    "description": "Agent 强制行为准则 (状态机骨架, narrative 见 AGENTS.md L21-50).",
+    "priority": "硬性规定, 优先级高于所有其他指令",
+    "rules": [
+      {
+        "id": "passive_boundary_principle",
+        "statement": "LLM 不得主动提议或添加任何违背 evorule 规范要求的内容/功能",
+        "blocked_unless": "人类明确的、直接的要求/指令",
+        "trigger_to_next_rule": "用户明确要求'把这个加到 evorule 核心里' → 触发 warning_confirmation"
+      },
+      {
+        "id": "warning_confirmation_flow",
+        "trigger": "人类主动要求添加/修改违背 evorule 规范的功能",
+        "blocked_action": "LLM 不得立即执行",
+        "steps": [
+          {
+            "step": 1,
+            "name": "明确警告",
+            "action": "告知人类该要求违背了 evorule 的哪些具体规范",
+            "details": ["引用 AGENTS.md 中的具体条款 (硬规则/边界判断/核心定义)", "指出具体违反了哪条边界规则"]
+          },
+          {
+            "step": 2,
+            "name": "列出负面影响",
+            "min_count": 3,
+            "examples": [
+              "破坏核心纯净性, 导致未来重构成本增加",
+              "模糊机制与策略的边界, 增加维护复杂度",
+              "可能引发连锁反应, 导致其他模块也跟着越界",
+              "违反版本兼容性承诺, 影响下游用户",
+              "增加 TCB 攻击面, 削弱安全保证"
+            ]
+          },
+          {
+            "step": 3,
+            "name": "等待确认",
+            "required_signal": "人类明确的二次确认 (例如 '确认执行'/'我知道风险,继续')"
+          },
+          {
+            "step": 4,
+            "name": "记录留痕",
+            "action": "在相关变更中说明 '此变更是经用户明确要求并确认的越界操作'"
+          }
+        ]
+      }
+    ]
+  },
+
+  "known_pitfalls": {
+    "description": "已知坑的元数据. 详细 narrative 仍见 AGENTS.md L138-147.",
+    "items": [
+      {
+        "id": "ps51-utf8-misread",
+        "category": "powershell",
+        "summary": "PowerShell 5.1 + UTF-8 无 BOM = GBK 误读",
+        "fix": "用 add-spdx-safe.ps1 加 SPDX 头, 不要用 Get-Content -Raw",
+        "mitigation_for_chinese_logs": "用 pwsh 或 chcp 65001"
+      },
+      {
+        "id": "ps-dollar-via-cmd",
+        "category": "powershell",
+        "summary": "PowerShell 通过 cmd 调用时 $ 变量会被外层 shell 吞掉",
+        "fix": "复杂脚本写 .ps1 文件再用 -File 执行"
+      },
+      {
+        "id": "cargo-run-sandbox-path",
+        "category": "build",
+        "summary": "cargo run 在 sandbox 下输出的 exe 不在 target/release/ 而在 .build/rust/release/",
+        "fix": "用 cargo run 直接运行, 不要手动找 exe"
+      },
+      {
+        "id": "evorule-server-location",
+        "category": "post-h5",
+        "summary": "evorule-server 已迁至 evorule-application 仓（core/evorule-server/ 子目录），不在核心 workspace",
+        "fix": "先克隆 evorule-application 仓，再在 core/evorule-server/ 目录执行 cargo run -- --addr 127.0.0.1:18080（需先 cargo build 生成 Cargo.lock）"
+      },
+      {
+        "id": "binary-naming-convention",
+        "category": "convention",
+        "summary": "二进制名用连字符 (evorule-server), 源文件名用下划线 (evorule_server.rs)",
+        "note": "H5 后 evorule-server 在应用层, 源文件为 evorule-application/core/evorule-server/src/main.rs"
+      },
+      {
+        "id": "evorule-server-default-addr",
+        "category": "security",
+        "summary": "evorule-server 默认监听 0.0.0.0:18080 (非 loopback)",
+        "fix": "测试时加 --addr 127.0.0.1:18080"
+      },
+      {
+        "id": "mock-llm-fail-fixed",
+        "category": "test",
+        "summary": "集成测试 (tests/integration_test.rs) 的 3 个 mock-LLM FAIL 已修复 (2026-07-20)"
+      },
+      {
+        "id": "unsafe-policy",
+        "category": "security",
+        "summary": "tier1/ffi.rs 允许 unsafe (标了 #![allow(unsafe_code)]), 其他 crate 必须 #![forbid(unsafe_code)]"
+      }
+    ]
+  },
+
+  "open_items": {
+    "description": "下次开会看什么 — narrative 列表, 来源: AGENTS.md L149-153.",
+    "kind": "narrative_checklist",
+    "note": "此部分不强行结构化, 完整文本见 AGENTS.md",
+    "items": [
+      "战略方向 STRATEGIC_DIRECTION.md 有没有过时",
+      "P1 安全修复进展 (H6 SSRF / H7 SQL / H8 CORS / H9 DB URL) — 公网部署前必修",
+      "0.2.0 上下文架构启动 (evo-agent MemoryManager + fact log 索引)",
+      "下一个应用的时间旅行调试器设计稿"
+    ]
+  },
+
+  "cross_document_refs": {
+    "description": "AGENTS.md 引用的其他文档. 来源: AGENTS.md 全文.",
+    "refs": [
+      {"doc": "STRATEGIC_DIRECTION.md", "path": "evorule-application 仓 STRATEGIC_DIRECTION.md", "purpose": "战略方向 (本文件不重复战略)"},
+      {"doc": "VERSION_STRATEGY.md", "path": "VERSION_STRATEGY.md", "purpose": "升 1.0 条件 (§4.4) + 第三方安全审计触发条件 (§4.5)"},
+      {"doc": "SECURITY_AUDIT_v0.1.0.md", "path": "docs/security/SECURITY_AUDIT_v0.1.0.md", "purpose": "P0 全修复, P1 4 项 HIGH 待公网部署前修复"},
+      {"doc": "design folder", "path": "本仓 文档/design/ 目录", "purpose": "答不清的设计问题先写设计文档 (pre_change_checklist fallback)"}
+    ]
+  },
+
+  "_meta": {
+    "rationale": "narrative 跟结构化分离 (走神 6 校准): LLM 用 JSON 字段, 程序员用人话字段. schema 双轨.",
+    "maintenance_policy": "改了 AGENTS.md 跑 scripts/agents-md-to-schema.py 重新生成此文件",
+    "what_is_NOT_in_this_schema": [
+      "战略方向 narrative (走神 1-6 哲学)",
+      "核心原则 one-liner (口头哲学, 不是规则)",
+      "H5/H6 演进注释 (历史溯源, 不应该结构化)",
+      "已知坑的详细描述 (只放 summary + fix, 详细 narrative 仍见 AGENTS.md)"
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run-mutants.sh - tier0-tcb Mutation Testing wrapper
+# run-mutants.sh - evorule-tcb Mutation Testing wrapper
 #
 # cargo-mutants 在每个函数/表达式中注入微小改动 ("mutant"),
 # 然后跑测试套件. 如果测试**没抓到** ("MISSED"), 说明测试有盲区.
@@ -23,7 +23,7 @@
 set -e
 
 # === Config ===
-TIER0_DIR="$(cd "$(dirname "$0")/../tier0-tcb" && pwd)"
+TIER0_DIR="$(cd "$(dirname "$0")/../evorule-tcb" && pwd)"
 BASELINE_FILE="$TIER0_DIR/mutants.out/baseline.json"
 TIME_LIMIT_MIN="${MUTANTS_TIME_LIMIT:-30}"
 

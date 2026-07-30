@@ -1,7 +1,7 @@
 # =============================================================================
 # GitHub Actions: Mutation Testing (cargo-mutants)
 #
-# 验证 tier0-tcb 测试**真的能抓 bug**. 单个 mutant 注入一个微小改动,
+# 验证 evorule-tcb 测试**真的能抓 bug**. 单个 mutant 注入一个微小改动,
 # 跑测试看是否能检测到. "MISSED" mutants 是测试盲区.
 #
 # Schedule: 每周日 UTC 0:00 (夜间跑, 不阻塞 PR)
@@ -46,8 +46,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            tier0-tcb/target
-          key: cargo-mutants-${{ runner.os }}-${{ hashFiles('tier0-tcb/Cargo.toml') }}
+            evorule-tcb/target
+          key: cargo-mutants-${{ runner.os }}-${{ hashFiles('evorule-tcb/Cargo.toml') }}
           restore-keys: |
             cargo-mutants-${{ runner.os }}-
 
@@ -57,7 +57,7 @@ jobs:
           cargo mutants --version
 
       - name: Run mutation testing
-        working-directory: tier0-tcb
+        working-directory: evorule-tcb
         run: |
           set -e
           mkdir -p mutants.out
@@ -72,12 +72,12 @@ jobs:
         with:
           name: mutation-results
           path: |
-            tier0-tcb/mutants.out/
+            evorule-tcb/mutants.out/
           retention-days: 90
 
       - name: Parse summary
         if: always()
-        working-directory: tier0-tcb
+        working-directory: evorule-tcb
         run: |
           if [ -f mutants.out/mutants.json ]; then
             echo "## Mutation Testing Summary" >> $GITHUB_STEP_SUMMARY

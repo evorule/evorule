@@ -9,7 +9,7 @@
 # preserved exactly.
 #
 # Usage:
-#   pwsh scripts/add-spdx-safe.ps1 -RootDir D:\evorule\tier0-tcb\src
+#   pwsh scripts/add-spdx-safe.ps1 -RootDir D:\evorule\evorule-tcb\src
 #   pwsh scripts/add-spdx-safe.ps1 -Paths file1.rs,file2.rs
 #   pwsh scripts/add-spdx-safe.ps1 -RootDir D:\evo-agent\src -Exclude "*ffi.rs"
 #

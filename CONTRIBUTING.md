@@ -32,8 +32,8 @@
 
 ### Principle 1: TCB minimal, business on top
 
-✅ **`tier0-tcb` is a Kani-verifiable minimal kernel — only addition, subtraction, and causal chains**
-❌ **Do NOT push business logic into `tier0-tcb`**
+✅ **`evorule-tcb` is a Kani-verifiable minimal kernel — only addition, subtraction, and causal chains**
+❌ **Do NOT push business logic into `evorule-tcb`**
 
 **Why**:
 
@@ -77,12 +77,12 @@
 
 ## 🐛 Reporting Bugs
 
-Use [Gitee Issues](https://gitee.com/evorulelab/evorule/issues) (preferred) or
+Use [Gitee Issues](https://gitee.com/evo-rule-lab/evorule/issues) (preferred) or
 GitHub Issues for international contributors.
 
 **Report template**:
 
-```markdown
+````markdown
 **Environment**:
 
 - OS: [e.g. Windows 11 / Ubuntu 22.04]
@@ -102,7 +102,8 @@ GitHub Issues for international contributors.
 
 **Logs / screenshots**:
 [Paste server startup log or curl output]
-```text
+
+````text
 
 ---
 
@@ -117,7 +118,8 @@ Also use Issues with the `enhancement` label.
 **Proposed solution**: Brief description
 **Alternatives considered**: Other options you evaluated
 **Impact scope**: Which tier / module is affected
-```
+````
+````
 
 ---
 
@@ -134,6 +136,7 @@ Also use Issues with the `enhancement` label.
    cargo check --workspace
    cargo test --workspace
    cargo clippy --workspace -- -D warnings   # 0 warnings required
+   ```
 
 ```text
 
@@ -155,7 +158,7 @@ chore(deps): upgrade tokio to 1.40
 refactor(reactor): split stable_detector module
 test(e2e): add core constitution smoke test
 
-```text
+````text
 
 ### Branch naming
 
@@ -202,13 +205,13 @@ Start `evorule-server` and verify 5 core scenarios:
 
 See: `tests/e2e_smoke.py`
 
-### Kani formal verification (tier0-tcb only)
+### Kani formal verification (evorule-tcb only)
 
 When adding new tier0 meta-instructions or domain types, you must add a Kani proof:
 
 ```bash
-cargo kani -p tier0-tcb --features kani
-```
+cargo kani -p evorule-tcb --features kani
+````
 
 ---
 
@@ -233,9 +236,9 @@ All `.rs` files must include the SPDX header:
 
 ### Module layering
 
-- `tier0-tcb`: **only** pure computation (`no_std` compatible)
-- `tier1-reactor`: event loop + FactsLog + time machine
-- `tier2-governance`: I/O + HTTP API + audit
+- `evorule-tcb`: **only** pure computation (`no_std` compatible)
+- `evorule-reactor`: event loop + FactsLog + time machine
+- `evorule-governance`: I/O + HTTP API + audit
 - `evo-agent` (separate repo): LLM orchestration
 
 ### Immutability by default
@@ -248,11 +251,11 @@ All `.rs` files must include the SPDX header:
 
 ## 🚫 What NOT to do
 
-- ❌ **Do NOT add I/O to `tier0-tcb`** (breaks `no_std`)
+- ❌ **Do NOT add I/O to `evorule-tcb`** (breaks `no_std`)
 - ❌ **Do NOT embed LLM inside `evorule`** (mechanism layer must stay LLM-free)
 - ❌ **Do NOT introduce non-JSON data formats** (breaks transparency)
 - ❌ **Do NOT use `unsafe` outside FFI code** (violates `#![forbid(unsafe_code)]`)
-- ❌ **Do NOT use `unwrap` / `expect` / `panic` in `tier0-tcb`** (breaks "never panic" invariant)
+- ❌ **Do NOT use `unwrap` / `expect` / `panic` in `evorule-tcb`** (breaks "never panic" invariant)
 - ❌ **Do NOT modify the "constitution" outside `core_eval.json`** (constitution stability is EvoRule's core)
 - ❌ **Do NOT commit secrets / API keys / personal info / internal addresses** (it's a public repo)
 
@@ -260,9 +263,9 @@ All `.rs` files must include the SPDX header:
 
 ## 📞 Contact
 
-- **Gitee**: <https://gitee.com/evorulelab/evorule/issues>
+- **Gitee**: <https://gitee.com/evo-rule-lab/evorule/issues>
 - **Email**: <evorulelab@gmail.com>
-- **Org**: [EvoRule Lab](https://gitee.com/evorulelab)
+- **Org**: [EvoRule Lab](https://gitee.com/evo-rule-lab)
 
 ---
 

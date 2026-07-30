@@ -6,7 +6,7 @@
 #
 # 用法:
 #   bash build-musl.sh                          # 默认 x86_64
-#   bash build-musl.sh --target aarch64         # 交叉编译 aarch64 (需 aarch64-linux-musl 工具链)
+#   bash build-musl.sh --target aarch64         # 交叉编译 aarch64 (需 gcc-aarch64-linux-gnu 包,提供 aarch64-linux-gnu-gcc)
 #   bash build-musl.sh --clean                  # clean + 编译
 #   bash build-musl.sh --check                  # 只验证二进制,不重新编译
 #   bash build-musl.sh --repro                  # 跑 reproducibility 测试(2 次构建 + SHA256 对比)

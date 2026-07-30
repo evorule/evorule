@@ -1,0 +1,109 @@
+[package]
+name = "evorule-governance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "Governance layer primitives: audit chain, rule validation, time machine, I/O dispatching"
+readme = "README.md"
+documentation = "https://docs.rs/evorule-governance"
+keywords = ["governance", "audit", "rules-engine", "validation", "time-machine"]
+# H6 后已移除 axum（web-programming）和 sqlx（database）依赖，更新 categories 以匹配当前纯机制层定位
+categories = ["asynchronous", "config", "data-structures", "development-tools"]
+# 发布到 crates.io 时排除开发产物/演示数据（下游依赖消费者不需要）
+exclude = [
+    "data/",                     # demo.sqlite 演示数据库
+    "**/hash_snapshot.txt",      # 哈希快照（开发产物）
+    "verify-server-v0.1.0.sh",   # 服务端验证脚本
+    "verification/",             # 差分测试源码（下游不需要）
+    "benches/",                  # Criterion 性能基准源码（dev-only）
+    "demo.db",                   # 可能存在的 SQLite 演示库文件
+    "scripts/",                  # 开发辅助脚本
+    "tests/verify_audit.py",     # Python 审计验证脚本（dev-only）
+    "proptest-regressions/",     # proptest 回归测试用例缓存
+    "KANI_VERIFICATION_PLAN.md", # Kani 验证计划文档
+    "rust-toolchain.toml",       # 开发工具链固定
+    "**/*.log",                  # 各类运行日志
+    "install_log.txt",           # 工具安装日志
+]
+
+
+[lints]
+workspace = true
+[dependencies]
+# 本地依赖
+evorule-tcb = { path = "../evorule-tcb", version = "0.1.0" }
+evorule-reactor = { path = "../evorule-reactor", version = "0.1.0", features = [
+    "persistence",
+] }
+
+# 异步运行时
+# H5: 移除 signal/bin 相关 feature(原 bin 用,已迁移到 evorule-server)
+# 移除 fs feature(I/O fs 操作已迁移到 evorule-io-handlers)
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+] }
+# H6: async-stream/futures-core 已迁移到 evorule-server（SSE stream! 宏需要，属应用层）
+
+# 日志
+tracing = "0.1"
+# H5: tracing-subscriber 已迁移到 evorule-server(仅 bin 初始化日志用)
+
+# H6: prometheus 依赖已移除（metrics 迁移到 evorule-application/core/evorule-server/src/metrics_impl.rs）
+# 核心层仅保留 IoMetrics trait 定义（无外部依赖），应用层通过依赖注入提供 Prometheus 实现
+
+# H5: I/O Handler SDK (sqlx/reqwest) 已迁移到 evorule-application/core/io_handlers/
+# evorule-governance 不再依赖具体 I/O 实现,仅保留 IoHandler trait(机制) + IoDispatcher(框架)
+
+# 审计组件
+blake3 = "1"                                              # 哈希
+flate2 = { version = "1.0", features = ["rust_backend"] } # P05：审计链 gzip 压缩
+
+# H6: HTTP API 依赖已迁移到 evorule-server（axum/tower/tower-http/tower_governor/governor/subtle）
+# 核心层不再包含 HTTP 路由处理（机制-策略分离）
+
+# 热重载已移除（应用层功能）
+
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"                                 # P2-9：JSON 配置文件(v6.1 起替代 TOML)
+
+# 错误处理
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+# H6: reqwest 已移除（HTTP API 测试已迁移到 evorule-server）
+# 形式化验证:proptest 差分测试(位于 verification/ 目录)
+proptest = "1.4"
+# 性能基准(criterion) — 041 v2.0 A8: 审计链 audit_new + verify 基线
+# 仅 dev 依赖,不进入 release 产物。
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# 041 v2.0 A8: 审计链 audit_new / verify 性能基准
+[[bench]]
+name = "audit_chain"
+path = "benches/audit_chain.rs"
+harness = false
+
+# 形式化验证相关测试目标(位于 verification/ 目录,非默认 tests/ 目录)
+# differential_test: P0-9/P0-10 差分测试(版本一致性 + rewind vs FactsLog)
+[[test]]
+name = "differential_test"
+path = "verification/differential_test.rs"
+
+[features]
+default = []
+# H6: metrics feature 已移除（IoMetrics trait 总是可用，Prometheus 实现由应用层提供）
+# H6: auth feature 已移除（auth.rs 已迁移到 evorule-server，应用层默认启用认证）
+persistence = ["evorule-reactor/persistence"]
+
+# H5: evorule-server 已迁到 evorule-application 仓 core/evorule-server/
+# evorule-governance 现在是纯 lib crate,不含 bin
+# 注: evorule CLI 在本仓 workspace 内独立 crate（evorule-cli/）

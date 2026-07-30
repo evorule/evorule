@@ -1,6 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["tier0-tcb", "tier1-reactor", "tier2-governance", "evorule-cli", "examples/reactive_researcher"]
+members = [
+    "evorule-tcb",
+    "evorule-reactor",
+    "evorule-governance",
+    "evorule-cli",
+    # examples/reactive_researcher 不参与核心 workspace 发布（属应用层 demo）
+    # 如需编译运行，请单独进入该目录 cargo build
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,7 +15,8 @@ edition = "2021"
 license = "AGPL-3.0-or-later"
 authors = ["EvoRule Project"]
 repository = "https://gitee.com/evo-rule-lab/evorule"
-
+homepage = "https://gitee.com/evo-rule-lab/evorule"
+rust-version = "1.74"
 
 
 [workspace.lints.rust]
@@ -23,7 +31,7 @@ panic = "deny"
 panic_in_result_fn = "deny"
 # F8: 嵌套复杂度 (守 cognitive_complexity)
 cognitive_complexity = { level = "warn", priority = -1 }
-# F9: 函数长度 (守 too_many_lines, 阈值在 lint 配置中调)
+# F9: 函数长度 (守 too_many_lines, 阈值 150 行以容纳 WAL 恢复等集中逻辑)
 too_many_lines = { level = "warn", priority = -1 }
 # F10 部分: 类型复杂度
 type_complexity = { level = "warn", priority = -1 }
@@ -38,5 +46,7 @@ all = { level = "warn", priority = -1 }
 opt-level = 3
 lto = true
 codegen-units = 1
-# 娉ㄦ剰锛氫笉璁剧疆 panic = "abort"銆?# tier0-tcb 鍘?release profile 鍚?panic = "abort"锛坣o_std 鍐呮牳浼樺寲锛夛紝
-# 浣?workspace 涓?panic 涓哄叏灞€璁剧疆锛岃€?tier1/tier2 渚濊禆 tokio 闇€ unwinding锛?# 鏁呯Щ闄ゃ€倀ier0-tcb 鐨勫畨鍏ㄦ€х敱 #![forbid(unsafe_code)] + build.rs 闂ㄧ淇濊瘉銆?
+# 注意: 不设置 panic = "abort"。
+# evorule-tcb 的 release profile 设 panic = "abort" (no_std 内核优化),
+# 但 workspace 中 panic 为全局设置, 而 tier1/tier2 依赖 tokio 需 unwinding, 故移除。
+# evorule-tcb 的安全性由 #![forbid(unsafe_code)] + build.rs 门禁保证。

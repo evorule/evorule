@@ -1,6 +1,6 @@
 # GATE_REFERENCE (跨模块门控索引)
 
-> **适用范围**: tier0-tcb / tier1-reactor / tier2-governance / evorule-cli
+> **适用范围**: evorule-tcb / evorule-reactor / evorule-governance / evorule-cli
 > **协议**: AGPL-3.0-or-later
 > **跨模块设计**: 详见 §一-§五(本文件即权威)
 > **状态**: 权威 (build.rs 编译时门禁 + clippy workspace lints 跨模块索引)
@@ -25,9 +25,9 @@
 
 ## 二、build.rs 模式索引
 
-### 2.1 tier0-tcb — 23 模式 (T 编号)
+### 2.1 evorule-tcb — 23 模式 (T 编号)
 
-实施文件: `D:\evorule\tier0-tcb\build.rs` (401 行, 扫描 `src/*.rs`)
+实施文件: `D:\evorule\evorule-tcb\build.rs` (401 行, 扫描 `src/*.rs`)
 
 | 编号       | 模式 (字节子串)            | 门控含义                |
 | ---------- | --------------------------- | ----------------------- |
@@ -59,9 +59,9 @@
 - `strip_test_mod()`: 剥离 `#[cfg(test)] mod tests { ... }` 块, 不扫描测试代码
 - `EVORULE_SKIP_GATE=1`: 紧急跳过, 编译警告
 
-### 2.2 tier1-reactor — 14 模式 (G8 + F11 + S5.2)
+### 2.2 evorule-reactor — 14 模式 (G8 + F11 + S5.2)
 
-实施文件: `D:\evorule\tier1-reactor\build.rs` (379 行, 扫描 `src/*.rs`)
+实施文件: `D:\evorule\evorule-reactor\build.rs` (379 行, 扫描 `src/*.rs`)
 
 | 编号              | 模式 (字节子串)       | 门控含义                |
 | ----------------- | ---------------------- | ----------------------- |
@@ -85,9 +85,9 @@
 - `fact.rs` 豁免: G8/S5.2 模式在 `fact.rs` 豁免 (IoType/ControlFlowType 字符串映射唯一真值来源)
 - `EVORULE_SKIP_GATE=1`: 紧急跳过
 
-### 2.3 tier2-governance — 14 模式 (跟 tier1 相同)
+### 2.3 evorule-governance — 14 模式 (跟 tier1 相同)
 
-实施文件: `D:\evorule\tier2-governance\build.rs` (382 行, 跟 tier1 结构相同)
+实施文件: `D:\evorule\evorule-governance\build.rs` (382 行, 跟 tier1 结构相同)
 
 **有意重复**: tier1/tier2 用同一组 14 模式, 保证两个反应器/治理层不会走偏。
 
@@ -141,7 +141,7 @@ all = { level = "warn", priority = -1 }
 
 ### 3.2 各 crate 启用
 
-`tier0-tcb/Cargo.toml`, `tier1-reactor/Cargo.toml`, `tier2-governance/Cargo.toml`, `evorule-cli/Cargo.toml`:
+`evorule-tcb/Cargo.toml`, `evorule-reactor/Cargo.toml`, `evorule-governance/Cargo.toml`, `evorule-cli/Cargo.toml`:
 
 ```toml
 [lints]
@@ -176,7 +176,7 @@ workspace = true
                               |
         +---------------------+---------------------+
         |                     |                     |
-   tier0-tcb             tier1-reactor         tier2-governance
+   evorule-tcb             evorule-reactor         evorule-governance
    TCB_SPEC.md           REACTOR_SPEC.md       GOVERNANCE_SPEC.md
    (T1-T14 + G1/G2 + D1-D10)   (F1-F11 + G1/G7/G8)    (G1 + G7 + G8 + D1-D10)
         |                     |                     |
@@ -200,7 +200,7 @@ workspace = true
 
 ## 五、SPEC.md 章节编号映射
 
-### 5.1 tier0-tcb/TCB_SPEC.md
+### 5.1 evorule-tcb/TCB_SPEC.md
 
 | 章节                                | 覆盖编号                  | build.rs 引用  |
 | ----------------------------------- | ------------------------- | -------------- |
@@ -215,7 +215,7 @@ workspace = true
 | 八、代码量目标 vs 实际                | —                          | —              |
 | 总结口诀 / 编号映射                   | G/T 交叉引用              | —              |
 
-### 5.2 tier1-reactor/REACTOR_SPEC.md
+### 5.2 evorule-reactor/REACTOR_SPEC.md
 
 | 章节                                  | 覆盖编号            | build.rs 引用  |
 | ------------------------------------- | ------------------- | -------------- |
@@ -227,7 +227,7 @@ workspace = true
 | 五、跨模块引用                         | G1-G8 + T1 redline  | 跨模块         |
 | 总结口诀                              | —                    | —              |
 
-### 5.3 tier2-governance/GOVERNANCE_SPEC.md
+### 5.3 evorule-governance/GOVERNANCE_SPEC.md
 
 | 章节                                  | 覆盖编号                  | build.rs 引用  |
 | ------------------------------------- | ------------------------- | -------------- |
@@ -251,41 +251,41 @@ workspace = true
 测试代码 + examples 是 Cargo 演示代码, 允许 panic/expect (L1 build.rs 已守 panic-prone 关键路径)。
 
 **Tier 0** (5):
-- `tier0-tcb/tests/kani_proofs.rs`
-- `tier0-tcb/tests/proptest_props.rs`
-- `tier0-tcb/tests/complex_branch_test.rs` (额外 `#[allow(clippy::too_many_lines)]` 在 fixture 函数)
-- `tier0-tcb/tests/integration_end_to_end.rs`
-- `tier0-tcb/tests/panic_free.rs`
-- `tier0-tcb/tests/tcb_error_variants.rs`
-- `tier0-tcb/examples/end_to_end.rs`
+- `evorule-tcb/tests/kani_proofs.rs`
+- `evorule-tcb/tests/proptest_props.rs`
+- `evorule-tcb/tests/complex_branch_test.rs` (额外 `#[allow(clippy::too_many_lines)]` 在 fixture 函数)
+- `evorule-tcb/tests/integration_end_to_end.rs`
+- `evorule-tcb/tests/panic_free.rs`
+- `evorule-tcb/tests/tcb_error_variants.rs`
+- `evorule-tcb/examples/end_to_end.rs`
 
 **Tier 1** (2):
-- `tier1-reactor/tests/complex_rule_test.rs` (额外 `#[allow(clippy::too_many_lines)]` 在 fixture 函数)
-- `tier1-reactor/tests/integration_test.rs`
+- `evorule-reactor/tests/complex_rule_test.rs` (额外 `#[allow(clippy::too_many_lines)]` 在 fixture 函数)
+- `evorule-reactor/tests/integration_test.rs`
 
 **Tier 2** (5):
-- `tier2-governance/tests/fault_recovery_test.rs`
-- `tier2-governance/tests/integration_test.rs`
-- `tier2-governance/tests/portal_integration_test.rs`
-- `tier2-governance/tests/rate_limit_test.rs`
-- `tier2-governance/tests/sse_integration_test.rs`
-- `tier2-governance/examples/bench_blake3.rs`
-- `tier2-governance/examples/bench_determinism.rs`
-- `tier2-governance/examples/bench_long_session.rs`
-- `tier2-governance/examples/bench_throughput.rs`
+- `evorule-governance/tests/fault_recovery_test.rs`
+- `evorule-governance/tests/integration_test.rs`
+- `evorule-governance/tests/portal_integration_test.rs`
+- `evorule-governance/tests/rate_limit_test.rs`
+- `evorule-governance/tests/sse_integration_test.rs`
+- `evorule-governance/examples/bench_blake3.rs`
+- `evorule-governance/examples/bench_determinism.rs`
+- `evorule-governance/examples/bench_long_session.rs`
+- `evorule-governance/examples/bench_throughput.rs`
 
 ### 6.2 src/ mod tests 豁免 (33 文件)
 
 src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]`。
 
 **Tier 0** (6):
-- `tier0-tcb/src/value.rs`, `transition.rs`, `path.rs`, `executor.rs`, `error.rs`, `domain.rs`
+- `evorule-tcb/src/value.rs`, `transition.rs`, `path.rs`, `executor.rs`, `error.rs`, `domain.rs`
 
 **Tier 1** (16):
-- `tier1-reactor/src/wal.rs`, `time_machine.rs`, `state.rs`, `stable_detector.rs`, `io_timeout_policy.rs`, `debug_control.rs`, `invariants.rs`, `channel.rs`, `metrics.rs`, `fact.rs`, `rule_validator.rs`, `rule_safety.rs`, `semantic_invariants.rs`, `pure.rs`, `reactor.rs`, `facts_log.rs`
+- `evorule-reactor/src/wal.rs`, `time_machine.rs`, `state.rs`, `stable_detector.rs`, `io_timeout_policy.rs`, `debug_control.rs`, `invariants.rs`, `channel.rs`, `metrics.rs`, `fact.rs`, `rule_validator.rs`, `rule_safety.rs`, `semantic_invariants.rs`, `pure.rs`, `reactor.rs`, `facts_log.rs`
 
 **Tier 2** (11):
-- `tier2-governance/src/shared_facts_log.rs`, `metrics.rs`, `object_pool.rs`, `auditor.rs`, `cluster.rs`, `hash.rs`, `io_subscriber.rs`, `api/auth.rs`, `api/session.rs`, `api/server.rs`, `api/hot_reload.rs`, `io_handlers/{http,memory}_handler.rs`
+- `evorule-governance/src/shared_facts_log.rs`, `metrics.rs`, `object_pool.rs`, `auditor.rs`, `cluster.rs`, `hash.rs`, `io_subscriber.rs`, `api/auth.rs`, `api/session.rs`, `api/server.rs`, `api/hot_reload.rs`, `io_handlers/{http,memory}_handler.rs`
 
 ### 6.3 src/ 函数级 cognitive_complexity / too_many_lines 豁免 (12 处)
 
@@ -293,20 +293,20 @@ src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allo
 
 | 文件:行 | 函数 | 复杂度/行数 | 理由 |
 | --- | --- | --- | --- |
-| `tier1-reactor/src/reactor.rs:385` | `async fn run` | 119/25, 285/100 | 反应器主循环, 拆函数影响接口 |
-| `tier1-reactor/src/reactor.rs:999` | `fn handle_fact` | 47/25 | 7 种 Fact 变体 match |
-| `tier1-reactor/src/wal.rs:232` | `pub fn fact_from_json` | 124/100 | 7 种 Fact 变体扁平 match |
-| `tier2-governance/src/api/hot_reload.rs:100` | `pub fn validate_core_eval` | 144/100 | 沙箱预执行所有指令 |
-| `tier2-governance/src/api/hot_reload.rs:325` | notify watcher closure | 52/25 | 多 Event 分支 |
-| `tier2-governance/src/api/server.rs:1974` | `pub fn build_router` | 103/100 | axum Router 多 route |
-| `tier2-governance/src/auditor.rs:210` | `pub fn audit_new` | 41/25 | 审计遍历 + 哈希 + append |
-| `tier2-governance/src/hash.rs:101` | `pub fn fact_to_stable_json` | 65/25, 136/100 | 7 种 Fact 变体 + 嵌套 |
-| `tier2-governance/src/hash.rs:310` | `pub fn verify_hash_chain` | 52/25 | 链式哈希 + early return |
-| `tier2-governance/src/io_subscriber.rs:221` | `async fn dispatch_and_respond` | 43/25 | IO dispatch + 重试 + 回写 |
-| `tier2-governance/src/metrics.rs:79` | `pub fn new` | 102/100 | 多指标注册 |
-| `tier2-governance/src/bin/evorule_server.rs:134` | `fn load_config_file` | 33/25 | 多配置源分支 |
-| `tier2-governance/src/bin/evorule_server.rs:433` | `async fn log_cleanup_task` | 52/25 | 日志清理多分支 |
-| `tier2-governance/src/bin/evorule_server.rs:545` | `async fn main` | 268/100 | 主函数集成所有子命令 |
+| `evorule-reactor/src/reactor.rs:385` | `async fn run` | 119/25, 285/100 | 反应器主循环, 拆函数影响接口 |
+| `evorule-reactor/src/reactor.rs:999` | `fn handle_fact` | 47/25 | 7 种 Fact 变体 match |
+| `evorule-reactor/src/wal.rs:232` | `pub fn fact_from_json` | 124/100 | 7 种 Fact 变体扁平 match |
+| `evorule-governance/src/api/hot_reload.rs:100` | `pub fn validate_core_eval` | 144/100 | 沙箱预执行所有指令 |
+| `evorule-governance/src/api/hot_reload.rs:325` | notify watcher closure | 52/25 | 多 Event 分支 |
+| `evorule-governance/src/api/server.rs:1974` | `pub fn build_router` | 103/100 | axum Router 多 route |
+| `evorule-governance/src/auditor.rs:210` | `pub fn audit_new` | 41/25 | 审计遍历 + 哈希 + append |
+| `evorule-governance/src/hash.rs:101` | `pub fn fact_to_stable_json` | 65/25, 136/100 | 7 种 Fact 变体 + 嵌套 |
+| `evorule-governance/src/hash.rs:310` | `pub fn verify_hash_chain` | 52/25 | 链式哈希 + early return |
+| `evorule-governance/src/io_subscriber.rs:221` | `async fn dispatch_and_respond` | 43/25 | IO dispatch + 重试 + 回写 |
+| `evorule-governance/src/metrics.rs:79` | `pub fn new` | 102/100 | 多指标注册 |
+| `evorule-governance/src/bin/evorule_server.rs:134` | `fn load_config_file` | 33/25 | 多配置源分支 |
+| `evorule-governance/src/bin/evorule_server.rs:433` | `async fn log_cleanup_task` | 52/25 | 日志清理多分支 |
+| `evorule-governance/src/bin/evorule_server.rs:545` | `async fn main` | 268/100 | 主函数集成所有子命令 |
 | `evorule-cli/src/main.rs:222` | `fn run_rules` | 57/25 | CLI 命令 dispatch |
 | `evorule-cli/src/main.rs:428` | `fn validate_rules` | 45/25 | 验证规则链 |
 
@@ -316,12 +316,12 @@ src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allo
 
 ## 七、相关文件
 
-- `tier0-tcb/TCB_SPEC.md` (权威)
-- `tier1-reactor/REACTOR_SPEC.md` (权威)
-- `tier2-governance/GOVERNANCE_SPEC.md` (权威)
-- `tier0-tcb/build.rs` (L1 字面量门禁, 23 模式)
-- `tier1-reactor/build.rs` (L1 字面量门禁, 14 模式)
-- `tier2-governance/build.rs` (L1 字面量门禁, 14 模式, 跟 tier1 相同)
+- `evorule-tcb/TCB_SPEC.md` (权威)
+- `evorule-reactor/REACTOR_SPEC.md` (权威)
+- `evorule-governance/GOVERNANCE_SPEC.md` (权威)
+- `evorule-tcb/build.rs` (L1 字面量门禁, 23 模式)
+- `evorule-reactor/build.rs` (L1 字面量门禁, 14 模式)
+- `evorule-governance/build.rs` (L1 字面量门禁, 14 模式, 跟 tier1 相同)
 - `evorule-cli/build.rs` (L1 字面量门禁, 8 模式)
 - `Cargo.toml` (根 `[workspace.lints]` 集中配置)
-- `{tier0-tcb,tier1-reactor,tier2-governance,evorule-cli}/Cargo.toml` (各 crate `[lints] workspace = true`)
+- `{evorule-tcb,evorule-reactor,evorule-governance,evorule-cli}/Cargo.toml` (各 crate `[lints] workspace = true`)

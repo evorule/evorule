@@ -3,9 +3,9 @@ $evoruleRoot = "D:\evorule"
 $evoAgentRoot = "D:\evo-agent"
 
 $rsDirs = @(
-    "$evoruleRoot\tier0-tcb\src",
-    "$evoruleRoot\tier1-reactor\src",
-    "$evoruleRoot\tier2-governance\src",
+    "$evoruleRoot\evorule-tcb\src",
+    "$evoruleRoot\evorule-reactor\src",
+    "$evoruleRoot\evorule-governance\src",
     "$evoAgentRoot\src"
 )
 foreach ($dir in $rsDirs) {

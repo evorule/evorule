@@ -8,7 +8,7 @@
           {
             "type": "set",
             "params": {
-              "attr": "__exec__.payload.x",
+              "attr": "x",
               "operation": "set",
               "value": 42
             }

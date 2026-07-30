@@ -9,9 +9,9 @@ target/
 # 文档（非运行时依赖）
 文档/
 *.md
-!tier0-tcb/README.md
-!tier1-reactor/README.md
-!tier2-governance/README.md
+!evorule-tcb/README.md
+!evorule-reactor/README.md
+!evorule-governance/README.md
 
 # 临时文件
 *.tmp

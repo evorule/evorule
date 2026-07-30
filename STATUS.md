@@ -21,7 +21,6 @@
 | **警告**       | **0** Rust 警告(编译时 6 个 gate 全 PASS)                                         | `cargo check --workspace`                  |
 | **依赖**       | 24 个直接依赖,0 已知 CVE                                                          | `docs/security/DEPENDENCY_AUDIT_v0.1.0.md` |
 | **审计链**     | blake3 哈希链,自洽,export/import 完整,P04-P06 改进已通过评估                      | `docs/security/SECURITY_AUDIT_v0.1.0.md`   |
-| **启动**       | 42ms (Windows + localhost,release 构建)                                           | 服务器运行测试 2026-07-25                  |
 | **可复现构建** | x86_64 + aarch64 musl,SHA256 验证 PASS                                            | `.gitee-ci/build-musl.yml`                 |
 | **CLI 体积**   | 1.6MB stripped(x86_64) / 1.4MB(aarch64)                                           | `build-musl.sh --check`                    |
 
@@ -46,17 +45,6 @@
 - [x] **P05 gzip 压缩** — 50.3% 压缩率,gzip magic 验证 PASS
 - [x] **P06 实时验证** — `--auto-verify --auto-verify-threshold 100` 全程无失败
 
-### HTTP API(40+ 端点)
-
-- [x] **健康检查** — `/api/health` `/api/health/liveness` `/api/health/readiness`
-- [x] **会话** — create / list / state / facts / history / payload
-- [x] **命令** — submit / io_response
-- [x] **审计** — audit / audit/verify / audit/causal/{fact_id} / audit/export[/compressed] / audit/import[/compressed]
-- [x] **时间机器** — replay / rewind/{v} / diff?a=&b= / fork/{parent}
-- [x] **调试** — debug/phase / debug/queue / debug/pending_io
-- [x] **指标** — `/metrics` (Prometheus 格式)
-- [x] **调试器 UI** — `/debugger/debugger.html` v0 sketch
-
 ### 独立 CLI(`evorule-cli`)
 
 - [x] **4 个子命令** — validate / run / replay / diff
@@ -65,21 +53,17 @@
 - [x] **musl static** — x86_64 + aarch64,reproducible(SHA256 验证)
 - [x] **Payload via file** — `--payload-file` 解决 PowerShell `"` 误读
 
-### 工具集(`evo-agent` 内置 6 个)
-
-- [x] **file_read / file_list / file_write / search_files** — workdir sandbox,大小限制
-- [x] **shell_exec** — 8 active + 20 candidate + 28 blocked + propose 协议
-- [x] **http_get** — 6 个 active hosts + SSRF blocklist
-- [x] **3 层安全模型** — active/candidate/blocked 统一语义
+> **HTTP API 端点 / 调试器 UI / 指标 / evorule-server 二进制** 已归应用层，见 evorule-application 仓。
+> **evo-agent 内置工具集**（file_read / shell_exec / http_get 等）已归 agent 层，见 evo-agent 仓。
 
 ### 安全(自评,未独立审计)
 
-- [x] **M1 Bearer token** — `--auth-token` / `EVORULE_AUTH_TOKEN`,非 loopback 启动警告
-- [x] **M3 工具调用** — 已在 Fact log(`IoRequest` + `IoResponse`)
-- [x] **M4 工具注册校验** — `AgentRunner::from_definition` 早失败
-- [x] **SECURITY_AUDIT v0.1.0** — P0 5 项全修复(panic!/Box::leak/Docker/版本号),P1 4 项 HIGH 待公网部署前修复
-- [x] **THREAT_MODEL v0.1.0** — 14 章节,7 attack trees,STRIDE per component
-- [x] **DEPENDENCY_AUDIT v0.1.0** — 24 direct deps,0 known CVEs
+- [x] **SECURITY_AUDIT v0.1.0** — 走神 9 拆分后 evorule 仓独立范围（纯机制层）；P0 全修复；P1 随 io_handlers 迁移至 application 仓修复
+- [x] **THREAT_MODEL v0.1.0** — STRIDE + Attack Trees + DFD（evorule 仓范围）
+- [x] **DEPENDENCY_AUDIT v0.1.0** — cargo-audit 实跑，0 CVE 0 warnings
+- [x] **M1 Bearer token / M3 工具调用 / M4 注册校验** — 属 evorule-server + evo-agent 应用层，在对应仓安全文档中跟踪
+- [x] **tier0 编译时门禁** — `#![deny(unwrap_used)]` / `#![deny(expect_used)]` / `#![deny(indexing_slicing)]` / `#![deny(panic)]`
+- [x] **tier0/1/2 build.rs 门禁** — T1/T2/T3/T15 全开
 
 ### 文档
 
@@ -135,27 +119,28 @@
 
 ### 阶段 1(1-2 周) — 验证 + 性能基准
 
-- [ ] evorule-server musl release 端到端测试
 - [ ] 性能基准(并发 session / 长 session / 压缩吞吐量)
 - [ ] 跨平台冷启动(Linux / WSL)
-- [ ] docs/benchmarks/RESULTS.md
+- [ ] 性能基准评估报告（仓内 L3 文档，不对外发布）
+- [ ] evorule-server musl release 端到端测试 — 见 evorule-application 仓
 
 ### 阶段 2(4-6 周) — 上下文架构
 
-- [ ] evo-agent MemoryManager 升级
+- [ ] evo-agent MemoryManager 升级 — 见 evo-agent 仓
 - [ ] evorule fact log 索引优化
 - [ ] 长期记忆压缩
 
 ### 阶段 3(8+ 周) — 应用层 P0
 
-- [ ] Time-Travel Debugger v1(D 计划)
-- [ ] Audit Inspector(可选)
+- [ ] Time-Travel Debugger v1(D 计划)— 见 evorule-application 仓
+- [ ] Audit Inspector(可选)— 见 evorule-application 仓
 
-### 后续(0.2.0+)
+### 后续(0.1.0 首发后)
 
 - [ ] demo 视频
-- [ ] P1 安全修复(SSRF/SQL/CORS/DB URL)
-- [ ] 打 `v0.2.0` tag
+- [ ] P1 安全修复(SSRF/SQL/CORS/DB URL)— 在 evorule-application 仓完成
+- [x] 打 `v0.1.0` tag（evorule 仓首发）+ 四 crate 同步发布 crates.io
+- [ ] v0.2.0 质量硬化（Kani 证明覆盖、CI 跑通）
 
 ---
 
@@ -163,7 +148,8 @@
 
 **0.1.0 期间**:
 
-- 我们**能跑** server / CLI / tools
+- 我们**能跑** CLI + 3 个 lib crate（evorule-tcb / evorule-reactor / evorule-governance）
+- **evorule-server / HTTP API / 调试器 UI / evo-agent 工具集** → 请使用 evorule-application 仓 + evo-agent 仓
 - 我们**不能**承诺 API 稳定
 - 我们**不修**新发现的安全问题(除非 critical)
 - 我们**鼓励** 提 issue / 提 PR,但**不承诺响应时间**
@@ -174,5 +160,5 @@
 
 ---
 
-**最后更新**:2026-07-25
-**下次更新**:0.2.0 发布前
+**最后更新**:2026-07-30
+**下次更新**:v0.1.0 首发 tag 后

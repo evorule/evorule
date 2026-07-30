@@ -9,7 +9,7 @@
 # This file is kept for backward compatibility with existing invocations
 # and CI pipelines. New code should call add-spdx-safe.ps1 directly.
 #
-# Excludes: tier1-reactor/src/ffi.rs (allows unsafe_code, known)
+# Excludes: evorule-reactor/src/ffi.rs (allows unsafe_code, known)
 
 $ErrorActionPreference = "Stop"
 
@@ -23,13 +23,13 @@ Write-Host "[add_spdx_headers.ps1] Delegating to add-spdx-safe.ps1" -ForegroundC
 Write-Host ""
 
 # Call safe script for each tier, with the original exclusion
-& powershell -NoProfile -File $safeScript -RootDir "D:\evorule\tier0-tcb\src"
+& powershell -NoProfile -File $safeScript -RootDir "D:\evorule\evorule-tcb\src"
 $rc1 = $LASTEXITCODE
 
-& powershell -NoProfile -File $safeScript -RootDir "D:\evorule\tier1-reactor\src" -Exclude "*ffi.rs"
+& powershell -NoProfile -File $safeScript -RootDir "D:\evorule\evorule-reactor\src" -Exclude "*ffi.rs"
 $rc2 = $LASTEXITCODE
 
-& powershell -NoProfile -File $safeScript -RootDir "D:\evorule\tier2-governance\src"
+& powershell -NoProfile -File $safeScript -RootDir "D:\evorule\evorule-governance\src"
 $rc3 = $LASTEXITCODE
 
 # Aggregate exit code
