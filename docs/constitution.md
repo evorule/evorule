@@ -73,7 +73,7 @@ EvoRule 项目当前采用 **BDFL（Benevolent Dictator For Life，仁慈的终�
 
 - 修改本宪法文档
 - 更改项目许可证
-- 修改 tier0-tcb 的 T1-T14 红线（TCB_SPEC.md）
+- 修改 evorule-tcb 的 T1-T14 红线（TCB_SPEC.md）
 - 改变治理模型（BDFL → 委员会）
 
 **审批**：仅 BDFL 批准
@@ -124,13 +124,13 @@ EvoRule 项目当前采用 **BDFL（Benevolent Dictator For Life，仁慈的终�
 > **反应器层和治理层不得展开控制流。**
 
 - evorule 是**机制**，不是**应用**
-- 业务逻辑必须以 JSON 数据的形式存在，由 tier0-tcb 执行
-- tier1-reactor 和 tier2-governance 只能做调度、路由、持久化等"机制"工作
+- 业务逻辑必须以 JSON 数据的形式存在，由 evorule-tcb 执行
+- evorule-reactor 和 evorule-governance 只能做调度、路由、持久化等"机制"工作
 - 任何在 Rust 代码中写业务逻辑的 PR 都会被拒绝
 
 ### 3.2 TCB 最小化
 
-> **tier0-tcb 只做加减和因果链。**
+> **evorule-tcb 只做加减和因果链。**
 
 - TCB（Trusted Computing Base）越小，形式化验证越容易
 - 任何新增的 TCB 原语都必须有充分的理由

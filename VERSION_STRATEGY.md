@@ -332,16 +332,16 @@ evo-agent 是**应用层**,版本可以独立:
 
 | 项目 | 类型 | Cargo.lock |
 |---|---|---|
-| `tier0-tcb` | lib | ❌ |
-| `tier1-reactor` | lib(有 cbindgen FFI) | ❌ |
-| `tier2-governance` | lib + binary(`evorule-server`) | ⚠️ **commit**(因为有 binary) |
+| `evorule-tcb` | lib | ❌ |
+| `evorule-reactor` | lib(有 cbindgen FFI) | ❌ |
+| `evorule-governance` | lib + binary(`evorule-server`) | ⚠️ **commit**(因为有 binary) |
 | `evo-agent` | lib(暂无 binary) | ❌ |
 | `evorule` workspace 根 | (有 binary 在子 crate) | ⚠️ **commit** |
 
 ### 8.3 .gitignore 规则
 
 ```gitignore
-# tier0-tcb / tier1-reactor / evo-agent(纯 lib,不 commit)
+# evorule-tcb / evorule-reactor / evo-agent(纯 lib,不 commit)
 target/
 build/
 *.pdb
@@ -350,7 +350,7 @@ build/
 *.exp
 *.d
 
-# tier2-governance / evorule workspace 根(有 binary,commit Cargo.lock)
+# evorule-governance / evorule workspace 根(有 binary,commit Cargo.lock)
 # 但当前 .gitignore 包含 Cargo.lock,需要修改
 
 # 统一规则:
@@ -363,9 +363,9 @@ build/
 ⚠️ **现状不一致**:
 
 - `D:\evorule\.gitignore` 第 9 行:`Cargo.lock`
-- 这对 `tier2-governance`(有 binary)来说是**错误的**
+- 这对 `evorule-governance`(有 binary)来说是**错误的**
 
-**修复建议**:从 `tier2-governance` 的 `.gitignore` 移除 `Cargo.lock`,让 binary 的 lock 被跟踪。
+**修复建议**:从 `evorule-governance` 的 `.gitignore` 移除 `Cargo.lock`,让 binary 的 lock 被跟踪。
 
 ---
 
@@ -388,9 +388,9 @@ build/
 
 ```bash
 # 1. 改版本号
-vim tier0-tcb/Cargo.toml  # version = "X.Y.Z"
-vim tier1-reactor/Cargo.toml
-vim tier2-governance/Cargo.toml
+vim evorule-tcb/Cargo.toml  # version = "X.Y.Z"
+vim evorule-reactor/Cargo.toml
+vim evorule-governance/Cargo.toml
 vim Cargo.toml  # workspace.package.version
 
 # 2. 改 CHANGELOG
@@ -463,7 +463,7 @@ v1.0.0-rc.1
 
 ### Q2: evo-agent 0.1.0 + evorule 0.1.0 同时发布,会不会有依赖冲突?
 
-**A**: evo-agent 用 `path = "../evorule/tier0-tcb"`,所以**必须**跟 evorule 0.1.0 同步发布。否则 evo-agent 编译失败。
+**A**: evo-agent 用 `path = "../evorule/evorule-tcb"`,所以**必须**跟 evorule 0.1.0 同步发布。否则 evo-agent 编译失败。
 
 ### Q3: 1.0 之后还能加新功能吗?
 
@@ -476,7 +476,7 @@ v1.0.0-rc.1
 - **lib-only 项目**:不 commit,所以用户拉时 cargo 自动 resolve 新的 dep 版本(可能 API 变化)
 - **binary 项目**:commit,锁定 build,确保可复现
 
-EvoRule 关键是 **tier2-governance**(有 binary `evorule-server`)。它的 Cargo.lock 应该 commit。
+EvoRule 关键是 **evorule-governance**(有 binary `evorule-server`)。它的 Cargo.lock 应该 commit。
 
 ### Q5: 怎么从 0.x 升 1.0?
 
@@ -523,7 +523,7 @@ EvoRule 关键是 **tier2-governance**(有 binary `evorule-server`)。它的 Car
 
 **作者**: EvoRule Project
 **邮箱**: <evorulelab@gmail.com>
-**Gitee**: <https://gitee.com/evorulelab/evorule>
+**Gitee**: <https://gitee.com/evo-rule-lab/evorule>
 
 ---
 

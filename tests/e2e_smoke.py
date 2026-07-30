@@ -12,7 +12,7 @@ evorule e2e 冒烟测试
 
 # 前置
   - 已 build: cargo build --bin evorule-server
-  - core_eval.json 在 ./tier0-tcb/core_eval.json(默认)
+  - core_eval.json 在 ./evorule-tcb/core_eval.json(默认)
 
 # 运行
   python tests/e2e_smoke.py

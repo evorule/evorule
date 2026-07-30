@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env pwsh
+#!/usr/bin/env pwsh
 # validate-cargolock.ps1
 # VERSION_STRATEGY.md 8
 # Check: binary projects commit Cargo.lock, lib projects do not
@@ -12,14 +12,15 @@ $evoruleRoot = Split-Path -Parent $PSScriptRoot
 $evoAgentRoot = "D:\evo-agent"
 
 # Project -> has binary ([[bin]] section), and the workspace root that contains its Cargo.lock
-# tier1-reactor has cdylib but no [[bin]], treat as lib
-# tier2-governance has [[bin]] name = "evorule-server"
+# evorule-reactor has cdylib but no [[bin]], treat as lib
+# H5: evorule-governance 已迁出 evorule-server bin,现为纯 lib crate
+#     evorule-server 已迁至 evorule-application/core/evorule-server/(应用层独立 crate)
 # evo-agent is lib only
 # Cargo.lock for workspace crates lives at the workspace root, not the crate dir
 $projects = [ordered]@{}
-$projects['tier0-tcb']        = @{ Path = "$evoruleRoot\tier0-tcb";        HasBinary = $false; LockRoot = $evoruleRoot }
-$projects['tier1-reactor']    = @{ Path = "$evoruleRoot\tier1-reactor";    HasBinary = $false; LockRoot = $evoruleRoot }
-$projects['tier2-governance'] = @{ Path = "$evoruleRoot\tier2-governance"; HasBinary = $true;  LockRoot = $evoruleRoot }
+$projects['evorule-tcb']        = @{ Path = "$evoruleRoot\evorule-tcb";        HasBinary = $false; LockRoot = $evoruleRoot }
+$projects['evorule-reactor']    = @{ Path = "$evoruleRoot\evorule-reactor";    HasBinary = $false; LockRoot = $evoruleRoot }
+$projects['evorule-governance'] = @{ Path = "$evoruleRoot\evorule-governance"; HasBinary = $false; LockRoot = $evoruleRoot }
 $projects['evo-agent']        = @{ Path = "$evoAgentRoot";                 HasBinary = $false; LockRoot = $evoAgentRoot }
 
 $failed = $false

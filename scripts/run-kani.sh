@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run-kani.sh - tier0-tcb Kani 形式化验证 wrapper
+# run-kani.sh - evorule-tcb Kani 形式化验证 wrapper
 #
 # Kani 在 Windows 上官方不支持 (需 Linux/WSL/macOS)。
 # 本脚本探测环境并选择合适的运行方式:
@@ -23,7 +23,7 @@ set -e
 
 # === Config ===
 KANI_VERSION="0.50.0"  # 与 Cargo.toml 一致, 后续需同步
-PROOF_DIR="$(cd "$(dirname "$0")/../tier0-tcb" && pwd)"
+PROOF_DIR="$(cd "$(dirname "$0")/../evorule-tcb" && pwd)"
 WSL_DISTRO="Ubuntu-22.04"
 
 # === Helpers ===
@@ -41,7 +41,7 @@ detect_platform() {
 # === Subcommands ===
 
 cmd_list() {
-    echo "Available proofs (from tier0-tcb/tests/kani_proofs.rs):"
+    echo "Available proofs (from evorule-tcb/tests/kani_proofs.rs):"
     cd "$PROOF_DIR"
     grep -E '^fn verify_' tests/kani_proofs.rs | sed 's/^fn /  /; s/().*//'
 }

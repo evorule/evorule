@@ -3,13 +3,13 @@
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! # reactive_researcher — EvoRule Reference 实现(1.0 §4.4 门槛)
 //!
-//! 端到端演示三层架构(tier0-tcb + tier1-reactor + tier2-governance)的完整用法。
+//! 端到端演示三层架构(evorule-tcb + evorule-reactor + evorule-governance)的完整用法。
 //!
 //! ## 工作流
 //! 1. 提交 `call_external` Command(LLM 分析)→ TCB 发 `IoRequest` →
 //!    自定义 `LlmHandler` 处理 → 回写 `IoResponse` → TCB 注入 `payload.llm_response` → Stable
 //! 2. 提交 `save_memory` Command(持久化)→ TCB 发 `IoRequest` →
-//!    复用 `tier2_governance::MemoryHandler` → 回写 `IoResponse` → Stable
+//!    复用 `evorule_governance::MemoryHandler` → 回写 `IoResponse` → Stable
 //! 3. 打印 `FactsLog::history()` 完整审计链
 //!
 //! ## 设计要点
@@ -23,15 +23,69 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use clap::Parser;
-use tier0_tcb::JsonValue;
-use tier1_reactor::serde_to_tcb;
-use tier1_reactor::{
-    EventReceiver, Fact, FactId, FactIdGenerator, FactSender, FactsLog, IoType, Reactor,
+use evorule_tcb::JsonValue;
+use evorule_reactor::serde_to_tcb;
+use evorule_reactor::{
+    EventReceiver, Fact, FactId, FactIdGenerator, FactSender, FactsLog, IoHandler, IoResult,
+    IoType, Reactor,
 };
-use tier2_governance::io_handler::{IoHandler, IoResult};
-use tier2_governance::io_handlers::memory_handler::MemoryHandler;
 use tokio::time::timeout;
+
+// ============================================================================
+// H5: MemoryHandler 内联实现
+// ============================================================================
+// H5 迁移: MemoryHandler 已迁至 evorule-application/core/io_handlers/。
+// 此 example 属于核心 workspace,不能依赖应用层 crate,故内联简单实现。
+// 生产环境请使用 evorule_io_handlers::MemoryHandler。
+
+/// 文件系统键值存储(示例用,简化版)
+struct MemoryHandler {
+    base_dir: PathBuf,
+}
+
+impl MemoryHandler {
+    fn new(base_dir: PathBuf) -> Self {
+        Self { base_dir }
+    }
+
+    fn resolve_path(&self, key: &str) -> PathBuf {
+        let safe_key = key.replace(['/', '\\'], "_").replace("..", "_");
+        self.base_dir.join(safe_key)
+    }
+}
+
+#[async_trait]
+impl IoHandler for MemoryHandler {
+    async fn execute(&self, params: &JsonValue) -> IoResult {
+        let key = params
+            .get("key")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing required param: key".to_string())?;
+        let path = self.resolve_path(key);
+
+        if let Some(value) = params.get("value") {
+            let content = value
+                .as_str()
+                .ok_or_else(|| "param 'value' must be a string".to_string())?;
+            if let Some(parent) = path.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| format!("create dir failed: {e}"))?;
+            }
+            tokio::fs::write(&path, content)
+                .await
+                .map_err(|e| format!("write file failed: {e}"))?;
+            Ok(JsonValue::Bool(true))
+        } else {
+            let content = tokio::fs::read_to_string(&path)
+                .await
+                .map_err(|e| format!("read file failed: {e}"))?;
+            Ok(JsonValue::String(content))
+        }
+    }
+}
 
 // ============================================================================
 // 段 1:CLI 定义
@@ -44,11 +98,11 @@ use tokio::time::timeout;
     about = "EvoRule reference implementation — reactive researcher demo (1.0 §4.4 gate)"
 )]
 struct Cli {
-    /// core_eval.json 路径(默认指向仓库根的 tier0-tcb/core_eval.json)
+    /// core_eval.json 路径(默认指向仓库根的 evorule-tcb/core_eval.json)
     #[arg(
         long,
         env = "EVORULE_CORE_EVAL",
-        default_value = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tier0-tcb/core_eval.json")
+        default_value = concat!(env!("CARGO_MANIFEST_DIR"), "/../../evorule-tcb/core_eval.json")
     )]
     core_eval: PathBuf,
 
@@ -118,6 +172,7 @@ impl LlmHandler {
     }
 }
 
+#[async_trait]
 impl IoHandler for LlmHandler {
     async fn execute(&self, params: &JsonValue) -> IoResult {
         // 提取 prompt(必需)
@@ -195,7 +250,7 @@ impl IoHandler for LlmHandler {
 
 /// I/O 订阅者 ID 起始偏移
 ///
-/// 与核心 `tier2_governance::IoSubscriber` 一致,从 10000 起,
+/// 与核心 `evorule_governance::IoSubscriber` 一致,从 10000 起,
 /// 避免与反应器自身的 `FactIdGenerator`(从 1 起)冲突。
 const SUBSCRIBER_ID_OFFSET: u64 = 10000;
 
@@ -428,8 +483,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// 从文件加载 core_eval.json,返回 transform 规则列表
 ///
-/// 复用 `tier1_reactor::wal::serde_to_tcb` 把 `serde_json::Value` 转为
-/// `tier0_tcb::JsonValue`(tier0-tcb 是 no_std crate,未实现 serde)。
+/// 复用 `evorule_reactor::wal::serde_to_tcb` 把 `serde_json::Value` 转为
+/// `evorule_tcb::JsonValue`(evorule-tcb 是 no_std crate,未实现 serde)。
 fn load_core_eval(path: &PathBuf) -> Result<Vec<JsonValue>, Box<dyn std::error::Error>> {
     let json_str = std::fs::read_to_string(path)
         .map_err(|e| format!("读取 core_eval.json 失败 ({}): {e}", path.display()))?;

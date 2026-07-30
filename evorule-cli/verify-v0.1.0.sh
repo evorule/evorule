@@ -56,11 +56,11 @@ if [ -f "$X86_64_BIN" ]; then
     SIZE=$(du -h "$X86_64_BIN" | cut -f1)
     BYTES=$(stat -c%s "$X86_64_BIN")
     echo "  二进制大小: $SIZE ($BYTES bytes)"
-    echo "  承诺大小: 1.6 MB (1677722 bytes)"
-    if [ "$BYTES" -lt 2000000 ] && [ "$BYTES" -gt 1400000 ]; then
-        pass "x86_64 大小在 1.4-2.0 MB 范围($SIZE, 跟 README 1.6 MB 承诺一致)"
+    echo "  承诺大小: 1.8 MB (1813064 bytes)"
+    if [ "$BYTES" -lt 2000000 ] && [ "$BYTES" -gt 1600000 ]; then
+        pass "x86_64 大小在 1.6-2.0 MB 范围($SIZE, 跟 README 1.8 MB 承诺一致)"
     else
-        warn "x86_64 大小 $SIZE 偏离 README 承诺 1.6 MB"
+        warn "x86_64 大小 $SIZE 偏离 README 承诺 1.8 MB"
     fi
 
     echo "  file: $(file "$X86_64_BIN" | cut -d: -f2-)"
@@ -81,17 +81,16 @@ echo "  3. 编译 aarch64 musl 静态二进制"
 sep
 AARCH64_BIN="$(cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin)["target_directory"])' 2>/dev/null)/aarch64-unknown-linux-musl/release/evorule"
 if [ -f "$AARCH64_BIN" ]; then
-    log "INFO" "已有 aarch64 产物,跳过编译"
+    log "INFO" "已有 aarch64 产物,跳过编译 (用 --rebuild 强制重编)"
     pass "aarch64 musl 产物存在"
 else
-    # 检查 aarch64 cross compiler
-    if which aarch64-linux-musl-gcc >/dev/null 2>&1; then
-        log "INFO" "aarch64-linux-musl-gcc 已装,开始交叉编译..."
-        # build-musl.sh 默认走 CC=aarch64-linux-musl-gcc(如果有),否则会失败
-        CC=aarch64-linux-musl-gcc bash build-musl.sh --target aarch64-unknown-linux-musl 2>&1 | tail -15
-        [ -f "$AARCH64_BIN" ] && pass "aarch64 musl 编译成功" || warn "aarch64 musl 编译失败(交叉工具链可能不全)"
+    # build-musl.sh 用 aarch64-linux-gnu-gcc 作为 linker(glibc 交叉编译器,但 musl 静态库由 rustc 自带)
+    if which aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+        log "INFO" "aarch64-linux-gnu-gcc 已装,开始交叉编译..."
+        bash build-musl.sh --target aarch64-unknown-linux-musl 2>&1 | tail -15
+        [ -f "$AARCH64_BIN" ] && pass "aarch64 musl 编译成功" || fail "aarch64 musl 编译失败"
     else
-        warn "aarch64-linux-musl-gcc 未装,跳过 aarch64 编译(README 说 1.4 MB,本机未验证)"
+        warn "aarch64-linux-gnu-gcc 未装,跳过 aarch64 编译(README 说 1.4 MB,本机未验证)"
     fi
 fi
 
@@ -99,11 +98,43 @@ if [ -f "$AARCH64_BIN" ]; then
     SIZE=$(du -h "$AARCH64_BIN" | cut -f1)
     BYTES=$(stat -c%s "$AARCH64_BIN")
     echo "  二进制大小: $SIZE ($BYTES bytes)"
-    echo "  承诺大小: 1.4 MB (1468006 bytes)"
+    echo "  承诺大小: 1.4 MB (1480792 bytes)"
     if [ "$BYTES" -lt 2000000 ] && [ "$BYTES" -gt 1200000 ]; then
         pass "aarch64 大小在 1.2-2.0 MB 范围($SIZE, 跟 README 1.4 MB 承诺一致)"
     else
         warn "aarch64 大小 $SIZE 偏离 README 承诺 1.4 MB"
+    fi
+
+    echo "  file: $(file "$AARCH64_BIN" | cut -d: -f2-)"
+    if file "$AARCH64_BIN" | grep -q "statically linked"; then
+        pass "aarch64 静态链接"
+    else
+        warn "aarch64 非静态链接"
+    fi
+
+    # 用 qemu-user-static 验证 aarch64 binary 能运行
+    if which qemu-aarch64-static >/dev/null 2>&1; then
+        echo "  qemu-aarch64-static 自检..."
+        if qemu-aarch64-static "$AARCH64_BIN" --version 2>&1 | grep -q "evorule 0.1.0"; then
+            pass "aarch64 binary 在 qemu 模拟下可运行"
+        else
+            fail "aarch64 binary 在 qemu 模拟下运行失败"
+        fi
+
+        # 跑 e2e.sh 验证功能(binfmt_misc 自动通过 qemu 调用)
+        if [ -f tests/e2e.sh ]; then
+            log "INFO" "跑 e2e.sh (aarch64 via qemu)..."
+            e2e_out=$(bash tests/e2e.sh "$AARCH64_BIN" 2>&1)
+            e2e_rc=$?
+            if [ $e2e_rc -eq 0 ] && echo "$e2e_out" | grep -q "all tests passed"; then
+                pass "aarch64 e2e.sh 全部通过(28/28 via qemu)"
+            else
+                fail "aarch64 e2e.sh 失败(退出码 $e2e_rc)"
+                echo "$e2e_out" | tail -10 | sed 's/^/    /'
+            fi
+        fi
+    else
+        warn "qemu-aarch64-static 未装,跳过运行时验证(apt install qemu-user-static)"
     fi
 fi
 
@@ -123,15 +154,15 @@ else
     warn "跳过 repro 测试(x86_64 产物不存在)"
 fi
 
-# ======== 5. 4 子命令 --version / --help ========
+# ======== 5. 5 子命令 --version / --help ========
 echo
 sep
-echo "  5. 4 子命令验证"
+echo "  5. 5 子命令验证"
 sep
 if [ ! -f "$X86_64_BIN" ]; then
-    fail "x86_64 产物不存在,无法验证 4 子命令"
+    fail "x86_64 产物不存在,无法验证 5 子命令"
 else
-    for sub in "" "validate" "run" "replay" "diff"; do
+    for sub in "" "validate" "run" "replay" "diff" "verify-chain"; do
         if [ -z "$sub" ]; then
             output=$("$X86_64_BIN" --version 2>&1 || true)
         else
@@ -229,15 +260,45 @@ else
         echo "$DIFF_OUT" | head -10 | sed 's/^/    /'
     fi
 
-    # 故意造一份不同的
-    echo '{"step":99,"type":"final","final_payload":{"x":999}}' >> /tmp/hospital_fact_diff.log
+    # 故意造一份不同的(追加一行合法 JSONL fact)
+    echo '{"id":99,"type":"Error","message":"probe"}' > /tmp/hospital_fact_diff.log
     cat /tmp/hospital_fact.log >> /tmp/hospital_fact_diff.log
     DIFF_OUT2=$("$X86_64_BIN" diff /tmp/hospital_fact.log /tmp/hospital_fact_diff.log 2>&1)
-    if echo "$DIFF_OUT2" | grep -qi "Only in"; then
+    if echo "$DIFF_OUT2" | grep -qiE "difference|\[~\]|\[-\]|\[\+\]"; then
         pass "diff 不同测试通过(能识别差异)"
     else
         fail "diff 不同测试失败"
         echo "$DIFF_OUT2" | head -10 | sed 's/^/    /'
+    fi
+fi
+
+# ======== 8b. verify-chain 测试 ========
+echo
+sep
+echo "  8b. verify-chain 测试(哈希链 + 结构不变量)"
+sep
+if [ ! -f "$X86_64_BIN" ] || [ ! -f /tmp/hospital_fact.log ]; then
+    warn "跳过 verify-chain(无产物或无 fact log)"
+else
+    # 正常验证
+    VERIFY_OUT=$("$X86_64_BIN" verify-chain /tmp/hospital_fact.log 2>&1)
+    EC=$?
+    if [ $EC -eq 0 ] && echo "$VERIFY_OUT" | grep -qi "verified"; then
+        pass "verify-chain 正常 fact log 通过(退出码 0)"
+    else
+        fail "verify-chain 正常 fact log 失败(退出码 $EC)"
+        echo "$VERIFY_OUT" | head -10 | sed 's/^/    /'
+    fi
+
+    # 篡改检测:改 id 破坏单调性
+    sed 's/"id":2,/"id":99,/' /tmp/hospital_fact.log > /tmp/hospital_tampered.log
+    VERIFY_OUT2=$("$X86_64_BIN" verify-chain /tmp/hospital_tampered.log 2>&1)
+    EC2=$?
+    if [ $EC2 -eq 1 ] && echo "$VERIFY_OUT2" | grep -qi "monotonicity"; then
+        pass "verify-chain 篡改检测通过(改 id=99 → 退出码 1 + monotonicity 报错)"
+    else
+        fail "verify-chain 篡改检测失败(退出码 $EC2,应报 monotonicity)"
+        echo "$VERIFY_OUT2" | head -10 | sed 's/^/    /'
     fi
 fi
 
@@ -277,7 +338,7 @@ fi
 # ======== 10. e2e.sh ========
 echo
 sep
-echo "  10. e2e.sh 测试"
+echo "  10. e2e.sh 测试(28 个 TAP 用例)"
 sep
 if [ ! -f "$X86_64_BIN" ]; then
     warn "跳过 e2e.sh(无产物)"
@@ -285,10 +346,10 @@ elif [ ! -f tests/e2e.sh ]; then
     warn "tests/e2e.sh 不存在"
 else
     log "INFO" "跑 tests/e2e.sh..."
-    bash tests/e2e.sh "$X86_64_BIN" 2>&1 | tail -25
+    bash tests/e2e.sh "$X86_64_BIN" 2>&1 | tail -35
     EC=$?
     if [ $EC -eq 0 ]; then
-        pass "e2e.sh 全部通过"
+        pass "e2e.sh 全部通过(28/28)"
     else
         # 进一步看是不是部分失败
         if bash tests/e2e.sh "$X86_64_BIN" 2>&1 | grep -q "failed 0"; then

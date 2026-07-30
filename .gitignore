@@ -42,7 +42,7 @@ Thumbs.db
 *.exe
 *.pdb
 
-# 构建/安装日志 (tier0-tcb/install_log.txt 等)
+# 构建/安装日志 (evorule-tcb/install_log.txt 等)
 install_log.txt
 install_llvm_cov_log.txt
 
@@ -55,12 +55,17 @@ kani-results/
 .kani-logs/
 
 # 内部中文设计文档
-# 物理位置: D:\_PRIVATE_zh_docs\ (evorule 仓外)
-# 访问入口: D:\evorule\_PRIVATE_zh_docs\ (NTFS junction)
+# 物理位置: 仓外私有目录（NTFS junction）
 # 防止 commit + 防误删 + 防误发布
 _PRIVATE_zh_docs/
 **/_PRIVATE_zh_docs/
 **/_PRIVATE_zh_docs/**
+
+# 仓内共享 L2/L3 设计/实现/基准文档（.gitignore 保护，不公开发布）
+# 来源: AGENTS.md §内部约定: 文档/ 永不发布
+文档/
+**/文档/
+**/文档/**
 
 # === SDK 构建产物 (Python / TypeScript) ===
 __pycache__/
@@ -112,6 +117,14 @@ find_p2.ps1
 
 # === 2026-07-25 TLA+ 形式化验证 ===
 # tla2tools.jar 由 CI 下载，不 commit 到仓库（2.2MB 二进制）
-tier0-tcb/tla/tla2tools.jar
+evorule-tcb/tla/tla2tools.jar
 # TLC 模型检测的临时状态文件
-tier0-tcb/tla/states/
+evorule-tcb/tla/states/
+
+# === 2026-07-30 发布前盘点: 排除 Kani/调试用临时 helper 脚本 ===
+# 命名约定: __前缀 = 一次性分析脚本; _前缀 = 本地 WSL/调试辅助脚本
+# 这些脚本不属于机制层发布内容,也不应进入长期 git 历史
+scripts/__*.ps1
+scripts/__*.sh
+scripts/_*.ps1
+scripts/_*.sh

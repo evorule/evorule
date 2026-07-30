@@ -60,9 +60,9 @@ if (Test-Path $pyToml) {
 
 # 4. .rs files SPDX header
 $rsDirs = @(
-    "$evoruleRoot\tier0-tcb\src",
-    "$evoruleRoot\tier1-reactor\src",
-    "$evoruleRoot\tier2-governance\src",
+    "$evoruleRoot\evorule-tcb\src",
+    "$evoruleRoot\evorule-reactor\src",
+    "$evoruleRoot\evorule-governance\src",
     "$evoAgentRoot\src"
 )
 $totalRs = 0
@@ -98,7 +98,7 @@ if ($totalRs -eq 0) {
 }
 
 # 5. core_eval.json CC0-1.0 metadata
-$coreEval = "$evoruleRoot\tier0-tcb\core_eval.json"
+$coreEval = "$evoruleRoot\evorule-tcb\core_eval.json"
 if (Test-Path $coreEval) {
     $content = Get-Content $coreEval -Raw
     if ($content -match 'CC0-1\.0') {

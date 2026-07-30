@@ -15,9 +15,26 @@ env:
 
 jobs:
   # ===== 多平台二进制构建 =====
+  # H5 迁移后状态（2026-07-28 更新）：
+  # - evorule-server 已迁至 evorule-application/core/evorule-server/（应用层独立 crate）
+  # - evorule 仓本身 publish = false（不发布到 crates.io）
+  # - evorule-cli 是用户内部工具，永不发布
+  # - 因此 evorule 仓的 release workflow **整体不再适用**
+  #
+  # 真正的 release 流程应在 evorule-application 仓执行：
+  #   - crates.io 发布：evorule-application
+  #   - GitHub Release：evorule-server 多平台二进制
+  #   - Docker 镜像：evorule-server 容器
+  #
+  # 本文件保留作为 evorule-application 仓 release workflow 的模板参考。
+  # 实际启用前请：
+  #   1. 复制此 workflow 到 evorule-application/.github/workflows/release.yml
+  #   2. 移除 evorule 仓特有的 path filter / cross compile 配置
+  #   3. 在 evorule-application 仓启用
   build-binaries:
-    name: Build ${{ matrix.target }}
+    name: Build ${{ matrix.target }} (disabled - moved to evorule-application)
     runs-on: ${{ matrix.os }}
+    if: false  # H5: 暂时禁用,待 evorule-application release workflow 建立
     strategy:
       fail-fast: false
       matrix:

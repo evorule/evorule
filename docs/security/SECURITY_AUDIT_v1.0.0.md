@@ -16,7 +16,7 @@ circulation among security-conscious users (compliance, regulated industries).
 > **Audit date**: 2026-07-25
 > **Audited versions**:
 >
-> - `evorule` 0.1.0+(Phase 1 形式化验证完成) — tier0-tcb / tier1-reactor / tier2-governance / evorule-cli
+> - `evorule` 0.1.0+(Phase 1 形式化验证完成) — evorule-tcb / evorule-reactor / evorule-governance / evorule-cli
 > - `evo-agent` 0.1.0
 > - 形式化验证白皮书: [`EVORULE_FORMAL_VERTIFICATION_PLAN.md`](../../EVORULE_FORMAL_VERTIFICATION_PLAN.md) v0.4.0
 >
@@ -35,9 +35,9 @@ circulation among security-conscious users (compliance, regulated industries).
 
 | 组件                    | 位置                      | LOC   | 形式化验证状态                                                  |
 | ----------------------- | ------------------------- | ----- | --------------------------------------------------------------- |
-| **tier0-tcb**           | `tier0-tcb/`              | ~1.5K | ✅ **Phase 1 完成**: Kani 4/5 + TLA+ 5 不变式 + proptest 26     |
-| **tier1-reactor**       | `tier1-reactor/`          | ~10K  | 🟡 5 条不变量运行时检查;⏳ Kani 形式化证明 Phase 3              |
-| **tier2-governance**    | `tier2-governance/`       | ~10K  | 🟡 blake3 哈希链实现;⏳ TLA+ 形式化证明 Phase 4;🔴 4 项 P1 待修 |
+| **evorule-tcb**           | `evorule-tcb/`              | ~1.5K | ✅ **Phase 1 完成**: Kani 4/5 + TLA+ 5 不变式 + proptest 26     |
+| **evorule-reactor**       | `evorule-reactor/`          | ~10K  | 🟡 5 条不变量运行时检查;⏳ Kani 形式化证明 Phase 3              |
+| **evorule-governance**    | `evorule-governance/`       | ~10K  | 🟡 blake3 哈希链实现;⏳ TLA+ 形式化证明 Phase 4;🔴 4 项 P1 待修 |
 | **evorule-cli**         | `evorule-cli/`            | ~3K   | 🟢 reproducible musl build;SHA256 verify                        |
 | **evo-agent**(应用层)   | `D:\evo-agent\`           | n/a   | 🟢 3-layer tool model + workdir sandbox(详见 v0.1.0 §5)         |
 | **evorule-application** | `D:\evorule-application\` | n/a   | 🟡 应用层,不阻塞 1.0.0 门槛                                     |
@@ -47,7 +47,7 @@ circulation among security-conscious users (compliance, regulated industries).
 | 方法             | 工具/技术                                                                  | 覆盖范围                                  |
 | ---------------- | -------------------------------------------------------------------------- | ----------------------------------------- |
 | **代码审查**     | 手工 review + `cargo clippy --all-targets -- -D warnings`(0 警告)          | 全 workspace                              |
-| **形式化验证**   | Kani 0.67.0(算术证明)+ TLA+ TLC 2.19(状态机证明)+ proptest(属性测试)       | tier0-tcb(L0-1 ~ L0-12 全覆盖)            |
+| **形式化验证**   | Kani 0.67.0(算术证明)+ TLA+ TLC 2.19(状态机证明)+ proptest(属性测试)       | evorule-tcb(L0-1 ~ L0-12 全覆盖)            |
 | **编译时门禁**   | `build.rs` 14 条 redline(T1-T14)+ G8(tier1/tier2 反应器/治理层控制流)      | tier0 + tier1 + tier2                     |
 | **依赖审计**     | `cargo audit`(人工比对达标,CI 自动化待)+ `cargo deny`(license)             | 全 workspace 24 个直接依赖                |
 | **手工威胁走查** | STRIDE per component + 7 攻击树(详见 [`THREAT_MODEL.md`](THREAT_MODEL.md)) | evorule + evo-agent + evorule-application |
@@ -66,12 +66,12 @@ circulation among security-conscious users (compliance, regulated industries).
 | **tier1 形式化验证**                    | ⏳ Phase 3(1.0.0 后): 5 条不变量运行时检查已实现,Kani 证明待                                                                                                                                                     |
 | **tier2 形式化验证**                    | ⏳ Phase 4(1.0.0 后): blake3 链实现完整,TLA+ AuditorChain.tla 待                                                                                                                                                 |
 | **`cargo audit`**                       | 🟡 人工比对达标(cargo-audit 0.22.2 已装,advisory-db fetch 因网络封锁失败;人工 auditor 比对 356 deps 0 high-severity;详见 [`DEPENDENCY_AUDIT_v1.0.0.md`](DEPENDENCY_AUDIT_v1.0.0.md);CI 自动化待 GitHub 网络可达) |
-| **Cryptographic chain**                 | ✅ **IMPLEMENTED** `tier2-governance/auditor.rs` + `hash.rs`(WAL 持久化 + `audit_verify()` HTTP 端点)                                                                                                            |
+| **Cryptographic chain**                 | ✅ **IMPLEMENTED** `evorule-governance/auditor.rs` + `hash.rs`(WAL 持久化 + `audit_verify()` HTTP 端点)                                                                                                            |
 | **Threat model document**               | 🟡 [`THREAT_MODEL.md`](THREAT_MODEL.md) 已更新至 Phase 1 完成状态;reviewer 签字仍待                                                                                                                              |
 | **Independent reviewer**                | 🔴 NOT YET APPOINTED(1.0.0 发布前必备)                                                                                                                                                                           |
 | **1.0 门槛达标(VERSION_STRATEGY §4.4)** | 🟡 **部分达标**: 形式化验证 ✅(tier0)/安全审计 🟡(本文档 DRAFT)/cargo audit 🟡(人工达标,CI 自动化待)/独立 reviewer ❌/1 reference impl ✅/性能基准 ❌ — 见 §8.1                                                  |
 
-**Verdict(条件 PASS)**: tier0-tcb 形式化验证 Phase 1 完成,达到 1.0 门槛中"形式化验证"项的硬要求(Kani 算术证明 + TLA+ 状态机证明,不止 stub)。
+**Verdict(条件 PASS)**: evorule-tcb 形式化验证 Phase 1 完成,达到 1.0 门槛中"形式化验证"项的硬要求(Kani 算术证明 + TLA+ 状态机证明,不止 stub)。
 **但 1.0.0 仍不可发布**,因为 §4.4 多项门槛未达标:cargo audit 人工达标但 CI 自动化待补、独立 reviewer 未指定、性能基准未做。
 此外,tier2 的 4 项 P1 HIGH 漏洞(SSRF/SQL/CORS/DB URL)**公网部署前必修**,虽然不阻塞 1.0.0 tag(因为 1.0.0 仍是"开发完成"而非"生产就绪"),但需在 CHANGELOG 显著标注。
 
@@ -82,7 +82,7 @@ circulation among security-conscious users (compliance, regulated industries).
 | **Audit author**             | EvoRule maintainers | 2026-07-25    | DRAFT — pending independent reviewer                                                            |
 | **Independent reviewer**     | 🔴 **TBD**          | n/a           | 1.0.0 tag 前必备,需在 §9 完成签字                                                               |
 | **Project lead**             | 🔴 **TBD**          | n/a           | 1.0.0 tag 前必备                                                                                |
-| **Formal verification lead** | EvoRule maintainers | 2026-07-25    | Phase 1 完成(详见 [TLC_VERIFICATION_REPORT.md](../../tier0-tcb/tla/TLC_VERIFICATION_REPORT.md)) |
+| **Formal verification lead** | EvoRule maintainers | 2026-07-25    | Phase 1 完成(详见 [TLC_VERIFICATION_REPORT.md](../../evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)) |
 
 **Until the independent reviewer signs, this document is DRAFT and
 should not be cited as evidence of security in customer-facing materials.**
@@ -94,17 +94,17 @@ should not be cited as evidence of security in customer-facing materials.**
 ### 2.1 三层架构信任边界图
 
 `$lang
-┌─ tier2(tier2-governance,信任度中)──────────────────────┐
+┌─ tier2(evorule-governance,信任度中)──────────────────────┐
 │  HTTP API / Session / Auditor / blake3 哈希链 / WAL     │
 │  攻击面: HTTP 入站、CORS、SQL/HTTP io_handler           │
 │  防御: 1MB body limit / 1000 并发上限 / 100 SSE 上限     │
 │         ⚠️ SSRF / SQL / CORS / DB URL P1 未修(§5.4)     │
-├─ tier1(tier1-reactor,信任度中)─────────────────────────┤
+├─ tier1(evorule-reactor,信任度中)─────────────────────────┤
 │  Reactor / FactsLog / I/O pending / 不变量运行时检查     │
 │  攻击面: 恶意 Fact / I/O 劫持 / 不变量违反               │
 │  防御: 5 条结构性不变量 invariants.rs / max_rounds       │
 │         ⏳ Kani 形式化证明 Phase 3(L1-1 ~ L1-5)         │
-├─ tier0(tier0-tcb,信任度高)─────────────────────────────┤
+├─ tier0(evorule-tcb,信任度高)─────────────────────────────┤
 │  纯函数 / 零 unsafe / 确定性 / 终止性                    │
 │  攻击面: 恶意构造的 JsonValue(core_eval/instruction)    │
 │  防御: ✅ Phase 1 完成(Kani + TLA+ + proptest + build.rs)│
@@ -118,16 +118,16 @@ should not be cited as evidence of security in customer-facing materials.**
 EvoRule 三层架构的信任自底向上传递:
 
 `$lang
-tier0-tcb 正确性(✅ Phase 1 形式化验证完成)
+evorule-tcb 正确性(✅ Phase 1 形式化验证完成)
     │
-    ├─→ tier1-reactor 建立于 tier0 之上
+    ├─→ evorule-reactor 建立于 tier0 之上
     │   • 调用 execute_transition 执行状态转换
     │   • 假设 tier0 输出确定(由 L0-7 TLA+ 保证)
     │   • 假设 tier0 终止(由 L0-6 TLA+ 保证)
     │   • 假设 tier0 不溢出(由 L0-1/L0-2 Kani 保证)
     │   ⏳ tier1 自身不变量 Phase 3 形式化
     │
-    └─→ tier2-governance 建立于 tier1 之上
+    └─→ evorule-governance 建立于 tier1 之上
         • 接收 tier1 的 Fact 流写入审计链
         • 假设 tier1 FactsLog append-only(由运行时检查保证,⏳ Phase 3 Kani)
         • 假设 tier1 版本号单调递增(由运行时检查保证,⏳ Phase 3 Kani)
@@ -150,11 +150,11 @@ tier0-tcb 正确性(✅ Phase 1 形式化验证完成)
 
 ---
 
-## 3. TCB 安全分析(tier0-tcb,最高信任)
+## 3. TCB 安全分析(evorule-tcb,最高信任)
 
 ### 3.1 攻击面分析
 
-tier0-tcb 是 EvoRule 的可信计算基(TCB),作为 1.0.0 门槛中"形式化验证"项的核心载体。
+evorule-tcb 是 EvoRule 的可信计算基(TCB),作为 1.0.0 门槛中"形式化验证"项的核心载体。
 
 **输入面(Input Surface)**:
 
@@ -202,20 +202,20 @@ tier0-tcb 是 EvoRule 的可信计算基(TCB),作为 1.0.0 门槛中"形式化�
 
 **Phase 1 验证产物**:
 
-- TLA+ spec: [`tier0-tcb/tla/ExecuteTransition.tla`](../../tier0-tcb/tla/ExecuteTransition.tla)(12 子动作 + 5 不变式)
-- TLC 配置: [`tier0-tcb/tla/ExecuteTransition.cfg`](../../tier0-tcb/tla/ExecuteTransition.cfg)(N_MAX=2, D_MAX=2, D_DOM_MAX=2)
-- TLC 验证报告: [`tier0-tcb/tla/TLC_VERIFICATION_REPORT.md`](../../tier0-tcb/tla/TLC_VERIFICATION_REPORT.md)(13629 状态, <1s, 5 不变式 PASS)
-- Kani proofs: [`tier0-tcb/tests/kani_proofs.rs`](../../tier0-tcb/tests/kani_proofs.rs)(5 个 `#[kani::proof]`)
-- proptest: [`tier0-tcb/tests/proptest_props.rs`](../../tier0-tcb/tests/proptest_props.rs)(26 个属性测试)
+- TLA+ spec: [`evorule-tcb/tla/ExecuteTransition.tla`](../../evorule-tcb/tla/ExecuteTransition.tla)(12 子动作 + 5 不变式)
+- TLC 配置: [`evorule-tcb/tla/ExecuteTransition.cfg`](../../evorule-tcb/tla/ExecuteTransition.cfg)(N_MAX=2, D_MAX=2, D_DOM_MAX=2)
+- TLC 验证报告: [`evorule-tcb/tla/TLC_VERIFICATION_REPORT.md`](../../evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)(13629 状态, <1s, 5 不变式 PASS)
+- Kani proofs: [`evorule-tcb/tests/kani_proofs.rs`](../../evorule-tcb/tests/kani_proofs.rs)(5 个 `#[kani::proof]`)
+- proptest: [`evorule-tcb/tests/proptest_props.rs`](../../evorule-tcb/tests/proptest_props.rs)(26 个属性测试)
 - 形式化验证白皮书: [`EVORULE_FORMAL_VERTIFICATION_PLAN.md`](../../EVORULE_FORMAL_VERTIFICATION_PLAN.md) v0.4.0
 
 ### 3.3 内存安全
 
-tier0-tcb 的内存安全由 Rust 类型系统 + 编译时门禁 + 形式化验证三层保证:
+evorule-tcb 的内存安全由 Rust 类型系统 + 编译时门禁 + 形式化验证三层保证:
 
 | 性质                   | 验证方式                                                                    | 状态                   |
 | ---------------------- | --------------------------------------------------------------------------- | ---------------------- |
-| 零 `unsafe`            | `#![forbid(unsafe_code)]` in `tier0-tcb/src/lib.rs` + build.rs T10 双重门控 | ✅ 编译时强制          |
+| 零 `unsafe`            | `#![forbid(unsafe_code)]` in `evorule-tcb/src/lib.rs` + build.rs T10 双重门控 | ✅ 编译时强制          |
 | 无 `unwrap`/`expect`   | build.rs T9 门控(测试代码 `#[cfg(test)]` 豁免)                              | ✅ 编译时强制          |
 | 无 `HashMap`/`HashSet` | build.rs T8 门控(确定性迭代,禁用非确定容器)                                 | ✅ 编译时强制          |
 | 无 `panic!`            | build.rs T1-T3 + Clippy `deny(panic)`                                       | ✅ 编译时强制          |
@@ -224,16 +224,16 @@ tier0-tcb 的内存安全由 Rust 类型系统 + 编译时门禁 + 形式化验�
 | 整数不溢出             | Kani L0-1/L0-2 证明 `checked_add`/`checked_sub`                             | ✅ 形式化证明          |
 | 路径不 panic           | proptest L0-10 证明 `resolve_path` 任意输入不 panic                         | ✅ 属性测试            |
 
-**注意**: tier1-reactor 的 `ffi.rs` 标注 `#![allow(unsafe_code)]` 用于 FFI 边界,已在 [`AGENTS.md`](../../AGENTS.md) 文档化。此豁免**不**扩展到 tier0-tcb。
+**注意**: evorule-reactor 的 `ffi.rs` 标注 `#![allow(unsafe_code)]` 用于 FFI 边界,已在 [`AGENTS.md`](../../AGENTS.md) 文档化。此豁免**不**扩展到 evorule-tcb。
 
 ### 3.4 依赖审计
 
-tier0-tcb 是零依赖 crate:
+evorule-tcb 是零依赖 crate:
 
 ```toml
-# tier0-tcb/Cargo.toml
+# evorule-tcb/Cargo.toml
 [package]
-name = "tier0-tcb"
+name = "evorule-tcb"
 version = "0.1.0"
 
 [dependencies]
@@ -242,16 +242,16 @@ version = "0.1.0"
 
 - ✅ `no_std` + `extern crate alloc` 仅依赖 `alloc` 核心库
 - ✅ 无任何第三方 crate
-- ✅ `cargo audit` 对 tier0-tcb 单 crate 报告 0 漏洞(无依赖可审)
+- ✅ `cargo audit` 对 evorule-tcb 单 crate 报告 0 漏洞(无依赖可审)
 - ✅ 全 workspace `cargo audit` 人工比对达标(356 deps,0 high-severity known CVE,2026-07-25;详见 [`DEPENDENCY_AUDIT_v1.0.0.md`](DEPENDENCY_AUDIT_v1.0.0.md))
 - ⏳ `cargo audit` 自动化(拉 RustSec advisory-db)待 CI 环境 GitHub 网络可达
 
-**含义**: tier0-tcb 的供应链风险为零。所有形式化验证的保证**不会被依赖更新破坏**。
+**含义**: evorule-tcb 的供应链风险为零。所有形式化验证的保证**不会被依赖更新破坏**。
 这是 EvoRule 三层架构的核心设计优势 —— TCB 的正确性独立于生态系统的其他部分。
 
 ---
 
-## 4. 反应器安全分析(tier1-reactor,中等信任)
+## 4. 反应器安全分析(evorule-reactor,中等信任)
 
 ### 4.1 攻击面分析
 
@@ -273,7 +273,7 @@ version = "0.1.0"
 
 ### 4.2 不变量保护
 
-tier1-reactor 的 5 条结构性不变量(详见白皮书 §5):
+evorule-reactor 的 5 条结构性不变量(详见白皮书 §5):
 
 | ID   | 不变量                             | 运行时检查                    | 形式化证明状态                                            |
 | ---- | ---------------------------------- | ----------------------------- | --------------------------------------------------------- |
@@ -306,11 +306,11 @@ tier1-reactor 的 5 条结构性不变量(详见白皮书 §5):
 
 ---
 
-## 5. 治理层安全分析(tier2-governance,中等信任)
+## 5. 治理层安全分析(evorule-governance,中等信任)
 
 ### 5.1 审计链完整性
 
-tier2-governance 的核心安全资产是 blake3 哈希链审计日志:
+evorule-governance 的核心安全资产是 blake3 哈希链审计日志:
 
 ```bash
 
@@ -362,15 +362,15 @@ Fact #2: content_hash = blake3(content_2)
 
 ### 5.4 已知 P1 HIGH 漏洞(公网部署前必修)
 
-基于 2026-07-25 代码审计 (H6-H9),tier2-governance 存在 4 项 P1 HIGH 漏洞。
+基于 2026-07-25 代码审计 (H6-H9),evorule-governance 存在 4 项 P1 HIGH 漏洞。
 **这些漏洞不阻塞 1.0.0 tag(1.0.0 仍是"开发完成"而非"生产就绪"),但必须在公网部署前修复,且需在 CHANGELOG 显著标注**:
 
 | ID     | 漏洞                        | 位置                               | 影响                                                                    | 修复计划                            |
 | ------ | --------------------------- | ---------------------------------- | ----------------------------------------------------------------------- | ----------------------------------- |
-| **H6** | `http_handler` 无 SSRF 防护 | `tier2-governance/http_handler.rs` | 攻击者可通过 `IoRequest::HTTP_GET` 访问内网/云元数据(`169.254.169.254`) | 0.1.1 加 URL scheme + IP 白名单(P1) |
-| **H7** | `db_handler` 允许任意 SQL   | `tier2-governance/db_handler.rs`   | 攻击者可执行 `DROP TABLE`/`ATTACH DATABASE`(参数化防注入,但语句无限制)  | 0.1.1 加 SQL 语句类型白名单(P1)     |
-| **H8** | CORS `permissive()`         | `tier2-governance/server.rs:2081`  | 任意 Origin 携带凭证访问 API = CSRF 风险                                | 0.1.1 改为可配置白名单(P1)          |
-| **H9** | `db_handler` URL 静默回退   | `tier2-governance/db_handler.rs`   | 无效 URL 静默用默认配置,数据可能写入意外位置                            | 0.1.1 `parse()` 失败返回 `Err`(P1)  |
+| **H6** | `http_handler` 无 SSRF 防护 | `evorule-governance/http_handler.rs` | 攻击者可通过 `IoRequest::HTTP_GET` 访问内网/云元数据(`169.254.169.254`) | 0.1.1 加 URL scheme + IP 白名单(P1) |
+| **H7** | `db_handler` 允许任意 SQL   | `evorule-governance/db_handler.rs`   | 攻击者可执行 `DROP TABLE`/`ATTACH DATABASE`(参数化防注入,但语句无限制)  | 0.1.1 加 SQL 语句类型白名单(P1)     |
+| **H8** | CORS `permissive()`         | `evorule-governance/server.rs:2081`  | 任意 Origin 携带凭证访问 API = CSRF 风险                                | 0.1.1 改为可配置白名单(P1)          |
+| **H9** | `db_handler` URL 静默回退   | `evorule-governance/db_handler.rs`   | 无效 URL 静默用默认配置,数据可能写入意外位置                            | 0.1.1 `parse()` 失败返回 `Err`(P1)  |
 
 **1.0.0 期间的缓解**: 默认 `--addr 127.0.0.1:18080`(loopback only) + 非 loopback 启动时警告 + `--auth-token` opt-in。
 即只要用户**不**暴露公网且**不**禁用 auth 警告,这些 P1 漏洞不会被远程利用。
@@ -379,7 +379,7 @@ Fact #2: content_hash = blake3(content_2)
 
 ## 6. 形式化验证覆盖矩阵
 
-### 6.1 Kani 证明覆盖(tier0-tcb)
+### 6.1 Kani 证明覆盖(evorule-tcb)
 
 5 个 `#[kani::proof]` 函数(仅 `#[cfg(kani)]` 时编译):
 
@@ -399,9 +399,9 @@ Fact #2: content_hash = blake3(content_2)
 
 ### 6.2 TLA+ 验证覆盖(Phase 1 完成)
 
-TLA+ spec: [`tier0-tcb/tla/ExecuteTransition.tla`](../../tier0-tcb/tla/ExecuteTransition.tla)
-TLC 配置: [`tier0-tcb/tla/ExecuteTransition.cfg`](../../tier0-tcb/tla/ExecuteTransition.cfg)
-验证报告: [`tier0-tcb/tla/TLC_VERIFICATION_REPORT.md`](../../tier0-tcb/tla/TLC_VERIFICATION_REPORT.md)
+TLA+ spec: [`evorule-tcb/tla/ExecuteTransition.tla`](../../evorule-tcb/tla/ExecuteTransition.tla)
+TLC 配置: [`evorule-tcb/tla/ExecuteTransition.cfg`](../../evorule-tcb/tla/ExecuteTransition.cfg)
+验证报告: [`evorule-tcb/tla/TLC_VERIFICATION_REPORT.md`](../../evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)
 
 **TLC 验证参数**:
 
@@ -458,7 +458,7 @@ TLC 配置: [`tier0-tcb/tla/ExecuteTransition.cfg`](../../tier0-tcb/tla/ExecuteT
 
 ### 6.4 编译时门控覆盖
 
-tier0-tcb 的 `build.rs` 实现 14 条 redline 门控(T1-T14):
+evorule-tcb 的 `build.rs` 实现 14 条 redline 门控(T1-T14):
 
 | 门控 | 检查内容                                     | 状态      |
 | ---- | -------------------------------------------- | --------- |
@@ -485,8 +485,8 @@ tier0-tcb 的 `build.rs` 实现 14 条 redline 门控(T1-T14):
 | ------------------------------------ | ------------------------------ | ------------------------------- | ------------------------------------------------------------------ |
 | L0-4 Kani proof 待 Linux 环境验证    | tier0 resolve_path             | proptest L0-10 已覆盖(200 case) | T2-2 任务(Linux 环境)                                              |
 | TLA+ 有限模型(N_MAX=2)非 ∀N 完整证明 | tier0 execute_transition       | 当前覆盖所有控制流路径          | post-1.0 TLAPS(TO-1~TO-10)                                         |
-| tier1 不变量形式化证明               | tier1-reactor                  | 5 条运行时检查 + 类型系统       | Phase 3(T3-0~T3-5,1.0.0 后)                                        |
-| tier2 审计链形式化证明               | tier2-governance Auditor       | 单元测试 + blake3 实现          | Phase 4(T4-0~T4-3,1.0.0 后)                                        |
+| tier1 不变量形式化证明               | evorule-reactor                  | 5 条运行时检查 + 类型系统       | Phase 3(T3-0~T3-5,1.0.0 后)                                        |
+| tier2 审计链形式化证明               | evorule-governance Auditor       | 单元测试 + blake3 实现          | Phase 4(T4-0~T4-3,1.0.0 后)                                        |
 | 跨层端到端不变量                     | 因果链 / 时间旅行 / audit sync | 集成测试                        | Phase 5(T5-1~T5-3)                                                 |
 | TLAPS 全量证明                       | tier0 spec                     | TLC 有限模型已覆盖              | post-1.0                                                           |
 | 第三方独立审计                       | 全栈                           | 本内部审计 + reviewer签字       | 触发条件见 [`VERSION_STRATEGY.md`](../../VERSION_STRATEGY.md) §4.5 |
@@ -554,7 +554,7 @@ tier0-tcb 的 `build.rs` 实现 14 条 redline 门控(T1-T14):
 | L6  | 3 pre-existing integration tests fail(已修复 2026-07-20) | evo-agent            | ✅ DONE                     |
 | L7  | 17 files garbled Chinese comments(PS 5.1 GBK)            | evo-agent            | 0.2.0                       |
 | L8  | `cargo audit` 自动化未跑(人工已达标)                     | 全 workspace         | CI 环境(待 GitHub 网络可达) |
-| L9  | Kani proofs 5 stubs(已部分修复: 4/5 PASS + 26 proptest)  | tier0-tcb            | 🟡 partial(等 Kani 0.68+)   |
+| L9  | Kani proofs 5 stubs(已部分修复: 4/5 PASS + 26 proptest)  | evorule-tcb            | 🟡 partial(等 Kani 0.68+)   |
 | L10 | 1 independent reviewer not appointed                     | n/a                  | T2-5 前                     |
 | L11 | `prometheus` dep unused                                  | evo-agent            | 0.2.0                       |
 
@@ -636,7 +636,7 @@ tier0-tcb 的 `build.rs` 实现 14 条 redline 门控(T1-T14):
 | **Audit author**             | EvoRule maintainers | 2026-07-25    | DRAFT — pending independent reviewer                                                            |
 | **Independent reviewer**     | 🔴 **TBD**          | n/a           | 1.0.0 tag 前必备                                                                                |
 | **Project lead**             | 🔴 **TBD**          | n/a           | 1.0.0 tag 前必备                                                                                |
-| **Formal verification lead** | EvoRule maintainers | 2026-07-25    | Phase 1 完成(详见 [TLC_VERIFICATION_REPORT.md](../../tier0-tcb/tla/TLC_VERIFICATION_REPORT.md)) |
+| **Formal verification lead** | EvoRule maintainers | 2026-07-25    | Phase 1 完成(详见 [TLC_VERIFICATION_REPORT.md](../../evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)) |
 
 **Until the independent reviewer signs, this document is DRAFT and
 should not be cited as evidence of security in customer-facing materials.**
@@ -656,23 +656,23 @@ cargo check --workspace
 cargo test --workspace
 
 # 3. Verify tier0 formal verification — Kani (requires Linux/WSL)
-cargo kani -p tier0-tcb                    # all 5 proofs (4 PASS + 1 待验证)
-cargo kani -p tier0-tcb --harness verify_set_integer_safety  # single proof
+cargo kani -p evorule-tcb                    # all 5 proofs (4 PASS + 1 待验证)
+cargo kani -p evorule-tcb --harness verify_set_integer_safety  # single proof
 
 # 4. Verify tier0 formal verification — TLA+ TLC
-cd tier0-tcb/tla
+cd evorule-tcb/tla
 tlc ExecuteTransition.cfg                  # 5 invariants PASS, 13629 states, <1s
 
 # 5. Verify tier0 proptest (26 properties, runs on Windows)
-cargo test -p tier0-tcb --test proptest_props
+cargo test -p evorule-tcb --test proptest_props
 
 # 6. Verify build.rs gates (14 redlines + G8)
-cargo build -p tier0-tcb                   # T1-T14 PASSED
-cargo build -p tier1-reactor               # G8 PASSED
-cargo build -p tier2-governance            # G8 PASSED
+cargo build -p evorule-tcb                   # T1-T14 PASSED
+cargo build -p evorule-reactor               # G8 PASSED
+cargo build -p evorule-governance            # G8 PASSED
 
 # 7. Verify audit chain (blake3 hash chain)
-cargo test -p tier2-governance audit       # hash chain + verify() + WAL
+cargo test -p evorule-governance audit       # hash chain + verify() + WAL
 
 # 8. Verify fmt + clippy (0 warnings)
 cargo fmt --check --all
@@ -694,16 +694,16 @@ cargo audit                                # 0 high-severity expected
 - [`SECURITY_AUDIT_v0.1.0.md`](SECURITY_AUDIT_v0.1.0.md) — v0.1.0 基线审计(历史参考)
 - [`DEPENDENCY_AUDIT_v0.1.0.md`](DEPENDENCY_AUDIT_v0.1.0.md) — 依赖审计(24 direct deps, 0 known CVEs)
 - [`SECURITY.md`](../../SECURITY.md) — 漏洞报告政策
-- [`tier0-tcb/tla/TLC_VERIFICATION_REPORT.md`](../../tier0-tcb/tla/TLC_VERIFICATION_REPORT.md) — TLC 验证报告
+- [`evorule-tcb/tla/TLC_VERIFICATION_REPORT.md`](../../evorule-tcb/tla/TLC_VERIFICATION_REPORT.md) — TLC 验证报告
 - [`AGENTS.md`](../../AGENTS.md) — 项目工作规则(含 tier1 ffi.rs unsafe 豁免说明)
 
 ### 形式化验证产物
 
-- [`tier0-tcb/tla/ExecuteTransition.tla`](../../tier0-tcb/tla/ExecuteTransition.tla) — TLA+ spec(12 子动作 + 5 不变式)
-- [`tier0-tcb/tla/ExecuteTransition.cfg`](../../tier0-tcb/tla/ExecuteTransition.cfg) — TLC 配置(N_MAX=2)
-- [`tier0-tcb/tests/kani_proofs.rs`](../../tier0-tcb/tests/kani_proofs.rs) — 5 个 Kani proof
-- [`tier0-tcb/tests/proptest_props.rs`](../../tier0-tcb/tests/proptest_props.rs) — 26 个 proptest
-- [`tier0-tcb/build.rs`](../../tier0-tcb/build.rs) — 14 条编译时门控(T1-T14)
+- [`evorule-tcb/tla/ExecuteTransition.tla`](../../evorule-tcb/tla/ExecuteTransition.tla) — TLA+ spec(12 子动作 + 5 不变式)
+- [`evorule-tcb/tla/ExecuteTransition.cfg`](../../evorule-tcb/tla/ExecuteTransition.cfg) — TLC 配置(N_MAX=2)
+- [`evorule-tcb/tests/kani_proofs.rs`](../../evorule-tcb/tests/kani_proofs.rs) — 5 个 Kani proof
+- [`evorule-tcb/tests/proptest_props.rs`](../../evorule-tcb/tests/proptest_props.rs) — 26 个 proptest
+- [`evorule-tcb/build.rs`](../../evorule-tcb/build.rs) — 14 条编译时门控(T1-T14)
 
 ### 外部方法学
 

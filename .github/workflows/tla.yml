@@ -2,8 +2,8 @@
 # GitHub Actions: TLA+ 形式化验证
 #
 # 使用 TLC 模型检测器验证 tier0 execute_transition 状态机规格
-#   - 模块: tier0-tcb/tla/ExecuteTransition.tla
-#   - 配置: tier0-tcb/tla/ExecuteTransition.cfg
+#   - 模块: evorule-tcb/tla/ExecuteTransition.tla
+#   - 配置: evorule-tcb/tla/ExecuteTransition.cfg
 #   - 5 个不变式: Termination / Determinism / DepthEnforcement / IoEarlyReturn / LoopProgress
 #
 # 设计文档: EVORULE_FORMAL_VERTIFICATION_PLAN.md §9.3
@@ -16,15 +16,15 @@ on:
   push:
     branches: [main]
     paths:
-      - 'tier0-tcb/tla/**'
-      - 'tier0-tcb/src/transition.rs'
-      - 'tier0-tcb/src/executor.rs'
+      - 'evorule-tcb/tla/**'
+      - 'evorule-tcb/src/transition.rs'
+      - 'evorule-tcb/src/executor.rs'
       - '.github/workflows/tla.yml'
   pull_request:
     paths:
-      - 'tier0-tcb/tla/**'
-      - 'tier0-tcb/src/transition.rs'
-      - 'tier0-tcb/src/executor.rs'
+      - 'evorule-tcb/tla/**'
+      - 'evorule-tcb/src/transition.rs'
+      - 'evorule-tcb/src/executor.rs'
       - '.github/workflows/tla.yml'
   workflow_dispatch:
 
@@ -32,7 +32,7 @@ jobs:
   tla-verify:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
-    continue-on-error: true  # Phase 1 完成后改 false
+    continue-on-error: false  # v0.1.0 发布前统一为严格门禁（与 Gitee validate.yml allow_failure:false 一致）
 
     steps:
       - name: Checkout
@@ -48,18 +48,18 @@ jobs:
         id: cache-tla
         uses: actions/cache@v4
         with:
-          path: tier0-tcb/tla/tla2tools.jar
+          path: evorule-tcb/tla/tla2tools.jar
           key: tla2tools-latest
 
       - name: Download tla2tools.jar
         if: steps.cache-tla.outputs.cache-hit != 'true'
-        working-directory: tier0-tcb/tla
+        working-directory: evorule-tcb/tla
         run: |
           wget -q https://github.com/tlaplus/tlaplus/releases/latest/download/tla2tools.jar
           java -jar tla2tools.jar TLC -help | head -3
 
       - name: Run TLC model checker
-        working-directory: tier0-tcb/tla
+        working-directory: evorule-tcb/tla
         run: |
           java -XX:+UseParallelGC -cp tla2tools.jar tlc2.TLC \
             -config ExecuteTransition.cfg ExecuteTransition
@@ -70,6 +70,6 @@ jobs:
         with:
           name: tlc-results
           path: |
-            tier0-tcb/tla/states/
-            tier0-tcb/tla/*.log
+            evorule-tcb/tla/states/
+            evorule-tcb/tla/*.log
           retention-days: 7

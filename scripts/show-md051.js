@@ -2,7 +2,7 @@
 
 const { execSync } = require('child_process');
 
-const cmd = `npx --yes markdownlint-cli "docs/**/*.md" "*.md" "tier0-tcb/**/*.md" "tier1-reactor/**/*.md" "tier2-governance/**/*.md" "evorule-cli/**/*.md" ".gitee/*.md" --ignore "**/node_modules/**" --ignore "_PRIVATE_zh_docs/**" --ignore ".trae/**" --ignore ".gate-logs/**"`;
+const cmd = `npx --yes markdownlint-cli "docs/**/*.md" "*.md" "evorule-tcb/**/*.md" "evorule-reactor/**/*.md" "evorule-governance/**/*.md" "evorule-cli/**/*.md" ".gitee/*.md" --ignore "**/node_modules/**" --ignore "_PRIVATE_zh_docs/**" --ignore ".trae/**" --ignore ".gate-logs/**"`;
 
 try {
   execSync(cmd, { cwd: 'd:/evorule', encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });

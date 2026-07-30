@@ -1,0 +1,61 @@
+# =============================================================================
+# GitHub Actions: 依赖安全审计 (cargo audit)
+#
+# 定期扫描 Cargo.lock 中的已知漏洞 (RustSec advisory DB)。
+# - push/PR: 增量校验
+# - schedule: 每周一全量扫描（捕获上游新披露的漏洞）
+#
+# 通过条件: cargo audit 退出码 0（无已知漏洞）
+# 失败处理: 阻塞合并 (non-zero exit)
+#
+# 说明: 本机 cargo-audit 受 rustc 版本限制装不上 (STATUS.md 记录 kstring 要求
+#       rustc 1.96)，CI 用 taiki-e/install-action 装独立二进制，绕过本机限制。
+# =============================================================================
+name: audit
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - ".github/workflows/audit.yml"
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - ".github/workflows/audit.yml"
+  schedule:
+    # 每周一 03:00 UTC 全量扫描（捕获上游新披露漏洞）
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  cargo-audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: cargo audit（核心 workspace）
+        run: cargo audit
+
+      - name: 生成审计报告归档
+        if: always()
+        run: |
+          mkdir -p audit-report
+          cargo audit --json > audit-report/cargo-audit.json || true
+          cargo audit > audit-report/cargo-audit.txt || true
+
+      - name: 上传审计报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-audit-report
+          path: audit-report/
+          retention-days: 30

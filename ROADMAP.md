@@ -58,7 +58,7 @@
   - 4 PASS(i64 加/减不上溢、JsonValue 类型安全、状态转换有界)
   - 1 个 verify_path_no_panic 因 Kani 工具链 alloc std unwind bound 限制 TIMEOUT(改由 proptest `resolve_path_never_panics_arbitrary_path` 保底)
   - 删除 verify_domain_boolean(改由 proptest `domain_eval_never_panics_arbitrary_type` 替代)
-  - 新增 5 个 proptest。详见 [`tier0-tcb/TCB_SPEC.md`](tier0-tcb/TCB_SPEC.md)
+  - 新增 5 个 proptest。详见 [`evorule-tcb/TCB_SPEC.md`](evorule-tcb/TCB_SPEC.md)
 
 - ❌ **公开 demo 视频** — 有评估文档,没 GIF/视频
 - ❌ **依赖自动审计** — cargo-audit 装不上(rustc 1.92 vs kstring 1.96 要求)
