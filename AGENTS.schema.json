@@ -198,9 +198,16 @@
       {
         "name": "evorule-application",
         "path": "evorule-application 仓（与本仓为兄弟仓，同级目录）",
-        "role": "可视化/调试器/仪表盘/evorule-server/io-handlers 集合",
+        "role": "可视化/调试器/仪表盘/业务规则模板集合",
         "kind": "application",
-        "h5_migration_note": "evorule-server 和 evorule-io-handlers 已从 evorule-governance 迁至此处 (core/evorule-server/, core/io_handlers/). evorule-governance 现为纯 lib crate."
+        "h5_migration_note": "原 evorule-server/io-handlers 已从 evorule-application 再次迁出（走神 9），成立 evorule-server 独立仓；evorule-application 现仅承载可视化 UI + 业务规则模板 + 调试器等纯应用层内容。"
+      },
+      {
+        "name": "evorule-server",
+        "path": "evorule-server 仓（与本仓为兄弟仓，同级目录，走神 9 独立拆分）",
+        "role": "官方 HTTP server 实现：evorule-server bin + core/io_handlers + core/auth + core/metrics + core/hot_reload + core/time_machine + core/debug_control + core/rule_tools + core/semantic_invariants 共 9 个 crate",
+        "kind": "application-server",
+        "migration_note": "从 evorule-governance 迁出 (H5) → 从 evorule-application 再次迁出（走神 9），现独立仓。"
       },
       {
         "name": "evorule-sdk",
@@ -212,10 +219,11 @@
     "external_apps_post_h5": [
       {
         "name": "evorule-server",
-        "path": "evorule-application 仓 core/evorule-server/ 子目录",
+        "path": "evorule-server 独立仓（与 evorule 同级目录）",
         "kind": "bin",
-        "build_cmd": "克隆 evorule-application 仓后，在 core/evorule-server/ 目录执行 cargo build",
-        "default_addr": "0.0.0.0:18080"
+        "build_cmd": "克隆 evorule-server 仓后，在仓顶层执行 cargo build --bin evorule-server",
+        "default_addr": "0.0.0.0:18080",
+        "source_file": "evorule-server/src/main.rs (顶层 crate, 非 core/ 子目录)"
       }
     ],
     "edges": [
@@ -299,15 +307,15 @@
       },
       {
         "id": "evorule-server-location",
-        "category": "post-h5",
-        "summary": "evorule-server 已迁至 evorule-application 仓（core/evorule-server/ 子目录），不在核心 workspace",
-        "fix": "先克隆 evorule-application 仓，再在 core/evorule-server/ 目录执行 cargo run -- --addr 127.0.0.1:18080（需先 cargo build 生成 Cargo.lock）"
+        "category": "post-h5+zoushen9",
+        "summary": "evorule-server 已两次外迁：H5（from evorule-governance → evorule-application）→ 走神 9（→ evorule-server 独立仓），不在 evorule 核心 workspace 中",
+        "fix": "克隆 evorule-server 仓（与 evorule 同级目录），在仓顶层执行 cargo run --bin evorule-server -- --addr 127.0.0.1:18080"
       },
       {
         "id": "binary-naming-convention",
         "category": "convention",
-        "summary": "二进制名用连字符 (evorule-server), 源文件名用下划线 (evorule_server.rs)",
-        "note": "H5 后 evorule-server 在应用层, 源文件为 evorule-application/core/evorule-server/src/main.rs"
+        "summary": "二进制名用连字符 (evorule-server), 源文件: evorule-server 独立仓顶层 evorule-server/src/main.rs",
+        "note": "H5 + 走神 9 两次外迁后, evorule-server 在应用层独立仓, 不再位于 evorule-application/core/ 路径下。"
       },
       {
         "id": "evorule-server-default-addr",

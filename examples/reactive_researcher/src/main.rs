@@ -36,9 +36,9 @@ use tokio::time::timeout;
 // ============================================================================
 // H5: MemoryHandler 内联实现
 // ============================================================================
-// H5 迁移: MemoryHandler 已迁至 evorule-application/core/io_handlers/。
+// H5 + 走神 9: MemoryHandler 已两次外迁，最终位于 evorule-server 独立仓 core/io_handlers/
 // 此 example 属于核心 workspace,不能依赖应用层 crate,故内联简单实现。
-// 生产环境请使用 evorule_io_handlers::MemoryHandler。
+// 生产环境请使用 evorule-server 独立仓中 evorule_io_handlers::MemoryHandler。
 
 /// 文件系统键值存储(示例用,简化版)
 struct MemoryHandler {

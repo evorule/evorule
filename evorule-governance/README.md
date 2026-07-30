@@ -45,8 +45,8 @@
 
 **不承担(策略/应用)**:
 
-- ❌ 具体 I/O handler 实现(HTTP/SQLite/Memory handler → 见 evorule-application 仓 `core/io_handlers/`)
-- ❌ evorule-server 独立二进制 / HTTP API / SSE / Prometheus metrics / Bearer 认证（→ 见 evorule-application 仓 `core/evorule-server/`,需在该仓独立 `cargo build`）
+- ❌ 具体 I/O handler 实现(HTTP/SQLite/Memory handler → 见 evorule-server 独立仓 `core/io_handlers/`)
+- ❌ evorule-server 独立二进制 / HTTP API / SSE / Prometheus metrics / Bearer 认证（→ 见 evorule-server 独立仓，顶层 `cargo build --bin evorule-server` 即可）
 - ❌ 业务策略(具体规则/权限配置由上层应用提供)
 
 ## 模块结构
@@ -110,8 +110,8 @@ let auditor = Auditor::load_from_tier1_wal(wal_path)?;
 let verified = auditor.verify_chain()?;
 ```
 
-> **evorule-server / HTTP API 用户**：请克隆 evorule-application 仓，在 `core/evorule-server/` 目录下 `cargo run -- --addr 127.0.0.1:18080`。
-> 该仓还提供 `core/io_handlers/` 下的 DbHandler/HttpHandler/MemoryHandler 具体实现示例。
+> **evorule-server / HTTP API 用户**：请克隆 evorule-server 独立仓（与 evorule 同级目录），在仓顶层执行 `cargo run --bin evorule-server -- --addr 127.0.0.1:18080`。
+> 该仓顶层 `core/io_handlers/` 下提供 DbHandler/HttpHandler/MemoryHandler 具体实现，`core/auth/` 提供 Bearer token + 速率限制认证中间件。
 
 ## 审计链与哈希链
 

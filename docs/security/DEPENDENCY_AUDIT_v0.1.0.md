@@ -31,13 +31,13 @@ evorule/                 （evorule 仓 = 纯引擎）
 └── evorule-cli/           evorule-tcb + serde + serde_json + clap + thiserror + tracing
 ```
 
-**evorule 仓不包含**（走神 9 / H5 迁出，详见 evorule-application 仓）：
+**evorule 仓不包含**（走神 9 两次迁出，见 evorule-server 独立仓 + evorule-application 仓）：
 
-- `sqlx` / `reqwest` → evorule-application 仓的 io_handlers
-- `axum` / `tower` / `tower-http` / `tower_governor` / `governor` / `subtle` → evorule-application 仓的 evorule-server
-- `prometheus` → evorule-application 仓的 evorule-server metrics 实现
-- `async-stream` / `futures-core` → evorule-server（SSE 流式端点，应用层）
-- `notify` → 已移除（hot_reload 删除）
+- `sqlx` / `reqwest` → evorule-server 独立仓 `core/io_handlers/`
+- `axum` / `tower` / `tower-http` / `tower_governor` / `governor` / `subtle` → evorule-server 独立仓 `evorule-server/` + `core/auth/`
+- `prometheus` → evorule-server 独立仓 `core/metrics/`
+- `async-stream` / `futures-core` → evorule-server 独立仓（SSE 流式端点，应用层）
+- `notify` → evorule-server 独立仓 `core/hot_reload/`
 
 ## 2. cargo-audit 实跑结果（B-2 验收）
 

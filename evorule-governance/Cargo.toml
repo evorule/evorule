@@ -55,10 +55,10 @@ tokio = { version = "1", features = [
 tracing = "0.1"
 # H5: tracing-subscriber 已迁移到 evorule-server(仅 bin 初始化日志用)
 
-# H6: prometheus 依赖已移除（metrics 迁移到 evorule-application/core/evorule-server/src/metrics_impl.rs）
+# H6: prometheus 依赖已移除（metrics 迁移到 evorule-server 独立仓 evorule-server/src/metrics_impl.rs + core/metrics/）
 # 核心层仅保留 IoMetrics trait 定义（无外部依赖），应用层通过依赖注入提供 Prometheus 实现
 
-# H5: I/O Handler SDK (sqlx/reqwest) 已迁移到 evorule-application/core/io_handlers/
+# H5: I/O Handler SDK (sqlx/reqwest) 已迁移到 evorule-server 独立仓 core/io_handlers/
 # evorule-governance 不再依赖具体 I/O 实现,仅保留 IoHandler trait(机制) + IoDispatcher(框架)
 
 # 审计组件
@@ -104,6 +104,6 @@ default = []
 # H6: auth feature 已移除（auth.rs 已迁移到 evorule-server，应用层默认启用认证）
 persistence = ["evorule-reactor/persistence"]
 
-# H5: evorule-server 已迁到 evorule-application 仓 core/evorule-server/
-# evorule-governance 现在是纯 lib crate,不含 bin
+# H5: evorule-server 已两次外迁 → 最终位于 evorule-server 独立仓（顶层 evorule-server/ crate）
+# evorule-governance 现在是纯 lib crate,不含任何 bin target
 # 注: evorule CLI 在本仓 workspace 内独立 crate（evorule-cli/）

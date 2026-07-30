@@ -16,9 +16,9 @@
 
 v0.1.0 走神 9 拆分后，evorule 仓聚焦「确定性执行引擎」（首发独立版）。相比 2026-07-20 生态全栈预览版：
 
-- **H5/H6 迁移**：HTTP API / io_handlers / evorule-server / metrics 全迁出至 **evorule-application 仓**，evorule 仓不再含网络 / DB / HTTP 攻击面
+- **H5/H6 + 走神 9 迁移**：HTTP API / io_handlers / evorule-server / metrics 先从 evorule-governance 迁至 evorule-application（H5/H6），**再次迁出成立 evorule-server 独立仓**（走神 9）；evorule 仓不再含网络 / DB / HTTP 攻击面
 - **引擎质量硬化**：Kani 12 proof（A-1）、clippy 0 warnings（B-1）、audit 0 CVE（B-2）
-- **P1 安全项**（H6 SSRF / H7 SQL / H8 CORS / H9 DB URL）随 io_handlers 迁至 evorule-application 仓，在该仓安全文档跟踪
+- **P1 安全项**（H6 SSRF / H7 SQL / H8 CORS / H9 DB URL）随 io_handlers 迁至 evorule-server 独立仓，在该仓安全文档跟踪
 - evo-agent 工具安全模型（file_read / shell_exec / http_get 3-layer）移至 **evo-agent 仓安全文档**
 
 ---
@@ -32,11 +32,14 @@ v0.1.0 走神 9 拆分后，evorule 仓聚焦「确定性执行引擎」（首�
 | evorule-governance | 治理层（审计 / 时间机器 / IoDispatcher 框架）     | `#![forbid(unsafe_code)]`                | tokio / tracing / blake3 / flate2 / serde / thiserror |
 | evorule-cli        | CLI 工具（run/replay/diff/validate/verify-chain） | `#![forbid(unsafe_code)]`                | serde / clap / tracing（publish=false）               |
 
-**evorule 仓不包含**（H5/H6 迁出，安全内容见对应仓）：
+**evorule 仓不包含**（H5/H6 + 走神 9 两次迁出，安全内容见对应仓）：
 
-- HTTP API / evorule-server → **见 evorule-application 仓**
-- io_handlers（DB / HTTP / Memory）→ **见 evorule-application 仓**
-- 认证中间件（Bearer token）→ **见 evorule-application 仓**
+- HTTP API / evorule-server → **见 evorule-server 独立仓**
+- io_handlers（DB / HTTP / Memory）→ **见 evorule-server 独立仓 core/io_handlers/**
+- 认证中间件（Bearer token）→ **见 evorule-server 独立仓 core/auth/**
+- Prometheus metrics 实现 → **见 evorule-server 独立仓 core/metrics/**
+- 热重载 / 时间机器 / 调试控制 / 规则工具 → **见 evorule-server 独立仓各 core/\* crate**
+- 可视化 UI / 业务规则模板 / 调试器仪表盘 → **见 evorule-application 仓**
 - evo-agent 工具（file_read / shell_exec / http_get 等）→ **见 evo-agent 仓**
 
 ---
@@ -112,15 +115,15 @@ v0.1.0 走神 9 拆分后，evorule 仓聚焦「确定性执行引擎」（首�
 
 ### 5.2 待修复（迁出 evorule 仓，在 application 仓跟踪）
 
-| ID  | 标题                           | 当前位置                                             |
-| --- | ------------------------------ | ---------------------------------------------------- |
-| H6  | http_handler 无 SSRF 防护      | `evorule-application/core/io_handlers/`（已迁出）    |
-| H7  | db_handler 无 SQL 白名单       | `evorule-application/core/io_handlers/`（已迁出）    |
-| H8  | CORS permissive                | `evorule-application/core/evorule-server/`（已迁出） |
-| H9  | DB URL 泄漏                    | `evorule-application/core/io_handlers/`（已迁出）    |
-| M1  | evorule-server HTTP API 无认证 | `evorule-application/core/evorule-server/`（已迁出） |
+| ID  | 标题                           | 当前位置                                                                      |
+| --- | ------------------------------ | ----------------------------------------------------------------------------- |
+| H6  | http_handler 无 SSRF 防护      | `evorule-server` 独立仓 `core/io_handlers/`（走神 9 再次迁出）                |
+| H7  | db_handler 无 SQL 白名单       | `evorule-server` 独立仓 `core/io_handlers/`（走神 9 再次迁出）                |
+| H8  | CORS permissive                | `evorule-server` 独立仓 `evorule-server/src/`（走神 9 再次迁出）              |
+| H9  | DB URL 泄漏                    | `evorule-server` 独立仓 `core/io_handlers/`（走神 9 再次迁出）                |
+| M1  | evorule-server HTTP API 无认证 | `evorule-server` 独立仓 `core/auth/` + `evorule-server/src/auth.rs`（走神 9） |
 
-> 上述 P1 项随 H5/H6 迁移已离开 evorule 仓，**在 `evorule-application` 仓的安全文档跟踪**，不计入 evorule 仓 v0.2.0 release-blocker。
+> 上述 P1 项随 H5/H6 迁移 + 走神 9 二次拆分已离开 evorule 仓，**在 `evorule-server` 独立仓的安全文档跟踪**，不计入 evorule 仓 v0.2.0 release-blocker。
 
 ### 5.3 v0.2.0 新增安全增强
 

@@ -14,7 +14,7 @@ $evoAgentRoot = "D:\evo-agent"
 # Project -> has binary ([[bin]] section), and the workspace root that contains its Cargo.lock
 # evorule-reactor has cdylib but no [[bin]], treat as lib
 # H5: evorule-governance 已迁出 evorule-server bin,现为纯 lib crate
-#     evorule-server 已迁至 evorule-application/core/evorule-server/(应用层独立 crate)
+#     evorule-server 已两次外迁（H5 → evorule-application → 走神 9 → evorule-server 独立仓顶层）
 # evo-agent is lib only
 # Cargo.lock for workspace crates lives at the workspace root, not the crate dir
 $projects = [ordered]@{}

@@ -6,17 +6,17 @@
 //! # 定位
 //! evorule-governance 是三层架构的最上层（纯机制层库）：
 //! - 订阅 evorule-reactor 的 event broadcast 通道，过滤 `IoRequest` 事实
-//! - 通过 IoDispatcher 框架分发 I/O（**具体 HTTP/SQLite/Memory Handler 实现已迁至 evorule-application 仓**）
+//! - 通过 IoDispatcher 框架分发 I/O（**具体 HTTP/SQLite/Memory Handler 实现已迁至 evorule-server 独立仓**）
 //! - 基于 `FactsLog` 构建审计链（BLAKE3 哈希 + 逻辑时钟）
 //! - 提供规则验证器（RuleValidator）+ 时间机器（TimeMachine: replay / rewind / fork / diff）
 //! - 提供 SessionManager：会话管理器（机制层，管理反应器实例生命周期）
 //!
-//! **H5/H6 迁移后不再包含**：HTTP API、SSE、Prometheus metrics、Bearer 认证、具体 I/O Handler 实现。
-//! 上述应用层功能全部位于 evorule-application 仓（core/evorule-server/ + core/io_handlers/）。
+//! **H5/H6 + 走神 9 两次迁移后不再包含**：HTTP API、SSE、Prometheus metrics、Bearer 认证、具体 I/O Handler 实现。
+//! 上述应用层功能全部位于 evorule-server 独立仓（evorule-server/ + core/io_handlers/ + core/auth/ + core/metrics/）。
 //!
 //! # 设计原则
 //! - **不染指控制流**：治理层完全不知道 `conditional`/`while_loop`/`sequence` 的存在
-//! - **I/O 外挂**：仅定义 IoHandler trait + IoDispatcher 框架（机制），零业务逻辑侵入；具体实现在 application 仓注入
+//! - **I/O 外挂**：仅定义 IoHandler trait + IoDispatcher 框架（机制），零业务逻辑侵入；具体实现在 evorule-server 独立仓注入
 //! - **事实总线**：所有组件通过 Fact 通信，无直接函数调用
 //!
 //! # 模块结构
@@ -37,14 +37,14 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-// H6: api 模块已迁移到 evorule-application/core/evorule-server/src/api/
+// H6: api 模块已迁移到 evorule-server 独立仓 evorule-server/src/api/
 // 核心层不再包含 HTTP API 代码（机制-策略分离）
 pub mod auditor;
 pub mod clock;
 pub mod hash;
 pub mod io_dispatcher;
 pub mod io_handler;
-// H5: io_handlers 模块已迁移到 evorule-application/core/io_handlers/(应用层)
+// H5 + 走神 9: io_handlers 具体实现已两次外迁，最终在 evorule-server 独立仓 core/io_handlers/
 // 具体 handler 实现(DbHandler/HttpHandler/MemoryHandler)不再属于核心
 pub mod io_subscriber;
 pub mod metrics;

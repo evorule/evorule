@@ -29,7 +29,7 @@ const TEST_LLM_RESPONSE: &str =
 const TEST_MEMORY_KEY: &str = "test_research_note_001";
 
 // ============================================================================
-// H5: MemoryHandler 内联实现(从 evorule-application/core/io_handlers 迁出)
+// H5 + 走神 9: MemoryHandler 内联实现(最终位于 evorule-server 独立仓 core/io_handlers/)
 // ============================================================================
 
 /// 文件系统键值存储(测试用,简化版)

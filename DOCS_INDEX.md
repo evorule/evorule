@@ -87,11 +87,12 @@
 
 ### 3.4 API 与宪章
 
-| 文档                                    | 说明                                               |
-| :-------------------------------------- | :------------------------------------------------- |
-| [constitution.md](docs/constitution.md) | 项目宪章：项目目标、技术原则、决策流程             |
-| [oss_strategy.md](docs/oss_strategy.md) | 开源策略：仓组织、贡献模型、发布模型、商业化模型   |
-| **HTTP API 文档 / CLI 子命令参考**      | 见 evorule-application 仓（evorule-server 子项目） |
+| 文档                                     | 说明                                                               |
+| :--------------------------------------- | :----------------------------------------------------------------- |
+| [constitution.md](docs/constitution.md)  | 项目宪章：项目目标、技术原则、决策流程                             |
+| [oss_strategy.md](docs/oss_strategy.md)  | 开源策略：仓组织、贡献模型、发布模型、商业化模型                   |
+| **HTTP API 文档**                        | 见 evorule-server 独立仓（`evorule-server/` + 9 个配套 lib crate） |
+| **全量应用 CLI（HTTP 调用/规则脚手架）** | 见 evorule-application 仓（evorule-app-cli 子项目）                |
 
 ---
 
@@ -122,21 +123,21 @@
 
 ### 4.2 evorule-tcb（TCB 基础层）
 
-| 文档                                                                         | 类型       | 说明                                                                                     |
-| :--------------------------------------------------------------------------- | :--------- | :--------------------------------------------------------------------------------------- |
-| [README.md](evorule-tcb/README.md)                                           | crate 介绍 | 用途、依赖、API 概览                                                                     |
-| **[TCB_SPEC.md](evorule-tcb/TCB_SPEC.md)**                                   | SPEC 规范  | **TCB 形式化规范**（数据定义 / 不变量 / 元指令语义 / 核心操作语义 / 错误语义）— **必读** |
-| [KANI.md](evorule-tcb/docs/KANI.md)                                          | 验证指引   | tier0 Kani proof 运行方式 + 常见坑（FixedMap / unwind 参数）                             |
-| [MUTANTS.md](evorule-tcb/docs/MUTANTS.md)                                    | 验证指引   | Mutagen 变异测试配置 + 结果解读                                                          |
-| [tla/TLC_VERIFICATION_REPORT.md](evorule-tcb/tla/TLC_VERIFICATION_REPORT.md) | 验证报告   | tier0 TLA+ 模型检查结果（execute_transition 确定性 + 终止性）                            |
+| 文档                                                                         | 类型       | 说明                                                                                                                                                                                                             |
+| :--------------------------------------------------------------------------- | :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [README.md](evorule-tcb/README.md)                                           | crate 介绍 | 用途、依赖、API 概览                                                                                                                                                                                             |
+| **[TCB_SPEC.md](evorule-tcb/TCB_SPEC.md)**                                   | SPEC 规范  | **TCB 形式化规范**（数据定义 / 不变量 / 元指令语义 / 核心操作语义 / 错误语义）— **必读** · [![crates.io](https://img.shields.io/crates/v/evorule-tcb.svg?label=crates.io)](https://crates.io/crates/evorule-tcb) |
+| [KANI.md](evorule-tcb/docs/KANI.md)                                          | 验证指引   | tier0 Kani proof 运行方式 + 常见坑（FixedMap / unwind 参数）                                                                                                                                                     |
+| [MUTANTS.md](evorule-tcb/docs/MUTANTS.md)                                    | 验证指引   | Mutagen 变异测试配置 + 结果解读                                                                                                                                                                                  |
+| [tla/TLC_VERIFICATION_REPORT.md](evorule-tcb/tla/TLC_VERIFICATION_REPORT.md) | 验证报告   | tier0 TLA+ 模型检查结果（execute_transition 确定性 + 终止性）                                                                                                                                                    |
 
 ### 4.3 evorule-reactor（反应器层）
 
-| 文档                                                   | 类型       | 说明                                                                                          |
-| :----------------------------------------------------- | :--------- | :-------------------------------------------------------------------------------------------- |
-| [README.md](evorule-reactor/README.md)                 | crate 介绍 | 反应器用途、组件、依赖关系                                                                    |
-| **[REACTOR_SPEC.md](evorule-reactor/REACTOR_SPEC.md)** | SPEC 规范  | **反应器规范**（生命周期 / 通道语义 / 不变量 / 稳定状态检测 / WAL 格式 / FFI 契约）— **必读** |
-| [KANI.md](evorule-reactor/docs/KANI.md)                | 验证指引   | tier1 Kani proof 运行方式 + 6 个 proof 清单（CI 跑 3 简单 + 3 复杂 proptest 兜底）            |
+| 文档                                                   | 类型       | 说明                                                                                                                                                                                                                          |
+| :----------------------------------------------------- | :--------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [README.md](evorule-reactor/README.md)                 | crate 介绍 | 反应器用途、组件、依赖关系                                                                                                                                                                                                    |
+| **[REACTOR_SPEC.md](evorule-reactor/REACTOR_SPEC.md)** | SPEC 规范  | **反应器规范**（生命周期 / 通道语义 / 不变量 / 稳定状态检测 / WAL 格式 / FFI 契约）— **必读** · [![crates.io](https://img.shields.io/crates/v/evorule-reactor.svg?label=crates.io)](https://crates.io/crates/evorule-reactor) |
+| [KANI.md](evorule-reactor/docs/KANI.md)                | 验证指引   | tier1 Kani proof 运行方式 + 6 个 proof 清单（CI 跑 3 简单 + 3 复杂 proptest 兜底）                                                                                                                                            |
 
 ### 4.4 evorule-governance（治理层机制）
 

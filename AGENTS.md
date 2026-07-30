@@ -107,8 +107,12 @@ LLM 不得主动提议或添加任何违背 evorule 规范要求的内容/功能
 ## 与其他项目的关系
 
 - **evo-agent** (**evo-agent 仓**,与本仓为兄弟仓):用 evorule 的 AI agent 编排层。它是应用,不是核心。
-- **evorule-application** (**evorule-application 仓**,与本仓为兄弟仓):可视化 / 调试器 / 仪表盘等的应用集合。
-  - **H5**: `evorule-server` 和 `evorule-io-handlers` 已从 evorule-governance 迁至此处(`core/evorule-server/`、`core/io_handlers/`)。evorule-governance 现为纯 lib crate,IoHandler trait 下沉到 evorule-reactor。
+- **evorule-application** (**evorule-application 仓**,与本仓为兄弟仓):可视化 / 调试器 / 仪表盘 / 业务规则模板等的应用集合。
+- **evorule-server** (**evorule-server 仓**,与本仓为兄弟仓,走神 9 独立拆分):官方 HTTP server 实现,暴露 evorule 核心能力为远程 API。承载:
+  - `evorule-server` 独立二进制(axum HTTP + SSE + Session 管理)
+  - `core/io_handlers/`(DbHandler / HttpHandler / MemoryHandler 具体实现)
+  - `core/auth`、`core/metrics`、`core/hot_reload`、`core/time_machine`、`core/debug_control`、`core/rule_tools`、`core/semantic_invariants` 共 7 个 server 配套 lib
+  - 从 evorule-governance 迁出(H5)→ 从 evorule-application 再次迁出(走神 9)
 - **evorule-sdk**:多语言客户端 SDK 独立仓。所有 SDK 都在外面,核心仓不含 SDK。
 - **evorule-tcb / evorule-reactor / evorule-governance**:evorule 的三个 crate,**都属于核心**。G8 门控("反应器/治理层不得展开控制流")必须保留。
   - **H5**: evorule-governance 已移除具体 I/O handler(DbHandler/HttpHandler/MemoryHandler)和 evorule-server bin,现为纯机制层库(IoDispatcher 框架 + IoHandler trait re-export)。
@@ -117,7 +121,6 @@ LLM 不得主动提议或添加任何违背 evorule 规范要求的内容/功能
   - 不引入新功能、不引入业务逻辑、不引入特定 I/O handler
   - 判断标准:这个功能 evorule-reactor 已经有了吗?有就可以包,没有就不能加
   - 扩展功能通过 Git 风格子命令发现机制实现(`evorule-xxx` 外部二进制)
-- **evorule-server**(H5 迁移):独立二进制服务入口,**属于应用层**,位于 **evorule-application 仓**(`core/evorule-server/` 子目录)。不在 evorule 核心 workspace 中,需克隆 evorule-application 仓后在该目录下独立 `cargo build`/`cargo run`。
 
 ## 版本与发布
 
@@ -150,8 +153,9 @@ LLM 不得主动提议或添加任何违背 evorule 规范要求的内容/功能
 - PowerShell 5.1 + 无 BOM UTF-8 文件 = GBK 误读。**用 `add-spdx-safe.ps1` 加 SPDX 头,不要用 `Get-Content -Raw`**。服务器中文日志乱码也是此因,用 `pwsh` 或 `chcp 65001` 可缓解
 - PowerShell 通过 cmd 调用时 `$` 变量会被外层 shell 吞掉(如 `powershell -Command "$h=@{}"` 失败)。**复杂脚本写 `.ps1` 文件再用 `-File` 执行**
 - `cargo run` 在 sandbox 下输出的 exe 不在 `target/release/`,而在 `.build/rust/release/`。**用 `cargo run` 直接运行,不要手动找 exe**
-- **H5**: evorule-server 已迁至 **evorule-application 仓**(`core/evorule-server/` 子目录),**不在核心 workspace 中**。运行方式:先克隆 evorule-application 仓,再在该仓 `core/evorule-server/` 目录下 `cargo run -- --addr 127.0.0.1:18080`(需先 `cargo build` 生成 Cargo.lock)。
-- 二进制名用连字符(`evorule-server`),源文件名用下划线(`evorule_server.rs`)。**H5 后 evorule-server 在应用层,源文件为 `evorule-application/core/evorule-server/src/main.rs`**
+- **H5 + 走神 9**: evorule-server 已两次外迁,现位于 **evorule-server 独立仓**(兄弟仓,顶层直接 workspace build),**不在核心 workspace 中**。
+  - 运行方式:先克隆 evorule-server 仓(与 evorule 同级目录),再在 evorule-server 仓顶层 `cargo run --bin evorule-server -- --addr 127.0.0.1:18080`
+- 二进制名用连字符(`evorule-server`),源文件 `evorule-server/src/main.rs`(evorule-server 独立仓顶层 crate)。
 - evorule-server 默认监听 `0.0.0.0:18080`(非 loopback)。**测试时加 `--addr 127.0.0.1:18080`**
 - 集成测试(`tests/integration_test.rs`)的 3 个 mock-LLM FAIL **已修复**(2026-07-20)
 - tier1/ffi.rs 允许 unsafe(标了 `#![allow(unsafe_code)]`),其他 crate 必须 `#![forbid(unsafe_code)]`

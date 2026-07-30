@@ -185,7 +185,7 @@ git push github main --tags
 ### 已知问题
 
 - P1 HIGH 安全修复未完成（H6 SSRF / H7 SQL / H8 CORS / H9 DB URL）
-- Dockerfile 已失效（evorule-server 已迁至 evorule-application）
+- Dockerfile 已失效（evorule-server 已迁至 evorule-server 独立仓，原路径已无用）
 - macOS 不支持
 
 ### 平台支持
