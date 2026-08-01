@@ -23,15 +23,15 @@
 //! | 5 | `InvalidType` | `exec_set` add 当前/值为非 integer |
 //! | 6 | `PathResolutionFailed` | `exec_set` value="__nonexistent__.x" 路径解析失败 |
 //! | 7 | `NestingTooDeep` | 65 层嵌套 branch |
-//! | 8 | `EmptyInstructionList` | `exec_push` params.instructions 为空 |
+//! | 8 | `EmptyInstructionList` | 保留枚举变体（push 空列表已改为 no-op，不再触发） |
 //! | 9 | `IntegerOverflow` | `exec_set` add `i64::MAX` + 1 / sub `i64::MIN` - 1 |
 //! | 10 | `TooManyTransformRules` | `execute_transition` 入口 core_eval.len() > 64 |
 //!
 //! 所有测试通过公共入口 `execute_meta_instruction` / `execute_transition` 触发。
 
-use std::collections::BTreeMap;
 use evorule_tcb::executor::execute_meta_instruction;
 use evorule_tcb::{execute_transition, JsonValue, TcbError, MAX_TRANSFORM_RULES};
+use std::collections::BTreeMap;
 
 // =============================================================================
 // Test helpers (类似 executor.rs mod tests 中的 helper，独立于该模块)
@@ -129,7 +129,7 @@ fn trigger_unknown_operation() {
 
 #[test]
 fn trigger_invalid_state_when_queue_not_array() {
-    // queue 不是 Array，但 instructions 非空，让 InvalidState 在 EmptyInstructionList 之后触发
+    // queue 不是 Array，但 instructions 非空，让 resolve_instructions_list 通过后触发 InvalidState
     let mut exec = BTreeMap::new();
     exec.insert("payload".to_string(), JsonValue::Null);
     exec.insert("queue".to_string(), JsonValue::string("not an array"));
@@ -311,12 +311,13 @@ fn trigger_nesting_too_deep() {
 }
 
 // =============================================================================
-// 8. EmptyInstructionList
+// 8. EmptyInstructionList (已改为 no-op，不再触发)
 // =============================================================================
 
 #[test]
-fn trigger_empty_instruction_list() {
-    let state = state_with_queue(JsonValue::Null, vec![]);
+fn push_empty_list_is_noop_not_error() {
+    // push 空指令列表现为 no-op（支持 conditional 的 else: [] 合法模式）
+    let state = state_with_queue(payload_int(0), vec![]);
     let instr = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("push")),
         (
@@ -325,10 +326,8 @@ fn trigger_empty_instruction_list() {
         ),
     ]);
     let result = execute_meta_instruction(&instr, state, 0);
-    match result {
-        Err(TcbError::EmptyInstructionList) => {}
-        other => panic!("expected EmptyInstructionList, got {other:?}"),
-    }
+    // 应返回 Ok（state 不变），而非 Err(EmptyInstructionList)
+    assert!(result.is_ok(), "expected Ok, got {result:?}");
 }
 
 // =============================================================================

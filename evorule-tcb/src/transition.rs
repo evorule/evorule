@@ -87,7 +87,7 @@ pub enum TransitionResult {
 /// - `TcbError::PathResolutionFailed`：`core_eval` 中路径解析失败
 ///
 /// 其他错误（`MissingField`、`UnknownMetaInstruction`、`UnknownOperation`、
-/// `InvalidType`、`NestingTooDeep`、`EmptyInstructionList`、`IntegerOverflow`）
+/// `InvalidType`、`NestingTooDeep`、`EmptyInstructionList`(保留变体)、`IntegerOverflow`）
 /// 由底层 `execute_meta_instruction` 透传。
 ///
 /// # 代码示例

@@ -18,6 +18,7 @@ use crate::domain::evaluate_domain;
 use crate::error::TcbError;
 use crate::path::{resolve_path, resolve_path_mut};
 use crate::value::{JsonValue, ObjectMap};
+use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -63,7 +64,7 @@ pub enum MetaInstructionResult {
 /// - `TcbError::InvalidType`：类型不匹配（如 `add` 遇到非整数）
 /// - `TcbError::PathResolutionFailed`：路径解析失败
 /// - `TcbError::NestingTooDeep`：`branch` 嵌套深度超限（最大 64 层）
-/// - `TcbError::EmptyInstructionList`：`push` 空列表、`branch` 空分支
+/// - `TcbError::EmptyInstructionList`：保留枚举变体（`push` 空列表和 `branch` 空分支均为 no-op，不再触发）
 /// - `TcbError::IntegerOverflow`：`add`/`sub` 超出 i64 范围
 ///
 /// # 代码示例
@@ -182,6 +183,21 @@ fn resolve_path_or_literal(
     }
 }
 
+/// 返回 `JsonValue` 的小写类型名，用于错误诊断。
+///
+/// 仅用于丰富 `PathResolutionFailed` 的错误上下文（哪一段、实际是什么类型），
+/// 不参与控制流，零依赖、`no_std` 安全。
+fn json_type_name(v: &JsonValue) -> &'static str {
+    match v {
+        JsonValue::Null => "null",
+        JsonValue::Bool(_) => "boolean",
+        JsonValue::Integer(_) => "integer",
+        JsonValue::String(_) => "string",
+        JsonValue::Array(_) => "array",
+        JsonValue::Object(_) => "object",
+    }
+}
+
 /// set 元指令：修改 payload 字段
 ///
 /// `attr` 和 `value` 都支持路径引用（`__` 开头的字符串自动解析）。
@@ -204,29 +220,54 @@ pub(crate) fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonVa
     let value = resolve_path_or_literal(&state, params.get("value"))?;
 
     let parts: Vec<&str> = attr.split('.').collect();
-    if parts.is_empty() || parts.first() == Some(&"") {
-        return Err(TcbError::PathResolutionFailed(attr.to_string()));
+    if parts.is_empty() || parts.iter().any(|p| p.is_empty()) {
+        return Err(TcbError::PathResolutionFailed(format!(
+            "{attr}: path contains empty segment"
+        )));
     }
 
     let field = *parts
         .last()
         .ok_or(TcbError::PathResolutionFailed(attr.to_string()))?;
 
+    // 解析 __exec__.payload 根节点（两个分支共用，hoist 出去避免重复获取）
+    let payload = resolve_path_mut(&mut state, "__exec__.payload").ok_or_else(|| {
+        TcbError::PathResolutionFailed(format!("{attr}: __exec__.payload not found"))
+    })?;
+    let payload_ty = json_type_name(payload);
+
     let parent_obj = if parts.len() == 1 {
-        resolve_path_mut(&mut state, "__exec__.payload")
-            .and_then(|v| v.as_object_mut())
-            .ok_or(TcbError::PathResolutionFailed(attr.to_string()))?
+        payload.as_object_mut().ok_or_else(|| {
+            TcbError::PathResolutionFailed(format!(
+                "{attr}: __exec__.payload is {payload_ty}, expected object"
+            ))
+        })?
     } else {
-        let mut current = resolve_path_mut(&mut state, "__exec__.payload")
-            .and_then(|v| v.as_object_mut())
-            .ok_or(TcbError::PathResolutionFailed(attr.to_string()))?;
+        let mut current = payload.as_object_mut().ok_or_else(|| {
+            TcbError::PathResolutionFailed(format!(
+                "{attr}: __exec__.payload is {payload_ty}, expected object"
+            ))
+        })?;
 
         for &part in parts
             .get(0..parts.len() - 1)
             .ok_or(TcbError::PathResolutionFailed(attr.to_string()))?
         {
-            if !current.contains_key(part) {
-                current.insert(part.to_string(), JsonValue::empty_object());
+            // 中间节点缺失或为 null 时，自动创建空对象
+            // （允许 set("a.b.c") 在 a 被置 null 后仍能写入）。
+            // 中间节点为其他非对象类型（integer/string/array/bool）时返回错误——
+            // 静默覆盖会掩盖规则定义 bug，TCB 应显式暴露路径上的类型冲突。
+            match current.get(part) {
+                None | Some(JsonValue::Null) => {
+                    current.insert(part.to_string(), JsonValue::empty_object());
+                }
+                Some(JsonValue::Object(_)) => {} // 已是对象，直接 descend
+                Some(other) => {
+                    return Err(TcbError::PathResolutionFailed(format!(
+                        "{attr}: intermediate segment '{part}' is {}, expected object",
+                        json_type_name(other)
+                    )))
+                }
             }
 
             current = current
@@ -268,10 +309,12 @@ pub(crate) fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonVa
 ///
 /// 顶层值如果是路径引用字符串，先解析为数组；
 /// 然后遍历数组元素，如果元素是 `__` 开头的字符串，解析为路径引用。
+/// **路径引用解析为数组时自动展平**（支持 `body`/`then`/`else` 为指令列表）。
 /// 这样 `core_eval.json` 可以写：
 /// ```json
-/// "instructions": ["__exec__.instruction.params.then"]
+/// "instructions": ["__exec__.instruction.params.body", "__exec__.instruction"]
 /// ```
+/// 其中 `body` 可以是单个指令对象或指令数组，两种情况都能正确推入队列。
 fn resolve_instructions_list(
     state: &JsonValue,
     val: Option<&JsonValue>,
@@ -286,7 +329,13 @@ fn resolve_instructions_list(
                 let resolved = resolve_path(state, s)
                     .cloned()
                     .ok_or_else(|| TcbError::PathResolutionFailed(s.clone()))?;
-                result.push(resolved);
+                // 路径引用解析为数组时展平（支持 body/then/else 为指令列表），
+                // 解析为单个对象时直接 push（向后兼容单指令 body 场景）。
+                if let JsonValue::Array(inner) = resolved {
+                    result.extend(inner);
+                } else {
+                    result.push(resolved);
+                }
             }
             _ => result.push(item.clone()),
         }
@@ -299,6 +348,8 @@ fn resolve_instructions_list(
 /// `instructions` 支持两种形式：
 /// 1. 路径引用字符串（如 `"__exec__.instruction.params.instructions"`）→ 解析为数组
 /// 2. 字面数组，元素可以是路径引用或字面指令对象
+///
+/// 空指令列表视为 no-op（如 conditional 的 else 分支为空数组），不返回错误。
 fn exec_push(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbError> {
     let params = instr
         .get("params")
@@ -306,8 +357,9 @@ fn exec_push(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbEr
 
     let instructions = resolve_instructions_list(&state, params.get("instructions"))?;
 
+    // 空指令列表 = no-op（conditional 的 else: [] 是合法模式）
     if instructions.is_empty() {
-        return Err(TcbError::EmptyInstructionList);
+        return Ok(state);
     }
 
     let queue = resolve_path_mut(&mut state, "__exec__.queue")
@@ -1104,6 +1156,88 @@ mod tests {
     }
 
     #[test]
+    fn test_set_nested_attr_through_null_intermediate() {
+        // 测试：set a.b.c 当 a 已存在但值为 null 时，应自动替换为空对象
+        // 场景：hotload_patch 把 audit.evolve_request 设为 null 后，
+        //       evolution_scanner 再次 set audit.evolve_request.reason 应成功
+        let mut payload = BTreeMap::new();
+        let mut audit = BTreeMap::new();
+        audit.insert("evolve_request".to_string(), JsonValue::Null);
+        payload.insert("audit".to_string(), JsonValue::Object(audit));
+        let state = make_exec_state_with_instruction(
+            JsonValue::object_from_pairs(&[("type", JsonValue::string("evolution_scanner"))]),
+            JsonValue::Object(payload),
+            vec![],
+        );
+
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("set")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("attr", JsonValue::string("audit.evolve_request.reason")),
+                    ("operation", JsonValue::string("set")),
+                    ("value", JsonValue::string("test reason")),
+                ]),
+            ),
+        ]);
+
+        let result = exec_set(&instr, state).unwrap();
+        let reason = resolve_path(&result, "__exec__.payload.audit.evolve_request.reason");
+        assert_eq!(reason.and_then(|v| v.as_str()), Some("test reason"));
+    }
+
+    #[test]
+    fn test_set_nested_attr_through_scalar_intermediate_errors() {
+        // 测试：set a.b.c 当 a 是非对象标量（如 integer）时，应返回 PathResolutionFailed，
+        // 而非静默覆盖标量值。TCB 应显式暴露路径上的类型冲突，避免掩盖规则定义 bug。
+        let mut payload = BTreeMap::new();
+        let mut audit = BTreeMap::new();
+        audit.insert("evolve_request".to_string(), JsonValue::Integer(42));
+        payload.insert("audit".to_string(), JsonValue::Object(audit));
+        let state = make_exec_state_with_instruction(
+            JsonValue::object_from_pairs(&[("type", JsonValue::string("evolution_scanner"))]),
+            JsonValue::Object(payload),
+            vec![],
+        );
+
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("set")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("attr", JsonValue::string("audit.evolve_request.reason")),
+                    ("operation", JsonValue::string("set")),
+                    ("value", JsonValue::string("test reason")),
+                ]),
+            ),
+        ]);
+
+        let result = exec_set(&instr, state);
+        match result {
+            Err(TcbError::PathResolutionFailed(msg)) => {
+                // 诊断上下文应包含：失败路径、出问题的中间段、实际类型、期望类型
+                assert!(
+                    msg.contains("evolve_request"),
+                    "message should name the failing segment, got: {msg}"
+                );
+                assert!(
+                    msg.contains("integer"),
+                    "message should name the actual type, got: {msg}"
+                );
+                assert!(
+                    msg.contains("object"),
+                    "message should name the expected type, got: {msg}"
+                );
+            }
+            other => panic!("expected PathResolutionFailed, got {other:?}"),
+        }
+
+        // 原值不被破坏由结构保证：错误在中间节点循环里 `return Err` 提前返回，
+        // 不会到达末尾 `parent_obj.insert(field, new_value)`，因此 42 不会被覆盖。
+    }
+
+    #[test]
     fn test_set_operation_sub_basic() {
         // 测试：sub 基本减法
         let state = make_exec_state("set", make_payload(10), vec![]);
@@ -1192,9 +1326,10 @@ mod tests {
     }
 
     #[test]
-    fn test_push_empty_list_returns_error() {
-        // 测试：push 空指令列表应返回错误
-        let state = make_exec_state("sequence", make_payload(0), vec![]);
+    fn test_push_empty_list_is_noop() {
+        // 测试：push 空指令列表应为 no-op（conditional 的 else: [] 是合法模式）
+        let existing = make_instruction_simple("old_op", 0);
+        let state = make_exec_state("sequence", make_payload(0), vec![existing]);
         let instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("push")),
             (
@@ -1203,8 +1338,12 @@ mod tests {
             ),
         ]);
 
-        let result = exec_push(&instr, state);
-        assert!(matches!(result, Err(TcbError::EmptyInstructionList)));
+        let result = exec_push(&instr, state).unwrap();
+        // 空列表不修改队列，原有指令仍在
+        let queue = resolve_path(&result, "__exec__.queue").unwrap();
+        let arr = queue.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0].get("type").and_then(|v| v.as_str()), Some("old_op"));
     }
 
     fn make_instruction_simple(instr_type: &str, value: i64) -> JsonValue {
@@ -1518,6 +1657,83 @@ mod tests {
     }
 
     #[test]
+    fn test_push_instructions_with_array_body_flattened() {
+        // 测试 core_eval.json 的 while_loop 映射，body 为指令数组：
+        // "instructions": ["__exec__.instruction.params.body", "__exec__.instruction"]
+        // 当 body 是数组时，应展平为多条指令，而非作为单个数组元素推入队列。
+        let body_array = JsonValue::array(vec![
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("increment")),
+                (
+                    "params",
+                    JsonValue::object_from_pairs(&[
+                        ("attr", JsonValue::string("x")),
+                        ("delta", JsonValue::Integer(1)),
+                    ]),
+                ),
+            ]),
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("set")),
+                (
+                    "params",
+                    JsonValue::object_from_pairs(&[
+                        ("attr", JsonValue::string("y")),
+                        ("operation", JsonValue::string("set")),
+                        ("value", JsonValue::Integer(42)),
+                    ]),
+                ),
+            ]),
+        ]);
+        let while_instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("while_loop")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("body", body_array),
+                    (
+                        "condition",
+                        JsonValue::object_from_pairs(&[
+                            ("type", JsonValue::string("lt")),
+                            ("path", JsonValue::string("__exec__.payload.x")),
+                            ("value", JsonValue::Integer(10)),
+                        ]),
+                    ),
+                ]),
+            ),
+        ]);
+        let state = make_exec_state_with_instruction(while_instr, make_payload(0), vec![]);
+
+        let push_instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("push")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[(
+                    "instructions",
+                    JsonValue::array(vec![
+                        JsonValue::string("__exec__.instruction.params.body"),
+                        JsonValue::string("__exec__.instruction"),
+                    ]),
+                )]),
+            ),
+        ]);
+
+        let result = exec_push(&push_instr, state).unwrap();
+        let queue = resolve_path(&result, "__exec__.queue").unwrap();
+        let arr = queue.as_array().unwrap();
+        // body 有 2 条指令，展平后 + while_loop 本身 = 3
+        assert_eq!(arr.len(), 3);
+        assert_eq!(
+            arr[0].get("type").and_then(|v| v.as_str()),
+            Some("increment")
+        );
+        assert_eq!(arr[1].get("type").and_then(|v| v.as_str()), Some("set"));
+        assert_eq!(
+            arr[2].get("type").and_then(|v| v.as_str()),
+            Some("while_loop")
+        );
+    }
+
+    #[test]
     fn test_push_instructions_with_literal_object() {
         // 测试 core_eval.json 的 while_loop on_false 映射：
         // "instructions": [{"type": "noop"}]
@@ -1717,8 +1933,12 @@ mod tests {
 
         let result = exec_set(&instr, state);
         match &result {
-            Err(TcbError::PathResolutionFailed(s)) if s == "x." => {}
-            _ => panic!("expected PathResolutionFailed(\"x.\"), got {:?}", result),
+            Err(TcbError::PathResolutionFailed(s))
+                if s.starts_with("x.") && s.contains("empty segment") => {}
+            _ => panic!(
+                "expected PathResolutionFailed(\"x.: ...\"), got {:?}",
+                result
+            ),
         }
     }
 
@@ -1741,8 +1961,12 @@ mod tests {
 
         let result = exec_set(&instr, state);
         match &result {
-            Err(TcbError::PathResolutionFailed(s)) if s == ".y" => {}
-            _ => panic!("expected PathResolutionFailed(\".y\"), got {:?}", result),
+            Err(TcbError::PathResolutionFailed(s))
+                if s.starts_with(".y") && s.contains("empty segment") => {}
+            _ => panic!(
+                "expected PathResolutionFailed(\".y: ...\"), got {:?}",
+                result
+            ),
         }
     }
 

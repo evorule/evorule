@@ -861,7 +861,7 @@ impl Reactor {
         } else {
             let mut current = &mut state.payload;
 
-            for &part in &parts[0..parts.len() - 1] {
+            for &part in parts.get(..parts.len() - 1).unwrap_or(&[]) {
                 if let JsonValue::Object(map) = current {
                     if !map.contains_key(part) {
                         map.insert(part.to_string(), JsonValue::empty_object());

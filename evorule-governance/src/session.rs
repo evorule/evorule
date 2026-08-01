@@ -712,6 +712,29 @@ impl SessionManager {
         Ok(session_id)
     }
 
+    /// 返回当前已加载的 transform 规则列表（只读）
+    ///
+    /// 用于 Portal API、reload API 返回当前生效的 transform 长度/内容。
+    pub fn core_eval(&self) -> &[JsonValue] {
+        &self.core_eval
+    }
+
+    /// 原子替换用于创建**新**会话的 transform 规则列表。
+    ///
+    /// 已经存在的会话（已 spawn 的 Reactor）其 core_eval 已被 clone 进 Reactor，
+    /// 不受此调用影响，保证确定性/TCB 不可变语义。
+    ///
+    /// 返回旧的 core_eval（调用方可按需记录）。
+    pub fn replace_core_eval(&mut self, new_core_eval: Vec<JsonValue>) -> Vec<JsonValue> {
+        let old = std::mem::replace(&mut self.core_eval, new_core_eval);
+        tracing::info!(
+            old_rules = old.len(),
+            new_rules = self.core_eval.len(),
+            "SessionManager core_eval replaced (only new sessions will use new rules)"
+        );
+        old
+    }
+
     /// 更新会话的最后活动时间（每次访问会话时调用）
     pub fn touch_session(&self, id: SessionId) {
         let shard = self.get_shard(id);

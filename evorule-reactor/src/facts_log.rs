@@ -712,7 +712,10 @@ impl FactsLog {
             .next()
             .map(|(_, &idx)| idx)
             .unwrap_or(inner.history.len());
-        inner.history[start..]
+        inner
+            .history
+            .get(start..)
+            .unwrap_or(&[])
             .iter()
             .map(|(_, f)| f.clone())
             .collect()
@@ -772,7 +775,9 @@ impl FactsLog {
         let inner = self.inner.read();
         let history = &inner.history;
         let start = history.len().saturating_sub(n);
-        history[start..]
+        history
+            .get(start..)
+            .unwrap_or(&[])
             .iter()
             .map(|(v, f)| (*v, f.clone()))
             .collect()
@@ -935,7 +940,7 @@ impl Default for FactsLog {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
-    #![allow(clippy::panic, clippy::expect_used)]
+    #![allow(clippy::panic, clippy::expect_used, clippy::indexing_slicing)]
     use super::*;
     use crate::fact::{FactId, IoType};
 
