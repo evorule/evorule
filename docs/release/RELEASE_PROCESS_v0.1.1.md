@@ -18,6 +18,7 @@
 - 本仓文档**只管好自己仓的真实情况**，诚实说明。
 - 如依赖其他仓，最多说明"依赖哪个仓哪个版本"，不谈论其内部结构、运行方式或发布情况。
 - 发布流程只覆盖本仓的验证、打 tag、推送。下游仓库的版本同步由各仓自行管理。
+- **分支策略**：`main` 为发布分支（tag 从 main 打），`dev/wip` 为开发分支。发布前将 dev/wip 合并到 main。
 
 ---
 
@@ -152,6 +153,8 @@ git push origin main --tags
 
 ## 6. 同步到 GitHub（镜像仓）
 
+> **暂缓**：GitHub 镜像仓尚未配置，本节留作以后稳定了再执行。当前仅发布到 Gitee。
+
 ```bash
 # 推送 main 分支 + tag
 git push github main --tags
@@ -165,6 +168,8 @@ git push github main --tags
 - `audit.yml`：依赖安全审计 ✅
 
 ## 7. 创建 GitHub Release
+
+> **暂缓**：与 §6 同步，GitHub 镜像仓配置后执行。
 
 在 GitHub 镜像仓的 Releases 页面创建 Release：
 
@@ -183,17 +188,17 @@ pwsh scripts/validate-all.ps1
 此命令会用默认严格模式运行 7 项检查（gate-bypass + 5 validate 脚本 + check_doc_safety）。`validate-release.ps1` 会检查 tag `v0.1.1` 存在且无更大 tag。
 
 ```bash
-# 2. 确认 tag 在两个仓库都存在
+# 2. 确认 tag 在仓库存在
 git tag -l v0.1.1                    # 本地
 git ls-remote --tags origin v0.1.1   # Gitee
-git ls-remote --tags github v0.1.1   # GitHub
+# GitHub: 暂缓（镜像仓未配置）
 
-# 3. 确认 CI 全绿（两个仓库）
+# 3. 确认 CI 全绿
 # Gitee: 访问 Gitee CI 页面确认 validate.yml 通过
-# GitHub: gh run list --workflow=ci.yml
+# GitHub: 暂缓（镜像仓未配置）
 
-# 4. 确认 GitHub Release 已创建
-gh release view v0.1.1
+# 4. 确认 GitHub Release 已创建（暂缓，镜像仓未配置）
+# gh release view v0.1.1
 
 # 5. 确认 cargo audit 报告已归档
 ls -la audit-report-v0.1.1/
