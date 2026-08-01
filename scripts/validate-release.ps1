@@ -2,7 +2,12 @@
 # validate-release.ps1
 # VERSION_STRATEGY.md 4.5, 10.1
 # Release-time check: git tag matches + pre-release identifier + tag format
+# 各仓独立发布:只校验本仓 git tag,不查兄弟仓
 # Exit code: 0 = pass, 1 = fail
+#
+# 时序说明:
+#   - 发布前就绪检查:用 -SkipTagCheck 跳过 tag 存在性检查(此时 tag 尚未创建)
+#   - 发布后验证(默认):tag 必须存在,且与 Cargo.toml version 一致
 
 [CmdletBinding()]
 param(
@@ -33,20 +38,45 @@ try {
         Write-Host "[INFO] Pre-release identifier: $preRelease" -ForegroundColor Cyan
     }
 
-    # 2. git tag match
+    # 2. git tag match — tag 不存在 FAIL(默认);-SkipTagCheck 跳过(发布前就绪检查用)
     if (-not $SkipTagCheck) {
         $tagName = "v$currentVersion"
         $tagExists = git tag --list $tagName
         if ($tagExists) {
             Write-Host "[OK]   git tag '$tagName' exists" -ForegroundColor Green
         } else {
-            Write-Host "[WARN] git tag '$tagName' does not exist (use 'git tag $tagName' to create)" -ForegroundColor Yellow
+            Write-Host "[FAIL] git tag '$tagName' does not exist — 发布验证要求 tag 已创建(用 'git tag $tagName' 创建;发布前就绪检查用 -SkipTagCheck 跳过)" -ForegroundColor Red
+            $failed = $true
         }
+
+        # 新增:不应有比当前版本更大的已发布 tag(说明 Cargo.toml 版本号落后于已发布 tag)
+        # 拦住"打了 v0.1.2 tag 但 Cargo.toml 还停在 0.1.1"的问题
+        $cm = [int]$Matches[1]; $cn = [int]$Matches[2]; $cp = [int]$Matches[3]
+        $allVersionTags = @(git tag --list 'v*' 2>$null | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' })
+        $futureTags = @()
+        foreach ($t in $allVersionTags) {
+            if ($t -match '^v(\d+)\.(\d+)\.(\d+)$') {
+                $tm = [int]$Matches[1]; $tn = [int]$Matches[2]; $tp = [int]$Matches[3]
+                $tagGreater = $false
+                if ($tm -gt $cm) { $tagGreater = $true }
+                elseif ($tm -eq $cm -and $tn -gt $cn) { $tagGreater = $true }
+                elseif ($tm -eq $cm -and $tn -eq $cn -and $tp -gt $cp) { $tagGreater = $true }
+                if ($tagGreater) { $futureTags += $t }
+            }
+        }
+        if ($futureTags.Count -gt 0) {
+            Write-Host "[FAIL] 存在比 Cargo.toml version ($cm.$cn.$cp) 更大的已发布 tag: $($futureTags -join ', ') — Cargo.toml 版本号落后于已发布 tag" -ForegroundColor Red
+            $failed = $true
+        } else {
+            Write-Host "[OK]   无比当前版本更大的已发布 tag(版本号未落后)" -ForegroundColor Green
+        }
+    } else {
+        Write-Host "[INFO] -SkipTagCheck set, skipping tag existence/consistency check (pre-release readiness)" -ForegroundColor DarkGray
     }
 
     # 3. Version tags format check (only check 'v'-prefixed tags)
     # Non-version tags (e.g. checkpoint-*) are development markers, not releases
-    $allTags = git tag --list
+    $allTags = @(git tag --list 2>$null)
     if ($allTags.Count -eq 0) {
         Write-Host "[INFO] No git tags yet" -ForegroundColor Cyan
     } else {

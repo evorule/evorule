@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env pwsh
+#!/usr/bin/env pwsh
 # validate-license.ps1
 # Check: LICENSE file + AGPL/CC0 identifier + .rs SPDX header + SDK license field
 # Exit code: 0 = pass, 1 = fail
@@ -8,15 +8,13 @@ param()
 
 $ErrorActionPreference = "Stop"
 $evoruleRoot = Split-Path -Parent $PSScriptRoot
-$evoAgentRoot = "D:\evo-agent"
 
 $failed = $false
 Write-Host "`n=== License Validation ===" -ForegroundColor Cyan
 
-# 1. LICENSE file + AGPL content
+# 1. LICENSE file + AGPL content(各仓独立发布:仅校验本仓)
 $licenseChecks = @(
-    @{ Name = 'evorule';     Path = "$evoruleRoot\LICENSE" },
-    @{ Name = 'evo-agent';   Path = "$evoAgentRoot\LICENSE" }
+    @{ Name = 'evorule';     Path = "$evoruleRoot\LICENSE" }
 )
 foreach ($p in $licenseChecks) {
     if (-not (Test-Path $p.Path)) {
@@ -58,12 +56,11 @@ if (Test-Path $pyToml) {
     }
 }
 
-# 4. .rs files SPDX header
+# 4. .rs files SPDX header(各仓独立发布:仅校验本仓 src)
 $rsDirs = @(
     "$evoruleRoot\evorule-tcb\src",
     "$evoruleRoot\evorule-reactor\src",
-    "$evoruleRoot\evorule-governance\src",
-    "$evoAgentRoot\src"
+    "$evoruleRoot\evorule-governance\src"
 )
 $totalRs = 0
 $withSpdx = 0

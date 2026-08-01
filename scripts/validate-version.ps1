@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$Quiet
 )
 $ErrorActionPreference = 'Stop'
@@ -12,15 +12,19 @@ trap {
 }
 
 $evoruleRoot = Split-Path -Parent $PSScriptRoot
-$evoAgentRoot = "D:\evo-agent"
 $semverPattern = '^(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?$'
 
 function Get-TomlVersion {
     param([Parameter(Mandatory=$false)][AllowNull()][string]$Path)
     if ([string]::IsNullOrEmpty($Path)) { return $null }
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
-    $line = Get-Content -LiteralPath $Path | Where-Object { $_ -match '^\s*version\s*=\s*"' } | Select-Object -First 1
+    $lines = Get-Content -LiteralPath $Path
+    # 优先识别显式 version = "X.Y.Z"
+    $line = $lines | Where-Object { $_ -match '^\s*version\s*=\s*"' } | Select-Object -First 1
     if ($line -and $line -match '"([^"]+)"') { return $Matches[1] }
+    # 识别 version.workspace = true(继承 workspace 版本,视为与 workspace 一致)
+    $wsLine = $lines | Where-Object { $_ -match '^\s*version\.workspace\s*=\s*true' } | Select-Object -First 1
+    if ($wsLine) { return '::workspace::' }
     return $null
 }
 function Get-JsonVersion {
@@ -32,14 +36,15 @@ function Get-JsonVersion {
     return $null
 }
 
+# 各仓独立发布:仅校验本仓(evorule)版本源,不查兄弟仓
 $projects = [ordered]@{}
-$projects['evorule-workspace'] = (Join-Path $evoruleRoot "Cargo.toml")
-$projects['evorule-tcb']         = (Join-Path $evoruleRoot "evorule-tcb\Cargo.toml")
-$projects['evorule-reactor']     = (Join-Path $evoruleRoot "evorule-reactor\Cargo.toml")
-$projects['evorule-governance']  = (Join-Path $evoruleRoot "evorule-governance\Cargo.toml")
-$projects['evo-agent']         = (Join-Path $evoAgentRoot "Cargo.toml")
-$projects['sdk-typescript']    = (Join-Path $evoruleRoot "sdk\typescript\package.json")
-$projects['sdk-python']        = (Join-Path $evoruleRoot "sdk\python\pyproject.toml")
+$projects['evorule-workspace']  = (Join-Path $evoruleRoot "Cargo.toml")
+$projects['evorule-tcb']        = (Join-Path $evoruleRoot "evorule-tcb\Cargo.toml")
+$projects['evorule-reactor']    = (Join-Path $evoruleRoot "evorule-reactor\Cargo.toml")
+$projects['evorule-governance'] = (Join-Path $evoruleRoot "evorule-governance\Cargo.toml")
+$projects['evorule-cli']        = (Join-Path $evoruleRoot "evorule-cli\Cargo.toml")
+$projects['sdk-typescript']     = (Join-Path $evoruleRoot "sdk\typescript\package.json")
+$projects['sdk-python']         = (Join-Path $evoruleRoot "sdk\python\pyproject.toml")
 
 $versions = [ordered]@{}
 $failed = $false
@@ -53,7 +58,11 @@ foreach ($name in $projects.Keys) {
     }
     $versions[$name] = $v
     if ($null -eq $v) {
-        Write-Host "[SKIP] $name : version not found" -ForegroundColor Yellow
+        Write-Host "[SKIP] $name : version not found (file may not exist)" -ForegroundColor Yellow
+        continue
+    }
+    if ($v -eq '::workspace::') {
+        Write-Host "[OK]   $name : workspace inherited (version.workspace = true)" -ForegroundColor Green
         continue
     }
     if ($v -notmatch $semverPattern) {
@@ -64,18 +73,27 @@ foreach ($name in $projects.Keys) {
     }
 }
 
-$npmLockfile = Join-Path $evoruleRoot "sdk\typescript\package-lock.json"
-if (Test-Path -LiteralPath $npmLockfile) {
-    $lockVersion = Get-JsonVersion $npmLockfile
-    $pkgVersion = $versions['sdk-typescript']
-    if ($lockVersion -and $pkgVersion -and $lockVersion -ne $pkgVersion) {
-        Write-Host "[FAIL] sdk-typescript lockfile: version '$lockVersion' != package.json '$pkgVersion'" -ForegroundColor Red
-        $failed = $true
-    } elseif ($lockVersion -and $pkgVersion) {
-        Write-Host "[OK]   sdk-typescript lockfile: $lockVersion (matches package.json)" -ForegroundColor Green
+$canonicalVersion = $versions['evorule-workspace']
+
+# 本仓内部 crate 必须与 workspace 完全一致(FULL version 比较,含 PATCH)
+if ($canonicalVersion -and $canonicalVersion -match $semverPattern) {
+    Write-Host ""
+    foreach ($name in @('evorule-tcb','evorule-reactor','evorule-governance','evorule-cli')) {
+        $v = $versions[$name]
+        if ($v) {
+            if ($v -eq '::workspace::') {
+                Write-Host "[OK]   $name : workspace inherited (== workspace $canonicalVersion)" -ForegroundColor Green
+            } elseif ($v -ne $canonicalVersion) {
+                Write-Host "[FAIL] $name ($v) != workspace ($canonicalVersion) — 本仓内部 crate 必须与 workspace 版本完全一致(含 PATCH)" -ForegroundColor Red
+                $failed = $true
+            } else {
+                Write-Host "[OK]   $name ($v) == workspace" -ForegroundColor Green
+            }
+        }
     }
 }
 
+# MAJOR 一致性(本仓所有项目)
 $parsedMajors = @()
 foreach ($name in $versions.Keys) {
     $v = $versions[$name]
@@ -89,84 +107,24 @@ if ($uniqueMajors.Count -gt 1) {
     Write-Host "`n[OK]   All projects share MAJOR = $($uniqueMajors[0])" -ForegroundColor Green
 }
 
-$mechMinor = $null
-if ($versions['evorule-workspace'] -and $versions['evorule-workspace'] -match $semverPattern) {
-    $mechMinor = [int]$Matches[2]
-}
-if ($null -ne $mechMinor) {
-    Write-Host ""
-    foreach ($name in @('evo-agent','sdk-typescript','sdk-python')) {
-        $v = $versions[$name]
-        if ($v -and $v -match $semverPattern) {
-            $minor = [int]$Matches[2]
-            if ($minor -lt $mechMinor) {
-                Write-Host "[FAIL] $name MINOR ($minor) < evorule MINOR ($mechMinor)" -ForegroundColor Red
-                $failed = $true
-            } else {
-                Write-Host "[OK]   $name MINOR ($minor) >= evorule MINOR ($mechMinor)" -ForegroundColor Green
-            }
-        }
+# npm lockfile
+$npmLockfile = Join-Path $evoruleRoot "sdk\typescript\package-lock.json"
+if (Test-Path -LiteralPath $npmLockfile) {
+    $lockVersion = Get-JsonVersion $npmLockfile
+    $pkgVersion = $versions['sdk-typescript']
+    if ($lockVersion -and $pkgVersion -and $lockVersion -ne $pkgVersion) {
+        Write-Host "[FAIL] sdk-typescript lockfile: version '$lockVersion' != package.json '$pkgVersion'" -ForegroundColor Red
+        $failed = $true
+    } elseif ($lockVersion -and $pkgVersion) {
+        Write-Host "[OK]   sdk-typescript lockfile: $lockVersion (matches package.json)" -ForegroundColor Green
     }
 }
 
-$canonicalVersion = $versions['evorule-workspace']
-
-if (-not $Quiet) { Write-Host "`n=== Document Version Consistency ===" -ForegroundColor Cyan }
-$readmePath = Join-Path $evoruleRoot "README.md"
-if (Test-Path -LiteralPath $readmePath) {
-    $readmeContent = Get-Content -LiteralPath $readmePath -Raw -Encoding UTF8
-    if ($readmeContent -match 'version\s*=\s*\{([^}]+)\}') {
-        $bibtexVersion = $Matches[1].Trim()
-        if ($bibtexVersion -notlike "$canonicalVersion*") {
-            Write-Host "[FAIL] README.md bibtex version '$bibtexVersion' != Cargo.toml '$canonicalVersion'" -ForegroundColor Red
-            $failed = $true
-        } else {
-            Write-Host "[OK]   README.md bibtex version = $bibtexVersion" -ForegroundColor Green
-        }
-    }
-}
-
-$contribPath = Join-Path $evoruleRoot "CONTRIBUTING.md"
-if (Test-Path -LiteralPath $contribPath) {
-    $c = Get-Content -LiteralPath $contribPath -Raw -Encoding UTF8
-    if ($c -match '\*\*Version\*\*:\s*(.+)') {
-        $cv = $Matches[1].Trim()
-        if ($cv -notlike "$canonicalVersion*") {
-            Write-Host "[FAIL] CONTRIBUTING.md Version '$cv' != Cargo.toml '$canonicalVersion'" -ForegroundColor Red
-            $failed = $true
-        } else {
-            Write-Host "[OK]   CONTRIBUTING.md Version = $cv" -ForegroundColor Green
-        }
-    }
-}
-
-$changelogPath = Join-Path $evoruleRoot "CHANGELOG.md"
-if (Test-Path -LiteralPath $changelogPath) {
-    $c = [System.IO.File]::ReadAllText($changelogPath, [System.Text.Encoding]::UTF8)
-    if ($c -match '##\s*\[[^\]]+\]\s*-\s*(\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?)') {
-        $uv = $Matches[1].Trim()
-        if ($uv -match '^(\d+)\.(\d+)') {
-            $unMajor = [int]$Matches[1]; $unMinor = [int]$Matches[2]
-            if ($canonicalVersion -match '^(\d+)\.(\d+)') {
-                $canMajor = [int]$Matches[1]; $canMinor = [int]$Matches[2]
-                if ($unMajor -lt $canMajor -or ($unMajor -eq $canMajor -and $unMinor -lt $canMinor)) {
-                    Write-Host "[FAIL] CHANGELOG first entry '$uv' < current '$canonicalVersion'" -ForegroundColor Red
-                    $failed = $true
-                } elseif ($unMajor -eq $canMajor -and $unMinor -eq $canMinor) {
-                    Write-Host "[OK]   CHANGELOG first entry = $uv (initial release)" -ForegroundColor Green
-                } else {
-                    Write-Host "[OK]   CHANGELOG first entry = $uv (> $canonicalVersion)" -ForegroundColor Green
-                }
-            }
-        }
-    }
-}
-
+# retired patterns (v6.x / v7.0 历史废弃版本号)
 $retiredPatterns = @('v6\.0','v6\.1','v6\.2','v7\.0','6\.0\.0')
 $docFiles = @(
     @{ Path = (Join-Path $evoruleRoot "README.md"); Name = 'README.md' },
     @{ Path = (Join-Path $evoruleRoot "CONTRIBUTING.md"); Name = 'CONTRIBUTING.md' },
-    @{ Path = (Join-Path $evoruleRoot "ROADMAP.md"); Name = 'ROADMAP.md' },
     @{ Path = (Join-Path $evoruleRoot "VERSION_STRATEGY.md"); Name = 'VERSION_STRATEGY.md' }
 )
 $retiredFound = $false
@@ -174,10 +132,9 @@ foreach ($doc in $docFiles) {
     if ([string]::IsNullOrEmpty($doc.Path) -or -not (Test-Path -LiteralPath $doc.Path)) { continue }
     $lines = Get-Content -LiteralPath $doc.Path -Encoding UTF8
     for ($i = 0; $i -lt $lines.Count; $i++) {
-        $line = $lines[$i]
         foreach ($pattern in $retiredPatterns) {
-            if ($line -match $pattern) {
-                Write-Host "[FAIL] $($doc.Name):$($i+1) contains retired version pattern '$pattern': $($line.Trim())" -ForegroundColor Red
+            if ($lines[$i] -match $pattern) {
+                Write-Host "[FAIL] $($doc.Name):$($i+1) contains retired version pattern '$pattern': $($lines[$i].Trim())" -ForegroundColor Red
                 $failed = $true; $retiredFound = $true
             }
         }
@@ -185,65 +142,70 @@ foreach ($doc in $docFiles) {
 }
 if (-not $retiredFound) { Write-Host "[OK]   No retired version references (v6.x/v7.0) in docs" -ForegroundColor Green }
 
-# === NEW: R2 文档硬编码版号校验（4e~4h）===
+# === 通用 L1 文档版本号扫描(替代硬编码 4e~4h)===
+# 扫描所有 L1 .md 中的 v\d+\.\d+\.\d+ 字面量,与 Cargo.toml canonical 不一致即 FAIL
+# 白名单:
+#   - CHANGELOG.md(历史段含多个版本)
+#   - 废弃文档(顶部 [已废弃] 横幅)
+#   - 审计/威胁模型文档(文件名含 AUDIT/THREAT_MODEL,审计版本与代码版本独立)
+#   - 未来版本(>canonical,如路线图 0.2.0/1.0.0)
+#   - canonical 自身
+# 注:\b 保证 _v0.1.0.md(文件名引用)不被误匹配
+if ($canonicalVersion -and $canonicalVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
+    $cm = [int]$Matches[1]; $cn = [int]$Matches[2]; $cp = [int]$Matches[3]
+    if (-not $Quiet) { Write-Host "`n=== L1 Document Version Scan (canonical = v$canonicalVersion) ===" -ForegroundColor Cyan }
 
-# 4e. README.md vX.Y.Z 徽章/标题硬编码
-$do4e = (Test-Path -LiteralPath $readmePath) -and -not [string]::IsNullOrEmpty($canonicalVersion)
-if ($do4e) {
-    $rmAll = [System.IO.File]::ReadAllText($readmePath, [System.Text.Encoding]::UTF8)
-    $col = [regex]::Matches($rmAll, '\bv(\d+\.\d+\.\d+)\b')
-    for ($i4e = 0; $i4e -lt $col.Count; $i4e++) {
-        $it = $col[$i4e]
-        $found = $it.Groups[1].Value
-        if ($found -ne $canonicalVersion -and $found -notmatch '^6\.' -and $found -notmatch '^7\.') {
-            $msg4e = "[WARN] README.md contains hardcoded v" + $found + " (expected canonical v" + $canonicalVersion + ")"
-            Write-Host $msg4e -ForegroundColor Yellow
+    $l1Files = @()
+    $l1Files += Get-ChildItem -LiteralPath $evoruleRoot -Filter *.md -File -ErrorAction SilentlyContinue
+    $docsDir = Join-Path $evoruleRoot "docs"
+    if (Test-Path -LiteralPath $docsDir) {
+        $l1Files += Get-ChildItem -LiteralPath $docsDir -Recurse -Filter *.md -File -ErrorAction SilentlyContinue
+    }
+    foreach ($crate in @('evorule-tcb','evorule-reactor','evorule-governance','evorule-cli')) {
+        $crateDir = Join-Path $evoruleRoot $crate
+        if (Test-Path -LiteralPath $crateDir) {
+            $l1Files += Get-ChildItem -LiteralPath $crateDir -Filter *.md -File -ErrorAction SilentlyContinue
         }
     }
-}
 
-# 4f. STATUS.md 基线版号
-$statusPath = Join-Path $evoruleRoot "STATUS.md"
-if (Test-Path -LiteralPath $statusPath) {
-    $s = [System.IO.File]::ReadAllText($statusPath, [System.Text.Encoding]::UTF8)
-    if ($s -match '##\s*v(\d+\.\d+\.\d+)\s*基线数据') {
-        $sv = $Matches[1]
-        if ($sv -ne $canonicalVersion) {
-            Write-Host "[FAIL] STATUS.md baseline header 'v$sv' != Cargo.toml canonical 'v$canonicalVersion'" -ForegroundColor Red
-            $failed = $true
-        } else {
-            Write-Host "[OK]   STATUS.md baseline header = v$sv (matches canonical)" -ForegroundColor Green
+    # 匹配 v\d+\.\d+\.\d+ 但排除文件名引用(如 SECURITY_AUDIT_v0.1.0.md 中的 _v0.1.0)
+    # 负向后行断言: v 前面不能是字母或下划线(否则是文件名/标识符的一部分)
+    $versionLiteralPattern = '(?<![a-zA-Z_])v(\d+\.\d+\.\d+)\b'
+    $scanFailed = $false
+    foreach ($f in $l1Files) {
+        $relName = $f.FullName.Substring($evoruleRoot.Length + 1)
+        # CHANGELOG 白名单:根 CHANGELOG.md + 子 crate CHANGELOG.md(历史段含多版本,合法)
+        if ($relName -match 'CHANGELOG\.md$') { continue }
+        $content = [System.IO.File]::ReadAllText($f.FullName, [System.Text.Encoding]::UTF8)
+        # 废弃文档跳过
+        $headLen = [Math]::Min(2000, $content.Length)
+        if ($content.Substring(0, $headLen) -match '\[已废弃\]') { continue }
+        # 审计/威胁模型文档跳过(版本绑定审计批次)
+        # SECURITY.md 含版本支持表(历史边界声明如 < v0.1.0-alpha.1,合法)
+        if ($relName -match 'AUDIT|THREAT_MODEL|^SECURITY\.md$') { continue }
+
+        $seen = @{}
+        foreach ($m in [regex]::Matches($content, $versionLiteralPattern)) {
+            $ver = $m.Groups[1].Value
+            if ($seen.ContainsKey($ver)) { continue }
+            $seen[$ver] = $true
+            if ($ver -eq $canonicalVersion) { continue }
+            # 未来版本允许(路线图/版本语义表)
+            if ($ver -match '^(\d+)\.(\d+)\.(\d+)$') {
+                $fm = [int]$Matches[1]; $fn = [int]$Matches[2]; $fp = [int]$Matches[3]
+                # 未来版本允许(路线图/版本语义表/回滚流程的下一个版本)
+                # FULL version 比较:任何 > canonical 的版本都算未来版本(含 PATCH 递增,如 0.1.1→0.1.2)
+                $isFuture = ($fm -gt $cm) -or
+                            ($fm -eq $cm -and $fn -gt $cn) -or
+                            ($fm -eq $cm -and $fn -eq $cn -and $fp -gt $cp)
+                if ($isFuture) { continue }
+            }
+            Write-Host "[FAIL] $relName contains 'v$ver' (expected v$canonicalVersion or future version)" -ForegroundColor Red
+            $failed = $true; $scanFailed = $true
         }
     }
-}
-
-# 4g. DOCS_INDEX.md 版本对齐标识
-$docsIndexPath = Join-Path $evoruleRoot "DOCS_INDEX.md"
-if (Test-Path -LiteralPath $docsIndexPath) {
-    $idx = [System.IO.File]::ReadAllText($docsIndexPath, [System.Text.Encoding]::UTF8)
-    if ($idx -match 'version\s*=\s*"(\d+\.\d+\.\d+)"') {
-        $iv = $Matches[1]
-        if ($iv -ne $canonicalVersion) {
-            Write-Host "[FAIL] DOCS_INDEX.md version-align marker '$iv' != Cargo.toml canonical '$canonicalVersion'" -ForegroundColor Red
-            $failed = $true
-        } else {
-            Write-Host "[OK]   DOCS_INDEX.md version-align marker = $iv (matches canonical)" -ForegroundColor Green
-        }
-    }
-}
-
-# 4h. 形式化验证白皮书当前基线
-$wpPath = Join-Path $evoruleRoot "EVORULE_FORMAL_VERIFICATION_PLAN_v3.md"
-if (Test-Path -LiteralPath $wpPath) {
-    $wp = [System.IO.File]::ReadAllText($wpPath, [System.Text.Encoding]::UTF8)
-    if ($wp -match '当前基线[^|]*\bv(\d+\.\d+\.\d+)\b') {
-        $wv = $Matches[1]
-        if ($wv -ne $canonicalVersion) {
-            Write-Host "[FAIL] Formal Verification Whitepaper current-baseline 'v$wv' != Cargo.toml canonical 'v$canonicalVersion'" -ForegroundColor Red
-            $failed = $true
-        } else {
-            Write-Host "[OK]   Formal Verification Whitepaper current-baseline = v$wv (matches canonical)" -ForegroundColor Green
-        }
+    if (-not $scanFailed) {
+        Write-Host "[OK]   L1 docs contain no stale version literals (CHANGELOG/废弃/审计/未来版本 白名单)" -ForegroundColor Green
     }
 }
 

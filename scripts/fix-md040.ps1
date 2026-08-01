@@ -105,7 +105,6 @@ $targetFiles = @(
     "docs/security/DEPENDENCY_AUDIT_v1.0.0.md",
     "CONTRIBUTING_ZH.md",
     "docs/security/DEPENDENCY_AUDIT_v0.1.0.md",
-    "ROADMAP.md",
     "VERSION_STRATEGY.md",
     "docs/security/THREAT_MODEL.md",
     "CONTRIBUTING.md",

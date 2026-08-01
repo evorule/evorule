@@ -8,8 +8,8 @@
 # 通过条件: cargo audit 退出码 0（无已知漏洞）
 # 失败处理: 阻塞合并 (non-zero exit)
 #
-# 说明: 本机 cargo-audit 受 rustc 版本限制装不上 (STATUS.md 记录 kstring 要求
-#       rustc 1.96)，CI 用 taiki-e/install-action 装独立二进制，绕过本机限制。
+# 说明: 本机 cargo-audit 受 rustc 版本限制装不上 (kstring 要求 rustc 1.96)，
+#       CI 用 taiki-e/install-action 装独立二进制，绕过本机限制。
 # =============================================================================
 name: audit
 
