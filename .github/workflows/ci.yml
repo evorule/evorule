@@ -65,6 +65,9 @@ jobs:
       - name: validate-cargolock.ps1
         shell: pwsh
         run: pwsh -NoProfile -File scripts/validate-cargolock.ps1
+      - name: validate-release.ps1（tag 格式校验，-SkipTagCheck 跳过 tag 存在性）
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/validate-release.ps1 -SkipTagCheck
 
       # 治理方案阶段 6 门禁收敛 · 强阻塞
       # 5 类检查：R-门控1 staged文档泄露 / R3 L1私有路径泄露 / L1不提L2L3 / 交叉引用完整性 / DOCS_INDEX索引存在性
@@ -95,8 +98,7 @@ jobs:
         run: cargo test --workspace --all-features
 
   # ===== 编译验证 =====
-  # H5 + 走神 9: evorule-server 已迁至 evorule-server 独立仓(顶层 crate，不再在 evorule-application/)
-  # 核心 evorule workspace 不再包含 evorule-server bin,此 job 改为编译核心 workspace 全部
+  # 编译核心 workspace 全部 crate(release)
   build-bin:
     name: Build core workspace
     runs-on: ubuntu-latest
@@ -124,77 +126,3 @@ jobs:
           path: target/release/evorule
           retention-days: 7
           if-no-files-found: warn
-
-  # ===== E2E 测试 =====
-  # H5 + 走神 9: evorule-server 已迁至 evorule-server 独立仓(顶层 crate)
-  # E2E 测试需要 evorule-server 二进制,应在 evorule-server 独立仓的 CI 中运行
-  # 此 job 暂时禁用,待 evorule-server 仓 CI 建立后迁移
-  e2e:
-    name: E2E Tests (disabled - moved to evorule-server)
-    runs-on: ubuntu-latest
-    if: false # H5: 暂时禁用,待 evorule-application CI 建立
-    needs: [build-bin]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 安装系统依赖（SQLite）
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev pkg-config
-
-      - name: 下载服务器二进制
-        uses: actions/download-artifact@v4
-        with:
-          name: evorule-server-linux-x86_64
-          path: .
-
-      - name: 赋予执行权限
-        run: chmod +x evorule-server
-
-      - name: 启动服务器
-        run: ./evorule-server &
-        env:
-          RUST_LOG: info
-
-      - name: 等待服务器启动
-        run: |
-          for i in {1..30}; do
-            if curl -s http://localhost:18080/api/health | grep -q "success"; then
-              echo "Server started"
-              break
-            fi
-            sleep 1
-          done
-
-      - name: TypeScript E2E 测试
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: sdk/typescript/package-lock.json
-
-      - name: 安装 TypeScript SDK 依赖
-        working-directory: sdk/typescript
-        run: npm ci
-
-      - name: 运行 TypeScript E2E 测试
-        working-directory: sdk/typescript
-        run: npm run test:e2e
-
-      - name: Python E2E 测试
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: sdk/python/pyproject.toml
-
-      - name: 安装 Python SDK（含开发依赖）
-        working-directory: sdk/python
-        run: pip install -e ".[dev]"
-
-      - name: 运行 Python E2E 测试
-        working-directory: sdk/python
-        run: python tests/test_e2e.py
-
-      - name: 停止服务器
-        run: pkill evorule-server || true

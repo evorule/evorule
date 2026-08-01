@@ -25,8 +25,10 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).parent.parent
-AGENTS_MD = REPO_ROOT / "AGENTS.md"
-SCHEMA_JSON = REPO_ROOT / "AGENTS.schema.json"
+# AGENTS.md / AGENTS.schema.json 已移至 L2 仓内（文档/，.gitignore 保护不发布）
+# L1 不再有 agent 工作规则与机器可读附录；此脚本仅用于 L2 内部双轨制校验
+AGENTS_MD = REPO_ROOT / "文档" / "AGENTS.md"
+SCHEMA_JSON = REPO_ROOT / "文档" / "AGENTS.schema.json"
 
 
 def extract_accepted_rules(md: str) -> list[str]:

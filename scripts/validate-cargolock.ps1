@@ -9,19 +9,16 @@ param()
 
 $ErrorActionPreference = "Stop"
 $evoruleRoot = Split-Path -Parent $PSScriptRoot
-$evoAgentRoot = "D:\evo-agent"
 
 # Project -> has binary ([[bin]] section), and the workspace root that contains its Cargo.lock
 # evorule-reactor has cdylib but no [[bin]], treat as lib
-# H5: evorule-governance 已迁出 evorule-server bin,现为纯 lib crate
-#     evorule-server 已两次外迁（H5 → evorule-application → 走神 9 → evorule-server 独立仓顶层）
-# evo-agent is lib only
+# evorule-governance 现为纯 lib crate(无 [[bin]])
+# 各仓独立发布:仅校验本仓 crate,不查兄弟仓
 # Cargo.lock for workspace crates lives at the workspace root, not the crate dir
 $projects = [ordered]@{}
 $projects['evorule-tcb']        = @{ Path = "$evoruleRoot\evorule-tcb";        HasBinary = $false; LockRoot = $evoruleRoot }
 $projects['evorule-reactor']    = @{ Path = "$evoruleRoot\evorule-reactor";    HasBinary = $false; LockRoot = $evoruleRoot }
 $projects['evorule-governance'] = @{ Path = "$evoruleRoot\evorule-governance"; HasBinary = $false; LockRoot = $evoruleRoot }
-$projects['evo-agent']        = @{ Path = "$evoAgentRoot";                 HasBinary = $false; LockRoot = $evoAgentRoot }
 
 $failed = $false
 Write-Host "`n=== Cargo.lock Policy Validation (8) ===" -ForegroundColor Cyan
