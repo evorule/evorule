@@ -35,6 +35,46 @@
 
 ---
 
+## [0.1.1] - 2026-08-01
+
+**evorule-tcb / evorule-governance patch 发布** — `exec_set` 路径解析诊断增强 + 中间节点/空列表语义收紧；附带 evorule-reactor clippy `indexing_slicing` 修复。四 crate 工作区版本同步 bump（cli 无代码改动，仅版本同步）。
+
+### 🐛 修复
+
+- **`exec_set` 路径校验加强** — `parts.first() == Some(&"")` → `parts.iter().any(|p| p.is_empty())`，捕获 `"a..b"` / `"a.b."` 等中间/尾部空段（原仅查首段）
+- **`exec_set` 中间节点语义收紧** — null/缺失自动建空对象继续 descend；其他非对象类型（integer/boolean/string/array）返回 `PathResolutionFailed` 且**不覆盖原值**（原对 null 报错、对其他非对象静默覆盖，语义不一致）
+- **`exec_push` 空列表改 no-op** — `EmptyInstructionList` 错误 → `Ok(state)`，支持合法的空 `else: []` / `then: []`（变体保留以维持错误类型 API 稳定）
+- **`resolve_instructions_list` 数组展平** — 路径引用解析为数组时 `extend` 展平入队，修复 `body`/`then`/`else` 为指令列表时的入队错误（原整包 push 导致执行失败）
+- **evorule-reactor clippy `indexing_slicing` 修复** — `facts_log.rs` 两处 `history[start..]` → `history.get(start..).unwrap_or(&[])`（`start` 由 `unwrap_or(len)` / `saturating_sub` 保证 ≤ len）；`reactor.rs` 一处 `&parts[0..len-1]` → `parts.get(..len-1).unwrap_or(&[])`（`else` 分支保证 `len ≥ 2`）；`facts_log.rs` 测试模块补 `#![allow(clippy::indexing_slicing)]`（与既有 `unwrap_used`/`panic` 豁免一致）。修复 Windows 工具链下 clippy 阻塞（v0.1.0 的"clippy 全绿"为 WSL 环境结果），逻辑不变
+
+> **行为变更说明**：上述修复中，null 中间节点与空列表 push 从"报错"变为"成功"。这是修正原错误行为（合法输入被拒），非破坏性变更；错误**类型**未变（`EmptyInstructionList` 变体保留），公开 API 签名未变。
+
+### 🆕 新增
+
+- **`PathResolutionFailed` 诊断消息丰富** — 含四要素：失败路径 + 出问题的段名 + 实际类型 + 期望类型，供上层日志直接 `Display` 输出（TCB 本身仍零日志副作用）
+- **`IoDispatcher` 实现 `Clone`** — 内部全为 `Arc<dyn IoHandler>`，clone 仅增引用计数
+- **`SessionManager` 新增 `core_eval()` getter + `replace_core_eval()` 原子替换** — 仅影响新会话，已运行会话的 TCB 不可变语义不变
+- **集成测试 `evorule-tcb/tests/set_path_diagnostics.rs`** — 8 场景锁定诊断契约（integer/boolean/array/string 中间节点报错、null 自动创建、payload 根异常、空段）
+
+### 📚 文档
+
+- **TCB_SPEC.md 新增 §八「错误语义与路径解析诊断契约」** — 含中间节点自动创建策略表、诊断消息四要素、可执行规约引用；原 §八代码量顺延为 §九
+- **`transition.rs` 注释更新** — `EmptyInstructionList` 标注为保留变体
+
+### ✅ 验证
+
+- `cargo test --workspace` 全通过（默认 features + `--features evorule-reactor/persistence` 双跑）
+- `cargo clippy --workspace --all-targets -- -D warnings` 0 warnings（默认 features + persistence feature 双跑）
+- `cargo build --release` 通过
+- `scripts/validate-all.ps1 -AllowUnreleased` 5 项全通过（version / changelog / license / cargolock / release）
+- `evorule-tcb`：168 lib 单元 + 集成（含新增 `set_path_diagnostics` 8 场景）+ 17 doc-tests 全通过
+- `evorule-governance`：全通过
+- `scripts/check_doc_safety.py` 全过（无私有路径泄露、L1 交叉引用完整）
+
+> 注：`ffi` feature 在 `--all-features` 下因 `lib.rs` 的 `#![forbid(unsafe_code)]` 与 `ffi.rs` 的 `#![allow(unsafe_code)]` 冲突（E0453）无法编译，此为 v0.1.0 预存在问题，与本版本修复无关，不在 0.1.1 范围内。
+
+---
+
 ## [0.1.0] - 2026-07-30
 
 **evorule 仓首次公开发布** — 走神 9 决策:evorule 仓必须独立 release，不绑 application/agent 完成。

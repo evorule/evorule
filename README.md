@@ -20,7 +20,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-0.1.1-green.svg)](Cargo.toml)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Kani](https://img.shields.io/badge/Kani-t0_12p_t1_11p-blue.svg)](evorule-tcb/verification/kani_proofs.rs)
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0-green.svg)]()
@@ -907,7 +907,7 @@ evorule verify-chain fact.log     # 验证 fact log 哈希链完整性
 ```bibtex
 @software{evorule,
   title = {EvoRule: A JSON-Data-Set Execution Engine with Append-Only Facts Log},
-  version = {0.1.0},
+  version = {0.1.1},
   year = {2026},
   url = {https://gitee.com/evo-rule-lab/evorule},
   license = {AGPL-3.0}
