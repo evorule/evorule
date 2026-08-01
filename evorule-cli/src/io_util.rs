@@ -15,8 +15,8 @@
 use std::fs;
 use std::path::Path;
 
-use serde_json::Value as SerdeValue;
 use evorule_tcb::JsonValue;
+use serde_json::Value as SerdeValue;
 
 use crate::error::CliError;
 

@@ -34,11 +34,11 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use evorule_governance::time_machine::rewind;
+use evorule_reactor::{Fact, FactId, FactsLog, Reactor};
+use evorule_tcb::JsonValue;
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use evorule_tcb::JsonValue;
-use evorule_reactor::{Fact, FactId, FactsLog, Reactor};
-use evorule_governance::time_machine::rewind;
 
 // =============================================================================
 // 辅助:JsonValue ↔ serde_json::Value 转换(用于比较)

@@ -14,9 +14,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use evorule_tcb::JsonValue;
-use evorule_reactor::{Fact, FactId, FactsLog};
 use evorule_governance::Auditor;
+use evorule_reactor::{Fact, FactId, FactsLog};
+use evorule_tcb::JsonValue;
 
 /// 向 FactsLog 填充 n 条 Command 事实
 fn fill_facts(log: &FactsLog, n: u64) {

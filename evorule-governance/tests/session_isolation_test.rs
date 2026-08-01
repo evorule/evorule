@@ -17,9 +17,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use evorule_tcb::JsonValue;
-use evorule_reactor::{Fact, FactId};
 use evorule_governance::SessionManager;
+use evorule_reactor::{Fact, FactId};
+use evorule_tcb::JsonValue;
 
 /// 构造与 core_eval.json increment 规则一致的 transform 规则。
 ///

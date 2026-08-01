@@ -23,8 +23,8 @@
 
 use crate::clock::LogicalClock;
 use crate::hash;
-use std::collections::BTreeMap;
 use evorule_reactor::{Fact, FactId, FactsLog};
+use std::collections::BTreeMap;
 
 /// 审计条目
 ///
@@ -1065,8 +1065,8 @@ fn extract_cause(fact: &Fact) -> Option<FactId> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
     use super::*;
-    use evorule_tcb::JsonValue;
     use evorule_reactor::{Fact, FactId, FactsLog, IoType};
+    use evorule_tcb::JsonValue;
 
     fn make_facts_log() -> FactsLog {
         FactsLog::new()

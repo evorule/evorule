@@ -93,8 +93,8 @@ use crate::fact_log;
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::useless_vec)]
-    use evorule_tcb::JsonValue;
     use evorule_reactor::{Fact, FactId};
+    use evorule_tcb::JsonValue;
 
     #[test]
     fn test_compare_identical() {

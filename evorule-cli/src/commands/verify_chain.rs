@@ -208,8 +208,8 @@ fn verify_structural_invariants(facts: &[Fact]) -> Vec<String> {
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
-    use evorule_tcb::JsonValue;
     use evorule_reactor::{Fact, FactId, IoType};
+    use evorule_tcb::JsonValue;
 
     #[test]
     fn test_verify_valid_chain() {

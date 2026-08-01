@@ -22,8 +22,8 @@ use std::collections::BTreeMap;
 use std::env;
 use std::path::Path;
 
-use evorule_tcb::JsonValue;
 use evorule_reactor::{Fact, FactId, FactsLog, IoType};
+use evorule_tcb::JsonValue;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -33,7 +33,10 @@ fn main() {
         Path::new("hashed_wal_sample.wal")
     };
 
-    println!("=== Generating hashed WAL file: {} ===", output_path.display());
+    println!(
+        "=== Generating hashed WAL file: {} ===",
+        output_path.display()
+    );
 
     let facts_log = FactsLog::with_wal(output_path).expect("failed to create FactsLog with WAL");
 
@@ -47,7 +50,10 @@ fn main() {
     println!("[OK] {} facts appended with hash chain", facts.len());
     println!("[OK] last_hash = {}", facts_log.last_hash());
     println!();
-    println!("Now run: cargo run --bin evorule -- verify-chain {}", output_path.display());
+    println!(
+        "Now run: cargo run --bin evorule -- verify-chain {}",
+        output_path.display()
+    );
 }
 
 fn build_fact_sequence() -> Vec<Fact> {

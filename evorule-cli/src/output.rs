@@ -33,7 +33,9 @@ pub fn fact_to_human(fact: &Fact) -> String {
         Fact::StateTransition { id, cause, .. } => {
             format!("[F{}] StateTransition cause=F{}", id.0, cause.0)
         }
-        Fact::IoRequest { id, cause, io_type, .. } => {
+        Fact::IoRequest {
+            id, cause, io_type, ..
+        } => {
             format!(
                 "[F{}] IoRequest cause=F{} io_type={}",
                 id.0,
@@ -41,7 +43,12 @@ pub fn fact_to_human(fact: &Fact) -> String {
                 io_type.as_str()
             )
         }
-        Fact::IoResponse { id, request_id, error, .. } => match error {
+        Fact::IoResponse {
+            id,
+            request_id,
+            error,
+            ..
+        } => match error {
             Some(msg) => format!(
                 "[F{}] IoResponse request_id=F{} error={}",
                 id.0, request_id.0, msg
@@ -81,8 +88,8 @@ pub fn format_diff_line(prefix: &str, content: &str) -> String {
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
-    use evorule_tcb::JsonValue;
     use evorule_reactor::{Fact, FactId, IoType};
+    use evorule_tcb::JsonValue;
 
     #[test]
     fn test_fact_to_human_command() {

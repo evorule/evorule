@@ -39,11 +39,11 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use evorule_reactor::{Fact, FactId, FactsLog, Reactor};
+use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 use std::path::PathBuf;
-use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
-use evorule_reactor::{Fact, FactId, FactsLog, Reactor};
 
 // =============================================================================
 // 辅助:加载 core_eval.json(与单元测试一致)

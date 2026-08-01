@@ -12,10 +12,10 @@
 //! 3. 检查审计链中的 Fact 记录
 //! 4. 验证执行结果
 
+use evorule_reactor::{Fact, FactIdGenerator, Reactor};
+use evorule_tcb::JsonValue;
 use std::collections::BTreeMap;
 use std::time::Duration;
-use evorule_tcb::JsonValue;
-use evorule_reactor::{Fact, FactIdGenerator, Reactor};
 use tokio::time::timeout;
 
 /// 将 serde_json::Value 转换为 evorule_tcb::JsonValue
@@ -145,9 +145,7 @@ async fn test_vip_order_processing() {
         ("inventory", JsonValue::Integer(100)),
     ]);
 
-    let reactor = Reactor::builder(core_eval)
-        .max_rounds(100)
-        .build();
+    let reactor = Reactor::builder(core_eval).max_rounds(100).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();

@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
@@ -11,8 +10,8 @@
 //! - 事件格式验证（Command/StateTransition/Stable）
 //! - 会话隔离验证
 
-use evorule_tcb::JsonValue;
 use evorule_reactor::{Fact, FactId, IoType, Reactor};
+use evorule_tcb::JsonValue;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

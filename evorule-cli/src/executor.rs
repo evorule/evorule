@@ -27,8 +27,8 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 use evorule_reactor::{Fact, FactId, FactIdGenerator, IoType};
+use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 
 use crate::error::CliError;
 

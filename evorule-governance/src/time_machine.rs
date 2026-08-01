@@ -6,9 +6,9 @@
 //! - 计算两个版本间的 payload 差异
 //! - 纯函数实现，无副作用，可测试
 
-use serde::{Deserialize, Serialize};
-use evorule_tcb::JsonValue;
 use evorule_reactor::Fact;
+use evorule_tcb::JsonValue;
+use serde::{Deserialize, Serialize};
 
 /// 将 JsonValue 转换为 serde_json::Value
 fn json_value_to_serde(v: &JsonValue) -> serde_json::Value {
@@ -289,8 +289,8 @@ fn compute_diff(payload_a: &serde_json::Value, payload_b: &serde_json::Value) ->
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
-    use evorule_tcb::JsonValue;
     use evorule_reactor::FactId;
+    use evorule_tcb::JsonValue;
 
     /// 将 serde_json::Value 转换为 JsonValue
     fn serde_to_json(v: serde_json::Value) -> JsonValue {
