@@ -353,7 +353,7 @@ dependencies = [
 
 [[package]]
 name = "evorule-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "clap",
@@ -368,7 +368,7 @@ dependencies = [
 
 [[package]]
 name = "evorule-governance"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "criterion",
@@ -386,7 +386,7 @@ dependencies = [
 
 [[package]]
 name = "evorule-reactor"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "blake3",
@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "evorule-tcb"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "criterion",
  "proptest",
