@@ -28,6 +28,10 @@ use evorule_reactor::{IoHandler, IoResult, IoType};
 ///
 /// 持有 `HashMap<IoType, Arc<dyn IoHandler>>`,根据 IoType 分发到对应 handler。
 /// 具体 handler 由应用层注册,核心层不感知具体实现类型。
+///
+/// `Clone` 实现：内部 handler 都是 `Arc<dyn IoHandler>`，clone 时只增加引用计数，
+/// 不复制 handler 本身。多会话模式下每个 session 的 IoSubscriber 可以共享同一组 handler。
+#[derive(Clone)]
 pub struct IoDispatcher {
     /// IoType → handler 映射
     handlers: HashMap<IoType, Arc<dyn IoHandler>>,

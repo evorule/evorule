@@ -135,7 +135,64 @@ TCB 的全部"智能"是一个 while 循环：反复应用 `core.eval` 规则，
 
 ---
 
-## 八、代码量目标 vs 实际 (2026-07-23 实测)
+## 八、错误语义与路径解析诊断契约
+
+> `TcbError::PathResolutionFailed(String)` 是 `set` 元指令路径解析失败的主错误变体。
+> 其 `String` 携带**自描述诊断消息**,供上层(governance/server)日志直接 `Display` 输出;
+> TCB 本身不产生任何日志副作用(零依赖、`no_std`、确定性不变,= D9 / T4)。
+
+### 8.1 `set` 中间节点自动创建策略
+
+`set a.b.c` 遍历中间段 `a`、`b` 时,按节点当前值分三类处理:
+
+| 中间节点当前值 | 行为 |
+| :--- | :--- |
+| 缺失 / `null` | 自动创建空对象,继续 descend |
+| `object` | 直接 descend |
+| `integer` / `boolean` / `string` / `array` | **返回 `PathResolutionFailed`,不覆盖原值** |
+
+> 设计理由:对 `null`/缺失自动建对象,支持 hotload 置 null 后重写场景;
+> 对其他非对象类型显式报错(而非静默覆盖),避免掩盖规则定义 bug。错误在中间节点循环里
+> `return Err` 提前返回,不会到达末尾 `parent_obj.insert`,因此原值不被破坏。
+
+### 8.2 诊断消息四要素
+
+`PathResolutionFailed` 的消息文本包含四要素,便于定位根因:
+
+| 要素 | 示例 |
+| :--- | :--- |
+| 失败路径 | `audit.evolve_request.reason` |
+| 出问题的段名 | `intermediate segment 'evolve_request'` |
+| 实际类型 | `is integer` |
+| 期望类型 | `expected object` |
+
+完整消息示例:
+
+```text
+audit.evolve_request.reason: intermediate segment 'evolve_request' is integer, expected object
+```
+
+其他失败场景的消息格式:
+
+| 场景 | 消息格式 |
+| :--- | :--- |
+| 路径含空段 | `{attr}: path contains empty segment` |
+| payload 根非对象 | `{attr}: __exec__.payload is {type}, expected object` |
+| payload 根缺失 | `{attr}: __exec__.payload not found` |
+
+### 8.3 可执行规约
+
+诊断契约由集成测试 [`tests/set_path_diagnostics.rs`](tests/set_path_diagnostics.rs) 锁定
+(8 个场景:integer/boolean/array/string 中间节点报错、null 自动创建、payload 根异常、空段)。
+查看实际消息文本:
+
+```text
+cargo test -p evorule-tcb --test set_path_diagnostics -- --nocapture
+```
+
+---
+
+## 九、代码量目标 vs 实际 (2026-07-23 实测)
 
 | 组件 | 目标 | 实际核心 (去 cfg(test)) | 实际 cfg(test) | 实际总 | 倍数 | 说明 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
