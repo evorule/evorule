@@ -519,9 +519,7 @@ STRIDE = Spoofing / Tampering / Repudiation / Information Disclosure / Denial of
 - [`DEPENDENCY_AUDIT_v0.1.0.md`](DEPENDENCY_AUDIT_v0.1.0.md) — evorule 仓 v0.1.0 依赖审计（当前有效版）
 - [`THREAT_MODEL.md`](THREAT_MODEL.md) — 生态全栈旧版(已废弃,2026-07-20)
 - [`VERSION_STRATEGY.md`](../../VERSION_STRATEGY.md) §4.4-§4.5 — 审计门槛
-- [`AGENTS.md`](../../AGENTS.md) — evorule 仓 agent 规则与边界
-- evo-agent 应用层威胁 → 见 evo-agent 仓（与本仓为兄弟仓，同级目录）docs/security/THREAT_MODEL.md
-- evorule-application 应用层威胁 → 见 evorule-application 仓（与本仓为兄弟仓，同级目录）docs/security/THREAT_MODEL.md
+- evo-agent / evorule-application 应用层威胁 → 见各自独立仓的威胁模型文档（本仓仅覆盖机制层）
 
 ### 12.2 外部方法学
 

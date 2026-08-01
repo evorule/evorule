@@ -100,8 +100,6 @@
 
 ### 🔄 变更
 
-- **evorule-application 仓** 切到新 `evorule-*` 命名（`path + version = "0.1.0"` 双声明）
-- **evo-agent 仓** 切到新 `evorule-*` 命名（`path + version = "0.1.0"` 双声明）
 - **`reactive_researcher`** repository URL 统一为带连字符版（`gitee.com/evo-rule-lab/evorule`）
 - **kani_proofs 编译目标** — 改名时 Kani metadata 列表同步更新
 
@@ -117,7 +115,7 @@
 ### 📚 文档
 
 - 「v0.1.0 不发」决策撤销（决策作废，详见撤销说明）
-- v0.2.0 标准拆分为 2.1/2.2/2.3 三份（evorule 仓 / application 仓 / agent 仓独立 release-blocker）
+- v0.2.0 本仓规划（独立 release-blocker 拆分多份）
 - 发布程序备查文档新增 v1.1（crate 改名 + 元数据 + 阻塞型坑 B1-B8 + 非阻塞 N1-N6）
 - evorule 发布准备方案、确定性测试方案 — 上游决策记录
 
@@ -137,8 +135,6 @@
 - ⚠️ **Gitee Go CI 真实跑通 (F-2)** 需 push 后才能看到 run ID
 - ⚠️ **5 终极门禁** 需打 v0.1.0 tag 前全过
 
-详见 [STATUS.md](STATUS.md) §"已知问题"。
-
 ---
 
 ### 形式化验证（A-1 / A-2 / C-1）
@@ -157,14 +153,13 @@
 - **B-2 cargo audit 0 CVE** — 公网 RustSec DB 实跑 0 CVE
 - **E-1 criterion 性能基准** — evorule-tcb 3 组基准（execute_transition / jsonvalue_ops / path_resolve）实跑
 
-### 走神 9 拆分（机制-应用边界清理）
+### 机制-应用边界清理
 
-- **evorule 仓独立 release** — 不绑 application/agent 仓；HTTP API / io_handlers / 认证中间件归 evorule-server 独立仓；可视化 / 业务模板归 evorule-application 仓
-- **H5 迁移落地** — `evorule-server` 与 `io_handlers` 从 evorule-governance 迁出；evorule-governance 现为纯机制层库（IoDispatcher 框架 + IoHandler trait re-export）
-- **走神 9 二次拆分落地** — `evorule-server` 与 `io_handlers` 从 evorule-application 仓再次迁出，成立 **evorule-server 独立仓**（9 个子 crate：server + io_handlers + auth + metrics + hot_reload + time_machine + debug_control + rule_tools + semantic_invariants）；evorule-application 仓回归纯可视化/业务模板定位
+- **evorule 仓独立 release** — 核心层仅包含机制；HTTP API、I/O Handler 实现、可视化、业务模板等应用层功能不在本仓
+- **evorule-governance 精简为纯机制层库** — IoDispatcher 框架 + IoHandler trait re-export（具体 I/O Handler 实现不在本仓）
 - **README 定位调整** — 叙事调整为"通用反应式执行引擎"
-- **SDK 全部外移** — TypeScript/Python/Go/Java SDK 迁移到独立仓 evorule-sdk
-- **evorule-cli 业务规则模板外移**（2026-07-30）— `evorule-cli/examples/hospital/` + `evorule-cli/examples/law-firm/` 两套行业规则集（HIPAA / 律所合规）共 10 个文件，按 `AGENTS.md` 边界判断表「evorule-cli 加规则模板 = 业务内容，不是机制，放 evorule-application ❌」迁移至兄弟仓 `evorule-application/examples/evorule-cli/`；evorule 核心仓 `evorule-cli/examples/` 仅保留机制层最小化演示 README 与 tests/fixtures 用例
+- **SDK 不在本仓** — 多语言客户端 SDK 见 evorule-sdk 独立仓
+- **evorule-cli 业务规则模板外移**（2026-07-30）— `evorule-cli/examples/hospital/` + `evorule-cli/examples/law-firm/` 两套行业规则集（HIPAA / 律所合规）共 10 个文件，按 `AGENTS.md` 边界判断表「evorule-cli 加规则模板 = 业务内容，不是机制，放应用层 ❌」迁出本仓；evorule 核心仓 `evorule-cli/examples/` 仅保留机制层最小化演示 README 与 tests/fixtures 用例
   - 【留痕声明】本次迁移是**经用户明确要求并确认**的越界清理操作，遵循 AGENTS.md 规则二的警告确认流程，不再回迁
 
 ### 🗑 移除（H5 边界清理）
@@ -183,27 +178,9 @@
 
 ### 已知问题（v0.1.0 首发时仍存在）
 
-- ⚠️ **P1 安全修复待公网部署前完成** — H6 SSRF / H7 SQL / H8 CORS / H9 DB URL（io_handlers 已迁 evorule-application 仓，在该仓修复）
+- ⚠️ **P1 安全修复待公网部署前完成** — H6 SSRF / H7 SQL / H8 CORS / H9 DB URL（具体 I/O Handler 实现位于应用层，不在本仓）
 - ⚠️ **跨平台 release 实测** 仅 Windows + WSL，macOS 待 CI 跑过确认
 - ❌ **API 稳定承诺仍不提供** — 1.0 之前 API 仍可能变化
-
-详见 [STATUS.md](STATUS.md) §"已知问题"。
-
----
-
-## [未发布] — v0.2.0 质量硬化（计划 2026-08-XX）
-
-> 本节为 v0.1.0 首发之后的规划项。
-
-**硬化目标**：在 v0.1.0 三 lib 首发基础上，补齐 CI 跨平台验证、Kani 证明覆盖、性能基准报告，使 evorule 仓进入稳定的质量门禁循环。
-
-### 规划项
-
-- [ ] macOS + Linux Gitee Go CI 全绿跑通（跨平台 release 验证 F-1）
-- [ ] Kani tier0 12 proof 全部实跑通过（含 verify_path_no_panic 优化方案）
-- [ ] Kani tier1 C1-1~C1-4 4 个新增 proof 实跑
-- [ ] 第三方代码 review 启动（Circle 2 阶段）
-- [ ] 跨平台 demo 视频 / GIF 录制（公开宣传素材）
 
 ---
 
@@ -215,7 +192,7 @@
 
 项目首次公开版本。EvoRule 是一个只接受和运行 JSON 数据集的反应式执行引擎，采用三层架构（TCB / Reactor / Governance），提供确定性执行、可审计链、时间旅行调试。
 
-**架构原则**：机制与策略分离。核心层（tier0/tier1/tier2）仅包含机制，应用层功能（HTTP API、SSE、Prometheus、认证、具体 I/O Handler）位于 `evorule-application` 仓库。
+**架构原则**：机制与策略分离。核心层（tier0/tier1/tier2）仅包含机制，应用层功能（HTTP API、SSE、Prometheus、认证、具体 I/O Handler）不在本仓。
 
 ### 🆕 新增
 
@@ -244,19 +221,7 @@
   - IoMetrics trait：可观测性接口（由应用层注入实现）
   - RuleValidator：规则静态安全分析（5 项检查）
 
-#### 应用层（evorule-application）
-
-> 以下功能位于 `evorule-application` 仓库，不属于核心层。
-
-- **evorule-server** — HTTP API 服务
-  - 40+ JSON HTTP 端点
-  - SSE 事件流（心跳 + 空闲超时 + 连接数限制）
-  - Bearer Token 认证
-  - Prometheus 指标暴露
-- **io_handlers** — 具体 I/O Handler 实现
-  - DbHandler（SQLite）
-  - HttpHandler（reqwest）
-  - MemoryHandler
+> 应用层功能（HTTP API 服务、具体 I/O Handler 实现等）不在本仓。
 
 #### 工具与生态
 
@@ -266,29 +231,27 @@
   - `diff` 子命令：时间机器版本对比
 - **5 个 validate-\*.ps1 + validate-all.ps1** — SemVer / CHANGELOG / License / Cargo.lock / Tag 校验
 - **CI 流水线** — Gitee Go + GitHub Actions（clippy / test / kani / differential）
-- **形式化验证白皮书 v3.1** — 七层验证体系 + 属性目录 + 追溯矩阵
+- **形式化验证白皮书** — 七层验证体系 + 属性目录 + 追溯矩阵
 
 ### 🔒 安全
 
 - **SECURITY_AUDIT v0.1.0** — P0 全修复，P1 4 项 HIGH 待公网部署前修复
 - **THREAT_MODEL.md** — 威胁建模
 - **DEPENDENCY_AUDIT v0.1.0** — 核心 crate 零已知漏洞（cargo audit 通过）
-- **Bearer Token 认证** — 应用层功能，位于 evorule-server
+- **Bearer Token 认证** — 应用层功能，不在本仓
 
 ### 📚 文档
 
 - **README.md** — 快速开始（核心库 + HTTP API 双路径）、架构图、三层详解
 - **VERSION_STRATEGY.md** — 生态版本号标准
-- **ROADMAP.md** — 公开路线图
-- **STATUS.md** — 当前状态与已知限制
-- **形式化验证白皮书 v3.1** — `EVORULE_FORMAL_VERIFICATION_PLAN_v3.md`
+- **形式化验证白皮书** — `EVORULE_FORMAL_VERIFICATION_PLAN_v3.md`
 - **设计原则** — 透明 / 可选 / 可控 / 可回放 / 可审计
 
 ### 🔄 变更
 
 - **协议统一为 AGPL-3.0-or-later**
 - **所有 .rs 文件加 SPDX header** — 全覆盖
-- **H5/H6 架构迁移** — HTTP API、SSE、Prometheus、认证、具体 I/O Handler 从 evorule-governance 迁移到 evorule-application，核心层保持纯净
+- **H5/H6 架构清理** — HTTP API、SSE、Prometheus、认证、具体 I/O Handler 不在 evorule 核心仓内，核心层保持纯净
 
 ### 🐛 修复
 
@@ -303,8 +266,6 @@
 - ⚠️ **跨平台 release 未全面验证** — Windows 开发验证通过，Linux/macOS CI 覆盖
 - ❌ **API 稳定承诺仍不提供** — 1.0 之前 API 仍可能变化
 - 🟡 **性能基准未建立** — v0.2.0 引入 criterion 性能测试
-
-详见 [STATUS.md](STATUS.md) §"已知问题"。
 
 ---
 

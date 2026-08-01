@@ -83,7 +83,7 @@
 
 - OS: [e.g. Windows 11 / Ubuntu 22.04]
 - Rust: [e.g. 1.74]
-- evorule 版本: [e.g. v0.1.0]
+- evorule 版本: [e.g. v0.1.1]
 
 **复现步骤**:
 
@@ -193,7 +193,7 @@ test(e2e): 添加宪法核心冒烟测试
 
 ### 端到端测试
 
-启动 evorule-server,跑通 5 个核心场景:
+跑通 5 个核心场景（HTTP API；启动方式详见 evorule-server 仓 README）:
 
 1. 健康检查
 2. 会话生命周期

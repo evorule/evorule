@@ -35,9 +35,9 @@ circulation among security-conscious users (compliance, regulated industries).
 
 | 组件                    | 位置                      | LOC   | 形式化验证状态                                                  |
 | ----------------------- | ------------------------- | ----- | --------------------------------------------------------------- |
-| **evorule-tcb**           | `evorule-tcb/`              | ~1.5K | ✅ **Phase 1 完成**: Kani 4/5 + TLA+ 5 不变式 + proptest 26     |
-| **evorule-reactor**       | `evorule-reactor/`          | ~10K  | 🟡 5 条不变量运行时检查;⏳ Kani 形式化证明 Phase 3              |
-| **evorule-governance**    | `evorule-governance/`       | ~10K  | 🟡 blake3 哈希链实现;⏳ TLA+ 形式化证明 Phase 4;🔴 4 项 P1 待修 |
+| **evorule-tcb**         | `evorule-tcb/`            | ~1.5K | ✅ **Phase 1 完成**: Kani 4/5 + TLA+ 5 不变式 + proptest 26     |
+| **evorule-reactor**     | `evorule-reactor/`        | ~10K  | 🟡 5 条不变量运行时检查;⏳ Kani 形式化证明 Phase 3              |
+| **evorule-governance**  | `evorule-governance/`     | ~10K  | 🟡 blake3 哈希链实现;⏳ TLA+ 形式化证明 Phase 4;🔴 4 项 P1 待修 |
 | **evorule-cli**         | `evorule-cli/`            | ~3K   | 🟢 reproducible musl build;SHA256 verify                        |
 | **evo-agent**(应用层)   | `D:\evo-agent\`           | n/a   | 🟢 3-layer tool model + workdir sandbox(详见 v0.1.0 §5)         |
 | **evorule-application** | `D:\evorule-application\` | n/a   | 🟡 应用层,不阻塞 1.0.0 门槛                                     |
@@ -47,7 +47,7 @@ circulation among security-conscious users (compliance, regulated industries).
 | 方法             | 工具/技术                                                                  | 覆盖范围                                  |
 | ---------------- | -------------------------------------------------------------------------- | ----------------------------------------- |
 | **代码审查**     | 手工 review + `cargo clippy --all-targets -- -D warnings`(0 警告)          | 全 workspace                              |
-| **形式化验证**   | Kani 0.67.0(算术证明)+ TLA+ TLC 2.19(状态机证明)+ proptest(属性测试)       | evorule-tcb(L0-1 ~ L0-12 全覆盖)            |
+| **形式化验证**   | Kani 0.67.0(算术证明)+ TLA+ TLC 2.19(状态机证明)+ proptest(属性测试)       | evorule-tcb(L0-1 ~ L0-12 全覆盖)          |
 | **编译时门禁**   | `build.rs` 14 条 redline(T1-T14)+ G8(tier1/tier2 反应器/治理层控制流)      | tier0 + tier1 + tier2                     |
 | **依赖审计**     | `cargo audit`(人工比对达标,CI 自动化待)+ `cargo deny`(license)             | 全 workspace 24 个直接依赖                |
 | **手工威胁走查** | STRIDE per component + 7 攻击树(详见 [`THREAT_MODEL.md`](THREAT_MODEL.md)) | evorule + evo-agent + evorule-application |
@@ -66,7 +66,7 @@ circulation among security-conscious users (compliance, regulated industries).
 | **tier1 形式化验证**                    | ⏳ Phase 3(1.0.0 后): 5 条不变量运行时检查已实现,Kani 证明待                                                                                                                                                     |
 | **tier2 形式化验证**                    | ⏳ Phase 4(1.0.0 后): blake3 链实现完整,TLA+ AuditorChain.tla 待                                                                                                                                                 |
 | **`cargo audit`**                       | 🟡 人工比对达标(cargo-audit 0.22.2 已装,advisory-db fetch 因网络封锁失败;人工 auditor 比对 356 deps 0 high-severity;详见 [`DEPENDENCY_AUDIT_v1.0.0.md`](DEPENDENCY_AUDIT_v1.0.0.md);CI 自动化待 GitHub 网络可达) |
-| **Cryptographic chain**                 | ✅ **IMPLEMENTED** `evorule-governance/auditor.rs` + `hash.rs`(WAL 持久化 + `audit_verify()` HTTP 端点)                                                                                                            |
+| **Cryptographic chain**                 | ✅ **IMPLEMENTED** `evorule-governance/auditor.rs` + `hash.rs`(WAL 持久化 + `audit_verify()` HTTP 端点)                                                                                                          |
 | **Threat model document**               | 🟡 [`THREAT_MODEL.md`](THREAT_MODEL.md) 已更新至 Phase 1 完成状态;reviewer 签字仍待                                                                                                                              |
 | **Independent reviewer**                | 🔴 NOT YET APPOINTED(1.0.0 发布前必备)                                                                                                                                                                           |
 | **1.0 门槛达标(VERSION_STRATEGY §4.4)** | 🟡 **部分达标**: 形式化验证 ✅(tier0)/安全审计 🟡(本文档 DRAFT)/cargo audit 🟡(人工达标,CI 自动化待)/独立 reviewer ❌/1 reference impl ✅/性能基准 ❌ — 见 §8.1                                                  |
@@ -77,11 +77,11 @@ circulation among security-conscious users (compliance, regulated industries).
 
 ### 1.4 审计签署
 
-| Role                         | Name                | Sign-off Date | Notes                                                                                           |
-| ---------------------------- | ------------------- | ------------- | ----------------------------------------------------------------------------------------------- |
-| **Audit author**             | EvoRule maintainers | 2026-07-25    | DRAFT — pending independent reviewer                                                            |
-| **Independent reviewer**     | 🔴 **TBD**          | n/a           | 1.0.0 tag 前必备,需在 §9 完成签字                                                               |
-| **Project lead**             | 🔴 **TBD**          | n/a           | 1.0.0 tag 前必备                                                                                |
+| Role                         | Name                | Sign-off Date | Notes                                                                                             |
+| ---------------------------- | ------------------- | ------------- | ------------------------------------------------------------------------------------------------- |
+| **Audit author**             | EvoRule maintainers | 2026-07-25    | DRAFT — pending independent reviewer                                                              |
+| **Independent reviewer**     | 🔴 **TBD**          | n/a           | 1.0.0 tag 前必备,需在 §9 完成签字                                                                 |
+| **Project lead**             | 🔴 **TBD**          | n/a           | 1.0.0 tag 前必备                                                                                  |
 | **Formal verification lead** | EvoRule maintainers | 2026-07-25    | Phase 1 完成(详见 [TLC_VERIFICATION_REPORT.md](../../evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)) |
 
 **Until the independent reviewer signs, this document is DRAFT and
@@ -95,23 +95,23 @@ should not be cited as evidence of security in customer-facing materials.**
 
 `$lang
 ┌─ tier2(evorule-governance,信任度中)──────────────────────┐
-│  HTTP API / Session / Auditor / blake3 哈希链 / WAL     │
-│  攻击面: HTTP 入站、CORS、SQL/HTTP io_handler           │
-│  防御: 1MB body limit / 1000 并发上限 / 100 SSE 上限     │
-│         ⚠️ SSRF / SQL / CORS / DB URL P1 未修(§5.4)     │
+│ HTTP API / Session / Auditor / blake3 哈希链 / WAL │
+│ 攻击面: HTTP 入站、CORS、SQL/HTTP io_handler │
+│ 防御: 1MB body limit / 1000 并发上限 / 100 SSE 上限 │
+│ ⚠️ SSRF / SQL / CORS / DB URL P1 未修(§5.4) │
 ├─ tier1(evorule-reactor,信任度中)─────────────────────────┤
-│  Reactor / FactsLog / I/O pending / 不变量运行时检查     │
-│  攻击面: 恶意 Fact / I/O 劫持 / 不变量违反               │
-│  防御: 5 条结构性不变量 invariants.rs / max_rounds       │
-│         ⏳ Kani 形式化证明 Phase 3(L1-1 ~ L1-5)         │
+│ Reactor / FactsLog / I/O pending / 不变量运行时检查 │
+│ 攻击面: 恶意 Fact / I/O 劫持 / 不变量违反 │
+│ 防御: 5 条结构性不变量 invariants.rs / max_rounds │
+│ ⏳ Kani 形式化证明 Phase 3(L1-1 ~ L1-5) │
 ├─ tier0(evorule-tcb,信任度高)─────────────────────────────┤
-│  纯函数 / 零 unsafe / 确定性 / 终止性                    │
-│  攻击面: 恶意构造的 JsonValue(core_eval/instruction)    │
-│  防御: ✅ Phase 1 完成(Kani + TLA+ + proptest + build.rs)│
-│         详见 §3 + §6                                   │
+│ 纯函数 / 零 unsafe / 确定性 / 终止性 │
+│ 攻击面: 恶意构造的 JsonValue(core_eval/instruction) │
+│ 防御: ✅ Phase 1 完成(Kani + TLA+ + proptest + build.rs)│
+│ 详见 §3 + §6 │
 └─────────────────────────────────────────────────────────┘
 
-```text
+````text
 
 ### 2.2 信任传递链
 
@@ -224,7 +224,7 @@ evorule-tcb 的内存安全由 Rust 类型系统 + 编译时门禁 + 形式化�
 | 整数不溢出             | Kani L0-1/L0-2 证明 `checked_add`/`checked_sub`                             | ✅ 形式化证明          |
 | 路径不 panic           | proptest L0-10 证明 `resolve_path` 任意输入不 panic                         | ✅ 属性测试            |
 
-**注意**: evorule-reactor 的 `ffi.rs` 标注 `#![allow(unsafe_code)]` 用于 FFI 边界,已在 [`AGENTS.md`](../../AGENTS.md) 文档化。此豁免**不**扩展到 evorule-tcb。
+**注意**: evorule-reactor 的 `ffi.rs` 标注 `#![allow(unsafe_code)]` 用于 FFI 边界,已在 [CONTRIBUTING.md](../../CONTRIBUTING.md) 文档化。此豁免**不**扩展到 evorule-tcb。
 
 ### 3.4 依赖审计
 
@@ -682,7 +682,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 # 9a. 本机当前:advisory-db fetch 因 github.com:443 网络封锁失败
 # 9b. CI 环境(有 GitHub 网络访问)应能跑通:
 cargo audit                                # 0 high-severity expected
-```
+````
 
 ## Appendix B: References
 
@@ -695,7 +695,7 @@ cargo audit                                # 0 high-severity expected
 - [`DEPENDENCY_AUDIT_v0.1.0.md`](DEPENDENCY_AUDIT_v0.1.0.md) — 依赖审计(24 direct deps, 0 known CVEs)
 - [`SECURITY.md`](../../SECURITY.md) — 漏洞报告政策
 - [`evorule-tcb/tla/TLC_VERIFICATION_REPORT.md`](../../evorule-tcb/tla/TLC_VERIFICATION_REPORT.md) — TLC 验证报告
-- [`AGENTS.md`](../../AGENTS.md) — 项目工作规则(含 tier1 ffi.rs unsafe 豁免说明)
+- [`CONTRIBUTING.md`](../../CONTRIBUTING.md) — 项目贡献规则(含 tier1 ffi.rs unsafe 豁免说明)
 
 ### 形式化验证产物
 

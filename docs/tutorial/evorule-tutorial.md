@@ -56,16 +56,17 @@ evorule 是一个**规则驱动的确定性执行框架**。它不是一个应�
 > **业务逻辑（策略）用 JSON 规则定义，执行引擎（机制）用 Rust 实现。两者严格分离。**
 
 这意味着：
+
 - 改业务逻辑 → 改 JSON 文件，**不需要重新编译**
 - 换执行引擎 → 换 Rust 实现，**业务规则不变**
 - 审计业务执行 → 查 JSON 规则 + 审计链，**不需要读代码**
 
 ### 1.2 机制-策略分离
 
-| 层次 | 属于 | 内容 | 修改方式 |
-|------|------|------|---------|
+| 层次                  | 属于         | 内容                                   | 修改方式               |
+| --------------------- | ------------ | -------------------------------------- | ---------------------- |
 | **机制**（Mechanism） | evorule 核心 | 元指令执行器、反应器、审计链、I/O 调度 | 改 Rust 代码，重新编译 |
-| **策略**（Policy） | 应用层 | 业务规则、服务集成、领域逻辑 | 改 JSON 规则，热加载 |
+| **策略**（Policy）    | 应用层       | 业务规则、服务集成、领域逻辑           | 改 JSON 规则，热加载   |
 
 这个分离的直接影响：
 
@@ -81,7 +82,7 @@ evorule 核心由三个 crate 组成：
 ┌─────────────────────────────────────────────────┐
 │              evorule-governance                  │
 │   IoDispatcher 框架 + IoHandler trait            │
-│   （I/O 调度框架，具体 handler 在 evorule-server）│
+│   （I/O 调度框架，具体 handler 实现不在本仓）     │
 ├─────────────────────────────────────────────────┤
 │              evorule-reactor                     │
 │   反应器主循环 + FactsLog 审计链                  │
@@ -99,13 +100,13 @@ evorule 核心由三个 crate 组成：
 
 ### 1.4 与传统硬编码的对比
 
-| 维度 | 传统硬编码 | evorule |
-|------|-----------|---------|
-| 业务逻辑位置 | 散布在代码各处 | 集中在 JSON 规则文件 |
-| 修改业务逻辑 | 改代码 → 编译 → 部署 | 改 JSON → 热加载 |
-| 审计能力 | 需要额外埋点 | 内置哈希审计链 |
-| I/O 集成 | 直接函数调用 | 两阶段协议（请求-结果分离）|
-| 自进化能力 | 需要手动实现 | `while_loop` + 规则沙箱 |
+| 维度         | 传统硬编码           | evorule                     |
+| ------------ | -------------------- | --------------------------- |
+| 业务逻辑位置 | 散布在代码各处       | 集中在 JSON 规则文件        |
+| 修改业务逻辑 | 改代码 → 编译 → 部署 | 改 JSON → 热加载            |
+| 审计能力     | 需要额外埋点         | 内置哈希审计链              |
+| I/O 集成     | 直接函数调用         | 两阶段协议（请求-结果分离） |
+| 自进化能力   | 需要手动实现         | `while_loop` + 规则沙箱     |
 
 ---
 
@@ -121,9 +122,22 @@ evorule 的一切业务逻辑最终都归结为 4 个元指令。业务指令（
 {
   "rule_id": "core.eval",
   "transform": [
-    {"type": "branch", "params": {"domain": {"type": "instruction", "instruction_type": "increment"}, "on_true": [
-      {"type": "set", "params": {"attr": "__exec__.instruction.params.attr", "operation": "add", "value": "__exec__.instruction.params.delta"}}
-    ]}},
+    {
+      "type": "branch",
+      "params": {
+        "domain": { "type": "instruction", "instruction_type": "increment" },
+        "on_true": [
+          {
+            "type": "set",
+            "params": {
+              "attr": "__exec__.instruction.params.attr",
+              "operation": "add",
+              "value": "__exec__.instruction.params.delta"
+            }
+          }
+        ]
+      }
+    }
     // ... 更多 transform 规则
   ]
 }
@@ -136,7 +150,10 @@ evorule 的一切业务逻辑最终都归结为 4 个元指令。业务指令（
 `set` 是最基础的元指令，修改 payload 中的字段：
 
 ```json
-{"type": "set", "params": {"attr": "audit.counter", "operation": "add", "value": 1}}
+{
+  "type": "set",
+  "params": { "attr": "audit.counter", "operation": "add", "value": 1 }
+}
 ```
 
 - `attr`：目标字段路径（支持 `a.b.c` 嵌套，中间节点不存在时自动创建）
@@ -157,7 +174,8 @@ let new_value = match operation {
 };
 ```
 
-> **关键区分**（参见 [PITFALLS P20](../../../evorule-server/docs/PITFALLS.md)）：
+> **关键区分**（参见 evorule-server 仓 PITFALLS P20）：
+>
 > - **业务 `set` 指令**（经 core_eval 处理）：`operation` 被忽略，总是覆盖。累加用 `increment` 指令
 > - **meta-instruction `set`**（transform 规则中的 `set`）：`operation` 有效，支持 `add`/`sub`
 
@@ -166,7 +184,12 @@ let new_value = match operation {
 `push` 将指令推到队列前端，实现 `sequence`、`conditional`、`while_loop` 等控制流：
 
 ```json
-{"type": "push", "params": {"instructions": ["__exec__.instruction.params.body", "__exec__.instruction"]}}
+{
+  "type": "push",
+  "params": {
+    "instructions": ["__exec__.instruction.params.body", "__exec__.instruction"]
+  }
+}
 ```
 
 `instructions` 支持路径引用（`__` 开头自动解析）和字面数组。路径引用解析为数组时会自动展平。
@@ -178,11 +201,28 @@ let new_value = match operation {
 `branch` 根据 domain 求值结果选择执行 `on_true` 或 `on_false`：
 
 ```json
-{"type": "branch", "params": {
-  "domain": {"type": "lt", "path": "payload.audit.evolution_count", "value": 3},
-  "on_true": [{"type": "push", "params": {"instructions": ["__exec__.instruction.params.body", "__exec__.instruction"]}}],
-  "on_false": []
-}}
+{
+  "type": "branch",
+  "params": {
+    "domain": {
+      "type": "lt",
+      "path": "payload.audit.evolution_count",
+      "value": 3
+    },
+    "on_true": [
+      {
+        "type": "push",
+        "params": {
+          "instructions": [
+            "__exec__.instruction.params.body",
+            "__exec__.instruction"
+          ]
+        }
+      }
+    ],
+    "on_false": []
+  }
+}
 ```
 
 `branch` 的嵌套深度上限是 64 层（`MAX_BRANCH_DEPTH`），防止恶意规则导致栈溢出。
@@ -192,14 +232,18 @@ let new_value = match operation {
 `io_request` 不修改任何状态，只产生一个 I/O 请求信号，由上层反应器处理：
 
 ```json
-{"type": "io_request", "params": {
-  "io_type": "call_external",
-  "service_name": "__exec__.instruction.params.service_name",
-  "target_pose": "__exec__.instruction.params.target_pose"
-}}
+{
+  "type": "io_request",
+  "params": {
+    "io_type": "call_external",
+    "service_name": "__exec__.instruction.params.service_name",
+    "target_pose": "__exec__.instruction.params.target_pose"
+  }
+}
 ```
 
 执行器返回 `MetaInstructionResult::IoRequired` 信号，反应器收到后：
+
 1. 暂停当前 transition
 2. 调用对应的外部服务
 3. 将结果写入 `payload.__io_result__`
@@ -209,14 +253,14 @@ let new_value = match operation {
 
 `branch` 的 `domain` 字段支持 6 种类型：
 
-| 类型 | 语义 | 示例 |
-|------|------|------|
-| `eq` | 等于 | `{"type": "eq", "path": "payload.x", "value": 42}` |
-| `lt` | 小于 | `{"type": "lt", "path": "payload.counter", "value": 3}` |
-| `exists` | 路径存在 | `{"type": "exists", "path": "payload.__io_result__"}` |
+| 类型          | 语义         | 示例                                                        |
+| ------------- | ------------ | ----------------------------------------------------------- |
+| `eq`          | 等于         | `{"type": "eq", "path": "payload.x", "value": 42}`          |
+| `lt`          | 小于         | `{"type": "lt", "path": "payload.counter", "value": 3}`     |
+| `exists`      | 路径存在     | `{"type": "exists", "path": "payload.__io_result__"}`       |
 | `instruction` | 指令类型匹配 | `{"type": "instruction", "instruction_type": "compute_ik"}` |
-| `all` | 全部满足 | `{"type": "all", "inner": [...]}` |
-| `not` | 逻辑非 | `{"type": "not", "inner": {...}}` |
+| `all`         | 全部满足     | `{"type": "all", "inner": [...]}`                           |
+| `not`         | 逻辑非       | `{"type": "not", "inner": {...}}`                           |
 
 ### 2.7 确定性保证
 
@@ -242,6 +286,7 @@ result = call_service("ik_solver", target_pose)  // 阻塞等待
 ```
 
 问题：
+
 - **不可审计**：调用发生在代码内部，审计链看不到请求和响应
 - **不可重放**：外部服务可能返回不同结果，无法确定性重放
 - **不可回滚**：如果后续步骤失败，已经发出的 I/O 调用无法撤回
@@ -260,24 +305,44 @@ evorule 的方案——**两阶段协议**：
 `compute_ik` 指令的 core_eval 映射展示了自动模式：
 
 ```json
-{"type": "branch", "params": {
-  "domain": {"type": "instruction", "instruction_type": "compute_ik"},
-  "on_true": [{"type": "branch", "params": {
-    "domain": {"type": "exists", "path": "payload.__io_result__"},
-    "on_false": [{"type": "io_request", "params": {
-      "io_type": "call_external",
-      "service_name": "__exec__.instruction.params.service_name",
-      "target_pose": "__exec__.instruction.params.target_pose"
-    }}],
-    "on_true": [{"type": "set", "params": {
-      "attr": "service_result", "operation": "set",
-      "value": "__exec__.payload.__io_result__"
-    }}]
-  }}]
-}}
+{
+  "type": "branch",
+  "params": {
+    "domain": { "type": "instruction", "instruction_type": "compute_ik" },
+    "on_true": [
+      {
+        "type": "branch",
+        "params": {
+          "domain": { "type": "exists", "path": "payload.__io_result__" },
+          "on_false": [
+            {
+              "type": "io_request",
+              "params": {
+                "io_type": "call_external",
+                "service_name": "__exec__.instruction.params.service_name",
+                "target_pose": "__exec__.instruction.params.target_pose"
+              }
+            }
+          ],
+          "on_true": [
+            {
+              "type": "set",
+              "params": {
+                "attr": "service_result",
+                "operation": "set",
+                "value": "__exec__.payload.__io_result__"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
 ```
 
 执行流程：
+
 1. 第一次执行：`__io_result__` 不存在 → `exists` 为 false → 走 `on_false` → 发出 `io_request`
 2. 反应器收到 `IoRequired` 信号 → 调用 IK Solver 服务 → 结果写入 `__io_result__`
 3. 第二次执行：`__io_result__` 存在 → `exists` 为 true → 走 `on_true` → 消费结果，写入 `service_result`
@@ -299,7 +364,8 @@ client.send_command(sid, {
 })
 ```
 
-evorule-server 收到后：
+HTTP server 收到后（见 evorule-server 仓）：
+
 1. 指令入队 → 反应器弹出 → `execute_transition` 执行 core_eval
 2. core_eval 匹配 `instruction_type: "compute_ik"` → 发出 `io_request`
 3. IoDispatcher 路由到 `inverse_kinematics_solver` 服务（端口 5102）
@@ -321,6 +387,7 @@ Fact_1 (hash_1) → Fact_2 (hash_2 = H(hash_1 + content_2)) → Fact_3 (hash_3 =
 ```
 
 Fact 类型包括：
+
 - `SessionCreated`：会话创建
 - `InstructionPushed`：指令入队
 - `TransitionStarted` / `TransitionCompleted`：状态转换
@@ -333,6 +400,7 @@ Fact 类型包括：
 evorule 的确定性保证意味着：**给定相同的 core_eval 规则、相同的初始 payload 和相同的指令序列，执行结果在任何环境下完全一致**。
 
 这带来的能力：
+
 - **重放调试**：用审计链中的 Fact 重放整个执行过程
 - **时间机器**：回溯到任意执行步骤的状态
 - **形式化验证**：用 Kani 对 TCB 做形式化证明（参见 [形式化验证白皮书](../../EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)）
@@ -360,22 +428,36 @@ evorule 没有专门的 `while` 循环指令——它通过 `branch` + `push` �
 core_eval.json 中 `while_loop` 的映射规则：
 
 ```json
-{"type": "branch", "params": {
-  "domain": {"type": "instruction", "instruction_type": "while_loop"},
-  "on_true": [{"type": "branch", "params": {
-    "domain": "__exec__.instruction.params.condition",
-    "on_true": [{"type": "push", "params": {
-      "instructions": [
-        "__exec__.instruction.params.body",
-        "__exec__.instruction"
-      ]
-    }}],
-    "on_false": []
-  }}]
-}}
+{
+  "type": "branch",
+  "params": {
+    "domain": { "type": "instruction", "instruction_type": "while_loop" },
+    "on_true": [
+      {
+        "type": "branch",
+        "params": {
+          "domain": "__exec__.instruction.params.condition",
+          "on_true": [
+            {
+              "type": "push",
+              "params": {
+                "instructions": [
+                  "__exec__.instruction.params.body",
+                  "__exec__.instruction"
+                ]
+              }
+            }
+          ],
+          "on_false": []
+        }
+      }
+    ]
+  }
+}
 ```
 
 执行逻辑：
+
 1. 匹配 `while_loop` 指令
 2. 求值 `condition`（如 `lt(payload.audit.evolution_count, 3)`）
 3. 条件为 true → `push` 将 `body` 指令和 `while_loop` 自身推入队列前端
@@ -468,7 +550,7 @@ UR5 是一款 6 轴协作机器人（工作半径 850mm）。本案例模拟焊�
 
 ```
 ┌──────────────────────────────────────────────────┐
-│                evorule-server (:18080)            │
+│                HTTP server (:18080)               │
 │   ┌─────────────┐  ┌──────────┐  ┌────────────┐ │
 │   │  Reactor    │  │ core_eval│  │  FactsLog  │ │
 │   │  (执行循环)  │  │ (规则映射)│  │  (审计链)  │ │
@@ -489,14 +571,14 @@ UR5 是一款 6 轴协作机器人（工作半径 850mm）。本案例模拟焊�
 
 yuanze-demos 从简单到复杂，渐进式构建了完整的机器人工作站：
 
-| 阶段 | 文件 | 内容 | 验证能力 |
-|------|------|------|---------|
-| 1 | 011.json | 单条 `compute_ik` 指令 | I/O 两阶段协议 |
-| 2 | 012.json | sequence：IK → 移动 | 指令队列 |
-| 3 | 013.json | conditional：精度验证分支 | 条件执行 |
-| 4 | 014.json | audit_alert：LLM 告警 | I/O + 审计 |
-| 5 | 015.json | while_loop：3 轮自进化 | 循环 + 热加载 |
-| 6 | 016.json | safety_rollback：安全回滚 | 容错 |
+| 阶段 | 文件     | 内容                      | 验证能力       |
+| ---- | -------- | ------------------------- | -------------- |
+| 1    | 011.json | 单条 `compute_ik` 指令    | I/O 两阶段协议 |
+| 2    | 012.json | sequence：IK → 移动       | 指令队列       |
+| 3    | 013.json | conditional：精度验证分支 | 条件执行       |
+| 4    | 014.json | audit_alert：LLM 告警     | I/O + 审计     |
+| 5    | 015.json | while_loop：3 轮自进化    | 循环 + 热加载  |
+| 6    | 016.json | safety_rollback：安全回滚 | 容错           |
 
 ### 6.4 运行结果
 
@@ -527,7 +609,7 @@ yuanze-demos 从简单到复杂，渐进式构建了完整的机器人工作站�
 
 ### 7.1 PITFALLS 体系
 
-evorule-server 维护了一套结构化的踩坑记录——[PITFALLS.json](../../../evorule-server/docs/PITFALLS.json)，包含 21 个已知的坑（P01-P21），每个坑记录：
+应用层 HTTP server（见 evorule-server 仓）维护了一套结构化的踩坑记录 PITFALLS.json，包含 21 个已知的坑（P01-P21），每个坑记录：
 
 - **触发场景**：什么情况下会踩到
 - **现象**：踩到后看到什么
@@ -537,7 +619,7 @@ evorule-server 维护了一套结构化的踩坑记录——[PITFALLS.json](../.
 
 ### 7.2 check_pitfalls.py 工具
 
-[check_pitfalls.py](../../../evorule-server/scripts/check_pitfalls.py) 是配套的自动检测工具，能扫描 JSON 规则文件，发现 12 种可检测的坑：
+配套的自动检测工具 check_pitfalls.py（见 evorule-server 仓）能扫描 JSON 规则文件，发现 12 种可检测的坑：
 
 ```bash
 # 扫描规则文件
@@ -571,6 +653,7 @@ client.send_command(sid, {"type": "increment", "params": {"attr": "audit.counter
 当 transform 规则中 `set` 的 `value` 引用 `__exec__.payload.X`，而 `X` 尚未被前置指令设置时，transition 会报 `PathResolutionFailed` 错误并**静默回滚**——审计链只记录一个 `Error` fact（仅 content_hash，无人类可读消息），极难排查。
 
 修复方案：
+
 1. 确保引用的路径在前置指令中已设置
 2. 用 `branch+exists(path)` 保护引用
 3. 测试独立指令前手动预设依赖字段
@@ -585,24 +668,14 @@ client.send_command(sid, {"type": "increment", "params": {"attr": "audit.counter
 # 1. 克隆 evorule 核心
 git clone https://github.com/evorule/evorule.git
 
-# 2. 克隆 evorule-server
-git clone https://github.com/evorule/evorule-server.git
+# 2. 准备 HTTP server（见 evorule-server 仓）与 yuanze-demos（机器人案例）
+#    克隆与启动方式参见各仓 README
 
-# 3. 克隆 yuanze-demos（机器人案例）
-git clone https://github.com/evorule/yuanze-demos.git
-
-# 4. 启动 6 个 Python 服务
+# 3. 启动 6 个 Python 服务
 cd yuanze-demos
 ./services/start_all_services.ps1
 
-# 5. 启动 evorule-server
-cd ../evorule-server
-cargo run --bin evorule-server -- --addr 127.0.0.1:18080 --max-rounds 10000 \
-  --rules-dir D:/yuanze-demos/server-config/rules \
-  --service-registry D:/yuanze-demos/server-config/service_registry.json \
-  --core-eval D:/evorule/evorule-tcb/core_eval.json
-
-# 6. 运行测试
+# 4. 运行测试
 cd ../yuanze-demos/tests
 python -m pytest test_happy_path.py -v
 python test_real_robot.py
@@ -610,24 +683,21 @@ python test_real_robot.py
 
 ### 8.2 参考文档索引
 
-| 文档 | 内容 | 位置 |
-|------|------|------|
-| [README.md](../../README.md) | 项目总览 | evorule 根目录 |
-| [STATUS.md](../../STATUS.md) | v0.1.0 能跑什么、不能跑什么 | evorule 根目录 |
-| [TCB_SPEC.md](../../evorule-tcb/TCB_SPEC.md) | TCB 规格说明 | evorule-tcb/ |
-| [REACTOR_SPEC.md](../../evorule-reactor/REACTOR_SPEC.md) | 反应器规格说明 | evorule-reactor/ |
-| [GOVERNANCE_SPEC.md](../../evorule-governance/GOVERNANCE_SPEC.md) | 治理层规格说明 | evorule-governance/ |
-| [core_eval.json](../../evorule-tcb/core_eval.json) | 框架宪法（业务指令→元指令映射） | evorule-tcb/ |
-| [PITFALLS.md](../../../evorule-server/docs/PITFALLS.md) | 21 个已知坑的详细说明 | evorule-server/docs/ |
-| [形式化验证白皮书](../../EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) | 七层验证体系 | evorule 根目录 |
-| [路线图](../../ROADMAP.md) | 0.2.0 → 1.0 里程碑 | evorule 根目录 |
+| 文档                                                              | 内容                            | 位置                |
+| ----------------------------------------------------------------- | ------------------------------- | ------------------- |
+| [README.md](../../README.md)                                      | 项目总览                        | evorule 根目录      |
+| [TCB_SPEC.md](../../evorule-tcb/TCB_SPEC.md)                      | TCB 规格说明                    | evorule-tcb/        |
+| [REACTOR_SPEC.md](../../evorule-reactor/REACTOR_SPEC.md)          | 反应器规格说明                  | evorule-reactor/    |
+| [GOVERNANCE_SPEC.md](../../evorule-governance/GOVERNANCE_SPEC.md) | 治理层规格说明                  | evorule-governance/ |
+| [core_eval.json](../../evorule-tcb/core_eval.json)                | 框架宪法（业务指令→元指令映射） | evorule-tcb/        |
+| [形式化验证白皮书](../../EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)  | 七层验证体系                    | evorule 根目录      |
 
 ### 8.3 下一步
 
 - **深入理解 TCB**：读 [TCB_SPEC.md](../../evorule-tcb/TCB_SPEC.md) 和 [executor.rs](../../evorule-tcb/src/executor.rs) 源码
 - **理解反应器**：读 [REACTOR_SPEC.md](../../evorule-reactor/REACTOR_SPEC.md) 和 [reactor.rs](../../evorule-reactor/src/reactor.rs) 源码
 - **构建自己的应用**：参考 yuanze-demos 的服务架构，为你的领域编写 JSON 规则和 Python 服务
-- **贡献规则模板**：将你的领域规则沉淀为模板，放在 evorule-application 仓
+- **贡献规则模板**：将你的领域规则沉淀为模板，放至应用层（见 evorule-application 仓）
 
 ---
 
