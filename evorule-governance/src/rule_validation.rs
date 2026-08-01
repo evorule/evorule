@@ -23,8 +23,8 @@
 //! - `evorule-tcb/src/executor.rs`：`execute_meta_instruction` 的合法指令类型
 //! - `evorule-reactor/src/特别规范.md`：机制-策略分离原则
 
-use serde::Serialize;
 use evorule_tcb::JsonValue;
+use serde::Serialize;
 
 // ============================================================================
 // 元指令白名单
@@ -758,8 +758,10 @@ pub fn validate_rules_from_json(json_str: &str) -> Result<ValidationResult, Stri
     let transforms = extract_transforms(&parsed)?;
 
     // 转换为 tier0 JsonValue
-    let tcb_transforms: Vec<JsonValue> =
-        transforms.iter().map(evorule_reactor::serde_to_tcb).collect();
+    let tcb_transforms: Vec<JsonValue> = transforms
+        .iter()
+        .map(evorule_reactor::serde_to_tcb)
+        .collect();
 
     Ok(validate_rules(&tcb_transforms))
 }

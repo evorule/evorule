@@ -40,14 +40,9 @@ pub fn run(
 
     // 初始指令：noop 触发 transform 链
     // （core_eval 规则通过 branch domain=instruction_type 匹配 noop 后执行 on_true）
-    let initial_instruction =
-        JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))]);
+    let initial_instruction = JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))]);
 
-    tracing::info!(
-        rules = transforms.len(),
-        max_steps,
-        "starting execution"
-    );
+    tracing::info!(rules = transforms.len(), max_steps, "starting execution");
 
     let facts = executor::execute(&transforms, initial_payload, initial_instruction, max_steps)?;
 
@@ -59,10 +54,7 @@ pub fn run(
         .iter()
         .any(|f| matches!(f, evorule_reactor::Fact::Error { .. }));
     if has_error {
-        tracing::warn!(
-            facts = facts.len(),
-            "execution completed with Error facts"
-        );
+        tracing::warn!(facts = facts.len(), "execution completed with Error facts");
     } else {
         tracing::info!(facts = facts.len(), "execution completed successfully");
     }

@@ -14,8 +14,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use evorule_tcb::JsonValue;
 use evorule_reactor::{Fact, FactId, Reactor};
+use evorule_tcb::JsonValue;
 
 /// 构造 increment 宪法规则
 fn make_core_eval() -> Vec<JsonValue> {
@@ -56,9 +56,7 @@ fn bench_reactor_single_command(c: &mut Criterion) {
     c.bench_function("reactor/e2e_single_command", |b| {
         b.iter(|| {
             rt.block_on(async {
-                let reactor = Reactor::builder(core_eval.clone())
-                    .max_rounds(1000)
-                    .build();
+                let reactor = Reactor::builder(core_eval.clone()).max_rounds(1000).build();
                 let (cmd_tx, mut event_rx, _event_tx, handle, _facts_log) = reactor.spawn();
 
                 cmd_tx
@@ -125,5 +123,9 @@ fn bench_reactor_100_commands(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_reactor_single_command, bench_reactor_100_commands);
+criterion_group!(
+    benches,
+    bench_reactor_single_command,
+    bench_reactor_100_commands
+);
 criterion_main!(benches);

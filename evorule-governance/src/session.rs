@@ -25,8 +25,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use evorule_tcb::JsonValue;
 use evorule_reactor::{EventSender, Fact, FactId, FactSender, FactsLog, Reactor, ReactorHandle};
+use evorule_tcb::JsonValue;
 
 use crate::auditor::{AuditEntry, Auditor};
 // ObjectPool 已移除（性能优化，非核心功能）
@@ -1019,8 +1019,8 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     #![allow(clippy::panic, clippy::expect_used)]
     use super::*;
-    use std::collections::BTreeMap;
     use evorule_reactor::Fact;
+    use std::collections::BTreeMap;
 
     fn make_core_eval() -> Vec<JsonValue> {
         let mut params = BTreeMap::new();

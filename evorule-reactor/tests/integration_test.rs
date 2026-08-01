@@ -5,8 +5,8 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 //! 反应式执行器集成测试
 
-use evorule_tcb::JsonValue;
 use evorule_reactor::{Fact, FactId, FactIdGenerator, IoType, Reactor};
+use evorule_tcb::JsonValue;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

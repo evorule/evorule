@@ -95,8 +95,8 @@ fn parse_facts(content: &str) -> Result<Vec<Fact>, CliError> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
-    use evorule_tcb::JsonValue;
     use evorule_reactor::{Fact, FactId};
+    use evorule_tcb::JsonValue;
 
     #[test]
     fn test_write_read_roundtrip() {

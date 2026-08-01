@@ -72,8 +72,8 @@ pub fn verify_hash_chain(facts: &[evorule_reactor::Fact]) -> bool {
 mod tests {
     #![allow(deprecated, clippy::unwrap_used, clippy::panic, clippy::expect_used)]
     use super::*;
-    use evorule_tcb::JsonValue;
     use evorule_reactor::{Fact, FactId, IoType};
+    use evorule_tcb::JsonValue;
 
     #[test]
     fn test_fact_to_stable_json_format() {

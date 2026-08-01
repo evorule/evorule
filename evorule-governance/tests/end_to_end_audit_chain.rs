@@ -21,10 +21,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-use tempfile::TempDir;
-use evorule_tcb::JsonValue;
-use evorule_reactor::{read_wal_with_hash, Fact, FactId, FactsLog, IoType, WalRecord};
 use evorule_governance::{auditor::Auditor, hash};
+use evorule_reactor::{read_wal_with_hash, Fact, FactId, FactsLog, IoType, WalRecord};
+use evorule_tcb::JsonValue;
+use tempfile::TempDir;
 
 /// 构造一个简单的 Command Fact
 fn make_command(id: u64, instruction_type: &str) -> Fact {

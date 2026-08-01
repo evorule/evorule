@@ -22,8 +22,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use evorule_tcb::JsonValue;
 use evorule_reactor::{EventReceiver, Fact, FactId, FactSender, IoType};
+use evorule_tcb::JsonValue;
 
 use crate::io_dispatcher::IoDispatcher;
 use crate::metrics::{NoOpMetrics, SharedMetrics};

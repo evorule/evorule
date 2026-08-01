@@ -88,10 +88,7 @@ fn assert_path_error(label: &str, state: JsonValue, attr: &str, expected: &[&str
         Err(TcbError::PathResolutionFailed(msg)) => {
             println!("[{label}] {msg}");
             for s in expected {
-                assert!(
-                    msg.contains(s),
-                    "[{label}] message missing '{s}': {msg}"
-                );
+                assert!(msg.contains(s), "[{label}] message missing '{s}': {msg}");
             }
         }
         other => panic!("[{label}] expected PathResolutionFailed, got {other:?}"),
@@ -193,7 +190,11 @@ fn intermediate_null_auto_creates_and_writes() {
         .and_then(|a| a.get("evolve_request"))
         .and_then(|e| e.get("reason"))
         .and_then(|v| v.as_str());
-    assert_eq!(reason, Some("v"), "reason should be written through null intermediate");
+    assert_eq!(
+        reason,
+        Some("v"),
+        "reason should be written through null intermediate"
+    );
 }
 
 // =============================================================================

@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
@@ -31,11 +30,11 @@
 //!   会永久重放旧反例, 掩盖真实 assertion bug -- 已 .gitignore)
 //! - 所有 proptest 用 fresh config, 不读取 .proptest-regressions
 
-use proptest::prelude::*;
-use proptest::test_runner::FileFailurePersistence;
 use evorule_tcb::domain::evaluate_domain;
 use evorule_tcb::path::resolve_path;
 use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
+use proptest::prelude::*;
+use proptest::test_runner::FileFailurePersistence;
 
 // =============================================================================
 // Strategies: bounded integers to avoid overflow paths polluting math tests

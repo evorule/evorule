@@ -14,8 +14,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use evorule_tcb::JsonValue;
 use evorule_reactor::{Fact, FactId, FactsLog};
+use evorule_tcb::JsonValue;
 
 fn bench_facts_log_append_1000(c: &mut Criterion) {
     let instruction = JsonValue::object_from_pairs(&[
