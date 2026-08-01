@@ -6,36 +6,24 @@
   This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 -->
 
-================================================================
-EvoRule 形式化验证白皮书 v3.1
-EvoRule Formal Verification Whitepaper v3.1
-================================================================
+# EvoRule 形式化验证白皮书
 
-版本: 3.1.0
-日期: 2026-07-20
-适用范围: EvoRule 机制层（evorule-tcb / evorule-reactor / evorule-governance）
-协议: AGPL-3.0-or-later（代码）+ CC0-1.0（core_eval.json）
-替代: v0.3.0（EVORULE_FORMAL_VERTIFICATION_PLAN.md）
-v2.0（EVORULE_FORMAL_VERIFICATION_PLAN_v2.md）
-v3.0（EVORULE_FORMAL_VERIFICATION_PLAN_v3.md，架构迁移前版本）
+> **适用范围**：EvoRule 机制层（evorule-tcb / evorule-reactor / evorule-governance）
+> **协议**：AGPL-3.0-or-later（代码）+ CC0-1.0（core_eval.json）
+> **最后更新**：2026-07-29
 
 ---
 
 ## 摘要
 
-v3.1 是 v3.0 的架构迁移修正版，对应 H5 "机制-策略分离"架构调整：
-原 evorule-governance 中的 HTTP API、SSE、Prometheus 指标、认证中间件等应用层功能
-已迁移至 `evorule-application`，形式化验证范围收缩至纯机制层。
-详见 [1.4 验证边界与不在范围](#14-验证边界与不在范围) 和 [9.3 v3.1 架构迁移备注](#93-v31-架构迁移备注2026-07-20)。
-
-v3.0 是 EvoRule 形式化验证的按计划升级，将验证范围从基础原语扩展到核心逻辑。
+本白皮书描述 EvoRule 机制层的形式化验证体系，覆盖 evorule-tcb / evorule-reactor / evorule-governance 三个核心 crate 的语义正确性证明。HTTP API、SSE、Prometheus 指标、认证中间件等应用层功能不在本仓验证范围，详见 [§1.4 验证边界与不在范围](#14-验证边界与不在范围)。
 
 **技术基础**：`execute_transition` 的算法逻辑使用 `&[JsonValue]` 切片迭代，
 `evaluate_domain` 使用递归路径访问，`execute_meta_instruction` 使用路径解析 ——
 核心算法不依赖 BTreeMap 内部结构。BTreeMap 仅作为 `JsonValue::Object`
 的存储后端，可通过 `#[cfg(kani)]` 抽象为固定大小数组，无需改变算法逻辑。
 
-v3.0 的验证体系：
+验证体系：
 
 1. **Kani + cfg(kani) 抽象** —— 验证 execute_transition / evaluate_domain /
    execute_meta_instruction 端到端核心逻辑
@@ -45,15 +33,15 @@ v3.0 的验证体系：
 5. **差分测试** —— reactor vs pure vs rewind vs Coq 提取代码
 6. **运行时验证 + 编译时门控** —— 不变式自检 + 架构强制
 
-【诚实声明】v3.0 是方案文档。标注"⏳"的属性是承诺在对应阶段完成的验证目标。
+【诚实声明】本白皮书是方案文档。标注"⏳"的属性是承诺在对应阶段完成的验证目标。
 
 ---
 
-## 一、v3.0 的技术基础
+## 一、技术基础
 
 ### 1.1 核心算法与存储分离
 
-v3.0 验证核心逻辑的技术基础在于算法与存储的分离：
+验证核心逻辑的技术基础在于算法与存储的分离：
 
 | 技术要点         | 说明                                                              |
 | ---------------- | ----------------------------------------------------------------- |
@@ -110,7 +98,7 @@ pub enum JsonValue {
 
 ### 1.3 验证的严格程度对比
 
-| 维度         | DO-178C Level A | Common Criteria EAL7 | EvoRule v3.0        |
+| 维度         | DO-178C Level A | Common Criteria EAL7 | EvoRule             |
 | ------------ | --------------- | -------------------- | ------------------- |
 | 形式化规约   | 可选 (DO-333)   | 必须                 | ✅ TLA+ + Coq       |
 | 代码级证明   | 不要求          | 必须                 | ✅ Kani + Verus     |
@@ -121,7 +109,7 @@ pub enum JsonValue {
 | MC/DC 覆盖   | 必须            | 不要求               | ✅ cargo-tarpaulin  |
 | 可追溯矩阵   | 必须            | 必须                 | ✅ 属性→工具→证据   |
 
-**结论**：v3.0 的严格程度**超过 DO-178C Level A 和 CC EAL7 的要求**，
+**结论**：本验证体系的严格程度**超过 DO-178C Level A 和 CC EAL7 的要求**，
 因为它额外要求代码级证明（Kani）、状态机验证（TLA+）、数学归纳（Coq）
 和差分测试，这些在航空/安全标准中都是可选或不要求的。
 
@@ -129,7 +117,6 @@ pub enum JsonValue {
 
 **核心原则**：形式化验证仅覆盖**机制层**（evorule-tcb / evorule-reactor / evorule-governance），
 **不覆盖应用层**（evorule-application / evorule-server / evorule-io-handlers）。
-这与 AGENTS.md 的机制-策略分离原则一致。
 
 | 层                            | 范围        | 说明                                                       |
 | ----------------------------- | ----------- | ---------------------------------------------------------- |
@@ -160,25 +147,25 @@ pub enum JsonValue {
 
 ### 2.1 P0：安全关键不变量
 
-| #     | 属性                      | 层    | v0.3 状态   | v3.0 方法             | v3.1 真实状态 |
-| ----- | ------------------------- | ----- | ----------- | --------------------- | ------------- |
-| P0-1  | i64 加法不溢出            | tier0 | ✅ Kani     | Kani                  | ✅ 实跑       |
-| P0-2  | i64 减法不下溢            | tier0 | ✅ Kani     | Kani                  | ✅ 实跑       |
-| P0-3  | resolve_path 不 panic     | tier0 | ✅ proptest | **Kani + proptest**   | 🔧 已实现未跑 |
-| P0-4  | evaluate_domain 不 panic  | tier0 | ✅ proptest | **Kani + proptest**   | ✅ 实跑       |
-| P0-5  | execute_transition 确定性 | tier0 | TLA+ TLC    | **Kani + TLA+ + Coq** | 🔧 已实现未跑 |
-| P0-6  | JsonValue 构造/访问一致   | tier0 | ✅ Kani     | Kani                  | ✅ 实跑       |
-| P0-7  | execute_transition 终止性 | tier0 | TLA+ TLC    | **Kani + TLA+ + Coq** | 🔧 已实现未跑 |
-| P0-8  | 递归深度硬上界            | tier0 | TLA+ TLC    | **Kani + TLA+ + Coq** | 🔧 已实现未跑 |
-| P0-9  | version 语义一致性        | t1+2  | ❌          | **差分测试 + Coq**    | 🔧 已实现未跑 |
-| P0-10 | rewind 状态重建一致       | t1+2  | ❌          | **差分测试 + TLA+**   | 🔧 已实现未跑 |
-| P0-11 | cause 队列同步            | tier1 | ❌          | **Kani**              | 🔧 已实现未跑 |
-| P0-12 | pure vs reactor 等价      | tier1 | ❌          | **差分测试 + Verus**  | 🔧 已实现未跑 |
-| P0-13 | Fact match 完备性         | 全层  | ❌          | **编译时 T15**        | ⏳ 未实现     |
-| P0-14 | 审计链哈希完整            | tier2 | ❌          | **proptest + Coq**    | ⏳ 未实现     |
-| P0-15 | 审计链重放确定            | tier2 | ❌          | **差分测试 + TLA+**   | ⏳ 未实现     |
+| #     | 属性                      | 层    | 验证方法              | 当前状态      |
+| ----- | ------------------------- | ----- | --------------------- | ------------- |
+| P0-1  | i64 加法不溢出            | tier0 | Kani                  | ✅ 实跑       |
+| P0-2  | i64 减法不下溢            | tier0 | Kani                  | ✅ 实跑       |
+| P0-3  | resolve_path 不 panic     | tier0 | **Kani + proptest**   | 🔧 已实现未跑 |
+| P0-4  | evaluate_domain 不 panic  | tier0 | **Kani + proptest**   | ✅ 实跑       |
+| P0-5  | execute_transition 确定性 | tier0 | **Kani + TLA+ + Coq** | 🔧 已实现未跑 |
+| P0-6  | JsonValue 构造/访问一致   | tier0 | Kani                  | ✅ 实跑       |
+| P0-7  | execute_transition 终止性 | tier0 | **Kani + TLA+ + Coq** | 🔧 已实现未跑 |
+| P0-8  | 递归深度硬上界            | tier0 | **Kani + TLA+ + Coq** | 🔧 已实现未跑 |
+| P0-9  | version 语义一致性        | t1+2  | **差分测试 + Coq**    | 🔧 已实现未跑 |
+| P0-10 | rewind 状态重建一致       | t1+2  | **差分测试 + TLA+**   | 🔧 已实现未跑 |
+| P0-11 | cause 队列同步            | tier1 | **Kani**              | 🔧 已实现未跑 |
+| P0-12 | pure vs reactor 等价      | tier1 | **差分测试 + Verus**  | 🔧 已实现未跑 |
+| P0-13 | Fact match 完备性         | 全层  | **编译时 T15**        | ⏳ 未实现     |
+| P0-14 | 审计链哈希完整            | tier2 | **proptest + Coq**    | ⏳ 未实现     |
+| P0-15 | 审计链重放确定            | tier2 | **差分测试 + TLA+**   | ⏳ 未实现     |
 
-> **状态三档定义（2026-07-29 更新）**：
+> **状态三档定义**：
 >
 > - **✅ 实跑**：代码实现 + 本地 Kani/TLA+/差分测试实跑通过（有执行记录或归档证据）
 > - **🔧 已实现未跑**：验证代码（proof/差分测试）已存在，但缺独立实跑 PASS 日志证据
@@ -186,7 +173,7 @@ pub enum JsonValue {
 
 ### 2.2 P1：正确性增强
 
-| #     | 属性                        | 层     | v3.0 方法             | 状态 |
+| #     | 属性                        | 层     | 验证方法              | 状态 |
 | ----- | --------------------------- | ------ | --------------------- | ---- |
 | P1-1  | I/O 计数一致性              | tier1  | Kani（FixedMap 抽象） | ⏳   |
 | P1-2  | io_recovery ⟺ **io_result** | tier1  | Kani                  | ⏳   |
@@ -201,7 +188,9 @@ pub enum JsonValue {
 | P1-11 | 多会话并发隔离              | tier2  | TLA+ + proptest       | ⏳   |
 | P1-12 | SSE 序列化完备              | 应用层 | 静态分析 + 集成测试   | ✅   |
 
-### 2.3 P2：安全增强（8 项，略，同 v2.0）
+### 2.3 P2：安全增强
+
+P2 共 8 项安全增强属性，计划在阶段 4（学术增强）启动验证。具体属性目录待阶段 3 完成后据实补齐。
 
 ---
 
@@ -209,7 +198,7 @@ pub enum JsonValue {
 
 ### 3.1 层级总览
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │ L7: 编译时门控 (build.rs + clippy + 类型系统)                │ 零成本
 │  G8/T4-T14 + T15(无 _ => {}) + T16(无 unwrap) + newtype     │
@@ -236,7 +225,7 @@ pub enum JsonValue {
 
 ### 3.2 L1：数学形式化层（Coq + TLA+ + TLAPS）
 
-**这是 v3.0 相对 v2.0 的最大升级：用 Coq 做数学证明。**
+本层使用 Coq 进行数学证明。
 
 #### 3.2.1 Coq 形式化
 
@@ -333,7 +322,7 @@ Proof.
   destruct facts.
   - (* StateTransition *) simpl. reflexivity.
   - (* IoResponse *) simpl. reflexivity.
-  - (* PayloadUpdate *) simpl. reflexivity. (* 断点 11 修复后的语义 *)
+  - (* PayloadUpdate *) simpl. reflexivity.
   - (* Command/IoRequest/Stable/Error *) simpl. reflexivity.
 Qed.
 ```
@@ -350,11 +339,11 @@ Qed.
 | `SessionIsolation.tla`    | tier2  | TLC         | ⏳   |
 
 **TLAPS 的作用**：TLC 是有界模型检测（n≤3），TLAPS 是数学归纳证明（∀N）。
-v3.0 要求 P0 属性必须有 TLAPS 证明，不只是 TLC PASS。
+P0 属性必须有 TLAPS 证明，不只是 TLC PASS。
 
 ### 3.3 L2：代码级演绎验证层（Kani + Verus）
 
-**这是 v3.0 的核心升级：直接验证 Rust 代码的核心逻辑。**
+本层直接验证 Rust 代码的核心逻辑。
 
 #### 3.3.1 Kani 核心逻辑验证（cfg(kani) 抽象）
 
@@ -499,15 +488,13 @@ mod spec {
 
 ### 3.4 L3：模型检测层（TLA+ TLC）
 
-同 v2.0，但扩展到全 tier。每个模型必须：
+每个模型必须：
 
 1. 生成 TLC 验证报告（如 `TLC_VERIFICATION_REPORT.md`）
 2. 标注参数降级理由
 3. 对应至少一个 P0 属性
 
 ### 3.5 L4：属性测试层（proptest + cargo-fuzz）
-
-**新增 cargo-fuzz 模糊测试**：
 
 ```rust
 // evorule-tcb/fuzz/fuzz_targets/execute_transition.rs
@@ -525,7 +512,7 @@ fuzz_target!(|data: &[u8]| {
 
 ### 3.6 L5：差分测试层
 
-5 个差分对（同 v2.0，略），核心是：
+5 个差分对，核心是：
 
 ```rust
 proptest! {
@@ -556,7 +543,7 @@ proptest! {
 
 ### 3.7 L6-L7：运行时验证 + 编译时门控
 
-同 v2.0，新增 T15（禁止 `_ => {}` 在 Fact match 中）和 T16（禁止 unwrap 在非测试代码中）。
+运行时验证含 8+ 不变式自检 + 哈希链验证 + 软限制告警。编译时门控含 G8/T4-T14 架构原则，以及 T15（禁止 `_ => {}` 在 Fact match 中）和 T16（禁止 unwrap 在非测试代码中）。
 
 ---
 
@@ -564,43 +551,42 @@ proptest! {
 
 ### 4.1 evorule-tcb：全量验证
 
-| 属性 | L1 Coq | L2 Kani | L2 Verus | L3 TLC | L4 proptest | 状态    |
-| ---- | ------ | ------- | -------- | ------ | ----------- | ------- |
-| P0-1 | -      | ✅      | -        | -      | ✅          | ✅ 完成 |
-| P0-2 | -      | ✅      | -        | -      | ✅          | ✅ 完成 |
-| P0-3 | ⏳     | ⏳ 新   | ⏳       | -      | ✅          | ⏳ 升级 |
-| P0-4 | ⏳     | ⏳ 新   | ⏳       | -      | ✅          | ⏳ 升级 |
-| P0-5 | ⏳ 新  | ⏳ 新   | ⏳ 新    | ✅     | ✅          | ⏳ 升级 |
-| P0-6 | -      | ✅      | -        | -      | ✅          | ✅ 完成 |
-| P0-7 | ⏳ 新  | ⏳ 新   | -        | ✅     | -           | ⏳ 升级 |
-| P0-8 | ⏳ 新  | ⏳ 新   | -        | ✅     | -           | ⏳ 升级 |
+| 属性 | L1 Coq | L2 Kani | L2 Verus | L3 TLC | L4 proptest | 状态 |
+| ---- | ------ | ------- | -------- | ------ | ----------- | ---- |
+| P0-1 | -      | ✅      | -        | -      | ✅          | ✅   |
+| P0-2 | -      | ✅      | -        | -      | ✅          | ✅   |
+| P0-3 | ⏳     | ⏳      | ⏳       | -      | ✅          | ⏳   |
+| P0-4 | ⏳     | ⏳      | ⏳       | -      | ✅          | ⏳   |
+| P0-5 | ⏳     | ⏳      | ⏳       | ✅     | ✅          | ⏳   |
+| P0-6 | -      | ✅      | -        | -      | ✅          | ✅   |
+| P0-7 | ⏳     | ⏳      | -        | ✅     | -           | ⏳   |
+| P0-8 | ⏳     | ⏳      | -        | ✅     | -           | ⏳   |
 
-**关键升级**：P0-5（execute_transition 确定性）从"仅 TLA+"升级为
-"Coq 数学证明 + Kani 代码证明 + Verus 规约证明 + TLA+ 模型检测"四重验证。
+P0-5（execute_transition 确定性）采用 Coq 数学证明 + Kani 代码证明 + Verus 规约证明 + TLA+ 模型检测四重验证。
 
 ### 4.2 evorule-reactor：全量验证
 
-| 属性  | L1 Coq        | L1 TLA+ | L2 Kani | L2 Verus | L5 差分 | 状态    |
-| ----- | ------------- | ------- | ------- | -------- | ------- | ------- |
-| P0-9  | ⏳ FactsLog.v | ⏳      | -       | -        | ⏳      | ⏳ 新增 |
-| P0-11 | -             | ⏳      | ⏳ 新   | -        | -       | ⏳ 新增 |
-| P0-12 | -             | -       | -       | ⏳       | ⏳      | ⏳ 新增 |
-| P1-1  | -             | -       | ⏳ 抽象 | -        | -       | ⏳ 升级 |
-| P1-2  | -             | -       | ⏳ 抽象 | -        | -       | ⏳ 升级 |
-| P1-3  | -             | -       | ✅      | -        | -       | ✅ 完成 |
-| P1-5  | -             | -       | ⏳ 抽象 | -        | -       | ⏳ 升级 |
-| P1-6  | -             | -       | ✅      | -        | -       | ✅ 完成 |
+| 属性  | L1 Coq        | L1 TLA+ | L2 Kani | L2 Verus | L5 差分 | 状态 |
+| ----- | ------------- | ------- | ------- | -------- | ------- | ---- |
+| P0-9  | ⏳ FactsLog.v | ⏳      | -       | -        | ⏳      | ⏳   |
+| P0-11 | -             | ⏳      | ⏳      | -        | -       | ⏳   |
+| P0-12 | -             | -       | -       | ⏳       | ⏳      | ⏳   |
+| P1-1  | -             | -       | ⏳ 抽象 | -        | -       | ⏳   |
+| P1-2  | -             | -       | ⏳ 抽象 | -        | -       | ⏳   |
+| P1-3  | -             | -       | ✅      | -        | -       | ✅   |
+| P1-5  | -             | -       | ⏳ 抽象 | -        | -       | ⏳   |
+| P1-6  | -             | -       | ✅      | -        | -       | ✅   |
 
-**关键升级**：P1-1/2/5 升级为"cfg(kani) 抽象模型验证"。
+P1-1/2/5 采用 cfg(kani) 抽象模型验证。
 
-### 4.3 evorule-governance：从零到全量
+### 4.3 evorule-governance：验证计划
 
-| 属性  | L1 Coq        | L1 TLA+       | L4 proptest | L5 差分 | 状态    |
-| ----- | ------------- | ------------- | ----------- | ------- | ------- |
-| P0-9  | ⏳            | ⏳            | -           | ⏳      | ⏳ 新增 |
-| P0-10 | -             | ⏳ Rewind     | -           | ⏳      | ⏳ 新增 |
-| P0-14 | ⏳ AuditChain | -             | ⏳          | -       | ⏳ 新增 |
-| P0-15 | -             | ⏳ AuditChain | -           | ⏳      | ⏳ 新增 |
+| 属性  | L1 Coq        | L1 TLA+       | L4 proptest | L5 差分 | 状态 |
+| ----- | ------------- | ------------- | ----------- | ------- | ---- |
+| P0-9  | ⏳            | ⏳            | -           | ⏳      | ⏳   |
+| P0-10 | -             | ⏳ Rewind     | -           | ⏳      | ⏳   |
+| P0-14 | ⏳ AuditChain | -             | ⏳          | -       | ⏳   |
+| P0-15 | -             | ⏳ AuditChain | -           | ⏳      | ⏳   |
 
 ---
 
@@ -723,7 +709,7 @@ proptest! {
 
 ## 七、诚实声明
 
-### 7.1 v3.0 能做到的
+### 7.1 能做到的
 
 1. **Kani 验证核心逻辑**：通过 cfg(kani) 抽象 BTreeMap，Kani 可以验证
    execute_transition / evaluate_domain / execute_meta_instruction 端到端。
@@ -734,10 +720,10 @@ proptest! {
 3. **多工具交叉验证**：P0-5 有 5 层覆盖（Coq + Kani + Verus + TLC + proptest），
    任何一层漏掉的缺陷，其他层可能发现。
 
-4. **差分测试发现实现不一致**：断点 9/10/11 就是差分测试方法发现的，
-   v3.0 将此方法系统化为 5 个差分对。
+4. **差分测试发现实现不一致**：差分测试方法可有效发现实现间的不一致，
+   本白皮书将此方法系统化为 5 个差分对。
 
-### 7.2 v3.0 仍有的限制
+### 7.2 限制
 
 1. **cfg(kani) 抽象的保真度**：FixedMap 不是 BTreeMap，抽象可能引入新的
    声音性问题。缓解：差分测试验证抽象模型与真实模型的行为一致性。
@@ -745,44 +731,28 @@ proptest! {
 2. **TLAPS 需要人工证明**：数学归纳证明不能自动化，需要形式化方法专家。
    阶段 3 才引入，阶段 1-2 用 TLC 有界模型检测替代。
 
-3. **Coq 提取不是 CompCert**：v3.0 的 Coq 形式化是"证明 Rust 代码满足规约"，
+3. **Coq 提取不是 CompCert**：本白皮书的 Coq 形式化是"证明 Rust 代码满足规约"，
    不是"从 Coq 提取 Rust 代码"。后者（CompCert 模式）是阶段 4 的学术增强。
 
 4. **并发验证有限**：TLA+ SessionIsolation 验证有限模型（2 会话），
    不是任意并发场景。多线程安全由 Rust 类型系统保证。
 
-5. **v3.0 是方案文档**：标注"⏳"的是承诺目标，非已完成。
+5. **本白皮书是方案文档**：标注"⏳"的是承诺目标，非已完成。
 
-### 7.3 v3.1 首批实跑验证成果（2026-07-29）
+### 7.3 首批实跑验证成果（2026-07-29）
 
 **cfg(kani) BTreeMap→FixedMap 抽象已在 P0-4 验证可行**：
 
 - `evaluate_domain` 的 `eq`/`lt`/`exists` 三个域类型通过 `verify_evaluate_domain_{eq,lt,exists}_kani` 在 Kani 0.67.0 下全部实跑 PASS，总耗时约 204 秒（eq 67s / lt 80s / exists 58s，0/947 失败）。
 - 核心优化技术（解决 CBMC 状态爆炸）：`ManuallyDrop` 切断递归 drop、u64 大端哈希消除 `memcmp` 循环、`from_sorted` 跳过 insert 查找、`match len` 完全展开二分查找、Kani 专用 Integer-only 比较避免 `PartialEq` 递归。
-- 证明语义对生产环境有效：FixedMap 维护与 BTreeMap 一致的字典序不变式，`Ord`/`Display`/`iter()` 实现无 `cfg` 分支，v3.0 §1.2 的抽象保真度假设在 P0-4 上被经验验证。
+- 证明语义对生产环境有效：FixedMap 维护与 BTreeMap 一致的字典序不变式，`Ord`/`Display`/`iter()` 实现无 `cfg` 分支，§1.2 的抽象保真度假设在 P0-4 上被经验验证。
 - 剩余已实现但未独立实跑的 proof（P0-3/5/7/8/9/10/11/12）见 P0 表格"🔧 已实现未跑"条目，后续按优先级补充执行记录。
 
 ---
 
-## 八、v0.3 → v2.0 → v3.0 变更总结
+## 八、附录
 
-| 方面         | v0.3        | v2.0         | v3.0                            | v3.0 升级理由         |
-| ------------ | ----------- | ------------ | ------------------------------- | --------------------- |
-| 核心逻辑验证 | stdlib 原语 | 简化模型     | ✅ **Kani + Coq + Verus**       | BTreeMap 可抽象       |
-| 验证层数     | 4           | 6            | **7**                           | 新增 Coq 数学形式化层 |
-| P0 属性数    | 8           | 15           | 15                              | 同 v2.0               |
-| P0-5 覆盖    | TLA+        | TLA+         | **Coq+Kani+Verus+TLC+proptest** | 五重验证              |
-| Coq          | 无          | 无           | **✅ 8 模块 ~2700 行**          | 数学证明              |
-| Verus        | 无          | 无           | **✅ 规约验证**                 | 代码级前置/后置条件   |
-| TLAPS        | 无          | 无           | **✅ 阶段 3**                   | ∀N 数学归纳           |
-| cargo-fuzz   | 无          | 无           | **✅ 阶段 3**                   | 模糊测试              |
-| 严格程度     | 基础级      | 对齐 DO-178C | **超过 DO-178C + EAL7**         | 多工具交叉验证        |
-
----
-
-## 九、附录
-
-### 9.1 工具版本
+### 8.1 工具版本
 
 | 工具       | 版本    | 用途           | CI 固定  |
 | ---------- | ------- | -------------- | -------- |
@@ -795,14 +765,14 @@ proptest! {
 | cargo-fuzz | latest  | 模糊测试       | 阶段 3   |
 | Rust       | nightly | 工具链         | ✅       |
 
-### 9.2 文件结构
+### 8.2 文件结构
 
-```
+```text
 evorule-tcb/
 ├── tla/
 │   ├── ExecuteTransition.tla       (已有, TLC PASS)
 │   └── TLC_VERIFICATION_REPORT.md  (已有)
-├── coq/                             (⏳ v3.0 新增)
+├── coq/
 │   ├── JsonValue.v
 │   ├── Path.v
 │   ├── Domain.v
@@ -813,28 +783,28 @@ evorule-tcb/
     ├── kani_proofs.rs              (已有)
     ├── proptest_props.rs           (已有)
     ├── fixed_map.rs                (已有)
-    └── fuzz/                       (⏳ v3.0 新增)
+    └── fuzz/
         └── fuzz_targets/
 
 evorule-reactor/
 ├── tla/
-│   ├── ReactorStateMachine.tla     (⏳ v3.0 新增)
-│   └── FactsLogVersioning.tla      (⏳ v3.0 新增)
-├── coq/                             (⏳ v3.0 新增)
+│   ├── ReactorStateMachine.tla
+│   └── FactsLogVersioning.tla
+├── coq/
 │   ├── FactsLog.v
 │   └── Makefile
 ├── src/
-│   └── pure.rs                     (升级: +核心逻辑 proof)
+│   └── pure.rs                     (含核心逻辑 proof)
 └── verification/
     ├── differential_test.rs        (已有)
     └── kani_proofs.rs              (已有)
 
 evorule-governance/
 ├── tla/
-│   ├── AuditChain.tla              (⏳ v3.0 新增)
-│   ├── RewindConsistency.tla       (⏳ v3.0 新增)
-│   └── SessionIsolation.tla        (⏳ v3.0 新增)
-├── coq/                             (⏳ v3.0 新增)
+│   ├── AuditChain.tla
+│   ├── RewindConsistency.tla
+│   └── SessionIsolation.tla
+├── coq/
 │   ├── AuditChain.v
 │   └── Makefile
 ├── verification/
@@ -843,40 +813,3 @@ evorule-governance/
     ├── end_to_end_audit_chain.rs   (集成测试)
     └── sse_integration_test.rs     (应用层 SSE 事件流测试)
 ```
-
-### 9.3 v3.1 架构迁移备注（2026-07-20）
-
-**背景**：v3.0 发布后，项目完成了两轮"机制-策略分离"架构迁移：
-
-1. H5：原 evorule-governance 中的 HTTP API、SSE、Prometheus 指标、认证中间件等应用层功能先迁至 evorule-application 仓；
-2. 走神 9：再从 evorule-application 仓迁出成立 **evorule-server 独立仓**（evorule-server + evorule-io-handlers + 7 个配套 lib crate）。
-
-**对验证范围的影响**：
-
-| 项目                                   | v3.0 归属          | v3.1 归属                     | 说明                                         |
-| -------------------------------------- | ------------------ | ----------------------------- | -------------------------------------------- |
-| HTTP API（axum 路由）                  | evorule-governance | evorule-server（应用层）      | 不在形式化验证范围                           |
-| SSE 事件流序列化                       | tier2（P1-12）     | 应用层（P1-12 重分类）        | 核心验证 Fact 正确性，传输格式由集成测试覆盖 |
-| Prometheus metrics 展示                | tier2              | evorule-server（应用层）      | 核心层仅保留 IoMetrics trait 接口            |
-| Bearer Token 认证                      | tier2              | evorule-server（应用层）      | 由独立安全审计覆盖                           |
-| 具体 I/O Handler（DB/HTTP/Memory）     | tier2              | evorule-io-handlers（应用层） | 核心层验证 IoHandler trait 语义              |
-| IoDispatcher / IoSubscriber            | tier2              | tier2（保留）                 | 机制层框架，属核心验证范围                   |
-| SessionManager / Auditor / TimeMachine | tier2              | tier2（保留）                 | 核心机制，属验证范围                         |
-
-**核心层不变的验证目标**：
-
-- evorule-tcb：core_eval 执行引擎语义、路径解析、状态转换
-- evorule-reactor：反应器主循环、FactsLog 版本控制、WAL、cause 队列、I/O 双路径
-- evorule-governance：审计链哈希完整性、rewind 一致性、会话隔离、IoDispatcher 调度语义
-
-### 9.4 旧文档处置
-
-| 文件                                              | 处置                      |
-| ------------------------------------------------- | ------------------------- |
-| `EVORULE_FORMAL_VERTIFICATION_PLAN.md` (v0.3)     | 归档为 `_deprecated_v0.3` |
-| `EVORULE_FORMAL_VERIFICATION_PLAN_v2.md` (v2.0)   | 归档为 `_deprecated_v2.0` |
-| `EVORULE_FORMAL_VERIFICATION_PLAN_v3.md` (本文档) | **当前有效**              |
-
-================================================================
-文档结束
-================================================================

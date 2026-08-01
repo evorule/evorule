@@ -8,6 +8,8 @@
 
 # EvoRule v0.1.0 手动发布流程
 
+> **[已废弃]** 本文档已于 2026-08-01 被 [RELEASE_PROCESS_v0.1.1.md](RELEASE_PROCESS_v0.1.1.md) 取代，不再作为现行发布流程。保留本文档仅作 v0.1.0 发布历史记录，内部内容未按现行基调（各仓独立发布）清理。请使用新版文档。
+
 > **文档性质**：v0.1.0 GA 公开发布的逐步操作手册。
 > **适用范围**：evorule 核心仓（evorule-tcb / evorule-reactor / evorule-governance / evorule-cli）。
 > **前置文档**：[VERSION_STRATEGY.md §9](../../VERSION_STRATEGY.md) 通用发版流程。
@@ -89,19 +91,7 @@ cargo audit > audit-report-v0.1.0/cargo-audit.txt
 - 填入实际发布日期：`## [0.1.0] - 2026-XX-XX`
 - 确认遵循 [Keep a Changelog](https://keepachangelog.com/) v1.0 格式
 
-### 3.2 STATUS.md
-
-确认 STATUS.md **显式声明** Tier-B 未达标项：
-
-```markdown
-> ⚠️ **公网部署警告**：v0.1.0 未达公网部署标准。
->
-> - P1 HIGH 安全修复未完成（H6 SSRF / H7 SQL / H8 CORS / H9 DB URL）
-> - 禁止将 evorule-server 暴露到公网
-> - 公网部署前必须完成 Tier-B 全部阻塞项
-```
-
-### 3.3 README.md
+### 3.2 README.md
 
 - 确认平台支持矩阵已就位（A9）
 - 确认"使用风险自负"声明存在
@@ -233,8 +223,6 @@ ls -la audit-report-v0.1.0/
 
 ## 10. 发布后事项
 
-- [ ] 在 STATUS.md 中将 v0.1.0 标记为"已发布"
-- [ ] 在 ROADMAP.md 中更新进度
 - [ ] 如有下游仓库需要同步，创建对应 PR
 - [ ] 归档本次发布的所有 CI 日志链接
 
@@ -253,7 +241,7 @@ git tag -d v0.1.0                          # 本地
 git push origin :refs/tags/v0.1.0          # Gitee
 git push github :refs/tags/v0.1.0          # GitHub
 
-# 3. 在 STATUS.md / README.md 标注"v0.1.0 已撤回，原因：XXX"
+# 3. 在 README.md 标注"v0.1.0 已撤回，原因：XXX"
 # 4. 修复后以 v0.1.1 重新发布（不覆盖已撤回的 v0.1.0）
 ```
 

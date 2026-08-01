@@ -16,12 +16,10 @@
 
 ## 一、入门必读
 
-| 文档                                                                   | 用途       | 一句话说明                                                                       |
-| :--------------------------------------------------------------------- | :--------- | :------------------------------------------------------------------------------- |
-| [README.md](README.md)                                                 | 项目总览   | EvoRule 是什么、快速开始、架构概览、路线图 — **新用户首读**                      |
-| [STATUS.md](STATUS.md)                                                 | 诚实记账   | v0.1.0 能跑什么、不能跑什么、基线数据（测试/性能/依赖）— **集成前必读**          |
-| [AGENTS.md](AGENTS.md)                                                 | 贡献者规则 | 人类 + AI agent 的硬性贡献规则（被动越界、边界判断、强制行为）— **贡献者首读**   |
-| [docs/tutorial/evorule-tutorial.md](docs/tutorial/evorule-tutorial.md) | 技术教程   | 从设计哲学到 UR5 实战的系统性教程（8 章，连接 README 与 SPEC）— **系统学习必读** |
+| 文档                                                                   | 用途     | 一句话说明                                                                       |
+| :--------------------------------------------------------------------- | :------- | :------------------------------------------------------------------------------- |
+| [README.md](README.md)                                                 | 项目总览 | EvoRule 是什么、快速开始、架构概览、路线图 — **新用户首读**                      |
+| [docs/tutorial/evorule-tutorial.md](docs/tutorial/evorule-tutorial.md) | 技术教程 | 从设计哲学到 UR5 实战的系统性教程（8 章，连接 README 与 SPEC）— **系统学习必读** |
 
 ---
 
@@ -29,13 +27,12 @@
 
 ### 2.1 版本、路线、承诺
 
-| 文档                                                                             | 主题                  | 说明                                                                                            |
-| :------------------------------------------------------------------------------- | :-------------------- | :---------------------------------------------------------------------------------------------- |
-| [VERSION_STRATEGY.md](VERSION_STRATEGY.md)                                       | 版本策略              | 语义化版本规则、升 1.0 条件、第三方安全审计触发条件（VERSION_STRATEGY v1.1）                    |
-| [ROADMAP.md](ROADMAP.md)                                                         | 路线图                | 0.2.0 → 1.0 各阶段规划里程碑                                                                    |
-| [CHANGELOG.md](CHANGELOG.md)                                                     | 更新日志              | Keep a Changelog v1.0 格式；每版所有重大变更                                                    |
-| [GATE_REFERENCE.md](GATE_REFERENCE.md)                                           | build.rs 门控参考     | 所有 tier0/1/2 build.rs 编译时门禁（T4/T5/T6/T8/T9/T10/T11/T12/T14 + G8 架构原则）              |
-| [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) | 形式化验证白皮书 v3.1 | 七层验证体系、P0/P1/P2 属性目录（三档状态：✅实跑 / 🔧已实现未跑 / ⏳未实现）— **当前有效版本** |
+| 文档                                                                             | 主题              | 说明                                                                                            |
+| :------------------------------------------------------------------------------- | :---------------- | :---------------------------------------------------------------------------------------------- |
+| [VERSION_STRATEGY.md](VERSION_STRATEGY.md)                                       | 版本策略          | 语义化版本规则、升 1.0 条件、第三方安全审计触发条件（VERSION_STRATEGY v1.1）                    |
+| [CHANGELOG.md](CHANGELOG.md)                                                     | 更新日志          | Keep a Changelog v1.0 格式；每版所有重大变更                                                    |
+| [GATE_REFERENCE.md](GATE_REFERENCE.md)                                           | build.rs 门控参考 | 所有 tier0/1/2 build.rs 编译时门禁（T4/T5/T6/T8/T9/T10/T11/T12/T14 + G8 架构原则）              |
+| [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) | 形式化验证白皮书  | 七层验证体系、P0/P1/P2 属性目录（三档状态：✅实跑 / 🔧已实现未跑 / ⏳未实现）— **当前有效版本** |
 
 ### 2.2 法律、协议、贡献
 
@@ -59,41 +56,42 @@
 
 ### 3.1 安全与审计（`docs/security/`）
 
-| 文档                                                                                                       | 版本   | 对应项目版本              | 说明                                                                                       |
-| :--------------------------------------------------------------------------------------------------------- | :----- | :------------------------ | :----------------------------------------------------------------------------------------- |
-| [SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md)                                         | v0.1.0 | 2026-07-30 首发独立版     | 走神 9 拆分后 evorule 仓独立范围(纯机制层)— **当前有效版本**                               |
-| [DEPENDENCY_AUDIT_v0.1.0.md](docs/security/DEPENDENCY_AUDIT_v0.1.0.md)                                     | v0.1.0 | 2026-07-30                | cargo-audit 实跑,0 CVE,0 warnings — **当前有效版本**                                       |
-| [THREAT_MODEL_v0.1.0.md](docs/security/THREAT_MODEL_v0.1.0.md)                                             | v0.1.0 | 2026-07-30                | 走神 9 拆分后 evorule 仓机制层威胁模型(STRIDE + 攻击树)— **当前有效版本**                  |
-| [SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md](docs/security/SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md)     | v0.1.0 | 2026-07-20 生态全栈预览版 | **[已废弃]** 2026-07-30 被 SECURITY_AUDIT_v0.1.0.md 取代（走神 9 前涵盖 evo-agent/server） |
-| [DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md](docs/security/DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md) | v0.1.0 | 2026-07-20 生态全栈预览版 | **[已废弃]** 2026-07-30 被 DEPENDENCY_AUDIT_v0.1.0.md 取代（手动审查版）                   |
-| [THREAT_MODEL.md](docs/security/THREAT_MODEL.md)                                                           | —      | 2026-07-20                | 生态全栈威胁模型 — **[已废弃]** 2026-07-30 被 THREAT_MODEL_v0.1.0.md 取代                  |
-| [SECURITY_AUDIT_v1.0.0.md](docs/security/SECURITY_AUDIT_v1.0.0.md)                                         | v1.0.0 | **未来版本占位**          | 1.0 之前不承诺（与 VERSION_STRATEGY §4.4 对齐）                                            |
-| [DEPENDENCY_AUDIT_v1.0.0.md](docs/security/DEPENDENCY_AUDIT_v1.0.0.md)                                     | v1.0.0 | **未来版本占位**          | —                                                                                          |
+| 文档                                                                                                       | 版本   | 对应项目版本              | 说明                                                                         |
+| :--------------------------------------------------------------------------------------------------------- | :----- | :------------------------ | :--------------------------------------------------------------------------- |
+| [SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md)                                         | 0.1.0  | 2026-07-30 首发独立版     | evorule 仓独立范围(纯机制层)— **当前有效版本**                               |
+| [DEPENDENCY_AUDIT_v0.1.0.md](docs/security/DEPENDENCY_AUDIT_v0.1.0.md)                                     | 0.1.0  | 2026-07-30                | cargo-audit 实跑,0 CVE,0 warnings — **当前有效版本**                         |
+| [THREAT_MODEL_v0.1.0.md](docs/security/THREAT_MODEL_v0.1.0.md)                                             | 0.1.0  | 2026-07-30                | evorule 仓机制层威胁模型(STRIDE + 攻击树)— **当前有效版本**                  |
+| [SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md](docs/security/SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md)     | 0.1.0  | 2026-07-20 生态全栈预览版 | **[已废弃]** 2026-07-30 被 SECURITY_AUDIT_v0.1.0.md 取代（原生态全栈预览版） |
+| [DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md](docs/security/DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md) | 0.1.0  | 2026-07-20 生态全栈预览版 | **[已废弃]** 2026-07-30 被 DEPENDENCY_AUDIT_v0.1.0.md 取代（手动审查版）     |
+| [THREAT_MODEL.md](docs/security/THREAT_MODEL.md)                                                           | —      | 2026-07-20                | 生态全栈威胁模型 — **[已废弃]** 2026-07-30 被 THREAT_MODEL_v0.1.0.md 取代    |
+| [SECURITY_AUDIT_v1.0.0.md](docs/security/SECURITY_AUDIT_v1.0.0.md)                                         | v1.0.0 | **未来版本占位**          | 1.0 之前不承诺（与 VERSION_STRATEGY §4.4 对齐）                              |
+| [DEPENDENCY_AUDIT_v1.0.0.md](docs/security/DEPENDENCY_AUDIT_v1.0.0.md)                                     | v1.0.0 | **未来版本占位**          | —                                                                            |
 
 ### 3.2 发布流程（`docs/release/`）
 
-| 文档                                                                | 对应版本 | 说明                                                              |
-| :------------------------------------------------------------------ | :------- | :---------------------------------------------------------------- |
-| [RELEASE_PROCESS_v0.1.0.md](docs/release/RELEASE_PROCESS_v0.1.0.md) | v0.1.0   | 6 个 validate-\*.ps1 脚本 + 发布前完整检查流程（v0.1.0 首发时用） |
+| 文档                                                                | 对应版本 | 说明                                                                          |
+| :------------------------------------------------------------------ | :------- | :---------------------------------------------------------------------------- |
+| [RELEASE_PROCESS_v0.1.1.md](docs/release/RELEASE_PROCESS_v0.1.1.md) | 0.1.1    | 5 个 validate-\*.ps1 脚本 + check_doc_safety + 发布前完整检查流程（当前有效） |
+| [RELEASE_PROCESS_v0.1.0.md](docs/release/RELEASE_PROCESS_v0.1.0.md) | 0.1.0    | **[已废弃]** 2026-08-01 被 v0.1.1 取代                                        |
 
 ### 3.3 基准评估（D2：内部共享，不公开发布）
 
 > 2026-07-29 按 D2 从 `docs/benchmarks/` 保守搬迁到 `文档/benchmarks/`（L3 仓内共享，.gitignore 保护）。
 > 下次发布周期经内容脱敏审查后可考虑升回 L1 公开。
 
-| 文档                                        | 主题              | 日期       | 脱敏待审项                  |
-| :------------------------------------------ | :---------------- | :--------- | :-------------------------- |
-| `文档/benchmarks/EVAL_2026-07-20.md`        | v0.1.0 基准评估   | 2026-07-20 | 环境路径/本机 IP 是否在样本 |
-| `文档/benchmarks/EXP_1.1.md` ~ `EXP_1.5.md` | 实验 1.1~1.5 记录 | —          | 同上                        |
+| 文档                                        | 主题                       | 日期       | 脱敏待审项                  |
+| :------------------------------------------ | :------------------------- | :--------- | :-------------------------- |
+| `文档/benchmarks/EVAL_2026-07-20.md`        | 0.1.0 基准评估（仓内共享） | 2026-07-20 | 环境路径/本机 IP 是否在样本 |
+| `文档/benchmarks/EXP_1.1.md` ~ `EXP_1.5.md` | 实验 1.1~1.5 记录          | —          | 同上                        |
 
 ### 3.4 API 与宪章
 
-| 文档                                     | 说明                                                               |
-| :--------------------------------------- | :----------------------------------------------------------------- |
-| [constitution.md](docs/constitution.md)  | 项目宪章：项目目标、技术原则、决策流程                             |
-| [oss_strategy.md](docs/oss_strategy.md)  | 开源策略：仓组织、贡献模型、发布模型、商业化模型                   |
-| **HTTP API 文档**                        | 见 evorule-server 独立仓（`evorule-server/` + 9 个配套 lib crate） |
-| **全量应用 CLI（HTTP 调用/规则脚手架）** | 见 evorule-application 仓（evorule-app-cli 子项目）                |
+| 文档                                     | 说明                                               |
+| :--------------------------------------- | :------------------------------------------------- |
+| [constitution.md](docs/constitution.md)  | 治理结构：治理模型、决策层级、贡献者阶梯、冲突解决 |
+| [oss_strategy.md](docs/oss_strategy.md)  | 开源策略：仓组织、贡献模型、发布模型、商业化模型   |
+| **HTTP API 文档**                        | 见 evorule-server 独立仓                           |
+| **全量应用 CLI（HTTP 调用/规则脚手架）** | 见 evorule-application 仓                          |
 
 ---
 
@@ -161,14 +159,14 @@
 
 > 同一主题多版并存时，**默认引用"当前有效版本"**。废弃版本只保留在历史参考目录或原位置加 `[已废弃]` 横幅。
 
-| 主题             | 当前有效版本                                                                                                                                    | 废弃版本（历史参考，禁止引用）                                                                                                                                        |
-| :--------------- | :---------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 形式化验证白皮书 | EVORULE_FORMAL_VERIFICATION_PLAN_v3.md（根目录，v3.1）                                                                                          | `EVORULE_FORMAL_VERTIFICATION_PLAN.md` — 2026-07-29 已删除（v1，含拼写错误）；历史 v2 草稿保留在私有集合（不公开）                                                    |
-| 首发检查清单     | 私有不公开（仅团队内部访问）                                                                                                                    | 私有 v1.0（已被 v2.0 取代，不公开）                                                                                                                                   |
-| 安全审计报告     | [docs/security/SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md)（v0.1.0 首发，走神 9 后 evorule 仓独立范围，**当前有效版本**） | SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（v0.1.0 生态全栈版，**[已废弃]** 2026-07-30 走神 9 拆分前旧版）；SECURITY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位，未到承诺期） |
-| 依赖审计报告     | [docs/security/DEPENDENCY_AUDIT_v0.1.0.md](docs/security/DEPENDENCY_AUDIT_v0.1.0.md)（v0.1.0 首发，cargo-audit 实跑 0 CVE，**当前有效版本**）   | DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（v0.1.0 生态全栈版，**[已废弃]** 2026-07-30 走神 9 拆分前旧版）；DEPENDENCY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位）         |
-| 威胁模型         | [docs/security/THREAT_MODEL_v0.1.0.md](docs/security/THREAT_MODEL_v0.1.0.md)（v0.1.0 首发，evorule 仓机制层，走神 9 拆分，**当前有效版本**）    | THREAT_MODEL.md（生态全栈版，2026-07-20，**[已废弃]** 2026-07-30 被三份独立文档取代）                                                                                 |
-| 发布流程         | docs/release/RELEASE_PROCESS_v0.1.0.md（v0.1.0 用）                                                                                             | 无（首发单版）                                                                                                                                                        |
+| 主题             | 当前有效版本                                                                                                                                 | 废弃版本（历史参考，禁止引用）                                                                                                                          |
+| :--------------- | :------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 形式化验证白皮书 | EVORULE_FORMAL_VERIFICATION_PLAN_v3.md（根目录）                                                                                             | `EVORULE_FORMAL_VERTIFICATION_PLAN.md` — 2026-07-29 已删除（v1，含拼写错误）；历史 v2 草稿保留在私有集合（不公开）                                      |
+| 首发检查清单     | 私有不公开（仅团队内部访问）                                                                                                                 | 私有 v1.0（已被 v2.0 取代，不公开）                                                                                                                     |
+| 安全审计报告     | [docs/security/SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md)（0.1.0 首发，evorule 仓独立范围，**当前有效版本**）         | SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（0.1.0 生态全栈版，**[已废弃]** 2026-07-30 旧版）；SECURITY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位，未到承诺期） |
+| 依赖审计报告     | [docs/security/DEPENDENCY_AUDIT_v0.1.0.md](docs/security/DEPENDENCY_AUDIT_v0.1.0.md)（0.1.0 首发，cargo-audit 实跑 0 CVE，**当前有效版本**） | DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（0.1.0 生态全栈版，**[已废弃]** 2026-07-30 旧版）；DEPENDENCY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位）         |
+| 威胁模型         | [docs/security/THREAT_MODEL_v0.1.0.md](docs/security/THREAT_MODEL_v0.1.0.md)（0.1.0 首发，evorule 仓机制层，**当前有效版本**）               | THREAT_MODEL.md（生态全栈版，2026-07-20，**[已废弃]** 2026-07-30 被三份独立文档取代）                                                                   |
+| 发布流程         | docs/release/RELEASE_PROCESS_v0.1.0.md（0.1.0 用）                                                                                           | 无（首发单版）                                                                                                                                          |
 
 ---
 
@@ -178,10 +176,10 @@
 你要找什么？
 │
 ├─► "EvoRule 有什么功能 / 怎么跑"
-│    └─► README.md → STATUS.md → 各 crate SPEC（TCB/REACTOR/GOVERNANCE/CLI）→ HTTP API 参考文档（属应用层，见 evorule-application 仓，已迁移出核心仓）
+│    └─► README.md → 各 lib SPEC（TCB/REACTOR/GOVERNANCE/CLI）→ HTTP API 参考文档（属应用层，见 evorule-server 仓）
 │
 ├─► "为什么这么设计 / 设计原则是什么"
-│    ├─► 对外公开版：docs/constitution.md + VERSION_STRATEGY.md
+│    ├─► 对外公开版：CONTRIBUTING.md（Core Principles）+ VERSION_STRATEGY.md
 │    │                  + 对应 crate SPEC（TCB/REACTOR/GOVERNANCE/CLI）
 │    └─► 内部深层：仅仓内共享文档/ 或 私有集合（外部读者不提供）
 │
@@ -191,7 +189,7 @@
 │         + 047 私有执行记录（内部，不公开）
 │
 ├─► "版本相关 / 下版本有什么 / 怎么升版本"
-│    └─► CHANGELOG.md + VERSION_STRATEGY.md + ROADMAP.md
+│    └─► CHANGELOG.md + VERSION_STRATEGY.md
 │         + docs/release/RELEASE_PROCESS_vX.Y.Z.md
 │
 ├─► "安全 / 漏洞 / 依赖有问题吗"

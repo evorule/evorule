@@ -10,7 +10,7 @@
 
 > EvoRule 三层架构的 Tier 2 治理层 —— I/O 订阅者、审计链、HTTP API。
 
-- **版本**:v0.1.0
+- **版本**:v0.1.1
 - **依赖**:evorule-tcb + evorule-reactor (路径依赖)
 - **协议**:AGPL-3.0-or-later
 - **测试**:`cargo test` 全部 PASS
@@ -169,7 +169,7 @@ let verified = auditor.verify_chain()?;
 | H9   | `db_handler.rs` URL 静默回退                            | 数据可能写入意外位置                  | 0.1.1 `parse()` 失败返回 `Err`  |
 | M1   | auth **默认禁用**                                       | localhost 任意进程可读所有 session    | 0.2.0 改默认启用或 Docker 强制  |
 
-**结论**:v0.1.0 仅适用于 localhost 个人试用与内网合规 PoC,**不可直接暴露公网**。
+**结论**:0.1.x 仅适用于 localhost 个人试用与内网合规 PoC,**不可直接暴露公网**。
 
 ## Feature Flags
 

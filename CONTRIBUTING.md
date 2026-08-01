@@ -43,7 +43,7 @@
 
 ### Principle 2: Mechanism vs. application separation
 
-✅ **`evo-agent` is the application layer; it talks to `evorule` via HTTP API**
+✅ **`evo-agent` is the application layer; depends on `evorule` via HTTP API (companion repo)**
 ❌ **Do NOT embed LLM / business rules / workflows inside `evorule`**
 
 **Why**:
@@ -82,7 +82,7 @@ GitHub Issues for international contributors.
 
 **Report template**:
 
-````markdown
+`````markdown
 **Environment**:
 
 - OS: [e.g. Windows 11 / Ubuntu 22.04]
@@ -119,7 +119,9 @@ Also use Issues with the `enhancement` label.
 **Alternatives considered**: Other options you evaluated
 **Impact scope**: Which tier / module is affected
 ````
-````
+`````
+
+`````
 
 ---
 
@@ -195,7 +197,7 @@ test(e2e): add core constitution smoke test
 
 ### End-to-end tests
 
-Start `evorule-server` and verify 5 core scenarios:
+Verify 5 core scenarios over HTTP API (setup 详见 evorule-server 仓 README):
 
 1. Health check
 2. Session lifecycle
@@ -211,7 +213,7 @@ When adding new tier0 meta-instructions or domain types, you must add a Kani pro
 
 ```bash
 cargo kani -p evorule-tcb --features kani
-````
+`````
 
 ---
 
@@ -239,7 +241,7 @@ All `.rs` files must include the SPDX header:
 - `evorule-tcb`: **only** pure computation (`no_std` compatible)
 - `evorule-reactor`: event loop + FactsLog + time machine
 - `evorule-governance`: I/O + HTTP API + audit
-- `evo-agent` (separate repo): LLM orchestration
+- `evo-agent` (companion project, depends on evorule): LLM orchestration
 
 ### Immutability by default
 

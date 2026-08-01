@@ -36,7 +36,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 ---
 
-> ## ⚠️ v0.1.0 — 公开基座 (2026-07-20)
+> ## ⚠️ v0.1.x — 公开基座 (当前 0.1.1, 2026-08-01)
 >
 > 这是 EvoRule **第一个公开版本**，提供核心执行引擎 + HTTP API + CLI 工具。**不是 production-ready**。
 >
@@ -53,8 +53,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 > | 多反应器协作原语（join/channel/shared）      | ❌ **路线图规划**       |
 > | 第三方安全审计                               | ❌ **不做**（1.0 之前） |
 >
-> **诚实记账**:见 [STATUS.md](STATUS.md)
-> **路线图**:见 [ROADMAP.md](ROADMAP.md)
+> **诚实记账**:见 [CHANGELOG.md](CHANGELOG.md)
 > **安全审计**:见 [docs/security/SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md)
 >
 > **使用风险自负**。issue / PR 欢迎，但不保证响应时间。
@@ -129,20 +128,20 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 ## 核心特性
 
-| 特性                   | 它服务的目标                                                                                                                                        |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 📦 **JSON 是唯一表达** | 规则、状态、事件、I/O 全是 JSON — 业务可被 git diff / grep                                                                                          |
-| 📜 **JSONL 事实账本**  | 所有 JSON 状态变化追加到 `FactsLog`，可 `tail` 可重放                                                                                               |
-| 🔒 **确定性执行**      | 给定 JSON 输入 → 必然 JSON 输出，无歧义                                                                                                             |
-| ⛓ **JSON 因果链**      | 每个 JSON 状态变化都有 `cause` 指向父 JSON                                                                                                          |
-| ⏪ **JSON 时间机器**   | `replay` / `rewind` / `fork` / `diff` — 任何 JSON 历史点都能重活                                                                                    |
-| 🐛 **调试器级控制**    | `pause` / `step` / `resume` / `break` — 像 GDB 一样调试执行（**应用层实现**，见 [evorule-application](../evorule-application/core/debug_control/)） |
-| 🔗 **多反应器协作**    | `join` / `channel` / `shared_facts_space` — 构建分布式反应式系统（**路线图规划**，v0.1.0 未实现）                                                   |
-| ✅ **Kani 形式化验证** | JSON 状态机核心不变式被 Kani 证明，而非靠 review                                                                                                    |
-| ✅ **TLA+ 状态机验证** | JSON 状态机控制流性质被 TLA+ TLC 证明（[验证报告](evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)）                                                     |
-| 🧱 **三层架构**        | tier0 = JSON 状态机 / tier1 = JSON 事件循环 / tier2 = 治理机制（HTTP API 在应用层）                                                                 |
-| 🤖 **AI Agent 基座**   | 通过独立的 [evo-agent](https://github.com/evorule/evo-agent) 把 LLM 输出（也是 JSON）接入                                                           |
-| 🏥 **单文件 CLI 落地** | [`evorule-cli/`](evorule-cli/) — musl 静态链接，零网络零遥测，直接给合规官用                                                                        |
+| 特性                   | 它服务的目标                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| 📦 **JSON 是唯一表达** | 规则、状态、事件、I/O 全是 JSON — 业务可被 git diff / grep                                               |
+| 📜 **JSONL 事实账本**  | 所有 JSON 状态变化追加到 `FactsLog`，可 `tail` 可重放                                                    |
+| 🔒 **确定性执行**      | 给定 JSON 输入 → 必然 JSON 输出，无歧义                                                                  |
+| ⛓ **JSON 因果链**      | 每个 JSON 状态变化都有 `cause` 指向父 JSON                                                               |
+| ⏪ **JSON 时间机器**   | `replay` / `rewind` / `fork` / `diff` — 任何 JSON 历史点都能重活                                         |
+| 🐛 **调试器级控制**    | `pause` / `step` / `resume` / `break` — 像 GDB 一样调试执行（**应用层实现**，见 evorule-application 仓） |
+| 🔗 **多反应器协作**    | `join` / `channel` / `shared_facts_space` — 构建分布式反应式系统（**路线图规划**，0.1.0 未实现）         |
+| ✅ **Kani 形式化验证** | JSON 状态机核心不变式被 Kani 证明，而非靠 review                                                         |
+| ✅ **TLA+ 状态机验证** | JSON 状态机控制流性质被 TLA+ TLC 证明（[验证报告](evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)）          |
+| 🧱 **三层架构**        | tier0 = JSON 状态机 / tier1 = JSON 事件循环 / tier2 = 治理机制（HTTP API 在应用层）                      |
+| 🤖 **AI Agent 基座**   | 配套项目 [evo-agent](https://github.com/evorule/evo-agent) 把 LLM 输出（也是 JSON）接入                  |
+| 🏥 **单文件 CLI 落地** | [`evorule-cli/`](evorule-cli/) — musl 静态链接，零网络零遥测，直接给合规官用                             |
 
 ---
 
@@ -278,7 +277,9 @@ assert!(history.len() >= 2, "至少有 Command + StateTransition");
 
 ---
 
-### 方式二：HTTP API（evorule-server）
+### 方式二：HTTP API（应用层）
+
+> HTTP API、SSE 事件流、具体 I/O Handler 实现属应用层，详见 [evorule-server 仓 README](https://gitee.com/evo-rule-lab/evorule-server)。
 
 > **关键概念**:
 >
@@ -286,26 +287,9 @@ assert!(history.len() >= 2, "至少有 Command + StateTransition");
 > - **业务规则**(business rules):`rules/*.json`,**可热重载**,定义你的业务如何响应。
 > - 两份 JSON 都是数据,都不需要重新编译就能生效。
 
-#### 1. 启动(用内置宪法)
+下方示例展示 HTTP API 的 JSON 调用形态，端点细节与启动方式详见 evorule-server 仓 README。
 
-> **注意**：evorule-server 属于应用层，**不在核心仓 workspace 中**。需单独克隆 `evorule-server` 独立仓。
-
-```bash
-# 1. 克隆核心仓 + evorule-server 独立仓（放同级目录）
-git clone https://gitee.com/evo-rule-lab/evorule
-git clone https://gitee.com/evo-rule-lab/evorule-server
-
-# 2. 在 evorule-server 仓顶层构建并启动
-cd evorule-server
-cargo run --bin evorule-server -- --addr 127.0.0.1:18080
-# 配置文件 / core_eval.json / 规则目录路径通过 CLI 参数或 EVORULE_* 环境变量指定
-# 详见 evorule-server 仓 README.md
-```
-
-> 想用自定义宪法?`--core_eval /path/to/your/core.json`
-> 想换业务规则目录?`--rules_dir /path/to/your/rules`
-
-### 2. (可选)写业务规则
+### 1. (可选)写业务规则
 
 ```json
 // rules/counter.json
@@ -351,9 +335,9 @@ cargo run --bin evorule-server -- --addr 127.0.0.1:18080
 ```
 
 **纯 JSON,无任何代码。** 业务分析师能写,git 能 diff,review 工具能识别。
-文件保存后,evorule-server 通过 `notify` crate 自动 watch,修改即生效(**热重载**)。
+规则文件保存后可热重载，修改即生效（**热重载**由应用层 `notify` watch 实现，详见 evorule-server 仓）。
 
-### 3. 用 JSON 提交命令
+### 2. 用 JSON 提交命令
 
 ````bash
 # 1. 创建会话
@@ -374,7 +358,7 @@ curl http://127.0.0.1:18080/api/sessions/$SESSION_ID/state
 # → {"payload":{"x":5},"queue":[],"version":3}
 ```
 
-### 4. 订阅 JSON 事件流
+### 3. 订阅 JSON 事件流
 
 ```bash
 curl -N http://127.0.0.1:18080/api/sessions/$SESSION_ID/events
@@ -385,7 +369,7 @@ curl -N http://127.0.0.1:18080/api/sessions/$SESSION_ID/events
 
 **从头到尾,所有数据都是 JSON。**
 
-### 5. 时间机器(回放 + 回滚)
+### 4. 时间机器(回放 + 回滚)
 
 ````bash
 # 回放全部 JSON Fact
@@ -443,11 +427,10 @@ EvoRule 文档按四层架构组织（公开 → 仓内共享 → 本地私有�
 | 你想… | 去… |
 |:----- |:--- |
 | 读文档总索引（所有公开文档） | [DOCS_INDEX.md](DOCS_INDEX.md) — **首读** |
-| 看诚实记账（能跑什么 / 不能跑什么） | [STATUS.md](STATUS.md) — **集成前必读** |
-| 查形式化验证 P0/P1 属性状态 | [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)（当前有效 v3.1） |
+| 查形式化验证 P0/P1 属性状态 | [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)（当前有效） |
 | 查 SPEC 架构规范（tier0/tier1/tier2/cli） | DOCS_INDEX.md §4 Crate 级文档，4 份 SPEC 串联 |
 | 查安全/依赖审计结果 | [docs/security/SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md) |
-| 写贡献代码 / 提 PR | [AGENTS.md](AGENTS.md) → [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md) |
+| 写贡献代码 / 提 PR | [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md) — 提交流程 / 检查清单 |
 
 > **文档维护原则**：新增公开文档必须在 `DOCS_INDEX.md` 登记；版本号必须与 `Cargo.toml` 同步；废弃文档顶部加 `[已废弃]` 横幅。
 
@@ -529,7 +512,7 @@ loop {
 文件:`evorule-governance/src/`
 
 **职责:** 核心治理机制 — 审计、会话管理、I/O 调度框架。
-**注意**: HTTP API、SSE 事件流、具体 I/O Handler 实现等**应用层功能**已迁移至 [evorule-server 独立仓](https://gitee.com/evo-rule-lab/evorule-server)（`core/io_handlers/` + `evorule-server/`）。
+**注意**: HTTP API、SSE 事件流、具体 I/O Handler 实现属应用层，见 [evorule-server 仓](https://gitee.com/evo-rule-lab/evorule-server)。
 
 - **JSON Auditor** — 基于 FactsLog 算 JSON 摘要 + BLAKE3 哈希链
 - **⏪ 时间机器** — replay / rewind / fork / diff（机制层实现）
@@ -569,7 +552,7 @@ loop {
 
 ## API 概览
 
-> **注意**：以下 HTTP API 属于**应用层**，已迁移至 [evorule-server 独立仓](https://gitee.com/evo-rule-lab/evorule-server)。
+> **注意**：以下 HTTP API 属于**应用层**，详见 [evorule-server 仓](https://gitee.com/evo-rule-lab/evorule-server)。
 > 核心层（tier0/tier1/tier2）提供 Rust 库 API，HTTP API 是应用层对核心层的封装。
 
 40+ 个端点，全部 `JSON → JSON`。
@@ -596,14 +579,14 @@ loop {
 
 ### SDK 客户端
 
-多语言 SDK 都在 [evorule-sdk](https://github.com/evorule/evorule-sdk) 独立仓：
+多语言 SDK 见 [evorule-sdk 独立仓](https://github.com/evorule/evorule-sdk)：
 
-| 语言       | 状态      | 仓库                                                  |
-| ---------- | --------- | ----------------------------------------------------- |
-| TypeScript | 🚧 开发中 | [evorule-sdk](https://github.com/evorule/evorule-sdk) |
-| Python     | 🚧 开发中 | [evorule-sdk](https://github.com/evorule/evorule-sdk) |
-| Go         | 🚧 开发中 | [evorule-sdk](https://github.com/evorule/evorule-sdk) |
-| Java       | 🚧 开发中 | [evorule-sdk](https://github.com/evorule/evorule-sdk) |
+| 语言       | 状态      |
+| ---------- | --------- |
+| TypeScript | 🚧 开发中 |
+| Python     | 🚧 开发中 |
+| Go         | 🚧 开发中 |
+| Java       | 🚧 开发中 |
 
 ---
 
@@ -706,18 +689,18 @@ evorule-reactor 11 个 proof（都是为"反应器不变式正确"服务）:
 
 - 🟡 Kani 验证：tier0 12 proof（5 早期 4/5 PASS + 7 新增：6 PASS + P0-4 拆分为 a/b/c）+ tier1 11 proof（原 7 + C1-1~C1-4 新增 4 个，含 FactsLog 单调性、哈希链反向链接、反应器不变量组合性、Phase 状态机不跳级）
 - ⚠️ 无 hot reload（业务规则重启后生效，后续版本加入）
-- ⚠️ 无 API 版本化前缀（`/api/v1/` 将在 0.2.0 引入）
 - ⚠️ JSON 表达力有限（无 Lambda，无复杂类型推导）—— 这是边界，不是 bug
 
 ### 路线图
 
-| 阶段         | 目标                                                        | 预计   |
-| ------------ | ----------------------------------------------------------- | ------ |
-| **0.1.0** ✅ | **公开基座**：核心执行引擎 + HTTP API + CLI 工具            | 已完成 |
-| 0.2.0        | 能力释放：时间机器 API 增强、调试 API、协作原语、API 版本化 | 1 季度 |
-| 0.4.0        | 集群强化：Raft 共识 + 共享账本 + 分布式确定性               | 1 季度 |
-| 0.5.0        | 性能优化：WAL 批量写入 + 对象池 + 万级会话并发              | 1 季度 |
-| 1.0.0        | API 稳定 + 第三方安全审计 + 生产就绪                        | 远期   |
+> 不承诺时间。方向性规划，实际能力以 [CHANGELOG](CHANGELOG.md) 为准。
+
+| 版本  | 方向                                                                   |
+| ----- | ---------------------------------------------------------------------- |
+| 0.2.0 | 时间机器机制增强、协作原语                                             |
+| 0.4.0 | Raft 共识 + 共享账本 + 分布式确定性                                    |
+| 0.5.0 | WAL 批量写入 + 对象池 + 万级会话并发                                   |
+| 1.0.0 | 生产就绪（升 1.0 条件见 [VERSION_STRATEGY](VERSION_STRATEGY.md) §4.2） |
 
 ---
 

@@ -5,16 +5,15 @@ Security disclosure procedures are public knowledge; we release them under CC0 s
 
 # 安全漏洞报告政策
 
-**最后更新**: 2026-07-20
+**最后更新**: 2026-08-01
 
 ## ⚠️ Supported Versions / 支持的版本
 
-| 版本 | 支持状态 | 说明 |
-|---|---|---|
-| `v0.1.0-alpha.x` | ✅ Supported | 公开基座阶段 |
-| `v0.1.0` (production) | ⏳ Pending | 0.2.0 后发,届时成为主支持线 |
-| `v6.0.x` (内部旧版) | ❌ EOL | 已退役,无 Gitee 撤回成本 |
-| `< v0.1.0-alpha.1` | ❌ Unsupported | 公开仓库之前的 commit 不维护 |
+| 版本                         | 支持状态       | 说明                         |
+| ---------------------------- | -------------- | ---------------------------- |
+| `v0.1.x`（含 0.1.0 / 0.1.1） | ✅ Supported   | 公开基座阶段，当前主支持线   |
+| `v6.0.x` (内部旧版)          | ❌ EOL         | 已退役,无 Gitee 撤回成本     |
+| `< v0.1.0-alpha.1`           | ❌ Unsupported | 公开仓库之前的 commit 不维护 |
 
 **alpha 阶段承诺**:
 
@@ -74,13 +73,13 @@ Security disclosure procedures are public knowledge; we release them under CC0 s
 
 EvoRule 涉及一些需要特别注意的安全边界:
 
-| 边界 | 风险 | 缓解 |
-|---|---|---|
-| `core_eval.json` 加载 | 恶意宪法可执行任意 transform | 仅加载受信任的宪法文件,build.rs 编译时门禁 |
-| `query_db` SQL | SQL 注入 | 必须用 `?` 占位符绑定参数,`audit/verify` 全程记录 |
-| 业务规则热重载 | 恶意 JSON 触发危险操作 | 监听目录限制 + 验证 + audit log |
-| HTTP API 认证 | 未授权访问 | Bearer token + 时序攻击防护(`subtle` crate) |
-| FFI 接口 | 内存安全 | Opaque pointer + "指针+长度" 字符串模式 |
+| 边界                  | 风险                         | 缓解                                              |
+| --------------------- | ---------------------------- | ------------------------------------------------- |
+| `core_eval.json` 加载 | 恶意宪法可执行任意 transform | 仅加载受信任的宪法文件,build.rs 编译时门禁        |
+| `query_db` SQL        | SQL 注入                     | 必须用 `?` 占位符绑定参数,`audit/verify` 全程记录 |
+| 业务规则热重载        | 恶意 JSON 触发危险操作       | 监听目录限制 + 验证 + audit log                   |
+| HTTP API 认证         | 未授权访问                   | Bearer token + 时序攻击防护(`subtle` crate)       |
+| FFI 接口              | 内存安全                     | Opaque pointer + "指针+长度" 字符串模式           |
 
 ### 📜 已知安全问题
 

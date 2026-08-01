@@ -8,17 +8,14 @@
 
 # `evorule` CLI
 
-[![版本 v0.1.0](https://img.shields.io/badge/version-v0.1.0-blue)](../Cargo.toml)
+[![版本 v0.1.1](https://img.shields.io/badge/version-v0.1.1-blue)](../Cargo.toml)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-green)](../LICENSE)
 [![文档索引 DOCS_INDEX](https://img.shields.io/badge/docs-DOCS_INDEX-8A2BE2)](../DOCS_INDEX.md)
 
 > **架构层次**:EvoRule 三层架构之上的 **L1 命令行封装工具**(面向圈 2 合规用户,不引入新机制,只封装 evorule-tcb + evorule-reactor 已有的能力)。
 
-> **业务规则模板位置说明（边界合规 · 2026-07-30）**:
-> 按 evorule 边界规范（仓根 `AGENTS.md` 边界判断表：`evorule-cli 加规则模板 = 业务内容，不是机制，放 evorule-application ❌`），
-> 所有面向行业的开箱即用规则集（**医院 HIPAA / 律所利益冲突 / 金融 AML / 政务数据分级** 等）已迁移到兄弟仓 `evorule-application` 的 `examples/evorule-cli/` 目录。
-> evorule 核心仓仅保留机制层最小化演示用例（见本仓 `evorule-cli/examples/README.md` 或 `evorule-cli/tests/fixtures/`）。
-> 【留痕】本次迁移是**经用户明确要求并确认**的越界清理操作，不再回迁。
+> **业务规则模板位置说明（边界合规）**:
+> 面向行业的开箱即用规则集（**医院 HIPAA / 律所利益冲突 / 金融 AML / 政务数据分级** 等）不在本仓——本仓仅保留机制层最小化演示用例（见本仓 `evorule-cli/examples/README.md` 或 `evorule-cli/tests/fixtures/`）。行业规则模板请参见对应独立仓。
 
 **本地 JSON 规则执行工具,面向"圈 2 合规刚需"用户**(医疗/律所/金融/政务等隐私敏感行业)。
 
@@ -48,8 +45,8 @@
 
 ```bash
 # 1) 下载(根据 CPU 架构选)
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.0/evorule-x86_64
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.0/evorule-aarch64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.1/evorule-x86_64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.1/evorule-aarch64
 
 # 2) 验证(可选,确认下载完整)
 sha256sum -c evorule-x86_64.sha256
@@ -447,14 +444,14 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 ```bash
 # Linux x86_64 圈 2 用户
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.0/evorule-x86_64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.1/evorule-x86_64
 chmod +x evorule-x86_64
 ./evorule-x86_64 validate /etc/company-rules/
 ./evorule-x86_64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 ./evorule-x86_64 verify-chain /var/log/evorule-fact.log
 
 # Linux aarch64 圈 2 用户 (AWS Graviton / RPi)
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.0/evorule-aarch64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.1/evorule-aarch64
 chmod +x evorule-aarch64
 ./evorule-aarch64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 ```
@@ -645,10 +642,8 @@ evorule-cli
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md) —— 贡献流程
 - [`CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md) —— 社区行为准则
 - [`CLA-individual.md`](../CLA-individual.md) —— 个人贡献者许可协议
-- [`ROADMAP.md`](../ROADMAP.md) —— 路线图
-- [`STATUS.md`](../STATUS.md) —— v0.1.0 真实状态记账
 - [`VERSION_STRATEGY.md`](../VERSION_STRATEGY.md) —— 版本号标准
-- [`docs/constitution.md`](../docs/constitution.md) —— EvoRule 宪法(价值观与原则)
+- [`docs/constitution.md`](../docs/constitution.md) —— evorule 仓治理结构(治理模型/决策层级/贡献者阶梯)
 - [`docs/oss_strategy.md`](../docs/oss_strategy.md) —— 开源治理策略(AGPL-3.0 解释 + 商业 license 路径)
-- [`docs/security/SECURITY_AUDIT_v0.1.0.md`](../docs/security/SECURITY_AUDIT_v0.1.0.md) —— v0.1.0 安全审计
+- [`docs/security/SECURITY_AUDIT_v0.1.0.md`](../docs/security/SECURITY_AUDIT_v0.1.0.md) —— 安全审计基线
 - [`docs/security/THREAT_MODEL.md`](../docs/security/THREAT_MODEL.md) —— 威胁模型
