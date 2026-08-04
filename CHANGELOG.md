@@ -109,9 +109,9 @@
 - `cargo test --workspace` 通过（含 `io_dispatcher.rs` 4 个新测试：dispatcher_routes_by_io_type / dispatch_hit_and_miss / new_equals_factory_key_collision + fact.rs io_type roundtrip/parse/new 测试）
 - `cargo clippy --workspace --all-targets -- -D warnings` 通过
 
-### 已知问题
+### 📦 发布
 
-- ⚠️ **未发布到 crates.io** — 版本已 bump 至 `0.2.0`（workspace + 4 子 crate + 子 crate 间版本声明），代码全量验证通过，但尚未 `cargo publish`
+- ✅ **已发布到 crates.io** — `evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli` v0.2.0 均已 `cargo publish` 成功
 
 ---
 
