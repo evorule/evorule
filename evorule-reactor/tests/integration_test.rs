@@ -149,7 +149,7 @@ async fn test_io_request_detection() {
     .unwrap()
     .expect("IoRequest not received");
 
-    assert_eq!(io_type, IoType::CALL_EXTERNAL);
+    assert_eq!(io_type, IoType::call_external());
     assert_eq!(params.get("prompt").and_then(|v| v.as_str()), Some("Hello"));
 
     // 使用实际的 request_id 回复
@@ -945,7 +945,7 @@ async fn test_consecutive_different_io_requests_no_interference() {
 
     // 1. 等待第一个 IoRequest（call_external）
     let (request_id_1, io_type_1) = wait_for_io_request(&mut rx).await.expect("IoRequest 1");
-    assert_eq!(io_type_1, IoType::CALL_EXTERNAL);
+    assert_eq!(io_type_1, IoType::call_external());
     tx.send(Fact::IoResponse {
         id: gen.next_id(),
         request_id: request_id_1,
@@ -959,7 +959,7 @@ async fn test_consecutive_different_io_requests_no_interference() {
     //    直接 set db_result = 残留的 "llm answer"，而不发起 IoRequest。
     //    此时 wait_for_io_request 会超时 panic。
     let (request_id_2, io_type_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
-    assert_eq!(io_type_2, IoType::QUERY_DB);
+    assert_eq!(io_type_2, IoType::query_db());
     tx.send(Fact::IoResponse {
         id: gen.next_id(),
         request_id: request_id_2,
@@ -1119,17 +1119,17 @@ async fn test_three_different_io_types_sequence() {
 
     // 1. call_external → IoRequest → IoResponse
     let (rid_1, ty_1) = wait_for_io_request(&mut rx).await.expect("IoRequest 1");
-    assert_eq!(ty_1, IoType::CALL_EXTERNAL);
+    assert_eq!(ty_1, IoType::call_external());
     send_io_response(&tx, &mut gen, rid_1, "llm-result");
 
     // 2. query_db → IoRequest（若 __io_result__ 未清除，会错误消费旧值）
     let (rid_2, ty_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
-    assert_eq!(ty_2, IoType::QUERY_DB);
+    assert_eq!(ty_2, IoType::query_db());
     send_io_response(&tx, &mut gen, rid_2, "db-rows");
 
     // 3. http_get → IoRequest（同样验证不消费残留）
     let (rid_3, ty_3) = wait_for_io_request(&mut rx).await.expect("IoRequest 3");
-    assert_eq!(ty_3, IoType::HTTP_GET);
+    assert_eq!(ty_3, IoType::http_get());
     send_io_response(&tx, &mut gen, rid_3, "http-body");
 
     // 4. 验证最终快照
@@ -1178,14 +1178,14 @@ async fn test_same_io_type_twice_no_stale_consumption() {
 
     // 1. 第一个 call_external → IoRequest
     let (rid_1, ty_1) = wait_for_io_request(&mut rx).await.expect("IoRequest 1");
-    assert_eq!(ty_1, IoType::CALL_EXTERNAL);
+    assert_eq!(ty_1, IoType::call_external());
     send_io_response(&tx, &mut gen, rid_1, "first-answer");
 
     // 2. 第二个 call_external → 必须发起新的 IoRequest
     //    若 __io_result__ 未清除，第二次 call_external 会直接走 on_true
     //    set llm_response = 残留的 "first-answer"，导致 wait_for_io_request 超时
     let (rid_2, ty_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
-    assert_eq!(ty_2, IoType::CALL_EXTERNAL);
+    assert_eq!(ty_2, IoType::call_external());
     send_io_response(&tx, &mut gen, rid_2, "second-answer");
 
     // 3. 验证：llm_response 应为第二次的结果（覆盖第一次）
@@ -1228,7 +1228,7 @@ async fn test_io_interleaved_with_normal_instructions() {
     // 1. 等待 call_external 的 IoRequest
     //    （increment 不产生 IoRequest，会先执行完再到达 call_external）
     let (rid, ty) = wait_for_io_request(&mut rx).await.expect("IoRequest");
-    assert_eq!(ty, IoType::CALL_EXTERNAL);
+    assert_eq!(ty, IoType::call_external());
     send_io_response(&tx, &mut gen, rid, "mixed-result");
 
     // 2. 等待 Stable
@@ -1281,11 +1281,11 @@ async fn test_all_five_io_types_sequence() {
 
     // 依次等待 5 个 IoRequest 并回复
     let expected_types = [
-        IoType::CALL_EXTERNAL,
-        IoType::QUERY_DB,
-        IoType::HTTP_GET,
-        IoType::SAVE_MEMORY,
-        IoType::CALL_SERVICE,
+        IoType::call_external(),
+        IoType::query_db(),
+        IoType::http_get(),
+        IoType::save_memory(),
+        IoType::call_service(),
     ];
     let expected_results = [
         "llm-output",
@@ -1369,7 +1369,7 @@ async fn test_io_response_with_null_result_clears_properly() {
     //    即使第一次的 __io_result__ 是 Null，清除机制必须生效
     //    （exists 域对 Null 返回 true，所以必须删除字段而非设为 Null）
     let (rid_2, ty_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
-    assert_eq!(ty_2, IoType::QUERY_DB);
+    assert_eq!(ty_2, IoType::query_db());
     send_io_response(&tx, &mut gen, rid_2, "db-data");
 
     // 3. 验证
@@ -1472,7 +1472,7 @@ async fn test_snapshot_updates_during_executing_loop() {
 ///
 /// 验证 inspect API 返回的 pending I/O 详情：
 /// - call_external 触发 IoRequest 后，pending_io() 返回非空列表
-/// - 列表包含 (FactId, IoType::CALL_EXTERNAL, Duration)
+/// - 列表包含 (FactId, IoType::call_external(), Duration)
 /// - Duration 是已等待时长（>= 0）
 #[tokio::test]
 async fn test_inspect_returns_pending_io() {

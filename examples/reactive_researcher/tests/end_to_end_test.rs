@@ -123,9 +123,9 @@ impl TestSubscriber {
                 ..
             } = fact
             {
-                let result = match io_type {
-                    IoType::CALL_EXTERNAL => self.llm.execute(&params).await,
-                    IoType::SAVE_MEMORY => self.memory.execute(&params).await,
+                let result = match io_type.as_str() {
+                    "call_external" => self.llm.execute(&params).await,
+                    "save_memory" => self.memory.execute(&params).await,
                     other => Err(format!("unsupported io_type: {other}")),
                 };
                 let (result_value, error) = match result {
@@ -350,8 +350,8 @@ async fn test_end_to_end_call_external_then_save_memory_with_persistence() {
         })
         .collect();
     assert_eq!(io_requests.len(), 2, "应有 2 个 IoRequest");
-    assert!(io_requests.contains(&IoType::CALL_EXTERNAL), "应含 CALL_EXTERNAL 请求");
-    assert!(io_requests.contains(&IoType::SAVE_MEMORY), "应含 SAVE_MEMORY 请求");
+    assert!(io_requests.contains(&IoType::call_external()), "应含 CALL_EXTERNAL 请求");
+    assert!(io_requests.contains(&IoType::save_memory()), "应含 SAVE_MEMORY 请求");
 
     // ─── 清理 ───
     let _ = std::fs::remove_dir_all(&memory_dir);

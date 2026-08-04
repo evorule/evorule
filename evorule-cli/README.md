@@ -8,7 +8,7 @@
 
 # `evorule` CLI
 
-[![版本 v0.1.1](https://img.shields.io/badge/version-v0.1.1-blue)](../Cargo.toml)
+[![版本 v0.2.0](https://img.shields.io/badge/version-v0.2.0-blue)](../Cargo.toml)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-green)](../LICENSE)
 [![文档索引 DOCS_INDEX](https://img.shields.io/badge/docs-DOCS_INDEX-8A2BE2)](../DOCS_INDEX.md)
 
@@ -45,8 +45,8 @@
 
 ```bash
 # 1) 下载(根据 CPU 架构选)
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.1/evorule-x86_64
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.1/evorule-aarch64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.0/evorule-x86_64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.0/evorule-aarch64
 
 # 2) 验证(可选,确认下载完整)
 sha256sum -c evorule-x86_64.sha256
@@ -444,14 +444,14 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 ```bash
 # Linux x86_64 圈 2 用户
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.1/evorule-x86_64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.0/evorule-x86_64
 chmod +x evorule-x86_64
 ./evorule-x86_64 validate /etc/company-rules/
 ./evorule-x86_64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 ./evorule-x86_64 verify-chain /var/log/evorule-fact.log
 
 # Linux aarch64 圈 2 用户 (AWS Graviton / RPi)
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.1.1/evorule-aarch64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.0/evorule-aarch64
 chmod +x evorule-aarch64
 ./evorule-aarch64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 ```
@@ -559,7 +559,7 @@ evorule run ./rules/ --payload-file payload.example.json
 ## 已知限制(0.1.0)
 
 - ❌ 无 I/O handler(`io_request` 会产生 IoRequest fact + Error fact,不实际执行 I/O)
-- ❌ 无 HTTP API(那是 `evorule-server` 独立仓的事,evorule-server 作为独立二进制对外暴露 HTTP；evorule 核心仓纯 lib + 本地 CLI)
+- ❌ 无 HTTP API(本 crate 是本地 CLI，不提供 HTTP 服务；如需 HTTP/SSE 由应用层基于核心仓机制自行构建)
 - ❌ 无配置文件(后续加 `.evorule.toml`)
 - ❌ 无 hot-reload(后续加)
 - ✅ 0 网络 ✓
@@ -629,9 +629,8 @@ evorule-cli
 
 ## 配套工具
 
-- **`evorule-server`** —— HTTP + SSE 服务的二进制([`../evorule-governance/`](../evorule-governance/))
 - **`core_eval.json`** —— 宪法文件(默认在 `evorule-tcb/core_eval.json`)
-- **evorule-application/time-travel-debugger** —— 后续做(可视化版 replay)
+- **可视化时间旅行调试器** —— 后续做(可视化版 replay，由应用层实现)
 
 ---
 

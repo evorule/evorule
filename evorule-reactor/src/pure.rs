@@ -438,7 +438,7 @@ mod tests {
         let id = FactId(1);
         let instr = increment_instr("x", 1);
         // 注册 I/O 请求
-        state.register_io_request(id, IoType::CALL_EXTERNAL);
+        state.register_io_request(id, IoType::call_external());
         state.save_io_instruction(id, instr.clone(), FactId(0));
         // 应用响应
         let result = apply_io_response(&mut state, id, JsonValue::string("result"));
@@ -478,12 +478,12 @@ mod tests {
         let mut state = ReactorState::new();
         let id = FactId(1);
         let instr = increment_instr("x", 1);
-        register_io_request_pure(&mut state, id, IoType::CALL_EXTERNAL, instr.clone());
+        register_io_request_pure(&mut state, id, IoType::call_external(), instr.clone());
         assert_eq!(state.pending_io_count, 1);
         assert!(state.pending_requests.contains(&id));
         assert_eq!(
             state.pending_io_types.get(&id),
-            Some(&IoType::CALL_EXTERNAL)
+            Some(&IoType::call_external())
         );
         assert_eq!(
             state.pending_io_instructions.get(&id),
@@ -498,8 +498,8 @@ mod tests {
         let mut state = ReactorState::new();
         let id = FactId(1);
         let instr = increment_instr("x", 1);
-        register_io_request_pure(&mut state, id, IoType::CALL_EXTERNAL, instr.clone());
-        register_io_request_pure(&mut state, id, IoType::CALL_EXTERNAL, instr.clone());
+        register_io_request_pure(&mut state, id, IoType::call_external(), instr.clone());
+        register_io_request_pure(&mut state, id, IoType::call_external(), instr.clone());
         assert_eq!(state.pending_io_count, 1);
     }
 }

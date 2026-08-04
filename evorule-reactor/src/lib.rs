@@ -67,7 +67,7 @@
 //! }
 //! ```
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 // 永不 panic 保障：禁止以下 panic-prone 模式（与 evorule-tcb 基线对齐）
 // 测试/基准模块内可局部 #[allow(...)] 豁免
@@ -80,11 +80,15 @@ mod channel;
 mod error;
 mod fact;
 mod facts_log;
+// ffi feature 必须暴露 extern "C" 接口，局部 allow unsafe_code 覆盖 deny
+// 默认 feature (无 ffi) 下 ffi 模块不会被编译
+#[cfg_attr(feature = "ffi", allow(unsafe_code))]
 #[cfg(feature = "ffi")]
 mod ffi;
 mod hash;
 mod invariants;
 // H5: IoHandler trait 下沉到 evorule-reactor(与 IoType 同层,object-safe)
+mod io_dispatcher;
 mod io_handler;
 mod phase;
 #[allow(dead_code)]
@@ -102,6 +106,7 @@ pub use fact::{ControlFlowType, Fact, FactId, FactIdGenerator, IoType};
 pub use facts_log::{FactsLog, FactsLogError};
 pub use hash::{compute_chain_hash, content_hash, fact_hash, fact_to_stable_json, HashError};
 pub use invariants::InvariantViolation;
+pub use io_dispatcher::{IoDispatcher, IoDispatcherBuilder};
 pub use io_handler::{IoHandler, IoResult};
 pub use phase::{PhaseContext, ReactorPhase};
 pub use reactor::{PendingIoEntry, Reactor, ReactorBuilder, ReactorHandle, ReactorStateSnapshot};

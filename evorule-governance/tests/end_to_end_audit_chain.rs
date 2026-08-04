@@ -70,7 +70,7 @@ fn make_io_request(id: u64, cause: u64) -> Fact {
     Fact::IoRequest {
         id: FactId(id),
         cause: FactId(cause),
-        io_type: IoType::HTTP_GET,
+        io_type: IoType::http_get(),
         params: JsonValue::Object(params),
     }
 }

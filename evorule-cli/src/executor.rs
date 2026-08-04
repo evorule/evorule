@@ -115,25 +115,15 @@ pub fn execute(
                 current_cause = id;
             }
             Ok(TransitionResult::IoRequired { io_type, params }) => {
-                let io_type = match IoType::parse(&io_type) {
-                    Some(t) => t,
-                    None => {
-                        let err_id = id_gen.next_id();
-                        facts.push(Fact::Error {
-                            id: err_id,
-                            message: format!("unknown io_type: {}", io_type),
-                        });
-                        tracing::error!(io_type = %io_type, "unknown io_type");
-                        break;
-                    }
-                };
+                // v0.2.0：io_type 透传不校验（parse 已 deprecated，无条件接受）
+                let io_type = IoType::new(&io_type);
                 let req_id = id_gen.next_id();
                 // 缓存 orig 指令（0.3.0 加 handler 时用于 push_front 重执行）
                 pending_io.insert(req_id, instruction.clone());
                 facts.push(Fact::IoRequest {
                     id: req_id,
                     cause: current_cause,
-                    io_type,
+                    io_type: io_type.clone(),
                     params,
                 });
                 // 0.2.0 无 I/O handler，发 Error 退出
@@ -323,7 +313,8 @@ mod tests {
 
     #[test]
     fn test_execute_unknown_io_type_produces_error() {
-        // io_type 不在 IoType::parse 已知列表
+        // v0.2.0：io_type 透传不校验，"unknown_io_type" 不再被 parse 拒绝，
+        // 而是透传后由 cli（无 handler）发 "no I/O handler for io_type=unknown_io_type" Error
         let core_eval = vec![io_request_rule("unknown_io_type")];
         let facts = execute(
             &core_eval,
@@ -334,9 +325,9 @@ mod tests {
         .unwrap();
 
         let has_error = facts.iter().any(
-            |f| matches!(f, Fact::Error { ref message, .. } if message.contains("unknown io_type")),
+            |f| matches!(f, Fact::Error { ref message, .. } if message.contains("no I/O handler")),
         );
-        assert!(has_error, "should have Error about unknown io_type");
+        assert!(has_error, "should have Error (no I/O handler) for unknown io_type");
     }
 
     #[test]

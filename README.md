@@ -20,7 +20,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.1.1-green.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-0.2.0-green.svg)](Cargo.toml)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Kani](https://img.shields.io/badge/Kani-t0_12p_t1_11p-blue.svg)](evorule-tcb/verification/kani_proofs.rs)
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0-green.svg)]()
@@ -36,9 +36,9 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 ---
 
-> ## ⚠️ v0.1.x — 公开基座 (当前 0.1.1, 2026-08-01)
+> ## ⚠️ v0.2.x — 自定义 IoType 重构 (当前 0.2.0, 2026-08-04)
 >
-> 这是 EvoRule **第一个公开版本**，提供核心执行引擎 + HTTP API + CLI 工具。**不是 production-ready**。
+> 这是 EvoRule **v0.2.x 公开基座**（IoType 重构为动态 `Arc<str>`，支持自定义 IoType；IoDispatcher 下沉到 evorule-reactor），提供核心执行引擎 + HTTP API + CLI 工具。**不是 production-ready**。
 >
 > | 承诺                                         | 状态                    |
 > | -------------------------------------------- | ----------------------- |
@@ -890,7 +890,7 @@ evorule verify-chain fact.log     # 验证 fact log 哈希链完整性
 ```bibtex
 @software{evorule,
   title = {EvoRule: A JSON-Data-Set Execution Engine with Append-Only Facts Log},
-  version = {0.1.1},
+  version = {0.2.0},
   year = {2026},
   url = {https://gitee.com/evo-rule-lab/evorule},
   license = {AGPL-3.0}

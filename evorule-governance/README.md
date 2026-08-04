@@ -10,8 +10,8 @@
 
 > EvoRule 三层架构的 Tier 2 治理层 —— I/O 订阅者、审计链、HTTP API。
 
-- **版本**:v0.1.1
-- **依赖**:evorule-tcb + evorule-reactor (路径依赖)
+- **版本**:v0.2.0
+- **依赖**:evorule-tcb = "0.2.0" + evorule-reactor = { version = "0.2.0", features = ["persistence"] }
 - **协议**:AGPL-3.0-or-later
 - **测试**:`cargo test` 全部 PASS
 - **build.rs 编译时门禁**:F11 禁止 `unwrap`/`expect`/`panic!`/`debug_assert!`(非测试代码),**G8 控制流白盒化**,PASSED
@@ -37,7 +37,7 @@
 
 **职责(机制)**:
 
-- **I/O 订阅者**:消费 `Fact::IoRequest` → 通过 IoDispatcher 分发给上层注入的 `IoHandler` 实现 → 产生 `Fact::IoResponse`（**具体 HTTP/SQLite/Memory Handler 实现已迁至 evorule-application 仓**）
+- **I/O 订阅者**:消费 `Fact::IoRequest` → 通过 IoDispatcher 分发给上层注入的 `IoHandler` 实现 → 产生 `Fact::IoResponse`（具体 Handler 实现由应用层注入，本 crate 仅定义机制）
 - **审计链**:基于 tier1 WAL 的 blake3 哈希链,支持 `load_from_tier1_wal()` 加载并验证完整性
 - **规则验证器**:基于 tier0 `core_eval.json` 的 JSON Schema 规则验证（RuleValidator）
 - **时间机器**:基于 tier1 FactsLog 的 replay / rewind / fork / diff 4 个 API
@@ -45,8 +45,8 @@
 
 **不承担(策略/应用)**:
 
-- ❌ 具体 I/O handler 实现(HTTP/SQLite/Memory handler → 见 evorule-server 独立仓 `core/io_handlers/`)
-- ❌ evorule-server 独立二进制 / HTTP API / SSE / Prometheus metrics / Bearer 认证（→ 见 evorule-server 独立仓，顶层 `cargo build --bin evorule-server` 即可）
+- ❌ 具体 I/O handler 实现(HTTP/SQLite/Memory handler → 由应用层提供)
+- ❌ HTTP API / SSE / Prometheus metrics / Bearer 认证（→ 由应用层提供）
 - ❌ 业务策略(具体规则/权限配置由上层应用提供)
 
 ## 模块结构
@@ -59,18 +59,18 @@ src/
 ├── io_dispatcher.rs        # I/O 分发器(Enum Dispatch 框架)
 ├── io_handler.rs           # IoHandler trait + IoResult(机制定义, 应用层注入实现)
 ├── io_subscriber.rs        # I/O 订阅者(消费 IoRequest → 分发 → 回写 IoResponse)
-├── metrics.rs              # IoMetrics trait(机制层接口, Prometheus 实现在 evorule-application 仓)
+├── metrics.rs              # IoMetrics trait(机制层接口, Prometheus 实现由应用层提供)
 ├── rule_validation.rs      # 规则验证器(RuleValidator, 基于 tier0 core_eval.json)
 ├── session.rs              # 会话管理器(SessionManager, 多反应器实例生命周期管理)
 ├── shared_facts_log.rs     # 共享 FactsLog(跨 session 审计)
 └── time_machine.rs         # 时间机器(replay / rewind / fork / diff)
 ```
 
-**H5/H6 迁移后已移除的模块**(均属应用层,已迁至 evorule-application 仓):
+**H5/H6 边界清理后已移除的模块**(均属应用层,已迁出本 crate):
 
 - `api/` 目录 — HTTP API (axum 路由 / Bearer token / CORS / 速率限制 / SSE)
 - `io_handlers/` 目录 — 具体 I/O 实现(db_handler / http_handler / memory_handler)
-- `bin/evorule_server.rs` — evorule-server 独立二进制
+- `bin/` 目录 — 独立二进制
 - `cluster.rs` — 多 reactor 协作原语
 - `object_pool.rs` — FactsLog 对象复用优化
 - `api/portal.rs` — Portal 聚合端点(应用层 UI)
@@ -80,12 +80,12 @@ src/
 
 ## 作为 lib 使用（evorule 核心仓）
 
-evorule-governance 现为**纯机制层库**（无 bin target），应作为 library 被上层应用（如 evorule-application、evo-agent）依赖：
+evorule-governance 现为**纯机制层库**（无 bin target），应作为 library 被上层应用依赖：
 
 ```toml
-# 在 evorule-application 或你自己的应用仓的 Cargo.toml 中
+# 在你自己的应用仓的 Cargo.toml 中
 [dependencies]
-evorule-governance = { version = "0.1.0" }
+evorule-governance = { version = "0.2.0" }
 ```
 
 快速开始示例：
@@ -110,8 +110,7 @@ let auditor = Auditor::load_from_tier1_wal(wal_path)?;
 let verified = auditor.verify_chain()?;
 ```
 
-> **evorule-server / HTTP API 用户**：请克隆 evorule-server 独立仓（与 evorule 同级目录），在仓顶层执行 `cargo run --bin evorule-server -- --addr 127.0.0.1:18080`。
-> 该仓顶层 `core/io_handlers/` 下提供 DbHandler/HttpHandler/MemoryHandler 具体实现，`core/auth/` 提供 Bearer token + 速率限制认证中间件。
+> **HTTP API 用户**：本 crate 不提供 HTTP API。如需 HTTP/SSE 服务，由应用层基于本 crate 的机制自行构建。
 
 ## 审计链与哈希链
 
@@ -148,36 +147,30 @@ let verified = auditor.verify_chain()?;
 
 ## 安全
 
-### 已实现
+### 已实现（本 crate 机制层）
 
-- **Bearer token 认证**(`api/auth.rs`):使用 `subtle::ConstantTimeEq` 恒定时间比较,防枚举攻击;支持 token 轮换(`current_tokens` + `previous_tokens`)。**默认禁用**(opt-in via `--auth-token` / `EVORULE_AUTH_TOKEN`),非 loopback 启动时打印警告。
-- **blake3 哈希链**(`hash.rs` + `auditor.rs`):基于 tier1 WAL 的 append-only 审计链,每个 Fact 携带哈希字段,篡改可检测;`/api/sessions/{id}/audit/verify` 端点提供完整性校验。
-- **速率限制**:200 req/s(burst=200),基于 `governor` 令牌桶;`--no-rate-limit` 可禁用(仅 benchmark)。
-- **SQLite 参数化查询**(`db_handler.rs`):使用 `sqlx` 参数绑定,防 SQL 注入(但语句本身无白名单,见下)。
-- **WAL 持久化**:可选的 Write-Ahead Log,`wal_fsync` 开关控制 fsync。
+- **blake3 哈希链**(`hash.rs` + `auditor.rs`):基于 tier1 WAL 的 append-only 审计链,每个 Fact 携带哈希字段,篡改可检测;`Auditor::load_from_tier1_wal()` 提供完整性校验。
+- **WAL 持久化**:通过 `persistence` feature 启用 tier1 WAL 持久化(由 evorule-reactor 提供)。
 - **build.rs 编译时门禁**:F11 禁止 `panic!`/`unwrap`/`expect`(非测试代码)。
+- **`#![forbid(unsafe_code)]`**:全 crate 禁止 unsafe。
 
-### ⚠️ 已知风险(P1,公网部署前必修)
+> HTTP API 认证、速率限制、CORS、SQLite/HTTP handler 等应用层安全特性不在本 crate 范围内，由应用层基于本 crate 的机制接口自行实现。
 
-> 详见 [`docs/security/SECURITY_AUDIT_v0.1.0.md`](../docs/security/SECURITY_AUDIT_v0.1.0.md) corr.7
+### 历史安全审计基线
 
-| 编号 | 问题                                                    | 风险                                  | 修复计划                        |
-| ---- | ------------------------------------------------------- | ------------------------------------- | ------------------------------- |
-| H6   | `http_handler.rs` **无 SSRF 防护**(接受任意 URL)        | 可访问内网/云元数据 `169.254.169.254` | 0.1.1 加 URL scheme + IP 白名单 |
-| H7   | `db_handler.rs` 允许**任意 SQL**(`DROP TABLE`/`ATTACH`) | 数据破坏                              | 0.1.1 加 SQL 语句类型白名单     |
-| H8   | CORS `permissive()`(`server.rs`)                        | 任意 Origin 携带凭证 = CSRF           | 0.1.1 改为可配置白名单          |
-| H9   | `db_handler.rs` URL 静默回退                            | 数据可能写入意外位置                  | 0.1.1 `parse()` 失败返回 `Err`  |
-| M1   | auth **默认禁用**                                       | localhost 任意进程可读所有 session    | 0.2.0 改默认启用或 Docker 强制  |
+> 历史审计报告: [`docs/security/SECURITY_AUDIT_v0.1.0.md`](../docs/security/SECURITY_AUDIT_v0.1.0.md)（历史全栈审计快照，含已迁出的应用层代码风险项 H6-H9/M1）
 
-**结论**:0.1.x 仅适用于 localhost 个人试用与内网合规 PoC,**不可直接暴露公网**。
+本 crate 为纯机制层库，不包含 HTTP API、I/O handler、认证中间件等应用层代码。历史审计中的 H6（SSRF）、H7（SQL 注入）、H8（CORS）、H9（DB URL 回退）、M1（auth 默认禁用）等风险项均针对已迁出的应用层实现，由应用层各自承担修复责任。
+
+本 crate 自身的安全保证为：永不 panic（build.rs F11 门禁）、`#![forbid(unsafe_code)]`、blake3 哈希链审计完整性。
 
 ## Feature Flags
 
-| Feature       | 说明                   |
-| ------------- | ---------------------- |
-| `metrics`     | Prometheus 指标暴露    |
-| `auth`        | 认证中间件(默认禁用)   |
-| `persistence` | WAL 持久化(依赖 tier1) |
+| Feature       | 说明                                   |
+| ------------- | -------------------------------------- |
+| `persistence` | WAL 持久化(依赖 tier1 evorule-reactor) |
+
+> `metrics` 和 `auth` feature 已随应用层代码迁出移除。IoMetrics trait 总是可用（机制层接口），Prometheus 实现和认证中间件由应用层提供。
 
 ---
 

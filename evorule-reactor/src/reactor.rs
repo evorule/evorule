@@ -24,6 +24,7 @@ use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -81,7 +82,7 @@ pub struct ReactorStateSnapshot {
 ///
 /// `started_at` 存的是发射时间戳，inspect 时调用 `started_at.elapsed()`
 /// 计算 Duration，避免 snapshot 持续更新时 Duration 失真。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingIoEntry {
     /// I/O 请求的 FactId
     pub id: FactId,
@@ -108,6 +109,13 @@ pub struct ReactorBuilder {
     facts_log: FactsLog,
     /// 执行中断标志（外部可通过 ReactorHandle 设置）
     interrupt_flag: Arc<AtomicBool>,
+    /// FactId 起始值（None=从 1 开始全新启动，Some(n)=从 n 恢复续跑）
+    ///
+    /// 用于崩溃恢复：从历史 WAL 中的最大 reactor 内部 FactId + 1 续跑，
+    /// 避免 StateTransition/IoRequest/Stable/Error 的 FactId 与历史 WAL 重复。
+    fact_id_start: Option<u64>,
+    /// v0.2.0 能力4：已知 io_type 集合（快速失败校验，None=不校验透传）
+    known_io_types: Option<Arc<HashSet<String>>>,
 }
 
 impl ReactorBuilder {
@@ -122,6 +130,8 @@ impl ReactorBuilder {
             io_timeout_check_interval: IO_TIMEOUT_CHECK_INTERVAL,
             facts_log: FactsLog::new(),
             interrupt_flag: Arc::new(AtomicBool::new(false)),
+            fact_id_start: None,
+            known_io_types: None,
         }
     }
 
@@ -178,6 +188,38 @@ impl ReactorBuilder {
         self
     }
 
+    /// 设置 reactor 内部 FactId 起始值（崩溃恢复续跑用）
+    ///
+    /// 默认 `None` = 从 1 开始（`FactIdGenerator::new()`）。
+    /// `Some(n)` = 从 n 开始（`FactIdGenerator::resume(n)`），用于崩溃恢复续跑，
+    /// 避免 reactor 内部产生的 StateTransition/IoRequest/Stable/Error 的 FactId
+    /// 与历史 WAL 中同类型 Fact 的 FactId 重复。
+    ///
+    /// # 规范合规
+    ///
+    /// - ✅ FactId 是机制（控制层标识），非业务语义
+    /// - ✅ 不影响 Kani 不变式（无 proof 验证 FactId 全局唯一性）
+    pub fn fact_id_start(mut self, start: u64) -> Self {
+        self.fact_id_start = Some(start);
+        self
+    }
+
+    /// v0.2.0 能力4：注册已知 io_type 集合（快速失败校验）
+    ///
+    /// 注册后，IoRequired 时若 io_type 不在集合内，立即发射 `Fact::Error`（恢复
+    /// v0.1.x 拼错 io_type 快速失败的确定性）。未注册（默认）则透传不校验，
+    /// 由 subscriber 决定能否处理。
+    ///
+    /// 通常从 `IoDispatcher::known_types()` 收集：
+    /// ```ignore
+    /// let dispatcher = IoDispatcher::builder().register(...).build();
+    /// reactor.known_io_types(dispatcher.known_types().map(|t| t.as_str().to_string()));
+    /// ```
+    pub fn known_io_types(mut self, types: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.known_io_types = Some(Arc::new(types.into_iter().map(Into::into).collect()));
+        self
+    }
+
     /// 构建反应器
     pub fn build(self) -> Reactor {
         Reactor {
@@ -189,6 +231,8 @@ impl ReactorBuilder {
             io_timeout_check_interval: self.io_timeout_check_interval,
             facts_log: self.facts_log,
             interrupt_flag: self.interrupt_flag,
+            fact_id_start: self.fact_id_start,
+            known_io_types: self.known_io_types,
         }
     }
 }
@@ -208,6 +252,10 @@ pub struct Reactor {
     facts_log: FactsLog,
     /// 执行中断标志（外部可通过 ReactorHandle 设置）
     interrupt_flag: Arc<AtomicBool>,
+    /// FactId 起始值（None=从 1 开始全新启动，Some(n)=从 n 恢复续跑）
+    fact_id_start: Option<u64>,
+    /// v0.2.0 能力4：已知 io_type 集合（快速失败校验，None=不校验透传）
+    known_io_types: Option<Arc<HashSet<String>>>,
 }
 
 impl Reactor {
@@ -296,7 +344,9 @@ impl Reactor {
         interrupt_flag: Arc<AtomicBool>,
     ) -> Result<(), ReactorError> {
         let mut state = ReactorState::new();
-        let mut id_gen = FactIdGenerator::new();
+        let mut id_gen = self
+            .fact_id_start
+            .map_or_else(FactIdGenerator::new, FactIdGenerator::resume);
         let mut steps: usize = 0;
         // 断点 1 修复：删除 current_cause 全局变量，
         // 改为通过 instruction_causes 队列追踪每个指令的独立 cause。
@@ -575,27 +625,28 @@ impl Reactor {
                         params,
                     }) => {
                         let id = id_gen.next_id();
-                        // 未知 io_type：发送 Fact::Error 而非静默退出（避免调用方超时等待）
-                        let io_type = match IoType::parse(&io_type_str) {
-                            Some(t) => t,
-                            None => {
+                        // v0.2.0：io_type 透传不校验（校验责任移到 subscriber；
+                        // known_io_types 快速失败见能力4/阶段2）。未知 io_type 由
+                        // 下游 subscriber 决定能否处理，处理不了 → error IoResponse
+                        // → reactor 走现有 Error 路径。
+                        // v0.2.0 能力4：known_io_types 快速失败校验（可选）
+                        if let Some(known) = &self.known_io_types {
+                            if !known.contains(&io_type_str) {
                                 state.phase = ReactorPhase::Error;
-                                // 断点 2 修复：在 Error 消息中包含指令 Debug 信息，
-                                // 使审计链可追溯丢失的指令（指令不推回队列，避免无限循环）
                                 let msg = format!(
-                                    "Unknown io_type: {} (instruction: {:?})",
+                                    "unknown io_type: {} (not in known_io_types, instruction: {:?})",
                                     io_type_str, instruction
                                 );
                                 tracing::error!(phase = %state.phase.as_str(), "{}", msg);
                                 let fact = Fact::Error { id, message: msg };
                                 Self::emit_fact(&self.facts_log, &event_tx, fact);
-                                // 长驻模式：不退出，继续执行队列中剩余指令。
-                                // 若队列已空，外层循环的稳定检测会自动发射 Stable。
                                 state.phase = ReactorPhase::Idle;
                                 continue 'main;
                             }
-                        };
-                        state.register_io_request(id, io_type);
+                        }
+                        let io_type = IoType::new(&io_type_str);
+                        // .clone()：io_type 之后还要用于 debug! 与 Fact::IoRequest
+                        state.register_io_request(id, io_type.clone());
                         // BUG 修复：缓存触发 I/O 的原指令及其 cause，IoResponse 到达后重新推送回队列，
                         // 使 core_eval.json 中的 exists(__io_result__) 双路径生效：
                         // 首次执行走 on_false（io_request），恢复执行走 on_true（set 消费结果）。

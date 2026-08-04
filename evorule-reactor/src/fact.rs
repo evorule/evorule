@@ -17,44 +17,68 @@ impl core::fmt::Display for FactId {
 
 /// I/O 请求类型（与 core_eval.json 中的 io_type 对应）
 ///
-/// 阶段3-1.4：实现 `Copy`，使 `register_io_request(id, io_type)` 后 `io_type`
-/// 仍可在调用方使用（如 reactor 中需要在 register 后再用于 Fact::IoRequest）。
+/// v0.2.0：内部表示从 `&'static str` 改为 `Arc<str>`，支持应用层注册任意
+/// io_type（如 `retrieve`/`file`/`http`）。`Arc<str>` 满足 `Clone + Eq + Hash +
+/// Ord + Send + Sync`，可作 `BTreeMap`/`HashMap` key、跨线程共享、克隆廉价
+/// （原子计数）。
 ///
-/// 阶段6：从硬编码枚举改为 String newtype，支持自定义 I/O 类型扩展。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct IoType(pub &'static str);
+/// # 失去 `Copy` 的影响
+///
+/// 所有按值传递处需显式 `.clone()`。典型场景：reactor 中
+/// `state.register_io_request(id, io_type)` 后仍要在 `Fact::IoRequest` 与
+/// `tracing::debug!` 中使用 `io_type`，需 `io_type.clone()`。
+///
+/// # 5 个旧 io_type
+///
+/// 从 `const` 改为工厂函数（`Arc::from` 非 const）。字符串值不变，故
+/// `IoType::new("call_service") == IoType::call_service()` 成立，旧 WAL /
+/// core_eval 无需改动。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct IoType(pub std::sync::Arc<str>);
 
 impl IoType {
     /// 调用外部服务
-    pub const CALL_EXTERNAL: Self = IoType("call_external");
+    pub fn call_external() -> Self {
+        Self(std::sync::Arc::from("call_external"))
+    }
     /// 查询数据库
-    pub const QUERY_DB: Self = IoType("query_db");
+    pub fn query_db() -> Self {
+        Self(std::sync::Arc::from("query_db"))
+    }
     /// HTTP GET 请求
-    pub const HTTP_GET: Self = IoType("http_get");
+    pub fn http_get() -> Self {
+        Self(std::sync::Arc::from("http_get"))
+    }
     /// 保存到记忆
-    pub const SAVE_MEMORY: Self = IoType("save_memory");
-    /// 调用外部服务
-    pub const CALL_SERVICE: Self = IoType("call_service");
+    pub fn save_memory() -> Self {
+        Self(std::sync::Arc::from("save_memory"))
+    }
+    /// 调用外部服务（v0.1.x 借道路径：按 `params.service_name` 二级路由）
+    pub fn call_service() -> Self {
+        Self(std::sync::Arc::from("call_service"))
+    }
+
+    /// 运行时构造任意 io_type（v0.2.0 自定义 IoType 入口）
+    ///
+    /// 用于应用层注册自定义 io_type，如 `IoType::new("retrieve")`。
+    /// 5 个旧 io_type 字符串值不变：`IoType::new("call_service") == IoType::call_service()`。
+    pub fn new(name: &str) -> Self {
+        Self(std::sync::Arc::from(name))
+    }
 
     /// 从字符串解析 I/O 类型
     ///
-    /// 与 core_eval.json 的 io_type 字段对应。
-    /// 未知类型返回 None（v0.1.0：不再用 Box::leak 创建自定义类型，避免内存泄漏）。
-    /// 自定义 IoType 支持将在 v0.2.0 通过 `Arc<str>` 实现。
+    /// v0.2.0：无条件接受（校验责任移到 subscriber / `ReactorBuilder::known_io_types`）。
+    /// 保留方法名仅为向后兼容旧调用点，行为从"未知返回 None"变为"始终返回 Some"，
+    /// 避免静默破坏。
+    #[deprecated(note = "v0.2.0 起用 IoType::new；parse 不再校验，保留仅为向后兼容")]
     pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "call_external" => Some(IoType("call_external")),
-            "query_db" => Some(IoType("query_db")),
-            "http_get" => Some(IoType("http_get")),
-            "save_memory" => Some(IoType("save_memory")),
-            "call_service" => Some(IoType("call_service")),
-            _ => None,
-        }
+        Some(Self::new(s))
     }
 
     /// 转为字符串
     pub fn as_str(&self) -> &str {
-        self.0
+        self.0.as_ref()
     }
 }
 
@@ -110,6 +134,17 @@ impl FactIdGenerator {
     /// 创建新的生成器（从 1 开始）
     pub const fn new() -> Self {
         Self { next: 1 }
+    }
+
+    /// 从指定值恢复（崩溃恢复续跑用）
+    ///
+    /// `resume(n)` 后首次 `next_id()` 返回 `FactId(n)`。
+    /// `resume(1)` 等价于 `new()`。
+    ///
+    /// 用于崩溃恢复场景：从历史 WAL 中的最大 FactId + 1 续跑，
+    /// 避免新一轮产生的 FactId 与历史 WAL 中的同类型 Fact 重复。
+    pub fn resume(from: u64) -> Self {
+        Self { next: from }
     }
 
     /// 生成下一个 ID
@@ -331,6 +366,23 @@ mod tests {
     }
 
     #[test]
+    fn test_fact_id_generator_resume() {
+        let mut gen = FactIdGenerator::resume(100);
+        assert_eq!(gen.next_id(), FactId(100));
+        assert_eq!(gen.next_id(), FactId(101));
+        assert_eq!(gen.next_id(), FactId(102));
+    }
+
+    #[test]
+    fn test_fact_id_generator_resume_from_1_equals_new() {
+        let mut a = FactIdGenerator::new();
+        let mut b = FactIdGenerator::resume(1);
+        for _ in 0..5 {
+            assert_eq!(a.next_id(), b.next_id());
+        }
+    }
+
+    #[test]
     fn test_fact_type_name_and_id() {
         let fact = Fact::Command {
             id: FactId(1),
@@ -361,7 +413,7 @@ mod tests {
         let io_req = Fact::IoRequest {
             id: FactId(20),
             cause: FactId(10),
-            io_type: IoType::CALL_EXTERNAL,
+            io_type: IoType::call_external(),
             params: JsonValue::empty_object(),
         };
         assert_eq!(io_req.id(), FactId(20));
@@ -389,35 +441,49 @@ mod tests {
 
     #[test]
     fn test_io_type_roundtrip() {
-        // 所有 IoType 变体的 parse ↔ as_str 往返
+        // 所有 IoType 变体的 new ↔ as_str 往返
         for expected in [
-            IoType::CALL_EXTERNAL,
-            IoType::QUERY_DB,
-            IoType::HTTP_GET,
-            IoType::SAVE_MEMORY,
-            IoType::CALL_SERVICE,
+            IoType::call_external(),
+            IoType::query_db(),
+            IoType::http_get(),
+            IoType::save_memory(),
+            IoType::call_service(),
         ] {
             let s = expected.as_str();
-            let parsed = IoType::parse(s).expect("roundtrip should succeed");
-            assert_eq!(parsed, expected, "roundtrip failed for {}", s);
+            let constructed = IoType::new(s);
+            assert_eq!(constructed, expected, "roundtrip failed for {}", s);
         }
     }
 
     #[test]
-    fn test_io_type_parse_unknown() {
-        // v0.1.0: 未知类型返回 None（不再 Box::leak 创建自定义类型）
-        assert!(IoType::parse("unknown").is_none());
-        assert!(IoType::parse("").is_none());
-        assert!(IoType::parse("CALL_LLM").is_none());
+    fn test_io_type_parse_accepts_any() {
+        // v0.2.0: parse 无条件接受（校验责任移到 subscriber / known_io_types）
+        #[allow(deprecated)]
+        {
+            assert!(IoType::parse("unknown").is_some());
+            assert!(IoType::parse("retrieve").is_some());
+            assert!(IoType::parse("call_service").is_some());
+            // 空字符串也被接受（校验由上层负责）
+            assert!(IoType::parse("").is_some());
+        }
+    }
+
+    #[test]
+    fn test_io_type_new_equals_factory() {
+        // v0.2.0: new 构造与工厂函数对相同字符串应相等（HashMap/BTreeMap key 一致性）
+        assert_eq!(IoType::new("call_service"), IoType::call_service());
+        assert_eq!(IoType::new("call_external"), IoType::call_external());
+        assert_eq!(IoType::new("retrieve"), IoType::new("retrieve"));
+        assert_ne!(IoType::new("retrieve"), IoType::new("file"));
     }
 
     #[test]
     fn test_io_type_display() {
-        assert_eq!(format!("{}", IoType::CALL_EXTERNAL), "call_external");
-        assert_eq!(format!("{}", IoType::QUERY_DB), "query_db");
-        assert_eq!(format!("{}", IoType::HTTP_GET), "http_get");
-        assert_eq!(format!("{}", IoType::SAVE_MEMORY), "save_memory");
-        assert_eq!(format!("{}", IoType::CALL_SERVICE), "call_service");
+        assert_eq!(format!("{}", IoType::call_external()), "call_external");
+        assert_eq!(format!("{}", IoType::query_db()), "query_db");
+        assert_eq!(format!("{}", IoType::http_get()), "http_get");
+        assert_eq!(format!("{}", IoType::save_memory()), "save_memory");
+        assert_eq!(format!("{}", IoType::call_service()), "call_service");
     }
 
     #[test]
@@ -463,7 +529,7 @@ mod tests {
         assert!(!Fact::IoRequest {
             id: FactId(6),
             cause: FactId(0),
-            io_type: IoType::CALL_EXTERNAL,
+            io_type: IoType::call_external(),
             params: JsonValue::empty_object(),
         }
         .is_terminal());
@@ -509,7 +575,7 @@ mod tests {
             Fact::IoRequest {
                 id: FactId(1),
                 cause: FactId(0),
-                io_type: IoType::CALL_EXTERNAL,
+                io_type: IoType::call_external(),
                 params: JsonValue::empty_object(),
             }
             .type_name(),

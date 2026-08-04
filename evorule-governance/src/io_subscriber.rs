@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn test_io_type_import_available() {
         // 确保 IoType 在本模块内可见且可使用（防止 import 被意外删除）
-        let t = IoType::CALL_EXTERNAL;
+        let t = IoType::call_external();
         assert_eq!(t.as_str(), "call_external");
     }
 
