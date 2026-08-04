@@ -119,7 +119,7 @@ mod tests {
             Fact::IoRequest {
                 id: FactId(4),
                 cause: FactId(3),
-                io_type: IoType::HTTP_GET,
+                io_type: IoType::http_get(),
                 params: JsonValue::empty_object(),
             },
             Fact::IoResponse {
@@ -211,7 +211,7 @@ mod tests {
             Fact::IoRequest {
                 id: FactId(4),
                 cause: FactId(3),
-                io_type: IoType::HTTP_GET,
+                io_type: IoType::http_get(),
                 params: JsonValue::empty_object(),
             },
             Fact::IoResponse {
@@ -278,7 +278,7 @@ mod tests {
             Fact::IoRequest {
                 id: FactId(4),
                 cause: FactId(3),
-                io_type: IoType::HTTP_GET,
+                io_type: IoType::http_get(),
                 params: JsonValue::empty_object(),
             },
             Fact::IoResponse {

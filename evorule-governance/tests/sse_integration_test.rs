@@ -209,5 +209,5 @@ async fn test_sse_io_request_event() {
     .await
     .expect("timeout waiting for IoRequest");
 
-    assert_eq!(io_request, IoType::CALL_EXTERNAL);
+    assert_eq!(io_request, IoType::call_external());
 }

@@ -339,9 +339,9 @@ impl ExampleSubscriber {
             "ExampleSubscriber 处理 IoRequest"
         );
 
-        let result: IoResult = match io_type {
-            IoType::CALL_EXTERNAL => self.llm.execute(&params).await,
-            IoType::SAVE_MEMORY => self.memory.execute(&params).await,
+        let result: IoResult = match io_type.as_str() {
+            "call_external" => self.llm.execute(&params).await,
+            "save_memory" => self.memory.execute(&params).await,
             other => Err(format!(
                 "unsupported io_type in demo: {other} (only call_external and save_memory are handled)"
             )),

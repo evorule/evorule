@@ -342,8 +342,8 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
                 .get("io_type")
                 .and_then(|t| t.as_str())
                 .ok_or_else(|| WalError::InvalidFact("IoRequest missing 'io_type'".into()))?;
-            let io_type = IoType::parse(io_type_str)
-                .ok_or_else(|| WalError::InvalidFact(format!("unknown io_type: {io_type_str}")))?;
+            // v0.2.0：io_type 透传不校验（崩溃恢复含自定义 io_type 的 WAL 必须可恢复）
+            let io_type = IoType::new(io_type_str);
             let params = obj
                 .get("params")
                 .ok_or_else(|| WalError::InvalidFact("IoRequest missing 'params'".into()))?;
@@ -1013,11 +1013,11 @@ mod tests {
     #[test]
     fn test_fact_io_request_roundtrip() {
         for io_type in [
-            IoType::CALL_EXTERNAL,
-            IoType::QUERY_DB,
-            IoType::HTTP_GET,
-            IoType::SAVE_MEMORY,
-            IoType::CALL_SERVICE,
+            IoType::call_external(),
+            IoType::query_db(),
+            IoType::http_get(),
+            IoType::save_memory(),
+            IoType::call_service(),
         ] {
             let fact = Fact::IoRequest {
                 id: FactId(3),

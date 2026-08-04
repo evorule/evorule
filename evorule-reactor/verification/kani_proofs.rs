@@ -124,7 +124,7 @@ pub fn invariant_io_count_register_complete() {
 
     // === register 保持不变量 ===
     let id = FactId(1);
-    register_io_request_pure(&mut state, id, IoType::CALL_EXTERNAL, JsonValue::Null);
+    register_io_request_pure(&mut state, id, IoType::call_external(), JsonValue::Null);
     assert_io_count_invariant(&state);
     kani::assert(
         state.pending_io_count == 1,
@@ -132,7 +132,7 @@ pub fn invariant_io_count_register_complete() {
     );
 
     // === 幂等性：重复 register 同一 id 不增加计数 ===
-    register_io_request_pure(&mut state, id, IoType::CALL_EXTERNAL, JsonValue::Null);
+    register_io_request_pure(&mut state, id, IoType::call_external(), JsonValue::Null);
     assert_io_count_invariant(&state);
     kani::assert(
         state.pending_io_count == 1,
@@ -180,10 +180,10 @@ pub fn invariant_io_count_force_remove() {
     register_io_request_pure(
         &mut state,
         FactId(1),
-        IoType::CALL_EXTERNAL,
+        IoType::call_external(),
         JsonValue::Null,
     );
-    register_io_request_pure(&mut state, FactId(2), IoType::QUERY_DB, JsonValue::Null);
+    register_io_request_pure(&mut state, FactId(2), IoType::query_db(), JsonValue::Null);
     assert_io_count_invariant(&state);
     kani::assert(state.pending_io_count == 2, "count==2 after two registers");
 
@@ -300,7 +300,7 @@ pub fn invariant_io_recovery_iff_result() {
 
     // === 注册 I/O 请求（纯函数版本，始终缓存指令）===
     let id = FactId(1);
-    register_io_request_pure(&mut state, id, IoType::CALL_EXTERNAL, JsonValue::Null);
+    register_io_request_pure(&mut state, id, IoType::call_external(), JsonValue::Null);
 
     // === apply_io_response（已知 id）→ 两者皆 true ===
     // 使用 JsonValue::Null 避免 String 堆分配导致 CBMC 状态爆炸

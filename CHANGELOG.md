@@ -35,6 +35,86 @@
 
 ---
 
+## [0.2.0] - 2026-08-04
+
+**evorule-reactor / evorule-governance 重大重构** — `IoType` 从固定 `&'static str` 重构为动态 `Arc<str>`，支持应用层注册任意 io_type；`IoHandler` trait 与 `IoDispatcher` 从 evorule-governance 下沉至 evorule-reactor（机制层基座），解除 agent 对 governance 的依赖。详细迁移步骤见 [MIGRATION_v0.2.0.md](./MIGRATION_v0.2.0.md)。
+
+### ⚠️ Breaking Changes
+
+- **`IoType` 内部表示从 `&'static str` 改为 `Arc<str>`**（`evorule-reactor/src/fact.rs`）
+  - 失去 `Copy` trait：所有按值传递处需显式 `.clone()`。典型场景：reactor 中 `state.register_io_request(id, io_type)` 后仍要在 `Fact::IoRequest` 与 `tracing::debug!` 中使用 `io_type`，需 `io_type.clone()`
+  - 5 个旧 `const` 改为工厂函数（`Arc::from` 非 const）：
+    | v0.1.x（已移除） | v0.2.0（替代） |
+    |---|---|
+    | `IoType::CALL_EXTERNAL` | `IoType::call_external()` |
+    | `IoType::HTTP_GET` | `IoType::http_get()` |
+    | `IoType::QUERY_DB` | `IoType::query_db()` |
+    | `IoType::SAVE_MEMORY` | `IoType::save_memory()` |
+    | `IoType::CALL_SERVICE` | `IoType::call_service()` |
+  - 字符串值不变：`IoType::new("call_service") == IoType::call_service()`，旧 WAL / core_eval.json 无需改动
+  - `IoType` 仍实现 `Clone + PartialEq + Eq + Hash + PartialOrd + Ord + Send + Sync`，可作 `HashMap`/`BTreeMap` key、跨线程共享、克隆廉价（原子计数）
+
+- **`IoHandler` trait 从 evorule-governance 下沉至 evorule-reactor**（`evorule-reactor/src/io_handler.rs`）
+  - 改用 `#[async_trait]` 使其 object-safe，支持 `Arc<dyn IoHandler>` 动态分发
+  - `evorule-governance/src/io_handler.rs` 保留 re-export（`pub use evorule_reactor::{IoHandler, IoResult}`），旧 `use evorule_governance::IoHandler` 仍可用
+  - 新代码推荐直接 `use evorule_reactor::IoHandler`
+
+- **`IoDispatcher` 从 evorule-governance 下沉至 evorule-reactor**（`evorule-reactor/src/io_dispatcher.rs`）
+  - 下沉动机：agent（解决方案1）不依赖 governance，v0.1.x 只能借道 `call_service` 二级路由；v0.2.0 agent 可直接按 IoType 注册 handler
+  - reactor 新增 `IoDispatcher::contains()` / `known_types()` 方法，供加载期校验
+  - `evorule-governance/src/io_dispatcher.rs` 改为 re-export（消除 v0.1.x 遗留的重复实现），旧 `use evorule_governance::IoDispatcher` 仍可用且自动获得 `contains()` / `known_types()` 新方法
+
+- **`IoType::parse()` 行为变更** — 从"未知返回 None"变为"始终返回 Some"（无条件接受），校验责任移到 subscriber / `ReactorBuilder::known_io_types`。标记 `#[deprecated]`，新代码用 `IoType::new()`
+
+### 🆕 新增
+
+- **`IoType::new(name: &str) -> IoType`** — 运行时构造任意 io_type（v0.2.0 自定义 IoType 入口）。应用层可注册 `IoType::new("retrieve")` / `IoType::new("file")` / `IoType::new("http")` 等自定义类型，无需修改核心宪法
+- **`ReactorBuilder::known_io_types(types)`** — 可选快速失败校验（`evorule-reactor/src/reactor.rs`）。注册后，IoRequest 时若 io_type 不在集合内，立即发射 `Fact::Error`（恢复 v0.1.x 拼错 io_type 快速失败的确定性）。未注册（默认）则透传不校验，由 subscriber 决定能否处理。通常从 `IoDispatcher::known_types()` 收集
+- **`IoDispatcher::contains(io_type) -> bool`** — 供加载期校验使用
+- **`IoDispatcher::known_types() -> impl Iterator<Item = &IoType>`** — 已注册的所有 IoType，供 `known_io_types` 收集
+
+### 🗑 弃用
+
+- **`IoType::parse(s)`** — v0.2.0 起用 `IoType::new`；parse 不再校验，保留仅为向后兼容
+
+### 🔄 变更
+
+- **evorule-reactor 新增 `async-trait` 依赖** — IoHandler trait object-safety 所需（零成本宏，运行时仅一次 `Box<dyn Future>` 分配）
+- **evorule-reactor `lib.rs` 公开导出** `IoDispatcher` / `IoDispatcherBuilder` / `IoHandler` / `IoResult`（H5 下沉后从 governance 迁入）
+- **evorule-governance `lib.rs`** 保留 `IoDispatcher` / `IoHandler` / `IoResult` 的 re-export（向后兼容）
+- **evorule-cli `executor.rs`** — 改用 `IoType::new(&io_type)` 构造（v0.2.0 透传不校验）
+
+### 向后兼容
+
+- ✅ **5 个旧 io_type 字符串值不变** — `IoType::new("call_service") == IoType::call_service()`，HashMap/BTreeMap key 一致
+- ✅ **旧 WAL 无需迁移** — io_type 以字符串序列化/反序列化（`wal.rs` 用 `IoType::new(io_type_str)` 反序列化）
+- ✅ **core_eval.json 无需改动** — io_type 字段仍是字符串
+- ✅ **governance re-export 保留** — `use evorule_governance::{IoHandler, IoDispatcher}` 仍可用
+- ✅ **`Fact::IoRequest` 结构不变** — `io_type: IoType` 字段类型名不变，仅内部表示改变
+
+### 本仓内部影响
+
+| 本仓 crate | 影响说明 |
+|---|---|
+| **evorule-cli** | `executor.rs` 改用 `IoType::new(&io_type)` 构造（v0.2.0 透传不校验，无 handler 时发 `Fact::Error` 退出） |
+| **evorule-tcb** | 无代码改动（仅版本同步 bump 至 `0.2.0`） |
+| **evorule-reactor** | `IoType` 重构 + `IoHandler`/`IoDispatcher` 下沉至本 crate（核心变更主体） |
+| **evorule-governance** | `io_handler.rs` / `io_dispatcher.rs` 改为 re-export reactor（消除 v0.1.x 遗留重复实现） |
+
+> 各独立下游仓的迁移状态由各仓自行记录，不在本仓文档中讨论（各仓独立发布原则）。
+
+### ✅ 验证
+
+- `cargo build --workspace` 通过（evorule-tcb / evorule-reactor / evorule-governance / evorule-cli）
+- `cargo test --workspace` 通过（含 `io_dispatcher.rs` 4 个新测试：dispatcher_routes_by_io_type / dispatch_hit_and_miss / new_equals_factory_key_collision + fact.rs io_type roundtrip/parse/new 测试）
+- `cargo clippy --workspace --all-targets -- -D warnings` 通过
+
+### 已知问题
+
+- ⚠️ **未发布到 crates.io** — 版本已 bump 至 `0.2.0`（workspace + 4 子 crate + 子 crate 间版本声明），代码全量验证通过，但尚未 `cargo publish`
+
+---
+
 ## [0.1.1] - 2026-08-01
 
 **evorule-tcb / evorule-governance patch 发布** — `exec_set` 路径解析诊断增强 + 中间节点/空列表语义收紧；附带 evorule-reactor clippy `indexing_slicing` 修复。四 crate 工作区版本同步 bump（cli 无代码改动，仅版本同步）。

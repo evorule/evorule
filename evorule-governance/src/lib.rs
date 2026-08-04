@@ -6,17 +6,17 @@
 //! # 定位
 //! evorule-governance 是三层架构的最上层（纯机制层库）：
 //! - 订阅 evorule-reactor 的 event broadcast 通道，过滤 `IoRequest` 事实
-//! - 通过 IoDispatcher 框架分发 I/O（**具体 HTTP/SQLite/Memory Handler 实现已迁至 evorule-server 独立仓**）
+//! - 通过 IoDispatcher 框架分发 I/O（具体 Handler 实现由应用层注入，本 crate 仅定义机制）
 //! - 基于 `FactsLog` 构建审计链（BLAKE3 哈希 + 逻辑时钟）
 //! - 提供规则验证器（RuleValidator）+ 时间机器（TimeMachine: replay / rewind / fork / diff）
 //! - 提供 SessionManager：会话管理器（机制层，管理反应器实例生命周期）
 //!
-//! **H5/H6 + 走神 9 两次迁移后不再包含**：HTTP API、SSE、Prometheus metrics、Bearer 认证、具体 I/O Handler 实现。
-//! 上述应用层功能全部位于 evorule-server 独立仓（evorule-server/ + core/io_handlers/ + core/auth/ + core/metrics/）。
+//! **H5/H6 边界清理后不再包含**：HTTP API、SSE、Prometheus metrics、Bearer 认证、具体 I/O Handler 实现。
+//! 上述应用层功能由应用层自行构建，本 crate 仅提供机制层接口。
 //!
 //! # 设计原则
 //! - **不染指控制流**：治理层完全不知道 `conditional`/`while_loop`/`sequence` 的存在
-//! - **I/O 外挂**：仅定义 IoHandler trait + IoDispatcher 框架（机制），零业务逻辑侵入；具体实现在 evorule-server 独立仓注入
+//! - **I/O 外挂**：仅定义 IoHandler trait + IoDispatcher 框架（机制），零业务逻辑侵入；具体实现由应用层注入
 //! - **事实总线**：所有组件通过 Fact 通信，无直接函数调用
 //!
 //! # 模块结构
@@ -30,22 +30,21 @@
 //! - `rule_validation` — 规则 JSON Schema 验证器（tier0 core_eval.json）
 //! - `time_machine` — 时间机器：replay / rewind / fork / diff
 //! - `shared_facts_log` — 跨 session 共享 FactsLog 包装
-//! - `metrics` — IoMetrics trait（机制层接口，Prometheus 实现在 evorule-application 仓）
-// cluster 已移除（多 reactor 协作原语，应用层功能，后续在 evorule-application 实现）
-// api, io_handlers, bin 目录已全部迁移至 evorule-application 仓（H5/H6 边界清理）
+//! - `metrics` — IoMetrics trait（机制层接口，Prometheus 实现由应用层提供）
+// cluster 已移除（多 reactor 协作原语，应用层功能，后续由应用层实现）
+// api, io_handlers, bin 目录已全部迁出本 crate（H5/H6 边界清理）
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-// H6: api 模块已迁移到 evorule-server 独立仓 evorule-server/src/api/
-// 核心层不再包含 HTTP API 代码（机制-策略分离）
+// H6: api 模块已迁出本 crate（机制-策略分离，核心层不再包含 HTTP API 代码）
 pub mod auditor;
 pub mod clock;
 pub mod hash;
 pub mod io_dispatcher;
 pub mod io_handler;
-// H5 + 走神 9: io_handlers 具体实现已两次外迁，最终在 evorule-server 独立仓 core/io_handlers/
-// 具体 handler 实现(DbHandler/HttpHandler/MemoryHandler)不再属于核心
+// H5: io_handlers 具体实现已外迁（机制-策略分离）
+// 具体 handler 实现(DbHandler/HttpHandler/MemoryHandler)不再属于本 crate
 pub mod io_subscriber;
 pub mod metrics;
 // object_pool 已移除（性能优化，非核心功能）

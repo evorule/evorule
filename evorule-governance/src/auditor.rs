@@ -1122,7 +1122,7 @@ mod tests {
         let f2 = Fact::IoRequest {
             id: FactId(3),
             cause: id1,
-            io_type: IoType::HTTP_GET,
+            io_type: IoType::http_get(),
             params: JsonValue::empty_object(),
         };
         let id2 = f2.id();
@@ -1410,7 +1410,7 @@ mod tests {
         let req = Fact::IoRequest {
             id: FactId(10),
             cause: FactId(1),
-            io_type: IoType::HTTP_GET,
+            io_type: IoType::http_get(),
             params: JsonValue::empty_object(),
         };
         let req_id = req.id();
@@ -2093,7 +2093,7 @@ mod tests {
             log.append(Fact::IoRequest {
                 id: FactId(i as u64 + 1),
                 cause: FactId(i as u64),
-                io_type: evorule_reactor::IoType::HTTP_GET,
+                io_type: evorule_reactor::IoType::http_get(),
                 params: JsonValue::empty_object(),
             })
             .unwrap();

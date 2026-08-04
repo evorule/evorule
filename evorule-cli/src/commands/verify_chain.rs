@@ -283,7 +283,7 @@ mod tests {
             Fact::IoRequest {
                 id: FactId(2),
                 cause: FactId(1),
-                io_type: IoType::CALL_EXTERNAL,
+                io_type: IoType::call_external(),
                 params: JsonValue::empty_object(),
             },
         ];

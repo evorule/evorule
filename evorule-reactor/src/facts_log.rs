@@ -1048,7 +1048,7 @@ mod tests {
         log.append(Fact::IoRequest {
             id: FactId(3),
             cause: FactId(2),
-            io_type: IoType::CALL_EXTERNAL,
+            io_type: IoType::call_external(),
             params: JsonValue::empty_object(),
         })
         .unwrap();
@@ -1151,7 +1151,7 @@ mod tests {
             .append(Fact::IoRequest {
                 id: FactId(1),
                 cause: FactId(0),
-                io_type: IoType::CALL_EXTERNAL,
+                io_type: IoType::call_external(),
                 params: JsonValue::empty_object(),
             })
             .unwrap();
@@ -1198,7 +1198,7 @@ mod tests {
         log.append(Fact::IoRequest {
             id: FactId(3),
             cause: FactId(2),
-            io_type: IoType::CALL_EXTERNAL,
+            io_type: IoType::call_external(),
             params: JsonValue::empty_object(),
         })
         .unwrap();
@@ -1589,7 +1589,7 @@ mod tests {
         log.append(Fact::IoRequest {
             id: FactId(4),
             cause: FactId(3),
-            io_type: IoType::CALL_EXTERNAL,
+            io_type: IoType::call_external(),
             params: JsonValue::object_from_pairs(&[("prompt", JsonValue::String("hi".into()))]),
         })
         .unwrap();

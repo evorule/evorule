@@ -126,7 +126,7 @@ mod tests {
         let fact = Fact::IoRequest {
             id: FactId(4),
             cause: FactId(2),
-            io_type: IoType::HTTP_GET,
+            io_type: IoType::http_get(),
             params: JsonValue::empty_object(),
         };
         let s = fact_to_human(&fact);

@@ -45,7 +45,7 @@ use evorule_tcb::JsonValue;
 use crate::Reactor;
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum evorule_error_code {
     EVORULE_OK = 0,
     EVORULE_ERROR_OOM = 1,
@@ -81,6 +81,15 @@ struct ReactorFfiHandle {
     command_tx: crate::FactSender,
     // 存储快照引用
     snapshot: std::sync::Arc<std::sync::Mutex<crate::ReactorStateSnapshot>>,
+    // C4：Command FactId 生成器（持久，跨 send_command 调用复用）
+    //
+    // 修复前每次 `evorule_reactor_send_command` 都 `FactIdGenerator::new()`，
+    // 导致所有 Command 的 FactId 恒为 1，FactsLog 中 FactId 重复。
+    // 现持久化于句柄内，`next_id()` 单调递增（1, 2, 3, ...）。
+    //
+    // 线程安全约定：与 `command_tx` 一致，FFI 句柄的 `&mut` 访问由 C 调用方
+    // 外部同步（同一句柄的并发 send_command 调用需调用方自行串行化）。
+    fact_id_gen: crate::FactIdGenerator,
 }
 
 #[no_mangle]
@@ -114,6 +123,8 @@ pub extern "C" fn evorule_reactor_new() -> *mut evorule_reactor {
         _runtime: runtime,
         command_tx,
         snapshot,
+        // C4：Command FactId 从 1 起单调递增（持久于句柄内）
+        fact_id_gen: crate::FactIdGenerator::new(),
     });
 
     Box::into_raw(ffi_handle) as *mut evorule_reactor
@@ -154,8 +165,10 @@ pub extern "C" fn evorule_reactor_send_command(
         None => return evorule_error_code::EVORULE_ERROR_INVALID_ARG,
     };
 
+    // C4：使用句柄内持久的 FactIdGenerator，保证 Command FactId 单调递增（1, 2, 3, ...）。
+    // 修复前每次 new() 导致所有 Command 的 FactId 恒为 1，FactsLog 中 FactId 重复。
     let fact = crate::Fact::Command {
-        id: crate::FactIdGenerator::new().next_id(),
+        id: handle.fact_id_gen.next_id(),
         instruction,
     };
 
@@ -268,4 +281,88 @@ pub extern "C" fn evorule_reactor_current_queue_size(reactor: *mut evorule_react
         .lock()
         .map(|s| s.queue_len as c_int)
         .unwrap_or(-1)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(unsafe_code)]
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use crate::Fact;
+    use std::time::{Duration, Instant};
+
+    /// C4 端到端：连发 3 条命令后，Command Fact 在 FactsLog 中 FactId 必须为
+    /// 单调递增的 [1, 2, 3]。
+    ///
+    /// 修复前每次 `evorule_reactor_send_command` 都 `FactIdGenerator::new()`，
+    /// 导致所有 Command 的 FactId 恒为 1，FactsLog 中 FactId 重复（破坏审计链
+    /// 唯一性）。修复后生成器持久于句柄内，`next_id()` 跨调用累加 → 1, 2, 3, ...
+    ///
+    /// 直接构造 `ReactorFfiHandle`（保留 facts_log clone 用于观察），调用真实
+    /// `evorule_reactor_send_command` 三次，确认 facts_log.history() 中 Command
+    /// FactId 序列为 [1, 2, 3]。
+    #[test]
+    fn ffi_send_command_produces_distinct_fact_ids_in_facts_log() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        // 在 runtime 上下文内 spawn reactor（tokio::spawn 需 context）
+        let (command_tx, _event_rx, _event_tx, handle, facts_log) = {
+            let _guard = runtime.enter();
+            let reactor = Reactor::builder(Vec::new()).build();
+            reactor.spawn()
+        };
+
+        let snapshot =
+            std::sync::Arc::new(std::sync::Mutex::new(crate::ReactorStateSnapshot::default()));
+        let ffi_handle = Box::new(ReactorFfiHandle {
+            _handle: handle,
+            _runtime: runtime,
+            command_tx,
+            snapshot,
+            fact_id_gen: crate::FactIdGenerator::new(),
+        });
+        let ptr = Box::into_raw(ffi_handle) as *mut evorule_reactor;
+
+        // 连发 3 条命令
+        let cmds = [r#"{"op":"a"}"#, r#"{"op":"b"}"#, r#"{"op":"c"}"#];
+        for c in &cmds {
+            let cstr = CString::new(*c).unwrap();
+            let rc = evorule_reactor_send_command(ptr, cstr.as_ptr());
+            assert_eq!(rc, evorule_error_code::EVORULE_OK);
+        }
+
+        // 轮询 facts_log，等待 3 条 Command 落盘（reactor 异步 drain + emit）
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let n = facts_log
+                .history()
+                .iter()
+                .filter(|f| matches!(f, Fact::Command { .. }))
+                .count();
+            if n >= 3 || Instant::now() > deadline {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        let ids: Vec<u64> = facts_log
+            .history()
+            .iter()
+            .filter_map(|f| match f {
+                Fact::Command { id, .. } => Some(id.0),
+                _ => None,
+            })
+            .collect();
+
+        evorule_reactor_free(ptr);
+
+        assert_eq!(
+            ids,
+            vec![1, 2, 3],
+            "C4: Command FactIds in FactsLog must be [1, 2, 3], got {ids:?}"
+        );
+    }
 }
