@@ -35,6 +35,35 @@
 
 ---
 
+## [0.2.1] - 2026-08-05
+
+**v0.2.0 发布后 Kani 验证同步修正** — v0.2.0 发布后发现的 Kani 验证编译错误、文档过时、CI 配置失效等问题在本次 patch 中修复。生产功能不受影响（所有代码修复均被 `#[cfg(kani)]` 门控）。
+
+### 🐛 修复
+
+- **Kani 验证编译错误修复**（不影响生产构建，仅 `#[cfg(kani)]` 模式）：
+  - `evorule-tcb/src/executor.rs`：`ManuallyDrop<Vec<JsonValue>>` 在 Kani 模式下无法直接 `extend`，改用 `inner.iter().cloned()`（`#[cfg(kani)]` 分支）
+  - `evorule-reactor/src/facts_log.rs`：`FactsLogLock` 的 `unsafe impl Sync` 与 crate 级 `#![deny(unsafe_code)]` 冲突，添加 `#[allow(unsafe_code)]`
+  - `evorule-tcb/verification/kani_proofs.rs`：移除未使用导入 `exec_set`，修正 `FixedMap<4>` slot 数注释
+- **examples/tests 版本号文本修正**：`end_to_end.rs` / `integration_end_to_end.rs` / `panic_free.rs` / `proptest_props.rs` 中 `v0.1.0` / `v0.1.0-alpha.1` → `v0.2.0`
+
+### 🔄 变更
+
+- **Cargo.toml 元数据清理**：移除 3 个 crate 中不存在的 `KANI_VERIFICATION_PLAN.md` 从 `exclude` 列表；`evorule-cli` 中 `verify-v0.1.0.sh` → `verify.sh`
+- **CI 配置更新**（`.github/workflows/kani.yml`）：标准化 Kani 0.67.0，仅 3 个最简单 proof 入 CI；移除无效 0.14.0 版本与 24h 超时表述
+- **PS1 脚本 UTF-8 BOM 恢复**（27 个脚本）：修复 PowerShell 5.1 中文注释乱码导致执行失败
+- **Kani 验证实测**（Kani 0.67.0, WSL Ubuntu 22.04, 2026-08-05）：
+  - evorule-tcb：12 proof → 9 PASS + 3 TIMEOUT（`evaluate_domain` 系列，proptest 保底）
+  - evorule-reactor：11 proof → 10 PASS + 1 TIMEOUT（`invariant_io_count_force_remove`）
+- **文档同步**（15+ 文档）：KANI.md / SECURITY_AUDIT / THREAT_MODEL / TCB_SPEC / REACTOR_SPEC 等全面对齐实测结果
+
+### 🗑 弃用
+
+- 删除 `evorule-cli/verify-v0.1.0.sh`（重命名为 `verify.sh`）
+- 删除 `evorule-governance/verify-server-v0.1.0.sh`（废弃）
+
+---
+
 ## [0.2.0] - 2026-08-04
 
 **evorule-reactor / evorule-governance 重大重构** — `IoType` 从固定 `&'static str` 重构为动态 `Arc<str>`，支持应用层注册任意 io_type；`IoHandler` trait 与 `IoDispatcher` 从 evorule-governance 下沉至 evorule-reactor（机制层基座），解除 agent 对 governance 的依赖。详细迁移步骤见 [MIGRATION_v0.2.0.md](./MIGRATION_v0.2.0.md)。
