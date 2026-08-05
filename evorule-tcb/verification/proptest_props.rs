@@ -3,7 +3,7 @@
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 // 测试代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 GATE_REFERENCE.md §六(豁免索引)
 #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
-//! evorule-tcb v0.1.0-alpha.1 -- Property tests (proptest)
+//! evorule-tcb v0.2.0 -- Property tests (proptest)
 //!
 //! ## 目的
 //!

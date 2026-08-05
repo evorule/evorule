@@ -251,8 +251,8 @@ workspace = true
 测试代码 + examples 是 Cargo 演示代码, 允许 panic/expect (L1 build.rs 已守 panic-prone 关键路径)。
 
 **Tier 0** (5):
-- `evorule-tcb/tests/kani_proofs.rs`
-- `evorule-tcb/tests/proptest_props.rs`
+- `evorule-tcb/verification/kani_proofs.rs`
+- `evorule-tcb/verification/proptest_props.rs`
 - `evorule-tcb/tests/complex_branch_test.rs` (额外 `#[allow(clippy::too_many_lines)]` 在 fixture 函数)
 - `evorule-tcb/tests/integration_end_to_end.rs`
 - `evorule-tcb/tests/panic_free.rs`

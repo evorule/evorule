@@ -136,7 +136,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 | ⛓ **JSON 因果链**      | 每个 JSON 状态变化都有 `cause` 指向父 JSON                                                               |
 | ⏪ **JSON 时间机器**   | `replay` / `rewind` / `fork` / `diff` — 任何 JSON 历史点都能重活                                         |
 | 🐛 **调试器级控制**    | `pause` / `step` / `resume` / `break` — 像 GDB 一样调试执行（**应用层实现**，见 evorule-application 仓） |
-| 🔗 **多反应器协作**    | `join` / `channel` / `shared_facts_space` — 构建分布式反应式系统（**路线图规划**，0.1.0 未实现）         |
+| 🔗 **多反应器协作**    | `join` / `channel` / `shared_facts_space` — 构建分布式反应式系统（**路线图规划**，0.2.0 未实现）         |
 | ✅ **Kani 形式化验证** | JSON 状态机核心不变式被 Kani 证明，而非靠 review                                                         |
 | ✅ **TLA+ 状态机验证** | JSON 状态机控制流性质被 TLA+ TLC 证明（[验证报告](evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)）          |
 | 🧱 **三层架构**        | tier0 = JSON 状态机 / tier1 = JSON 事件循环 / tier2 = 治理机制（HTTP API 在应用层）                      |
@@ -610,10 +610,10 @@ cargo test --workspace
 # 安装 Kani(一次性,需要 Linux/WSL)
 cargo install --git https://github.com/model-checking/kani --tag kani-0.67.0
 
-# tier0: 跑 12 个 proof(5 早期: 4 PASS + 1 待验证; 7 新增: 6 PASS + 1 拆分)
+# tier0: 跑 12 个 proof(9 PASS + 3 TIMEOUT, evaluate_domain 系列由 proptest 保底)
 cargo kani -p evorule-tcb
 
-# tier1: 跑 11 个 proof(原 7 + C1-1~C1-4 新增 4 个)
+# tier1: 跑 11 个 proof(10 PASS + 1 TIMEOUT, invariant_io_count_force_remove 状态爆炸)
 cargo kani -p evorule-reactor
 
 # 跑 19 个 proptest(Windows 可用)
@@ -623,24 +623,24 @@ cargo test -p evorule-tcb --test proptest_props
 当前已就位的 12 个 proof(都是为"JSON 状态机正确"服务):
 
 - `verify_value_roundtrip` — JsonValue 序列化往返一致性 ✅ PASS
-- `verify_path_no_panic` — JSON 路径解析永不 panic(已加 4 个 `kani::assert`,待 Kani 环境验证)
+- `verify_path_no_panic` — JSON 路径解析永不 panic ✅ PASS
 - `verify_set_integer_safety` — 整数 set 安全性 ✅ PASS
 - `verify_set_sub_safety` — set 减法安全性 ✅ PASS
 - `verify_jsonvalue_array_safety` — JsonValue Array 构造器安全性 ✅ PASS
-- `verify_resolve_path_object_kani` — 对象路径解析(Kani 专用 FixedMap 后端) 🔧 待验证
-- `verify_evaluate_domain_eq_kani` — domain eq 条件求值(从 P0-4 拆分) 🔧 待验证
-- `verify_evaluate_domain_lt_kani` — domain lt 条件求值(从 P0-4 拆分) 🔧 待验证
-- `verify_evaluate_domain_exists_kani` — domain exists 路径存在性(从 P0-4 拆分) 🔧 待验证
-- `verify_execute_transition_kani` — 状态转换执行 🔧 待验证
-- `verify_termination_kani` — max_steps 终止性 🔧 待验证
-- `verify_depth_enforcement_kani` — 嵌套深度限制 🔧 待验证
+- `verify_resolve_path_object_kani` — 对象路径解析(Kani 专用 FixedMap 后端) ✅ PASS
+- `verify_evaluate_domain_eq_kani` — domain eq 条件求值(从 P0-4 拆分) ⏳ TIMEOUT
+- `verify_evaluate_domain_lt_kani` — domain lt 条件求值(从 P0-4 拆分) ⏳ TIMEOUT
+- `verify_evaluate_domain_exists_kani` — domain exists 路径存在性(从 P0-4 拆分) ⏳ TIMEOUT
+- `verify_execute_transition_kani` — 状态转换执行 ✅ PASS
+- `verify_termination_kani` — max_steps 终止性 ✅ PASS
+- `verify_depth_enforcement_kani` — 嵌套深度限制 ✅ PASS
 
-> 🟡 **早期 5 proof: 4/5 PASS + 19 proptest；新增 7 proof 待验证(原 P0-4 拆分为 a/b/c 三子 proof 避免 CBMC 状态爆炸)**。详见 [`evorule-tcb/TCB_SPEC.md`](evorule-tcb/TCB_SPEC.md)。
+> ✅ **9/12 PASS + 3 TIMEOUT + 19 proptest 全 PASS**（`evaluate_domain` 系列 3 个因 CBMC 对嵌套 FixedMap 状态爆炸超时,由 proptest 保底覆盖）。实测环境: Kani 0.67.0, WSL Ubuntu 22.04。详见 [`evorule-tcb/TCB_SPEC.md`](evorule-tcb/TCB_SPEC.md)。
 
 evorule-reactor 11 个 proof（都是为"反应器不变式正确"服务）:
 
 - `invariant_io_count_register_complete` — register/complete 保持 I/O 计数一致 ✅ PASS
-- `invariant_io_count_force_remove` — force_remove 保持 I/O 计数一致 ✅ PASS
+- `invariant_io_count_force_remove` — force_remove 保持 I/O 计数一致 ⏳ TIMEOUT
 - `invariant_version_monotonic` — version 单调递增 ✅ PASS
 - `invariant_io_recovery_iff_result` — io_recovery ⟺ **io_result** ✅ PASS
 - `command_does_not_decrease_queue` — apply_command 队列不减 ✅ PASS
@@ -651,7 +651,7 @@ evorule-reactor 11 个 proof（都是为"反应器不变式正确"服务）:
 - `proof_reactor_invariants_preserved_after_pure_ops` (C1-3) — 纯操作序列后不变量保持 ✅ PASS
 - `proof_phase_state_machine_cannot_jump` (C1-4) — Phase 状态机不跳级 ✅ PASS
 
-> ✅ **tier1 11 个 proof 全部 PASS**（C1-1~C1-4 为 v0.2.0 达标条件新增）。详见 [`evorule-reactor/verification/kani_proofs.rs`](evorule-reactor/verification/kani_proofs.rs)。
+> ✅ **10/11 PASS + 1 TIMEOUT**（`invariant_io_count_force_remove` 因 BTreeSet force_remove 状态爆炸超时;C1-1~C1-4 为 v0.2.0 达标条件新增）。实测环境: Kani 0.67.0, WSL Ubuntu 22.04。详见 [`evorule-reactor/verification/kani_proofs.rs`](evorule-reactor/verification/kani_proofs.rs)。
 
 ---
 
@@ -685,9 +685,9 @@ evorule-reactor 11 个 proof（都是为"反应器不变式正确"服务）:
 
 ## 已知限制 & 路线图
 
-### 0.1.0 限制
+### 0.2.0 限制
 
-- 🟡 Kani 验证：tier0 12 proof（5 早期 4/5 PASS + 7 新增：6 PASS + P0-4 拆分为 a/b/c）+ tier1 11 proof（原 7 + C1-1~C1-4 新增 4 个，含 FactsLog 单调性、哈希链反向链接、反应器不变量组合性、Phase 状态机不跳级）
+- 🟡 Kani 验证：tier0 12 proof（9 PASS + 3 TIMEOUT，`evaluate_domain` 系列由 proptest 保底）+ tier1 11 proof（10 PASS + 1 TIMEOUT，`invariant_io_count_force_remove` 超时）
 - ⚠️ 无 hot reload（业务规则重启后生效，后续版本加入）
 - ⚠️ JSON 表达力有限（无 Lambda，无复杂类型推导）—— 这是边界，不是 bug
 

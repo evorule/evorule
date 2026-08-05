@@ -332,7 +332,15 @@ fn resolve_instructions_list(
                 // 路径引用解析为数组时展平（支持 body/then/else 为指令列表），
                 // 解析为单个对象时直接 push（向后兼容单指令 body 场景）。
                 if let JsonValue::Array(inner) = resolved {
-                    result.extend(inner);
+                    #[cfg(kani)]
+                    {
+                        // Kani: inner 是 ManuallyDrop<Vec<JsonValue>>，通过 Deref 调 iter
+                        result.extend(inner.iter().cloned());
+                    }
+                    #[cfg(not(kani))]
+                    {
+                        result.extend(inner);
+                    }
                 } else {
                     result.push(resolved);
                 }

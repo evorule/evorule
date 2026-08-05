@@ -26,6 +26,17 @@ circulation among security-conscious users (compliance, regulated industries).
 >
 > **本审计继承 [`SECURITY_AUDIT_v0.1.0.md`](SECURITY_AUDIT_v0.1.0.md) 历史发现,
 > 聚焦 1.0.0 门槛达标状态。v0.1.0 文档保留为基线参考。**
+>
+> **📝 Kani 勘误 (2026-08-05)**：本审计起草时 (2026-07-25) TCB 仅 5 个 proof (4 PASS + 1 TIMEOUT)。
+> 经 v0.2.0 升级 + 2026-08-05 重新实测,当前状态为：
+>
+> - **evorule-tcb**: 12 proof, **9 PASS + 3 TIMEOUT** (`evaluate_domain` 系列, proptest 保底)
+> - **evorule-reactor**: 11 proof, **10 PASS + 1 TIMEOUT** (`invariant_io_count_force_remove`)
+> - `verify_path_no_panic` 已 PASS (19s), 不再 TIMEOUT
+> - 详见 [`evorule-tcb/docs/KANI.md`](../../evorule-tcb/docs/KANI.md) + [`evorule-reactor/docs/KANI.md`](../../evorule-reactor/docs/KANI.md)
+>
+> 下文中 "4/5 PASS"、"5 个 proof"、"L0-4 待验证" 等表述均为审计时 (2026-07-25) 的历史状态,
+> 已被上述实测结果取代。
 
 ---
 
@@ -62,8 +73,8 @@ circulation among security-conscious users (compliance, regulated industries).
 | **High-severity issues**                | 🔴 **4 known P1**(tier2: SSRF / SQL / CORS / DB URL,公网部署前必修;详见 §5.4)                                                                                                                                    |
 | **Medium-severity issues**              | 🟡 1(M1 PARTIAL: auth middleware 已实现但默认禁用)                                                                                                                                                               |
 | **Low-severity issues**                 | 11(L1-L11,见 §7.3)                                                                                                                                                                                               |
-| **tier0 形式化验证**                    | ✅ **Phase 1 完成**: Kani 4/5 PASS + 1 待 Linux 环境验证 + TLA+ TLC 5 不变式 PASS + proptest 26 PASS(详见 §6)                                                                                                    |
-| **tier1 形式化验证**                    | ⏳ Phase 3(1.0.0 后): 5 条不变量运行时检查已实现,Kani 证明待                                                                                                                                                     |
+| **tier0 形式化验证**                    | ✅ **Phase 1 完成** (2026-08-05 更新): Kani 9/12 PASS + 3 TIMEOUT + TLA+ TLC 5 不变式 PASS + proptest 26 PASS(详见 §6)                                                                                           |
+| **tier1 形式化验证**                    | 🔧 **部分完成** (2026-08-05): Kani 10/11 PASS + 1 TIMEOUT + 5 条不变量运行时检查;Coq/Verus 仍待 Phase 3                                                                                                          |
 | **tier2 形式化验证**                    | ⏳ Phase 4(1.0.0 后): blake3 链实现完整,TLA+ AuditorChain.tla 待                                                                                                                                                 |
 | **`cargo audit`**                       | 🟡 人工比对达标(cargo-audit 0.22.2 已装,advisory-db fetch 因网络封锁失败;人工 auditor 比对 356 deps 0 high-severity;详见 [`DEPENDENCY_AUDIT_v1.0.0.md`](DEPENDENCY_AUDIT_v1.0.0.md);CI 自动化待 GitHub 网络可达) |
 | **Cryptographic chain**                 | ✅ **IMPLEMENTED** `evorule-governance/auditor.rs` + `hash.rs`(WAL 持久化 + `audit_verify()` HTTP 端点)                                                                                                          |
@@ -205,8 +216,8 @@ evorule-tcb 是 EvoRule 的可信计算基(TCB),作为 1.0.0 门槛中"形式化
 - TLA+ spec: [`evorule-tcb/tla/ExecuteTransition.tla`](../../evorule-tcb/tla/ExecuteTransition.tla)(12 子动作 + 5 不变式)
 - TLC 配置: [`evorule-tcb/tla/ExecuteTransition.cfg`](../../evorule-tcb/tla/ExecuteTransition.cfg)(N_MAX=2, D_MAX=2, D_DOM_MAX=2)
 - TLC 验证报告: [`evorule-tcb/tla/TLC_VERIFICATION_REPORT.md`](../../evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)(13629 状态, <1s, 5 不变式 PASS)
-- Kani proofs: [`evorule-tcb/tests/kani_proofs.rs`](../../evorule-tcb/tests/kani_proofs.rs)(5 个 `#[kani::proof]`)
-- proptest: [`evorule-tcb/tests/proptest_props.rs`](../../evorule-tcb/tests/proptest_props.rs)(26 个属性测试)
+- Kani proofs: [`evorule-tcb/verification/kani_proofs.rs`](../../evorule-tcb/verification/kani_proofs.rs)(12 个 `#[kani::proof]`)
+- proptest: [`evorule-tcb/verification/proptest_props.rs`](../../evorule-tcb/verification/proptest_props.rs)(26 个属性测试)
 - 形式化验证白皮书: [`EVORULE_FORMAL_VERTIFICATION_PLAN.md`](../../EVORULE_FORMAL_VERTIFICATION_PLAN.md) v0.4.0
 
 ### 3.3 内存安全
@@ -381,21 +392,25 @@ Fact #2: content_hash = blake3(content_2)
 
 ### 6.1 Kani 证明覆盖(evorule-tcb)
 
-5 个 `#[kani::proof]` 函数(仅 `#[cfg(kani)]` 时编译):
+> **2026-08-05 更新**：TCB 现有 12 个 `#[kani::proof]` 函数,实测 9 PASS + 3 TIMEOUT。
+> 下表为审计时 (2026-07-25) 的 5 proof 状态;新增 7 proof 的实测结果见
+> [`evorule-tcb/docs/KANI.md`](../../evorule-tcb/docs/KANI.md)。
 
-| Proof 函数                      | L0-ID | 验证目标                                     | 状态                                   | 耗时         |
-| ------------------------------- | ----- | -------------------------------------------- | -------------------------------------- | ------------ |
-| `verify_value_roundtrip`        | L0-3  | JsonValue 构造与访问一致性                   | ✅ PASS                                | 0.15s        |
-| `verify_set_integer_safety`     | L0-1  | i64 `checked_add` 不 panic                   | ✅ PASS                                | 0.16s        |
-| `verify_set_sub_safety`         | L0-2  | i64 `checked_sub` 不 panic                   | ✅ PASS                                | 0.17s        |
-| `verify_jsonvalue_array_safety` | L0-5  | JsonValue Array 构造器安全性(Phase 0 重命名) | ✅ PASS                                | 0/41 failed  |
-| `verify_path_no_panic`          | L0-4  | resolve_path 对 Array 状态不 panic           | 🔧 待验证(Kani 环境需 Linux,T2-2 任务) | TIMEOUT 5min |
+审计时 (2026-07-25) 的 5 个 proof（仅 `#[cfg(kani)]` 时编译）:
 
-**总计**: 4 PASS + 1 待验证。
+| Proof 函数                      | L0-ID | 验证目标                                     | 状态 (2026-07-25)   | 状态 (2026-08-05) | 耗时         |
+| ------------------------------- | ----- | -------------------------------------------- | ------------------- | ----------------- | ------------ |
+| `verify_value_roundtrip`        | L0-3  | JsonValue 构造与访问一致性                   | ✅ PASS             | ✅ PASS           | 8s           |
+| `verify_set_integer_safety`     | L0-1  | i64 `checked_add` 不 panic                   | ✅ PASS             | ✅ PASS           | 3s           |
+| `verify_set_sub_safety`         | L0-2  | i64 `checked_sub` 不 panic                   | ✅ PASS             | ✅ PASS           | 4s           |
+| `verify_jsonvalue_array_safety` | L0-5  | JsonValue Array 构造器安全性                 | ✅ PASS             | ✅ PASS           | 5s           |
+| `verify_path_no_panic`          | L0-4  | resolve_path 对 Array 状态不 panic           | 🔧 待验证 (TIMEOUT) | ✅ PASS           | 19s          |
 
-**L0-4 待验证原因**: Kani 0.67.0 对 `BTreeMap` 内部 `correct_childrens_parent_links` 与 `memcmp` 的默认 unwind bound 不够,5min TIMEOUT。
-已加 4 个 `kani::assert` 提升 coverage,等 Kani 0.68+ 修复或 Linux 环境验证(T2-2)。
-**保底**: proptest L0-10 `resolve_path_never_panics_arbitrary_path`(200 case)已覆盖该性质。
+**审计时总计**: 4 PASS + 1 待验证 → **当前总计**: 9 PASS + 3 TIMEOUT (12 proof)。
+
+**L0-4 历史注记**: 审计时 (2026-07-25) Kani 0.67.0 对 `BTreeMap` 内部 unwind bound 不够导致 5min TIMEOUT。
+2026-08-05 重新实跑 (FixedMap 优化 + `--default-unwind 80`) 已 PASS (19s)。
+新增 7 proof 中 3 个 `evaluate_domain` 系列 TIMEOUT (CBMC 对嵌套 FixedMap 状态爆炸), 由 19 个 proptest 保底覆盖。
 
 ### 6.2 TLA+ 验证覆盖(Phase 1 完成)
 
@@ -656,7 +671,7 @@ cargo check --workspace
 cargo test --workspace
 
 # 3. Verify tier0 formal verification — Kani (requires Linux/WSL)
-cargo kani -p evorule-tcb                    # all 5 proofs (4 PASS + 1 待验证)
+cargo kani -p evorule-tcb                    # all 12 proofs (9 PASS + 3 TIMEOUT, 详见 §6.1)
 cargo kani -p evorule-tcb --harness verify_set_integer_safety  # single proof
 
 # 4. Verify tier0 formal verification — TLA+ TLC
@@ -701,8 +716,8 @@ cargo audit                                # 0 high-severity expected
 
 - [`evorule-tcb/tla/ExecuteTransition.tla`](../../evorule-tcb/tla/ExecuteTransition.tla) — TLA+ spec(12 子动作 + 5 不变式)
 - [`evorule-tcb/tla/ExecuteTransition.cfg`](../../evorule-tcb/tla/ExecuteTransition.cfg) — TLC 配置(N_MAX=2)
-- [`evorule-tcb/tests/kani_proofs.rs`](../../evorule-tcb/tests/kani_proofs.rs) — 5 个 Kani proof
-- [`evorule-tcb/tests/proptest_props.rs`](../../evorule-tcb/tests/proptest_props.rs) — 26 个 proptest
+- [`evorule-tcb/verification/kani_proofs.rs`](../../evorule-tcb/verification/kani_proofs.rs) — 12 个 Kani proof
+- [`evorule-tcb/verification/proptest_props.rs`](../../evorule-tcb/verification/proptest_props.rs) — 26 个 proptest
 - [`evorule-tcb/build.rs`](../../evorule-tcb/build.rs) — 14 条编译时门控(T1-T14)
 
 ### 外部方法学

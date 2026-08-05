@@ -1,4 +1,4 @@
-# add-spdx-safe.ps1
+﻿# add-spdx-safe.ps1
 # SAFE SPDX header adder using byte-level operations.
 # This replaces the buggy fix-missing-spdx.ps1 which used Get-Content -Raw
 # and corrupted UTF-8 files (without BOM) on Chinese Windows (PowerShell 5.1

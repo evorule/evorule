@@ -82,13 +82,14 @@ detect_kani_deps_dir() {
 # 列出所有可用的 proof harness
 list_proofs() {
     log_info "可用的 Kani proof harness（${CRATE}）："
-    if [ -f "${WORKSPACE_ROOT}/${CRATE}/src/pure.rs" ]; then
-        grep -E 'pub fn [a-z_]+\(\)' "${WORKSPACE_ROOT}/${CRATE}/src/pure.rs" \
-            | grep -v '^#' \
-            | sed 's/.*pub fn /  - /; s/().*//' \
+    local proof_file="${WORKSPACE_ROOT}/${CRATE}/verification/kani_proofs.rs"
+    if [ -f "$proof_file" ]; then
+        grep -A1 '#\[kani::proof' "$proof_file" \
+            | grep -E '^(pub )?fn ' \
+            | sed 's/.*fn /  - /; s/().*//' \
             | sort
     else
-        log_error "找不到 pure.rs，请确认 crate 路径"
+        log_error "找不到 verification/kani_proofs.rs，请确认 crate 路径"
         return 1
     fi
 }
@@ -530,9 +531,9 @@ main() {
 
         # 获取所有 proof 列表
         local proofs
-        proofs=$(grep -E 'pub fn [a-z_]+\(\)' "${WORKSPACE_ROOT}/${CRATE}/src/pure.rs" \
-            | grep -v '^#' \
-            | sed 's/.*pub fn //; s/().*//' \
+        proofs=$(grep -A1 '#\[kani::proof' "${WORKSPACE_ROOT}/${CRATE}/verification/kani_proofs.rs" \
+            | grep -E '^(pub )?fn ' \
+            | sed 's/.*fn //; s/().*//' \
             | sort)
 
         local total=0

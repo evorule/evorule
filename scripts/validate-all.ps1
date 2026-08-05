@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # validate-all.ps1
 # One-shot runner for all VERSION_STRATEGY validation scripts
 #
@@ -9,7 +9,7 @@
 #
 # 时序:
 #   1. 发布前:  pwsh scripts/validate-all.ps1 -PreRelease   (代码/文档/CHANGELOG 就绪, tag 未打)
-#   2. 打 tag:  git tag v0.1.1
+#   2. 打 tag:  git tag v0.2.0
 #   3. 发布后:  pwsh scripts/validate-all.ps1               (tag 存在且与版本一致)
 #
 # 包含 7 项检查:

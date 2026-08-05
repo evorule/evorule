@@ -161,6 +161,7 @@ struct FactsLogLock(RefCell<FactsLogInner>);
 // 的 !Sync 导致 !Send。Kani 模式下 reactor.rs 的 spawn 代码不会被实际执行
 // （Kani 只验证指定 harness），此 impl 仅用于满足编译期 Send 检查。
 #[cfg(kani)]
+#[allow(unsafe_code)]
 unsafe impl Sync for FactsLogLock {}
 
 #[cfg(not(kani))]

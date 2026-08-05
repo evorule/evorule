@@ -15,7 +15,7 @@
 - **外部依赖**:0
 - **测试**:`cargo test` 239 PASS / 0 failed(160 单元 + 62 集成 + 17 doc = `complex_branch_test` 3 + `integration_end_to_end` 4 + `panic_free` 22 + `proptest_props` 19 + `tcb_error_variants` 14)
 - **Clippy**:零警告(`deny(unwrap_used/expect_used/indexing_slicing/panic)`)
-- **形式化验证**:Kani 5 proof, 4/5 PASS
+- **形式化验证**:Kani 12 proof, 9/12 PASS + 3 TIMEOUT(proptest 保底)
 - **build.rs 编译时门禁**:14 条 redline (T1-T14) 编译期强制,PASSED
 - **协议**:AGPL-3.0-or-later(代码) + CC0-1.0(`core_eval.json` 公共领域)
 
@@ -288,17 +288,26 @@ transition.rs （状态转换，依赖 executor/path/value）
 - `MAX_TRANSFORM_RULES = 64`：`core_eval` 规则数上限（SPEC T6 终止性保证）
 - `TransitionResult` 枚举：`State { new_payload, new_queue }` | `IoRequired { io_type, params }`
 
-#### [tests/kani_proofs.rs](file:///d:/evorule/evorule-tcb/tests/kani_proofs.rs) — Kani 验证
+#### [verification/kani_proofs.rs](file:///d:/evorule/evorule-tcb/verification/kani_proofs.rs) — Kani 验证
 
-5 个 `#[kani::proof]` 函数(仅 `#[cfg(kani)]` 时编译):
+12 个 `#[kani::proof]` 函数(仅 `#[cfg(kani)]` 时编译):
 
-| Proof 函数                  | 验证目标                                                       |
-| --------------------------- | -------------------------------------------------------------- |
-| `verify_value_roundtrip`    | JsonValue 构造与访问一致性                                     |
-| `verify_path_no_panic`      | 路径解析对 Array 状态不 panic 且返回预期结果(已加 assert)      |
-| `verify_set_integer_safety` | 整数 `i64::checked_add` 行为正确                               |
-| `verify_transition_bounded` | JsonValue 状态遍历不 panic,execute_transition 内部状态机可终止 |
-| `verify_set_sub_safety`     | 整数 `i64::checked_sub` 行为正确                               |
+| Proof 函数                        | 验证目标                                                       |
+| --------------------------------- | -------------------------------------------------------------- |
+| `verify_value_roundtrip`          | JsonValue 构造与访问一致性                                     |
+| `verify_path_no_panic`            | 路径解析对 Array 状态不 panic 且返回预期结果(已加 assert)      |
+| `verify_set_integer_safety`       | 整数 `i64::checked_add` 行为正确                               |
+| `verify_set_sub_safety`           | 整数 `i64::checked_sub` 行为正确                               |
+| `verify_jsonvalue_array_safety`   | JsonValue Array 构造器 + empty_object 安全性                   |
+| `verify_resolve_path_object_kani` | resolve_path 对 Object 返回正确结果 (FixedMap)                 |
+| `verify_evaluate_domain_eq_kani`  | evaluate_domain eq 域类型正确性 (CBMC 超时,proptest 保底)      |
+| `verify_evaluate_domain_lt_kani`  | evaluate_domain lt 域类型正确性 (CBMC 超时,proptest 保底)      |
+| `verify_evaluate_domain_exists_kani` | evaluate_domain exists 域类型正确性 (CBMC 超时,proptest 保底) |
+| `verify_execute_transition_kani`  | execute_transition 状态转换安全性                              |
+| `verify_termination_kani`         | execute_transition 有限步终止                                  |
+| `verify_depth_enforcement_kani`   | MAX_BRANCH_DEPTH 递归深度约束                                  |
+
+> 详见 [docs/KANI.md](docs/KANI.md) — 完整验证状态与故障排查指南。
 
 ---
 
@@ -597,10 +606,10 @@ pub enum TcbError {
 
 1. **build.rs 编译时门禁** — 14 条 redline (T1-T14) 强制,
    详见 [`TCB_SPEC.md`](TCB_SPEC.md)。
-2. **形式化验证** — Kani 5 proof, 4/5 PASS(见第八节)。
+2. **形式化验证** — Kani 12 proof, 9/12 PASS + 3 TIMEOUT(见第八节)。
 3. **属性测试** — proptest 19 / 0 / 0(详见
-   [`tests/proptest_props.rs`](tests/proptest_props.rs))。
-4. **第三方安全审计** — 留待 1.0.0 公开版,0.1.0 不做。
+   [`verification/proptest_props.rs`](verification/proptest_props.rs))。
+4. **第三方安全审计** — 留待 1.0.0 公开版（0.x 阶段不做）。
 
 ---
 

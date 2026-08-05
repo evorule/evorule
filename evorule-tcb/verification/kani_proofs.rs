@@ -51,34 +51,35 @@
 //! - `exec_set` 内部对整数 add/sub 使用 `i64::checked_add`/`checked_sub`，
 //!   证明 checked_* 行为正确 ⇒ 证明 evorule 行为正确
 //!
-//! # 验证状态（实测 2026-07-22，Kani 0.67.0 + nightly-2025-11-21）
+//! # 验证状态（实测 2026-08-05，Kani 0.67.0 + rustc 1.99.0-nightly, WSL Ubuntu 22.04）
 //!
 //! | Proof | 状态 | 耗时 | 备注 |
 //! |---|---|---|---|
-//! | `verify_value_roundtrip` | ✅ PASS | 0.15s | 0/377 failed (7 unreachable) |
-//! | `verify_path_no_panic` | 🔧 已改进 | — | 加 assert，待 Kani 验证；proptest 保底 |
-//! | `verify_set_integer_safety` | ✅ PASS | 0.16s | 0/41 failed |
-//! | `verify_jsonvalue_array_safety` | ✅ PASS | 0.29s | 0/436 failed (9 unreachable) |
-//! | `verify_set_sub_safety` | ✅ PASS | 0.17s | 0/41 failed |
-//! | ~~`verify_domain_boolean`~~ | 🗑️ 已移除 | — | 改用 proptest 替代（见下） |
+//! | `verify_value_roundtrip` | ✅ PASS | 8s | JsonValue Integer 构造/访问一致性 |
+//! | `verify_path_no_panic` | ✅ PASS | 19s | 路径解析对 Array 不 panic + assert |
+//! | `verify_set_integer_safety` | ✅ PASS | 3s | i64::checked_add 不溢出 |
+//! | `verify_set_sub_safety` | ✅ PASS | 4s | i64::checked_sub 不下溢 |
+//! | `verify_jsonvalue_array_safety` | ✅ PASS | 5s | Array 构造器 + empty_object 安全 |
+//! | `verify_resolve_path_object_kani` | ✅ PASS | 24s | resolve_path 对 FixedMap Object 正确 |
+//! | `verify_evaluate_domain_eq_kani` | ⏳ TIMEOUT | 610s | CBMC 对嵌套 FixedMap 状态爆炸 |
+//! | `verify_evaluate_domain_lt_kani` | ⏳ TIMEOUT | 610s | 同上 |
+//! | `verify_evaluate_domain_exists_kani` | ⏳ TIMEOUT | 610s | 同上 |
+//! | `verify_execute_transition_kani` | ✅ PASS | 11s | execute_transition 状态转换 |
+//! | `verify_termination_kani` | ✅ PASS | 231s | 有限步终止 (CBMC 4.6GB 内存) |
+//! | `verify_depth_enforcement_kani` | ✅ PASS | 60s | MAX_BRANCH_DEPTH 深度约束 |
 //!
-//! **总计 4/5 PASS (80%)**。原 `verify_domain_boolean` 因注释与代码矛盾
-//! （声称避开 BTreeMap 却用了 BTreeMap）导致 TIMEOUT，已于 2026-07-23 移除，
-//! 改用 proptest 属性测试替代（`tests/proptest_props.rs`）：
+//! **总计 9/12 PASS, 3/12 TIMEOUT**。
+//!
+//! `evaluate_domain` 系列（eq/lt/exists）因 CBMC 对 3 层嵌套 FixedMap
+//! (`__exec__.payload.x`) 的符号执行状态爆炸,600s 超时。逻辑正确性由
+//! proptest 属性测试保底覆盖（`verification/proptest_props.rs`）：
 //! - `domain_eval_never_panics_arbitrary_type`：任意 domain 类型 + 字段缺失不 panic
 //! - `domain_eval_nested_never_panics`：嵌套 domain 递归不 panic
 //!
-//! `verify_path_no_panic` 已改进（加 `kani::assert` 验证返回值），待 Kani 环境验证
-//! 能否通过。proptest `resolve_path_never_panics_arbitrary_path` 已提供保底覆盖。
-//! 若 Kani 仍 TIMEOUT 则删除此 proof。详见 `../TCB_SPEC.md`。
-//!
-//! 当前 4/5 已建立核心证明：
-//! - **i64 加法不上溢**（`verify_set_integer_safety`）
-//! - **i64 减法不下溢**（`verify_set_sub_safety`）
-//! - **JsonValue 状态遍历不 panic**（`verify_value_roundtrip` + `verify_jsonvalue_array_safety`）
+//! 详见 `../docs/KANI.md` 和 `../TCB_SPEC.md`。
 
 use crate::domain::evaluate_domain;
-use crate::executor::{exec_branch, exec_set, MAX_BRANCH_DEPTH};
+use crate::executor::{exec_branch, MAX_BRANCH_DEPTH};
 use crate::path::resolve_path;
 use crate::value::ObjectMap;
 use crate::{execute_transition, JsonValue, TcbError, MAX_TRANSFORM_RULES};
@@ -249,9 +250,10 @@ fn verify_set_sub_safety() {
 // ============================================================================
 // P0-3 ~ P0-8: 核心算法 Kani 形式化验证(阶段 1 新增)
 //
-// 以下 5 个 proof 通过 FixedMap 抽象(`cfg(kani)` 切换 `JsonValue::Object` 后端)
+// 以下 7 个 proof 通过 FixedMap 抽象(`cfg(kani)` 切换 `JsonValue::Object` 后端)
 // 验证 evorule 核心算法的关键属性。FixedMap 维护与 BTreeMap 一致的字典序,
 // 因此 proof 结果对生产环境(BTreeMap)同样有效。
+// (原 P0-4 单个 proof 后拆分为 eq/lt/exists 3 个子 proof, 故从 5 增至 7)
 //
 // 设计要点:
 // - 使用 `object_from_pairs` 构造 Object(FixedMap/BTreeMap 通用 API)
@@ -271,7 +273,7 @@ fn verify_set_sub_safety() {
 ///
 /// # Kani 建模说明
 /// 使用 `object_from_pairs` 构造 FixedMap 后端的 Object(Kani 环境下
-/// `ObjectMap = FixedMap<8>`)。`kani::any()` 仅用于 i64 值,字符串为字面值。
+/// `ObjectMap = FixedMap<4>`)。`kani::any()` 仅用于 i64 值,字符串为字面值。
 #[kani::proof]
 fn verify_resolve_path_object_kani() {
     let val: i64 = kani::any();

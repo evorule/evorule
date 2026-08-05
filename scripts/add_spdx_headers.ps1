@@ -1,4 +1,4 @@
-# scripts/add_spdx_headers.ps1
+﻿# scripts/add_spdx_headers.ps1
 # DEPRECATED wrapper: forwards to add-spdx-safe.ps1 (byte-level, BOM-safe).
 #
 # The original implementation used Get-Content -Raw -Encoding utf8, which on

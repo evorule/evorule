@@ -24,7 +24,7 @@ exclude = [
     "build-musl.sh",      # musl 构建脚本（开发用）
     "check-musl.sh",      # musl 校验脚本
     "run_kani.sh",        # Kani 验证脚本（dev-only）
-    "verify-v0.1.0.sh",   # 版本验证脚本
+    "verify.sh",          # 版本验证脚本
     "tests/",             # e2e 测试脚本（含 fixtures，下游不需要）
     "examples/README.md", # 已改为迁移说明（机制层最小样例，不打包）
     "CLI_SPEC.md",        # 仓内设计文档

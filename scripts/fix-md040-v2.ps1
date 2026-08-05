@@ -1,4 +1,4 @@
-# fix-md040-v2.ps1 - Fix MD040 by adding language to fenced code blocks
+﻿# fix-md040-v2.ps1 - Fix MD040 by adding language to fenced code blocks
 # Version 2: more robust parsing
 
 param(

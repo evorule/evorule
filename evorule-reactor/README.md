@@ -18,6 +18,7 @@
 - **G8 门控遵守**:反应器主循环(`reactor.rs`)的控制流分支是**策略数据**(Fact 变体的 match)而非**硬编码业务逻辑**;任何业务分支均由 `core_eval.json` 数据驱动,编译期通过 `build.rs` 递归扫描确认。
 - **`unsafe`**:`#![forbid(unsafe_code)]`(`ffi.rs` 局部豁免 `#![allow(unsafe_code)]`,FFI 边界,已文档化)
 - **P0 修复(2026-07-25)**:`Box::leak` 内存泄漏已修复(`IoType::parse` 返回 `Option`);锁中毒改为 `e.into_inner()` 恢复(非 panic)
+- **v0.2.0 重构(2026-08-04)**:`IoType` 内部从 `&'static str` 改为 `Arc<str>`,支持 `IoType::new()` 注册任意 io_type(失去 `Copy`,5 个 `const` 改工厂函数);`IoHandler`/`IoDispatcher` 从 governance 下沉至本 crate(trait 改 `#[async_trait]` object-safe);`IoType::parse` 标记 `#[deprecated]`。详见 [MIGRATION_v0.2.0.md](../MIGRATION_v0.2.0.md)
 
 ## 设计原则
 
@@ -51,6 +52,8 @@ src/
 ├── ffi.rs              # C FFI 接口（feature = "ffi"）
 ├── hash.rs             # BLAKE3 哈希链算法（单一真相源，tier2/CLI re-export）
 ├── invariants.rs       # 结构不变量检查
+├── io_dispatcher.rs    # I/O 分发器（v0.2.0 从 governance 下沉；builder + register(IoType, handler)）
+├── io_handler.rs       # IoHandler trait + IoResult（v0.2.0 从 governance 下沉；#[async_trait] object-safe）
 ├── lib.rs              # 模块声明 + 公共 API 导出
 ├── phase.rs            # 反应器阶段（Executing/Idle/Stable 等）
 ├── pure.rs             # 纯函数执行器（TCB 调用封装）

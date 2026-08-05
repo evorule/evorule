@@ -1,4 +1,4 @@
-# fix-md040.ps1 - Auto-detect and add language to fenced code blocks
+﻿# fix-md040.ps1 - Auto-detect and add language to fenced code blocks
 
 param(
     [string]$RootDir = "d:\evorule"

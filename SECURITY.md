@@ -5,13 +5,14 @@ Security disclosure procedures are public knowledge; we release them under CC0 s
 
 # 安全漏洞报告政策
 
-**最后更新**: 2026-08-01
+**最后更新**: 2026-08-04
 
 ## ⚠️ Supported Versions / 支持的版本
 
 | 版本                         | 支持状态       | 说明                         |
 | ---------------------------- | -------------- | ---------------------------- |
-| `v0.1.x`（含 0.1.0 / 0.1.1） | ✅ Supported   | 公开基座阶段，当前主支持线   |
+| `v0.2.x`（含 0.2.0）         | ✅ Supported   | 公开基座阶段，当前主支持线   |
+| `v0.1.x`（含 0.1.0 / 0.1.1） | ✅ Supported   | 上一基座阶段                 |
 | `v6.0.x` (内部旧版)          | ❌ EOL         | 已退役,无 Gitee 撤回成本     |
 | `< v0.1.0-alpha.1`           | ❌ Unsupported | 公开仓库之前的 commit 不维护 |
 

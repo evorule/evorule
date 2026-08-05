@@ -1,4 +1,4 @@
-$path = "D:\evorule\evorule-reactor\src\ffi.rs"
+﻿$path = "D:\evorule\evorule-reactor\src\ffi.rs"
 $bytes = [System.IO.File]::ReadAllBytes($path)
 
 $spdx = [System.Text.Encoding]::UTF8.GetBytes("// SPDX-License-Identifier: AGPL-3.0-or-later`n// Copyright (C) 2026 EvoRule Project`n// This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.`n`n")

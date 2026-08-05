@@ -1,5 +1,5 @@
 #!/bin/bash
-# e2e.sh - End-to-end test for evorule CLI (v0.1.0 corrective rewrite)
+# e2e.sh - End-to-end test for evorule CLI
 #
 # Tests all 5 subcommands (validate / run / replay / diff / verify-chain)
 # with realistic rule fixtures. Output in TAP format for CI integration.
@@ -110,7 +110,7 @@ assert_cmd() {
 }
 
 # ===== Test 1: --version =====
-echo "# evorule e2e test (v0.1.0)"
+echo "# evorule e2e test (v0.2.0)"
 echo "# binary: $BIN"
 echo "#"
 
@@ -343,7 +343,7 @@ assert_cmd "law-firm example runs with payload (Stable)" \
     -o "$WORK_DIR/hospital.log" >/dev/null 2>&1
 hospital_content=$(cat "$WORK_DIR/hospital.log")
 if [[ "$hospital_content" == *'"type":"IoRequest"'* ]] && [[ "$hospital_content" == *'"type":"Error"'* ]]; then
-    tap_ok "hospital example produces IoRequest + Error (no handler in 0.1.0)"
+    tap_ok "hospital example produces IoRequest + Error (no handler in 0.2.0)"
 else
     tap_not_ok "hospital example produces IoRequest + Error" "expected IoRequest and Error facts"
 fi

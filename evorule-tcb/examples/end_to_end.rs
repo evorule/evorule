@@ -492,7 +492,7 @@ fn test_catch_all_noop(core_eval: &[JsonValue]) {
 use std::collections::BTreeMap;
 fn main() {
     println!("================================================================");
-    println!("evorule-tcb v0.1.0 -- End-to-End Demo");
+    println!("evorule-tcb v0.2.0 -- End-to-End Demo");
     println!(
         "Loading real core_eval.json ({} bytes), parsing, executing TCB",
         CORE_EVAL_JSON.len()
@@ -546,7 +546,7 @@ fn main() {
     test_catch_all_noop(&transform);
 
     println!("\n================================================================");
-    println!("ALL PASS  evorule-tcb v0.1.0 IS a JSON-driven transparent executor.");
+    println!("ALL PASS  evorule-tcb v0.2.0 IS a JSON-driven transparent executor.");
     println!("================================================================");
     println!("\nVerifies:");
     println!("  [x] core_eval.json is the real driver (no hardcoded business logic)");

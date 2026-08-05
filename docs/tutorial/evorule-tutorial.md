@@ -8,7 +8,7 @@
 
 # EvoRule 技术教程：从原理到应用
 
-> **版本**：与 `Cargo.toml` 中 `version = "0.1.0"` 同步
+> **版本**：与 `Cargo.toml` 中 `version = "0.2.0"` 同步
 > **案例**：UR5 机器人焊接工作站（[yuanze-demos](https://github.com/evorule/yuanze-demos)）
 > **定位**：读完 [README.md](../../README.md) 后的系统性学习材料，连接 SPEC 文档（深层规格）与应用实践
 

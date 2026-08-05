@@ -3,21 +3,27 @@
 #
 # 验证两个 crate 的 Kani proof (仅限能在 CI 预算内通过的验证)：
 #
-# evorule-tcb (12 个 proof - 全部为纯函数,状态空间小):
-#   - verify_value_roundtrip, verify_path_no_panic, ...
+# evorule-tcb (12 个 proof - 纯函数 + FixedMap 抽象,状态空间可控):
+#   - verify_value_roundtrip, verify_path_no_panic, verify_set_integer_safety,
+#     verify_set_sub_safety, verify_jsonvalue_array_safety,
+#     verify_resolve_path_object_kani, verify_evaluate_domain_eq_kani,
+#     verify_evaluate_domain_lt_kani, verify_evaluate_domain_exists_kani,
+#     verify_execute_transition_kani, verify_termination_kani,
+#     verify_depth_enforcement_kani
 #
-# evorule-reactor (3 个 proof - 已过滤掉因堆分配状态爆炸而超时的 proof):
+# evorule-reactor (3 个 CI proof - 最简单的纯状态机验证,保证 CI 可靠性):
 #   - invariant_version_monotonic (版本单调递增)
 #   - max_rounds_termination (终止性)
 #   - invariant_cause_queue_sync (P0-11 cause 队列同步)
 #
-# 注意：tier1 中其他 proof (如 invariant_io_count_*) 因涉及复杂的堆分配
-# 数据结构(HashMap/Vec),CBMC 建模时会产生状态空间爆炸,即使给予 24h
-# 超时也无法完成。这些 proof 将在本地/专用硬件环境下运行,或通过代码审查
-# 替代,不阻塞 CI。
+# 注意：reactor 共 11 个 proof, 实测 10/11 PASS, 1/11 TIMEOUT (2026-08-05)。
+# 未列入 CI 的 8 个 proof 中 7 个本地实测 PASS (16-115s), 但涉及堆分配数据结构
+# (Vec/VecDeque/BTreeSet), 跨 Kani 版本可能不稳定, 故仅保留 3 个最简单的 proof 入 CI。
+# 唯一 TIMEOUT 的是 invariant_io_count_force_remove (BTreeSet force_remove 状态爆炸, 600s 超时)。
+# 详见 evorule-reactor/docs/KANI.md。
 #
-# Kani 版本: 0.14.0 (最新稳定版,支持 Rust 2021 edition)
-# Rust 版本: nightly-2024-07-25 (Kani 官方推荐)
+# Kani 版本: 0.67.0
+# Rust 版本: nightly-2025-11-21 (与 evorule-tcb/rust-toolchain.toml 一致)
 # =============================================================================
 
 name: kani
@@ -57,21 +63,23 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  KANI_VERSION: "0.14.0"
+  KANI_VERSION: "0.67.0"
 
 jobs:
   kani-verify:
     runs-on: ubuntu-22.04
-    timeout-minutes: 30 # 每个 crate 的 CI 验证预算为 30 分钟
+    timeout-minutes: ${{ matrix.timeout }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - crate: evorule-tcb
-            # tier0 纯函数验证,verify_termination_kani 需 unwind 65+ (MAX_TRANSFORM_RULES + 1)
+            timeout: 30
+            # 12 个 proof (纯函数 + FixedMap),verify_termination_kani 需 unwind 65+ (MAX_TRANSFORM_RULES + 1)
             verify_cmd: "cargo kani -p evorule-tcb --output-format=terse --default-unwind 80"
           - crate: evorule-reactor
-            # tier1 状态机验证,需要稍大 unwind,但仅限简单 proof
+            timeout: 60
+            # 3 个 CI proof (最简单的纯状态机验证;其余 8 个本地实测 7 PASS + 1 TIMEOUT,详见 docs/KANI.md)
             verify_cmd: "cargo kani -p evorule-reactor --output-format=terse --default-unwind 4"
 
     steps:
@@ -92,11 +100,11 @@ jobs:
         if: steps.skip.outputs.skip != 'true'
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain (nightly for Kani 0.14.0)
+      - name: Install Rust toolchain (nightly for Kani 0.67.0)
         if: steps.skip.outputs.skip != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2024-07-25
+          toolchain: nightly-2025-11-21
           components: rustfmt, clippy
 
       - name: Cache cargo
@@ -126,9 +134,9 @@ jobs:
           PROOF="${{ github.event.inputs.proof }}"
           if [ -n "$PROOF" ]; then
             echo "==> [${{ matrix.crate }}] Running specific proof: $PROOF"
-            ${{ matrix.verify_cmd }} --proof "$PROOF"
+            ${{ matrix.verify_cmd }} --harness "$PROOF"
           else
-            echo "==> [${{ matrix.crate }}] Running all proofs"
+            echo "==> [${{ matrix.crate }}] Running all CI proofs"
             ${{ matrix.verify_cmd }}
           fi
 
@@ -179,9 +187,9 @@ jobs:
             };
             const body = '## 🔍 Kani Verification Summary (CI Budget)\n\n' +
               '| Crate | Status |\n|---|---|\n' +
-              '| evorule-tcb | ' + getStatus(0) + ' |\n' +
-              '| evorule-reactor | ' + getStatus(1) + ' |\n\n' +
-              '*Note: tier1 proofs limited to 3 simple proofs to fit CI budget. Complex proofs (e.g. io_count) require local/high-memory hardware.*';
+              '| evorule-tcb (12 proofs) | ' + getStatus(0) + ' |\n' +
+              '| evorule-reactor (3 CI proofs) | ' + getStatus(1) + ' |\n\n' +
+              '*Note: reactor CI 仅运行 3 个简单 proof;其余 8 个本地实测 7 PASS + 1 TIMEOUT,详见 docs/KANI.md.*';
             github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,

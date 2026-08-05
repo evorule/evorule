@@ -206,11 +206,11 @@ evorule run ./rules/ --max-steps 100
 | ----------------- | --------------------------------- | ---------------------------------------------------- |
 | `Command`         | id, instruction                   | 用户提交新指令(触发执行)                             |
 | `StateTransition` | id, cause, new_payload, new_queue | 状态转换(每步执行)                                   |
-| `IoRequest`       | id, cause, io_type, params        | I/O 请求信号(0.1.0 无 handler → Error)               |
-| `IoResponse`      | id, request_id, result, error     | I/O 响应(0.1.0 不产生)                               |
+| `IoRequest`       | id, cause, io_type, params        | I/O 请求信号(0.2.0 无 handler → Error)               |
+| `IoResponse`      | id, request_id, result, error     | I/O 响应(0.2.0 不产生)                               |
 | `Stable`          | id, final_snapshot                | 稳定状态(最终快照,始终发射)                          |
 | `Error`           | id, message                       | 执行错误(max_steps 超限 / TCB 错误 / 无 I/O handler) |
-| `PayloadUpdate`   | id, path, value                   | 载荷更新(0.1.0 不产生)                               |
+| `PayloadUpdate`   | id, path, value                   | 载荷更新(0.2.0 不产生)                               |
 
 退出码:
 
@@ -388,17 +388,17 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 **I/O 类型**(mechanism-policy separation):
 
-`io_request` 的 `io_type` 必须是 evorule-reactor `IoType::parse` 支持的 5 种之一:
+自 v0.2.0 起,`io_type` 支持任意字符串(`IoType::new("your_service")`),不再限于固定白名单;`IoType::parse` 已 `#[deprecated]`,新代码用 `IoType::new`。内置 5 个工厂函数(字符串值不变,向后兼容):
 
-| io_type         | 用途               |
-| --------------- | ------------------ |
-| `call_external` | 调用外部服务       |
-| `query_db`      | 查询数据库         |
-| `http_get`      | HTTP GET 请求      |
-| `save_memory`   | 保存到记忆         |
-| `call_service`  | 调用外部服务(通用) |
+| io_type         | 内置工厂函数              | 用途               |
+| --------------- | ------------------------- | ------------------ |
+| `call_external` | `IoType::call_external()` | 调用外部服务       |
+| `query_db`      | `IoType::query_db()`      | 查询数据库         |
+| `http_get`      | `IoType::http_get()`      | HTTP GET 请求      |
+| `save_memory`   | `IoType::save_memory()`   | 保存到记忆         |
+| `call_service`  | `IoType::call_service()`  | 调用外部服务(通用) |
 
-**业务语义**通过 `call_service` + `service_name` 表达(如 `"io_type": "call_service", "service_name": "audit_log"`),不直接硬编码业务 io_type。
+**业务语义**既可通过 `call_service` + `service_name` 表达(如 `"io_type": "call_service", "service_name": "audit_log"`),也可直接用自定义 io_type(如 `"io_type": "audit_log"`,由应用层 subscriber 按字符串路由)。机制层只认字符串、不校验语义,校验由 `ReactorBuilder::known_io_types` 或 subscriber 决定。
 
 ---
 
@@ -500,7 +500,7 @@ ok 23  - validate hospital example rules
 ok 24  - validate law-firm example rules
 ok 25  - hospital example runs with payload (Stable)
 ok 26  - law-firm example runs with payload (Stable)
-ok 27  - hospital example produces IoRequest + Error (no handler in 0.1.0)
+ok 27  - hospital example produces IoRequest + Error (no handler in 0.2.0)
 ok 28  - verify-chain on hospital log (complex facts) exits 0
 ```
 
@@ -556,7 +556,7 @@ evorule run ./rules/ --payload-file payload.example.json
 
 ---
 
-## 已知限制(0.1.0)
+## 已知限制(0.2.0)
 
 - ❌ 无 I/O handler(`io_request` 会产生 IoRequest fact + Error fact,不实际执行 I/O)
 - ❌ 无 HTTP API(本 crate 是本地 CLI，不提供 HTTP 服务；如需 HTTP/SSE 由应用层基于核心仓机制自行构建)

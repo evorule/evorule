@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! evorule-tcb v0.1.0-alpha.1 -- End-to-End Integration Test
+//! evorule-tcb v0.2.0 -- End-to-End Integration Test
 //!
 //! 测试代码豁免 L2 clippy panic/expect_used (L1 build.rs 门禁已守 G1 panic-prone)。
 #![allow(clippy::panic, clippy::expect_used)]

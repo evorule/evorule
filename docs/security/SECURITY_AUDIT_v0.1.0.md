@@ -10,6 +10,11 @@
 > **Scope**: evorule 仓 = evorule-tcb + evorule-reactor + evorule-governance + evorule-cli
 > **Previous**: [SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md](SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md)（2026-07-20 生态全栈版，含 evo-agent 工具 / evorule-server，已拆分）
 
+> ⚠️ **v0.2.0 勘误注（2026-08-04，正文未改）**：本审计冻结于 v0.1.0，以下结构变更在 v0.2.0 发生，阅读时请自行映射：
+> - **IoHandler / IoDispatcher trait 下沉**：trait 定义从 `evorule-governance` 迁至 `evorule-reactor`（机制层基座统一）；governance 保留 re-export。本文中"治理层 IoDispatcher 框架"现指"reactor 定义 + governance re-export"。
+> - **IoType 重构为 `Arc<str>`**：从封闭枚举改为 `Arc<str>` + 工厂函数（`IoType::call_external()` 等），失去 `Copy`；新增 `IoType::new("任意字符串")` 支持自定义 io_type；`IoType::parse` 标记 `#[deprecated]`。IoType 不再是固定白名单，但 TCB 内置 5 个工厂函数字符串值不变（向后兼容）。
+> - 详见 [MIGRATION_v0.2.0.md](../../MIGRATION_v0.2.0.md) 与 [CHANGELOG.md](../../CHANGELOG.md) `[0.2.0]` 段。本文正文保持 v0.1.0 原貌，不作回改。
+
 ---
 
 ## 0. 摘要
