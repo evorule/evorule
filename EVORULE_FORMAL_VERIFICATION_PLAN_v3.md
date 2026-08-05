@@ -151,15 +151,15 @@ pub enum JsonValue {
 | ----- | ------------------------- | ----- | --------------------- | ------------- |
 | P0-1  | i64 加法不溢出            | tier0 | Kani                  | ✅ 实跑       |
 | P0-2  | i64 减法不下溢            | tier0 | Kani                  | ✅ 实跑       |
-| P0-3  | resolve_path 不 panic     | tier0 | **Kani + proptest**   | 🔧 已实现未跑 |
-| P0-4  | evaluate_domain 不 panic  | tier0 | **Kani + proptest**   | ✅ 实跑       |
-| P0-5  | execute_transition 确定性 | tier0 | **Kani + TLA+ + Coq** | 🔧 已实现未跑 |
+| P0-3  | resolve_path 不 panic     | tier0 | **Kani + proptest**   | ✅ 实跑       |
+| P0-4  | evaluate_domain 不 panic  | tier0 | **Kani + proptest**   | ✅ 实跑†      |
+| P0-5  | execute_transition 确定性 | tier0 | **Kani + TLA+ + Coq** | ✅ 实跑       |
 | P0-6  | JsonValue 构造/访问一致   | tier0 | Kani                  | ✅ 实跑       |
-| P0-7  | execute_transition 终止性 | tier0 | **Kani + TLA+ + Coq** | 🔧 已实现未跑 |
-| P0-8  | 递归深度硬上界            | tier0 | **Kani + TLA+ + Coq** | 🔧 已实现未跑 |
+| P0-7  | execute_transition 终止性 | tier0 | **Kani + TLA+ + Coq** | ✅ 实跑       |
+| P0-8  | 递归深度硬上界            | tier0 | **Kani + TLA+ + Coq** | ✅ 实跑       |
 | P0-9  | version 语义一致性        | t1+2  | **差分测试 + Coq**    | 🔧 已实现未跑 |
 | P0-10 | rewind 状态重建一致       | t1+2  | **差分测试 + TLA+**   | 🔧 已实现未跑 |
-| P0-11 | cause 队列同步            | tier1 | **Kani**              | 🔧 已实现未跑 |
+| P0-11 | cause 队列同步            | tier1 | **Kani**              | ✅ 实跑       |
 | P0-12 | pure vs reactor 等价      | tier1 | **差分测试 + Verus**  | 🔧 已实现未跑 |
 | P0-13 | Fact match 完备性         | 全层  | **编译时 T15**        | ⏳ 未实现     |
 | P0-14 | 审计链哈希完整            | tier2 | **proptest + Coq**    | ⏳ 未实现     |
@@ -170,16 +170,19 @@ pub enum JsonValue {
 > - **✅ 实跑**：代码实现 + 本地 Kani/TLA+/差分测试实跑通过（有执行记录或归档证据）
 > - **🔧 已实现未跑**：验证代码（proof/差分测试）已存在，但缺独立实跑 PASS 日志证据
 > - **⏳ 未实现**：纯计划，验证代码尚未写入仓库
+>
+> **† P0-4 说明**：3 个 Kani proof（eq/lt/exists）实测均 TIMEOUT（CBMC 对嵌套 FixedMap 状态爆炸，600s 超时），
+> 但 19 个 proptest 属性测试全 PASS 保底覆盖。Kani 0.67.0, WSL Ubuntu 22.04, 2026-08-05 实测。
 
 ### 2.2 P1：正确性增强
 
 | #     | 属性                        | 层     | 验证方法              | 状态 |
 | ----- | --------------------------- | ------ | --------------------- | ---- |
-| P1-1  | I/O 计数一致性              | tier1  | Kani（FixedMap 抽象） | ⏳   |
-| P1-2  | io_recovery ⟺ **io_result** | tier1  | Kani                  | ⏳   |
+| P1-1  | I/O 计数一致性              | tier1  | Kani（FixedMap 抽象） | 🔧†  |
+| P1-2  | io_recovery ⟺ **io_result** | tier1  | Kani                  | ✅   |
 | P1-3  | version 单调递增            | tier1  | Kani                  | ✅   |
-| P1-4  | FactsLog append-only        | tier1  | 类型系统 + Kani       | ⏳   |
-| P1-5  | apply_command 队列不减      | tier1  | Kani                  | ⏳   |
+| P1-4  | FactsLog append-only        | tier1  | 类型系统 + Kani       | ✅   |
+| P1-5  | apply_command 队列不减      | tier1  | Kani                  | ✅   |
 | P1-6  | max_rounds 终止             | tier1  | Kani                  | ✅   |
 | P1-7  | PayloadUpdate version 递增  | t1+2   | 差分测试              | ✅   |
 | P1-8  | 嵌套路径创建一致            | t0+1   | 差分测试              | ✅   |
@@ -187,6 +190,8 @@ pub enum JsonValue {
 | P1-10 | fork_session 正确性         | tier2  | 差分测试              | ⏳   |
 | P1-11 | 多会话并发隔离              | tier2  | TLA+ + proptest       | ⏳   |
 | P1-12 | SSE 序列化完备              | 应用层 | 静态分析 + 集成测试   | ✅   |
+
+> **† P1-1 说明**：拆分为 1a（`invariant_io_count_register_complete` PASS 36s）+ 1b（`invariant_io_count_force_remove` TIMEOUT 609s, BTreeSet force_remove 状态爆炸）。1a 已验证, 1b 仍超时, 由 proptest 保底。
 
 ### 2.3 P2：安全增强
 
@@ -350,7 +355,7 @@ P0 属性必须有 TLAPS 证明，不只是 TLC PASS。
 **P0-5: execute_transition 确定性 + 不 panic**
 
 ```rust
-// evorule-tcb/tests/kani_proofs.rs
+// evorule-tcb/verification/kani_proofs.rs
 
 #[kani::proof]
 fn verify_execute_transition_core_logic() {
@@ -555,29 +560,39 @@ proptest! {
 | ---- | ------ | ------- | -------- | ------ | ----------- | ---- |
 | P0-1 | -      | ✅      | -        | -      | ✅          | ✅   |
 | P0-2 | -      | ✅      | -        | -      | ✅          | ✅   |
-| P0-3 | ⏳     | ⏳      | ⏳       | -      | ✅          | ⏳   |
-| P0-4 | ⏳     | ⏳      | ⏳       | -      | ✅          | ⏳   |
-| P0-5 | ⏳     | ⏳      | ⏳       | ✅     | ✅          | ⏳   |
+| P0-3 | ⏳     | ✅      | ⏳       | -      | ✅          | ✅   |
+| P0-4 | ⏳     | ⏳†     | ⏳       | -      | ✅          | ✅   |
+| P0-5 | ⏳     | ✅      | ⏳       | ✅     | ✅          | ✅   |
 | P0-6 | -      | ✅      | -        | -      | ✅          | ✅   |
-| P0-7 | ⏳     | ⏳      | -        | ✅     | -           | ⏳   |
-| P0-8 | ⏳     | ⏳      | -        | ✅     | -           | ⏳   |
+| P0-7 | ⏳     | ✅      | -        | ✅     | -           | ✅   |
+| P0-8 | ⏳     | ✅      | -        | ✅     | -           | ✅   |
 
 P0-5（execute_transition 确定性）采用 Coq 数学证明 + Kani 代码证明 + Verus 规约证明 + TLA+ 模型检测四重验证。
+
+> **† P0-4 Kani 说明**：3 个 evaluate_domain Kani proof (eq/lt/exists) 实测均 TIMEOUT (CBMC 对嵌套 FixedMap
+> 状态爆炸, 600s 超时)。L4 proptest 19 个属性测试全 PASS 保底。Kani 0.67.0, WSL Ubuntu 22.04, 2026-08-05 实测。
+> P0-3/5/7/8 Kani proof 均已 PASS (11-231s)。
 
 ### 4.2 evorule-reactor：全量验证
 
 | 属性  | L1 Coq        | L1 TLA+ | L2 Kani | L2 Verus | L5 差分 | 状态 |
 | ----- | ------------- | ------- | ------- | -------- | ------- | ---- |
 | P0-9  | ⏳ FactsLog.v | ⏳      | -       | -        | ⏳      | ⏳   |
-| P0-11 | -             | ⏳      | ⏳      | -        | -       | ⏳   |
+| P0-11 | -             | ⏳      | ✅      | -        | -       | ✅   |
 | P0-12 | -             | -       | -       | ⏳       | ⏳      | ⏳   |
-| P1-1  | -             | -       | ⏳ 抽象 | -        | -       | ⏳   |
-| P1-2  | -             | -       | ⏳ 抽象 | -        | -       | ⏳   |
+| P1-1  | -             | -       | 🔧†     | -        | -       | 🔧   |
+| P1-2  | -             | -       | ✅      | -        | -       | ✅   |
 | P1-3  | -             | -       | ✅      | -        | -       | ✅   |
-| P1-5  | -             | -       | ⏳ 抽象 | -        | -       | ⏳   |
+| P1-4  | -             | -       | ✅      | -        | -       | ✅   |
+| P1-5  | -             | -       | ✅      | -        | -       | ✅   |
 | P1-6  | -             | -       | ✅      | -        | -       | ✅   |
 
-P1-1/2/5 采用 cfg(kani) 抽象模型验证。
+P1-1/2/4/5 采用 cfg(kani) 抽象模型验证。实测 (Kani 0.67.0, 2026-08-05):
+P1-2/4/5 PASS (23-56s), P1-1 拆分为 1a (PASS 36s) + 1b (TIMEOUT 609s, BTreeSet 状态爆炸)。
+† 标记表示部分通过 (1a PASS, 1b TIMEOUT, proptest 保底)。
+另含 C1-1~C1-4 (proof_fact_log_append_monotonic / proof_hash_chain_back_link /
+proof_reactor_invariants_preserved_after_pure_ops / proof_phase_state_machine_cannot_jump)
+均 PASS (7-115s), 共 11 个 reactor proof, 10/11 PASS + 1/11 TIMEOUT。
 
 ### 4.3 evorule-governance：验证计划
 
@@ -596,15 +611,15 @@ P1-1/2/5 采用 cfg(kani) 抽象模型验证。
 | ----- | ------ | ------- | ------- | -------- | ------ | ----------- | ------- | --------- | ------- | ---- |
 | P0-1  | -      | -       | ✅      | -        | -      | ✅          | -       | -         | -       | ✅   |
 | P0-2  | -      | -       | ✅      | -        | -      | ✅          | -       | -         | -       | ✅   |
-| P0-3  | ⏳     | -       | ⏳      | ⏳       | -      | ✅          | -       | -         | -       | ⏳   |
-| P0-4  | ⏳     | -       | ⏳      | ⏳       | -      | ✅          | -       | -         | -       | ⏳   |
-| P0-5  | ⏳     | -       | ⏳      | ⏳       | ✅     | ✅          | -       | -         | -       | ⏳   |
+| P0-3  | ⏳     | -       | ✅      | ⏳       | -      | ✅          | -       | -         | -       | ✅   |
+| P0-4  | ⏳     | -       | ⏳†     | ⏳       | -      | ✅          | -       | -         | -       | ✅   |
+| P0-5  | ⏳     | -       | ✅      | ⏳       | ✅     | ✅          | -       | -         | -       | ✅   |
 | P0-6  | -      | -       | ✅      | -        | -      | ✅          | -       | -         | -       | ✅   |
-| P0-7  | ⏳     | -       | ⏳      | -        | ✅     | -           | -       | -         | -       | ⏳   |
-| P0-8  | ⏳     | -       | ⏳      | -        | ✅     | -           | -       | -         | -       | ⏳   |
+| P0-7  | ⏳     | -       | ✅      | -        | ✅     | -           | -       | -         | -       | ✅   |
+| P0-8  | ⏳     | -       | ✅      | -        | ✅     | -           | -       | -         | -       | ✅   |
 | P0-9  | ⏳     | ⏳      | -       | -        | -      | -           | ⏳      | ⏳        | -       | ⏳   |
 | P0-10 | -      | ⏳      | -       | -        | -      | -           | ⏳      | -         | -       | ⏳   |
-| P0-11 | -      | ⏳      | ⏳      | -        | -      | -           | -       | ⏳        | -       | ⏳   |
+| P0-11 | -      | ⏳      | ✅      | -        | -      | -           | -       | ⏳        | -       | ✅   |
 | P0-12 | -      | -       | -       | ⏳       | -      | -           | ⏳      | -         | -       | ⏳   |
 | P0-13 | -      | -       | -       | -        | -      | -           | -       | ⏳        | ⏳ T15  | ⏳   |
 | P0-14 | ⏳     | -       | -       | -        | -      | ⏳          | -       | ⏳        | -       | ⏳   |
@@ -739,14 +754,19 @@ P1-1/2/5 采用 cfg(kani) 抽象模型验证。
 
 5. **本白皮书是方案文档**：标注"⏳"的是承诺目标，非已完成。
 
-### 7.3 首批实跑验证成果（2026-07-29）
+### 7.3 实跑验证成果（2026-08-05 重新验证）
 
-**cfg(kani) BTreeMap→FixedMap 抽象已在 P0-4 验证可行**：
+**cfg(kani) BTreeMap→FixedMap 抽象验证结果**：
 
-- `evaluate_domain` 的 `eq`/`lt`/`exists` 三个域类型通过 `verify_evaluate_domain_{eq,lt,exists}_kani` 在 Kani 0.67.0 下全部实跑 PASS，总耗时约 204 秒（eq 67s / lt 80s / exists 58s，0/947 失败）。
-- 核心优化技术（解决 CBMC 状态爆炸）：`ManuallyDrop` 切断递归 drop、u64 大端哈希消除 `memcmp` 循环、`from_sorted` 跳过 insert 查找、`match len` 完全展开二分查找、Kani 专用 Integer-only 比较避免 `PartialEq` 递归。
-- 证明语义对生产环境有效：FixedMap 维护与 BTreeMap 一致的字典序不变式，`Ord`/`Display`/`iter()` 实现无 `cfg` 分支，§1.2 的抽象保真度假设在 P0-4 上被经验验证。
-- 剩余已实现但未独立实跑的 proof（P0-3/5/7/8/9/10/11/12）见 P0 表格"🔧 已实现未跑"条目，后续按优先级补充执行记录。
+- **TCB 12 proof 实测 9 PASS + 3 TIMEOUT**（Kani 0.67.0, WSL Ubuntu 22.04）：
+  - 9 PASS: `verify_value_roundtrip`(8s) / `verify_path_no_panic`(19s) / `verify_set_integer_safety`(3s) / `verify_set_sub_safety`(4s) / `verify_jsonvalue_array_safety`(5s) / `verify_resolve_path_object_kani`(24s) / `verify_execute_transition_kani`(11s) / `verify_termination_kani`(231s) / `verify_depth_enforcement_kani`(60s)
+  - 3 TIMEOUT: `verify_evaluate_domain_{eq,lt,exists}_kani` — CBMC 对 3 层嵌套 FixedMap（`__exec__.payload.x`）符号执行状态爆炸, 600s 超时。由 19 个 proptest 属性测试保底覆盖。
+- **Reactor 11 proof 实测 10 PASS + 1 TIMEOUT**：
+  - 10 PASS: `invariant_io_count_register_complete`(36s) / `invariant_version_monotonic`(23s) / `invariant_io_recovery_iff_result`(45s) / `command_does_not_decrease_queue`(23s) / `max_rounds_termination`(9s) / `invariant_cause_queue_sync`(27s) / `proof_fact_log_append_monotonic`(56s) / `proof_hash_chain_back_link`(115s) / `proof_reactor_invariants_preserved_after_pure_ops`(16s) / `proof_phase_state_machine_cannot_jump`(7s)
+  - 1 TIMEOUT: `invariant_io_count_force_remove` — BTreeSet force_remove 状态爆炸, 600s 超时。
+- 核心优化技术（缓解 CBMC 状态爆炸）：`ManuallyDrop` 切断递归 drop、u64 大端哈希消除 `memcmp` 循环、`from_sorted` 跳过 insert 查找、`match len` 完全展开二分查找、Kani 专用 Integer-only 比较避免 `PartialEq` 递归、KIdSet/KIdMap 替代 BTreeSet/BTreeMap。
+- 证明语义对生产环境有效：FixedMap 维护与 BTreeMap 一致的字典序不变式，`Ord`/`Display`/`iter()` 实现无 `cfg` 分支，§1.2 的抽象保真度假设在 P0-3/5/7/8 上被经验验证。
+- **历史注记**：2026-07-29 首次实跑时 `evaluate_domain` 系列 3 个 proof 曾 PASS（eq 67s / lt 80s / exists 58s），但 commit 0a1a13f（2026-08-01）引入 `executor.rs:335` ManuallyDrop 兼容问题后全部 break。修复后重新实跑（2026-08-05）此 3 个 proof 因 CBMC 状态爆炸持续 TIMEOUT，不再可复现 PASS。
 
 ---
 

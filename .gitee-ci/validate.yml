@@ -157,7 +157,7 @@ test-tag:
   allow_failure: false
 
 # 3. release-job (参考,可选): 实际发版时跑
-# 暂不开,等 0.1.0 真正发版时再 enable
+# 暂不开,本仓 release 流程见 docs/release/RELEASE_PROCESS_v0.1.1.md（crates.io 发布手动执行）
 # release:
 #   stage: release
 #   image: mcr.microsoft.com/powershell:lts-nanoserver-1809

@@ -24,7 +24,6 @@ exclude = [
     "tests/build_ffi.ps1",       # C FFI 构建脚本（PowerShell）
     "tests/test_evorule.c",      # C FFI 集成测试源码
     "hash_snapshots/",           # 哈希快照目录
-    "KANI_VERIFICATION_PLAN.md", # Kani 验证计划文档
     "proptest-regressions/",     # proptest 回归测试用例缓存
     "rust-toolchain.toml",       # 开发工具链固定
     "**/*.log",                  # 各类运行日志
@@ -60,13 +59,13 @@ crate-type = ["lib", "cdylib"]
 # 阶段7：Kani 形式化验证
 #
 # 实际门控用 `#[cfg(kani)]`（由 `cargo kani` 自动注入 `--cfg kani`），
-# 与 evorule-tcb/tests/kani_proofs.rs 风格一致，无需 --features kani。
+# 与 evorule-tcb/verification/kani_proofs.rs 风格一致，无需 --features kani。
 # 此 feature 保留作向后兼容标记，启用后对 proof 编译无影响
 # （proof 在 cfg(kani) 下，普通 cargo build 不编译）。
 #
 # 运行验证：
 #   cargo kani -p evorule-reactor
-#   cargo kani -p evorule-reactor --harness invariant_io_count_consistency
+#   cargo kani -p evorule-reactor --harness invariant_version_monotonic
 kani = []
 # 阶段9：C FFI 接口
 #
@@ -111,12 +110,24 @@ name = "differential_test"
 path = "verification/differential_test.rs"
 
 [package.metadata.kani]
-# CI 验证列表 (仅限能在 CI 预算内通过的 proof)
-# 已移除以堆分配状态爆炸而超时的 proof (需本地/专用硬件运行):
-#   - invariant_io_count_register_complete (涉及 HashMap 操作)
-#   - invariant_io_count_force_remove (涉及 HashMap 操作)
-#   - invariant_io_recovery_iff_result (涉及 Vec 操作)
-#   - command_does_not_decrease_queue (涉及 Vec 操作)
+# CI 验证列表 (仅限能在 CI 预算内稳定通过的 proof)
+#
+# 实测结果 (Kani 0.67.0, WSL Ubuntu 22.04, 2026-08-05):
+#   10/11 PASS, 1/11 TIMEOUT
+#
+# 未列入 CI 的 8 个 proof 中, 7 个本地实测 PASS (16-115s), 但因涉及堆分配
+# 数据结构 (Vec/VecDeque/BTreeSet) 跨 Kani 版本可能不稳定, 为保证 CI 可靠性
+# 仅保留 3 个最简单的纯状态机 proof:
+#   - invariant_io_count_register_complete   (PASS 36s,  涉及 BTreeSet)
+#   - invariant_io_count_force_remove        (TIMEOUT 609s, BTreeSet force_remove 状态爆炸)
+#   - invariant_io_recovery_iff_result       (PASS 45s,  涉及 Vec 操作)
+#   - command_does_not_decrease_queue        (PASS 23s,  涉及 VecDeque)
+#   - proof_fact_log_append_monotonic        (PASS 56s,  涉及 Vec + 哈希链)
+#   - proof_hash_chain_back_link             (PASS 115s, 涉及哈希链)
+#   - proof_reactor_invariants_preserved_after_pure_ops (PASS 16s, 组合操作)
+#   - proof_phase_state_machine_cannot_jump  (PASS 7s,   Phase 状态机)
+#
+# 详见 evorule-reactor/docs/KANI.md "完整验证" 表
 proofs = [
     "invariant_version_monotonic", # version 单调递增 (简单计数器)
     "max_rounds_termination",      # max_rounds 终止条件 (简单有界循环)

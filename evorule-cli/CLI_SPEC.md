@@ -94,7 +94,7 @@ disable permanently.**
    - 必须从前端取才能保证 push 的指令先执行
 2. **max_steps 先检后 pop**:超限发 `Fact::Error` + break(对齐 evorule-reactor BUG-3 修复)
 3. **I/O 两阶段架构**:`pending_io: HashMap<FactId, JsonValue>` 缓存 orig 指令
-   - 0.1.0 无 handler 时发 `Fact::Error` 退出,但架构正确
+   - 0.2.0 无 handler 时发 `Fact::Error` 退出,但架构正确
    - 后续加 handler 时只需在 IoRequest 分支注入 IoResponse + push_front(orig) 即可
 
 ### fact_log.rs(tier1 WAL 格式)

@@ -1,4 +1,4 @@
-# List all .rs files missing SPDX header
+﻿# List all .rs files missing SPDX header
 $evoruleRoot = "D:\evorule"
 $evoAgentRoot = "D:\evo-agent"
 

@@ -8,7 +8,7 @@
 
 - 如何用 `evorule-tcb` 的 `core_eval.json` 驱动规则引擎
 - 如何用 `evorule-reactor` 的 `Reactor` 构建事实驱动执行器
-- 如何用 `evorule-governance` 的 `IoHandler` trait 和 `MemoryHandler` 实现 I/O 外挂
+- 如何用 `evorule-reactor` 的 `IoHandler` trait 实现 I/O 外挂（v0.2.0 起 trait 下沉至 reactor；`MemoryHandler` 本例内联实现，生产版见 evorule-server 独立仓）
 - 如何通过 Fact 通道(command / event)在用户、反应器、I/O 订阅者之间通信
 - 如何读取 `FactsLog` 审计链,展示事实驱动可审计性
 
@@ -64,6 +64,7 @@ cargo run -p reactive_researcher
 ```
 
 预期输出:
+
 1. 配置信息(core_eval 路径、memory 目录、LLM 模式等)
 2. 步骤 1:LLM 响应(dry-run canned 文本)
 3. 步骤 2:Memory 保存结果(`memory_result = true`)
@@ -81,15 +82,15 @@ Get-Content .\examples\reactive_researcher\reactive_researcher_memory\research_n
 
 ## CLI 参数
 
-| 参数 | 环境变量 | 默认值 | 说明 |
-|------|----------|--------|------|
-| `--core-eval` | `EVORULE_CORE_EVAL` | `<manifest>/../../evorule-tcb/core_eval.json` | core_eval.json 路径 |
-| `--memory-dir` | `EVORULE_MEMORY_DIR` | `<manifest>/reactive_researcher_memory` | Memory 持久化目录 |
-| `--llm-mode` | `EVORULE_LLM_MODE` | `dry-run` | LLM 模式:`dry-run` 或 `live` |
-| `--llm-url` | `EVORULE_LLM_URL` | (无) | live 模式下的 LLM API URL(OpenAI 兼容) |
-| `--llm-api-key` | `EVORULE_LLM_API_KEY` | (无) | live 模式下的 API key |
-| `--topic` | (无) | `请用三句话总结 EvoRule 框架的设计哲学` | 待研究的主题(LLM prompt) |
-| `--memory-key` | (无) | `research_note_001` | 保存 LLM 响应的 memory key |
+| 参数            | 环境变量              | 默认值                                        | 说明                                   |
+| --------------- | --------------------- | --------------------------------------------- | -------------------------------------- |
+| `--core-eval`   | `EVORULE_CORE_EVAL`   | `<manifest>/../../evorule-tcb/core_eval.json` | core_eval.json 路径                    |
+| `--memory-dir`  | `EVORULE_MEMORY_DIR`  | `<manifest>/reactive_researcher_memory`       | Memory 持久化目录                      |
+| `--llm-mode`    | `EVORULE_LLM_MODE`    | `dry-run`                                     | LLM 模式:`dry-run` 或 `live`           |
+| `--llm-url`     | `EVORULE_LLM_URL`     | (无)                                          | live 模式下的 LLM API URL(OpenAI 兼容) |
+| `--llm-api-key` | `EVORULE_LLM_API_KEY` | (无)                                          | live 模式下的 API key                  |
+| `--topic`       | (无)                  | `请用三句话总结 EvoRule 框架的设计哲学`       | 待研究的主题(LLM prompt)               |
+| `--memory-key`  | (无)                  | `research_note_001`                           | 保存 LLM 响应的 memory key             |
 
 ### 自定义主题
 
@@ -152,6 +153,7 @@ cargo run -p reactive_researcher -- --llm-mode live --topic "对比 tokio 和 as
 ```
 
 注意 ID 分配:
+
 - 反应器自身 `FactIdGenerator` 从 1 起(F1-F6)
 - `ExampleSubscriber` 从 10000 起(F10000, F10001),避免冲突
 
@@ -177,17 +179,20 @@ impl IoHandler for MyHandler {
 }
 ```
 
-2. 在 `ExampleSubscriber::dispatch_and_respond` 的 match 中添加分支:
+2. 在 `ExampleSubscriber::dispatch_and_respond` 的 `match io_type.as_str()` 中添加分支:
 
 ```rust
-IoType::CALL_SERVICE => self.my_handler.execute(&params).await,
+"my_service" => self.my_handler.execute(&params).await,
 ```
+
+> v0.2.0 起 `IoType` 失去 `Copy` 且旧 `const` 变体移除，`match` 改为对 `io_type.as_str()` 匹配字符串字面量（见 `src/main.rs` 的 `dispatch_and_respond`）。
 
 3. 在 `core_eval.json` 中添加对应的 transform 规则(把 `instruction_type` 映射到 `io_request`)
 
 ### AGENTS.md 合规
 
 本示例严格遵守 `AGENTS.md`:
+
 - ✅ **不修改任何核心 crate**(`evorule-tcb` / `evorule-reactor` / `evorule-governance` 源码零改动)
 - ✅ 所有自定义代码(`LlmHandler` / `ExampleSubscriber`)都在 example 包内
 - ✅ 通过公共 API 组合使用,展示框架的可扩展性

@@ -43,8 +43,7 @@ $projects['evorule-tcb']        = (Join-Path $evoruleRoot "evorule-tcb\Cargo.tom
 $projects['evorule-reactor']    = (Join-Path $evoruleRoot "evorule-reactor\Cargo.toml")
 $projects['evorule-governance'] = (Join-Path $evoruleRoot "evorule-governance\Cargo.toml")
 $projects['evorule-cli']        = (Join-Path $evoruleRoot "evorule-cli\Cargo.toml")
-$projects['sdk-typescript']     = (Join-Path $evoruleRoot "sdk\typescript\package.json")
-$projects['sdk-python']         = (Join-Path $evoruleRoot "sdk\python\pyproject.toml")
+# 注:SDK 已物理分离到独立仓(evorule-sdk),本仓不再校验 sdk-typescript / sdk-python 版本
 
 $versions = [ordered]@{}
 $failed = $false
@@ -56,6 +55,7 @@ foreach ($name in $projects.Keys) {
     } else {
         $v = Get-TomlVersion $p
     }
+    # 注:SDK 已分离,上述 sdk 分支保留仅为兼容,本仓 projects 已无 sdk 条目
     $versions[$name] = $v
     if ($null -eq $v) {
         Write-Host "[SKIP] $name : version not found (file may not exist)" -ForegroundColor Yellow

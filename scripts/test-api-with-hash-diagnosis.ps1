@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-or-later
+﻿# SPDX-License-Identifier: AGPL-3.0-or-later
 # End-to-end API test + hash chain diagnosis
 # Usage: powershell -ExecutionPolicy Bypass -File test-api-with-hash-diagnosis.ps1
 

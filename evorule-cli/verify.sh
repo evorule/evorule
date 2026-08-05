@@ -1,5 +1,5 @@
 #!/bin/bash
-# verify-v0.1.0.sh - 验证 evorule-cli README 中承诺的每一项
+# verify.sh - 验证 evorule-cli README 中承诺的每一项
 # 必须在 WSL/Linux 下运行
 
 set -uo pipefail
@@ -18,7 +18,7 @@ warn() { log "WARN" "$1"; ((WARN++)); RESULTS+=("WARN  $1"); }
 sep() { echo "=================================================="; }
 
 sep
-echo "  evorule-cli v0.1.0 README 承诺验证"
+echo "  evorule-cli README 承诺验证"
 sep
 
 # ======== 1. 基础环境 ========
@@ -115,7 +115,7 @@ if [ -f "$AARCH64_BIN" ]; then
     # 用 qemu-user-static 验证 aarch64 binary 能运行
     if which qemu-aarch64-static >/dev/null 2>&1; then
         echo "  qemu-aarch64-static 自检..."
-        if qemu-aarch64-static "$AARCH64_BIN" --version 2>&1 | grep -q "evorule 0.1.0"; then
+        if qemu-aarch64-static "$AARCH64_BIN" --version 2>&1 | grep -qE "evorule [0-9]+\.[0-9]+\.[0-9]+"; then
             pass "aarch64 binary 在 qemu 模拟下可运行"
         else
             fail "aarch64 binary 在 qemu 模拟下运行失败"

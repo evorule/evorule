@@ -24,6 +24,11 @@
 > - evorule-server / io_handlers 应用层威胁模型 → 见 evorule-server 独立仓安全文档
 > - evorule-application 应用层威胁模型（可视化 UI / 业务模板 / 仪表盘） → 见 evorule-application 仓安全文档
 
+> ⚠️ **v0.2.0 勘误注（2026-08-04，正文未改）**：本威胁模型冻结于 v0.1.0，以下结构变更在 v0.2.0 发生，阅读时请自行映射：
+> - **IoHandler / IoDispatcher trait 下沉**：trait 定义从 `evorule-governance` 迁至 `evorule-reactor`（机制层基座统一）；governance 保留 re-export。涉及 I/O 路由的威胁项请按此调整模块归属。
+> - **IoType 重构为 `Arc<str>`**：从封闭枚举改为 `Arc<str>` + 工厂函数，失去 `Copy`；新增 `IoType::new("任意字符串")` 支持自定义 io_type，IoType 不再是固定白名单（5 个内置工厂函数字符串值不变，向后兼容）。`IoType::parse` 已 `#[deprecated]`。
+> - 详见 [MIGRATION_v0.2.0.md](../../MIGRATION_v0.2.0.md) 与 [CHANGELOG.md](../../CHANGELOG.md) `[0.2.0]` 段。本文正文保持 v0.1.0 原貌，不作回改。
+
 ---
 
 ## 0. 怎么读这份文档

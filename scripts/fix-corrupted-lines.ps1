@@ -1,4 +1,4 @@
-# fix-corrupted-lines.ps1
+﻿# fix-corrupted-lines.ps1
 # Recovery: the fix-missing-spdx.ps1 script corrupted evo-agent files
 # because Get-Content -Raw decoded UTF-8 files (no BOM) as GBK,
 # which replaced \n bytes between multi-byte Chinese and ASCII with 0x3F (?).

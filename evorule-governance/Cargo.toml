@@ -15,19 +15,17 @@ keywords = ["governance", "audit", "rules-engine", "validation", "time-machine"]
 categories = ["asynchronous", "config", "data-structures", "development-tools"]
 # 发布到 crates.io 时排除开发产物/演示数据（下游依赖消费者不需要）
 exclude = [
-    "data/",                     # demo.sqlite 演示数据库
-    "**/hash_snapshot.txt",      # 哈希快照（开发产物）
-    "verify-server-v0.1.0.sh",   # 服务端验证脚本
-    "verification/",             # 差分测试源码（下游不需要）
-    "benches/",                  # Criterion 性能基准源码（dev-only）
-    "demo.db",                   # 可能存在的 SQLite 演示库文件
-    "scripts/",                  # 开发辅助脚本
-    "tests/verify_audit.py",     # Python 审计验证脚本（dev-only）
-    "proptest-regressions/",     # proptest 回归测试用例缓存
-    "KANI_VERIFICATION_PLAN.md", # Kani 验证计划文档
-    "rust-toolchain.toml",       # 开发工具链固定
-    "**/*.log",                  # 各类运行日志
-    "install_log.txt",           # 工具安装日志
+    "data/",                 # demo.sqlite 演示数据库
+    "**/hash_snapshot.txt",  # 哈希快照（开发产物）
+    "verification/",         # 差分测试源码（下游不需要）
+    "benches/",              # Criterion 性能基准源码（dev-only）
+    "demo.db",               # 可能存在的 SQLite 演示库文件
+    "scripts/",              # 开发辅助脚本
+    "tests/verify_audit.py", # Python 审计验证脚本（dev-only）
+    "proptest-regressions/", # proptest 回归测试用例缓存
+    "rust-toolchain.toml",   # 开发工具链固定
+    "**/*.log",              # 各类运行日志
+    "install_log.txt",       # 工具安装日志
 ]
 
 

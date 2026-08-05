@@ -79,37 +79,40 @@
 
 这些是业务逻辑或业务数据, 一旦写在 Rust 中即构成"漂移", `build.rs` 会直接拦截编译:
 
-| 编号 | 禁止项 | 示例 | 执行层 |
-| :--- | :--- | :--- | :--- |
-| **G7/G8** | 控制流指令名硬编码 | `"conditional"` / `"while_loop"` / `"sequence"` 出现在 Rust 字符串中 | L1 (build.rs) |
-| **G1** (= F11) | panic-prone 构造 | `debug_assert!` / `.unwrap(` / `.expect(` | L1 (build.rs) |
-| **§5.2** | 业务术语字符串字面量 | `"math_rule"` / `"admin"` / `"summarize"` 等 | L1 (build.rs) |
-| **F1** | 硬编码业务指令类型 | `if instruction_type == "math_rule"` | L1 (§5.2 覆盖) |
-| **F2** | 硬编码数字阈值 | `if score > 80` | L3 (review) |
-| **F3** | 动态 prompt 拼接 | `format!("请总结：{}", content)` | L3 (review) |
-| **F4** | 动态 SQL 拼接 | `format!("SELECT * FROM users WHERE id={}", id)` | L3 (review) |
-| **F5** | 硬编码权限/角色判断 | `if user.role == "admin"` | L1 (§5.2 覆盖) |
-| **F6** | Rust 中过滤/排序规则列表 | `rules.iter().filter(\|r\| r.type == "active")` | L3 (review) |
-| **F7/F8** | if/else 嵌套 > 2 层 | — | L2 (clippy cognitive_complexity) |
-| **F9** | 函数 > 50 行 | — | L2 (clippy too_many_lines) |
-| **F10** | 跨 Handler 互调 | handler A 调 handler B 的方法 | L3 (review) |
+| 编号           | 禁止项                   | 示例                                                                 | 执行层                           |
+| :------------- | :----------------------- | :------------------------------------------------------------------- | :------------------------------- |
+| **G7/G8**      | 控制流指令名硬编码       | `"conditional"` / `"while_loop"` / `"sequence"` 出现在 Rust 字符串中 | L1 (build.rs)                    |
+| **G1** (= F11) | panic-prone 构造         | `debug_assert!` / `.unwrap(` / `.expect(`                            | L1 (build.rs)                    |
+| **§5.2**       | 业务术语字符串字面量     | `"math_rule"` / `"admin"` / `"summarize"` 等                         | L1 (build.rs)                    |
+| **F1**         | 硬编码业务指令类型       | `if instruction_type == "math_rule"`                                 | L1 (§5.2 覆盖)                   |
+| **F2**         | 硬编码数字阈值           | `if score > 80`                                                      | L3 (review)                      |
+| **F3**         | 动态 prompt 拼接         | `format!("请总结：{}", content)`                                     | L3 (review)                      |
+| **F4**         | 动态 SQL 拼接            | `format!("SELECT * FROM users WHERE id={}", id)`                     | L3 (review)                      |
+| **F5**         | 硬编码权限/角色判断      | `if user.role == "admin"`                                            | L1 (§5.2 覆盖)                   |
+| **F6**         | Rust 中过滤/排序规则列表 | `rules.iter().filter(\|r\| r.type == "active")`                      | L3 (review)                      |
+| **F7/F8**      | if/else 嵌套 > 2 层      | —                                                                    | L2 (clippy cognitive_complexity) |
+| **F9**         | 函数 > 50 行             | —                                                                    | L2 (clippy too_many_lines)       |
+| **F10**        | 跨 Handler 互调          | handler A 调 handler B 的方法                                        | L3 (review)                      |
 
 ---
 
 ## 三、§5.2 业务术语表
 
 以下术语**不得**作为字符串字面量出现在 evorule-reactor 的 Rust 源码中
-(豁免: `#[cfg(test)]` 测试模块 + `src/fact.rs` 中的 IoType 枚举映射):
+(豁免: `#[cfg(test)]` 测试模块 + `src/fact.rs` 中的 IoType 内置字符串值定义):
 
-| 术语 | 类别 | 替代方案 |
-| :--- | :--- | :--- |
-| `math_rule` | 业务规则 | 放 `core_eval.json` |
-| `physics_rule` | 业务规则 | 放 `core_eval.json` |
-| `summarize` | prompt | 用模板变量 |
-| `admin` | 角色 | 放权限配置 |
-| `teacher` | 角色 | 放权限配置 |
-| `call_external` | I/O 指令 | 放 IoType 枚举 (fact.rs) |
-| `call_service` | I/O 指令 | 放 IoType 枚举 (fact.rs) |
+> **v0.2.0 注**:`IoType` 已从封闭枚举重构为 `Arc<str>` + 工厂函数,支持 `IoType::new("任意字符串")` 注册自定义 io_type。
+> 上表 `call_external` / `call_service` 仍为 fact.rs 内置工厂函数的字符串值(豁免);应用层自定义 io_type 的字符串字面量不受此表约束(属应用层策略,不在本 crate Rust 源码中)。
+
+| 术语            | 类别     | 替代方案                                                    |
+| :-------------- | :------- | :---------------------------------------------------------- |
+| `math_rule`     | 业务规则 | 放 `core_eval.json`                                         |
+| `physics_rule`  | 业务规则 | 放 `core_eval.json`                                         |
+| `summarize`     | prompt   | 用模板变量                                                  |
+| `admin`         | 角色     | 放权限配置                                                  |
+| `teacher`       | 角色     | 放权限配置                                                  |
+| `call_external` | I/O 指令 | IoType 内置值（fact.rs 工厂函数 `IoType::call_external()`） |
+| `call_service`  | I/O 指令 | IoType 内置值（fact.rs 工厂函数 `IoType::call_service()`）  |
 
 ---
 
@@ -117,17 +120,17 @@
 
 **build.rs 扫描的 13 个模式**:
 
-| 规则 | 模式 | 数量 |
-| :--- | :--- | :--- |
-| G7/G8 (控制流硬编码) | `"conditional"`, `"while_loop"`, `"sequence"` | 3 |
-| G1/F11 (panic-prone) | `debug_assert!`, `.unwrap(`, `.expect(` | 3 |
-| §5.2 (业务术语) | `"math_rule"`, `"physics_rule"`, `"summarize"`, `"admin"`, `"teacher"`, `"call_external"`, `"call_service"` | 7 |
+| 规则                 | 模式                                                                                                        | 数量 |
+| :------------------- | :---------------------------------------------------------------------------------------------------------- | :--- |
+| G7/G8 (控制流硬编码) | `"conditional"`, `"while_loop"`, `"sequence"`                                                               | 3    |
+| G1/F11 (panic-prone) | `debug_assert!`, `.unwrap(`, `.expect(`                                                                     | 3    |
+| §5.2 (业务术语)      | `"math_rule"`, `"physics_rule"`, `"summarize"`, `"admin"`, `"teacher"`, `"call_external"`, `"call_service"` | 7    |
 
 **豁免**:
 
 - `#[cfg(test)] mod tests { ... }` 测试模块 — 测试 fixture 可构造这些字符串
 - 注释 (`//`, `///`, `//!`, `/* */`) — 文档可自由提及
-- `src/fact.rs` (G8/§5.2 模式) — IoType/ControlFlowType 枚举映射的唯一真值来源
+- `src/fact.rs` (G8/§5.2 模式) — IoType 内置字符串值 / ControlFlowType 枚举映射的唯一真值来源
 
 **紧急跳过**: `EVORULE_SKIP_GATE=1 cargo build` (须有书面理由, 永不永久禁用)
 

@@ -23,7 +23,6 @@ exclude = [
     "verification/",             # Kani 证明 + proptest 属性测试源码（下游不需要）
     "benches/",                  # Criterion 性能基准源码（dev-only）
     "tla_quint.sh",              # TLA+ 模型运行脚本
-    "KANI_VERIFICATION_PLAN.md", # Kani 验证计划文档
     "proptest-regressions/",     # proptest 回归测试用例缓存
     "**/*.log",                  # 各类运行日志
 ]

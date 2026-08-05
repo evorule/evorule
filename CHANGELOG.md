@@ -94,12 +94,12 @@
 
 ### 本仓内部影响
 
-| 本仓 crate | 影响说明 |
-|---|---|
-| **evorule-cli** | `executor.rs` 改用 `IoType::new(&io_type)` 构造（v0.2.0 透传不校验，无 handler 时发 `Fact::Error` 退出） |
-| **evorule-tcb** | 无代码改动（仅版本同步 bump 至 `0.2.0`） |
-| **evorule-reactor** | `IoType` 重构 + `IoHandler`/`IoDispatcher` 下沉至本 crate（核心变更主体） |
-| **evorule-governance** | `io_handler.rs` / `io_dispatcher.rs` 改为 re-export reactor（消除 v0.1.x 遗留重复实现） |
+| 本仓 crate             | 影响说明                                                                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| **evorule-cli**        | `executor.rs` 改用 `IoType::new(&io_type)` 构造（v0.2.0 透传不校验，无 handler 时发 `Fact::Error` 退出） |
+| **evorule-tcb**        | 无代码改动（仅版本同步 bump 至 `0.2.0`）                                                                 |
+| **evorule-reactor**    | `IoType` 重构 + `IoHandler`/`IoDispatcher` 下沉至本 crate（核心变更主体）                                |
+| **evorule-governance** | `io_handler.rs` / `io_dispatcher.rs` 改为 re-export reactor（消除 v0.1.x 遗留重复实现）                  |
 
 > 各独立下游仓的迁移状态由各仓自行记录，不在本仓文档中讨论（各仓独立发布原则）。
 
@@ -185,10 +185,9 @@
 
 ### 🔒 安全
 
-- 升级到 Kani 0.67.0 + nightly-2025-11-21 后，tier0 3 个 domain Kani proof（eq/lt/exists）首次跑通
-  - `verify_evaluate_domain_eq_kani` 67.17s PASS（947 checks, 0 failed, 42 unreachable）
-  - `verify_evaluate_domain_lt_kani` 79.62s PASS
-  - `verify_evaluate_domain_exists_kani` 57.79s PASS
+- 升级到 Kani 0.67.0 + nightly-2025-11-21 后，tier0 12 个 Kani proof 实测 9 PASS + 3 TIMEOUT
+  - 9 PASS: `verify_value_roundtrip` / `verify_path_no_panic` / `verify_set_integer_safety` / `verify_set_sub_safety` / `verify_jsonvalue_array_safety` / `verify_resolve_path_object_kani` / `verify_execute_transition_kani` / `verify_termination_kani` / `verify_depth_enforcement_kani`（3-231s）
+  - 3 TIMEOUT: `verify_evaluate_domain_eq_kani` / `_lt_kani` / `_exists_kani`（CBMC 对嵌套 FixedMap 状态爆炸, 600s 超时, 由 19 个 proptest 保底覆盖）
 - tier0 编译时门禁：`#![deny(unwrap_used)]` / `#![deny(expect_used)]` / `#![deny(indexing_slicing)]` / `#![deny(panic)]`
 - tier0/1/2 编译时 build.rs 门禁全开（T1/T2/T3/T15）
 
@@ -209,8 +208,8 @@
 ### 已知问题
 
 - ⚠️ **v0.1.0 跨平台 release 实测** 仅 Windows + WSL，macOS 待 CI 跑过确认
-- ⚠️ **Kani tier0 12 proof 中 9 个未实跑**（仅 3 个 domain proof 跑通），verify_path_no_panic 等 9 个待 Kani 0.68+ 升级后跑通
-- ⚠️ **Kani tier1 11 proof 中 4 个新 C1-1~C1-4 未实跑**（代码已就位，等 Kani 0.68+ 跑通）
+- ⚠️ **Kani tier0 12 proof**：实测 9 PASS + 3 TIMEOUT（`evaluate_domain` 系列, proptest 保底）
+- ⚠️ **Kani tier1 11 proof**：实测 10 PASS + 1 TIMEOUT（`invariant_io_count_force_remove`, BTreeSet 状态爆炸）
 - ⚠️ **跨平台 release 验证 (F-1)** 状态 3 个 ❌ 待改 ✅
 - ⚠️ **Gitee Go CI 真实跑通 (F-2)** 需 push 后才能看到 run ID
 - ⚠️ **5 终极门禁** 需打 v0.1.0 tag 前全过
@@ -219,11 +218,13 @@
 
 ### 形式化验证（A-1 / A-2 / C-1）
 
-- **evorule-tcb 12 个 Kani proof**（A-1）— WSL Kani 0.67.0 + CBMC 实跑
+- **evorule-tcb 12 个 Kani proof**（A-1）— WSL Kani 0.67.0 + CBMC 实跑：**9 PASS + 3 TIMEOUT**
   - `verify_value_roundtrip` / `verify_path_no_panic` / `verify_set_integer_safety` / `verify_jsonvalue_array_safety` / `verify_set_sub_safety` / `verify_resolve_path_object_kani` / `verify_evaluate_domain_eq_kani` / `verify_evaluate_domain_lt_kani` / `verify_evaluate_domain_exists_kani` / `verify_execute_transition_kani` / `verify_termination_kani` / `verify_depth_enforcement_kani`
-- **evorule-reactor 11 个 Kani proof**（A-2，7 原有 + 4 新 C1-1~C1-4）
+  - TIMEOUT 的 3 个 `evaluate_domain` 系列由 19 个 proptest 属性测试保底覆盖
+- **evorule-reactor 11 个 Kani proof**（A-2，7 原有 + 4 新 C1-1~C1-4）— 实跑：**10 PASS + 1 TIMEOUT**
   - 7 原有：`invariant_io_count_register_complete` / `invariant_io_count_force_remove` / `invariant_version_monotonic` / `invariant_io_recovery_iff_result` / `command_does_not_decrease_queue` / `max_rounds_termination` / `invariant_cause_queue_sync`
   - 4 新：`proof_fact_log_append_monotonic` / `proof_hash_chain_back_link` / `proof_reactor_invariants_preserved_after_pure_ops` / `proof_phase_state_machine_cannot_jump`
+  - TIMEOUT 的 `invariant_io_count_force_remove`（BTreeSet force_remove 状态爆炸）由 proptest 保底
 - **C-1 `verify_path_no_panic` Kani 真实通过** — 原 BTreeMap 路径爆炸问题通过基于 Vec 的 KIdSet/KIdMap 替代方案解决
 
 ### 引擎质量（A-3 / B-1 / B-2 / E-1）
@@ -254,7 +255,7 @@
 
 - **MSRV** — `is_multiple_of` → `%` 取模（reactor.rs / auditor.rs），兼容 Rust 1.74
 - **时间机器 diff 递归** — 从顶层字段对比扩展为嵌套对象递归对比
-- **Kani 路径爆炸** — BTreeSet/BTreeMap → KIdSet/KIdMap（Vec 基实现），11 个 reactor proof 全部稳定通过
+- **Kani 路径爆炸** — BTreeSet/BTreeMap → KIdSet/KIdMap（Vec 基实现），reactor 11 个 proof 实测 10 PASS + 1 TIMEOUT（`invariant_io_count_force_remove` 仍超时）
 
 ### 已知问题（v0.1.0 首发时仍存在）
 

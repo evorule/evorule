@@ -27,7 +27,7 @@
 ┌─────────────────────────────────────────────────┐
 │  evorule-governance  治理层（本 crate）             │
 │  · I/O 分发框架 / 审计链 / 规则验证 / 时间机器    │
-│  · 机制层库: IoDispatcher 框架 + IoHandler trait │
+│  · 机制层库: IoDispatcher / IoHandler（v0.2.0 起定义下沉至 reactor，本 crate re-export）│
 ├─────────────────────────────────────────────────┤
 │  evorule-reactor     反应式执行器（Fact/MPSC/WAL）  │
 ├─────────────────────────────────────────────────┤
@@ -37,7 +37,7 @@
 
 **职责(机制)**:
 
-- **I/O 订阅者**:消费 `Fact::IoRequest` → 通过 IoDispatcher 分发给上层注入的 `IoHandler` 实现 → 产生 `Fact::IoResponse`（具体 Handler 实现由应用层注入，本 crate 仅定义机制）
+- **I/O 订阅者**:消费 `Fact::IoRequest` → 通过 IoDispatcher 分发给上层注入的 `IoHandler` 实现 → 产生 `Fact::IoResponse`（具体 Handler 实现由应用层注入；v0.2.0 起 `IoDispatcher`/`IoHandler` 定义下沉至 evorule-reactor，本 crate re-export 向后兼容）
 - **审计链**:基于 tier1 WAL 的 blake3 哈希链,支持 `load_from_tier1_wal()` 加载并验证完整性
 - **规则验证器**:基于 tier0 `core_eval.json` 的 JSON Schema 规则验证（RuleValidator）
 - **时间机器**:基于 tier1 FactsLog 的 replay / rewind / fork / diff 4 个 API
@@ -56,8 +56,8 @@ src/
 ├── auditor.rs              # 审计器(基于 tier1 WAL 的哈希链验证)
 ├── clock.rs                # 逻辑时钟
 ├── hash.rs                 # blake3 哈希算法(re-export evorule_reactor::hash)
-├── io_dispatcher.rs        # I/O 分发器(Enum Dispatch 框架)
-├── io_handler.rs           # IoHandler trait + IoResult(机制定义, 应用层注入实现)
+├── io_dispatcher.rs        # I/O 分发器（v0.2.0 起为 re-export，定义已下沉至 evorule-reactor）
+├── io_handler.rs           # IoHandler trait + IoResult（v0.2.0 起为 re-export，定义已下沉至 evorule-reactor）
 ├── io_subscriber.rs        # I/O 订阅者(消费 IoRequest → 分发 → 回写 IoResponse)
 ├── metrics.rs              # IoMetrics trait(机制层接口, Prometheus 实现由应用层提供)
 ├── rule_validation.rs      # 规则验证器(RuleValidator, 基于 tier0 core_eval.json)

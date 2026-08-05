@@ -115,6 +115,19 @@ cargo audit > audit-report-v0.2.0/cargo-audit.txt
 - 确认"使用风险自负"声明存在
 - 确认 API 稳定性诚实声明（"1.0 之前不承诺"）
 
+### 3.3 迁移指南（破坏性变更时必需）
+
+> 对应 [VERSION_STRATEGY.md §6.1](../../VERSION_STRATEGY.md) 破坏性变更管理要求。
+
+当本次发布含 **⚠️ BREAKING CHANGES**（0.x 阶段 MINOR 升级或 1.x MAJOR 升级）时：
+
+- [ ] 根目录存在 `MIGRATION_v<X.Y.Z>.md`（如 `MIGRATION_v0.2.0.md`），逐项列出破坏性变更 + 迁移步骤
+- [ ] 迁移指南在 `DOCS_INDEX.md` §2.1 登记
+- [ ] CHANGELOG 的 BREAKING 段落交叉引用该迁移指南
+- [ ] 迁移指南中的代码示例可编译（`cargo build` 通过）
+
+PATCH 发布（无破坏性变更）可跳过本节。
+
 ## 4. 创建 Git Tag
 
 ```bash

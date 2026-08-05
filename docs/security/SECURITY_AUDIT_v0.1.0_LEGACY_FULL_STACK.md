@@ -8,6 +8,12 @@ Audit reports are public artifacts; we release them under CC0 to maximize
 circulation among security-conscious users (compliance, regulated industries).
 -->
 
+> **📝 路径勘误 (2026-08-05)**：本文档为 v0.1.0 历史归档，文中引用的
+> `evorule-tcb/tests/kani_proofs.rs` 路径已于 v0.2.0 迁移至
+> [`evorule-tcb/verification/kani_proofs.rs`](../../evorule-tcb/verification/kani_proofs.rs)。
+> 当前 Kani 验证状态 (12 proof, 9 PASS + 3 TIMEOUT) 详见
+> [`SECURITY_AUDIT_v1.0.0.md`](SECURITY_AUDIT_v1.0.0.md) §6.1。
+
 > **Internal self-audit** of the EvoRule ecosystem at v0.1.0.
 > Per [`VERSION_STRATEGY.md` §4.4](../../VERSION_STRATEGY.md), 1.0.0 requires
 > this document + `THREAT_MODEL.md` + `cargo audit` 0 high-severity + 1
