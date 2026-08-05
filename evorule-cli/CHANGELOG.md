@@ -13,6 +13,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.1 - 2026-08-05
+
+**与 evorule-tcb / evorule-reactor / evorule-governance v0.2.1 同步** — v0.2.0 发布后 Kani 验证同步修正。CLI 无代码改动（仅版本同步 bump + verify.sh 重命名）。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.2.1]` 段。
+
+### 🔄 变更
+
+- 版本同步 bump 至 0.2.1
+- `verify-v0.1.0.sh` 重命名为 `verify.sh`（功能不变）
+- README 版本 badge 更新
+
+### 向后兼容
+
+- ✅ CLI 行为不变
+- ✅ fact log 格式不变
+
+---
+
 ## v0.2.0 - 2026-08-04
 
 **与 evorule-reactor v0.2.0 同步** — `executor.rs` 改用 `IoType::new(&io_type)` 构造。v0.2.0 起 `IoType` 重构为 `Arc<str>`(失去 `Copy`,5 个 `const` 改工厂函数,`parse` 标记 `#[deprecated]`)。CLI 行为不变:透传 io_type 不校验,无 handler 时发 `Fact::Error` 退出。

@@ -327,7 +327,10 @@ mod tests {
         let has_error = facts.iter().any(
             |f| matches!(f, Fact::Error { ref message, .. } if message.contains("no I/O handler")),
         );
-        assert!(has_error, "should have Error (no I/O handler) for unknown io_type");
+        assert!(
+            has_error,
+            "should have Error (no I/O handler) for unknown io_type"
+        );
     }
 
     #[test]
