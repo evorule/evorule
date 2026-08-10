@@ -35,6 +35,34 @@
 
 ---
 
+## [0.2.2] - 2026-08-10
+
+**协议文档修正 + SDK 合规脚本方向反转** — 修正 SDK 许可证在文档中的"MIT 漏网之鱼"。SDK 是 evorule 核心的衍生作品（封装 evorule-server API + 业务语义层 Guard.check），协议必须与核心保持一致。本次 PATCH 不含任何 Rust 源代码改动，生产功能不受影响。
+
+### 🔄 变更
+
+- **`docs/oss_strategy.md` §3 矩阵 + §3.1 + §5 FAQ 修正**：
+  - §3 矩阵：TypeScript SDK / Python SDK 两行 License 由 `MIT` → `AGPL-3.0-or-later`，理由改写为"SDK 是核心衍生作品，协议不能自相矛盾；双轨许可兜底"
+  - §3.1 标题由"为什么 SDK 用 MIT？" → "为什么 SDK 也用 AGPL？"，整段重写：阐述衍生作品调用链逻辑（核心 → server → SDK），并解释双轨兜底（内部集成不对外 SaaS / 政府学术非营利免费豁免 / 企业闭源 SaaS 走商业许可）
+  - §5 FAQ 原"SDK MIT → 不需要开源"→ 3 场景拆分表（内部集成 / SaaS 二选一 / 政府学术免费豁免）
+
+- **`scripts/update-sdk-license.js` 完全重写（方向反转）**：
+  - 头部 SPDX `MIT` → `AGPL-3.0-or-later`
+  - 不再内嵌 AGPL 文本，改为 `fs.readFileSync` 读取仓根 LICENSE 文件复用（保证与核心 100% 一致）
+  - 替换方向反转：原来"匹配旧 AGPL header → 替换为 MIT" → 反转为"匹配旧 MIT header → 替换为 AGPL"
+  - 新增 SDK 目录不存在的防御性检查（早期 v0.x SDK 尚未初始化时跳过而非崩溃）
+  - 所有 `.py` / `.ts` / `.md` 新 SPDX header 统一为 `AGPL-3.0-or-later`
+
+### 🐛 修复
+
+- **修复 `update-sdk-license.js` 在 SDK 目录不存在时崩溃**：原脚本假定 `sdk/python` 和 `sdk/typescript` 目录已存在，直接 `readdirSync` 导致 `ENOENT` 退出码 1。新增 `fs.existsSync` 防御检查，跳过并打印警告（v0.2.x 阶段 SDK 尚未创建是正常状态，脚本应在 SDK 实际落地后再跑批量替换）
+
+### 🔒 安全
+
+- **堵死 MIT SDK 灰色通道**：MIT 时期 Agent 公司可通过 SDK 绕过核心 AGPL 不付费（SDK MIT 不传染 → 客户代码完全自由 → 卖闭源 SaaS 无义务）。SDK 改为 AGPL 后，对外 SaaS 场景必须二选一：开源 SaaS 应用层 或 购买商业许可。内部集成 / 政府学术非营利不受影响（双轨兜底）
+
+---
+
 ## [0.2.1] - 2026-08-05
 
 **v0.2.0 发布后 Kani 验证同步修正** — v0.2.0 发布后发现的 Kani 验证编译错误、文档过时、CI 配置失效等问题在本次 patch 中修复。生产功能不受影响（所有代码修复均被 `#[cfg(kani)]` 门控）。
