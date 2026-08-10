@@ -285,14 +285,7 @@ TCB = while 循环 + InstructionExecutor
 
 **升 1.0.0 的硬条件**(任一不满足 = 继续 0.x):
 
-- 0 warnings
-- E2E 测试
-- API 稳定性承诺
-- Kani 形式化验证(不止 stub)
-- 完整文档(TECHNICAL_MANUAL / USER_GUIDE / API_REFERENCE)
-- 性能基准(PERFORMANCE_BENCHMARK.md)
-- 安全审计(内部 self-audit + 威胁模型 + `cargo audit` 0 高危 + 独立 reviewer)
-- 1 个 reference 实现
+详见 [VERSION_STRATEGY.md §4.2](VERSION_STRATEGY.md#42-升-100-的门)（8 项条件）或 [ROADMAP.md §二](ROADMAP.md#二升-100-的硬条件)。
 
 **为什么诚实**:
 
@@ -310,7 +303,7 @@ TCB = while 循环 + InstructionExecutor
 | "evorule 是 AI Agent 框架" | evorule 是 **确定性执行引擎,零 AI / 零 LLM**。evorule 不调用 LLM,不做 embedding,不"思考"。AI Agent 框架在 `evorule-agent` / `evo-agent` 仓(应用层),它们用 evorule 作底座。              |
 | "evorule 是工作流引擎"     | evorule 是 **反应式执行引擎**。工作流 = 预定义的步骤序列(控制流在业务层);evorule = 由 JSON 规则动态决定的下一步(数据驱动)。区别在于:工作流是"先定好怎么做",evorule 是"运行时算怎么做"。 |
 | "evorule 是数据库"         | evorule 是 **状态机 + 审计链**,不是数据库。FactsLog 是 append-only 事件流,不是关系型存储。需要数据库请在应用层集成。                                                                    |
-| "evorule 是分布式系统"     | evorule 仓本身是**单进程反应器**。多反应器协作原语(`join` / `channel` / `shared_facts_space`)在 v0.2.0 未实现,路线图规划中。                                                            |
+| "evorule 是分布式系统"     | evorule 仓本身是**单进程反应器**。多反应器协作原语(`join` / `channel` / `shared_facts_space`)已从核心仓移除,改到 application 仓实现。                                                            |
 | "evorule 引擎很复杂"       | evorule-tcb 实际核心 1559 行,目标 235 行(6.6× 主要是测试)。`core_eval.json` 是公开宪法,可以读完。**故意保持小**。                                                                       |
 | "evorule 什么都做"         | evorule **故意什么都不做**(除了加减与因果链)。HTTP / SDK / Agent 框架 / 可视化工具 = 在其他仓,不是 evorule。                                                                            |
 
