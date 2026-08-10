@@ -298,7 +298,7 @@
 - **README 定位调整** — 叙事调整为"通用反应式执行引擎"
 - **SDK 不在本仓** — 多语言客户端 SDK 见 evorule-sdk 独立仓
 - **evorule-cli 业务规则模板外移**（2026-07-30）— `evorule-cli/examples/hospital/` + `evorule-cli/examples/law-firm/` 两套行业规则集（HIPAA / 律所合规）共 10 个文件，按 `AGENTS.md` 边界判断表「evorule-cli 加规则模板 = 业务内容，不是机制，放应用层 ❌」迁出本仓；evorule 核心仓 `evorule-cli/examples/` 仅保留机制层最小化演示 README 与 tests/fixtures 用例
-  - 【留痕声明】本次迁移是**经用户明确要求并确认**的越界清理操作，遵循 AGENTS.md 规则二的警告确认流程，不再回迁
+  - 【留痕声明】本次迁移是**经项目方明确决策并确认**的越界清理操作，遵循 AGENTS.md 规则二的警告确认流程，不再回迁
 
 ### 🗑 移除（H5 边界清理）
 

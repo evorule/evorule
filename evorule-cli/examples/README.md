@@ -62,5 +62,5 @@ evorule diff /tmp/facts.jsonl /tmp/facts.jsonl   # 相同 → 空 diff
 ---
 
 > 【留痕声明】本目录中原 hospital/ 与 law-firm/ 业务规则模板（2026-07-30 前存在）
-> 是**经用户明确要求并确认**按 evorule 边界规范迁移出核心仓的越界清理操作，
+> 是**经项目方明确决策并确认**按 evorule 边界规范迁移出核心仓的越界清理操作，
 > 不再回迁（见 AGENTS.md §规则二·记录留痕）。
