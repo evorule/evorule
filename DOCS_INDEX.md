@@ -73,7 +73,6 @@
 | 文档                                                                | 对应版本 | 说明                                                                          |
 | :------------------------------------------------------------------ | :------- | :---------------------------------------------------------------------------- |
 | [RELEASE_PROCESS_v0.1.1.md](docs/release/RELEASE_PROCESS_v0.1.1.md) | 0.1.1    | 5 个 validate-\*.ps1 脚本 + check_doc_safety + 发布前完整检查流程（当前有效） |
-| [RELEASE_PROCESS_v0.1.0.md](docs/release/RELEASE_PROCESS_v0.1.0.md) | 0.1.0    | **[已废弃]** 2026-08-01 被 RELEASE_PROCESS_v0.1.1.md 取代                     |
 
 ### 3.3 基准评估（D2：内部共享，不公开发布）
 
@@ -167,7 +166,7 @@
 | 安全审计报告     | [docs/security/SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md)（0.1.0 首发，evorule 仓独立范围，**当前有效版本**）         | SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（0.1.0 生态全栈版，**[已废弃]** 2026-07-30 旧版）；SECURITY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位，未到承诺期） |
 | 依赖审计报告     | [docs/security/DEPENDENCY_AUDIT_v0.1.0.md](docs/security/DEPENDENCY_AUDIT_v0.1.0.md)（0.1.0 首发，cargo-audit 实跑 0 CVE，**当前有效版本**） | DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（0.1.0 生态全栈版，**[已废弃]** 2026-07-30 旧版）；DEPENDENCY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位）         |
 | 威胁模型         | [docs/security/THREAT_MODEL_v0.1.0.md](docs/security/THREAT_MODEL_v0.1.0.md)（0.1.0 首发，evorule 仓机制层，**当前有效版本**）               | THREAT_MODEL.md（生态全栈版，2026-07-20，**[已废弃]** 2026-07-30 被三份独立文档取代）                                                                   |
-| 发布流程         | [docs/release/RELEASE_PROCESS_v0.1.1.md](docs/release/RELEASE_PROCESS_v0.1.1.md)（0.1.1，当前有效，含 validate-all + check_doc_safety 流程） | [docs/release/RELEASE_PROCESS_v0.1.0.md](docs/release/RELEASE_PROCESS_v0.1.0.md)（0.1.0，**[已废弃]** 2026-08-01 被 RELEASE_PROCESS_v0.1.1.md 取代）    |
+| 发布流程         | [docs/release/RELEASE_PROCESS_v0.1.1.md](docs/release/RELEASE_PROCESS_v0.1.1.md)（0.1.1，当前有效，含 validate-all + check_doc_safety 流程） | RELEASE_PROCESS_v0.1.0.md（0.1.0，**[已废弃]** 2026-08-01 被取代；2026-08-10 因含本地路径泄露从仓库移除，历史保留在 v0.1.0 tag）    |
 
 ---
 
