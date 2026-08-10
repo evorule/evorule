@@ -105,6 +105,30 @@ def extract_pitfalls(md: str) -> list[str]:
     return [item.strip() for item in items]
 
 
+def extract_rule2_trace_template(md: str) -> str | None:
+    """从 AGENTS.md 的规则二第 4 步抽取留痕模板文字。
+
+    用于校验 AGENTS.md 与 schema.json 的留痕措辞是否保持一致,
+    避免单边修改导致已被废弃的旧措辞复发。
+    匹配规则二第 4 步的 "记录留痕" 段,提取引号内的精确文字。
+    """
+    section = re.search(
+        r"###\s*规则二\s*[:：]\s*警告确认流程.*?(?=##\s*硬规则|\Z)",
+        md, re.DOTALL,
+    )
+    if not section:
+        return None
+    # 规则二 4. 记录留痕 行,提取引号内的模板文字
+    m = re.search(
+        r"4\.\s*\*\*记录留痕\*\*\s*[:：].*?[“\"](.+?)[”\"]",
+        section.group(0), re.DOTALL,
+    )
+    if not m:
+        return None
+    # 中文全角引号 / 英文半角引号归一
+    return m.group(1).strip()
+
+
 def extract_all(md: str) -> dict[str, Any]:
     """从 AGENTS.md 抽取所有结构化 section"""
     return {
@@ -113,6 +137,7 @@ def extract_all(md: str) -> dict[str, Any]:
         "boundary_judgments": extract_boundary_table(md),
         "pre_change_checklist": extract_checklist(md),
         "pitfalls": extract_pitfalls(md),
+        "rule2_trace_template": extract_rule2_trace_template(md),
     }
 
 
@@ -202,6 +227,43 @@ def diff_report(extracted: dict[str, Any], schema: dict[str, Any]) -> list[str]:
         diffs.append(
             f"pre_change_checklist.questions: AGENTS.md 有 {md_checklist_count} 条, "
             f"schema.json 有 {schema_checklist_count} 条. 数量不一致, 需要重新抽取."
+        )
+
+    # rule2 trace template 对比 (文字级, 防止单边修改导致 AI 措辞复发)
+    md_template = extracted.get("rule2_trace_template")
+    schema_template: str | None = None
+    try:
+        for rule in schema.get("agent_protocol", {}).get("rules", []):
+            if rule.get("id") == "warning_confirmation_flow":
+                for step in rule.get("steps", []):
+                    if step.get("name") == "记录留痕" or step.get("step") == 4:
+                        raw_action = step.get("action", "")
+                        # 从 schema 的 action 描述中去掉前缀 "在相关变更中说明 "
+                        # 以及外层引号,仅保留模板文字本体
+                        m = re.search(r"[“\"'](.+?)[”\"']", raw_action)
+                        if m:
+                            schema_template = m.group(1).strip()
+                        break
+                break
+    except (KeyError, IndexError, TypeError):
+        schema_template = None
+
+    if md_template and schema_template and md_template != schema_template:
+        diffs.append(
+            "agent_protocol.rules[warning_confirmation_flow].steps[记录留痕].action: "
+            "AGENTS.md 与 schema.json 的留痕模板文字不一致 (单边修改会导致 AI 措辞复发).\n"
+            f"    AGENTS.md : {md_template!r}\n"
+            f"    schema.json: {schema_template!r}"
+        )
+    elif md_template and not schema_template:
+        diffs.append(
+            "agent_protocol.rules[warning_confirmation_flow].steps[记录留痕].action: "
+            "AGENTS.md 能抽出留痕模板, 但 schema.json 找不到对应字段, 请确认结构."
+        )
+    elif schema_template and not md_template:
+        diffs.append(
+            "agent_protocol.rules[warning_confirmation_flow].steps[记录留痕]: "
+            "schema.json 有留痕模板, 但 AGENTS.md 解析失败, 请检查 md 格式."
         )
 
     return diffs

@@ -1,4 +1,4 @@
-﻿# Copyright 2026 EvoRule Project
+# Copyright 2026 EvoRule Project
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
@@ -16,7 +16,7 @@
   - The hospital / law-firm JSON rule sets are INDUSTRY-SPECIFIC BUSINESS CONTENT
     and therefore belong in evorule-application, never in the framework core.
   - This script is the companion tool for the 2026-07-30 boundary-cleanup action
-    (performed after EXPLICIT USER CONFIRMATION per AGENTS.md Rule 2).
+    (performed after EXPLICIT PROJECT-SIDE CONFIRMATION per AGENTS.md Rule 2).
 
   Recommended usage: COPY this script into evorule-application/scripts/ and run it
   from there.  Alternatively, run it directly from the evorule core repo and pass
@@ -70,7 +70,7 @@
 
 .NOTES
   [Rule-2 audit trail] This migration is a boundary-cleanup action performed
-  AFTER EXPLICIT USER CONFIRMATION.  Corresponding trace documents live in
+  AFTER EXPLICIT PROJECT-SIDE CONFIRMATION.  Corresponding trace documents live in
   the evorule core repo:
     - CHANGELOG.md v0.1.0 section "走神 9 拆分（机制-应用边界清理）"
     - evorule-cli/README.md top banner "业务规则模板位置说明（边界合规 · 2026-07-30）"
@@ -259,15 +259,16 @@ $MetaContent = @"
 
 ## AGENTS.md Rule 2 (Warning + Confirmation)
 
-Before performing this migration the following warnings were communicated to the
-user AND explicitly confirmed by the user (2026-07-30 decision):
+Before performing this migration the Rule-2 warning-and-confirmation flow was
+completed and the decision was explicitly confirmed by the project side
+(2026-07-30 decision):
 - WARNING: This violates the evorule core "mechanism-only" purity rule.
 - WARNING: Negative consequences
     1) Breaks core purity, future refactor cost rises.
     2) Blurs the mechanism vs. strategy boundary, maintenance complexity grows.
     3) Business-rule changes would otherwise drag the core release cadence.
     4) Duplicates / overlaps with the solution set in evorule-application.
-- EXPLICIT USER CONFIRMATION: YES (2026-07-30, decision text: "业务规则迁移").
+- EXPLICIT PROJECT-SIDE CONFIRMATION: YES (2026-07-30, decision text: "业务规则迁移").
 - [x] Rule-2 "record and retain trail" — this file is the retained trail.
 
 ## Maintenance guidelines (going forward)
