@@ -50,7 +50,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 > | Kani 验证（tier0 12 proof + tier1 11 proof） | ✅                      |
 > | musl static CLI（x86_64 + aarch64）          | ✅                      |
 > | API 版本化（`/api/v1/`）                     | ❌ **1.0 之前不承诺**   |
-> | 多反应器协作原语（join/channel/shared）      | ❌ **路线图规划**       |
+> | 多反应器协作原语（join/channel/shared）      | ❌ **已移至 application 仓** |
 > | 第三方安全审计                               | ❌ **不做**（1.0 之前） |
 >
 > **诚实记账**:见 [CHANGELOG.md](CHANGELOG.md)
@@ -136,7 +136,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 | ⛓ **JSON 因果链**      | 每个 JSON 状态变化都有 `cause` 指向父 JSON                                                               |
 | ⏪ **JSON 时间机器**   | `replay` / `rewind` / `fork` / `diff` — 任何 JSON 历史点都能重活                                         |
 | 🐛 **调试器级控制**    | `pause` / `step` / `resume` / `break` — 像 GDB 一样调试执行（**应用层实现**，见 evorule-application 仓） |
-| 🔗 **多反应器协作**    | `join` / `channel` / `shared_facts_space` — 构建分布式反应式系统（**路线图规划**，0.2.0 未实现）         |
+| 🔗 **多反应器协作**    | `join` / `channel` / `shared_facts_space` — 构建分布式反应式系统（**已从核心仓移除**，改到 application 仓实现）         |
 | ✅ **Kani 形式化验证** | JSON 状态机核心不变式被 Kani 证明，而非靠 review                                                         |
 | ✅ **TLA+ 状态机验证** | JSON 状态机控制流性质被 TLA+ TLC 证明（[验证报告](evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)）          |
 | 🧱 **三层架构**        | tier0 = JSON 状态机 / tier1 = JSON 事件循环 / tier2 = 治理机制（HTTP API 在应用层）                      |
@@ -685,7 +685,7 @@ evorule-reactor 11 个 proof（都是为"反应器不变式正确"服务）:
 
 ## 已知限制 & 路线图
 
-### 0.2.0 限制
+### 当前版本（v0.2.x）限制
 
 - 🟡 Kani 验证：tier0 12 proof（9 PASS + 3 TIMEOUT，`evaluate_domain` 系列由 proptest 保底）+ tier1 11 proof（10 PASS + 1 TIMEOUT，`invariant_io_count_force_remove` 超时）
 - ⚠️ 无 hot reload（业务规则重启后生效，后续版本加入）
@@ -693,14 +693,7 @@ evorule-reactor 11 个 proof（都是为"反应器不变式正确"服务）:
 
 ### 路线图
 
-> 不承诺时间。方向性规划，实际能力以 [CHANGELOG](CHANGELOG.md) 为准。
-
-| 版本  | 方向                                                                   |
-| ----- | ---------------------------------------------------------------------- |
-| 0.2.0 | 时间机器机制增强、协作原语                                             |
-| 0.4.0 | Raft 共识 + 共享账本 + 分布式确定性                                    |
-| 0.5.0 | WAL 批量写入 + 对象池 + 万级会话并发                                   |
-| 1.0.0 | 生产就绪（升 1.0 条件见 [VERSION_STRATEGY](VERSION_STRATEGY.md) §4.2） |
+> 完整路线图（版本方向 / 升 1.0 条件 / 形式化验证阶段 / 功能规划 / 治理过渡 / 许可证变更）见 [ROADMAP.md](ROADMAP.md)。
 
 ---
 
