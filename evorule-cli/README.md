@@ -8,7 +8,7 @@
 
 # `evorule` CLI
 
-[![版本 v0.2.1](https://img.shields.io/badge/version-v0.2.1-blue)](../Cargo.toml)
+[![版本 v0.2.2](https://img.shields.io/badge/version-v0.2.2-blue)](../Cargo.toml)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-green)](../LICENSE)
 [![文档索引 DOCS_INDEX](https://img.shields.io/badge/docs-DOCS_INDEX-8A2BE2)](../DOCS_INDEX.md)
 
@@ -45,8 +45,8 @@
 
 ```bash
 # 1) 下载(根据 CPU 架构选)
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.1/evorule-x86_64
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.1/evorule-aarch64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.2/evorule-x86_64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.2/evorule-aarch64
 
 # 2) 验证(可选,确认下载完整)
 sha256sum -c evorule-x86_64.sha256
@@ -444,14 +444,14 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 ```bash
 # Linux x86_64 圈 2 用户
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.1/evorule-x86_64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.2/evorule-x86_64
 chmod +x evorule-x86_64
 ./evorule-x86_64 validate /etc/company-rules/
 ./evorule-x86_64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 ./evorule-x86_64 verify-chain /var/log/evorule-fact.log
 
 # Linux aarch64 圈 2 用户 (AWS Graviton / RPi)
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.1/evorule-aarch64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.2/evorule-aarch64
 chmod +x evorule-aarch64
 ./evorule-aarch64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 ```

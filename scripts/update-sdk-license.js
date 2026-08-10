@@ -1,5 +1,7 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // 批量更新 SDK 的 SPDX header 和 LICENSE
+// —— SDK 是 evorule 核心的衍生作品，协议与核心保持一致 AGPL-3.0-or-later
+//    详见 docs/oss_strategy.md §3 §3.1
 
 const fs = require('fs');
 const path = require('path');
@@ -9,40 +11,27 @@ const sdkRoots = [
     path.join(__dirname, '..', 'sdk', 'typescript'),
 ];
 
-const mitLicenseText = `MIT License
+// 不内嵌 AGPL 完整文本，直接读取仓根 LICENSE（与核心仓保持 100% 一致）
+const agplLicenseText = fs.readFileSync(
+    path.join(__dirname, '..', 'LICENSE'),
+    'utf8'
+);
 
-Copyright (c) 2026 EvoRule Project
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-`;
-
-// MD 文件的新 SPDX header（MIT 版）
-const mitMdHeader = `<!--
+// MD 文件的新 SPDX header（AGPL 版）
+const agplMdHeader = `<!--
   Copyright 2026 EvoRule Project
 
-  SPDX-License-Identifier: MIT
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This file is part of EvoRule, licensed under the GNU Affero General
+  Public License v3.0 or later. See /LICENSE in the repository root or
+  <https://www.gnu.org/licenses/agpl-3.0.html>.
 -->
 
 `;
 
-// MD 文件的旧 SPDX header（AGPL 版）- 匹配整个 HTML 注释块（包含完整 AGPL 文本）
-const agplMdHeaderPattern = /^<!--\s*\n[\s\S]*?SPDX-License-Identifier:\s*AGPL-[^\n]*\s*\n-->\n*/;
+// MD 文件的旧 SPDX header（MIT 版）- 匹配整个 HTML 注释块（包含完整 MIT 文本）
+const mitMdHeaderPattern = /^<!--\s*\n[\s\S]*?SPDX-License-Identifier:\s*MIT[^\n]*\s*\n-->\n*/;
 
 // Python 文件的 SPDX header
 const pySpdxPattern = /^#\s*SPDX-License-Identifier:[^\n]*\n/;
@@ -56,21 +45,23 @@ function processFile(filePath) {
     const originalContent = content;
 
     if (ext === '.md') {
-        // 替换 AGPL SPDX header 为 MIT
-        if (agplMdHeaderPattern.test(content)) {
-            content = content.replace(agplMdHeaderPattern, mitMdHeader);
+        // 替换 MIT SPDX header 为 AGPL
+        if (mitMdHeaderPattern.test(content)) {
+            content = content.replace(mitMdHeaderPattern, agplMdHeader);
         }
     } else if (ext === '.py') {
+        const newHeader = '# SPDX-License-Identifier: AGPL-3.0-or-later\n';
         if (pySpdxPattern.test(content)) {
-            content = content.replace(pySpdxPattern, '# SPDX-License-Identifier: MIT\n');
+            content = content.replace(pySpdxPattern, newHeader);
         } else {
-            content = '# SPDX-License-Identifier: MIT\n' + content;
+            content = newHeader + content;
         }
     } else if (ext === '.ts') {
+        const newHeader = '// SPDX-License-Identifier: AGPL-3.0-or-later\n';
         if (tsSpdxPattern.test(content)) {
-            content = content.replace(tsSpdxPattern, '// SPDX-License-Identifier: MIT\n');
+            content = content.replace(tsSpdxPattern, newHeader);
         } else {
-            content = '// SPDX-License-Identifier: MIT\n' + content;
+            content = newHeader + content;
         }
     }
 
@@ -102,12 +93,20 @@ for (const sdkRoot of sdkRoots) {
     const sdkName = path.basename(sdkRoot);
     console.log(`\n📦 处理: sdk/${sdkName}`);
 
-    // 1. 替换 LICENSE 文件
+    // SDK 目录可能还没创建（v0.x 早期版本常见），跳过而非崩溃
+    if (!fs.existsSync(sdkRoot)) {
+        console.log(`  ⚠️  跳过: 目录不存在（SDK 尚未初始化, 创建后再运行本脚本即可）。路径: ${sdkRoot}`);
+        continue;
+    }
+
+    // 1. 替换 LICENSE 文件（直接复用仓根 LICENSE，保证与核心一致）
     const licensePath = path.join(sdkRoot, 'LICENSE');
     if (fs.existsSync(licensePath)) {
-        fs.writeFileSync(licensePath, mitLicenseText, 'utf8');
-        console.log(`  ✅ LICENSE → MIT`);
+        fs.writeFileSync(licensePath, agplLicenseText, 'utf8');
+        console.log(`  ✅ LICENSE → AGPL-3.0-or-later (复用仓根 LICENSE)`);
         totalChanged++;
+    } else {
+        console.log(`  ℹ️  SDK 根目录暂无 LICENSE 文件，跳过写入。`);
     }
 
     // 2. 批量更新 SPDX header

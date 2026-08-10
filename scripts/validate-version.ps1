@@ -171,6 +171,12 @@ if ($canonicalVersion -and $canonicalVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
     # 匹配 v\d+\.\d+\.\d+ 但排除文件名引用(如 SECURITY_AUDIT_v0.1.0.md 中的 _v0.1.0)
     # 负向后行断言: v 前面不能是字母或下划线(否则是文件名/标识符的一部分)
     $versionLiteralPattern = '(?<![a-zA-Z_])v(\d+\.\d+\.\d+)\b'
+    # === v0.2.2 引入: 历史性引用白名单 ===
+    # 1) 文件名匹配 MIGRATION_v*.md / RELEASE_PROCESS_v*.md → 整个文件跳过(文档本身讲特定版本迁移/发布流程)
+    # 2) 文档版本表行 → 行内匹配 "基于 evorule-core-backup" 或 "| X.Y | YYYY-MM-DD |" 表格行格式
+    # 3) 历史性描述行 → 行内同时含 v\d.\d.\d 和以下关键词之一: 重构/下沉/已移除/未实现/迁移/达标条件/边界再调整/从 governance/已废弃/已发布/迁移指南/破坏性变更/路线图规划
+    $docVersionTableRowPattern = '\|\s*\d+\.\d+\s*\|\s*\d{4}-\d{2}-\d{2}\s*\|'
+    $historyKeywordPattern = '重构|下沉|已移除|未实现|迁移|达标条件|边界再调整|从 governance|已废弃|已发布|迁移指南|破坏性变更|路线图规划|初版|自\s*v\d+\.\d+\.\d+\s*起'
     $scanFailed = $false
     foreach ($f in $l1Files) {
         $relName = $f.FullName.Substring($evoruleRoot.Length + 1)
@@ -183,7 +189,11 @@ if ($canonicalVersion -and $canonicalVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
         # 审计/威胁模型文档跳过(版本绑定审计批次)
         # SECURITY.md 含版本支持表(历史边界声明如 < v0.1.0-alpha.1,合法)
         if ($relName -match 'AUDIT|THREAT_MODEL|^SECURITY\.md$') { continue }
+        # === v0.2.2 新增:迁移指南/发布流程文档 → 整文件跳过 ===
+        # MIGRATION_v0.2.0.md 讲 v0.1.x → v0.2.0 迁移, RELEASE_PROCESS_v0.1.1.md 讲 v0.2.0 发布流程示例
+        if ($relName -match 'MIGRATION_v\d+\.\d+\.\d+\.md$|RELEASE_PROCESS_v\d+\.\d+\.\d+\.md$') { continue }
 
+        $lines = $content -split "`r?`n"
         $seen = @{}
         foreach ($m in [regex]::Matches($content, $versionLiteralPattern)) {
             $ver = $m.Groups[1].Value
@@ -200,6 +210,19 @@ if ($canonicalVersion -and $canonicalVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
                             ($fm -eq $cm -and $fn -eq $cn -and $fp -gt $cp)
                 if ($isFuture) { continue }
             }
+            # === v0.2.2 新增:历史性引用白名单(按行上下文判断) ===
+            # 定位匹配所在行,检查该行是否为文档版本表行或历史性描述行
+            $matchStart = $m.Index
+            $lineStart = $content.LastIndexOf("`n", $matchStart)
+            if ($lineStart -lt 0) { $lineStart = 0 } else { $lineStart++ }
+            $lineEnd = $content.IndexOf("`n", $matchStart)
+            if ($lineEnd -lt 0) { $lineEnd = $content.Length }
+            $lineText = $content.Substring($lineStart, $lineEnd - $lineStart)
+            # 文档版本表行: "| 1.0 | 2026-07-19 | 初版,基于 evorule-core-backup v0.2.0-beta ..."
+            if ($lineText -match $docVersionTableRowPattern -or $lineText -match '基于 evorule-core-backup') { continue }
+            # 历史性描述行: 同行同时含 v0.2.X 和历史关键词
+            if ($lineText -match $historyKeywordPattern) { continue }
+
             Write-Host "[FAIL] $relName contains 'v$ver' (expected v$canonicalVersion or future version)" -ForegroundColor Red
             $failed = $true; $scanFailed = $true
         }

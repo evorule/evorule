@@ -128,3 +128,8 @@ scripts/__*.ps1
 scripts/__*.sh
 scripts/_*.ps1
 scripts/_*.sh
+
+# === 2026-08-10 发布前盘点: 根目录预编译二进制（musl 静态产物，应走 Release 资产而非 git history） ===
+# 这两个文件是 evorule CLI 的 Linux musl 静态二进制，不应 commit 进 git
+/evorule-aarch64
+/evorule-x86_64
