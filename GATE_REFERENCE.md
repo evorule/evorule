@@ -91,7 +91,7 @@
 
 **有意重复**: tier1/tier2 用同一组 14 模式, 保证两个反应器/治理层不会走偏。
 
-### 2.4 evorule-cli — 6 模式 (G8 + F11)
+### 2.4 evorule-cli — 7 模式 (G8 + F11)
 
 实施文件: `D:\evorule\evorule-cli\build.rs`
 
@@ -281,11 +281,15 @@ src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allo
 **Tier 0** (6):
 - `evorule-tcb/src/value.rs`, `transition.rs`, `path.rs`, `executor.rs`, `error.rs`, `domain.rs`
 
-**Tier 1** (16):
-- `evorule-reactor/src/wal.rs`, `time_machine.rs`, `state.rs`, `stable_detector.rs`, `io_timeout_policy.rs`, `debug_control.rs`, `invariants.rs`, `channel.rs`, `metrics.rs`, `fact.rs`, `rule_validator.rs`, `rule_safety.rs`, `semantic_invariants.rs`, `pure.rs`, `reactor.rs`, `facts_log.rs`
+**Tier 1** (13):
+- `evorule-reactor/src/wal.rs`, `state.rs`, `stable_detector.rs`, `invariants.rs`, `channel.rs`, `fact.rs`, `pure.rs`, `reactor.rs`, `facts_log.rs`, `ffi.rs`, `hash.rs`, `io_dispatcher.rs`, `phase.rs`
 
-**Tier 2** (11):
-- `evorule-governance/src/shared_facts_log.rs`, `metrics.rs`, `object_pool.rs`, `auditor.rs`, `cluster.rs`, `hash.rs`, `io_subscriber.rs`, `api/auth.rs`, `api/session.rs`, `api/server.rs`, `api/hot_reload.rs`, `io_handlers/{http,memory}_handler.rs`
+> 注：v0.2.0 重构移除了 `time_machine.rs` / `io_timeout_policy.rs` / `debug_control.rs` / `metrics.rs` / `rule_validator.rs` / `rule_safety.rs` / `semantic_invariants.rs`（机制层精简，对应能力下沉或删除）。
+
+**Tier 2** (8):
+- `evorule-governance/src/shared_facts_log.rs`, `metrics.rs`, `auditor.rs`, `hash.rs`, `io_subscriber.rs`, `rule_validation.rs`, `session.rs`, `time_machine.rs`
+
+> 注：H5 + 走神 9 外迁后，`object_pool.rs` / `cluster.rs` / `api/{auth,session,server,hot_reload}.rs` / `io_handlers/{http,memory}_handler.rs` / `bin/evorule_server.rs` 均已迁出 evorule-governance（现位于 evorule-server 独立仓）；evorule-governance 现为纯机制层库。
 
 ### 6.3 src/ 函数级 cognitive_complexity / too_many_lines 豁免 (12 处)
 
@@ -322,6 +326,6 @@ src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allo
 - `evorule-tcb/build.rs` (L1 字面量门禁, 23 模式)
 - `evorule-reactor/build.rs` (L1 字面量门禁, 14 模式)
 - `evorule-governance/build.rs` (L1 字面量门禁, 14 模式, 跟 tier1 相同)
-- `evorule-cli/build.rs` (L1 字面量门禁, 8 模式)
+- `evorule-cli/build.rs` (L1 字面量门禁, 7 模式)
 - `Cargo.toml` (根 `[workspace.lints]` 集中配置)
 - `{evorule-tcb,evorule-reactor,evorule-governance,evorule-cli}/Cargo.toml` (各 crate `[lints] workspace = true`)

@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 EvoRule Project
 # This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+
+# §二 #8 修复：根 Cargo.toml exclude 了本目录，但 Cargo 仍会向上查找 workspace。
+# 显式声明空 workspace 表，使本目录成为独立 workspace，避免 "believes it's in a workspace" 错误。
+[workspace]
+
 [package]
 name = "reactive_researcher"
 version = "0.2.1"

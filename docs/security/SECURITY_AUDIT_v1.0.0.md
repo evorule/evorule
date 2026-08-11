@@ -586,7 +586,7 @@ evorule-tcb 的 `build.rs` 实现 14 条 redline 门控(T1-T14):
 | 真实 LLM handler          | ✅ 已实现                                                                                                                     | ✅    | -                               |
 | 真实 tool handler         | ✅ 已实现                                                                                                                     | ✅    | -                               |
 | 0 warnings                | ✅ 0 警告(`cargo check --workspace`,2026-07-25)                                                                               | ✅    | -                               |
-| E2E 测试                  | ✅ 731 passed + 4 ignored(2026-07-25)                                                                                         | ✅    | -                               |
+| E2E 测试                  | ✅ 664 passed + 4 ignored(2026-07-25)                                                                                         | ✅    | -                               |
 | API 稳定性承诺            | 🟡 1.0.0 tag 时锁定 API;CHANGELOG 写"为什么 stable"                                                                           | 🟡    | T2-5                            |
 | **形式化验证(不止 stub)** | ✅ tier0 Kani 4/5 + TLA+ 5 不变式 + proptest 26 + build.rs 14(Phase 1 完成,2026-07-25)                                        | ✅    | -                               |
 | 完整文档                  | 🟡 形式化验证白皮书 v0.4.0 ✅;TECHNICAL_MANUAL ❌                                                                             | 🟡    | 待补                            |

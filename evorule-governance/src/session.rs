@@ -1230,7 +1230,7 @@ mod tests {
                 Ok(g) => g,
                 Err(e) => e.into_inner(),
             };
-            for (id, _) in shard_guard.iter() {
+            for id in shard_guard.keys() {
                 let idx = *id as usize % 4;
                 counts[idx] += 1;
             }

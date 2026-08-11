@@ -45,8 +45,8 @@
 
 ```bash
 # 1) 下载(根据 CPU 架构选)
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.2/evorule-x86_64
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.2/evorule-aarch64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.1/evorule-x86_64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.1/evorule-aarch64
 
 # 2) 验证(可选,确认下载完整)
 sha256sum -c evorule-x86_64.sha256
@@ -444,14 +444,14 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 ```bash
 # Linux x86_64 圈 2 用户
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.2/evorule-x86_64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.1/evorule-x86_64
 chmod +x evorule-x86_64
 ./evorule-x86_64 validate /etc/company-rules/
 ./evorule-x86_64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 ./evorule-x86_64 verify-chain /var/log/evorule-fact.log
 
 # Linux aarch64 圈 2 用户 (AWS Graviton / RPi)
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.2/evorule-aarch64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.1/evorule-aarch64
 chmod +x evorule-aarch64
 ./evorule-aarch64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 ```
@@ -510,29 +510,6 @@ ok 28  - verify-chain on hospital log (complex facts) exits 0
 sudo apt install qemu-user-static
 bash tests/e2e.sh .build/rust/aarch64-unknown-linux-musl/release/evorule
 ```
-
----
-
-## 示例规则(给圈 2 用户开箱即用)
-
-`examples/` 下放了两套真实场景的合规规则,每套都包含规则文件、示例 payload、README:
-
-| 目录                                       | 适用对象            | 法规对应                              |
-| ------------------------------------------ | ------------------- | ------------------------------------- |
-| [`examples/hospital/`](examples/hospital/) | 医院信息科 / 病案室 | HIPAA / 等保 2.0 / 《个人信息保护法》 |
-| [`examples/law-firm/`](examples/law-firm/) | 律所合规部          | 律师执业规范 / 客户保密 / GDPR Art.30 |
-
-每套 3 条核心规则(覆盖 访问审计 / 权限检查 / 隐私脱敏),复制整个目录到 `/etc/your-rules/` 即可落地。
-
-**30 秒试用**:
-
-```bash
-cd examples/hospital/
-evorule validate ./rules/
-evorule run ./rules/ --payload-file payload.example.json
-```
-
-详细说明 + 监管对话脚本见 `examples/README.md`。
 
 ---
 

@@ -17,40 +17,10 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# EvoRule — 声明
+# EvoRule TCB — 声明
 
-**版权所有 (c) 2026 EvoRule Project**
+本 crate（`evorule-tcb`）是 EvoRule 项目的一部分。
 
-本项目包含由 EvoRule Project 开发的软件。
+**完整项目声明（版权 / 协议分离 / 设计原则 / 联系信息）见根目录 [NOTICE.md](../NOTICE.md)。**
 
-## 协议分离
-
-| 资产 | 协议 | 说明 |
-|---|---|---|
-| **代码** | AGPL-3.0-or-later | 详见 [LICENSE](LICENSE) |
-| **`core_eval.json`** | **CC0 1.0 公共领域** | EvoRule 宪法(解释器规范)—— 任何人都可以自由实现兼容的 EvoRule 引擎,无需保留版权声明 |
-
-**协议分离的战略意义**:
-
-- 代码(copyleft,AGPL-3.0):保护 EvoRule 当前实现,阻止大厂"白嫖 fork 后卖闭源 SaaS"
-- 宪法(public domain,CC0-1.0):鼓励广泛采用,任何人都可以基于宪法实现兼容引擎
-- 这把"标准"和"实现"分开,类似 HTTP 规范(W3C 公共)vs Apache HTTP Server(版权)
-
-## 设计原则
-
-EvoRule 的核心设计原则:
-
-- 规则即数据(可读、可审计、可序列化)
-- 自解释引擎(解释器本身也是可被审计的规则)
-- 完全可追溯(每次状态变化留下因果链)
-- 零隐藏逻辑(解释器可读 + 可审计)
-- 不可变状态(基于不可变数据结构)
-- 确定性执行(相同输入 = 永远相同输出)
-
-## 联系信息
-
-- **项目**: EvoRule — 反应式执行引擎
-- **作者**: EvoRule Project
-- **邮箱**: <evorulelab@gmail.com>
-- **组织**: [EvoRule Lab](https://gitee.com/evo-rule-lab)
-- **Gitee**: <https://gitee.com/evo-rule-lab/evorule>
+为避免多份 NOTICE 维护漂移，本文件不再重复完整声明内容；任何版权或协议疑问以根 [NOTICE.md](../NOTICE.md) 为准。
