@@ -13,6 +13,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.2 - 2026-08-10
+
+**与 evorule-tcb / evorule-reactor / evorule-governance v0.2.2 同步** — 协议文档修正 + SDK 合规脚本方向反转（核心仓层面）。CLI 无源代码改动（仅版本同步 bump + 依赖版本号对齐 + README 版本 badge 更新）。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.2.2]` 段。
+
+### 🔄 变更
+
+- 版本同步 bump 至 0.2.2
+- `Cargo.toml` 依赖版本对齐：`evorule-tcb` / `evorule-reactor` 由 `0.2.1` → `0.2.2`
+- README 版本 badge 更新（v0.2.1 → v0.2.2）
+- README 下载链接回退至 v0.2.1（v0.2.2 未在 Gitee 发布二进制 release，下载指向最近一个有 release 的版本）
+
+### 向后兼容
+
+- ✅ CLI 行为不变
+- ✅ fact log 格式不变
+
+---
+
 ## v0.2.1 - 2026-08-05
 
 **与 evorule-tcb / evorule-reactor / evorule-governance v0.2.1 同步** — v0.2.0 发布后 Kani 验证同步修正。CLI 无代码改动（仅版本同步 bump + verify.sh 重命名）。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.2.1]` 段。

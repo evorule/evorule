@@ -114,7 +114,7 @@ TCB 的全部"智能"是一个 while 循环：反复应用 `core.eval` 规则，
 | :------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------- |
 | Kani     | 12 proof (value_roundtrip / path_no_panic / set_integer_safety / set_sub_safety / jsonvalue_array_safety / resolve_path_object_kani / evaluate_domain_eq / evaluate_domain_lt / evaluate_domain_exists / execute_transition / termination / depth_enforcement) | 9 PASS + 3 TIMEOUT |
 | proptest | 19 个属性测试 (覆盖所有 panic-prone 路径)                                                                                                                                                                                                                      | 全 PASS            |
-| TLA+     | execute_transition 状态机                                                                                                                                                                                                                                      | 1.x 路线 (待实施)  |
+| TLA+     | execute_transition 状态机                                                                                                                                                                                                                                      | 已实跑 PASS 2026-07-25 |
 
 > **Kani 验证明细**（Kani 0.67.0, WSL Ubuntu 22.04）：
 >

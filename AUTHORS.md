@@ -29,7 +29,7 @@ EvoRule 项目旨在构建一个**只接受和运行 JSON 数据集**的反应�
   角色:创始人、架构设计、`core_eval.json`(宪法)作者、全栈实现
   邮箱:<evorulelab@gmail.com>
 
-> 截至目前(2026-07-25),Mr. DAMU ZHENG 是 EvoRule 项目的**唯一作者**。
+> 截至目前(2026-08-10),Mr. DAMU ZHENG 是 EvoRule 项目的**唯一作者**。
 > 项目所有代码、文档、规则、设计决策均由其独立完成。
 
 ## 设计原则
