@@ -66,7 +66,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 ---
 
-<img src="assets/banner.svg" alt="EvoRule Banner" width="100%">
+<img src="assets/banner.png" alt="EvoRule Banner" width="100%">
 
 ---
 
