@@ -170,7 +170,9 @@ if ($canonicalVersion -and $canonicalVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
 
     # 匹配 v\d+\.\d+\.\d+ 但排除文件名引用(如 SECURITY_AUDIT_v0.1.0.md 中的 _v0.1.0)
     # 负向后行断言: v 前面不能是字母或下划线(否则是文件名/标识符的一部分)
-    $versionLiteralPattern = '(?<![a-zA-Z_])v(\d+\.\d+\.\d+)\b'
+    # v1.9 补盲区:除 v 前缀(v0.2.2)外,也匹配无 v 前缀的 version = "X.Y.Z" 写法
+    # (如 DOCS_INDEX 的 `version = "0.2.0"`),避免此类"写死版本号"逃过门禁
+    $versionLiteralPattern = '(?<![a-zA-Z_])v(\d+\.\d+\.\d+)\b|version\s*=\s*"(\d+\.\d+\.\d+)"'
     # === v0.2.2 引入: 历史性引用白名单 ===
     # 1) 文件名匹配 MIGRATION_v*.md / RELEASE_PROCESS_v*.md → 整个文件跳过(文档本身讲特定版本迁移/发布流程)
     # 2) 文档版本表行 → 行内匹配 "基于 evorule-core-backup" 或 "| X.Y | YYYY-MM-DD |" 表格行格式
@@ -196,7 +198,9 @@ if ($canonicalVersion -and $canonicalVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
         $lines = $content -split "`r?`n"
         $seen = @{}
         foreach ($m in [regex]::Matches($content, $versionLiteralPattern)) {
+            # v1.9:交替模式两组捕获(v 前缀 / version="X.Y.Z"),取非空者
             $ver = $m.Groups[1].Value
+            if (-not $ver) { $ver = $m.Groups[2].Value }
             if ($seen.ContainsKey($ver)) { continue }
             $seen[$ver] = $true
             if ($ver -eq $canonicalVersion) { continue }

@@ -45,8 +45,11 @@ PRIVATE_LEAK_PATTERNS = [
 ]
 
 # ---------------------------------------------------------------------------
-# R-兄弟仓零谈论：L1 公开文档禁止谈论兄弟仓内部结构/状态/路径/运行方式/发布情况
-# 基调：各仓独立发布,只管自己仓真实情况。最多说明依赖哪个仓哪个版本,其他不多说一句。
+# R-兄弟仓引用合规：L1 公开文档禁止谈论兄弟仓"未核实/规划态"的内容；
+# 允许引用兄弟仓"已核实/已实现"的功能模块或现状。
+# 基调：各仓独立发布,只管自己仓真实情况。可以引用兄弟仓已实现的部分（须经项目方核实为真实存在），
+#       但禁止谈论未实现/规划态/详细内部路径等未核实表述。
+# 判定优先级：未核实/规划态 → 违规；已实现引用 或 依赖声明 → 放行；谈论内部 → 违规；其他提及 → 报告需 review。
 # ---------------------------------------------------------------------------
 # 兄弟仓名（仅真正的外部兄弟仓；本仓子 crate evorule-tcb/reactor/governance/cli 不算兄弟仓,
 # 它们是本仓内部,谈论其内部属于"自己仓真实情况"）
@@ -73,6 +76,20 @@ SIBLING_INTERNAL_DISCUSSION_HINTS = re.compile(
     r'已迁|迁至|迁移到|拆分|拆出|外迁|'
     r'CI|workflow|发布情况|已发布|未发布|'
     r'bin|二进制|crate\b)'
+)
+# v1.x 调整：允许引用"已核实的兄弟仓实现"（现状/已实现的功能模块），
+# 仅禁止谈论未核实 / 规划态 / 未实现状态的表述。核心仍是"引用须已核实"。
+# 已实现引用特征 → 放行（未实现/将实现/待实现由 SIBLING_UNVERIFIED_HINTS 先行拦截）
+SIBLING_IMPLEMENTATION_REFERENCE_HINTS = re.compile(
+    r'(由\s*\S*\s*仓|'          # "由 [X 仓] ..."
+    r'\S*\s*实现|'             # "... 实现"（描述已实现功能）
+    r'(?:现)?位于\s*\S*\s*仓|' # "现位于/位于 X 仓"
+    r'已迁出|已外迁|已发布|已实现)'
+)
+# 未核实 / 规划态特征 → 违规（即使同时带"实现/位于"字样）
+SIBLING_UNVERIFIED_HINTS = re.compile(
+    r'(将实现|未实现|待实现|待实施|计划|规划|待定|拟|'
+    r'即将|未来|将来|后续版本|路线图|planned|roadmap|tbd|todo)'
 )
 
 # ---------------------------------------------------------------------------
@@ -105,6 +122,7 @@ AGENT_PRODUCT_HINTS = re.compile(
     r'构建\s*agent|agent\s*demo|agent\s*示例|'
     r'research\s*agent|reactive\s*agent|'
     r'agent\s*层|agent\s*系统|多\s*agent|'
+    r'给\s*LLM\s*精灵|'  # 产品/文学表达:LLM 作为受众(如"给 LLM 精灵一个确定性落点"),非 AI 协作身份泄露
     r'evo-agent)'  # evo-agent 是仓名,由 R-兄弟仓 管,这里放行避免双重报告
 )
 
@@ -245,15 +263,17 @@ def check_l1_mentions_l2l3(docs: List[Path], root: Path) -> List[Tuple[Path, int
 
 
 # ---------------------------------------------------------------------------
-# R-兄弟仓零谈论：L1 公开文档禁止谈论兄弟仓内部结构/状态/路径/运行方式
+# R-兄弟仓引用合规：L1 公开文档禁止谈论未核实/规划态的兄弟仓内容,允许引用已核实实现
 # ---------------------------------------------------------------------------
 
 def check_sibling_mention(docs: List[Path], root: Path) -> List[Tuple[Path, int, str, str]]:
     """返回 [(path, lineno, repo_name, snippet)]
-    规则:
+    规则(v1.x 调整,允许引用已核实的兄弟仓实现):
       - 废弃文档(顶部 [已废弃] 横幅)跳过(保留历史不深清)
-      - 命中 SIBLING_INTERNAL_DISCUSSION_HINTS(谈论内部特征) → 违规(不走依赖白名单)
-      - 命中 DEPENDENCY_DECLARATION_HINTS(依赖声明) → 放行
+      - 命中 SIBLING_UNVERIFIED_HINTS(未核实/规划态) → 违规(即使带"实现/位于"字样)
+      - 命中 SIBLING_IMPLEMENTATION_REFERENCE_HINTS(已实现引用) 或
+        DEPENDENCY_DECLARATION_HINTS(依赖声明) → 放行
+      - 命中 SIBLING_INTERNAL_DISCUSSION_HINTS(谈论内部特征) → 违规
       - 其他提及兄弟仓名 → 报告(需人工 review)
     """
     violations: List[Tuple[Path, int, str, str]] = []
@@ -275,13 +295,18 @@ def check_sibling_mention(docs: List[Path], root: Path) -> List[Tuple[Path, int,
                 if not m:
                     continue
                 repo_name = m.group(0)
+                # 未核实 / 规划态 → 直接违规(即使带"实现/位于"字样)
+                if SIBLING_UNVERIFIED_HINTS.search(line):
+                    violations.append((doc, i, repo_name, line.strip()))
+                    break
+                # 已实现引用 或 依赖声明 → 放行
+                if SIBLING_IMPLEMENTATION_REFERENCE_HINTS.search(line) \
+                        or DEPENDENCY_DECLARATION_HINTS.search(line):
+                    continue
                 # 明确谈论内部特征 → 直接违规
                 if SIBLING_INTERNAL_DISCUSSION_HINTS.search(line):
                     violations.append((doc, i, repo_name, line.strip()))
                     break
-                # 依赖声明 → 放行
-                if DEPENDENCY_DECLARATION_HINTS.search(line):
-                    continue
                 # 其他提及 → 报告(人工 review)
                 violations.append((doc, i, repo_name, line.strip()))
                 break
@@ -563,9 +588,9 @@ def print_human(r: Dict[str, Any]):
         for v in r['l1_mentions_l2l3']:
             print(f"   ✗ {v['file']}:{v['line']}  {v['snippet']}", file=sys.stderr)
 
-    hr('R-兄弟仓零谈论')
+    hr('R-兄弟仓引用合规')
     if not r['sibling_mention_l1']:
-        print('✓ L1 公开文档未谈论兄弟仓内部(依赖声明除外)')
+        print('✓ L1 公开文档未谈论兄弟仓未核实/规划态内容(已实现引用与依赖声明除外)')
     else:
         for v in r['sibling_mention_l1']:
             print(f"   ✗ {v['file']}:{v['line']}  repo={v['repo']}  {v['snippet']}", file=sys.stderr)
