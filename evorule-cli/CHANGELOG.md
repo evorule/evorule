@@ -13,6 +13,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.3 - 2026-08-10
+
+**CLI 规则加载修复（PATCH）** — 修复 `load_rules` 将规则目录内的初始数据文件 `payload.json` 误当作规则加载的问题。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.2.3]` 段。
+
+### 🐛 修复
+
+- **`load_rules` 排除保留数据文件 `payload.json`**（[io_util.rs](src/io_util.rs)）：
+  - 规则目录内放置 `payload.json`（通常无 `type` 字段）此前会触发 `missing field: type`
+  - 现按约定排除文件名恰好为 `payload.json`（大小写不敏感）的文件
+  - 新增单测 `test_load_rules_ignores_payload_json`
+
+### 🔄 变更
+
+- 版本同步 bump 至 0.2.3
+- `Cargo.toml` 依赖版本对齐：`evorule-tcb` / `evorule-reactor` 由 `0.2.2` → `0.2.3`
+- 发版计划：Gitee 发布 v0.2.3 时，crates.io 同步发布 v0.2.3（crates.io 当前停在 v0.2.1）
+
+### 向后兼容
+
+- ✅ 合法规则文件的加载与确定性排序不变
+- ✅ fact log 格式不变
+- ✅ 命令与输出格式不变（仅修复误加载场景）
+
+---
+
 ## v0.2.2 - 2026-08-10
 
 **与 evorule-tcb / evorule-reactor / evorule-governance v0.2.2 同步** — 协议文档修正 + SDK 合规脚本方向反转（核心仓层面）。CLI 无源代码改动（仅版本同步 bump + 依赖版本号对齐 + README 版本 badge 更新）。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.2.2]` 段。

@@ -34,7 +34,7 @@ exclude = [
 [lints]
 workspace = true
 [dependencies]
-evorule-tcb = { path = "../evorule-tcb", version = "0.2.2" }
+evorule-tcb = { path = "../evorule-tcb", version = "0.2.3" }
 tokio = { version = "1.0", features = [
     "sync",
     "rt",

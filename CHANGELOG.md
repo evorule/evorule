@@ -35,6 +35,30 @@
 
 ---
 
+## [0.2.3] - 2026-08-10
+
+**CLI 规则加载修复（PATCH）** — 修复 `evorule` CLI 的 `load_rules` 将规则目录内的初始数据文件 `payload.json` 误当作规则加载的问题。生产机制层（tcb / reactor / governance）无 Rust 源代码改动，仅版本同步 bump；核心变更在 CLI。
+
+### 🐛 修复
+
+- **`evorule-cli` `load_rules` 排除保留数据文件 `payload.json`**（[io_util.rs](evorule-cli/src/io_util.rs)）：
+  - 若用户在规则目录内放置初始输入 `payload.json`（通常为 `{}` 或无 `type` 字段），此前会被当作规则加载并触发 `missing field: type` 错误
+  - 现按约定排除文件名恰好为 `payload.json`（大小写不敏感）的文件，不参与规则加载；新增单测 `test_load_rules_ignores_payload_json`
+  - 修复后，规则目录内可安全放置 `payload.json`（与 `--payload-file` 配合），无需强制把数据文件放目录外
+
+### 🔄 变更
+
+- 版本同步 bump 至 0.2.3（workspace 单一真相源 `Cargo.toml` + 各子 crate 依赖版本对齐）
+- **发版计划**：Gitee 发布 v0.2.3 时，crates.io 同步发布 evorule-cli v0.2.3（crates.io 当前停在 v0.2.1）
+
+### 向后兼容
+
+- ✅ 规则加载行为：合法规则文件的加载与确定性排序不变
+- ✅ fact log 格式不变
+- ✅ CLI 命令与输出格式不变（仅修复误加载场景）
+
+---
+
 ## [0.2.2] - 2026-08-10
 
 **协议文档修正 + SDK 合规脚本方向反转** — 修正 SDK 许可证在文档中的"MIT 漏网之鱼"。SDK 是 evorule 核心的衍生作品（封装 evorule-server API + 业务语义层 Guard.check），协议必须与核心保持一致。本次 PATCH 不含任何 Rust 源代码改动，生产功能不受影响。

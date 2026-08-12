@@ -83,7 +83,7 @@
 
 - OS: [e.g. Windows 11 / Ubuntu 22.04]
 - Rust: [e.g. 1.74]
-- evorule 版本: [e.g. v0.2.2]
+- evorule 版本: [e.g. v0.2.3]
 
 **复现步骤**:
 
