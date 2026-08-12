@@ -8,7 +8,7 @@
 
 [package]
 name = "reactive_researcher"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "EvoRule reference implementation - reactive researcher demo (1.0.0 §4.4 gate)"
 license = "AGPL-3.0-or-later"
@@ -20,9 +20,9 @@ name = "reactive_researcher"
 path = "src/main.rs"
 
 [dependencies]
-evorule-tcb = { path = "../../evorule-tcb", version = "0.2.1" }
-evorule-reactor = { path = "../../evorule-reactor", version = "0.2.1" }
-evorule-governance = { path = "../../evorule-governance", version = "0.2.1" }
+evorule-tcb = { path = "../../evorule-tcb", version = "0.2.2" }
+evorule-reactor = { path = "../../evorule-reactor", version = "0.2.2" }
+evorule-governance = { path = "../../evorule-governance", version = "0.2.2" }
 tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",
