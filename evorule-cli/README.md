@@ -8,7 +8,7 @@
 
 # `evorule` CLI
 
-[![版本 v0.2.2](https://img.shields.io/badge/version-v0.2.2-blue)](../Cargo.toml)
+[![版本 v0.2.3](https://img.shields.io/badge/version-v0.2.3-blue)](../Cargo.toml)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-green)](../LICENSE)
 [![文档索引 DOCS_INDEX](https://img.shields.io/badge/docs-DOCS_INDEX-8A2BE2)](../DOCS_INDEX.md)
 

@@ -10,8 +10,8 @@
 
 > EvoRule 三层架构的 Tier 1 反应式执行器 —— 事实驱动的状态转换引擎。
 
-- **版本**:v0.2.2
-- **依赖**:evorule-tcb = "0.2.2"
+- **版本**:v0.2.3
+- **依赖**:evorule-tcb = "0.2.3"
 - **协议**:AGPL-3.0-or-later
 - **测试**:`cargo test` 全部 PASS(含 `complex_rule_test` / `reactor_test` / `ffi_test` 等)
 - **build.rs 编译时门禁**:F11 禁止 `unwrap`/`expect`/`panic!`/`debug_assert!`(非测试代码),**G8 控制流白盒化**,PASSED
