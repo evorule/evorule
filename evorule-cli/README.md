@@ -45,8 +45,8 @@
 
 ```bash
 # 1) 下载(根据 CPU 架构选)
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.1/evorule-x86_64
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.1/evorule-aarch64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.3/evorule-x86_64
+wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.3/evorule-aarch64
 
 # 2) 验证(可选,确认下载完整)
 sha256sum -c evorule-x86_64.sha256
