@@ -22,6 +22,7 @@
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -123,6 +124,8 @@ AGENT_PRODUCT_HINTS = re.compile(
     r'research\s*agent|reactive\s*agent|'
     r'agent\s*层|agent\s*系统|多\s*agent|'
     r'给\s*LLM\s*精灵|'  # 产品/文学表达:LLM 作为受众(如"给 LLM 精灵一个确定性落点"),非 AI 协作身份泄露
+    r'给\s*LLM\s*一个|'  # 产品概念:"给 LLM 一个可信任的执行层"——LLM 作为服务对象/受众,非身份泄露
+    r'交给\s*LLM|'      # 产品概念:"交给 LLM,这是它的天赋"——LLM 作为分工对象,非身份泄露
     r'evo-agent)'  # evo-agent 是仓名,由 R-兄弟仓 管,这里放行避免双重报告
 )
 
@@ -205,14 +208,21 @@ def list_l1_docs(root: Path) -> List[Path]:
     for base in roots:
         if not base.exists():
             continue
-        for p in base.rglob('*.md'):
-            if any(excl in p.parts for excl in L1_EXCLUDE_DIRS):
-                continue
-            # 仅保留 L1 区域内：根目录下直接 md（非任何 exclude 子目录）或 docs/** 下 md
-            if base == root:
-                if p.parent != root:
-                    continue  # 根目录只看直下
-            files.append(p.resolve())
+        for dirpath, dirnames, filenames in os.walk(str(base)):
+            # 剪枝：不进入排除目录（避免遍历 .build 等大型构建目录）
+            dirnames[:] = [d for d in dirnames if d not in L1_EXCLUDE_DIRS]
+            cur = Path(dirpath)
+            for f in filenames:
+                if not f.endswith('.md'):
+                    continue
+                p = cur / f
+                if any(excl in p.parts for excl in L1_EXCLUDE_DIRS):
+                    continue
+                # 仅保留 L1 区域内：根目录下直接 md（非任何 exclude 子目录）或 docs/** 下 md
+                if base == root:
+                    if p.parent != root:
+                        continue  # 根目录只看直下
+                files.append(p.resolve())
     return sorted(set(files))
 
 
