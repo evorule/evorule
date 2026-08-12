@@ -136,7 +136,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 | ⛓ **JSON 因果链**      | 每个 JSON 状态变化都有 `cause` 指向父 JSON                                                               |
 | ⏪ **JSON 时间机器**   | `replay` / `rewind` / `fork` / `diff` — 任何 JSON 历史点都能重活                                         |
 | 🐛 **调试器级控制**    | `pause` / `resume` / `step` / `inspect` — 像 GDB 一样调试执行（**由 [evorule-server 仓](https://gitee.com/evo-rule-lab/evorule-server) `core/debug_control` 实现**） |
-| 🔗 **多反应器协作**    | `join` / `channel` / `shared_facts_space` — 构建分布式反应式系统（**已从核心仓移除**，改到 application 仓实现）         |
+| 🔗 **多反应器协作**    | `join` / `channel` / `shared_facts_space` — 构建分布式反应式系统（**未实现**，路线图规划）         |
 | ✅ **Kani 形式化验证** | JSON 状态机核心不变式被 Kani 证明，而非靠 review                                                         |
 | ✅ **TLA+ 状态机验证** | JSON 状态机控制流性质被 TLA+ TLC 证明（[验证报告](evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)）          |
 | 🧱 **三层架构**        | evorule-tcb = JSON 状态机 / evorule-reactor = JSON 事件循环 / evorule-governance = 治理机制（HTTP API 在应用层）                      |
