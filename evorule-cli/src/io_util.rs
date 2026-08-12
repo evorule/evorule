@@ -239,7 +239,11 @@ mod tests {
     fn test_load_rules_ignores_payload_json() {
         let dir = make_temp_dir("payload-skip");
         // 规则文件
-        fs::write(dir.join("01-capture.json"), r#"{"transform":[{"type":"noop"}]}"#).unwrap();
+        fs::write(
+            dir.join("01-capture.json"),
+            r#"{"transform":[{"type":"noop"}]}"#,
+        )
+        .unwrap();
         // 保留数据文件：无 type 字段的初始 payload，不应被当作规则加载
         fs::write(dir.join("payload.json"), r#"{"request_id":"REQ-001"}"#).unwrap();
 
