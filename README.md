@@ -45,12 +45,12 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 > | 能编译、能跑、核心 API 完整                  | ✅                      |
 > | BLAKE3 审计链（tier1 WAL 哈希链）            | ✅                      |
 > | ⏪ 时间机器（replay/rewind/fork/diff API）   | ✅                      |
-> | 🐛 调试控制（phase/queue/pending_io）        | ✅（应用层实现）        |
+> | 🐛 调试控制（phase/queue/pending_io）        | ✅（[evorule-server](https://gitee.com/evo-rule-lab/evorule-server) 实现） |
 > | HTTP API 会话管理（命令/状态/事件流/审计）   | ✅（应用层实现）        |
 > | Kani 验证（tier0 12 proof + tier1 11 proof） | ✅                      |
 > | musl static CLI（x86_64 + aarch64）          | ✅                      |
 > | API 版本化（`/api/v1/`）                     | ❌ **1.0 之前不承诺**   |
-> | 多反应器协作原语（join/channel/shared）      | ❌ **已移至 application 仓** |
+> | 多反应器协作原语（join/channel/shared）      | ❌ **规划中** |
 > | 第三方安全审计                               | ❌ **不做**（1.0 之前） |
 >
 > **诚实记账**:见 [CHANGELOG.md](CHANGELOG.md)
@@ -135,11 +135,11 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 | 🔒 **确定性执行**      | 给定 JSON 输入 → 必然 JSON 输出，无歧义                                                                  |
 | ⛓ **JSON 因果链**      | 每个 JSON 状态变化都有 `cause` 指向父 JSON                                                               |
 | ⏪ **JSON 时间机器**   | `replay` / `rewind` / `fork` / `diff` — 任何 JSON 历史点都能重活                                         |
-| 🐛 **调试器级控制**    | `pause` / `step` / `resume` / `break` — 像 GDB 一样调试执行（**应用层实现**，见 evorule-application 仓） |
+| 🐛 **调试器级控制**    | `pause` / `resume` / `step` / `inspect` — 像 GDB 一样调试执行（**由 [evorule-server 仓](https://gitee.com/evo-rule-lab/evorule-server) `core/debug_control` 实现**） |
 | 🔗 **多反应器协作**    | `join` / `channel` / `shared_facts_space` — 构建分布式反应式系统（**已从核心仓移除**，改到 application 仓实现）         |
 | ✅ **Kani 形式化验证** | JSON 状态机核心不变式被 Kani 证明，而非靠 review                                                         |
 | ✅ **TLA+ 状态机验证** | JSON 状态机控制流性质被 TLA+ TLC 证明（[验证报告](evorule-tcb/tla/TLC_VERIFICATION_REPORT.md)）          |
-| 🧱 **三层架构**        | tier0 = JSON 状态机 / tier1 = JSON 事件循环 / tier2 = 治理机制（HTTP API 在应用层）                      |
+| 🧱 **三层架构**        | evorule-tcb = JSON 状态机 / evorule-reactor = JSON 事件循环 / evorule-governance = 治理机制（HTTP API 在应用层）                      |
 | 🤖 **AI Agent 基座**   | 配套项目 [evo-agent](https://github.com/evorule/evo-agent) 把 LLM 输出（也是 JSON）接入                  |
 | 🏥 **单文件 CLI 落地** | [`evorule-cli/`](evorule-cli/) — musl 静态链接，零网络零遥测，直接给合规官用                             |
 
@@ -166,7 +166,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 - IoHandler trait：I/O Handler 接口定义（H5 从 tier2 下沉至此）
 - 协作原语支撑：FactsLog 共享 + 事件同步
 - 稳定检测：队列空 + 无挂起 JSON I/O
-- 调试控制（pause/step/break/phase）已移至应用层 `evorule-application/core/debug_control/`
+- 调试控制（pause / resume / step / inspect + interrupt / watch）由 [evorule-server 仓](https://gitee.com/evo-rule-lab/evorule-server) `core/debug_control` 模块实现
 
 **🔐 evorule-tcb — JSON 状态机**
 
@@ -201,7 +201,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 │  ─ JSON 时间机器(replay / rewind / fork / diff)                      │
 │  ─ IoHandler trait:I/O Handler 接口定义(H5 从 tier2 下沉)           │
 │  ─ 稳定检测:队列空 + 无挂起 JSON I/O                                 │
-│  ─ (调试控制 pause/step/break 已移至应用层)                          │
+│  ─ (调试控制 pause/resume/step/inspect + interrupt/watch 由 evorule-server 实现) │
 ├──────────────────────────────────────────────────────────────────────┤
 │  evorule-tcb (JSON 状态机)                                              │
 │  ─ JsonValue:JSON 的内存表示                                          │

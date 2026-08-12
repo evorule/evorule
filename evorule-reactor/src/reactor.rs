@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+﻿// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! 反应器核心 - 事实驱动的状态转换引擎
@@ -277,7 +277,7 @@ impl Reactor {
     /// 返回的 `ReactorHandle` 携带共享快照与中断标志，支持：
     /// - `interrupt()`：请求反应器在当前指令后退出
     /// - `abort()`：强制中止反应器任务
-    /// - GDB 风格的 pause/resume/step 已移至 application 层（debug_control 模块）
+    /// - GDB 风格的 pause/resume/step/inspect + interrupt/watch 已由 [evorule-server 仓](https://gitee.com/evo-rule-lab/evorule-server) `core/debug_control` 模块实现
     pub fn spawn(
         self,
     ) -> (
@@ -992,9 +992,8 @@ impl Reactor {
 /// - [`causal_depth`](Self::causal_depth)：因果链深度
 /// - [`is_finished`](Self::is_finished)：是否已结束
 ///
-/// **调试控制**（已移至 application 层）：
-/// - pause/resume/step 等 GDB 风格控制已移至
-///   `evorule-application/core/debug_control` 模块
+/// **调试控制**（由 [evorule-server 仓](https://gitee.com/evo-rule-lab/evorule-server) `core/debug_control` 模块实现）：
+/// - pause/resume/step/inspect + interrupt/watch
 /// - 基于 `interrupt()` + FactsLog rewind 实现伪单步
 pub struct ReactorHandle {
     handle: JoinHandle<Result<(), ReactorError>>,
