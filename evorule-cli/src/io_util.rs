@@ -31,6 +31,11 @@ use crate::error::CliError;
 /// 2. `[{...}, {...}]` — 顶层数组，每项是一条 transform
 /// 3. `{...}` — 单条 transform 对象
 ///
+/// # 保留数据文件排除
+/// 文件名恰好为 `payload.json`（大小写不敏感）的文件被当作**初始输入数据**而非规则，
+/// 不参与加载。若用户在规则目录内放置初始 payload，其 `{}` 通常无 `type` 字段，
+/// 会被误当成规则并触发 `missing field: type`（见 `parse_initial_payload` 与教程约定）。
+///
 /// # 错误
 /// - `RulesDirNotFound`：目录不存在
 /// - `NoRulesFound`：目录中无 `.json` 文件
@@ -48,13 +53,21 @@ pub fn load_rules(rules_dir: &Path) -> Result<Vec<JsonValue>, CliError> {
     }
 
     // 收集 .json 文件并按文件名排序（P0-2 修复）
+    // 排除保留数据文件 `payload.json`（大小写不敏感）：它通常无 `type` 字段，
+    // 若被当规则加载会触发 "missing field: type"（见 parse_initial_payload 与教程约定）。
     let mut entries: Vec<_> = fs::read_dir(rules_dir)?
         .filter_map(Result::ok)
         .filter(|e| {
-            e.path()
+            let is_json = e
+                .path()
                 .extension()
                 .and_then(|s| s.to_str())
-                .is_some_and(|ext| ext == "json")
+                .is_some_and(|ext| ext == "json");
+            let is_payload = e
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.eq_ignore_ascii_case("payload.json"));
+            is_json && !is_payload
         })
         .collect();
     entries.sort_by_key(|e| e.file_name());
@@ -218,6 +231,30 @@ mod tests {
 
         let rules = load_rules(&dir).unwrap();
         assert_eq!(rules.len(), 4, "should load 4 transforms from 4 formats");
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_load_rules_ignores_payload_json() {
+        let dir = make_temp_dir("payload-skip");
+        // 规则文件
+        fs::write(dir.join("01-capture.json"), r#"{"transform":[{"type":"noop"}]}"#).unwrap();
+        // 保留数据文件：无 type 字段的初始 payload，不应被当作规则加载
+        fs::write(dir.join("payload.json"), r#"{"request_id":"REQ-001"}"#).unwrap();
+
+        let rules = load_rules(&dir).unwrap();
+        assert_eq!(
+            rules.len(),
+            1,
+            "payload.json must not be loaded as a rule, got {} transforms",
+            rules.len()
+        );
+        assert_eq!(
+            rules[0].get("type").and_then(|v| v.as_str()),
+            Some("noop"),
+            "only the real rule should be loaded"
+        );
 
         cleanup(&dir);
     }
