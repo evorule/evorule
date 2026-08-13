@@ -126,3 +126,59 @@ jobs:
           path: target/release/evorule
           retention-days: 7
           if-no-files-found: warn
+
+  # ===== Windows 平台验证（编译 + 测试，解决平台覆盖窄） =====
+  build-test-windows:
+    name: Windows (build + test)
+    runs-on: windows-latest
+    needs: [lint, docs-check]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust 缓存
+        uses: Swatinem/rust-cache@v2
+
+      - name: 编译核心 workspace (release)
+        run: cargo build --release --workspace
+
+      - name: cargo test
+        run: cargo test --workspace --all-features
+
+      - name: 上传 evorule-cli 二进制产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: evorule-cli-windows-x86_64
+          path: target/release/evorule.exe
+          retention-days: 7
+          if-no-files-found: warn
+
+  # ===== macOS 平台验证（编译 + 测试，解决平台覆盖窄） =====
+  build-test-macos:
+    name: macOS (build + test)
+    runs-on: macos-latest
+    needs: [lint, docs-check]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust 缓存
+        uses: Swatinem/rust-cache@v2
+
+      - name: 编译核心 workspace (release)
+        run: cargo build --release --workspace
+
+      - name: cargo test
+        run: cargo test --workspace --all-features
+
+      - name: 上传 evorule-cli 二进制产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: evorule-cli-macos
+          path: target/release/evorule
+          retention-days: 7
+          if-no-files-found: warn
