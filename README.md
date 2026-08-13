@@ -12,19 +12,24 @@
 
 # EvoRule
 
-**只接受和运行 JSON 数据集的反应式执行引擎**
+**只接受和运行 JSON 数据的反应式执行引擎**
 
-> 没有智能，只有执行 — 确定性执行，可回溯，可审计
+> ### 让 LLM 负责想，让 EvoRule 负责做
+>
+> **没有智能，只有执行** —— 确定性执行，可回溯，可审计。
+> 在智能时代，选择不智能，是为了更智能：**确定性智能**。
 
 _规则不言语。它们只运行。而我们是首批见证者。_
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.2.1-green.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-0.2.3-green.svg)](Cargo.toml)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Kani](https://img.shields.io/badge/Kani-t0_12p_t1_11p-blue.svg)](evorule-tcb/verification/kani_proofs.rs)
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0-green.svg)]()
 [![Gitee Stars](https://gitee.com/evo-rule-lab/evorule/badge/star.svg?theme=dark)](https://gitee.com/evo-rule-lab/evorule/stargazers)
+
+**为谁而做**：AI 基建工程师 · 确定性执行爱好者 · 合规/审计工具开发者
 
 [快速开始](#快速开始) ·
 [核心特性](#核心特性) ·
@@ -820,10 +825,10 @@ thiserror = "2"          # 错误类型
 | ------- | ------- | ---------------------------------------- | --------------------------------------------------------------------- |
 | Linux   | x86_64  | ✅ `ci.yml` + `.gitee-ci/build-musl.yml` | **首发支持**（musl 静态 + 动态）                                      |
 | Linux   | aarch64 | ✅ `.gitee-ci/build-musl.yml`            | **首发支持**（musl 静态，AWS Graviton / RPi）                         |
-| Windows | x86_64  | ❌ 无 CI                                 | ⚠️ **开发验证通过**，核心 `cargo test --workspace` 全绿，但无 CI 守护 |
-| macOS   | —       | ❌ 无 CI                                 | ❌ **不支持**（无 CI、无开发验证；如需使用需自行编译，不保证可用）    |
+| Windows | x86_64  | ✅ `ci.yml` (`build-test-windows`)       | **CI 守护**（编译 + 测试全绿），`cargo install --path evorule-cli` 或下载 `evorule.exe` |
+| macOS   | x86_64  | ✅ `ci.yml` (`build-test-macos`)         | **CI 守护**（编译 + 测试全绿）                                        |
 
-> **注意**:musl 静态 CLI 产物仅限 Linux。Windows 用户可通过 `cargo install --path evorule-cli` 从源码构建使用。
+> **注意**:musl 静态 CLI 产物仅限 Linux。Windows / macOS 可通过 `cargo install --path evorule-cli` 从源码构建使用，或从 Release 下载 `evorule.exe`。
 
 **5 个子命令**:
 
