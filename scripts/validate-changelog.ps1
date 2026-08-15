@@ -14,10 +14,11 @@ $ErrorActionPreference = "Stop"
 $evoruleRoot = Split-Path -Parent $PSScriptRoot
 
 # 各仓独立发布:仅校验本仓(evorule workspace + 本仓内 sdk),不查兄弟仓(evo-agent 等)
+# 路径用 '/' 连接而非 '\',保证 Linux/macOS CI runner 上 .NET ReadAllText 能正确解析
 $projects = [ordered]@{}
-$projects['evorule']        = @{ Version = "$evoruleRoot\Cargo.toml";                   Changelog = "$evoruleRoot\CHANGELOG.md" }
-$projects['sdk-typescript'] = @{ Version = "$evoruleRoot\sdk\typescript\package.json";  Changelog = "$evoruleRoot\sdk\typescript\CHANGELOG.md" }
-$projects['sdk-python']     = @{ Version = "$evoruleRoot\sdk\python\pyproject.toml";    Changelog = "$evoruleRoot\sdk\python\CHANGELOG.md" }
+$projects['evorule']        = @{ Version = "$evoruleRoot/Cargo.toml";                   Changelog = "$evoruleRoot/CHANGELOG.md" }
+$projects['sdk-typescript'] = @{ Version = "$evoruleRoot/sdk/typescript/package.json";  Changelog = "$evoruleRoot/sdk/typescript/CHANGELOG.md" }
+$projects['sdk-python']     = @{ Version = "$evoruleRoot/sdk/python/pyproject.toml";    Changelog = "$evoruleRoot/sdk/python/CHANGELOG.md" }
 
 function Read-Version {
     param([string]$Path)
