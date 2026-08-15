@@ -13,6 +13,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.4 - 2026-08-15
+
+**版本同步 + 形式化验证 P0 完善（PATCH）** — 机制层 evaluate_domain 分层 Kani harness 落地与验证证据归档。CLI 无功能变更，依赖版本同步 bump。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.2.4]` 段。
+
+### 🔄 变更
+
+- 版本同步 bump 至 0.2.4
+- `Cargo.toml` 依赖版本对齐：`evorule-tcb` / `evorule-reactor` 由 `0.2.3` → `0.2.4`
+- 发版计划：Gitee 发布 v0.2.4 时，crates.io 同步发布 v0.2.4（crates.io 当前停在 v0.2.1）
+
+### 向后兼容
+
+- ✅ 命令与输出格式不变
+- ✅ fact log 格式不变
+
+---
+
 ## v0.2.3 - 2026-08-10
 
 **CLI 规则加载修复（PATCH）** — 修复 `load_rules` 将规则目录内的初始数据文件 `payload.json` 误当作规则加载的问题。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.2.3]` 段。

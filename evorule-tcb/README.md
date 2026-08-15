@@ -10,7 +10,7 @@
 
 > EvoRule 三层架构的 Tier 0 可信计算基 (Trusted Computing Base) ——零依赖、`no_std` 兼容的纯计算内核。
 
-- **版本**:v0.2.3
+- **版本**:v0.2.4
 - **定位**:纯函数 + 确定性 + 永不 panic
 - **外部依赖**:0
 - **测试**:`cargo test` 239 PASS / 0 failed(160 单元 + 62 集成 + 17 doc = `complex_branch_test` 3 + `integration_end_to_end` 4 + `panic_free` 22 + `proptest_props` 19 + `tcb_error_variants` 14)

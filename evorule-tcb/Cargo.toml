@@ -85,11 +85,13 @@ proofs = [
     "verify_set_integer_safety",
     "verify_set_sub_safety",
     "verify_jsonvalue_array_safety",
-    "verify_resolve_path_object_kani",    # P0-3 新增
-    "verify_evaluate_domain_eq_kani",     # P0-4a (从 P0-4 拆分,避免 CBMC 状态爆炸)
-    "verify_evaluate_domain_lt_kani",     # P0-4b (从 P0-4 拆分)
-    "verify_evaluate_domain_exists_kani", # P0-4c (从 P0-4 拆分)
-    "verify_execute_transition_kani",     # P0-5 新增
-    "verify_termination_kani",            # P0-7 新增
-    "verify_depth_enforcement_kani",      # P0-8 新增
+    "verify_resolve_path_object_kani",       # P0-3 新增
+    "verify_evaluate_domain_eq_atom_kani",   # P0-4a-atom (从 P0-4 拆分,避免 CBMC 状态爆炸)
+    "verify_evaluate_domain_lt_atom_kani",   # P0-4b-atom (从 P0-4 拆分)
+    "verify_evaluate_domain_exists_atom_kani", # P0-4c-atom (从 P0-4 拆分)
+    "verify_evaluate_domain_and_kani",       # P0-4d-combo (逻辑组合层)
+    "verify_evaluate_domain_not_kani",       # P0-4e-combo (逻辑组合层)
+    "verify_execute_transition_kani",        # P0-5 新增
+    "verify_termination_kani",               # P0-7 新增
+    "verify_depth_enforcement_kani",         # P0-8 新增
 ]

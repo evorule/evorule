@@ -11,12 +11,13 @@
 //! # 并发模型
 //! 使用 `std::sync::RwLock`，因为写操作极快（push + 字段更新），不跨 await 持锁。
 
-use std::collections::BTreeMap;
-use std::path::Path;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use evorule_reactor::{Fact, FactId, FactsLog, FactsLogError};
 use evorule_tcb::JsonValue;
+use serde::{Deserialize, Serialize};
 
 /// 共享事实元数据
 ///
@@ -35,6 +36,25 @@ pub struct SharedFact {
     pub version: u64,
 }
 
+/// 共享事实元数据持久化容器
+///
+/// 用于将 `SharedFactsLog` 的内存元数据（`fact_sources`、`next_fact_id`、`rolled_up`、
+/// `used_at_startup`）持久化到独立文件，弥补 `FactsLog` 的 WAL 只记录 Fact 本身、
+/// 不记录元数据的设计限制。
+///
+/// 序列化为 JSON 文件，通过 `write_metadata_atomic` 原子写入（write tmp + rename）。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SharedFactsMetadata {
+    /// 下一个 fact_id（自增计数器）
+    pub next_fact_id: u64,
+    /// FactId(u64) → source_session_id 映射
+    pub fact_sources: BTreeMap<u64, u64>,
+    /// session_id → 启动时使用的 fact_id 列表
+    pub used_at_startup: BTreeMap<u64, Vec<u64>>,
+    /// 已标记为 rollup 的 fact_id 集合（`facts_by_path_prefix` 查询时过滤）
+    pub rolled_up: BTreeSet<u64>,
+}
+
 /// 跨会话共享事实存储
 ///
 /// 作为跨会话共享事实的全局存储，支持按路径前缀查询。
@@ -48,6 +68,10 @@ struct SharedFactsLogInner {
     next_fact_id: u64,
     fact_sources: BTreeMap<FactId, u64>,
     used_at_startup: BTreeMap<u64, Vec<FactId>>,
+    /// 已标记为 rollup 的 fact_id 集合（`facts_by_path_prefix` 过滤，`fact_by_id` 不过滤）
+    rolled_up: BTreeSet<FactId>,
+    /// metadata 文件路径（`Some` 时 `append`/`mark_as_rollup` 写入；`None` 时纯内存）
+    metadata_path: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for SharedFactsLogInner {
@@ -61,7 +85,7 @@ impl std::fmt::Debug for SharedFactsLogInner {
 }
 
 impl SharedFactsLog {
-    /// 创建空的 SharedFactsLog（无 WAL）
+    /// 创建空的 SharedFactsLog（无 WAL，纯内存）
     pub fn new() -> Self {
         Self {
             inner: Arc::new(RwLock::new(SharedFactsLogInner {
@@ -69,11 +93,16 @@ impl SharedFactsLog {
                 next_fact_id: 1,
                 fact_sources: BTreeMap::new(),
                 used_at_startup: BTreeMap::new(),
+                rolled_up: BTreeSet::new(),
+                metadata_path: None,
             })),
         }
     }
 
-    /// 创建带 WAL 持久化的 SharedFactsLog
+    /// 创建带 WAL 持久化的 SharedFactsLog（不恢复历史，向后兼容）
+    ///
+    /// 注意：此方法只挂载 WAL writer，不从 WAL 恢复历史。
+    /// 如需完整恢复（fact 历史 + 元数据），请使用 [`recover`](Self::recover)。
     pub fn with_wal<P: AsRef<Path>>(path: P) -> Result<Self, FactsLogError> {
         let facts_log = FactsLog::with_wal(path)?;
         Ok(Self {
@@ -82,6 +111,67 @@ impl SharedFactsLog {
                 next_fact_id: 1,
                 fact_sources: BTreeMap::new(),
                 used_at_startup: BTreeMap::new(),
+                rolled_up: BTreeSet::new(),
+                metadata_path: None,
+            })),
+        })
+    }
+
+    /// 从 WAL + metadata 文件完整恢复 SharedFactsLog
+    ///
+    /// 与 [`with_wal`](Self::with_wal) 不同，此方法会：
+    /// 1. 调用 `FactsLog::recover(wal_path)` 从 WAL 重放 fact 历史
+    /// 2. 读取 metadata 文件恢复 `fact_sources`、`next_fact_id`、`rolled_up`、`used_at_startup`
+    ///
+    /// # 参数
+    /// - `wal_path`: WAL 文件路径
+    /// - `metadata_path`: metadata 文件路径（不存在时使用默认值）
+    ///
+    /// # 错误
+    /// - WAL 恢复失败返回 `FactsLogError`
+    /// - metadata 文件读取失败（文件不存在除外）返回 `FactsLogError`
+    pub fn recover<P1: AsRef<Path>, P2: AsRef<Path>>(
+        wal_path: P1,
+        metadata_path: P2,
+    ) -> Result<Self, FactsLogError> {
+        // WAL 文件不存在时用 with_wal 创建新的，存在时用 recover 恢复
+        let facts_log = if wal_path.as_ref().exists() {
+            FactsLog::recover(&wal_path)?
+        } else {
+            FactsLog::with_wal(&wal_path)?
+        };
+
+        // 读取 metadata 文件（不存在时使用默认值）
+        let metadata = match std::fs::read_to_string(&metadata_path) {
+            Ok(content) => serde_json::from_str::<SharedFactsMetadata>(&content)
+                .map_err(|e| FactsLogError::WalError(format!("metadata parse error: {e}")))?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => SharedFactsMetadata::default(),
+            Err(e) => return Err(FactsLogError::WalError(format!("metadata read error: {e}"))),
+        };
+
+        // 转换 u64 → FactId
+        let fact_sources: BTreeMap<FactId, u64> = metadata
+            .fact_sources
+            .into_iter()
+            .map(|(k, v)| (FactId(k), v))
+            .collect();
+
+        let used_at_startup: BTreeMap<u64, Vec<FactId>> = metadata
+            .used_at_startup
+            .into_iter()
+            .map(|(k, v)| (k, v.into_iter().map(FactId).collect()))
+            .collect();
+
+        let rolled_up: BTreeSet<FactId> = metadata.rolled_up.into_iter().map(FactId).collect();
+
+        Ok(Self {
+            inner: Arc::new(RwLock::new(SharedFactsLogInner {
+                facts_log,
+                next_fact_id: metadata.next_fact_id.max(1),
+                fact_sources,
+                used_at_startup,
+                rolled_up,
+                metadata_path: Some(metadata_path.as_ref().to_path_buf()),
             })),
         })
     }
@@ -118,12 +208,21 @@ impl SharedFactsLog {
         let version = inner.facts_log.append(fact)?;
         inner.fact_sources.insert(fact_id, source_session_id);
 
+        // 持久化 metadata（best-effort：失败只记日志，不阻塞 append）
+        if let Some(ref meta_path) = inner.metadata_path {
+            if let Err(e) = write_metadata_atomic(meta_path, &inner) {
+                tracing::warn!("SharedFactsLog metadata persist failed: {e}");
+            }
+        }
+
         Ok(version)
     }
 
     /// 按路径前缀查询共享事实
     ///
     /// 返回所有路径以指定前缀开头的共享事实。
+    /// 已标记为 rollup 的 fact 会被过滤（不显示在列表中）。
+    /// 如需查询单个已 rollup 的 fact，使用 [`fact_by_id`](Self::fact_by_id)（不过滤）。
     pub fn facts_by_path_prefix(&self, prefix: &str) -> Vec<SharedFact> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
 
@@ -132,6 +231,14 @@ impl SharedFactsLog {
             .facts_by_path_prefix(prefix)
             .into_iter()
             .filter(|(_, fact)| matches!(fact, Fact::PayloadUpdate { .. }))
+            .filter(|(_, fact)| {
+                // 过滤已 rollup 的 fact（列表查询不显示旧摘要）
+                if let Fact::PayloadUpdate { id, .. } = fact {
+                    !inner.rolled_up.contains(id)
+                } else {
+                    false
+                }
+            })
             .map(|(version, fact)| {
                 if let Fact::PayloadUpdate { id, path, value } = fact {
                     let source_session_id = *inner.fact_sources.get(&id).unwrap_or(&0);
@@ -227,6 +334,27 @@ impl SharedFactsLog {
             .collect()
     }
 
+    /// 标记 fact 为已 rollup
+    ///
+    /// 被标记的 fact 在 `facts_by_path_prefix` 查询中被过滤（不再显示在列表中），
+    /// 但 `fact_by_id` 仍可查到（保持审计可追溯）。
+    /// 如果设置了 `metadata_path`，状态会持久化到文件（原子写入）。
+    ///
+    /// # 参数
+    /// - `fact_ids`: 要标记为 rollup 的 fact ID 列表
+    pub fn mark_as_rollup(&self, fact_ids: &[FactId]) {
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        for id in fact_ids {
+            inner.rolled_up.insert(*id);
+        }
+        // 持久化 metadata（best-effort）
+        if let Some(ref meta_path) = inner.metadata_path {
+            if let Err(e) = write_metadata_atomic(meta_path, &inner) {
+                tracing::warn!("SharedFactsLog metadata persist failed: {e}");
+            }
+        }
+    }
+
     /// 重置 SharedFactsLog 到初始状态
     pub fn reset(&self) {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
@@ -234,7 +362,36 @@ impl SharedFactsLog {
         inner.next_fact_id = 1;
         inner.fact_sources.clear();
         inner.used_at_startup.clear();
+        inner.rolled_up.clear();
     }
+}
+
+/// 原子写入 metadata 文件（write tmp + rename，防断电损坏）
+///
+/// 将 `SharedFactsLogInner` 的元数据序列化为 JSON，先写入临时文件再 rename，
+/// 确保断电时不会产生损坏的 metadata 文件。
+fn write_metadata_atomic(path: &Path, inner: &SharedFactsLogInner) -> Result<(), FactsLogError> {
+    let metadata = SharedFactsMetadata {
+        next_fact_id: inner.next_fact_id,
+        fact_sources: inner.fact_sources.iter().map(|(k, v)| (k.0, *v)).collect(),
+        used_at_startup: inner
+            .used_at_startup
+            .iter()
+            .map(|(k, v)| (*k, v.iter().map(|f| f.0).collect()))
+            .collect(),
+        rolled_up: inner.rolled_up.iter().map(|f| f.0).collect(),
+    };
+
+    let json = serde_json::to_string(&metadata)
+        .map_err(|e| FactsLogError::WalError(format!("metadata serialize error: {e}")))?;
+
+    let tmp_path = path.with_extension("tmp");
+    std::fs::write(&tmp_path, json)
+        .map_err(|e| FactsLogError::WalError(format!("metadata write error: {e}")))?;
+    std::fs::rename(&tmp_path, path)
+        .map_err(|e| FactsLogError::WalError(format!("metadata rename error: {e}")))?;
+
+    Ok(())
 }
 
 impl Default for SharedFactsLog {
@@ -327,6 +484,121 @@ mod tests {
         assert_eq!(log.history_len(), 1);
 
         log.reset();
+        assert_eq!(log.history_len(), 0);
+        assert_eq!(log.version(), 0);
+    }
+
+    // ===== L-3: mark_as_rollup + recover 测试 =====
+
+    #[test]
+    fn test_mark_as_rollup_filters_from_prefix_query() {
+        let log = SharedFactsLog::new();
+
+        log.append(
+            "shared.ns.sessions.s1.summary",
+            JsonValue::string("s1"),
+            100,
+        )
+        .unwrap();
+        log.append(
+            "shared.ns.sessions.s2.summary",
+            JsonValue::string("s2"),
+            100,
+        )
+        .unwrap();
+        log.append(
+            "shared.ns.sessions.s3.summary",
+            JsonValue::string("s3"),
+            100,
+        )
+        .unwrap();
+
+        // 标记 s1 为 rollup
+        log.mark_as_rollup(&[FactId(1)]);
+
+        // 列表查询：s1 被过滤
+        let result = log.facts_by_path_prefix("shared.ns.sessions.");
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].fact_id, FactId(2));
+        assert_eq!(result[1].fact_id, FactId(3));
+    }
+
+    #[test]
+    fn test_mark_as_rollup_fact_by_id_still_visible() {
+        let log = SharedFactsLog::new();
+
+        log.append(
+            "shared.ns.sessions.s1.summary",
+            JsonValue::string("s1"),
+            100,
+        )
+        .unwrap();
+
+        log.mark_as_rollup(&[FactId(1)]);
+
+        // fact_by_id 不过滤 rolled_up（审计可追溯）
+        let fact = log.fact_by_id(FactId(1));
+        assert!(fact.is_some());
+        assert_eq!(fact.unwrap().path, "shared.ns.sessions.s1.summary");
+    }
+
+    #[test]
+    fn test_recover_restores_facts_and_metadata() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("shared.wal");
+        let meta_path = dir.path().join("shared.json");
+
+        // 第一次创建：写入数据 + rollup
+        {
+            let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
+            log.append("shared.ns.stable.key1", JsonValue::string("v1"), 100)
+                .unwrap();
+            log.append(
+                "shared.ns.sessions.s1.summary",
+                JsonValue::string("s1"),
+                100,
+            )
+            .unwrap();
+            log.mark_as_rollup(&[FactId(2)]); // rollup s1 summary
+        }
+
+        // 第二次创建：从 WAL + metadata 恢复
+        {
+            let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
+            assert_eq!(log.history_len(), 2); // fact 历史恢复
+            assert_eq!(log.version(), 2);
+
+            // fact_sources 恢复
+            assert_eq!(log.source_session_id(FactId(1)), Some(100));
+
+            // rolled_up 恢复：prefix 查询过滤了 FactId(2)
+            let result = log.facts_by_path_prefix("shared.ns.");
+            assert_eq!(result.len(), 1);
+            assert_eq!(result[0].fact_id, FactId(1));
+
+            // fact_by_id 仍可查到 rolled_up 的 fact
+            assert!(log.fact_by_id(FactId(2)).is_some());
+
+            // next_fact_id 恢复：下一次 append 从 3 开始
+            let v = log
+                .append("shared.ns.stable.key2", JsonValue::string("v2"), 200)
+                .unwrap();
+            assert_eq!(v, 3);
+        }
+    }
+
+    #[test]
+    fn test_recover_metadata_not_found_uses_defaults() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("shared.wal");
+        let meta_path = dir.path().join("nonexistent.json");
+
+        // metadata 文件不存在 → 使用默认值，不报错
+        let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
         assert_eq!(log.history_len(), 0);
         assert_eq!(log.version(), 0);
     }
