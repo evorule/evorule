@@ -33,8 +33,8 @@ exclude = [
 workspace = true
 [dependencies]
 # 本地依赖
-evorule-tcb = { path = "../evorule-tcb", version = "0.2.3" }
-evorule-reactor = { path = "../evorule-reactor", version = "0.2.3", features = [
+evorule-tcb = { path = "../evorule-tcb", version = "0.2.4" }
+evorule-reactor = { path = "../evorule-reactor", version = "0.2.4", features = [
     "persistence",
 ] }
 

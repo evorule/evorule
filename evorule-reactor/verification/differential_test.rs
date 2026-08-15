@@ -30,6 +30,25 @@
 //! 因此差分测试的路径 B 也使用 `empty_object()` 作为初始 payload,确保两条路径
 //! 从同一状态出发。
 //!
+//! # 语义等价规约(差分测试的形式化契约)
+//!
+//! 对任意指令 `I` 与初始 payload `S`(此处恒为 `empty_object()`):
+//!
+//! ```text
+//! 路径 A(Reactor 异步流水线) ≙ 路径 B(execute_transition 纯函数)
+//! ⟺  (A 成功 ∧ B 成功 ∧ A.new_payload ≡ B.new_payload 结构全等)
+//!   ∨ (A 失败 ∧ B 失败)     // 两路径结果类型一致(成功/失败)
+//! ```
+//!
+//! 约束与例外:
+//! - **成功路径**:new_payload 必须结构全等(见 `assert_semantically_equivalent`)。
+//! - **失败路径**:仅要求两路径都失败(错误的具体类型由各自路径语义保证,
+//!   不在本规约范围内,因 Reactor 对错误的包装与 TCB 错误码存在合理的抽象差异)。
+//! - **多步序列**(如 set→increment):每一步分别满足上述规约,最终状态全等。
+//!
+//! 该规约是 P0-12 抽象保真度的主要证据:Reactor 的队列管理、cause 追踪、
+//! version bump、I/O 恢复态清理等流水线逻辑不得篡改 TCB 核心算法的输出。
+//!
 //! # 跑法
 //!
 //! ```bash
@@ -140,6 +159,38 @@ fn proptest_config() -> ProptestConfig {
 }
 
 // =============================================================================
+// 语义等价规约断言(差分测试的形式化契约的裁决器)
+// =============================================================================
+//
+// 见模块文档「语义等价规约」。四个参数分别是两条路径的成功标志与 payload:
+// - 两路径都成功 → payload 必须结构全等;
+// - 两路径都失败 → 等价(错误类型一致性由各自路径语义保证);
+// - 一成一败 → 违反规约,直接 panic。
+// =============================================================================
+
+fn assert_semantically_equivalent(
+    reactor_ok: bool,
+    reactor_payload: &JsonValue,
+    direct_ok: bool,
+    direct_payload: &JsonValue,
+    ctx: &str,
+) {
+    match (reactor_ok, direct_ok) {
+        (true, true) => {
+            assert_eq!(
+                reactor_payload, direct_payload,
+                "语义等价规约违反: 两路径均成功但 new_payload 结构不等价 ({ctx})"
+            );
+        }
+        (false, false) => {
+            // 两路径均失败,视为等价(错误类型差异属合理抽象边界,不在规约内)
+        }
+        (true, false) => panic!("语义等价规约违反: Reactor 成功但 execute_transition 失败 ({ctx})"),
+        (false, true) => panic!("语义等价规约违反: execute_transition 成功但 Reactor 失败 ({ctx})"),
+    }
+}
+
+// =============================================================================
 // 辅助:从 Reactor 事件流中提取 StateTransition 的 new_payload
 // =============================================================================
 
@@ -215,12 +266,8 @@ proptest! {
                 Err(e) => panic!("execute_transition failed: {:?}", e),
             };
 
-            // 比较 x 字段(都被 set 设为 new_value)
-            prop_assert_eq!(
-                reactor_pl.get("x").and_then(|v| v.as_i64()),
-                direct_pl.get("x").and_then(|v| v.as_i64()),
-                "x mismatch after set"
-            );
+            // 语义等价规约: 两条路径均成功,new_payload 必须结构全等(不止比较 x 字段)
+            assert_semantically_equivalent(true, &reactor_pl, true, &direct_pl, "set");
             // 验证 x 确实是 new_value
             prop_assert_eq!(
                 reactor_pl.get("x").and_then(|v| v.as_i64()),
@@ -266,16 +313,12 @@ proptest! {
             // 两条路径应产生相同类型的结果(都 Ok(State) 或都 Err)
             match (&reactor_result, &direct_result) {
                 (Some((reactor_pl, _)), Ok(TransitionResult::State { new_payload: direct_pl, .. })) => {
-                    // 两条路径都成功,比较 x 字段
-                    prop_assert_eq!(
-                        reactor_pl.get("x").and_then(|v| v.as_i64()),
-                        direct_pl.get("x").and_then(|v| v.as_i64()),
-                        "x mismatch after increment (delta={})",
-                        delta,
-                    );
+                    // 两条路径都成功:语义等价规约要求 payload 结构全等
+                    assert_semantically_equivalent(true, reactor_pl, true, direct_pl, "increment");
                 }
                 (None, Err(_)) => {
-                    // 两条路径都失败(如 increment on missing field 返回错误)
+                    // 两条路径都失败(如 increment on missing field 返回错误):
+                    // 满足语义等价规约的失败分支
                     prop_assert!(true, "both paths failed as expected");
                 }
                 (reactor_opt, direct_res) => {

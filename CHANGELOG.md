@@ -35,6 +35,33 @@
 
 ---
 
+## [0.2.4] - 2026-08-15
+
+**形式化验证 P0 阶段完善（PATCH）** — 落地差分测试语义等价规约、evaluate_domain 分层 Kani harness、验证证据归档规范。机制层无 API 破坏性变更，CLI 依赖版本同步 bump。
+
+### 🆕 新增
+
+- **验证证据归档规范**（[collect-verification-evidence.ps1](scripts/collect-verification-evidence.ps1)）：
+  - 自动化收集验证过程关键元数据（提交 SHA / 工具链版本 / 测试日志 / 差分结果），证据按 `evorule-{crate}/verification/evidence/` 归档，保证验证结果可追溯、可复核
+- **差分测试语义等价规约落地**（[differential_test.rs](evorule-reactor/verification/differential_test.rs) / [differential_test.rs](evorule-governance/verification/differential_test.rs)）：
+  - 新增语义等价断言函数，将 Reactor 异步流水线与 `execute_transition` 纯函数结果升级为全 payload 比较，差分测试实跑并归档 PASS 证据
+
+### 🔄 变更
+
+- **evaluate_domain 分层 Kani harness**（[kani_proofs.rs](evorule-tcb/verification/kani_proofs.rs)）：
+  - 移除原 `verify_evaluate_domain_eq/lt/exists_kani` 超时 proof（3 层嵌套 FixedMap 导致 CBMC 状态爆炸）
+  - 拆分为原子层（eq / lt / exists）+ 组合层（and / not）共 5 个 proof，降低状态空间、提升验证效率
+  - `evorule-tcb/Cargo.toml` `[package.metadata.kani]` proofs 列表同步更新
+- 版本同步 bump 至 0.2.4（workspace 单一真相源 `Cargo.toml` + 各子 crate 依赖版本对齐）
+
+### 向后兼容
+
+- ✅ 机制层公开 API 不变（tcb / reactor / governance）
+- ✅ fact log 格式不变
+- ✅ CLI 命令与输出格式不变
+
+---
+
 ## [0.2.3] - 2026-08-10
 
 **CLI 规则加载修复（PATCH）** — 修复 `evorule` CLI 的 `load_rules` 将规则目录内的初始数据文件 `payload.json` 误当作规则加载的问题。生产机制层（tcb / reactor / governance）无 Rust 源代码改动，仅版本同步 bump；核心变更在 CLI。

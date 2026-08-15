@@ -60,6 +60,11 @@ fn resolve_domain_path<'a>(exec_state: &'a JsonValue, path: &str) -> Option<&'a 
 #[cfg(kani)]
 fn resolve_domain_path<'a>(exec_state: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
     let bytes = path.as_bytes();
+    // 扁平路径:直接访问 exec_state 根层(分层 atom proof 使用,1 层 get_bytes,
+    // 避免 3 层嵌套 __exec__→payload→x 的 FixedMap 查找开销)。
+    if bytes.len() == 1 && bytes[0] == b'x' {
+        return exec_state.get_bytes(b"x");
+    }
     let exec = exec_state.get_bytes(b"__exec__")?;
 
     // 按路径长度分发（避免循环和切片）

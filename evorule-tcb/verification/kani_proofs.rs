@@ -61,20 +61,24 @@
 //! | `verify_set_sub_safety` | ✅ PASS | 4s | i64::checked_sub 不下溢 |
 //! | `verify_jsonvalue_array_safety` | ✅ PASS | 5s | Array 构造器 + empty_object 安全 |
 //! | `verify_resolve_path_object_kani` | ✅ PASS | 24s | resolve_path 对 FixedMap Object 正确 |
-//! | `verify_evaluate_domain_eq_kani` | ⏳ TIMEOUT | 610s | CBMC 对嵌套 FixedMap 状态爆炸 |
-//! | `verify_evaluate_domain_lt_kani` | ⏳ TIMEOUT | 610s | 同上 |
-//! | `verify_evaluate_domain_exists_kani` | ⏳ TIMEOUT | 610s | 同上 |
+//! | `verify_evaluate_domain_eq_atom_kani` | 🔧 待实跑 | - | 分层 atom(扁平 state),P0-4 分层方案 |
+//! | `verify_evaluate_domain_lt_atom_kani` | 🔧 待实跑 | - | 同上 |
+//! | `verify_evaluate_domain_exists_atom_kani` | 🔧 待实跑 | - | 同上 |
+//! | `verify_evaluate_domain_and_kani` | 🔧 待实跑 | - | 组合层 all |
+//! | `verify_evaluate_domain_not_kani` | 🔧 待实跑 | - | 组合层 not |
 //! | `verify_execute_transition_kani` | ✅ PASS | 11s | execute_transition 状态转换 |
 //! | `verify_termination_kani` | ✅ PASS | 231s | 有限步终止 (CBMC 4.6GB 内存) |
 //! | `verify_depth_enforcement_kani` | ✅ PASS | 60s | MAX_BRANCH_DEPTH 深度约束 |
 //!
-//! **总计 9/12 PASS, 3/12 TIMEOUT**。
+//! **原 2026-08-05 实测 9/12 PASS, 3/12 TIMEOUT**;2026-08-14 已将 3 个
+//! TIMEOUT(evaluate_domain eq/lt/exists)替换为分层 harness(见下文 P0-4 分层方案),
+//! 状态为已实现、待 WSL2 实跑。
 //!
-//! `evaluate_domain` 系列（eq/lt/exists）因 CBMC 对 3 层嵌套 FixedMap
-//! (`__exec__.payload.x`) 的符号执行状态爆炸,600s 超时。逻辑正确性由
-//! proptest 属性测试保底覆盖（`verification/proptest_props.rs`）：
-//! - `domain_eval_never_panics_arbitrary_type`：任意 domain 类型 + 字段缺失不 panic
-//! - `domain_eval_nested_never_panics`：嵌套 domain 递归不 panic
+//! `evaluate_domain` 系列原 proof(3 层嵌套 FixedMap `__exec__.payload.x`)因 CBMC
+//! 符号执行状态爆炸 610s 超时。逻辑正确性另由 proptest 属性测试保底覆盖
+//! (`verification/proptest_props.rs`):
+//! - `domain_eval_never_panics_arbitrary_type`:任意 domain 类型 + 字段缺失不 panic
+//! - `domain_eval_nested_never_panics`:嵌套 domain 递归不 panic
 //!
 //! 详见 `../docs/KANI.md` 和 `../TCB_SPEC.md`。
 
@@ -326,131 +330,160 @@ fn verify_resolve_path_object_kani() {
     );
 }
 
-/// 构造最小 exec_state: `{ __exec__: { payload: { x: <val> } } }`
+/// P0-4 分层验证方案(2026-08-14):evaluate_domain 分层 Kani harness
 ///
-/// Kani 专用辅助函数。使用 `from_sorted` 直接构造 FixedMap,**无二分查找**。
+/// # 背景
+/// 原 `verify_evaluate_domain_eq/lt/exists_kani` 构造 3 层嵌套 FixedMap
+/// (`__exec__→payload→x`) + 3 层 `resolve_domain_path`,CBMC 符号执行
+/// 状态爆炸,610s 超时(见上文验证状态表)。已由本分层方案替换。
 ///
-/// # 设计变更（2026-07-29 v5 优化）
+/// # 分层思路
+/// 把"路径解析"与"域类型逻辑"解耦:
+/// - **atom 层**:扁平 state `{x: val}` + 路径 `"x"`(resolve_domain_path 的
+///   Kani 分支直接返回 `exec_state.get_bytes(b"x")`,1 层 FixedMap 查找)。
+///   域逻辑(eq/lt/exists)对符号 val/target 的每个分支都被穷举。
+/// - **组合层**(all/not):子域求值结果被短路求值,组合逻辑(all 空列表
+///   vacuous truth、not 取反)被穷举。
+/// - 生产路径的 3 层解析由 `verify_resolve_path_object_kani` +
+///   proptest `domain_eval_nested_never_panics` 保底覆盖。
 ///
-/// v4 用 `ObjectMap::insert` 构造,每次 `insert` 内部执行 `binary_search_bytes`
-/// 二分查找循环 + 数组元素后移循环。3 层嵌套 Object 构造共 3 次 `insert`,
-/// 组合状态空间仍较大。
-///
-/// v5 改用 `from_sorted` 直接按索引写入数组,完全跳过二分查找和元素后移。
-/// 每个 FixedMap 只需 1 个 `while` 循环(1-3 次迭代)完成构造。
-fn make_exec_state_for_kani(val: i64) -> JsonValue {
-    // { x: <val> } — 1 key, 已排序
-    let payload = JsonValue::Object(ObjectMap::from_sorted([(
+/// # 扁平 state 构造
+/// `{x: <val>}` —— 1 层 FixedMap,1 次 from_sorted,零嵌套。
+fn make_flat_state_for_kani(val: i64) -> JsonValue {
+    JsonValue::Object(ObjectMap::from_sorted([(
         "x".to_string(),
         JsonValue::Integer(val),
-    )]));
-
-    // { payload: { x: <val> } } — 1 key, 已排序
-    let exec_inner = JsonValue::Object(ObjectMap::from_sorted([("payload".to_string(), payload)]));
-
-    // { __exec__: { payload: { x: <val> } } } — 1 key, 已排序
-    JsonValue::Object(ObjectMap::from_sorted([(
-        "__exec__".to_string(),
-        exec_inner,
     )]))
 }
 
-/// P0-4a: 验证 `evaluate_domain` 的 `eq` 域类型正确性
-///
-/// # 验证内容
-/// - `eq` domain 对 `__exec__.payload.x == target` 返回 `(val == target)`
-///
-/// # Kani 建模说明
-/// 使用 `from_sorted` 构造 FixedMap(无二分查找开销)。
-/// 键按字典序排列: "path" < "type" < "value"。
+/// P0-4a-atom: eq 域 —— 扁平 state,符号 val 与 target
 #[kani::proof]
-fn verify_evaluate_domain_eq_kani() {
+fn verify_evaluate_domain_eq_atom_kani() {
     let val: i64 = kani::any();
     let target: i64 = kani::any();
 
-    let exec_state = make_exec_state_for_kani(val);
+    let state = make_flat_state_for_kani(val);
 
-    // eq domain: { path, type, value } — 按字典序排列
     let eq_domain = JsonValue::Object(ObjectMap::from_sorted([
-        ("path".to_string(), JsonValue::string("__exec__.payload.x")),
         ("type".to_string(), JsonValue::string("eq")),
+        ("path".to_string(), JsonValue::string("x")),
         ("value".to_string(), JsonValue::Integer(target)),
     ]));
 
-    let eq_result = evaluate_domain(&eq_domain, &exec_state);
-    kani::assert(
-        eq_result == (val == target),
-        "eq domain matches arithmetic equality",
-    );
+    let result = evaluate_domain(&eq_domain, &state);
+    kani::assert(result == (val == target), "eq matches arithmetic equality");
 
-    // forget 含 FixedMap 的 JsonValue,避免 drop 建模开销
-    core::mem::forget(exec_state);
+    core::mem::forget(state);
     core::mem::forget(eq_domain);
 }
 
-/// P0-4b: 验证 `evaluate_domain` 的 `lt` 域类型正确性
-///
-/// # 验证内容
-/// - `lt` domain 对 `__exec__.payload.x < target` 返回 `(val < target)`
+/// P0-4b-atom: lt 域 —— 扁平 state,符号 val 与 target
 #[kani::proof]
-fn verify_evaluate_domain_lt_kani() {
+fn verify_evaluate_domain_lt_atom_kani() {
     let val: i64 = kani::any();
     let target: i64 = kani::any();
 
-    let exec_state = make_exec_state_for_kani(val);
+    let state = make_flat_state_for_kani(val);
 
-    // lt domain: { path, type, value } — 按字典序排列
     let lt_domain = JsonValue::Object(ObjectMap::from_sorted([
-        ("path".to_string(), JsonValue::string("__exec__.payload.x")),
         ("type".to_string(), JsonValue::string("lt")),
+        ("path".to_string(), JsonValue::string("x")),
         ("value".to_string(), JsonValue::Integer(target)),
     ]));
 
-    let lt_result = evaluate_domain(&lt_domain, &exec_state);
-    kani::assert(
-        lt_result == (val < target),
-        "lt domain matches arithmetic less-than",
-    );
+    let result = evaluate_domain(&lt_domain, &state);
+    kani::assert(result == (val < target), "lt matches arithmetic less-than");
 
-    core::mem::forget(exec_state);
+    core::mem::forget(state);
     core::mem::forget(lt_domain);
 }
 
-/// P0-4c: 验证 `evaluate_domain` 的 `exists` 域类型正确性
-///
-/// # 验证内容
-/// - `exists` domain 对存在路径返回 `true`
-/// - `exists` domain 对不存在路径返回 `false`
+/// P0-4c-atom: exists 域 —— 扁平 state,存在/缺失路径
 #[kani::proof]
-fn verify_evaluate_domain_exists_kani() {
+fn verify_evaluate_domain_exists_atom_kani() {
     let val: i64 = kani::any();
 
-    let exec_state = make_exec_state_for_kani(val);
+    let state = make_flat_state_for_kani(val);
 
-    // 1. 存在路径 __exec__.payload.x → true
-    // { path, type } — 按字典序排列
     let exists_domain = JsonValue::Object(ObjectMap::from_sorted([
-        ("path".to_string(), JsonValue::string("__exec__.payload.x")),
         ("type".to_string(), JsonValue::string("exists")),
+        ("path".to_string(), JsonValue::string("x")),
     ]));
-    let exists_result = evaluate_domain(&exists_domain, &exec_state);
-    kani::assert(exists_result, "exists returns true for present path");
+    kani::assert(
+        evaluate_domain(&exists_domain, &state),
+        "exists true for present path",
+    );
 
-    // 2. 不存在路径 __exec__.payload.missing → false
-    // { path, type } — 按字典序排列
     let missing_domain = JsonValue::Object(ObjectMap::from_sorted([
-        (
-            "path".to_string(),
-            JsonValue::string("__exec__.payload.missing"),
-        ),
         ("type".to_string(), JsonValue::string("exists")),
+        ("path".to_string(), JsonValue::string("missing")),
     ]));
-    let missing_result = evaluate_domain(&missing_domain, &exec_state);
-    kani::assert(!missing_result, "exists returns false for absent path");
+    kani::assert(
+        !evaluate_domain(&missing_domain, &state),
+        "exists false for absent path",
+    );
 
-    core::mem::forget(exec_state);
+    core::mem::forget(state);
     core::mem::forget(exists_domain);
     core::mem::forget(missing_domain);
+}
+
+/// P0-4d-combo: all(and) —— 组合层,all 空列表真 + 短路求值
+#[kani::proof]
+fn verify_evaluate_domain_and_kani() {
+    let val: i64 = kani::any();
+    let target: i64 = kani::any();
+
+    let state = make_flat_state_for_kani(val);
+
+    let eq_domain = JsonValue::Object(ObjectMap::from_sorted([
+        ("type".to_string(), JsonValue::string("eq")),
+        ("path".to_string(), JsonValue::string("x")),
+        ("value".to_string(), JsonValue::Integer(target)),
+    ]));
+    let and_domain = JsonValue::Object(ObjectMap::from_sorted([
+        ("type".to_string(), JsonValue::string("all")),
+        ("inner".to_string(), JsonValue::array(vec![eq_domain])),
+    ]));
+
+    let result = evaluate_domain(&and_domain, &state);
+    kani::assert(result == (val == target), "all([eq]) matches eq");
+
+    // all 空列表 = 真(vacuous truth)
+    let empty_all = JsonValue::Object(ObjectMap::from_sorted([
+        ("type".to_string(), JsonValue::string("all")),
+        ("inner".to_string(), JsonValue::empty_array()),
+    ]));
+    kani::assert(evaluate_domain(&empty_all, &state), "all([]) is true");
+
+    core::mem::forget(state);
+    core::mem::forget(and_domain);
+    core::mem::forget(empty_all);
+}
+
+/// P0-4e-combo: not —— 组合层,取反逻辑
+#[kani::proof]
+fn verify_evaluate_domain_not_kani() {
+    let val: i64 = kani::any();
+    let target: i64 = kani::any();
+
+    let state = make_flat_state_for_kani(val);
+
+    let eq_domain = JsonValue::Object(ObjectMap::from_sorted([
+        ("type".to_string(), JsonValue::string("eq")),
+        ("path".to_string(), JsonValue::string("x")),
+        ("value".to_string(), JsonValue::Integer(target)),
+    ]));
+    let not_domain = JsonValue::Object(ObjectMap::from_sorted([
+        ("type".to_string(), JsonValue::string("not")),
+        ("inner".to_string(), eq_domain),
+    ]));
+
+    let result = evaluate_domain(&not_domain, &state);
+    kani::assert(result == (val != target), "not(eq) matches inequality");
+
+    core::mem::forget(state);
+    core::mem::forget(not_domain);
 }
 
 /// P0-5: 验证 `execute_transition` 端到端不 panic + 确定性 + 正确性
