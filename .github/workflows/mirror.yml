@@ -32,4 +32,11 @@ jobs:
           done
 
       - name: Mirror tags to GitHub
-        run: git push origin --tags --force
+        run: |
+          # 仅镜像发布标签（v*），跳过 pre-*/checkpoint-* 等开发检查点标签。
+          # 这些检查点标签指向历史提交，其中包含旧版 .github/workflows/ci.yml，
+          # GITHUB_TOKEN（GitHub App）无 workflows 权限，推送会被拒绝。
+          for tag in $(git tag -l 'v*'); do
+            [ -z "$tag" ] && continue
+            git push origin "refs/tags/$tag:refs/tags/$tag" --force
+          done
