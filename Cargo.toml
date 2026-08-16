@@ -1,0 +1,40 @@
+[workspace]
+resolver = "2"
+# evorule-b 是 D:\evorule 的副本（用于本地测试修正，未迁移到主仓）。
+# 2026-08-17：将主仓全部 4 仓 (tcb / reactor / governance / cli) 复制进来，
+# TCB 用 evorule-b 的 v0.3.1 审计版（含 collect/merge/has_fields），
+# reactor/governance/cli 用主仓 v0.2.4。workspace 包含全部 4 仓用于本地联调。
+members = [
+    "evorule-tcb",
+    "evorule-reactor",
+    "evorule-governance",
+    "evorule-cli",
+]
+
+[workspace.package]
+version = "0.2.4"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+authors = ["EvoRule Project"]
+rust-version = "1.74"
+homepage = "https://gitee.com/evorule/evorule"
+repository = "https://gitee.com/evorule/evorule"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+cognitive_complexity = { level = "warn", priority = -1 }
+too_many_lines = { level = "warn", priority = -1 }
+type_complexity = { level = "warn", priority = -1 }
+module_inception = "warn"
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

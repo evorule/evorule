@@ -1,0 +1,40 @@
+[package]
+name = "evorule-tcb"
+version = "0.3.1"
+edition = "2021"
+authors = ["EvoRule Project"]
+license = "AGPL-3.0-or-later"
+description = "EvoRule TCB Core - 纯计算内核，零依赖，确定性状态转换"
+repository = "https://gitee.com/evorule/evorule"
+keywords = ["tcb", "deterministic", "state-machine", "no-std"]
+categories = ["no-std", "cryptography", "embedded"]
+
+[dependencies]
+# 无外部依赖（#![no_std] 兼容）
+# alloc 由 Rust 标准库提供
+
+[features]
+default = ["std"]
+# std 特性：启用标准库支持（用于测试和错误处理）
+std = []
+
+[lints.rust]
+# kani cfg 由 kani 工具链注入，Cargo 不识别，显式声明以抑制 warning
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[lints.clippy]
+# G1: panic-prone（build.rs L1 已守，clippy L2 双保险）
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+# F7/F8: 嵌套复杂度
+cognitive_complexity = { level = "warn", priority = -1 }
+# F9: 函数长度
+too_many_lines = { level = "warn", priority = -1 }
+# F10 部分: 类型复杂度
+type_complexity = { level = "warn", priority = -1 }
+# F6 部分: 模块导入图
+module_inception = "warn"
+# 通用代码质量（warn 级，不阻断 CI）
+all = { level = "warn", priority = -1 }

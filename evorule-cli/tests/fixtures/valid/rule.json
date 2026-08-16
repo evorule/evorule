@@ -1,0 +1,20 @@
+{
+  "transform": [
+    {
+      "type": "branch",
+      "params": {
+        "domain": {"type": "all", "inner": []},
+        "on_true": [
+          {
+            "type": "set",
+            "params": {
+              "attr": "x",
+              "operation": "set",
+              "value": 42
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

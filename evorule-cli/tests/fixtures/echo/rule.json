@@ -1,0 +1,20 @@
+{
+  "transform": [
+    {
+      "type": "branch",
+      "params": {
+        "domain": {"type": "all", "inner": []},
+        "on_true": [
+          {
+            "type": "set",
+            "params": {
+              "attr": "result",
+              "operation": "set",
+              "value": "__exec__.payload.input"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

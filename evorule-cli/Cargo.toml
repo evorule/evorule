@@ -1,0 +1,70 @@
+[package]
+name = "evorule-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "EvoRule CLI - Local JSON rule executor for compliance-critical users (zero network, zero telemetry, musl static)"
+readme = "README.md"
+documentation = "https://docs.rs/evorule-cli"
+# L0 合规核定位：零网络、零 telemetry、纯本地执行。面向政府/军工/医疗/金融/法律合规刚需场景
+# 需要远程 HTTP API 交互见 evorule-server 独立仓
+# 需要应用层工具（规则脚手架 / 仪表盘等）见 evorule-application 仓
+keywords = ["cli", "deterministic", "audit", "compliance", "rules-engine"]
+categories = [
+    "command-line-utilities",
+    "config",
+    "data-structures",
+    "development-tools",
+]
+exclude = [
+    "build-musl.sh",      # musl 构建脚本（开发用）
+    "check-musl.sh",      # musl 校验脚本
+    "run_kani.sh",        # Kani 验证脚本（dev-only）
+    "verify.sh",          # 版本验证脚本
+    "tests/",             # e2e 测试脚本（含 fixtures，下游不需要）
+    "examples/README.md", # 已改为迁移说明（机制层最小样例，不打包）
+    "CLI_SPEC.md",        # 仓内设计文档
+    "**/*.log",           # 运行日志
+]
+
+[[bin]]
+name = "evorule"     # 用户友好名（不是包名 evorule-cli）
+path = "src/main.rs"
+
+
+[lints]
+workspace = true
+[dependencies]
+# Core: evorule-tcb（纯函数 execute_transition）+ evorule-reactor（Fact/FactId/IoType/wal 序列化/哈希链）
+#
+# 依赖范围决策：
+# - evorule-reactor 拉 tokio + blake3 + serde_json（全 pure Rust），可 musl 静态链接
+# - evorule-governance 虽 H6 已去应用层依赖，但 CLI 目前仅需 tier0+tier1 功能，故不引入
+# - CLI 主执行路径同步（execute_transition 是纯函数），tokio 仅用于 reactor spawn + WAL flush
+# - persistence feature 启用 WAL 读写（含哈希链验证），serde_json/blake3 均 pure Rust，支持 musl
+evorule-tcb = { path = "../evorule-tcb", version = "0.3.1" }
+evorule-reactor = { path = "../evorule-reactor", version = "0.2.4", features = [
+    "persistence",
+] }
+
+# CLI essentials (all pure Rust)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive", "env"] }
+thiserror = "2"
+
+# 哈希链验证（verify-chain 命令需要直接调用 blake3 验证存储的哈希）
+blake3 = "1"
+
+# Tracing (optional but useful for the user to see what evorule is doing)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 注: profile 在 workspace 根 Cargo.toml 统一配置
+# evorule-cli 不重复声明,避免 "profiles for the non root package will be ignored" 警告
+
+# musl static link target: cargo build --release --target x86_64-unknown-linux-musl

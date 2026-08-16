@@ -1,0 +1,125 @@
+# Rust 构建产物
+target/
+**/target/
+.build/
+**/.build/
+
+# 测试日志与中间产物
+test_results/
+**/test_results/
+*.log
+**/*.log
+check_output.log
+test_output.log
+
+# 运行时数据
+data/
+*.db
+*.sqlite
+*.db-journal
+
+# 环境变量（可能含密钥）
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# Windows 构建产物
+*.exe
+*.pdb
+*.dll
+
+# Kani 形式化验证产物
+kani-results/
+*.kani
+.kani-logs/
+
+# 临时文件
+*.tmp
+*.bak
+*~
+
+# Proptest 失败持久化
+*.proptest-regressions
+
+# Trae 临时
+.trae/
+
+# 仓内 L2/L3 内部文档（保护，不公开发布）
+文档/
+**/文档/
+**/文档/**
+
+# 2026-08-17 evorule-b 复刻
+# 物理位置：仓内 L2/L3 工作文档目录
+# 防止误发布
+
+# === 2026-08-17 升级 v0.3.1 补充保护 ===
+
+# 仓内英文 docs/ 内部修复日志（与 文档/ 重复, 不公开发布）
+docs/
+**/docs/
+**/docs/**
+
+# scripts/ 私人调试脚本（下划线/双下划线开头, 不是发布物）
+scripts/_*.ps1
+scripts/__*.ps1
+scripts/_*.sh
+scripts/__*.sh
+**/scripts/_*.ps1
+**/scripts/__*.ps1
+**/scripts/_*.sh
+**/scripts/__*.sh
+
+# Python 缓存
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build/verify/check 脚本（开发/CI 工具, 不是 release 资产）
+build-*.sh
+verify-*.sh
+check-*.sh
+# 简写形式 (无 dash, 如 verify.sh / check.sh)
+build.sh
+verify.sh
+check.sh
+**/build-*.sh
+**/verify-*.sh
+**/check-*.sh
+**/build.sh
+**/verify.sh
+**/check.sh
+
+# Kani 形式化验证收集脚本 + 证据
+collect_kani_artifacts.sh
+run_kani_proofs.sh
+run_kani.sh
+run-kani.sh
+**/collect_kani_artifacts.sh
+**/run_kani_proofs.sh
+**/run_kani.sh
+**/run-kani.sh
+verification/evidence/
+**/verification/evidence/
+*.kani-stdout.txt
+*.kani-stderr.txt
+# 注意: verification/kani_proofs.rs 是证明源码, NOT ignore (保留)
+
+# Hash 快照文件（dev 产物）
+hash_snapshot.txt
+**/hash_snapshot.txt
+
+# Examples 的 Cargo.lock（examples 自身 lock, workspace 顶层 Cargo.lock 保留）
+examples/**/Cargo.lock
