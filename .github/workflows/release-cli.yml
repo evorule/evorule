@@ -20,6 +20,8 @@ jobs:
   # 说明：evorule-cli 通过 crates.io 发布 + GitHub Release 附带原生二进制。
   # macOS 的 x86_64 与 aarch64 无法交叉编译（需 Apple SDK），故用原生 mac runner 分别构建；
   # Linux x86_64 / Windows x86_64 用各自原生 runner。
+  # 注意：macos-13（Intel）runner 镜像已于 2025-12-04 被 GitHub 全面退役，标签不再分配 runner，
+  # 会导致 job 无限排队。x86_64 构建改用官方替代标签 macos-15-intel。
   build-cli:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
@@ -36,7 +38,7 @@ jobs:
             bin: evorule.exe
             archive: zip
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-15-intel
             bin: evorule
             archive: tar.gz
           - target: aarch64-apple-darwin
