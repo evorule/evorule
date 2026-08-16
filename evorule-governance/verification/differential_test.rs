@@ -59,7 +59,7 @@ fn tcb_to_serde(v: &JsonValue) -> serde_json::Value {
         JsonValue::Null => serde_json::Value::Null,
         JsonValue::Bool(b) => serde_json::Value::Bool(*b),
         JsonValue::Integer(i) => serde_json::Value::Number((*i).into()),
-        JsonValue::String(s) => serde_json::Value::String(s.clone()),
+        JsonValue::String(s) => serde_json::Value::String(s.to_string()),
         JsonValue::Array(arr) => serde_json::Value::Array(arr.iter().map(tcb_to_serde).collect()),
         JsonValue::Object(map) => {
             let mut obj = serde_json::Map::new();

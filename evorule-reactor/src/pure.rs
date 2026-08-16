@@ -336,10 +336,10 @@ mod tests {
                     if let Some(i) = n.as_i64() {
                         JsonValue::Integer(i)
                     } else {
-                        JsonValue::String(n.to_string())
+                        JsonValue::string(n.to_string())
                     }
                 }
-                serde_json::Value::String(s) => JsonValue::String(s),
+                serde_json::Value::String(s) => JsonValue::string(s),
                 serde_json::Value::Array(arr) => {
                     JsonValue::Array(arr.into_iter().map(serde_to_tcb).collect())
                 }

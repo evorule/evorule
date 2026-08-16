@@ -16,7 +16,7 @@ fn json_value_to_serde(v: &JsonValue) -> serde_json::Value {
         JsonValue::Null => serde_json::Value::Null,
         JsonValue::Bool(b) => serde_json::Value::Bool(*b),
         JsonValue::Integer(i) => serde_json::Value::Number((*i).into()),
-        JsonValue::String(s) => serde_json::Value::String(s.clone()),
+        JsonValue::String(s) => serde_json::Value::String(s.to_string()),
         JsonValue::Array(arr) => {
             serde_json::Value::Array(arr.iter().map(json_value_to_serde).collect())
         }
@@ -306,7 +306,7 @@ mod tests {
                     JsonValue::Null
                 }
             }
-            serde_json::Value::String(s) => JsonValue::String(s),
+            serde_json::Value::String(s) => JsonValue::string(s),
             serde_json::Value::Array(arr) => {
                 JsonValue::Array(arr.into_iter().map(serde_to_json).collect())
             }
