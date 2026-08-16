@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "发布 tag（如 v0.2.4）。留空则使用推送的 tag。"
+        required: false
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -85,6 +90,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 解析发布 tag
+        id: tag
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 下载所有产物
         uses: actions/download-artifact@v4
         with:
@@ -97,12 +112,13 @@ jobs:
       - name: 创建 Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.tag }}
           generate_release_notes: true
           files: |
             release-assets/evorule-cli-*.tar.gz
             release-assets/evorule-cli-*.zip
           body: |
-            ## EvoRule CLI ${{ github.ref_name }}
+            ## EvoRule CLI ${{ steps.tag.outputs.tag }}
 
             ### 📦 产物
             - `evorule-cli-x86_64-unknown-linux-gnu.tar.gz` — Linux x86_64
