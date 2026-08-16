@@ -23,10 +23,27 @@ jobs:
           git remote add gitee https://gitee.com/evorule/evorule.git
           git fetch gitee --tags --prune --force
 
+      - name: 配置带 workflow 权限的推送令牌
+        # 根因修复：默认 GITHUB_TOKEN 是 GitHub App 令牌，无 workflows 权限，
+        # 推送任何修改 .github/workflows/* 的提交都会被 GitHub 拒绝
+        # （"refusing to allow a GitHub App to create or update workflow ..."），
+        # 导致镜像无法同步 CI/发布流程的改动。
+        # 改用 MIRROR_TOKEN（PAT，含 repo + workflow scope）推送才能完整同步。
+        # 首次需在 Settings → Secrets → Actions 添加仓库 secret：MIRROR_TOKEN。
+        run: |
+          if [ -z "${MIRROR_TOKEN}" ]; then
+            echo "::warning::MIRROR_TOKEN 未配置，将退化为 GITHUB_TOKEN（无法同步 workflow 文件改动）"
+          else
+            git remote set-url origin "https://x-access-token:${MIRROR_TOKEN}@github.com/evorule/evorule.git"
+          fi
+        env:
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+
       - name: Mirror branches to GitHub
         run: |
-          # 将 Gitee 上的每个分支强制同步到 GitHub 同名分支（完全镜像对齐）
-          for branch in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/gitee/); do
+          # 将 Gitee 上的每个真实分支强制同步到 GitHub 同名分支（完全镜像对齐）。
+          # 跳过 HEAD 符号引用（gitee/HEAD → HEAD 不是真实分支，推送会被拒绝）。
+          for branch in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/gitee/ | grep -v '^HEAD$'); do
             [ -z "$branch" ] && continue
             git push origin "refs/remotes/gitee/$branch:refs/heads/$branch" --force
           done
@@ -34,8 +51,6 @@ jobs:
       - name: Mirror tags to GitHub
         run: |
           # 仅镜像发布标签（v*），跳过 pre-*/checkpoint-* 等开发检查点标签。
-          # 这些检查点标签指向历史提交，其中包含旧版 .github/workflows/ci.yml，
-          # GITHUB_TOKEN（GitHub App）无 workflows 权限，推送会被拒绝。
           for tag in $(git tag -l 'v*'); do
             [ -z "$tag" ] && continue
             git push origin "refs/tags/$tag:refs/tags/$tag" --force
