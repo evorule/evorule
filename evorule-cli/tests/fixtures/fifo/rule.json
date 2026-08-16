@@ -1,0 +1,62 @@
+{
+  "transform": [
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "instruction",
+          "instruction_type": "noop"
+        },
+        "on_true": [
+          {
+            "type": "push",
+            "params": {
+              "instructions": [
+                {"type": "step1"},
+                {"type": "step2"}
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "instruction",
+          "instruction_type": "step1"
+        },
+        "on_true": [
+          {
+            "type": "set",
+            "params": {
+              "attr": "order",
+              "operation": "set",
+              "value": "first"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "instruction",
+          "instruction_type": "step2"
+        },
+        "on_true": [
+          {
+            "type": "set",
+            "params": {
+              "attr": "order",
+              "operation": "set",
+              "value": "second"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

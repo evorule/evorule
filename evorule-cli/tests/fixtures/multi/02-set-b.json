@@ -1,0 +1,12 @@
+{
+  "transform": [
+    {
+      "type": "set",
+      "params": {
+        "attr": "b",
+        "operation": "set",
+        "value": 2
+      }
+    }
+  ]
+}

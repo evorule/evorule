@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 EvoRule Project
+# This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+
+# §二 #8 修复：根 Cargo.toml exclude 了本目录，但 Cargo 仍会向上查找 workspace。
+# 显式声明空 workspace 表，使本目录成为独立 workspace，避免 "believes it's in a workspace" 错误。
+[workspace]
+
+[package]
+name = "reactive_researcher"
+version = "0.2.4"
+edition = "2021"
+description = "EvoRule reference implementation - reactive researcher demo (1.0.0 §4.4 gate)"
+license = "AGPL-3.0-or-later"
+repository = "https://gitee.com/evo-rule-lab/evorule"
+publish = false
+
+[[bin]]
+name = "reactive_researcher"
+path = "src/main.rs"
+
+[dependencies]
+evorule-tcb = { path = "../../evorule-tcb", version = "0.2.4" }
+evorule-reactor = { path = "../../evorule-reactor", version = "0.2.4" }
+evorule-governance = { path = "../../evorule-governance", version = "0.2.4" }
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "signal",
+    "time",
+    "fs",
+] }
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
+# H5: IoHandler trait 已下沉到 evorule-reactor,需 async-trait 支持 object-safe 实现
+async-trait = "0.1"
