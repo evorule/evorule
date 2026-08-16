@@ -62,16 +62,21 @@ jobs:
 
       - name: 打包（tar.gz）
         if: matrix.archive == 'tar.gz'
+        # 注意：仓库 .cargo/config.toml 设置了 target-dir = ".build/rust"，
+        # 产物不在默认 target/ 目录，必须用 cargo metadata 解析真实 target_directory。
         run: |
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../evorule-cli-${{ matrix.target }}.tar.gz ${{ matrix.bin }}
-          cd ../..
+          TARGET_DIR=$(cargo metadata --no-deps --format-version 1 | python3 -c "import sys,json;print(json.load(sys.stdin)['target_directory'])")
+          echo "target_dir=$TARGET_DIR"
+          cd "$TARGET_DIR/${{ matrix.target }}/release"
+          tar czf "$GITHUB_WORKSPACE/evorule-cli-${{ matrix.target }}.tar.gz" ${{ matrix.bin }}
 
       - name: 打包（zip）
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          Compress-Archive -Path "target/${{ matrix.target }}/release/${{ matrix.bin }}" -DestinationPath "evorule-cli-${{ matrix.target }}.zip"
+          $td = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).target_directory
+          Write-Host "target_dir=$td"
+          Compress-Archive -Path "$td/${{ matrix.target }}/release/${{ matrix.bin }}" -DestinationPath "$env:GITHUB_WORKSPACE/evorule-cli-${{ matrix.target }}.zip"
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
