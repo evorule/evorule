@@ -66,8 +66,8 @@ impl IoDispatcher {
     /// # 示例
     /// ```ignore
     /// let dispatcher = IoDispatcher::builder()
-    ///     .register(IoType::query_db(), Arc::new(db_handler))
-    ///     .register(IoType::http_get(), Arc::new(http_handler))
+    ///     .register(IoType::call_external(), Arc::new(llm_handler))
+    ///     .register(IoType::call_service(), Arc::new(service_handler))
     ///     .build();
     /// ```
     pub fn builder() -> IoDispatcherBuilder {

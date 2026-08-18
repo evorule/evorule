@@ -1,3 +1,22 @@
+<!--
+  Copyright 2026 EvoRule Project
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published
+  by the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # GATE_REFERENCE (跨模块门控索引)
 
 > **适用范围**: evorule-tcb / evorule-reactor / evorule-governance / evorule-cli
@@ -209,8 +228,8 @@ workspace = true
 | 二、确定性约束 (T4-T6, T8, T12-T14) | T4, T5, T6, T8, T12, T13, T14 | L1 (23 模式)   |
 | 三、安全性约束 (G1, G2)              | G1 (= T9, T11), G2 (= T10) | L1 (T9, T10, T11) |
 | 四、数据流约束 (D1-D10)              | D1, D2, D6, D7, D8, D9, D10  | L3 引用        |
-| 五、编译时门禁 (build.rs)             | — (引用 L1)                | §3.2 完整配置  |
-| 六、形式化验证 (Kani 5 proof)        | 全部 T 编号交叉验证         | Kani 0.67.0    |
+| 五、编译时门禁 (build.rs)             | — (引用 L1)                | §5.1-5.4 配置  |
+| 六、形式化验证                       | ✅ P0-P21 已完成(34 proofs,5 层覆盖) | — (Kani 外部工具,详见 `evorule-tcb/verification/kani-formal-verification-design.md`) |
 | 七、基础设施约束 (不可逾越)           | —                          | —              |
 | 八、代码量目标 vs 实际                | —                          | —              |
 | 总结口诀 / 编号映射                   | G/T 交叉引用              | —              |
@@ -246,35 +265,25 @@ workspace = true
 
 按以下豁免设计原则(deny 类永不豁免 + warn 类按"重构成本/收益"权衡 + 测试代码全豁免), 实际豁免 3 类:
 
-### 6.1 tests/ + examples/ 文件级豁免 (14 文件)
+### 6.1 tests/ + examples/ 文件级豁免 (8 文件)
 
 测试代码 + examples 是 Cargo 演示代码, 允许 panic/expect (L1 build.rs 已守 panic-prone 关键路径)。
 
-**Tier 0** (5):
-- `evorule-tcb/verification/kani_proofs.rs`
-- `evorule-tcb/verification/proptest_props.rs`
-- `evorule-tcb/tests/complex_branch_test.rs` (额外 `#[allow(clippy::too_many_lines)]` 在 fixture 函数)
-- `evorule-tcb/tests/integration_end_to_end.rs`
-- `evorule-tcb/tests/panic_free.rs`
-- `evorule-tcb/tests/tcb_error_variants.rs`
-- `evorule-tcb/examples/end_to_end.rs`
+**Tier 0** (1):
+- `evorule-tcb/tests/integration_test.rs`
 
-**Tier 1** (2):
+**Tier 1** (3):
 - `evorule-reactor/tests/complex_rule_test.rs` (额外 `#[allow(clippy::too_many_lines)]` 在 fixture 函数)
 - `evorule-reactor/tests/integration_test.rs`
+- `evorule-reactor/examples/generate_hashed_wal.rs`
 
-**Tier 2** (5):
-- `evorule-governance/tests/fault_recovery_test.rs`
-- `evorule-governance/tests/integration_test.rs`
-- `evorule-governance/tests/portal_integration_test.rs`
-- `evorule-governance/tests/rate_limit_test.rs`
+**Tier 2** (4):
 - `evorule-governance/tests/sse_integration_test.rs`
+- `evorule-governance/tests/end_to_end_audit_chain.rs`
+- `evorule-governance/tests/session_isolation_test.rs`
 - `evorule-governance/examples/bench_blake3.rs`
-- `evorule-governance/examples/bench_determinism.rs`
-- `evorule-governance/examples/bench_long_session.rs`
-- `evorule-governance/examples/bench_throughput.rs`
 
-### 6.2 src/ mod tests 豁免 (33 文件)
+### 6.2 src/ mod tests 豁免 (27 文件)
 
 src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]`。
 
@@ -291,7 +300,7 @@ src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allo
 
 > 注：H5 + 走神 9 外迁后，`object_pool.rs` / `cluster.rs` / `api/{auth,session,server,hot_reload}.rs` / `io_handlers/{http,memory}_handler.rs` / `bin/evorule_server.rs` 均已迁出 evorule-governance（现位于 evorule-server 独立仓）；evorule-governance 现为纯机制层库。
 
-### 6.3 src/ 函数级 cognitive_complexity / too_many_lines 豁免 (12 处)
+### 6.3 src/ 函数级 cognitive_complexity / too_many_lines 豁免 (16 处)
 
 按"重构成本/收益"权衡, 大型 dispatch / 拆函数影响接口稳定性的生产函数:
 
@@ -300,19 +309,19 @@ src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allo
 | `evorule-reactor/src/reactor.rs:385` | `async fn run` | 119/25, 285/100 | 反应器主循环, 拆函数影响接口 |
 | `evorule-reactor/src/reactor.rs:999` | `fn handle_fact` | 47/25 | 7 种 Fact 变体 match |
 | `evorule-reactor/src/wal.rs:232` | `pub fn fact_from_json` | 124/100 | 7 种 Fact 变体扁平 match |
-| `evorule-governance/src/api/hot_reload.rs:100` | `pub fn validate_core_eval` | 144/100 | 沙箱预执行所有指令 |
-| `evorule-governance/src/api/hot_reload.rs:325` | notify watcher closure | 52/25 | 多 Event 分支 |
-| `evorule-governance/src/api/server.rs:1974` | `pub fn build_router` | 103/100 | axum Router 多 route |
+| `evorule-reactor/src/facts_log.rs:386` | `pub fn recover_with_options` | 109/100 (v0.3.1 新增) | WAL 重放 + mount + 哈希链恢复必须单函数原子语义 |
+| `evorule-reactor/src/facts_log.rs:538` | `pub fn append` | 115/100 (v0.3.1 新增) | Kani 简化路径 + 非 Kani 完整路径必须单函数 |
 | `evorule-governance/src/auditor.rs:210` | `pub fn audit_new` | 41/25 | 审计遍历 + 哈希 + append |
+| `evorule-governance/src/auditor.rs:644` | `pub fn load_from_tier1_wal` | 106/100 (v0.3.1 新增) | tier1 WAL 加载 + 链式哈希验证必须单函数 |
 | `evorule-governance/src/hash.rs:101` | `pub fn fact_to_stable_json` | 65/25, 136/100 | 7 种 Fact 变体 + 嵌套 |
 | `evorule-governance/src/hash.rs:310` | `pub fn verify_hash_chain` | 52/25 | 链式哈希 + early return |
 | `evorule-governance/src/io_subscriber.rs:221` | `async fn dispatch_and_respond` | 43/25 | IO dispatch + 重试 + 回写 |
 | `evorule-governance/src/metrics.rs:79` | `pub fn new` | 102/100 | 多指标注册 |
-| `evorule-governance/src/bin/evorule_server.rs:134` | `fn load_config_file` | 33/25 | 多配置源分支 |
-| `evorule-governance/src/bin/evorule_server.rs:433` | `async fn log_cleanup_task` | 52/25 | 日志清理多分支 |
-| `evorule-governance/src/bin/evorule_server.rs:545` | `async fn main` | 268/100 | 主函数集成所有子命令 |
 | `evorule-cli/src/main.rs:222` | `fn run_rules` | 57/25 | CLI 命令 dispatch |
 | `evorule-cli/src/main.rs:428` | `fn validate_rules` | 45/25 | 验证规则链 |
+| `evorule-cli/src/executor.rs:53` | `pub fn execute` | 108/100 (v0.3.1 新增) | CLI 主循环 + I/O 两阶段 + max_steps 门禁必须单函数 |
+| `evorule-tcb/src/transition.rs:1245` | `fn test_while_loop_condition_false_returns_state_not_ignored` | 102/100 (v0.3.1 新增) | test fixture 故意复杂, 拆函数让上下文散落 |
+| `evorule-tcb/src/transition.rs:1955` | `fn react_core_eval` | 149/100 (v0.3.1 新增) | 3 条 ReAct 规则必须在同一函数内构造完整 context |
 
 每处豁免都配 `// 豁免理由: ...` 注释, 说明豁免依据(deny 类永不豁免 / warn 类按"成本/收益"权衡)。
 

@@ -1,0 +1,209 @@
+# CI for EvoRule 中文版 (Gitee Go)
+#
+# 覆盖 (10 个 job):
+# - test:           Linux + Windows 全量测试 + doc test + release 编译
+# - fmt:            rustfmt --check (风格统一)
+# - clippy:         clippy -D warnings (0 warnings 是 1.0 升门条件)
+# - audit:          cargo audit (0 高危是 1.0 升门条件)
+# - e2e:            evorule-cli/tests/e2e.sh (TAP) + cli_test 集成
+# - tcb-determinism: TCB 零依赖产物 + proptest 确定性
+# - kani:           TCB 形式化验证 34 proofs
+#
+# 设计说明:
+# - Gitee Go runner 主支持 Linux/Windows；macOS 不在矩阵（macOS 二进制由未来英文版 GitHub Actions 出）
+# - rust-version 1.74; rust-toolchain.toml 锁 1.74.0 (CI / 本地 / 贡献者一致)
+# - 与 .github/workflows/ci.yml 等价但独立维护，零镜像
+# - rustfmt / clippy 组件由 rust-toolchain.toml 装
+name: CI
+
+on:
+  push:
+    branches: [main, master, "release/**"]
+  pull_request:
+    branches: [main, master]
+  # 允许手动触发
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTUP_TOOLCHAIN: "1.97.1"   # 与 rust-toolchain.toml 对齐, 防止 runner 用错版本
+
+jobs:
+  # ==========================================================================
+  # 1. 双平台全量测试 (Linux + Windows)
+  # ==========================================================================
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-rust@v2
+        with:
+          rust-version: ${{ env.RUSTUP_TOOLCHAIN }}
+          cache: true
+
+      - name: 全量测试 (workspace)
+        run: cargo test --workspace --all-targets
+
+      - name: 文档测试
+        run: cargo test --workspace --doc
+
+      - name: 编译检查 (release, --all-targets 含 examples/benches/tests, 验证门禁)
+        run: cargo build --workspace --release --all-targets
+
+  # ==========================================================================
+  # 2. rustfmt 风格检查
+  # ==========================================================================
+  fmt:
+    name: fmt check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-rust@v2
+        with:
+          rust-version: ${{ env.RUSTUP_TOOLCHAIN }}
+          components: rustfmt
+          cache: true
+
+      - name: 验证所有 workspace crate 风格统一
+        run: cargo fmt --all -- --check
+
+  # ==========================================================================
+  # 3. clippy 0-warnings 把关
+  # ==========================================================================
+  clippy:
+    name: clippy (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-rust@v2
+        with:
+          rust-version: ${{ env.RUSTUP_TOOLCHAIN }}
+          components: clippy
+          cache: true
+
+      # workspace.lints.clippy 在 Cargo.toml 已配; -D warnings 把 lint 警告升级为 error
+      - name: clippy 全量 (-D warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # ==========================================================================
+  # 4. cargo audit 0 高危
+  # ==========================================================================
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: 安装 cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: 扫描依赖已知漏洞
+        # 1.0 升门条件之一: cargo audit 0 高危
+        run: cargo audit
+
+  # ==========================================================================
+  # 5. evorule-cli 端到端测试 (bash e2e.sh)
+  #    仅在 Linux 上运行 (脚本依赖 bash + mktemp, 与 CI 意图一致)
+  # ==========================================================================
+  e2e:
+    name: e2e (cli)
+    runs-on: ubuntu-latest
+    # 独立于 test, 并行跑 (节省时间)
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-rust@v2
+        with:
+          rust-version: ${{ env.RUSTUP_TOOLCHAIN }}
+          cache: true
+
+      - name: 构建 release 二进制
+        run: cargo build -p evorule-cli --release --bin evorule
+
+      - name: 运行 e2e.sh (TAP 格式输出)
+        run: bash evorule-cli/tests/e2e.sh ./target/release/evorule
+
+      - name: 运行 Rust 集成测试 (cli_test)
+        run: cargo test -p evorule-cli --test cli_test --release
+
+  # ==========================================================================
+  # 6. TCB 确定性专项 (零依赖门禁 + proptest)
+  # ==========================================================================
+  tcb-determinism:
+    name: tcb determinism
+    runs-on: ubuntu-latest
+    # 独立于 test, 并行跑
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-rust@v2
+        with:
+          rust-version: ${{ env.RUSTUP_TOOLCHAIN }}
+          cache: true
+
+      # proptest 确定性属性测试 (随机采样验证 相同输入→相同输出)
+      - name: TCB 确定性属性测试
+        run: cargo test -p evorule-tcb --test determinism_proptest --release
+
+      # 零依赖产物验证: 严格断言 TCB 只依赖 Rust std
+      # (cargo tree 本身 exit 0, 必须 wc -l 显式断言)
+      - name: TCB 零依赖产物验证
+        run: |
+          cargo build -p evorule-tcb --release
+          DEPS=$(cargo tree -p evorule-tcb --edges normal)
+          echo "TCB dep tree:"
+          echo "${DEPS}"
+          LINE_COUNT=$(echo "${DEPS}" | wc -l)
+          if [ "${LINE_COUNT}" -ne 1 ]; then
+            echo "ERROR: TCB 期望零依赖 (1 行: crate 自身), 实际 ${LINE_COUNT} 行"
+            echo "${DEPS}"
+            exit 1
+          fi
+          if ! echo "${DEPS}" | grep -q "^evorule-tcb v"; then
+            echo "ERROR: TCB dep tree 缺少 crate 行"
+            exit 1
+          fi
+          echo "TCB 零依赖验证通过"
+
+  # ==========================================================================
+  # 7. Kani 形式化验证 (34 proofs, 5 层覆盖)
+  #    1.0 升门条件: tier0 核心不变式被 Kani 证明
+  # ==========================================================================
+  kani:
+    name: kani (evorule-tcb)
+    runs-on: ubuntu-latest
+    # 独立于 test, 并行跑
+    steps:
+      - uses: actions/checkout@v3
+
+      # Kani 用自带工具链 (CBMC backend), 与 rust-toolchain.toml 解耦
+      - name: 安装 Kani
+        run: |
+          # Kani 0.67+ 走官方安装脚本; Ubuntu 24.04 runner 已装 rustc/cargo
+          curl --proto '=https' --tlsv1.2 -sSf https://model-checking.github.io/kani/install.sh | sh -s -- -y
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+
+      - name: 验证 Kani 安装
+        run: cargo kani --version
+
+      - name: 跑 TCB 所有 Kani proofs
+        # 复用 evorule-tcb/scripts/run_kani_tcb.sh (本地验证已用)
+        # 该脚本串行跑 21 个 proof, 任何 fail exit 1
+        run: |
+          bash evorule-tcb/scripts/run_kani_tcb.sh

@@ -105,6 +105,23 @@ pub fn resolve_path_mut<'a>(state: &'a mut JsonValue, path: &str) -> Option<&'a 
     resolve_path_mut_inner(state, &segments)
 }
 
+/// 解析相对 `__exec__` 上下文的路径（统一路径约定，v0.3.2 起）
+///
+/// domain 的 `path`、collect 的 `from`、merge 的 `messages`/`tool_result(s)`
+/// 共用本函数，消除此前三套并存的路径约定：
+///
+/// - `__exec__.` 开头：strip 前缀后从 `__exec__` 节点解析（绝对路径兼容写法）
+/// - 其他写法：自动补全 `__exec__.` 前缀解析（相对路径，如 `payload.x`、
+///   `instruction.type`、`queue[0].type`）
+///
+/// 解析失败返回 `None`（调用方决定求值语义：domain 视为 false，
+/// collect/merge 转为显式 `PathResolutionFailed`）。
+pub(crate) fn resolve_exec_path<'a>(state: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
+    let stripped = path.strip_prefix("__exec__.").unwrap_or(path);
+    let exec = state.get("__exec__")?;
+    resolve_path(exec, stripped)
+}
+
 /// 内部递归实现（可变路径解析）
 fn resolve_path_mut_inner<'a>(
     state: &'a mut JsonValue,
@@ -140,7 +157,7 @@ fn resolve_path_mut_inner<'a>(
 
 /// 路径段（解析后的中间表示）
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum PathSegment {
+pub(crate) enum PathSegment {
     /// 字段访问（如 `payload`）
     Field(String),
     /// 索引访问（如 `items[0]` 或 `[0]`，field 为 None 时表示纯索引）
@@ -148,16 +165,25 @@ enum PathSegment {
 }
 
 /// 解析路径字符串为段列表
-fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
+///
+/// 语法约束：
+/// - 点号分隔符前后必须有字段名，唯一例外是 `]` 之后的**第一个**点号
+///   （允许 `items[0].name` 与 `data.[0]` 两种等价写法）；
+/// - 索引段后的连续点号（如 `items[0]..name`）非法。
+pub(crate) fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
     let mut segments = Vec::new();
     let mut current = String::new();
     let mut chars = path.chars().peekable();
     let mut escaped = false;
+    // 上一个处理的字符是否为索引段的 ']'：
+    // 仅其后的第一个点号允许 current 为空（消耗后立即复位，拒绝连续点号）
+    let mut just_closed_index = false;
 
     while let Some(c) = chars.next() {
         if escaped {
             // 转义字符：原样保留
             current.push(c);
+            just_closed_index = false;
             escaped = false;
             continue;
         }
@@ -168,13 +194,11 @@ fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
         }
 
         if c == '.' {
-            // 点号分隔符
-            // 检查是否刚处理完索引段（如 `items[0].name` 中的 `.`）
-            let just_after_index =
-                !segments.is_empty() && matches!(segments.last(), Some(PathSegment::Index(_, _)));
-
-            if current.is_empty() && !just_after_index {
-                // 真正的空段（如 "x..y" 或 ".x"），非法
+            // 点号分隔符：空 current 仅在刚闭合索引段时合法
+            let after_index = just_closed_index;
+            just_closed_index = false;
+            if current.is_empty() && !after_index {
+                // 真正的空段（如 "x..y"、".x" 或 "x[0]..y"），非法
                 return None;
             }
             if !current.is_empty() {
@@ -209,6 +233,7 @@ fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
             }
             let idx: usize = idx_str.parse().ok()?;
             segments.push(PathSegment::Index(field, idx));
+            just_closed_index = true;
             // ']' 后必须是 '.', '[', 或字符串结束（拒绝 "[0]abc" 等非法拼接）
             match chars.peek() {
                 None | Some('.' | '[') => {}
@@ -219,6 +244,7 @@ fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
 
         // 普通字符
         current.push(c);
+        just_closed_index = false;
     }
 
     // 处理末尾
@@ -430,6 +456,28 @@ mod tests {
         let state = JsonValue::Object(map);
 
         assert_eq!(resolve_path(&state, "x..y"), None);
+    }
+
+    #[test]
+    fn test_resolve_path_consecutive_dots_after_index_returns_none() {
+        // L1 回归：索引段后仅允许一个点号，连续点号非法
+        let mut inner = BTreeMap::new();
+        inner.insert("name".to_string(), JsonValue::string("alpha"));
+        let items = JsonValue::array(vec![JsonValue::Object(inner)]);
+        let mut outer = BTreeMap::new();
+        outer.insert("items".to_string(), items);
+        let state = JsonValue::Object(outer);
+
+        assert_eq!(resolve_path(&state, "items[0]..name"), None);
+        assert_eq!(resolve_path(&state, "items[0]...name"), None);
+        // 纯索引开头同理
+        let arr = JsonValue::array(vec![JsonValue::array(vec![JsonValue::Integer(1)])]);
+        assert_eq!(resolve_path(&arr, "[0]..x"), None);
+        // 合法对照：单点号仍可用
+        assert_eq!(
+            resolve_path(&state, "items[0].name"),
+            Some(&JsonValue::string("alpha"))
+        );
     }
 
     #[test]

@@ -34,7 +34,7 @@ workspace = true
 [dependencies]
 # 本地依赖
 evorule-tcb = { path = "../evorule-tcb", version = "0.3.1" }
-evorule-reactor = { path = "../evorule-reactor", version = "0.2.4", features = [
+evorule-reactor = { path = "../evorule-reactor", version = "0.3.1", features = [
     "persistence",
 ] }
 

@@ -27,6 +27,29 @@ pub struct LogicalClock {
 
 impl LogicalClock {
     /// 创建新时钟，初始值为 0
+    ///
+    /// # 示例
+    /// ```
+    /// use evorule_governance::LogicalClock;
+    ///
+    /// let clock = LogicalClock::new();
+    /// assert_eq!(clock.current(), 0);
+    ///
+    /// // tick 单调递增
+    /// let first = clock.tick();
+    /// let second = clock.tick();
+    /// assert_eq!(first, 1);
+    /// assert_eq!(second, 2);
+    ///
+    /// // merge 取 max(local, other) + 1
+    /// clock.merge(10);
+    /// assert_eq!(clock.current(), 11);
+    ///
+    /// // Clone 后共享同一计数器
+    /// let clone = clock.clone();
+    /// clone.tick();
+    /// assert_eq!(clock.current(), 12);
+    /// ```
     pub fn new() -> Self {
         Self {
             counter: Arc::new(AtomicU64::new(0)),

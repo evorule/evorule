@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! 反应器核心 - 事实驱动的状态转换引擎
@@ -277,7 +277,7 @@ impl Reactor {
     /// 返回的 `ReactorHandle` 携带共享快照与中断标志，支持：
     /// - `interrupt()`：请求反应器在当前指令后退出
     /// - `abort()`：强制中止反应器任务
-    /// - GDB 风格的 pause/resume/step/inspect + interrupt/watch 已由 [evorule-server 仓](https://gitee.com/evo-rule-lab/evorule-server) `core/debug_control` 模块实现
+    /// - GDB 风格的 pause/resume/step/inspect + interrupt/watch 已由 [evorule-server 仓](https://gitee.com/evorule/evorule-server) `core/debug_control` 模块实现
     pub fn spawn(
         self,
     ) -> (
@@ -604,9 +604,9 @@ impl Reactor {
                             );
                         }
 
-                        // I/O 恢复执行后清除 __io_result__，防止残留影响后续 I/O 指令。
-                        // exists 域检查的是"路径存在"（Null 也算存在），若不清除，
-                        // 后续不同的 I/O 指令会错误地走 on_true 分支消费旧结果。
+                        // I/O 恢复执行后清除 __io_results__，防止残留影响后续 I/O 指令。
+                        // v0.3.1：core_eval 消费结果后以 null 清除（exists 将 null 视为不存在），
+                        // 此处在恢复执行完成后整体移除 __io_results__ 容器并复位 io_recovery 标志。
                         if state.io_recovery {
                             state.clear_io_recovery();
                         }
@@ -619,6 +619,25 @@ impl Reactor {
                             new_queue: state.queue.iter().cloned().collect(),
                         };
                         Self::emit_fact(&self.facts_log, &event_tx, fact);
+                    }
+                    Ok(TransitionResult::Ignored {
+                        instruction_type,
+                        reason,
+                    }) => {
+                        // 指令被静默忽略：产生 Error 事实，使系统显式感知此问题
+                        // 注意：Error 事实不 bump log version（与 FactsLog 行为对齐），
+                        // 因此 reactor 也不 bump version，保持 reactor_version == log_version 不变式
+                        state.phase = ReactorPhase::Error;
+                        let id = id_gen.next_id();
+                        let msg = format!(
+                            "Instruction ignored by TCB: type={}, reason={}, instruction={:?}",
+                            instruction_type, reason, instruction
+                        );
+                        tracing::warn!(phase = %state.phase.as_str(), "{}", msg);
+                        let fact = Fact::Error { id, message: msg };
+                        Self::emit_fact(&self.facts_log, &event_tx, fact);
+                        state.phase = ReactorPhase::Idle;
+                        continue 'main;
                     }
                     Ok(TransitionResult::IoRequired {
                         io_type: io_type_str,
@@ -648,7 +667,7 @@ impl Reactor {
                         // .clone()：io_type 之后还要用于 debug! 与 Fact::IoRequest
                         state.register_io_request(id, io_type.clone());
                         // BUG 修复：缓存触发 I/O 的原指令及其 cause，IoResponse 到达后重新推送回队列，
-                        // 使 core_eval.json 中的 exists(__io_result__) 双路径生效：
+                        // 使 core_eval.json 中的 exists(__io_results__.{io_type}) 双路径生效：
                         // 首次执行走 on_false（io_request），恢复执行走 on_true（set 消费结果）。
                         // 断点 1 修复：同时缓存 cause，使恢复执行时 cause 指向正确的 Fact。
                         state.save_io_instruction(id, instruction.clone(), cause);
@@ -843,25 +862,46 @@ impl Reactor {
                 if let Some(err_msg) = &error {
                     tracing::warn!("IoResponse carries error: {}", err_msg);
                 }
-                if state.complete_io_request(request_id) {
-                    Self::inject_io_result(state, result)?;
-                    // BUG 修复：取出缓存的原指令，重新推送回队列前端。
-                    // 反应器主循环将再次调用 execute_transition 执行同一指令，
-                    // 此时 payload.__io_result__ 已注入，core_eval.json 中
-                    // exists(__io_result__) 为真 → 走 on_true 分支，set 消费结果到业务字段。
-                    if let Some((orig_instruction, orig_cause)) =
-                        state.take_io_instruction(request_id)
-                    {
-                        // 断点 1 修复：用缓存的 cause 重新关联指令
-                        state.push_front(orig_instruction, orig_cause);
-                        // 标记 I/O 恢复执行：下一次 execute_transition 返回 State 后
-                        // 需清除 __io_result__，防止残留影响后续不同的 I/O 指令。
-                        state.io_recovery = true;
-                    }
-                    state.bump_version();
-                } else {
+                // v0.3.1：先取 io_type（complete_io_request 会移除 io_type 记录），
+                // 用于将结果注入 `__io_results__.{io_type}`（按类型隔离）。
+                let io_type = state.get_io_type(&request_id).cloned();
+                if !state.complete_io_request(request_id) {
                     tracing::warn!("Unknown IoResponse: {}, ignoring", request_id);
+                    return Ok(());
                 }
+                // v0.3.1 修复：null 结果与错误响应没有可消费的结果。
+                // `exists` 域将 null 视为"已清除/不存在"，若把 null 注入 __io_results__ 后
+                // 再重新推送原指令，恢复执行时 exists==false → 指令无限重发 io_request（死循环）。
+                // 处理：丢弃缓存的原指令，不再重新推送；错误信息由 warn 日志与
+                // FactsLog 中的 IoResponse（error 字段）保留。
+                if result.is_null() || error.is_some() {
+                    state.take_io_instruction(request_id);
+                    state.bump_version();
+                    return Ok(());
+                }
+                if let Some(io_type) = io_type {
+                    Self::inject_io_result(state, &io_type, result)?;
+                } else {
+                    // 理论不可达：register_io_request 总是记录 io_type。
+                    // 此处静默跳过注入，避免中断反应器主流程。
+                    tracing::warn!(
+                        "IoResponse for {} has no recorded io_type, result not injected",
+                        request_id
+                    );
+                }
+                // BUG 修复：取出缓存的原指令，重新推送回队列前端。
+                // 反应器主循环将再次调用 execute_transition 执行同一指令，
+                // 此时 payload.__io_results__.{io_type} 已注入，core_eval.json 中
+                // exists(__io_results__.{io_type}) 为真 → 走 on_true 分支，set 消费结果到业务字段。
+                if let Some((orig_instruction, orig_cause)) = state.take_io_instruction(request_id)
+                {
+                    // 断点 1 修复：用缓存的 cause 重新关联指令
+                    state.push_front(orig_instruction, orig_cause);
+                    // 标记 I/O 恢复执行：下一次 execute_transition 返回 State 后
+                    // 需清除 __io_results__，防止残留影响后续不同的 I/O 指令。
+                    state.io_recovery = true;
+                }
+                state.bump_version();
             }
 
             // 反应器自身产生的 Fact 不应通过 command 通道回来，忽略
@@ -940,19 +980,17 @@ impl Reactor {
         Ok(())
     }
 
-    /// 注入 I/O 结果到 payload.__io_result__
-    fn inject_io_result(state: &mut ReactorState, result: JsonValue) -> Result<(), ReactorError> {
-        if let Some(target) = resolve_path_mut(&mut state.payload, "__io_result__") {
-            *target = result;
-            Ok(())
-        } else if let JsonValue::Object(map) = &mut state.payload {
-            map.insert("__io_result__".to_string(), result);
-            Ok(())
-        } else {
-            Err(ReactorError::InvalidState {
-                field: "__io_result__",
-            })
-        }
+    /// 注入 I/O 结果到 payload.__io_results__.{io_type}（v0.3.1 按类型隔离）
+    ///
+    /// 使用 `update_payload` 处理嵌套路径：`__io_results__` 不存在时自动创建空对象。
+    /// 不递增 version（version 递增由调用方在 IoResponse 处理时统一执行）。
+    fn inject_io_result(
+        state: &mut ReactorState,
+        io_type: &IoType,
+        result: JsonValue,
+    ) -> Result<(), ReactorError> {
+        let path = format!("__io_results__.{}", io_type.as_str());
+        Self::update_payload(state, &path, result)
     }
 }
 
@@ -992,7 +1030,7 @@ impl Reactor {
 /// - [`causal_depth`](Self::causal_depth)：因果链深度
 /// - [`is_finished`](Self::is_finished)：是否已结束
 ///
-/// **调试控制**（由 [evorule-server 仓](https://gitee.com/evo-rule-lab/evorule-server) `core/debug_control` 模块实现）：
+/// **调试控制**（由 [evorule-server 仓](https://gitee.com/evorule/evorule-server) `core/debug_control` 模块实现）：
 /// - pause/resume/step/inspect + interrupt/watch
 /// - 基于 `interrupt()` + FactsLog rewind 实现伪单步
 pub struct ReactorHandle {
@@ -1158,9 +1196,14 @@ mod tests {
     #[test]
     fn test_inject_io_result() {
         let mut state = ReactorState::new();
-        Reactor::inject_io_result(&mut state, JsonValue::string("llm_response")).unwrap();
+        let io_type = IoType::call_external();
+        Reactor::inject_io_result(&mut state, &io_type, JsonValue::string("llm_response")).unwrap();
         assert_eq!(
-            state.payload.get("__io_result__").and_then(|v| v.as_str()),
+            state
+                .payload
+                .get("__io_results__")
+                .and_then(|r| r.get("call_external"))
+                .and_then(|v| v.as_str()),
             Some("llm_response")
         );
     }

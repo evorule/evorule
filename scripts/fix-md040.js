@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // fix-md040.js - Auto-detect and add language to fenced code blocks
 // Uses the markdownlint API approach: read files, find ``` without language,
 // detect language, and add it.

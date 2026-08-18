@@ -50,6 +50,9 @@ pub const DEFAULT_MAX_STEPS: usize = 10000;
 /// - FIFO 队列：`VecDeque::pop_front`，不能用 `Vec::pop`
 /// - max_steps 先检后 pop：超限发 Error + break
 /// - I/O 两阶段：IoRequest 时缓存 orig 指令到 pending_io，0.2.0 无 handler 发 Error
+// 108 行: CLI 主循环 + I/O 两阶段 + max_steps 门禁 + 错误处理必须单函数原子语义
+// 拆函数会让 4 阶段 (loop / dispatch / pending_io / break) 状态传递出错
+#[allow(clippy::too_many_lines)]
 pub fn execute(
     core_eval: &[JsonValue],
     initial_payload: JsonValue,
@@ -139,6 +142,28 @@ pub fn execute(
                 );
                 break;
             }
+            Ok(TransitionResult::Ignored {
+                instruction_type,
+                reason,
+            }) => {
+                // v0.3.1：指令被静默忽略（无匹配 transform 规则或规则产生 noop 效果）。
+                // 与 reactor 行为一致：产生 Error 事实使系统显式感知此问题
+                let err_id = id_gen.next_id();
+                let msg = format!(
+                    "Instruction ignored by TCB: type={}, reason={}, instruction={:?}",
+                    instruction_type, reason, instruction
+                );
+                facts.push(Fact::Error {
+                    id: err_id,
+                    message: msg,
+                });
+                tracing::warn!(
+                    instruction_type = %instruction_type,
+                    reason = %reason,
+                    "TCB 静默忽略指令（无匹配规则或 noop 效果）"
+                );
+                break;
+            }
             Err(e) => {
                 let err_id = id_gen.next_id();
                 let msg = format!("TCB error at step {}: {}", steps, e);
@@ -203,7 +228,8 @@ mod tests {
 
     #[test]
     fn test_execute_empty_core_eval_noop() {
-        // 空 core_eval + noop 指令：execute_transition 不修改状态
+        // v0.3.1：空 core_eval + noop 指令 → TCB 显式返回 `Ignored`（无匹配 transform 规则）
+        // cli executor 按 reactor 一致行为产生 `Error` 事实（不再静默失败）
         let facts = execute(
             &[],
             JsonValue::empty_object(),
@@ -212,14 +238,19 @@ mod tests {
         )
         .unwrap();
 
-        // 应产生：Command + StateTransition + Stable
-        assert_eq!(
-            facts.len(),
-            3,
-            "expected Command + StateTransition + Stable"
-        );
+        // 应产生：Command + Error(ignored by TCB) + Stable
+        assert_eq!(facts.len(), 3, "expected Command + Error(ignored) + Stable");
         assert!(matches!(facts[0], Fact::Command { .. }));
-        assert!(matches!(facts[1], Fact::StateTransition { .. }));
+        match &facts[1] {
+            Fact::Error { message, .. } => {
+                assert!(
+                    message.contains("ignored by TCB"),
+                    "expected TCB ignored error, got: {}",
+                    message
+                );
+            }
+            other => panic!("expected Error for Ignored, got {:?}", other),
+        }
         assert!(matches!(facts[2], Fact::Stable { .. }));
     }
 

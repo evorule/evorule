@@ -44,6 +44,12 @@ pub enum TcbError {
         meta_type: String,
     },
 
+    /// 未知的域类型（domain `type` 字段不在支持的 7 种之内）
+    UnknownDomainType {
+        /// 未知的域类型名称
+        domain_type: String,
+    },
+
     /// 未知的 set 操作类型
     UnknownOperation {
         /// 未知的操作名称（如 "multiply"）
@@ -80,12 +86,6 @@ pub enum TcbError {
         limit: usize,
     },
 
-    /// 指令列表为空
-    EmptyInstructionList {
-        /// 发生空的上下文（如 "push.instructions" 或 "branch.on_true"）
-        context: String,
-    },
-
     /// 整数运算溢出（`add`/`sub` 超出 i64 范围）
     IntegerOverflow {
         /// 溢出操作描述
@@ -103,6 +103,12 @@ pub enum TcbError {
         /// 实际传入的规则数
         actual: usize,
     },
+
+    /// 单次状态转换执行的元指令总数超限（终止性宽度防线）
+    TooManyExecutedInstructions {
+        /// 允许的最大执行总数
+        limit: usize,
+    },
 }
 
 impl core::fmt::Display for TcbError {
@@ -113,6 +119,9 @@ impl core::fmt::Display for TcbError {
             }
             TcbError::UnknownMetaInstruction { meta_type } => {
                 write!(f, "unknown meta instruction: {}", meta_type)
+            }
+            TcbError::UnknownDomainType { domain_type } => {
+                write!(f, "unknown domain type: {}", domain_type)
             }
             TcbError::UnknownOperation { operation } => {
                 write!(f, "unknown operation: {}", operation)
@@ -137,25 +146,25 @@ impl core::fmt::Display for TcbError {
             TcbError::NestingTooDeep { limit } => {
                 write!(f, "branch nesting depth exceeds limit ({})", limit)
             }
-            TcbError::EmptyInstructionList { context } => {
-                write!(f, "empty instruction list in '{}'", context)
-            }
             TcbError::IntegerOverflow {
                 operation,
                 left,
                 right,
             } => {
-                write!(
-                    f,
-                    "integer overflow in {} ({} {} {})",
-                    operation, left, operation, right
-                )
+                write!(f, "integer overflow: {} {} {}", left, operation, right)
             }
             TcbError::TooManyTransformRules { limit, actual } => {
                 write!(
                     f,
                     "core_eval transform rules exceed limit: {} > {}",
                     actual, limit
+                )
+            }
+            TcbError::TooManyExecutedInstructions { limit } => {
+                write!(
+                    f,
+                    "total executed meta instructions exceed limit ({})",
+                    limit
                 )
             }
         }
@@ -193,6 +202,11 @@ mod tests {
         };
         assert_eq!(format!("{}", err), "unknown meta instruction: foo");
 
+        let err = TcbError::UnknownDomainType {
+            domain_type: "e".to_string(),
+        };
+        assert_eq!(format!("{}", err), "unknown domain type: e");
+
         let err = TcbError::UnknownOperation {
             operation: "multiply".to_string(),
         };
@@ -201,7 +215,10 @@ mod tests {
         let err = TcbError::InvalidState {
             reason: "__exec__.payload missing".to_string(),
         };
-        assert_eq!(format!("{}", err), "invalid state: __exec__.payload missing");
+        assert_eq!(
+            format!("{}", err),
+            "invalid state: __exec__.payload missing"
+        );
 
         let err = TcbError::InvalidType {
             expected: "integer",
@@ -228,14 +245,6 @@ mod tests {
             "branch nesting depth exceeds limit (64)"
         );
 
-        let err = TcbError::EmptyInstructionList {
-            context: "push.instructions".to_string(),
-        };
-        assert_eq!(
-            format!("{}", err),
-            "empty instruction list in 'push.instructions'"
-        );
-
         let err = TcbError::IntegerOverflow {
             operation: "add".to_string(),
             left: i64::MAX,
@@ -243,10 +252,13 @@ mod tests {
         };
         assert_eq!(
             format!("{}", err),
-            "integer overflow in add (9223372036854775807 add 1)"
+            "integer overflow: 9223372036854775807 add 1"
         );
 
-        let err = TcbError::TooManyTransformRules { limit: 64, actual: 100 };
+        let err = TcbError::TooManyTransformRules {
+            limit: 64,
+            actual: 100,
+        };
         assert_eq!(
             format!("{}", err),
             "core_eval transform rules exceed limit: 100 > 64"
@@ -269,9 +281,14 @@ mod tests {
         assert_eq!(e1, e2);
         assert_ne!(e1, e3);
 
-        assert_eq!(TcbError::InvalidState { reason: "".to_string() }, TcbError::InvalidState {
-            reason: "".to_string()
-        });
+        assert_eq!(
+            TcbError::InvalidState {
+                reason: "".to_string()
+            },
+            TcbError::InvalidState {
+                reason: "".to_string()
+            }
+        );
         assert_ne!(
             TcbError::InvalidState {
                 reason: "a".to_string()

@@ -127,7 +127,7 @@ path = "verification/differential_test.rs"
 #   - proof_reactor_invariants_preserved_after_pure_ops (PASS 16s, 组合操作)
 #   - proof_phase_state_machine_cannot_jump  (PASS 7s,   Phase 状态机)
 #
-# 详见 evorule-reactor/docs/KANI.md "完整验证" 表
+# 详见 verification/INDEX.md §4.2 "evorule-reactor 验证资产"
 proofs = [
     "invariant_version_monotonic", # version 单调递增 (简单计数器)
     "max_rounds_termination",      # max_rounds 终止条件 (简单有界循环)

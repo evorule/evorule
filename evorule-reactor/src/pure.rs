@@ -20,7 +20,7 @@
 //! # 可验证的不变式（Kani 证明目标）
 //!
 //! 1. `pending_io_count == pending_requests.len() == pending_io_timestamps.len()`
-//! 2. `io_recovery == true ⇔ payload.__io_result__ 存在`
+//! 2. `io_recovery == true ⇔ payload.__io_results__ 存在非 null 结果`
 //! 3. `version >= prev_version`（单调递增）
 //! 4. 单步执行后状态一致性
 //! 5. max_rounds 内终止（需 bounded model checking）
@@ -54,6 +54,15 @@ use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 pub(crate) enum StepOutcome {
     /// 状态转移成功（payload / queue 已更新）
     StateChanged,
+    /// 指令被忽略：没有匹配的宪法规则或规则产生了 noop 效果
+    ///
+    /// 参见 docs/rule_taxonomy.md 规则分类体系
+    Ignored {
+        /// 被忽略的指令类型
+        instruction_type: String,
+        /// 忽略原因
+        reason: String,
+    },
     /// 触发 I/O 请求（调用方需注册并发射 IoRequest）
     IoRequired {
         /// I/O 类型字符串（原始字符串，调用方 parse 成 IoType）
@@ -105,7 +114,7 @@ pub(crate) fn next_step(
             state.payload = new_payload;
             state.update_queue_with_causes(new_queue, cause);
 
-            // I/O 恢复执行后清除 __io_result__，防止残留
+            // I/O 恢复执行后整体清除 __io_results__，防止残留影响后续不同的 I/O 指令
             if state.io_recovery {
                 state.clear_io_result();
                 state.io_recovery = false;
@@ -120,6 +129,24 @@ pub(crate) fn next_step(
             }
 
             Some(StepOutcome::StateChanged)
+        }
+        Ok(TransitionResult::Ignored {
+            instruction_type,
+            reason,
+        }) => {
+            // 指令被静默忽略：记录告警并返回 Ignored 结果
+            // 这使得上层（reactor）可以产生 Error 事实，不再静默失败
+            // 规则分类参见 docs/rule_taxonomy.md
+            state.bump_version();
+            tracing::warn!(
+                instruction_type = %instruction_type,
+                reason = %reason,
+                "指令被忽略：没有匹配的宪法规则或规则产生了 noop 效果"
+            );
+            Some(StepOutcome::Ignored {
+                instruction_type,
+                reason,
+            })
         }
         Ok(TransitionResult::IoRequired { io_type, params }) => {
             // 注意：register_io_request 含 Instant::now()，不在纯函数中
@@ -182,10 +209,22 @@ pub(crate) fn apply_io_response(
     request_id: FactId,
     result: JsonValue,
 ) -> Result<bool, ReactorError> {
+    // v0.3.1：先取 io_type（complete_io_request 会移除 io_type 记录）
+    let io_type = state.get_io_type(&request_id).cloned();
     if !state.complete_io_request(request_id) {
         return Ok(false);
     }
-    inject_io_result(state, result)?;
+    // v0.3.1 修复：null 结果没有可消费的内容（`exists` 将 null 视为不存在）。
+    // 若注入 null 后重新推送原指令，恢复执行会再次走 io_request → 死循环。
+    // 处理：丢弃缓存的原指令，不再重新推送（与 reactor::handle_fact 一致）。
+    if result.is_null() {
+        state.take_io_instruction(request_id);
+        state.bump_version();
+        return Ok(true);
+    }
+    if let Some(io_type) = io_type {
+        inject_io_result(state, &io_type, result)?;
+    }
     if let Some((orig_instruction, orig_cause)) = state.take_io_instruction(request_id) {
         state.push_front(orig_instruction, orig_cause);
         state.io_recovery = true;
@@ -194,7 +233,7 @@ pub(crate) fn apply_io_response(
     Ok(true)
 }
 
-/// 注入 I/O 结果到 payload.__io_result__（纯函数）
+/// 注入 I/O 结果到 payload.__io_results__.{io_type}（纯函数）
 ///
 /// 对应原 `inject_io_result` 方法。
 ///
@@ -203,24 +242,31 @@ pub(crate) fn apply_io_response(
 /// Kani 模式下不操作 `JsonValue::Object` 内部的 `BTreeMap`（会导致 CBMC 状态爆炸），
 /// 改为设置 `kani_has_io_result` 标志位。`has_io_result` 在 Kani 模式下
 /// 检查此标志位而非 BTreeMap，保证不变量验证的一致性。
-fn inject_io_result(state: &mut ReactorState, result: JsonValue) -> Result<(), ReactorError> {
+fn inject_io_result(
+    state: &mut ReactorState,
+    io_type: &IoType,
+    result: JsonValue,
+) -> Result<(), ReactorError> {
     #[cfg(kani)]
     {
-        let _ = result; // 避免未使用变量警告
+        let _ = (result, io_type); // 避免未使用变量警告
         state.kani_has_io_result = true;
         return Ok(());
     }
     #[cfg(not(kani))]
     {
-        match &mut state.payload {
-            JsonValue::Object(map) => {
-                map.insert("__io_result__".to_string(), result);
-                Ok(())
+        if let JsonValue::Object(map) = &mut state.payload {
+            let entry = map
+                .entry("__io_results__".to_string())
+                .or_insert_with(JsonValue::empty_object);
+            if let JsonValue::Object(io_map) = entry {
+                io_map.insert(io_type.as_str().to_string(), result);
+                return Ok(());
             }
-            _ => Err(ReactorError::InvalidState {
-                field: "payload is not an object, cannot inject __io_result__",
-            }),
         }
+        Err(ReactorError::InvalidState {
+            field: "payload is not an object, cannot inject __io_results__",
+        })
     }
 }
 
@@ -444,9 +490,12 @@ mod tests {
         let result = apply_io_response(&mut state, id, JsonValue::string("result"));
         assert!(result.is_ok());
         assert!(result.unwrap());
-        // 验证结果已注入
+        // 验证结果已注入（v0.3.1：__io_results__.{io_type} 按类型隔离）
         assert!(matches!(
-            state.payload.get("__io_result__"),
+            state
+                .payload
+                .get("__io_results__")
+                .and_then(|r| r.get("call_external")),
             Some(JsonValue::String(_))
         ));
         // 验证恢复标志已设置

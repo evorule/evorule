@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 ﻿# scripts/add_spdx_headers.ps1
 # DEPRECATED wrapper: forwards to add-spdx-safe.ps1 (byte-level, BOM-safe).
 #

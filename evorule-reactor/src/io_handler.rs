@@ -36,7 +36,7 @@ use evorule_tcb::JsonValue;
 
 /// I/O 执行结果
 ///
-/// 成功时返回 `JsonValue`(将注入到 `payload.__io_result__`),
+/// 成功时返回 `JsonValue`(将注入到 `payload.__io_results__.{io_type}`),
 /// 失败时返回错误消息(将记录到 `IoResponse.error` 字段)。
 pub type IoResult = Result<JsonValue, String>;
 
@@ -59,10 +59,12 @@ pub trait IoHandler: Send + Sync {
     /// 执行 I/O 操作
     ///
     /// # 参数
-    /// - `params`:I/O 请求参数(如 `{"prompt": "...", "temperature": 0.7}`)
+    /// - `params`:I/O 请求参数(由 `io_request` 指令透传,如
+    ///   `call_external` 为 `{"messages": [...], "tools": [...]}`,
+    ///   `call_service` 为 `{"service_name": "...", "args": {...}}`)
     ///
     /// # 返回
-    /// - `Ok(JsonValue)`:I/O 结果(将注入到 `payload.__io_result__`)
-    /// - `Err(String)`:错误消息(将记录到 `IoResponse.error`)
+    /// - `Ok(JsonValue)`:I/O 结果(将注入到 `payload.__io_results__.{io_type}`)
+    /// - `Err(String)`:错误消息(将记录到 `IoResponse.error`,结果不会被消费)
     async fn execute(&self, params: &JsonValue) -> IoResult;
 }

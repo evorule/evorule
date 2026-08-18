@@ -10,15 +10,16 @@
 
 > EvoRule 三层架构的 Tier 1 反应式执行器 —— 事实驱动的状态转换引擎。
 
-- **版本**:v0.2.4
-- **依赖**:evorule-tcb = "0.2.4"
+- **版本**:v0.3.1
+- **依赖**:evorule-tcb = "0.3.1"(ReAct 循环支持)
 - **协议**:AGPL-3.0-or-later
-- **测试**:`cargo test` 全部 PASS(含 `complex_rule_test` / `reactor_test` / `ffi_test` 等)
-- **build.rs 编译时门禁**:F11 禁止 `unwrap`/`expect`/`panic!`/`debug_assert!`(非测试代码),**G8 控制流白盒化**,PASSED
+- **测试**:`cargo test` 220 PASS / 0 failed + 3 ignored(176 单元 + 2 `complex_rule_test` + 11 `differential_test` + 28 `integration_test` + 3 doc `ok`/3 `ignored`)
+- **build.rs 编译时门禁**:14 模式(G8 控制流 `conditional`/`while_loop`/`sequence` + F11 `unwrap`/`expect`/`panic!`/`debug_assert!` + S5.2 业务术语 7 条),非测试代码强制,PASSED
 - **G8 门控遵守**:反应器主循环(`reactor.rs`)的控制流分支是**策略数据**(Fact 变体的 match)而非**硬编码业务逻辑**;任何业务分支均由 `core_eval.json` 数据驱动,编译期通过 `build.rs` 递归扫描确认。
-- **`unsafe`**:`#![forbid(unsafe_code)]`(`ffi.rs` 局部豁免 `#![allow(unsafe_code)]`,FFI 边界,已文档化)
+- **`unsafe`**:`#![deny(unsafe_code)]`(`ffi.rs` 在 `ffi` feature 下局部 `#[allow(unsafe_code)]`,FFI 边界,已文档化)
 - **P0 修复(2026-07-25)**:`Box::leak` 内存泄漏已修复(`IoType::parse` 返回 `Option`);锁中毒改为 `e.into_inner()` 恢复(非 panic)
-- **v0.2.0 重构(2026-08-04)**:`IoType` 内部从 `&'static str` 改为 `Arc<str>`,支持 `IoType::new()` 注册任意 io_type(失去 `Copy`,5 个 `const` 改工厂函数);`IoHandler`/`IoDispatcher` 从 governance 下沉至本 crate(trait 改 `#[async_trait]` object-safe);`IoType::parse` 标记 `#[deprecated]`。详见 [MIGRATION_v0.2.0.md](../MIGRATION_v0.2.0.md)
+- **v0.2.0 重构(2026-08-04)**:`IoType` 内部从 `&'static str` 改为 `Arc<str>`,支持 `IoType::new()` 注册任意 io_type(失去 `Copy`,5 个 `const` 改工厂函数);`IoHandler`/`IoDispatcher` 从 governance 下沉至本 crate(trait 改 `#[async_trait]` object-safe);`IoType::parse` 标记 `#[deprecated]`
+- **v0.3.1 TCB 升级**:依赖 evorule-tcb 升至 0.3.1,ReAct 循环由 `call_external`/`call_service`/`collect`/`merge` 驱动(迭代上限 10);I/O 结果按 `__io_results__.{io_type}` 类型隔离,消费后以 null 清除
 
 ## 设计原则
 
@@ -27,7 +28,7 @@
 - **稳定检测**：队列空 + 无待处理 I/O = 稳定
 - **无状态泄漏**：所有状态由反应器维护
 - **Append-Only 审计链**：所有 Fact 追加到 FactsLog，支持审计重放
-- **哈希链完整性**：每个 Fact 写入 WAL 时自动计算 BLAKE3 哈希链（`content_hash`/`prev_hash`/`chain_hash`），篡改可检测
+- **哈希链完整性**：每次 `append` 自动计算 BLAKE3 哈希链（`content_hash`/`prev_hash`/`chain_hash`），篡改可检测；纯内存模式同样维护（`last_hash` 始终存在，不依赖 persistence feature）
 
 ## 架构
 
@@ -60,8 +61,17 @@ src/
 ├── reactor.rs          # 反应器主循环 + ReactorBuilder + ReactorHandle
 ├── stable_detector.rs  # 稳定状态检测器
 ├── state.rs            # 反应器状态快照
-└── wal.rs              # WAL 读写（JSONL 格式，含哈希字段）
+└── wal.rs              # WAL 读写（JSONL 格式，含哈希字段）[feature = "persistence"]
+
+tests/
+├── integration_test.rs # 集成测试（28 用例：I/O 双路径 / 类型隔离 / 审计重放）
+└── complex_rule_test.rs # 复杂规则集成测试（2 用例：normal/vip 订单）
+
+verification/
+└── differential_test.rs # 差分验证（11 用例：reactor 运行时 vs execute_transition 纯函数）
 ```
+
+> **注意**：`wal.rs` 仅在启用 `persistence` feature 时编译（见 [lib.rs](src/lib.rs) `#[cfg(feature = "persistence")]`）。不启用该 feature 时,`FactsLog` 仍以纯内存模式运行并维护哈希链。
 
 ## 快速入门
 
@@ -160,12 +170,18 @@ while let Ok(fact) = rx.recv().await {
 | 方法                       | 说明                                 |
 | -------------------------- | ------------------------------------ |
 | `FactsLog::new()`          | 创建纯内存 FactsLog                  |
+| `FactsLog::with_initial_payload(p)` | 创建带初始 payload 的纯内存 FactsLog |
 | `FactsLog::with_wal(path)` | 创建带 WAL 持久化的 FactsLog         |
-| `FactsLog::recover(path)`  | 从 WAL 恢复 FactsLog（重放 + 挂载）  |
+| `FactsLog::recover(path)`  | 从 WAL 恢复 FactsLog（重放 + 挂载 + 恢复哈希链尾）  |
 | `facts_log.append(fact)`   | 追加 Fact（自动计算哈希链 + 写 WAL） |
 | `facts_log.last_hash()`    | 获取审计链末尾哈希                   |
 | `facts_log.history()`      | 获取全部 Fact 历史                   |
+| `facts_log.history_with_versions()` | 获取 Fact 历史（携带版本号）   |
+| `facts_log.facts_by_path_prefix(prefix)` | 按路径前缀加速查询（A3 路径索引） |
 | `facts_log.version()`      | 获取当前版本号                       |
+| `facts_log.last_stable_version()` | 获取最后稳定版本号               |
+| `facts_log.read_from(v)`   | 从指定版本起重放（审计重放）         |
+| `facts_log.compact()`      | 压缩历史，返回压缩比例               |
 
 ## C FFI 接口
 
@@ -191,7 +207,7 @@ evorule_reactor_free(reactor);
 | ------------- | --------------------------------------- |
 | `persistence` | WAL 持久化（FactsLog + 哈希链写入磁盘） |
 | `ffi`         | C FFI 接口（生成 cdylib）               |
-| `kani`        | Kani 形式化验证（保留标记）             |
+| `kani`        | Kani 形式化验证（保留标记；实际由 `cargo kani` 注入 `cfg(kani)` 门控） |
 
 ## 版本策略
 

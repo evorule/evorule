@@ -61,8 +61,9 @@ fn load_json_rule(json_str: &str) -> Vec<JsonValue> {
 #[allow(clippy::too_many_lines)]
 async fn test_vip_order_processing() {
     // JSON 规则：电商订单处理（遵循 TCB 的 I/O 两阶段模式）
-    // 阶段 1：检查 is_vip，如果存在且 __io_result__ 不存在，则发起 I/O
-    // 阶段 2：如果 __io_result__ 存在，则消费结果
+    // v0.3.1：I/O 结果按类型隔离在 __io_results__.{io_type}
+    // 阶段 1：检查 is_vip，如果存在且 __io_results__.call_service 不存在，则发起 I/O
+    // 阶段 2：如果 __io_results__.call_service 存在，则消费结果
     let json_rule = r#"{
   "transform": [
     {
@@ -86,7 +87,7 @@ async fn test_vip_order_processing() {
                   "params": {
                     "domain": {
                       "type": "exists",
-                      "path": "__exec__.payload.__io_result__"
+                      "path": "__exec__.payload.__io_results__.call_service"
                     },
                     "on_true": [
                       {
@@ -102,7 +103,7 @@ async fn test_vip_order_processing() {
                         "params": {
                           "attr": "vip_notification",
                           "operation": "set",
-                          "value": "__exec__.payload.__io_result__"
+                          "value": "__exec__.payload.__io_results__.call_service"
                         }
                       }
                     ],

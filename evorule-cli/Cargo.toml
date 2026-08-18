@@ -47,7 +47,7 @@ workspace = true
 # - CLI 主执行路径同步（execute_transition 是纯函数），tokio 仅用于 reactor spawn + WAL flush
 # - persistence feature 启用 WAL 读写（含哈希链验证），serde_json/blake3 均 pure Rust，支持 musl
 evorule-tcb = { path = "../evorule-tcb", version = "0.3.1" }
-evorule-reactor = { path = "../evorule-reactor", version = "0.2.4", features = [
+evorule-reactor = { path = "../evorule-reactor", version = "0.3.1", features = [
     "persistence",
 ] }
 

@@ -19,6 +19,11 @@
 //! | T4 (I/O)      | `std::fs::`, `std::net::`, `std::io::`, 等     | 5    |
 //! | T14 (线程异步)| `std::thread`, `tokio::`, `async`, `await`, `spawn(` | 5 |
 //!
+//! 除上述 23 个逐行子串模式外, 还执行 1 项文件级检查:
+//! `BOM-detected` —— 源码文件不得以 UTF-8 BOM (U+FEFF) 开头。
+//! 编辑器引入 BOM 会遮蔽首行 `//` 前缀, 使注释跳过失效 (首行被误当代码扫描)。
+//! 门禁检测到 BOM 时: 剥离 BOM 保证后续扫描正确, 同时将 BOM 记为违规强制移除。
+//!
 //! # 守不住的 (靠 L3 code review)
 //!
 //! T1/T2 (需 trait impl / enum 变体计数) / T3 (运行时) / T7 (接口检测) / T13 (static mut)
@@ -356,13 +361,25 @@ fn main() -> ExitCode {
         if path.extension().and_then(|s| s.to_str()) != Some("rs") {
             continue;
         }
-        let raw = match fs::read_to_string(&path) {
+        let mut raw = match fs::read_to_string(&path) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("build.rs: cannot read {}: {e}", path.display());
                 return ExitCode::FAILURE;
             }
         };
+
+        // BOM 检测: 编辑器可能引入 UTF-8 BOM (U+FEFF), 它会遮蔽首行 `//` 前缀,
+        // 使注释跳过失效 (首行被误当代码扫描 → 可能误报 T8/T9/T10 等模式)。
+        // 剥离 BOM 保证后续扫描正确, 同时将 BOM 记为违规强制移除 (确定性 + 格式一致性)。
+        if raw.starts_with('\u{FEFF}') {
+            violations.push((
+                path.clone(),
+                "BOM-detected".to_string(),
+                "L1: file starts with UTF-8 BOM (U+FEFF)".to_string(),
+            ));
+            raw.remove(0);
+        }
 
         for (label, needle) in FORBIDDEN {
             let content_to_scan = if is_test_tolerant(label) {

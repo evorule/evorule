@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 #!/usr/bin/env bash
 # =============================================================================
 # run-mutants.sh - evorule-tcb Mutation Testing wrapper

@@ -74,7 +74,7 @@
 //! # Kani 工具链限制
 //!
 //! Kani 0.65/0.67 + nightly Rust 在 `BTreeMap`/`BTreeSet` 内部红黑树建模上
-//! 有 unwind bound 限制（见 evorule-tcb/docs/KANI.md）。因此涉及 BTreeSet 的 proof
+//! 有 unwind bound 限制（见 evorule-tcb/verification/kani-formal-verification-design.md）。因此涉及 BTreeSet 的 proof
 //! 使用固定 `FactId` 而非 `kani::any()` 生成任意 key，避免状态爆炸。
 //! 不涉及 BTreeSet 的 proof（version_monotonic / command_does_not_decrease_queue /
 //! max_rounds_termination / cause_queue_sync）使用 `kani::any()` 验证任意输入。

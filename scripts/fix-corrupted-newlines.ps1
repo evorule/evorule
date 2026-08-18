@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 ﻿# fix-corrupted-newlines.ps1
 # Third-pass fix: replace 0x3F (?) with 0x0A (\n) when followed by Rust line-start tokens
 # (like #[, pub, fn, impl, use, let, etc.)

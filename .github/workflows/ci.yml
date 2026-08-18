@@ -1,0 +1,109 @@
+# CI for EvoRule workspace (evorule-tcb / evorule-reactor / evorule-governance / evorule-cli)
+#
+# 覆盖:
+# - 三平台 (Linux / Windows / macOS) 全量 cargo test --workspace
+# - evorule-cli 端到端测试 (tests/e2e.sh, TAP 格式)
+# - TCB 构建门禁 (build.rs 在 cargo build 时自动执行)
+#
+# 设计说明:
+# - macOS 使用 native runner (macos-13 x86_64 / macos-14 aarch64), 不交叉编译
+# - rust-version 1.74; 使用 stable 工具链保证向后兼容
+name: CI
+
+on:
+  push:
+    branches: [main, master, "release/**"]
+  pull_request:
+    branches: [main, master]
+  # 允许手动触发
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ==========================================================================
+  # 1. 三平台全量测试
+  # ==========================================================================
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-13 # x86_64 native
+          - macos-14 # aarch64 native
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # 缓存 cargo 构建产物 (跨平台共享缓存, key 含 runner 避免冲突)
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: 全量测试 (workspace)
+        run: cargo test --workspace --all-targets
+
+      - name: 文档测试
+        run: cargo test --workspace --doc
+
+      - name: 编译检查 (release, 验证门禁)
+        run: cargo build --workspace --release
+
+  # ==========================================================================
+  # 2. evorule-cli 端到端测试 (bash e2e.sh)
+  #    仅在 Linux 上运行 (脚本依赖 bash + mktemp, 与 CI 意图一致)
+  # ==========================================================================
+  e2e:
+    name: e2e (cli)
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: 构建 release 二进制
+        run: cargo build -p evorule-cli --release --bin evorule
+
+      - name: 运行 e2e.sh (TAP 格式输出)
+        run: bash evorule-cli/tests/e2e.sh ./target/release/evorule
+
+      - name: 运行 Rust 集成测试 (cli_test)
+        run: cargo test -p evorule-cli --test cli_test --release
+
+  # ==========================================================================
+  # 3. TCB 确定性专项 (零依赖门禁 + proptest)
+  # ==========================================================================
+  tcb-determinism:
+    name: tcb determinism
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      # proptest 确定性属性测试 (随机采样验证 相同输入→相同输出)
+      - name: TCB 确定性属性测试
+        run: cargo test -p evorule-tcb --test determinism_proptest --release
+
+      # 构建门禁已随 cargo build 执行; 显式验证零依赖产物
+      - name: TCB 零依赖产物验证
+        run: |
+          cargo build -p evorule-tcb --release
+          # 检查编译产物无外部依赖 (仅 Rust std)
+          cargo tree -p evorule-tcb --edges normal

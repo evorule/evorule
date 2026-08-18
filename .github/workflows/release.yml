@@ -1,0 +1,113 @@
+# Release workflow for EvoRule
+#
+# 触发: 推送 v* tag
+# 产物: 三平台二进制 (GitHub Release 附件)
+#   - Linux   x86_64        (ubuntu-latest, 静态 musl)
+#   - Windows x86_64        (windows-latest)
+#   - macOS   x86_64        (macos-13 native)
+#   - macOS   aarch64       (macos-14 native)
+#
+# 设计说明:
+# - macOS 使用 native runner 而非交叉编译 (与项目约定一致)
+# - Linux 用 musl 静态链接, 产出单一可执行文件
+# - tag 格式: v0.1.0 / v0.2.4 等
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ==========================================================================
+  # 1. 四平台矩阵构建
+  # ==========================================================================
+  build:
+    name: build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact: evorule-linux-x86_64
+            ext: ""
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: evorule-windows-x86_64
+            ext: ".exe"
+          - name: macos-x86_64
+            os: macos-13
+            target: x86_64-apple-darwin
+            artifact: evorule-macos-x86_64
+            ext: ""
+          - name: macos-aarch64
+            os: macos-14
+            target: aarch64-apple-darwin
+            artifact: evorule-macos-aarch64
+            ext: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: 安装 musl 工具链 (Linux)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: 构建 CLI 二进制
+        run: cargo build -p evorule-cli --release --target ${{ matrix.target }} --bin evorule
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: target/${{ matrix.target }}/release/evorule${{ matrix.ext }}
+
+  # ==========================================================================
+  # 2. 汇总发布
+  # ==========================================================================
+  release:
+    name: release
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 下载所有二进制
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: 校验产物存在
+        run: |
+          ls -la artifacts/
+          test -f artifacts/evorule-linux-x86_64
+          test -f artifacts/evorule-windows-x86_64.exe
+          test -f artifacts/evorule-macos-x86_64
+          test -f artifacts/evorule-macos-aarch64
+
+      - name: 创建 Release 并附加二进制
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/evorule-linux-x86_64
+            artifacts/evorule-windows-x86_64.exe
+            artifacts/evorule-macos-x86_64
+            artifacts/evorule-macos-aarch64
+          generate_release_notes: true

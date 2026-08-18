@@ -10,8 +10,8 @@
 
 > EvoRule 三层架构的 Tier 2 治理层 —— I/O 订阅者、审计链、HTTP API。
 
-- **版本**:v0.2.4
-- **依赖**:evorule-tcb = "0.2.4" + evorule-reactor = { version = "0.2.4", features = ["persistence"] }
+- **版本**:v0.3.1
+- **依赖**:evorule-tcb = "0.3.1" + evorule-reactor = { version = "0.3.1", features = ["persistence"] }
 - **协议**:AGPL-3.0-or-later
 - **测试**:`cargo test` 全部 PASS
 - **build.rs 编译时门禁**:F11 禁止 `unwrap`/`expect`/`panic!`/`debug_assert!`(非测试代码),**G8 控制流白盒化**,PASSED
@@ -85,7 +85,7 @@ evorule-governance 现为**纯机制层库**（无 bin target），应作为 lib
 ```toml
 # 在你自己的应用仓的 Cargo.toml 中
 [dependencies]
-evorule-governance = { version = "0.2.4" }
+evorule-governance = { version = "0.3.1" }
 ```
 
 快速开始示例：

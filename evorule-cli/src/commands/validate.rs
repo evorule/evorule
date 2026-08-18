@@ -15,7 +15,7 @@
 //!
 //! # 白名单来源
 //! evorule-tcb/src/executor.rs 的 `execute_meta_instruction` 处理的元指令类型：
-//! branch / set / push / io_request / noop / increment / decrement
+//! branch / set / push / io_request / noop / increment / decrement / collect / merge
 
 use std::path::Path;
 
@@ -26,6 +26,7 @@ use crate::io_util;
 ///
 /// 来源：evorule-tcb/src/executor.rs::execute_meta_instruction 处理的元指令。
 /// 不含 G8 禁止词（conditional/while_loop/sequence），故无需 build.rs 豁免。
+/// v0.3.1：新增 ReAct 元指令 `collect` / `merge`（多工具扇出与消息历史合并）。
 const VALID_TRANSFORM_TYPES: &[&str] = &[
     "branch",
     "set",
@@ -34,6 +35,8 @@ const VALID_TRANSFORM_TYPES: &[&str] = &[
     "noop",
     "increment",
     "decrement",
+    "collect",
+    "merge",
 ];
 
 /// 执行 validate 子命令

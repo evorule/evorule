@@ -1,9 +1,8 @@
 [workspace]
 resolver = "2"
-# evorule-b 是 D:\evorule 的副本（用于本地测试修正，未迁移到主仓）。
-# 2026-08-17：将主仓全部 4 仓 (tcb / reactor / governance / cli) 复制进来，
-# TCB 用 evorule-b 的 v0.3.1 审计版（含 collect/merge/has_fields），
-# reactor/governance/cli 用主仓 v0.2.4。workspace 包含全部 4 仓用于本地联调。
+# D:\evorule 是 v0.3.1 工作目录（原 evorule-b 副本 + 主仓 reactor/governance/cli 联调）。
+# 2026-08-17：4 仓 (tcb / reactor / governance / cli) 统一以 v0.3.1 准备发布。
+# TCB 含 collect/merge/has_fields + ReAct 循环，reactor/governance/cli 同步升至 v0.3.1。
 members = [
     "evorule-tcb",
     "evorule-reactor",
@@ -12,7 +11,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.4"
+version = "0.3.1"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 authors = ["EvoRule Project"]

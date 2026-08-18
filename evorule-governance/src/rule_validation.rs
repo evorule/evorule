@@ -151,6 +151,27 @@ pub struct ValidationSummary {
 ///
 /// # 返回值
 /// 包含全部校验项和汇总的 `ValidationResult`。
+///
+/// # 示例
+/// ```
+/// use evorule_governance::rule_validation::validate_rules;
+/// use evorule_tcb::JsonValue;
+///
+/// // 一条合法规则：无条件 set(x, 42)
+/// let rule = JsonValue::object_from_pairs(&[
+///     ("type", JsonValue::string("set")),
+///     ("params", JsonValue::object_from_pairs(&[
+///         ("attr", JsonValue::string("x")),
+///         ("operation", JsonValue::string("set")),
+///         ("value", JsonValue::Integer(42)),
+///     ])),
+/// ]);
+///
+/// let result = validate_rules(&[rule]);
+/// assert!(result.passed, "合法规则应通过校验");
+/// assert_eq!(result.summary.total_transforms, 1);
+/// assert_eq!(result.summary.total_errors, 0);
+/// ```
 pub fn validate_rules(transforms: &[JsonValue]) -> ValidationResult {
     // === 阶段一：静态验证 ===
     let static_checks = perform_static_validation(transforms);
@@ -751,6 +772,32 @@ fn check_self_reference(transforms: &[JsonValue]) -> ValidationCheck {
 ///
 /// # 返回值
 /// 校验结果，包含静态验证和安全分析。
+///
+/// # 示例
+/// ```
+/// use evorule_governance::rule_validation::validate_rules_from_json;
+///
+/// // 标准 core_eval 格式（含 transform 数组）
+/// let json = r#"{
+///   "transform": [
+///     {
+///       "type": "branch",
+///       "params": {
+///         "domain": {"type": "all", "inner": []},
+///         "on_true": [
+///           {"type": "set", "params": {"attr": "x", "operation": "set", "value": 42}}
+///         ]
+///       }
+///     }
+///   ]
+/// }"#;
+///
+/// let result = validate_rules_from_json(json).expect("JSON 应可解析");
+/// assert!(result.passed);
+///
+/// // 非法 JSON 应返回 Err
+/// assert!(validate_rules_from_json("{not valid json}").is_err());
+/// ```
 pub fn validate_rules_from_json(json_str: &str) -> Result<ValidationResult, String> {
     let parsed: serde_json::Value =
         serde_json::from_str(json_str).map_err(|e| format!("JSON 解析失败: {}", e))?;

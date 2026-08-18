@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 ﻿# fix-corrupted-lines.ps1
 # Recovery: the fix-missing-spdx.ps1 script corrupted evo-agent files
 # because Get-Content -Raw decoded UTF-8 files (no BOM) as GBK,

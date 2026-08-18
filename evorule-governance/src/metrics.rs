@@ -45,7 +45,7 @@ pub trait IoMetrics: Send + Sync {
     /// 记录 I/O 调用耗时（按 io_type 打标签）
     ///
     /// # 参数
-    /// - `io_type`：I/O 类型字符串（如 "call_external"、"query_db"）
+    /// - `io_type`：I/O 类型字符串（如 "call_external"、"call_service"）
     /// - `duration`：本次 I/O 调用耗时
     fn observe_io_duration(&self, _io_type: &str, _duration: Duration) {}
 

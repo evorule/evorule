@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 ﻿# fix-corrupted-quotes.ps1
 # Second-pass fix: replace 0x3F (?) with 0x22 (") when it's at a string boundary
 # (after non-ASCII bytes, followed by . , ) ; (typical Rust end-of-expression markers)
