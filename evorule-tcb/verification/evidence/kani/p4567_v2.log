@@ -1,0 +1,15 @@
+===== verify_resolve_path_simple_field =====
+VERIFICATION RESULT:
+VERIFICATION:- SUCCESSFUL
+Verification Time: 0.8802018s
+Complete - 1 successfully verified harnesses, 0 failures, 1 total.
+
+===== verify_resolve_path_nested_dot =====
+
+===== verify_resolve_path_array_index =====
+VERIFICATION RESULT:
+VERIFICATION:- SUCCESSFUL
+Verification Time: 1.4423528s
+Complete - 1 successfully verified harnesses, 0 failures, 1 total.
+
+===== verify_resolve_path_double_dot =====

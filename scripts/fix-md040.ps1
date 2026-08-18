@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 ﻿# fix-md040.ps1 - Auto-detect and add language to fenced code blocks
 
 param(

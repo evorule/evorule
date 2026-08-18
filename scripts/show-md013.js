@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // show-md013.js - Show MD013 errors with file and line
 
 const { execSync } = require('child_process');

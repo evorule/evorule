@@ -1,0 +1,12 @@
+﻿Verification evidence: P0-9-P0-10
+Status: PASS
+Exit code: 0
+# Evidence metadata
+- commit SHA: 8b2932e2e2652f8293fa5881b6b27e5b83186022
+- rustc: rustc 1.97.1 (8bab26f4f 2026-07-14)
+- cargo: cargo 1.97.1 (c980f4866 2026-06-30)
+- timestamp: 2026-08-14 11:14:59 +08:00
+- platform: Microsoft Windows NT 10.0.22631.0
+- log: P0-9-P0-10_PASS_8b2932e_20260814_111450.stdout.txt
+--- captured output (see stdout file) ---
+[1m[92m   Compiling[0m evorule-reactor v0.2.3 (D:\evorule\evorule-reactor) [1m[93mwarning[0m[1m[97m: linker stdout: 姝ｅ湪鍒涘缓搴?D:\evorule\.build/rust\debug\deps\evorule_reactor.dll.lib 鍜屽璞?D:\evorule\.build/rust\debug\deps\evorule_reactor.dll.exp[0m   [1m[96m|[0m   [1m[96m= [0m[1m[97mnote[0m: `#[warn(linker_messages)]` on by default  [1m[93mwarning[0m: `evorule-reactor` (lib) generated 1 warning [1m[92m   Compiling[0m evorule-governance v0.2.3 (D:\evorule\evorule-governance) [1m[92m    Finished[0m ]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\`test` profile [unoptimized + debuginfo]]8;;\ target(s) in 4.52s [1m[92m     Running[0m verification\differential_test.rs (.build/rust\debug\deps\differential_test-16a543f5cb062ecb.exe)  running 5 tests test diff_rewind_vs_factslog_payload_update ... ok test diff_rewind_vs_factslog_state_transition ... ok test diff_rewind_vs_factslog_mixed ... ok test diff_version_consistency_multi_command ... ok test diff_version_consistency_single_command ... ok  test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s 

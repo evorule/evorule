@@ -9,10 +9,6 @@
 //! - 类型安全（所有转换返回 `Option`）
 //! - 永不 panic
 
-#![allow(clippy::unwrap_used)]
-#![allow(clippy::expect_used)]
-#![allow(clippy::panic)]
-
 use alloc::borrow::Cow;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -836,12 +832,18 @@ mod tests {
     #[test]
     fn test_try_insert() {
         let mut obj = JsonValue::empty_object();
-        assert!(obj.try_insert("k".to_string(), JsonValue::Integer(1)).is_ok());
-        assert!(obj.try_insert("k".to_string(), JsonValue::Integer(2)).is_err());
+        assert!(obj
+            .try_insert("k".to_string(), JsonValue::Integer(1))
+            .is_ok());
+        assert!(obj
+            .try_insert("k".to_string(), JsonValue::Integer(2))
+            .is_err());
         assert_eq!(obj.get("k"), Some(&JsonValue::Integer(1)));
 
         let mut non_obj = JsonValue::Integer(0);
-        assert!(non_obj.try_insert("k".to_string(), JsonValue::Integer(1)).is_err());
+        assert!(non_obj
+            .try_insert("k".to_string(), JsonValue::Integer(1))
+            .is_err());
     }
 
     #[test]

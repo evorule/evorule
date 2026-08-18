@@ -26,20 +26,12 @@
 
 #![forbid(unsafe_code)]
 
-mod cli;
-mod commands;
-mod error;
-mod executor;
-mod fact_log;
-mod hash;
-mod io_util;
-mod output;
-
 use std::process::ExitCode;
 
 use clap::Parser;
 
-use crate::cli::{Cli, Command};
+use evorule_cli::cli::{Cli, Command};
+use evorule_cli::commands;
 
 fn main() -> ExitCode {
     init_tracing();

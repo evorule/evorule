@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // show-md051.js - Show MD051 errors
 
 const { execSync } = require('child_process');

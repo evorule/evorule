@@ -1,0 +1,14 @@
+# =============================================================================
+# Rust toolchain 锁定
+#
+# 目的:
+# - 锁 1.97.0(Gitee Go runner 与本机都是 stable 通道,2026-07 出 1.97.1)
+# - 与 Cargo.toml `[workspace.package].rust-version = "1.74"` 兼容(MSRV 是下限)
+# - CI / 本地 / 贡献者使用相同版本,避免 stable 漂移
+# - clippy + rustfmt 组件必须装(clippy 是 1.0 升门条件之一)
+# - Kani 用自带工具链,不依赖此文件
+# =============================================================================
+[toolchain]
+channel = "1.97.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

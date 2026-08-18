@@ -142,6 +142,193 @@ fn set_instr(attr: &str, value: i64) -> JsonValue {
     ])
 }
 
+/// set 指令（任意 JsonValue 值），用于构造嵌套对象等场景
+fn set_json_instr(attr: &str, value: JsonValue) -> JsonValue {
+    JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string("set")),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("attr", JsonValue::string(attr)),
+                ("operation", JsonValue::string("set")),
+                ("value", value),
+            ]),
+        ),
+    ])
+}
+
+// =============================================================================
+// v0.3.1 新指令/域类型构造（差分测试覆盖新逻辑）
+// =============================================================================
+
+fn decrement_instr(attr: &str, delta: i64) -> JsonValue {
+    JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string("decrement")),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("attr", JsonValue::string(attr)),
+                ("delta", JsonValue::Integer(delta)),
+            ]),
+        ),
+    ])
+}
+
+fn sequence_instr(instructions: Vec<JsonValue>) -> JsonValue {
+    JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string("sequence")),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[("instructions", JsonValue::Array(instructions))]),
+        ),
+    ])
+}
+
+fn conditional_instr(domain: JsonValue, then_instr: JsonValue, else_instr: JsonValue) -> JsonValue {
+    JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string("conditional")),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("domain", domain),
+                ("then", then_instr),
+                ("else", else_instr),
+            ]),
+        ),
+    ])
+}
+
+fn while_loop_instr(condition: JsonValue, body: JsonValue) -> JsonValue {
+    JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string("while_loop")),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[("condition", condition), ("body", body)]),
+        ),
+    ])
+}
+
+fn call_external_instr(messages: JsonValue, tools: JsonValue) -> JsonValue {
+    JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string("call_external")),
+        (
+            "params",
+            JsonValue::object_from_pairs(&[("messages", messages), ("tools", tools)]),
+        ),
+    ])
+}
+
+/// v0.3.1 域类型：has_fields（判断对象是否含指定字段）
+fn has_fields_domain(path: &str, fields: &[&str]) -> JsonValue {
+    JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string("has_fields")),
+        ("path", JsonValue::string(path)),
+        (
+            "fields",
+            JsonValue::Array(fields.iter().map(|f| JsonValue::string(*f)).collect()),
+        ),
+    ])
+}
+
+/// v0.3.1 域类型：lt（path 整数值 < value）
+///
+/// `path` 为完整状态路径（如 `__exec__.payload.x`），
+/// 与 TCB 的 `resolve_domain_path` 解析规则一致。
+fn lt_domain(path: &str, value: i64) -> JsonValue {
+    JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string("lt")),
+        ("path", JsonValue::string(path)),
+        ("value", JsonValue::Integer(value)),
+    ])
+}
+
+// =============================================================================
+// v0.3.1 差分辅助：多步队列执行模拟 + 事件排空
+// =============================================================================
+
+/// 模拟 Reactor 的队列驱动主循环（仅用 execute_transition 纯函数）：
+/// 循环 pop 队首指令执行，直到队列为空、触发 I/O 或执行错误。
+///
+/// 返回 `(最终 payload, 最终队列)`。这是差分测试路径 B 的多步模拟，
+/// 与 Reactor 每步调用一次 `execute_transition` 的语义完全一致。
+///
+/// # 步数上限
+///
+/// 带 10000 步硬上限（对应 Reactor 的 max_rounds 防线）：测试构造错误
+/// 导致队列永不排空时快速 panic，而非无限挂起拖垮整个测试套件。
+fn simulate_execution(
+    core_eval: &[JsonValue],
+    initial_payload: JsonValue,
+    initial_queue: Vec<JsonValue>,
+) -> (JsonValue, Vec<JsonValue>) {
+    const MAX_SIM_STEPS: usize = 10_000;
+    let mut payload = initial_payload;
+    let mut queue = initial_queue;
+    for _ in 0..MAX_SIM_STEPS {
+        if queue.is_empty() {
+            return (payload, queue);
+        }
+        let instruction = queue.remove(0);
+        match execute_transition(core_eval, &instruction, &payload, &queue) {
+            Ok(TransitionResult::State {
+                new_payload,
+                new_queue,
+            }) => {
+                payload = new_payload;
+                queue = new_queue;
+            }
+            // I/O 触发/忽略/错误：与 Reactor 行为一致（停止推进，等待 IoResponse/产生 Error）
+            Ok(TransitionResult::IoRequired { .. })
+            | Ok(TransitionResult::Ignored { .. })
+            | Err(_) => {
+                return (payload, queue);
+            }
+        }
+    }
+    panic!(
+        "simulate_execution exceeded {MAX_SIM_STEPS} steps (queue never drained) — \
+         likely a non-terminating rule (e.g. while_loop with constant body)"
+    );
+}
+
+/// 持续接收事件直到 Stable/Error，返回最后看到的 StateTransition 的 new_payload。
+///
+/// 适用于多步指令（sequence/conditional/while_loop）以及 ReAct 结果消费场景：
+/// Reactor 会持续处理队列中的指令，直到稳定或出错。
+async fn drain_to_stable(rx: &mut evorule_reactor::EventReceiver) -> Option<JsonValue> {
+    let mut last_payload = None;
+    while let Ok(fact) = rx.recv().await {
+        match fact {
+            Fact::StateTransition { new_payload, .. } => last_payload = Some(new_payload),
+            Fact::Stable { .. } => return last_payload,
+            Fact::Error { .. } => return None,
+            _ => {}
+        }
+    }
+    last_payload
+}
+
+/// 持续接收事件直到 IoRequest，返回 `(request_id, io_type, params)`。
+///
+/// 用于 ReAct 循环差分：call_external 无结果时 Reactor 触发 IoRequest fact。
+async fn extract_io_request(
+    rx: &mut evorule_reactor::EventReceiver,
+) -> Option<(FactId, String, JsonValue)> {
+    while let Ok(fact) = rx.recv().await {
+        match fact {
+            Fact::IoRequest {
+                id,
+                io_type,
+                params,
+                ..
+            } => return Some((id, io_type.as_str().to_string(), params)),
+            Fact::Error { .. } => return None,
+            _ => {}
+        }
+    }
+    None
+}
+
 // =============================================================================
 // proptest 配置
 // =============================================================================
@@ -408,6 +595,244 @@ proptest! {
             Ok(())
         })?;
     }
+
+    /// P0-12: decrement 指令 —— Reactor 与 execute_transition 产生相同 new_payload
+    ///
+    /// v0.3.1 基础指令（与 increment 对称，采用 sub 操作）。
+    /// TCB 将缺失字段视为 0（0 - delta = -delta），两条路径应产生相同结果。
+    #[test]
+    fn diff_reactor_vs_pure_decrement(
+        delta in -100_000i64..100_000,
+    ) {
+        let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+        rt.block_on(async move {
+            let core_eval = load_core_eval();
+            let payload = JsonValue::empty_object();
+            let instruction = decrement_instr("x", delta);
+
+            let facts_log = FactsLog::new();
+            let reactor = Reactor::builder(core_eval.clone())
+                .max_rounds(100)
+                .facts_log(facts_log)
+                .build();
+            let (tx, mut rx, _event_tx, handle, _log) = reactor.spawn();
+
+            tx.send(Fact::Command {
+                id: FactId(1),
+                instruction: instruction.clone(),
+            }).expect("send command failed");
+
+            let reactor_result = extract_state_transition(&mut rx).await;
+            handle.abort();
+
+            let direct_result = execute_transition(&core_eval, &instruction, &payload, &[]);
+
+            prop_assert!(reactor_result.is_some(), "reactor should emit StateTransition for decrement");
+            let (reactor_pl, _) = reactor_result.unwrap();
+            let direct_pl = match direct_result {
+                Ok(TransitionResult::State { new_payload, .. }) => new_payload,
+                Ok(other) => panic!("execute_transition returned {:?}, expected State", format!("{:?}", other)),
+                Err(e) => panic!("execute_transition failed: {:?}", e),
+            };
+
+            assert_semantically_equivalent(true, &reactor_pl, true, &direct_pl, "decrement");
+            prop_assert_eq!(
+                reactor_pl.get("x").and_then(|v| v.as_i64()),
+                Some(-delta),
+                "decrement on missing field should be 0 - delta = -delta"
+            );
+
+            Ok(())
+        })?;
+    }
+
+    /// P0-12: sequence 指令 —— Reactor 与 execute_transition 队列调度一致
+    ///
+    /// v0.3.1 控制流指令：sequence 将多条指令 push 进队列依次执行。
+    /// 路径 A 排空到 Stable 后与路径 B（纯函数多步模拟）最终 payload 结构全等。
+    #[test]
+    fn diff_reactor_vs_pure_sequence(
+        v1 in -1_000i64..1_000,
+        v2 in -1_000i64..1_000,
+    ) {
+        let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+        rt.block_on(async move {
+            let core_eval = load_core_eval();
+            let instruction = sequence_instr(vec![
+                set_instr("x", v1),
+                set_instr("y", v2),
+            ]);
+
+            // 路径 A: Reactor
+            let facts_log = FactsLog::new();
+            let reactor = Reactor::builder(core_eval.clone())
+                .max_rounds(100)
+                .facts_log(facts_log)
+                .build();
+            let (tx, mut rx, _event_tx, handle, _log) = reactor.spawn();
+            tx.send(Fact::Command {
+                id: FactId(1),
+                instruction: instruction.clone(),
+            }).expect("send command failed");
+            let reactor_payload = drain_to_stable(&mut rx).await;
+            handle.abort();
+
+            // 路径 B: 纯函数多步模拟（模拟 Reactor 队列驱动）
+            let (direct_payload, _) = simulate_execution(
+                &core_eval,
+                JsonValue::empty_object(),
+                vec![instruction.clone()],
+            );
+
+            prop_assert!(reactor_payload.is_some(), "reactor should reach Stable after sequence");
+            let reactor_pl = reactor_payload.unwrap();
+            assert_semantically_equivalent(true, &reactor_pl, true, &direct_payload, "sequence");
+            prop_assert_eq!(
+                reactor_pl.get("x").and_then(|v| v.as_i64()),
+                Some(v1),
+                "sequence should set x"
+            );
+            prop_assert_eq!(
+                reactor_pl.get("y").and_then(|v| v.as_i64()),
+                Some(v2),
+                "sequence should set y"
+            );
+
+            Ok(())
+        })?;
+    }
+
+    /// P0-12: conditional 指令 —— Reactor 与 execute_transition 分支选择一致
+    ///
+    /// v0.3.1 控制流指令：conditional 依据 lt 域类型选择 then/else 分支。
+    /// 路径 A 先 set x = base，再执行 conditional；路径 B 用纯函数模拟同两步。
+    #[test]
+    fn diff_reactor_vs_pure_conditional(
+        base in -100i64..100,
+        threshold in -100i64..100,
+    ) {
+        let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+        rt.block_on(async move {
+            let core_eval = load_core_eval();
+            let instruction = conditional_instr(
+                lt_domain("__exec__.payload.x", threshold),
+                set_instr("a", 1),
+                set_instr("a", 2),
+            );
+
+            // 路径 A: Reactor —— 先 set x = base，再执行 conditional
+            let facts_log = FactsLog::new();
+            let reactor = Reactor::builder(core_eval.clone())
+                .max_rounds(100)
+                .facts_log(facts_log)
+                .build();
+            let (tx, mut rx, _event_tx, handle, _log) = reactor.spawn();
+            tx.send(Fact::Command {
+                id: FactId(1),
+                instruction: set_instr("x", base),
+            }).expect("send set failed");
+            let _ = drain_to_stable(&mut rx).await;
+            tx.send(Fact::Command {
+                id: FactId(2),
+                instruction: instruction.clone(),
+            }).expect("send conditional failed");
+            let reactor_payload = drain_to_stable(&mut rx).await;
+            handle.abort();
+
+            // 路径 B: 纯函数两步模拟
+            let (after_set, _) = simulate_execution(
+                &core_eval,
+                JsonValue::empty_object(),
+                vec![set_instr("x", base)],
+            );
+            let (direct_payload, _) = simulate_execution(
+                &core_eval,
+                after_set,
+                vec![instruction.clone()],
+            );
+
+            prop_assert!(reactor_payload.is_some(), "reactor should reach Stable after conditional");
+            let reactor_pl = reactor_payload.unwrap();
+            assert_semantically_equivalent(true, &reactor_pl, true, &direct_payload, "conditional");
+            let expected = if base < threshold { 1 } else { 2 };
+            prop_assert_eq!(
+                reactor_pl.get("a").and_then(|v| v.as_i64()),
+                Some(expected),
+                "conditional should pick the {} branch (base={}, threshold={})",
+                if base < threshold { "then" } else { "else" },
+                base,
+                threshold,
+            );
+
+            Ok(())
+        })?;
+    }
+
+    /// P0-12: while_loop 指令 —— Reactor 与 execute_transition 循环终止一致
+    ///
+    /// v0.3.1 控制流指令：while_loop 依据 lt 域类型反复执行 body 直到条件不满足。
+    /// 路径 A 先 set counter = 0，再执行 while_loop；路径 B 用纯函数模拟同两步。
+    ///
+    /// body 必须用 `increment`（宪法加法指令）：业务 `set` 规则硬编码
+    /// operation="set"（覆盖语义），误用 `set+add` 会让 counter 每轮被覆盖回
+    /// 常量，condition 永真 → while_loop 死循环（历史回归教训）。
+    #[test]
+    fn diff_reactor_vs_pure_while_loop(
+        n in 1i64..10,
+    ) {
+        let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+        rt.block_on(async move {
+            let core_eval = load_core_eval();
+            // condition: counter < n; body: counter += 1
+            let instruction = while_loop_instr(
+                lt_domain("__exec__.payload.counter", n),
+                increment_instr("counter", 1),
+            );
+
+            // 路径 A: Reactor —— 先 set counter = 0，再执行 while_loop
+            let facts_log = FactsLog::new();
+            let reactor = Reactor::builder(core_eval.clone())
+                .max_rounds(200)
+                .facts_log(facts_log)
+                .build();
+            let (tx, mut rx, _event_tx, handle, _log) = reactor.spawn();
+            tx.send(Fact::Command {
+                id: FactId(1),
+                instruction: set_instr("counter", 0),
+            }).expect("send set failed");
+            let _ = drain_to_stable(&mut rx).await;
+            tx.send(Fact::Command {
+                id: FactId(2),
+                instruction: instruction.clone(),
+            }).expect("send while_loop failed");
+            let reactor_payload = drain_to_stable(&mut rx).await;
+            handle.abort();
+
+            // 路径 B: 纯函数两步模拟
+            let (after_set, _) = simulate_execution(
+                &core_eval,
+                JsonValue::empty_object(),
+                vec![set_instr("counter", 0)],
+            );
+            let (direct_payload, _) = simulate_execution(
+                &core_eval,
+                after_set,
+                vec![instruction.clone()],
+            );
+
+            prop_assert!(reactor_payload.is_some(), "reactor should reach Stable after while_loop");
+            let reactor_pl = reactor_payload.unwrap();
+            assert_semantically_equivalent(true, &reactor_pl, true, &direct_payload, "while_loop");
+            prop_assert_eq!(
+                reactor_pl.get("counter").and_then(|v| v.as_i64()),
+                Some(n),
+                "while_loop should increment counter to n (n={})",
+                n,
+            );
+
+            Ok(())
+        })?;
+    }
 }
 
 // =============================================================================
@@ -471,6 +896,259 @@ fn diff_reactor_vs_pure_noop() {
         assert!(
             direct_pl.is_object(),
             "direct payload should be object after noop"
+        );
+    });
+}
+
+// =============================================================================
+// P0-12: ReAct 循环（v0.3.1 核心新逻辑）
+// =============================================================================
+//
+// 用例 5/6 覆盖 ReAct 循环的 I/O 触发与结果消费两条路径：
+// - call_external 无 __io_results__ 结果 → io_request（路径 A 触发 IoRequest fact）
+// - call_external 有 __io_results__ 结果 → 消费到 llm_response，__io_results__ 按类型隔离
+// 路径 B 分别与 execute_transition 返回的 IoRequired / 注入结果后的 State 全等。
+// =============================================================================
+
+/// P0-12: call_external 指令 —— Reactor 与 execute_transition 的 I/O 触发一致
+///
+/// v0.3.1 ReAct 循环入口：call_external 无 `__io_results__.call_external` 结果时，
+/// 触发 io_request（io_type=call_external，messages/tools 透传）。
+/// Reactor 应发出 IoRequest fact，execute_transition 应返回 IoRequired，二者参数一致。
+#[test]
+fn diff_reactor_vs_pure_call_external_io_request() {
+    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    rt.block_on(async move {
+        let core_eval = load_core_eval();
+        let messages = JsonValue::Array(vec![JsonValue::object_from_pairs(&[
+            ("role", JsonValue::string("user")),
+            ("content", JsonValue::string("hello from differential test")),
+        ])]);
+        let tools = JsonValue::Array(vec![]);
+        let instruction = call_external_instr(messages.clone(), tools);
+
+        // 路径 A: Reactor —— call_external 无结果时触发 IoRequest
+        let facts_log = FactsLog::new();
+        let reactor = Reactor::builder(core_eval.clone())
+            .max_rounds(100)
+            .facts_log(facts_log)
+            .build();
+        let (tx, mut rx, _event_tx, handle, _log) = reactor.spawn();
+        tx.send(Fact::Command {
+            id: FactId(1),
+            instruction: instruction.clone(),
+        })
+        .expect("send command failed");
+        let reactor_io = extract_io_request(&mut rx).await;
+        handle.abort();
+
+        // 路径 B: execute_transition 直接调用 → IoRequired
+        let direct_result =
+            execute_transition(&core_eval, &instruction, &JsonValue::empty_object(), &[]);
+
+        let (request_id, reactor_io_type, reactor_params) =
+            reactor_io.expect("reactor should emit IoRequest for call_external");
+        let (direct_io_type, direct_params) = match direct_result {
+            Ok(TransitionResult::IoRequired { io_type, params }) => (io_type, params),
+            Ok(other) => panic!(
+                "execute_transition returned {:?}, expected IoRequired",
+                format!("{:?}", other)
+            ),
+            Err(e) => panic!("execute_transition failed: {:?}", e),
+        };
+
+        // io_type 一致（ReAct 循环的 I/O 触发路径）
+        assert_eq!(reactor_io_type, direct_io_type, "io_type mismatch");
+        assert_eq!(
+            reactor_io_type, "call_external",
+            "should request call_external"
+        );
+        // params 一致（messages/tools 路径解析结果）
+        assert_eq!(reactor_params, direct_params, "io_request params mismatch");
+        // messages 透传（v0.3.1: call_external 参数仅使用 messages + tools）
+        let messages_array = messages.as_array().expect("messages should be an array");
+        assert_eq!(
+            direct_params.get("messages").and_then(|v| v.as_array()),
+            Some(messages_array),
+            "messages should be passed through to io_request"
+        );
+        // request_id 已分配
+        assert!(request_id.0 > 0, "request_id should be positive");
+    });
+}
+
+/// P0-12: call_external 结果消费 —— Reactor 与 execute_transition 状态一致
+///
+/// v0.3.1 ReAct 循环：注入 IoResponse 结果后，Reactor 恢复执行原指令，
+/// 消费 `__io_results__.call_external`（按类型隔离）到 `llm_response`，
+/// 并清除 `__io_results__` 容器。路径 B 用预设结果 + 模拟清理做纯函数对比。
+#[test]
+fn diff_reactor_vs_pure_call_external_consume() {
+    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    rt.block_on(async move {
+        let core_eval = load_core_eval();
+        let messages = JsonValue::Array(vec![JsonValue::object_from_pairs(&[
+            ("role", JsonValue::string("user")),
+            ("content", JsonValue::string("hello")),
+        ])]);
+        let tools = JsonValue::Array(vec![]);
+        let instruction = call_external_instr(messages, tools);
+
+        // LLM 回复：纯文本（无 tool_calls）→ 走 on_false 分支 push noop 后稳定
+        let llm_result = JsonValue::object_from_pairs(&[
+            ("role", JsonValue::string("assistant")),
+            ("content", JsonValue::string("no tools needed")),
+        ]);
+
+        // 路径 A: Reactor —— 触发 IoRequest → 注入 IoResponse → 消费 → Stable
+        let facts_log = FactsLog::new();
+        let reactor = Reactor::builder(core_eval.clone())
+            .max_rounds(100)
+            .facts_log(facts_log)
+            .build();
+        let (tx, mut rx, _event_tx, handle, _log) = reactor.spawn();
+        tx.send(Fact::Command {
+            id: FactId(1),
+            instruction: instruction.clone(),
+        })
+        .expect("send command failed");
+        let (request_id, io_type, _) = extract_io_request(&mut rx)
+            .await
+            .expect("reactor should emit IoRequest");
+        assert_eq!(io_type, "call_external", "io_type should be call_external");
+
+        // 注入 IoResponse（模拟 LLM 返回）
+        tx.send(Fact::IoResponse {
+            id: FactId(100),
+            request_id,
+            result: llm_result.clone(),
+            error: None,
+        })
+        .expect("send io_response failed");
+
+        let reactor_payload = drain_to_stable(&mut rx).await;
+        handle.abort();
+
+        // 路径 B: 纯函数模拟 —— 预设 __io_results__.call_external 再执行指令，
+        // 随后模拟 Reactor 的 clear_io_recovery（整体移除 __io_results__ 容器）
+        let io_injected_payload = JsonValue::object_from_pairs(&[(
+            "__io_results__",
+            JsonValue::object_from_pairs(&[("call_external", llm_result.clone())]),
+        )]);
+        let (mut direct_payload, _) =
+            simulate_execution(&core_eval, io_injected_payload, vec![instruction.clone()]);
+        if let JsonValue::Object(map) = &mut direct_payload {
+            map.remove("__io_results__");
+        }
+
+        let reactor_pl =
+            reactor_payload.expect("reactor should reach Stable after consuming io result");
+        // 结构全等（Reactor 与纯函数模拟最终状态一致）
+        assert_eq!(
+            reactor_pl, direct_payload,
+            "payload mismatch after consuming io result"
+        );
+        // llm_response 应为 LLM 回复（__io_results__ 按类型隔离消费）
+        assert_eq!(
+            reactor_pl
+                .get("llm_response")
+                .and_then(|v| v.get("content"))
+                .and_then(|v| v.as_str()),
+            Some("no tools needed"),
+            "llm_response should contain the LLM reply"
+        );
+        // __io_results__ 容器应已被清除（不残留陈旧结果）
+        assert!(
+            !reactor_pl.get("__io_results__").is_some(),
+            "__io_results__ container should be cleared after consumption"
+        );
+    });
+}
+
+/// P0-12: conditional + has_fields 域类型 —— Reactor 与 execute_transition 一致
+///
+/// v0.3.1 新增 `has_fields` 域类型（core_eval 第 8 条规则用其判断 llm_response
+/// 是否含 tool_calls）。本用例用 conditional + has_fields 验证：
+/// - has_fields(payload.x, ["flag_a"]) 为真 → then 分支
+/// - has_fields(payload.x, ["flag_missing"]) 为假 → else 分支
+///
+/// 路径 B 用纯函数多步模拟，最终 payload 结构全等。
+#[test]
+fn diff_reactor_vs_pure_conditional_has_fields() {
+    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    rt.block_on(async move {
+        let core_eval = load_core_eval();
+        // x = { "flag_a": 1 }
+        let set_x_obj = set_json_instr(
+            "x",
+            JsonValue::object_from_pairs(&[("flag_a", JsonValue::Integer(1))]),
+        );
+        // has_fields(x, ["flag_a"]) → true → set a = 1
+        let cond_then = conditional_instr(
+            has_fields_domain("__exec__.payload.x", &["flag_a"]),
+            set_instr("a", 1),
+            set_instr("a", 2),
+        );
+        // has_fields(x, ["flag_missing"]) → false → set b = 2
+        let cond_else = conditional_instr(
+            has_fields_domain("__exec__.payload.x", &["flag_missing"]),
+            set_instr("b", 1),
+            set_instr("b", 2),
+        );
+
+        // 路径 A: Reactor —— set x → cond_then → cond_else
+        let facts_log = FactsLog::new();
+        let reactor = Reactor::builder(core_eval.clone())
+            .max_rounds(100)
+            .facts_log(facts_log)
+            .build();
+        let (tx, mut rx, _event_tx, handle, _log) = reactor.spawn();
+        tx.send(Fact::Command {
+            id: FactId(1),
+            instruction: set_x_obj.clone(),
+        })
+        .expect("send set failed");
+        let _ = drain_to_stable(&mut rx).await;
+        tx.send(Fact::Command {
+            id: FactId(2),
+            instruction: cond_then.clone(),
+        })
+        .expect("send cond_then failed");
+        let _ = drain_to_stable(&mut rx).await;
+        tx.send(Fact::Command {
+            id: FactId(3),
+            instruction: cond_else.clone(),
+        })
+        .expect("send cond_else failed");
+        let reactor_payload = drain_to_stable(&mut rx).await;
+        handle.abort();
+
+        // 路径 B: 纯函数三步模拟
+        let (after_set, _) = simulate_execution(
+            &core_eval,
+            JsonValue::empty_object(),
+            vec![set_x_obj.clone()],
+        );
+        let (after_then, _) = simulate_execution(&core_eval, after_set, vec![cond_then.clone()]);
+        let (direct_payload, _) =
+            simulate_execution(&core_eval, after_then, vec![cond_else.clone()]);
+
+        let reactor_pl = reactor_payload.expect("reactor should reach Stable");
+        assert_eq!(
+            reactor_pl, direct_payload,
+            "payload mismatch for has_fields conditional"
+        );
+        // has_fields(x, [flag_a]) 为真 → a = 1（then 分支）
+        assert_eq!(
+            reactor_pl.get("a").and_then(|v| v.as_i64()),
+            Some(1),
+            "has_fields(payload.x, [flag_a]) should be true → a = 1"
+        );
+        // has_fields(x, [flag_missing]) 为假 → b = 2（else 分支）
+        assert_eq!(
+            reactor_pl.get("b").and_then(|v| v.as_i64()),
+            Some(2),
+            "has_fields(payload.x, [flag_missing]) should be false → b = 2"
         );
     });
 }

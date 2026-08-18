@@ -8,7 +8,7 @@
 
 # `evorule` CLI
 
-[![版本 v0.2.4](https://img.shields.io/badge/version-v0.2.4-blue)](../Cargo.toml)
+[![版本 v0.3.1](https://img.shields.io/badge/version-v0.3.1-blue)](../Cargo.toml)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-green)](../LICENSE)
 [![文档索引 DOCS_INDEX](https://img.shields.io/badge/docs-DOCS_INDEX-8A2BE2)](../DOCS_INDEX.md)
 
@@ -45,8 +45,8 @@
 
 ```bash
 # 1) 下载(根据 CPU 架构选)
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.4/evorule-x86_64
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.4/evorule-aarch64
+wget https://gitee.com/evorule/evorule/releases/download/v0.3.1/evorule-x86_64
+wget https://gitee.com/evorule/evorule/releases/download/v0.3.1/evorule-aarch64
 
 # 2) 验证(可选,确认下载完整)
 sha256sum -c evorule-x86_64.sha256
@@ -444,14 +444,14 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 ```bash
 # Linux x86_64 圈 2 用户
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.4/evorule-x86_64
+wget https://gitee.com/evorule/evorule/releases/download/v0.3.1/evorule-x86_64
 chmod +x evorule-x86_64
 ./evorule-x86_64 validate /etc/company-rules/
 ./evorule-x86_64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 ./evorule-x86_64 verify-chain /var/log/evorule-fact.log
 
 # Linux aarch64 圈 2 用户 (AWS Graviton / RPi)
-wget https://gitee.com/evo-rule-lab/evorule/releases/download/v0.2.4/evorule-aarch64
+wget https://gitee.com/evorule/evorule/releases/download/v0.3.1/evorule-aarch64
 chmod +x evorule-aarch64
 ./evorule-aarch64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 ```
@@ -533,7 +533,7 @@ bash tests/e2e.sh .build/rust/aarch64-unknown-linux-musl/release/evorule
 
 ---
 
-## 已知限制(0.2.0)
+## 已知限制(0.3.1)
 
 - ❌ 无 I/O handler(`io_request` 会产生 IoRequest fact + Error fact,不实际执行 I/O)
 - ❌ 无 HTTP API(本 crate 是本地 CLI，不提供 HTTP 服务；如需 HTTP/SSE 由应用层基于核心仓机制自行构建)
@@ -592,15 +592,17 @@ evorule-cli
 
 ## CI 集成
 
-`.gitee-ci/build-musl.yml` 自动构建并上传产物:
+中文版 Gitee Go CI (`.gitee-ci/`) 自动构建并上传产物到 Gitee release：
 
-| Stage                 | 输出                                          | 触发                            |
-| --------------------- | --------------------------------------------- | ------------------------------- |
-| `build:musl:x86_64`   | `evorule-x86_64-unknown-linux-musl` (1.8 MB)  | tag / main / dev/wip / src 变更 |
-| `build:musl:aarch64`  | `evorule-aarch64-unknown-linux-musl` (1.4 MB) | 同上                            |
-| `verify:reproducible` | (无产物,只校验)                               | tag(v*.*.\*)                    |
+| Workflow                        | 触发                            | 输出                                              |
+| ------------------------------- | ------------------------------- | ------------------------------------------------- |
+| `.gitee-ci/ci.yml`              | push / PR (main, master, release/\*\*) | Linux + Windows 全量测试 + e2e + TCB 确定性 |
+| `.gitee-ci/release.yml`         | tag `v*`                        | Linux x86_64 (musl) + Linux aarch64 (musl) + Windows x86_64 二进制 + SHA256 → Gitee release |
 
-每个 build stage 内置 G8 门控校验(通过 evorule-tcb / evorule-cli build.rs 自动执行)。
+每个 build stage 内置 G8 门禁校验（通过 evorule-tcb / evorule-cli build.rs 自动执行）。
+
+**macOS 二进制**：Gitee Go 无 macOS runner，由未来英文版仓库（GitHub Actions）发布。
+**GitHub 关系**：本仓库不向 GitHub 镜像（`不做镜像`），英文版将独立仓库发布。
 
 ---
 

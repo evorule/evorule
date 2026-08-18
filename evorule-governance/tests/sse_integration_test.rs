@@ -185,8 +185,17 @@ async fn test_sse_io_request_event() {
     let mut event_rx = event_tx.subscribe();
 
     // 发送 call_external 指令触发 IoRequest
+    // v0.3.1 语义：call_external 仅接受 messages（必选）/ tools（可选），
+    // prompt/system 已废除；io_request 的 messages 为必选参数，
+    // 缺失时 TCB 报 PathResolutionFailed（M4：fail-fast）而非发出残缺请求。
+    let mut message = BTreeMap::new();
+    message.insert("role".to_string(), JsonValue::string("user"));
+    message.insert("content".to_string(), JsonValue::string("test"));
     let mut params = BTreeMap::new();
-    params.insert("prompt".to_string(), JsonValue::string("test"));
+    params.insert(
+        "messages".to_string(),
+        JsonValue::Array(vec![JsonValue::Object(message)]),
+    );
     let mut instr = BTreeMap::new();
     instr.insert("type".to_string(), JsonValue::string("call_external"));
     instr.insert("params".to_string(), JsonValue::Object(params));

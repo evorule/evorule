@@ -641,6 +641,9 @@ impl Auditor {
     /// - [`LoadError::ContentHashMismatch`]：Fact 内容被篡改（content_hash 不匹配）
     /// - [`LoadError::ChainBroken`]：哈希链断裂（prev_hash 链接不正确）
     /// - [`LoadError::ChainHashMismatch`]：链哈希不匹配（chain_hash 被篡改）
+    // 106 行: tier1 WAL 加载 + 链式哈希验证 + mount 必须单函数原子语义
+    // 拆函数会让 hash chain 验证状态在 step 间传递时丢失 early-return 信号
+    #[allow(clippy::too_many_lines)]
     pub fn load_from_tier1_wal(&mut self, path: &std::path::Path) -> Result<(), LoadError> {
         use evorule_reactor::read_wal_with_hash;
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # =============================================================================
 # check_doc_safety.py — EvoRule 文档安全与引用完整性检查器
 #

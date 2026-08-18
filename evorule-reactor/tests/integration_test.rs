@@ -76,7 +76,15 @@ fn make_instruction(typ: &str, attr: &str, delta: i64) -> JsonValue {
 
 fn make_call_external_instruction(prompt: &str) -> JsonValue {
     let mut params = BTreeMap::new();
-    params.insert("prompt".to_string(), JsonValue::string(prompt));
+    // v0.3.1：call_external 使用 messages 参数（LLM 消息历史数组），
+    // io_request 透传 instruction 的 messages/tools 参数。
+    params.insert(
+        "messages".to_string(),
+        JsonValue::Array(vec![JsonValue::object_from_pairs(&[
+            ("role", JsonValue::string("user")),
+            ("content", JsonValue::string(prompt)),
+        ])]),
+    );
     let mut instr = BTreeMap::new();
     instr.insert("type".to_string(), JsonValue::string("call_external"));
     instr.insert("params".to_string(), JsonValue::Object(params));
@@ -150,7 +158,17 @@ async fn test_io_request_detection() {
     .expect("IoRequest not received");
 
     assert_eq!(io_type, IoType::call_external());
-    assert_eq!(params.get("prompt").and_then(|v| v.as_str()), Some("Hello"));
+    // v0.3.1：call_external 的 io_request 透传 instruction 的 messages/tools 参数
+    let messages = params.get("messages").and_then(|v| v.as_array());
+    assert!(
+        messages.is_some(),
+        "call_external io_request should carry messages (v0.3.1)"
+    );
+    let first_msg = messages
+        .and_then(|m| m.first())
+        .and_then(|m| m.get("content"))
+        .and_then(|v| v.as_str());
+    assert_eq!(first_msg, Some("Hello"));
 
     // 使用实际的 request_id 回复
     let result = JsonValue::string("response from LLM");
@@ -177,16 +195,16 @@ async fn test_io_request_detection() {
 
     assert!(result.is_some());
     let snapshot = result.unwrap();
-    // BUG 修复验证：I/O 结果应被消费为业务字段 llm_response，
-    // 而 __io_result__ 应被清除（防止残留影响后续 I/O 指令）。
+    // v0.3.1：I/O 结果应被消费为业务字段 llm_response，
+    // 恢复执行完成后 __io_results__ 应被整体移除（防止残留影响后续 I/O 指令）。
     assert_eq!(
         snapshot.get("llm_response").and_then(|v| v.as_str()),
         Some("response from LLM"),
-        "llm_response business field should be set from __io_result__"
+        "llm_response business field should be set from __io_results__.call_external"
     );
     assert!(
-        snapshot.get("__io_result__").is_none(),
-        "__io_result__ should be cleared after being consumed"
+        snapshot.get("__io_results__").is_none(),
+        "__io_results__ should be cleared after recovery execution"
     );
 }
 
@@ -797,13 +815,17 @@ async fn test_noop_instruction() {
 
 #[tokio::test]
 async fn test_unknown_instruction_falls_to_noop() {
+    // v0.3.1: 未知指令类型不再静默当 noop。
+    // `all([])` 兜底规则匹配但显式标注非业务规则（evorule-tcb/src/transition.rs:179），
+    // TCB 返回 `TransitionResult::Ignored`，反应器产生 Error 事实。
+    // 这取代了之前"静默失败"的旧设计，强制上游感知未知指令。
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
     let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
-    // 未知指令类型，应被 core_eval.json 的兜底规则（all([])）匹配，不执行任何操作
+    // 未知指令类型：all([]) 兜底规则匹配但无业务效果
     let mut instr = BTreeMap::new();
     instr.insert(
         "type".to_string(),
@@ -815,9 +837,24 @@ async fn test_unknown_instruction_falls_to_noop() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable not received");
-    // 未知指令不修改 payload
-    assert_eq!(snapshot, JsonValue::empty_object());
+    // 等待 Error 事实（v0.3.1 新行为：未知指令产生显式告警）
+    let error_msg = tokio::time::timeout(Duration::from_secs(5), async {
+        while let Ok(fact) = rx.recv().await {
+            if let Fact::Error { message, .. } = fact {
+                return message;
+            }
+        }
+        panic!("channel closed without Error fact");
+    })
+    .await
+    .expect("timeout waiting for Error fact");
+
+    // Error 消息必须明确指出"被 TCB 忽略"
+    assert!(
+        error_msg.contains("ignored by TCB"),
+        "expected 'ignored by TCB' in error message, got: {}",
+        error_msg
+    );
 }
 
 #[tokio::test]
@@ -903,29 +940,22 @@ async fn wait_for_io_request(rx: &mut evorule_reactor::EventReceiver) -> Option<
     .unwrap()
 }
 
-/// 辅助：构造 query_db 指令
-fn make_query_db_instruction(query: &str) -> JsonValue {
-    let mut params = BTreeMap::new();
-    params.insert("query".to_string(), JsonValue::string(query));
-    let mut instr = BTreeMap::new();
-    instr.insert("type".to_string(), JsonValue::string("query_db"));
-    instr.insert("params".to_string(), JsonValue::Object(params));
-    JsonValue::Object(instr)
-}
-
 // ===== I/O 双路径机制测试（BUG 修复验证）=====
 
 #[tokio::test]
 async fn test_consecutive_different_io_requests_no_interference() {
-    // 关键 BUG 修复验证：连续两次不同的 I/O 调用（call_external + query_db）
+    // 关键 BUG 修复验证：连续两次不同的 I/O 调用（call_external + call_service）
     // 必须各自走完整的 io_request → io_response → set 消费流程，
-    // 不能因为第一次的 __io_result__ 残留导致第二次错误走 on_true 分支。
+    // 不能因为第一次的 __io_results__ 残留导致第二次错误走 on_true 分支。
+    //
+    // v0.3.1：I/O 结果按 io_type 隔离存储在 __io_results__.{io_type}，
+    // 恢复执行完成后整体移除 __io_results__ 容器。
     //
     // 使用 sequence 指令将两个 I/O 指令打包在同一次执行中：
-    // sequence([call_external, query_db]) → 队列展开为 [call_external, query_db]
+    // sequence([call_external, call_service]) → 队列展开为 [call_external, call_service]
     // 1. call_external 首次执行 → IoRequest → IoResponse → 重新执行 → set llm_response
-    // 2. query_db 首次执行 → 若 __io_result__ 未清除，会错误走 on_true（消费旧值）
-    //    清除后 → IoRequest → IoResponse → 重新执行 → set db_result
+    // 2. call_service 首次执行 → 若 __io_results__ 未清除，会错误走 on_true（消费旧值）
+    //    清除后 → IoRequest → IoResponse → 重新执行 → set service_result
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
     let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
@@ -935,7 +965,7 @@ async fn test_consecutive_different_io_requests_no_interference() {
     // 用 sequence 打包两个 I/O 指令
     let sequence_instr = make_sequence_instruction(vec![
         make_call_external_instruction("Hello"),
-        make_query_db_instruction("SELECT 1"),
+        make_call_service_instruction("calculator"),
     ]);
     tx.send(Fact::Command {
         id: gen.next_id(),
@@ -943,46 +973,46 @@ async fn test_consecutive_different_io_requests_no_interference() {
     })
     .unwrap();
 
-    // 1. 等待第一个 IoRequest（call_external）
+    // 1. 等待第一个 IoRequest（call_external）→ 回复 LLM 对象（含 messages）
     let (request_id_1, io_type_1) = wait_for_io_request(&mut rx).await.expect("IoRequest 1");
     assert_eq!(io_type_1, IoType::call_external());
-    tx.send(Fact::IoResponse {
-        id: gen.next_id(),
-        request_id: request_id_1,
-        result: JsonValue::string("llm answer"),
-        error: None,
-    })
-    .unwrap();
+    send_io_response_value(&tx, &mut gen, request_id_1, make_llm_response("llm answer"));
 
-    // 2. 等待第二个 IoRequest（query_db）
-    //    如果 __io_result__ 未被清除，query_db 会错误地走 on_true 分支，
-    //    直接 set db_result = 残留的 "llm answer"，而不发起 IoRequest。
+    // 2. 等待第二个 IoRequest（call_service）
+    //    如果 __io_results__ 未被清除，call_service 会错误地走 on_true 分支，
+    //    直接 set service_result = 残留的 "llm answer"，而不发起 IoRequest。
     //    此时 wait_for_io_request 会超时 panic。
     let (request_id_2, io_type_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
-    assert_eq!(io_type_2, IoType::query_db());
+    assert_eq!(io_type_2, IoType::call_service());
     tx.send(Fact::IoResponse {
         id: gen.next_id(),
         request_id: request_id_2,
-        result: JsonValue::string("db rows"),
+        result: JsonValue::string("service rows"),
         error: None,
     })
     .unwrap();
 
-    // 3. 等待 Stable
+    // 3. merge 生成的新 call_external（ReAct 循环下一轮）→ 回复后循环结束
+    let (request_id_3, io_type_3) = wait_for_io_request(&mut rx).await.expect("IoRequest 3");
+    assert_eq!(io_type_3, IoType::call_external());
+    let final_llm = make_llm_response("final llm");
+    send_io_response_value(&tx, &mut gen, request_id_3, final_llm.clone());
+
+    // 4. 等待 Stable
     let snapshot = wait_for_stable(&mut rx).await.expect("Stable");
     assert_eq!(
-        snapshot.get("llm_response").and_then(|v| v.as_str()),
-        Some("llm answer"),
-        "call_external should set llm_response"
+        snapshot.get("llm_response"),
+        Some(&final_llm),
+        "llm_response should be from the final call_external"
     );
     assert_eq!(
-        snapshot.get("db_result").and_then(|v| v.as_str()),
-        Some("db rows"),
-        "query_db should set db_result from its own IoResponse (not残留的 llm answer)"
+        snapshot.get("service_result").and_then(|v| v.as_str()),
+        Some("service rows"),
+        "call_service should set service_result from its own IoResponse (not残留的 llm answer)"
     );
     assert!(
-        snapshot.get("__io_result__").is_none(),
-        "__io_result__ should be cleared after consumption"
+        snapshot.get("__io_results__").is_none(),
+        "__io_results__ should be cleared after consumption"
     );
 }
 
@@ -1048,27 +1078,6 @@ async fn test_io_result_consumed_to_business_field() {
 
 // ===== 扩展 I/O 双路径测试：多类型、同类型、混合场景 =====
 
-/// 辅助：构造 http_get 指令
-fn make_http_get_instruction(url: &str) -> JsonValue {
-    let mut params = BTreeMap::new();
-    params.insert("url".to_string(), JsonValue::string(url));
-    let mut instr = BTreeMap::new();
-    instr.insert("type".to_string(), JsonValue::string("http_get"));
-    instr.insert("params".to_string(), JsonValue::Object(params));
-    JsonValue::Object(instr)
-}
-
-/// 辅助：构造 save_memory 指令
-fn make_save_memory_instruction(key: &str, value: &str) -> JsonValue {
-    let mut params = BTreeMap::new();
-    params.insert("key".to_string(), JsonValue::string(key));
-    params.insert("value".to_string(), JsonValue::string(value));
-    let mut instr = BTreeMap::new();
-    instr.insert("type".to_string(), JsonValue::string("save_memory"));
-    instr.insert("params".to_string(), JsonValue::Object(params));
-    JsonValue::Object(instr)
-}
-
 /// 辅助：构造 call_service 指令
 fn make_call_service_instruction(service_name: &str) -> JsonValue {
     let mut params = BTreeMap::new();
@@ -1079,7 +1088,22 @@ fn make_call_service_instruction(service_name: &str) -> JsonValue {
     JsonValue::Object(instr)
 }
 
-/// 辅助：发送 IoResponse 并返回
+/// 构造 v0.3.1 ReAct 流程的 LLM 响应对象。
+///
+/// core_eval 的 call_service 恢复分支会执行 `merge`，它引用
+/// `llm_response.messages` 作为消息历史。因此 call_external 的 IoResponse
+/// 必须返回含 `messages` 数组的对象（不含 tool_calls → 不再生成子任务）。
+fn make_llm_response(content: &str) -> JsonValue {
+    JsonValue::object_from_pairs(&[(
+        "messages",
+        JsonValue::Array(vec![JsonValue::object_from_pairs(&[
+            ("role", JsonValue::string("assistant")),
+            ("content", JsonValue::string(content)),
+        ])]),
+    )])
+}
+
+/// 辅助：发送 IoResponse（字符串结果）
 fn send_io_response(
     tx: &evorule_reactor::FactSender,
     gen: &mut FactIdGenerator,
@@ -1095,21 +1119,42 @@ fn send_io_response(
     .unwrap();
 }
 
+/// 辅助：发送 IoResponse（JsonValue 结果，如 LLM 对象响应）
+fn send_io_response_value(
+    tx: &evorule_reactor::FactSender,
+    gen: &mut FactIdGenerator,
+    request_id: FactId,
+    result: JsonValue,
+) {
+    tx.send(Fact::IoResponse {
+        id: gen.next_id(),
+        request_id,
+        result,
+        error: None,
+    })
+    .unwrap();
+}
+
 #[tokio::test]
-async fn test_three_different_io_types_sequence() {
-    // 验证 3 种不同 I/O 类型连续调用（call_external + query_db + http_get）
-    // 每次都必须走完整的 io_request → io_response → set 消费流程
+async fn test_two_different_io_types_sequence() {
+    // 验证 2 种受支持 I/O 类型连续调用（call_external + call_service）
+    // 每次都必须走完整的 io_request → io_response → set 消费流程。
+    // v0.3.1：core_eval 仅内置 call_external（LLM 推理）与 call_service（工具/服务）两类 I/O；
+    // query_db/http_get/save_memory 已移出宪法，由应用层以 call_service 实现。
+    //
+    // 注意 v0.3.1 ReAct 语义：call_service 恢复分支执行 `merge`，生成一个新的
+    // call_external 循环回 LLM（引用 llm_response.messages）。因此共 3 次 IoRequest：
+    // call_external(#1) → call_service(#2) → call_external(#3, 由 merge 生成)。
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(200).build();
     let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
-    // sequence([call_external, query_db, http_get])
+    // sequence([call_external, call_service])
     let sequence_instr = make_sequence_instruction(vec![
         make_call_external_instruction("prompt-1"),
-        make_query_db_instruction("SELECT * FROM users"),
-        make_http_get_instruction("https://api.example.com/data"),
+        make_call_service_instruction("notify"),
     ]);
     tx.send(Fact::Command {
         id: gen.next_id(),
@@ -1117,48 +1162,44 @@ async fn test_three_different_io_types_sequence() {
     })
     .unwrap();
 
-    // 1. call_external → IoRequest → IoResponse
+    // 1. call_external → IoRequest → IoResponse（LLM 返回含 messages 的对象）
     let (rid_1, ty_1) = wait_for_io_request(&mut rx).await.expect("IoRequest 1");
     assert_eq!(ty_1, IoType::call_external());
-    send_io_response(&tx, &mut gen, rid_1, "llm-result");
+    send_io_response_value(&tx, &mut gen, rid_1, make_llm_response("llm-result"));
 
-    // 2. query_db → IoRequest（若 __io_result__ 未清除，会错误消费旧值）
+    // 2. call_service → IoRequest（若 __io_results__ 未清除，会错误消费旧值）
     let (rid_2, ty_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
-    assert_eq!(ty_2, IoType::query_db());
-    send_io_response(&tx, &mut gen, rid_2, "db-rows");
+    assert_eq!(ty_2, IoType::call_service());
+    send_io_response(&tx, &mut gen, rid_2, "service-output");
 
-    // 3. http_get → IoRequest（同样验证不消费残留）
+    // 3. merge 生成的新 call_external → IoRequest（ReAct 循环下一轮）
     let (rid_3, ty_3) = wait_for_io_request(&mut rx).await.expect("IoRequest 3");
-    assert_eq!(ty_3, IoType::http_get());
-    send_io_response(&tx, &mut gen, rid_3, "http-body");
+    assert_eq!(ty_3, IoType::call_external());
+    let final_llm = make_llm_response("llm-final");
+    send_io_response_value(&tx, &mut gen, rid_3, final_llm.clone());
 
     // 4. 验证最终快照
     let snapshot = wait_for_stable(&mut rx).await.expect("Stable");
     assert_eq!(
-        snapshot.get("llm_response").and_then(|v| v.as_str()),
-        Some("llm-result"),
-        "call_external should set llm_response"
+        snapshot.get("llm_response"),
+        Some(&final_llm),
+        "llm_response should be from the final call_external (merge loop)"
     );
     assert_eq!(
-        snapshot.get("db_result").and_then(|v| v.as_str()),
-        Some("db-rows"),
-        "query_db should set db_result"
-    );
-    assert_eq!(
-        snapshot.get("http_response").and_then(|v| v.as_str()),
-        Some("http-body"),
-        "http_get should set http_response"
+        snapshot.get("service_result").and_then(|v| v.as_str()),
+        Some("service-output"),
+        "call_service should set service_result from its own IoResponse"
     );
     assert!(
-        snapshot.get("__io_result__").is_none(),
-        "__io_result__ should be cleared after all I/O consumed"
+        snapshot.get("__io_results__").is_none(),
+        "__io_results__ should be cleared after all I/O consumed"
     );
 }
 
 #[tokio::test]
 async fn test_same_io_type_twice_no_stale_consumption() {
     // 验证相同 I/O 类型连续调用两次（call_external × 2）
-    // 第二次必须发起新的 io_request，不能消费第一次的残留 __io_result__
+    // 第二次必须发起新的 io_request，不能消费第一次的残留 __io_results__
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(200).build();
     let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
@@ -1182,7 +1223,7 @@ async fn test_same_io_type_twice_no_stale_consumption() {
     send_io_response(&tx, &mut gen, rid_1, "first-answer");
 
     // 2. 第二个 call_external → 必须发起新的 IoRequest
-    //    若 __io_result__ 未清除，第二次 call_external 会直接走 on_true
+    //    若 __io_results__ 未清除，第二次 call_external 会直接走 on_true
     //    set llm_response = 残留的 "first-answer"，导致 wait_for_io_request 超时
     let (rid_2, ty_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
     assert_eq!(ty_2, IoType::call_external());
@@ -1196,8 +1237,8 @@ async fn test_same_io_type_twice_no_stale_consumption() {
         "llm_response should be from the second call_external (not stale first-answer)"
     );
     assert!(
-        snapshot.get("__io_result__").is_none(),
-        "__io_result__ should be cleared"
+        snapshot.get("__io_results__").is_none(),
+        "__io_results__ should be cleared"
     );
 }
 
@@ -1251,15 +1292,15 @@ async fn test_io_interleaved_with_normal_instructions() {
         "increment y=10 should execute after call_external (not affected by I/O)"
     );
     assert!(
-        snapshot.get("__io_result__").is_none(),
-        "__io_result__ should be cleared"
+        snapshot.get("__io_results__").is_none(),
+        "__io_results__ should be cleared"
     );
 }
 
 #[tokio::test]
-async fn test_all_five_io_types_sequence() {
-    // 终极验证：5 种 I/O 类型全部连续调用
-    // call_external + query_db + http_get + save_memory + call_service
+async fn test_all_supported_io_types_sequence() {
+    // 终极验证：v0.3.1 支持的 2 种 I/O 类型全部连续调用
+    // call_external + call_service（ReAct 循环：call_service 恢复时 merge 生成新 call_external）
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(500).build();
     let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
@@ -1268,9 +1309,6 @@ async fn test_all_five_io_types_sequence() {
 
     let sequence_instr = make_sequence_instruction(vec![
         make_call_external_instruction("llm-prompt"),
-        make_query_db_instruction("SELECT 1"),
-        make_http_get_instruction("https://example.com"),
-        make_save_memory_instruction("key1", "value1"),
         make_call_service_instruction("calculator"),
     ]);
     tx.send(Fact::Command {
@@ -1279,28 +1317,14 @@ async fn test_all_five_io_types_sequence() {
     })
     .unwrap();
 
-    // 依次等待 5 个 IoRequest 并回复
+    // 依次等待 3 个 IoRequest 并回复
+    // #1 call_external → LLM 对象；#2 call_service → 工具结果；#3 call_external（merge 生成）
     let expected_types = [
         IoType::call_external(),
-        IoType::query_db(),
-        IoType::http_get(),
-        IoType::save_memory(),
         IoType::call_service(),
+        IoType::call_external(),
     ];
-    let expected_results = [
-        "llm-output",
-        "db-output",
-        "http-output",
-        "memory-output",
-        "tool-output",
-    ];
-    let expected_fields = [
-        "llm_response",
-        "db_result",
-        "http_response",
-        "memory_result",
-        "service_result",
-    ];
+    let expected_results = ["llm-output", "tool-output", "llm-final"];
 
     for (i, expected_ty) in expected_types.iter().enumerate() {
         let (rid, ty) = wait_for_io_request(&mut rx)
@@ -1313,41 +1337,56 @@ async fn test_all_five_io_types_sequence() {
             i + 1,
             expected_ty
         );
-        send_io_response(&tx, &mut gen, rid, expected_results[i]);
+        if i == 1 {
+            // call_service → 字符串工具结果
+            send_io_response(&tx, &mut gen, rid, expected_results[i]);
+        } else {
+            // call_external → LLM 对象（含 messages，供 merge 引用）
+            send_io_response_value(&tx, &mut gen, rid, make_llm_response(expected_results[i]));
+        }
     }
 
     // 验证最终快照
     let snapshot = wait_for_stable(&mut rx).await.expect("Stable");
-    for (i, field) in expected_fields.iter().enumerate() {
-        assert_eq!(
-            snapshot.get(field).and_then(|v| v.as_str()),
-            Some(expected_results[i]),
-            "Field {} should be set to {}",
-            field,
-            expected_results[i]
-        );
-    }
+    let final_llm = make_llm_response("llm-final");
+    assert_eq!(
+        snapshot.get("llm_response"),
+        Some(&final_llm),
+        "llm_response should be from the final call_external"
+    );
+    assert_eq!(
+        snapshot.get("service_result").and_then(|v| v.as_str()),
+        Some("tool-output"),
+        "service_result should be from call_service IoResponse"
+    );
     assert!(
-        snapshot.get("__io_result__").is_none(),
-        "__io_result__ should be cleared after all 5 I/O consumed"
+        snapshot.get("__io_results__").is_none(),
+        "__io_results__ should be cleared after all I/O consumed"
     );
 }
 
 #[tokio::test]
 async fn test_io_response_with_null_result_clears_properly() {
-    // 验证 IoResponse 携带 Null 结果时，双路径机制仍然正常工作
-    // 第一次 call_external 返回 Null → set llm_response = Null → 清除 __io_result__
-    // 第二次 query_db 应仍能正确发起 IoRequest（不消费残留）
+    // 验证 IoResponse 携带 Null 结果时，不产生死循环，且后续 I/O 不受影响。
+    //
+    // v0.3.1 语义：null 结果没有可消费的内容（`exists` 将 null 视为不存在），
+    // 若把 null 注入 __io_results__ 后重新推送原指令，恢复执行时 exists==false
+    // → 指令无限重发 io_request（死循环）。
+    // 处理：丢弃缓存的原指令，不再重新推送（错误/空结果走同一路径）。
+    //
+    // 测试设计：sequence([call_external(null), call_external(normal)])
+    // 1. call_external #1 → IoRequest → 回复 Null → 指令被丢弃（无死循环）
+    // 2. call_external #2 仍在队列 → 必须发起新 IoRequest → 回复结果 → set llm_response
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(200).build();
     let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
-    // sequence([call_external, query_db])
+    // sequence([call_external, call_external])
     let sequence_instr = make_sequence_instruction(vec![
         make_call_external_instruction("null-test"),
-        make_query_db_instruction("SELECT 1"),
+        make_call_external_instruction("second"),
     ]);
     tx.send(Fact::Command {
         id: gen.next_id(),
@@ -1355,8 +1394,9 @@ async fn test_io_response_with_null_result_clears_properly() {
     })
     .unwrap();
 
-    // 1. call_external → IoRequest → 回复 Null
-    let (rid_1, _) = wait_for_io_request(&mut rx).await.expect("IoRequest 1");
+    // 1. call_external #1 → IoRequest → 回复 Null（指令应被丢弃，不重发 io_request）
+    let (rid_1, ty_1) = wait_for_io_request(&mut rx).await.expect("IoRequest 1");
+    assert_eq!(ty_1, IoType::call_external());
     tx.send(Fact::IoResponse {
         id: gen.next_id(),
         request_id: rid_1,
@@ -1365,30 +1405,22 @@ async fn test_io_response_with_null_result_clears_properly() {
     })
     .unwrap();
 
-    // 2. query_db → 必须仍发起新 IoRequest
-    //    即使第一次的 __io_result__ 是 Null，清除机制必须生效
-    //    （exists 域对 Null 返回 true，所以必须删除字段而非设为 Null）
+    // 2. call_external #2 → 必须仍发起新 IoRequest（不受 #1 的 Null 影响）
     let (rid_2, ty_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
-    assert_eq!(ty_2, IoType::query_db());
-    send_io_response(&tx, &mut gen, rid_2, "db-data");
+    assert_eq!(ty_2, IoType::call_external());
+    send_io_response(&tx, &mut gen, rid_2, "second-answer");
 
     // 3. 验证
     let snapshot = wait_for_stable(&mut rx).await.expect("Stable");
-    // llm_response 应为 Null（第一次 I/O 的结果）
+    // llm_response 应来自第二次 I/O 的结果（第一次 Null 的指令被丢弃，未消费任何字段）
     assert_eq!(
-        snapshot.get("llm_response"),
-        Some(&JsonValue::Null),
-        "llm_response should be Null (from first IoResponse)"
-    );
-    // db_result 应为 "db-data"（第二次 I/O 的结果，不是残留的 Null）
-    assert_eq!(
-        snapshot.get("db_result").and_then(|v| v.as_str()),
-        Some("db-data"),
-        "db_result should be from its own IoResponse"
+        snapshot.get("llm_response").and_then(|v| v.as_str()),
+        Some("second-answer"),
+        "llm_response should be from the second call_external (Null result dropped)"
     );
     assert!(
-        snapshot.get("__io_result__").is_none(),
-        "__io_result__ should be cleared even when first result was Null"
+        snapshot.get("__io_results__").is_none(),
+        "__io_results__ should be cleared"
     );
 }
 

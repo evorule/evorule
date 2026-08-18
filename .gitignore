@@ -3,6 +3,8 @@ target/
 **/target/
 .build/
 **/.build/
+.check-target/
+**/.check-target/
 
 # 测试日志与中间产物
 test_results/
@@ -11,6 +13,9 @@ test_results/
 **/*.log
 check_output.log
 test_output.log
+# 例外：验证证据日志必须入库（verification/evidence/README.md §六 强制，防止"跑完即丢"）
+!verification/evidence/**/*.log
+!**/verification/evidence/**/*.log
 
 # 运行时数据
 data/
@@ -58,17 +63,8 @@ kani-results/
 文档/
 **/文档/
 **/文档/**
-
-# 2026-08-17 evorule-b 复刻
-# 物理位置：仓内 L2/L3 工作文档目录
-# 防止误发布
-
-# === 2026-08-17 升级 v0.3.1 补充保护 ===
-
-# 仓内英文 docs/ 内部修复日志（与 文档/ 重复, 不公开发布）
-docs/
-**/docs/
-**/docs/**
+# 注意: 根目录 docs/ 及各 crate docs/ 是 L1 公开层发布目录（check_doc_safety 视为 L1），
+# 不纳入本保护区；内部文档统一归入 文档/（文档分层见 DOCS_INDEX.md）
 
 # scripts/ 私人调试脚本（下划线/双下划线开头, 不是发布物）
 scripts/_*.ps1
@@ -102,20 +98,12 @@ check.sh
 **/verify.sh
 **/check.sh
 
-# Kani 形式化验证收集脚本 + 证据
-collect_kani_artifacts.sh
-run_kani_proofs.sh
-run_kani.sh
-run-kani.sh
-**/collect_kani_artifacts.sh
-**/run_kani_proofs.sh
-**/run_kani.sh
-**/run-kani.sh
-verification/evidence/
-**/verification/evidence/
+# Kani 形式化验证瞬时中间产物（transient 输出, 不是证据, 不纳入 git）
 *.kani-stdout.txt
 *.kani-stderr.txt
-# 注意: verification/kani_proofs.rs 是证明源码, NOT ignore (保留)
+# 注意: Kani 证明源码(*_proofs.rs)、Kani 运行/收集脚本(run_kani*.sh / collect_kani_artifacts.sh)
+#       以及验证证据(verification/evidence/)均为验证资产, 必须纳入 git 防止丢失
+#       （见 verification/INDEX.md §五/§七）
 
 # Hash 快照文件（dev 产物）
 hash_snapshot.txt
@@ -123,3 +111,18 @@ hash_snapshot.txt
 
 # Examples 的 Cargo.lock（examples 自身 lock, workspace 顶层 Cargo.lock 保留）
 examples/**/Cargo.lock
+
+# 根目录临时工作产物（不属于 release 资产, 防止误 add）
+check_out.json
+**/check_out.json
+run_check.ps1
+run_tests.ps1
+
+# Release 二进制（CI 在 Gitee release 页发布, 本地仓不存, 避免 5MB+ dead artifact）
+/release-assets/
+**/release-assets/
+
+# Reactive researcher 运行时数据（应用层 reference 实现的 memory 目录, 不是源码）
+examples/**/reactive_researcher_memory/
+**/reactive_researcher_memory/
+reactive_researcher_memory/

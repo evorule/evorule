@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 // Kani 专用集合类型
 //
 // Kani 对 BTreeSet/BTreeMap 的红黑树内部结构建模能力有限（见
-// evorule-tcb/docs/KANI.md），即使集合只有 1 个元素，insert/remove 操作
+// evorule-tcb/verification/kani-formal-verification-design.md），即使集合只有 1 个元素，insert/remove 操作
 // 也会展开大量红黑树节点操作路径，导致 CBMC 状态爆炸。
 //
 // 解决方案：在 #[cfg(kani)] 模式下用基于 Vec 的线性集合替代 BTreeSet/
@@ -188,9 +188,9 @@ pub(crate) struct ReactorState {
     /// 触发 I/O 的原指令缓存（IoRequest id → (原指令, cause)）
     ///
     /// IoResponse 到达后，反应器将原指令重新推送回队列前端，
-    /// 使 core_eval.json 中的 `exists(__io_result__)` 双路径生效：
+    /// 使 core_eval.json 中的 `exists(__io_results__.{io_type})` 双路径生效：
     /// - 首次执行：走 on_false 分支，触发 io_request
-    /// - 恢复执行：走 on_true 分支，set 消费 __io_result__ 到业务字段
+    /// - 恢复执行：走 on_true 分支，set 消费 __io_results__.{io_type} 到业务字段
     ///
     /// 断点 1 修复：同时缓存 cause（触发 I/O 的原指令的 cause FactId），
     /// 使恢复执行时 StateTransition/IoRequest 的 cause 指向正确的 Fact。
@@ -232,9 +232,9 @@ pub(crate) struct ReactorState {
     /// I/O 恢复执行标志
     ///
     /// IoResponse 到达后设为 true，重新执行原指令后（execute_transition 返回 State）
-    /// 反应器检查此标志，若为 true 则清除 `payload.__io_result__` 并重置为 false。
-    /// 这是必要的，因为 `exists` 域检查的是"路径存在"，Null 值也算存在；
-    /// 若不清除，后续不同的 I/O 指令会错误地走 on_true 分支（消费残留的旧结果）。
+    /// 反应器检查此标志，若为 true 则清除 `payload.__io_results__` 并重置为 false。
+    /// 这是必要的：v0.3.1 中 `exists` 域对 null 返回 false（core_eval 用 null 清除结果），
+    /// 若 io_recovery 未清除，后续不同的 I/O 指令会错误地认为仍在恢复中。
     pub io_recovery: bool,
 
     /// 控制层阶段（白盒化：让执行状态机可观察）
@@ -402,6 +402,13 @@ impl ReactorState {
         }
     }
 
+    /// 查询指定 I/O 请求的 io_type（IoResponse 处理时用于定位 `__io_results__.{io_type}`）
+    ///
+    /// 必须在 `complete_io_request` 之前调用，因为完成请求会移除 io_type 记录。
+    pub fn get_io_type(&self, id: &FactId) -> Option<&IoType> {
+        self.pending_io_types.get(id)
+    }
+
     /// 完成一个 I/O 请求，返回是否成功（即该请求是否在等待中）
     ///
     /// P3-11：同时移除时间戳。
@@ -479,11 +486,13 @@ impl ReactorState {
         self.pending_io_instructions.remove(&id)
     }
 
-    /// 清除 payload 中的 `__io_result__` 字段
+    /// 清除 payload 中的 `__io_results__` 字段
     ///
-    /// I/O 恢复执行后调用，防止残留的 `__io_result__` 影响后续不同的 I/O 指令。
-    /// 因为 `exists` 域检查的是"路径存在"（Null 也算存在），若不清除，
-    /// 后续 I/O 指令会错误地走 on_true 分支，消费旧的 I/O 结果。
+    /// v0.3.1：I/O 结果按 io_type 隔离存储在 `__io_results__.{io_type}`，
+    /// core_eval 消费后将对应项置为 null（`exists` 将 null 视为不存在）。
+    /// I/O 恢复执行后调用，整体移除 `__io_results__` 容器，
+    /// 防止残留的 null 项在后续 I/O 指令中被误读、也避免陈旧结果影响后续 I/O 指令。
+    /// 因为同一时刻最多只有一个 pending I/O，整体移除是安全的。
     pub fn clear_io_result(&mut self) {
         #[cfg(kani)]
         {
@@ -493,12 +502,12 @@ impl ReactorState {
         #[cfg(not(kani))]
         {
             if let JsonValue::Object(map) = &mut self.payload {
-                map.remove("__io_result__");
+                map.remove("__io_results__");
             }
         }
     }
 
-    /// 原子清除 I/O 恢复状态（同时清除 `__io_result__` 和 `io_recovery` 标志）
+    /// 原子清除 I/O 恢复状态（同时清除 `__io_results__` 和 `io_recovery` 标志）
     ///
     /// 此方法在一次调用内完成两个操作，避免中间状态违反不变式 #2/#4。
     /// 注意: 不变式检查在 'main 循环开头调用，不会在此方法内部触发，

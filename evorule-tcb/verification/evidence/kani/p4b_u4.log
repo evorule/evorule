@@ -1,0 +1,46 @@
+Kani Rust Verifier 0.67.0 (cargo plugin)
+   Compiling evorule-tcb v0.3.1 (/mnt/d/evorule/evorule-tcb)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.08s
+   Compiling evorule-tcb v0.3.1 (/mnt/d/evorule/evorule-tcb)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.91s
+   Compiling evorule-tcb v0.3.1 (/mnt/d/evorule/evorule-tcb)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.83s
+   Compiling evorule-tcb v0.3.1 (/mnt/d/evorule/evorule-tcb)
+warning: function `any_value` is never used
+  --> evorule-tcb/tests/kani/model.rs:32:15
+   |
+32 | pub(crate) fn any_value() -> JsonValue {
+   |               ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `single_key_object_pair` is never used
+  --> evorule-tcb/tests/kani/model.rs:67:15
+   |
+67 | pub(crate) fn single_key_object_pair() -> (JsonValue, JsonValue) {
+   |               ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `any_str` is never used
+  --> evorule-tcb/tests/kani/model.rs:91:15
+   |
+91 | pub(crate) fn any_str<const N: usize>() -> String {
+   |               ^^^^^^^
+
+warning: Found the following unsupported constructs:
+             - caller_location (1)
+             - foreign function (2)
+         
+         Verification will fail if one or more of these constructs is reachable.
+         See https://model-checking.github.io/kani/rust-feature-support.html for more details.
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.37s
+Checking harness kani::kani_proofs::verify_resolve_path_nested_dot...
+
+VERIFICATION RESULT:
+ ** 0 of 1024 failed (27 unreachable)
+
+VERIFICATION:- SUCCESSFUL
+Verification Time: 8.341833s
+
+Manual Harness Summary:
+Complete - 1 successfully verified harnesses, 0 failures, 1 total.

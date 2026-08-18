@@ -383,6 +383,9 @@ impl FactsLog {
     /// # 错误
     /// - `WalError`：WAL 读取失败或重放完成后挂载失败
     /// - `VersionOverflow`：重放过程中版本号溢出
+    // 109 行: WAL 重放 + mount + 哈希链恢复必须保持单函数原子语义
+    // 拆函数会让 4 阶段 (load/replay/mount/hash-chain) 状态传递出错
+    #[allow(clippy::too_many_lines)]
     pub fn recover_with_options<P: AsRef<std::path::Path>>(
         path: P,
         max_wal_size_bytes: u64,
@@ -535,6 +538,9 @@ impl FactsLog {
     /// 若挂载了 WAL，则先 write-ahead 写入磁盘（含哈希字段）并 flush，再更新内存状态。
     /// WAL 写失败时内存尚未更新，返回 `WalError` 让调用方决定是否终止反应器，
     /// 避免内存与磁盘状态分叉。
+    // 115 行: Kani 简化路径 + 非 Kani 完整路径 (哈希链 + WAL 写 + 内存更新) 必须
+    // 保持单函数原子语义, 拆函数会让 #[cfg(kani)] 分支 + 错误处理链断裂
+    #[allow(clippy::too_many_lines)]
     pub fn append(&self, fact: Fact) -> Result<u64, FactsLogError> {
         let mut inner = self.inner.write();
 

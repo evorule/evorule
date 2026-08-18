@@ -5,13 +5,31 @@ edition = "2021"
 authors = ["EvoRule Project"]
 license = "AGPL-3.0-or-later"
 description = "EvoRule TCB Core - 纯计算内核，零依赖，确定性状态转换"
-repository = "https://gitee.com/evorule/evorule"
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/evorule-tcb"
+readme = "README.md"
 keywords = ["tcb", "deterministic", "state-machine", "no-std"]
-categories = ["no-std", "cryptography", "embedded"]
+categories = ["no-std", "data-structures"]
+# 发布到 crates.io 时排除开发产物/验证脚本（下游依赖消费者不需要）
+# 与 evorule-reactor / evorule-governance 风格对齐
+exclude = [
+    "verification/",          # Kani 形式化验证 + 差分测试源码 (dev-only)
+    "benches/",               # Criterion 性能基准源码 (dev-only)
+    "scripts/",               # Kani 验证脚本 (dev-only)
+    "rust-toolchain.toml",    # 开发工具链固定
+    "**/*.log",               # 各类运行日志
+    "install_log.txt",        # 工具安装日志
+]
 
 [dependencies]
 # 无外部依赖（#![no_std] 兼容）
 # alloc 由 Rust 标准库提供
+
+[dev-dependencies]
+# 确定性属性测试：随机输入下验证「相同输入 → 相同输出」
+# 仅 dev 依赖，不进入发布产物（与零依赖核心隔离）
+proptest = "1.4"
 
 [features]
 default = ["std"]

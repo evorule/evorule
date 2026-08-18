@@ -5,12 +5,14 @@
 //!
 //! 端到端演示三层架构(evorule-tcb + evorule-reactor + evorule-governance)的完整用法。
 //!
-//! ## 工作流
+//! ## 工作流(v0.3.1 ReAct 循环)
 //! 1. 提交 `call_external` Command(LLM 分析)→ TCB 发 `IoRequest` →
-//!    自定义 `LlmHandler` 处理 → 回写 `IoResponse` → TCB 注入 `payload.llm_response` → Stable
-//! 2. 提交 `save_memory` Command(持久化)→ TCB 发 `IoRequest` →
-//!    复用 `evorule_governance::MemoryHandler` → 回写 `IoResponse` → Stable
-//! 3. 打印 `FactsLog::history()` 完整审计链
+//!    自定义 `LlmHandler` 处理 → 回写 `IoResponse` → TCB 注入 `payload.llm_response`
+//! 2. LLM 返回含 `tool_calls`(save_memory)的响应 → TCB `collect` 生成 `call_service`
+//!    指令 → 发 `IoRequest` → `MemoryHandler` 持久化 → 回写 `IoResponse` → Stable
+//! 3. TCB 消费 `service_result` 后 `merge` 生成新的 `call_external`(ReAct 循环下一轮) →
+//!    LLM 返回最终结论(无 tool_calls)→ 循环终止 → Stable
+//! 4. 打印 `FactsLog::history()` 完整审计链
 //!
 //! ## 设计要点
 //! - **不修改任何核心 crate**:所有自定义代码(LlmHandler / ExampleSubscriber)在本包内
@@ -21,6 +23,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -82,7 +85,7 @@ impl IoHandler for MemoryHandler {
             let content = tokio::fs::read_to_string(&path)
                 .await
                 .map_err(|e| format!("read file failed: {e}"))?;
-            Ok(JsonValue::String(content))
+            Ok(JsonValue::string(content))
         }
     }
 }
@@ -126,7 +129,7 @@ struct Cli {
     #[arg(long, env = "EVORULE_LLM_API_KEY")]
     llm_api_key: Option<String>,
 
-    /// 待研究的主题(将作为 prompt 发给 LLM)
+    /// 待研究的主题(将作为 user 消息内容发给 LLM)
     #[arg(long, default_value = "请用三句话总结 EvoRule 框架的设计哲学")]
     topic: String,
 
@@ -151,13 +154,19 @@ enum LlmMode {
 /// LLM 处理器
 ///
 /// 实现 `IoHandler` trait,处理 `call_external` 类型的 I/O 请求。
-/// - `DryRun`:返回确定性 canned 响应(默认,无网络)
-/// - `Live`:通过 reqwest 调用 OpenAI 兼容的 chat completions API
+/// - `DryRun`:返回确定性 canned 响应(默认,无网络)。第一轮返回含 `tool_calls`
+///   (save_memory)的响应以触发 ReAct 循环的持久化步骤;merge 后的后续轮返回最终结论。
+/// - `Live`:通过 reqwest 调用 OpenAI 兼容的 chat completions API。
+///
+/// v0.3.1:`call_external` 的 io_request 透传 `messages` 消息历史数组,
+/// 不再使用旧版的 `prompt` 参数。
 struct LlmHandler {
     mode: LlmMode,
     client: reqwest::Client,
     llm_url: Option<String>,
     llm_api_key: Option<String>,
+    memory_key: String,
+    call_count: AtomicUsize,
 }
 
 impl LlmHandler {
@@ -168,6 +177,8 @@ impl LlmHandler {
             client: reqwest::Client::new(),
             llm_url: cli.llm_url.clone(),
             llm_api_key: cli.llm_api_key.clone(),
+            memory_key: cli.memory_key.clone(),
+            call_count: AtomicUsize::new(0),
         }
     }
 }
@@ -175,22 +186,53 @@ impl LlmHandler {
 #[async_trait]
 impl IoHandler for LlmHandler {
     async fn execute(&self, params: &JsonValue) -> IoResult {
-        // 提取 prompt(必需)
-        let prompt = params
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "missing required param: prompt".to_string())?;
+        // 提取 messages 消息历史(必需, v0.3.1)
+        let messages = params
+            .get("messages")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "missing required param: messages".to_string())?;
 
         match self.mode {
             LlmMode::DryRun => {
-                // 确定性 canned 响应:无网络,可重复运行
-                let canned = format!(
-                    "[dry-run LLM] 关于 '{prompt}' 的研究结论: \
-                     EvoRule 通过三层架构(tier0 TCB / tier1 reactor / tier2 governance) \
-                     实现事实驱动的确定性执行。TCB 保持 no_std + forbid(unsafe_code), \
-                     所有 I/O 经 Fact 通道异步外挂,核心可形式化验证。"
-                );
-                Ok(JsonValue::String(canned))
+                let call = self.call_count.fetch_add(1, Ordering::SeqCst);
+                if call == 0 {
+                    // 第一轮:返回研究结论,并附带 save_memory 工具调用。
+                    // ReAct 循环:collect 据此生成 call_service(save_memory) 指令。
+                    let research = format!(
+                        "[dry-run LLM] 研究结论: EvoRule 通过三层架构 \
+                         (tier0 TCB / tier1 reactor / tier2 governance) \
+                         实现事实驱动的确定性执行。TCB 保持 no_std + forbid(unsafe_code), \
+                         所有 I/O 经 Fact 通道异步外挂,核心可形式化验证。"
+                    );
+                    Ok(JsonValue::object_from_pairs(&[
+                        // merge 引用 llm_response.messages 作为消息历史
+                        (
+                            "messages",
+                            JsonValue::Array(vec![JsonValue::object_from_pairs(&[
+                                ("role", JsonValue::string("assistant")),
+                                ("content", JsonValue::string(research.clone())),
+                            ])]),
+                        ),
+                        (
+                            "tool_calls",
+                            JsonValue::Array(vec![JsonValue::object_from_pairs(&[
+                                ("name", JsonValue::string("save_memory")),
+                                (
+                                    "args",
+                                    JsonValue::object_from_pairs(&[
+                                        ("key", JsonValue::string(self.memory_key.clone())),
+                                        ("value", JsonValue::string(research)),
+                                    ]),
+                                ),
+                            ])]),
+                        ),
+                    ]))
+                } else {
+                    // merge 后的后续轮:返回最终结论(无 tool_calls → 循环终止)
+                    Ok(JsonValue::string(
+                        "[dry-run LLM] 研究完成,结论已持久化到 memory 文件。",
+                    ))
+                }
             }
             LlmMode::Live => {
                 let url = self
@@ -198,20 +240,16 @@ impl IoHandler for LlmHandler {
                     .as_ref()
                     .ok_or_else(|| "live mode requires --llm-url or EVORULE_LLM_URL".to_string())?;
 
-                // 从 params 提取可选字段(model / system)
+                // 从 params 提取可选字段(model)
                 let model = params
                     .get("model")
                     .and_then(|v| v.as_str())
                     .unwrap_or("gpt-3.5-turbo");
-                let system = params.get("system").and_then(|v| v.as_str()).unwrap_or("");
 
-                // 构造 OpenAI 兼容 chat completions 请求体
+                // 构造 OpenAI 兼容 chat completions 请求体:直接透传 messages 消息历史
                 let body = serde_json::json!({
                     "model": model,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": prompt},
-                    ],
+                    "messages": messages.iter().map(tcb_to_serde).collect::<Vec<_>>(),
                 });
 
                 let resp = self
@@ -238,7 +276,7 @@ impl IoHandler for LlmHandler {
                     .as_str()
                     .unwrap_or("(empty response)")
                     .to_string();
-                Ok(JsonValue::String(text))
+                Ok(JsonValue::string(text))
             }
         }
     }
@@ -261,7 +299,7 @@ const SUBSCRIBER_ID_OFFSET: u64 = 10000;
 ///
 /// 与核心 `IoSubscriber` 的区别:
 /// - 不依赖 `IoDispatcher`(后者强制要 DbHandler)
-/// - 只处理 demo 用到的两种 io_type(call_external / save_memory)
+/// - 只处理 demo 用到的两种 io_type(call_external / call_service)
 struct ExampleSubscriber {
     llm: LlmHandler,
     memory: MemoryHandler,
@@ -341,9 +379,24 @@ impl ExampleSubscriber {
 
         let result: IoResult = match io_type.as_str() {
             "call_external" => self.llm.execute(&params).await,
-            "save_memory" => self.memory.execute(&params).await,
+            // v0.3.1:call_service 是通用工具调用,按 service_name 二级路由到具体 handler。
+            // io_request 参数为 { service_name, args }。
+            "call_service" => {
+                let service_name = params
+                    .get("service_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let args = params
+                    .get("args")
+                    .cloned()
+                    .unwrap_or_else(JsonValue::empty_object);
+                match service_name {
+                    "save_memory" => self.memory.execute(&args).await,
+                    other => Err(format!("unsupported service: {other}")),
+                }
+            }
             other => Err(format!(
-                "unsupported io_type in demo: {other} (only call_external and save_memory are handled)"
+                "unsupported io_type in demo: {other} (only call_external and call_service are handled)"
             )),
         };
 
@@ -421,18 +474,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut gen = FactIdGenerator::new();
 
     // ─────────────────────────────────────────────────────────────
-    // 5. Command 1:call_external(LLM 分析)
+    // 5. Command:call_external(LLM 分析)
+    //    v0.3.1 ReAct 循环:LLM 返回 tool_calls → collect 生成 call_service(save_memory)
+    //    → MemoryHandler 持久化 → merge 生成新一轮 call_external → LLM 返回最终结论 → Stable
     // ─────────────────────────────────────────────────────────────
-    println!("┌─ 步骤 1:call_external(LLM 分析)─────────────────────────────");
+    println!("┌─ 步骤:call_external(LLM 分析 + ReAct 自动持久化)─────────────");
     let cmd1 = Fact::Command {
         id: gen.next_id(),
         instruction: make_call_external_instruction(&cli.topic),
     };
     command_tx.send(cmd1)?;
-    let snapshot1 = wait_for_stable(&mut event_rx).await?;
+    let snapshot = wait_for_stable(&mut event_rx).await?;
 
-    // 6. 提取 LLM 响应
-    let llm_response = snapshot1
+    // 6. 提取最终 LLM 响应(merge 后新一轮的结果)
+    let llm_response = snapshot
         .get("llm_response")
         .and_then(|v| v.as_str())
         .ok_or("llm_response 字段缺失:call_external 未完成或结果未注入")?
@@ -442,20 +497,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("└──────────────────────────────────────────────────────────────");
     println!();
 
-    // ─────────────────────────────────────────────────────────────
-    // 7. Command 2:save_memory(持久化)
-    // ─────────────────────────────────────────────────────────────
-    println!("┌─ 步骤 2:save_memory(持久化到 {}) ─────", cli.memory_key);
-    let cmd2 = Fact::Command {
-        id: gen.next_id(),
-        instruction: make_save_memory_instruction(&cli.memory_key, &llm_response),
-    };
-    command_tx.send(cmd2)?;
-    let snapshot2 = wait_for_stable(&mut event_rx).await?;
-
-    // 8. 验证 memory_result
-    let memory_ok = snapshot2.get("memory_result").and_then(|v| v.as_bool()) == Some(true);
-    println!("│ memory_result = {memory_ok}");
+    // 7. 验证 service_result(save_memory 工具的返回)
+    let memory_ok = snapshot.get("service_result").and_then(|v| v.as_bool()) == Some(true);
+    println!("┌─ 持久化结果(ReAct 循环内 call_service(save_memory))──────────");
+    println!("│ service_result = {memory_ok}");
     if memory_ok {
         println!(
             "│ 文件已写入:{}/{}",
@@ -498,25 +543,42 @@ fn load_core_eval(path: &PathBuf) -> Result<Vec<JsonValue>, Box<dyn std::error::
     Ok(core_eval)
 }
 
-/// 构造 `call_external` 指令
-fn make_call_external_instruction(prompt: &str) -> JsonValue {
+/// 构造 `call_external` 指令(v0.3.1:使用 `messages` 消息历史数组参数)
+fn make_call_external_instruction(topic: &str) -> JsonValue {
     let mut params = BTreeMap::new();
-    params.insert("prompt".to_string(), JsonValue::string(prompt));
+    params.insert(
+        "messages".to_string(),
+        JsonValue::Array(vec![JsonValue::object_from_pairs(&[
+            ("role", JsonValue::string("user")),
+            ("content", JsonValue::string(topic)),
+        ])]),
+    );
     let mut instr = BTreeMap::new();
     instr.insert("type".to_string(), JsonValue::string("call_external"));
     instr.insert("params".to_string(), JsonValue::Object(params));
     JsonValue::Object(instr)
 }
 
-/// 构造 `save_memory` 指令
-fn make_save_memory_instruction(key: &str, value: &str) -> JsonValue {
-    let mut params = BTreeMap::new();
-    params.insert("key".to_string(), JsonValue::string(key));
-    params.insert("value".to_string(), JsonValue::string(value));
-    let mut instr = BTreeMap::new();
-    instr.insert("type".to_string(), JsonValue::string("save_memory"));
-    instr.insert("params".to_string(), JsonValue::Object(params));
-    JsonValue::Object(instr)
+/// 将 `evorule_tcb::JsonValue` 转换为 `serde_json::Value`
+///
+/// live 模式构造 OpenAI 兼容请求体时使用(反向转换,与 `serde_to_tcb` 互补)。
+fn tcb_to_serde(v: &JsonValue) -> serde_json::Value {
+    match v {
+        JsonValue::Null => serde_json::Value::Null,
+        JsonValue::Bool(b) => serde_json::Value::Bool(*b),
+        JsonValue::Integer(i) => serde_json::Value::Number((*i).into()),
+        JsonValue::String(s) => serde_json::Value::String(s.to_string()),
+        JsonValue::Array(arr) => {
+            serde_json::Value::Array(arr.iter().map(tcb_to_serde).collect())
+        }
+        JsonValue::Object(obj) => {
+            let mut map = serde_json::Map::new();
+            for (k, v) in obj {
+                map.insert(k.clone(), tcb_to_serde(v));
+            }
+            serde_json::Value::Object(map)
+        }
+    }
 }
 
 /// 等待反应器稳定,返回 final_snapshot(payload)

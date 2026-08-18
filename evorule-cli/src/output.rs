@@ -18,6 +18,27 @@ use evorule_reactor::Fact;
 /// - IoRequest: `[F3] IoRequest io_type=call_external`
 /// - Stable: `[F4] Stable`
 /// - Error: `[F5] Error: max_steps exceeded`
+///
+/// # 示例
+/// ```
+/// use evorule_cli::output::fact_to_human;
+/// use evorule_reactor::{Fact, FactId};
+/// use evorule_tcb::JsonValue;
+///
+/// let command = Fact::Command {
+///     id: FactId(1),
+///     instruction: JsonValue::object_from_pairs(&[
+///         ("type", JsonValue::string("noop")),
+///     ]),
+/// };
+/// assert_eq!(fact_to_human(&command), "[F1] Command type=noop");
+///
+/// let stable = Fact::Stable {
+///     id: FactId(4),
+///     final_snapshot: JsonValue::empty_object(),
+/// };
+/// assert_eq!(fact_to_human(&stable), "[F4] Stable");
+/// ```
 pub fn fact_to_human(fact: &Fact) -> String {
     match fact {
         Fact::Command { id, instruction } => {

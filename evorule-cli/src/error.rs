@@ -61,6 +61,14 @@ pub enum CliError {
 
 impl CliError {
     /// 从任意字符串创建通用错误
+    ///
+    /// # 示例
+    /// ```
+    /// use evorule_cli::CliError;
+    ///
+    /// let err = CliError::other("something went wrong");
+    /// assert_eq!(err.to_string(), "something went wrong");
+    /// ```
     pub fn other(msg: impl Into<String>) -> Self {
         Self::Other(msg.into())
     }
@@ -74,6 +82,23 @@ impl CliError {
 /// - 2：规则加载错误（目录不存在、无 .json）
 impl CliError {
     /// 返回该错误对应的退出码
+    ///
+    /// # 约定
+    /// - 0：成功
+    /// - 1：通用错误（默认）
+    /// - 2：规则加载错误（目录不存在、无 .json）
+    ///
+    /// # 示例
+    /// ```
+    /// use evorule_cli::CliError;
+    ///
+    /// // 规则目录缺失 → 退出码 2
+    /// let dir_err = CliError::RulesDirNotFound("/nonexistent".into());
+    /// assert_eq!(dir_err.exit_code(), 2);
+    ///
+    /// // 通用错误 → 退出码 1
+    /// assert_eq!(CliError::other("boom").exit_code(), 1);
+    /// ```
     pub fn exit_code(&self) -> i32 {
         match self {
             CliError::RulesDirNotFound(_) | CliError::NoRulesFound(_) => 2,
