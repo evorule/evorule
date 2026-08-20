@@ -126,3 +126,7 @@ run_tests.ps1
 examples/**/reactive_researcher_memory/
 **/reactive_researcher_memory/
 reactive_researcher_memory/
+
+# mdBook build output(自动生成,不进版本)
+**/docs/book/
+**/book/
