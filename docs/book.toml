@@ -1,0 +1,33 @@
+[book]
+title = "evorule 文档"
+description = "evorule 规则引擎:确定性智能 + BLAKE3 不可篡改审计链 + ReAct 循环"
+authors = ["EvoRule Project"]
+language = "zh"
+src = "."
+
+[build]
+build-dir = "book"
+create-missing = true
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://gitee.com/evorule/evorule"
+edit-url-template = "https://gitee.com/evorule/evorule/edit/main/docs/{path}"
+site-url = "/evorule/"
+mathjax-support = false
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
+limit-results = 20
+teaser-word-count = 30
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 1
+boost-paragraph = 1
+expand = true
+heading-split-level = 3
