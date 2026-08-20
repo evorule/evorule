@@ -1,9 +1,9 @@
 [package]
 name = "evorule-tcb"
-version = "0.3.1"
-edition = "2021"
-authors = ["EvoRule Project"]
-license = "AGPL-3.0-or-later"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 description = "EvoRule TCB Core - 纯计算内核，零依赖，确定性状态转换"
 repository.workspace = true
 homepage.workspace = true
@@ -30,6 +30,8 @@ exclude = [
 # 确定性属性测试：随机输入下验证「相同输入 → 相同输出」
 # 仅 dev 依赖，不进入发布产物（与零依赖核心隔离）
 proptest = "1.4"
+# 性能基准测试
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [features]
 default = ["std"]
@@ -56,3 +58,7 @@ type_complexity = { level = "warn", priority = -1 }
 module_inception = "warn"
 # 通用代码质量（warn 级，不阻断 CI）
 all = { level = "warn", priority = -1 }
+
+[[bench]]
+name = "tcb_core"
+harness = false

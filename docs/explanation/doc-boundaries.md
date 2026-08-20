@@ -20,7 +20,7 @@
 
 **L1 包含**(在 Cargo.toml `exclude` 之外):
 - 根 `*.md`(README、CHANGELOG、ROADMAP、DESIGN_PHILOSOPHY 等)
-- 根 `docs/` 全部内容(本目录)
+- 根 `docs/` 全部内容(本目录),含 `docs/explanation/` 下的哲学/立场白皮书 00-/01-/02- 系列(中文) — 与根 `DESIGN_PHILOSOPHY.md`(英文/技术角度)互补
 - 各 crate 的 `README.md`、`SPEC.md`(如有)、`NOTICE.md`、`CHANGELOG.md`
 
 **L1 不包含**(`Cargo.toml` 的 `exclude` 列表):

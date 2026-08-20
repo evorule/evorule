@@ -402,6 +402,7 @@ dependencies = [
 name = "evorule-tcb"
 version = "0.3.1"
 dependencies = [
+ "criterion",
  "proptest",
 ]
 

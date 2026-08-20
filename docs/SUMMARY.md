@@ -8,6 +8,9 @@
 - [任务式指南](how-to/README.md)
 - [参考手册](reference/README.md)
 - [原理与设计](explanation/README.md)
+  - [立场总纲:有所得必有所失](explanation/00-有所得必有所失-EvoRule的取舍立场.md)
+  - [立场篇:智能时代选择不智能](explanation/01-智能时代选择不智能-什么是确定性智能.md)
+  - [立场篇:哥德尔不自证与逼近真相](explanation/02-哥德尔不自证与逼近真相-EvoRule对正确的诚实立场.md)
 
 # 项目
 

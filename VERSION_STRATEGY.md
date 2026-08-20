@@ -219,7 +219,7 @@ evorule 仓包含**机制层**与**工具**两类子 crate：
 
 ### Q1: 0.x 阶段每次 MINOR 都包含破坏性变更，用户怎么跟踪?
 
-**A**: 0.x 阶段用户应**锁版本**（如 `evorule = "=0.2.0"`，**精确版本**）。`cargo update` 会自动跳到下一个 MINOR，这是用户预期的（因为 0.x 不承诺兼容）。
+**A**: 0.x 阶段用户应**锁版本**（如 `evorule = "=0.3.1"`，**精确版本**）。`cargo update` 会自动跳到下一个 MINOR，这是用户预期的（因为 0.x 不承诺兼容）。
 
 ### Q2: 如果有紧急 hotfix 怎么办?
 
@@ -234,9 +234,115 @@ evorule 仓包含**机制层**与**工具**两类子 crate：
 
 | 版本 | 日期       | 主要变化                                                                                                             |
 | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| 1.3  | 2026-08-20 | 新增 §12 发版版本号同步清单；将 evorule-tcb `version` 改为 `version.workspace = true` 消除 SSOT 硬编码；同步 4 处锁版本示例从 `0.2.0`/`0.2.4` 到 `0.3.1` |
 | 1.2  | 2026-08-02 | 瘦身重构：删除 SemVer/Rust 通用知识复制、重复 FAQ、商业敏感信息、内部路径；§4.2 重写 production ready 为机制层成熟度 |
 | 1.1  | 2026-07-20 | 校准安全审计门槛                                                                                                     |
 | 1.0  | 2026-07-20 | 初版                                                                                                                 |
+
+---
+
+## 12. 发版版本号同步清单
+
+**问题**: 历史发版时漏改 `CONTRIBUTING.md` / `README.md` banner / 锁版本示例等位置，导致仓内出现 `0.2.0` / `0.2.4` 与当前 `0.3.1` 并存。SSOT 已集中（`Cargo.toml` `[workspace.package].version`），但**派生位置**散落 L1 文档各处。
+
+**本节目标**: 把"发版时需要同步的所有位置"列成清单，发版前按表打勾 → 不再漏。
+
+### 12.1 类别 A — 单一真相源（SSOT，改这一处就够）
+
+| # | 路径 | 字段 | 说明 |
+| - | ---- | ---- | ---- |
+| A1 | `Cargo.toml` | `[workspace.package].version` | **唯一手动改点**。所有子 crate 通过 `version.workspace = true` 自动继承。 |
+
+> 改完 A1 后跑一次 `cargo build --workspace` 让 `Cargo.lock` 自动同步。
+
+### 12.2 类别 B — 自动传递（不需手动改，但要确认没硬编码）
+
+| # | 路径 | 字段 | 期望形式 |
+| - | ---- | ---- | -------- |
+| B1 | `evorule-tcb/Cargo.toml` | `[package].version` | `version.workspace = true` |
+| B2 | `evorule-reactor/Cargo.toml` | `[package].version` | `version.workspace = true` |
+| B3 | `evorule-governance/Cargo.toml` | `[package].version` | `version.workspace = true` |
+| B4 | `evorule-cli/Cargo.toml` | `[package].version` | `version.workspace = true` |
+| B5 | `Cargo.lock` | 所有 `evorule-*` 包的 `version` | 由 `cargo build` 自动重写 |
+
+> **违规模式**: 任何子 crate 出现 `version = "0.X.Y"` 硬编码 = SSOT 违反。`validate-version.ps1` 自动检测。
+
+### 12.3 类别 C — 必改（文档内的版本号引用，SSOT 改了这些必须跟着改）
+
+| # | 路径 | 行号近似 | 当前内容 | 改为什么 |
+| - | ---- | -------- | -------- | -------- |
+| C1 | `README.md` | 顶部 banner | `⚠️ v0.X.x — ... (当前 0.Y.Z, YYYY-MM-DD)` | 跟 SSOT 同步到当前 MINOR + 当前 PATCH + CHANGELOG 日期 |
+| C2 | `README.md` | 顶部段落 | `EvoRule **v0.X.x 公开基座**` | 跟 SSOT 同步 |
+| C3 | `README.md` | L26 附近 | badge `version-X.Y.Z-green` | 跟 SSOT 同步 |
+| C4 | `CONTRIBUTING.md` | L23 | `**Version**: X.Y.Z` | 跟 SSOT 同步 |
+| C5 | `CONTRIBUTING.md` | 报告模板 | `evorule version: [e.g. X.Y.Z]` | 跟 SSOT 同步 |
+| C6 | `CONTRIBUTING_ZH.md` | 报告模板 | `evorule 版本: [e.g. vX.Y.Z]` | 跟 SSOT 同步 |
+| C7 | `VERSION_STRATEGY.md` | §10 Q1 FAQ 锁版本示例 | `evorule = "=X.Y.Z"` | 跟 SSOT 同步 |
+| C8 | `DESIGN_PHILOSOPHY.md` | SemVer 章节锁版本示例 | `evorule = "=X.Y.Z"` | 跟 SSOT 同步 |
+
+> **白名单豁免**（这些位置故意保留旧版本号，**不要改**）：
+> - `CHANGELOG.md` 各历史段（多版本共存，合法）
+> - `GATE_REFERENCE.md` 表格里 `v0.X 新增` / `v0.Y 重构` 标记（历史变更记录）
+> - `DESIGN_PHILOSOPHY.md` 的"v0.2.0 边界再调整"段（历史变更记录）
+> - `evorule-cli/README.md` 等 I/O 协议对比表（`v0.2.0 不产生` / `v0.3.1 产生` 是历史对比）
+> - `SECURITY.md` / `SECURITY_AUDIT_v*.md` / `THREAT_MODEL_v*.md`（版本绑定审计批次）
+> - `MIGRATION_v*.md` / `RELEASE_PROCESS_v*.md`（讲特定版本迁移/发布流程）
+> - `DOCS_INDEX.md` 中 `SECURITY_AUDIT_v0.1.0.md` 引用（0.1.0 审计持续有效）
+> - 任何 `v\d+.\d+.\d+` 出现在路线图/未来版本表格
+
+### 12.4 类别 D — 必查（SSOT 改后，文档内提及的版本号是否仍然准确）
+
+| # | 路径 | 检查什么 |
+| - | ---- | -------- |
+| D1 | `ROADMAP.md` | 路线图状态行（`✅ 0.X.1 已发布`）是否需要更新 |
+| D2 | `CHANGELOG.md` | 是否新增了当前版本的章节（按 §4.3 格式） |
+| D3 | `DOCS_INDEX.md` | "与 `Cargo.toml` 中 `version` 同步" 段是否仍准确 |
+| D4 | `examples/*/README.md` | example 自身的版本号与依赖版本号 |
+
+### 12.5 类别 E — 自动化校验（人工改完 C/D 后跑）
+
+```powershell
+# Windows PowerShell 5.1 跑法（避免 UTF-8 解析坑）：
+#   PowerShell 5.1 + 中文 Windows 上 ps1 无 BOM 会按 GBK 读，破坏中文注释 → parse error
+#   临时方案：在 ps1 头部加 UTF-8 BOM (EF BB BF)，但 PowerShell 5.1 仍可能把 BOM 当字符
+#   推荐：先在 PowerShell 7 (pwsh) 环境跑，PowerShell 5.1 环境建议升级或用 docker
+pwsh -NoProfile -File scripts/validate-version.ps1
+```
+
+`validate-version.ps1` 覆盖：
+- A1 / B1-B4：所有 Cargo.toml `version` 与 workspace 一致
+- B5：`Cargo.lock` 与 workspace 一致
+- C1-C8：扫描 L1 文档（`*.md`）中所有 `v\d+\.\d+\.\d+` 字面量，与 canonical 不一致即 FAIL（自动应用 §12.3 白名单）
+- MAJOR 一致性：本仓所有项目 MAJOR 必须相同
+- 历史废弃模式扫描：`v6.x` / `v7.0` / `6.0.0` 等已退役模式
+
+### 12.6 类别 F — git 操作
+
+| # | 操作 | 说明 |
+| - | ---- | ---- |
+| F1 | `git add` 改完的文件 | 按 A-E 列表确认 |
+| F2 | `git commit -m "chore(release): vX.Y.Z"` | 遵循 §6.1 commit message 规范 |
+| F3 | `git tag vX.Y.Z` | 严格按 §9.1 格式（带 `v` 前缀） |
+| F4 | `git push origin main --tags` | 触发 Gitee Go CI（§9.3）自动 release |
+
+### 12.7 发版前 Checklist（按顺序打勾）
+
+- [ ] A1 改完 `Cargo.toml` workspace.package.version
+- [ ] 跑 `cargo build --workspace` 让 `Cargo.lock` 自动同步
+- [ ] 跑 `pwsh -NoProfile -File scripts/validate-version.ps1` 确认 A/B 全绿
+- [ ] 手动改 C1-C8（按 §12.3 表）
+- [ ] 复跑 `validate-version.ps1` 确认 C 全绿
+- [ ] 检查 D1-D4 派生文档
+- [ ] 按 §4.3 写新 `CHANGELOG.md` 段
+- [ ] commit + tag + push（按 §12.6）
+- [ ] Gitee release 页面核对 CI 上传的二进制（§9.3）
+
+### 12.8 反模式（不要这样做）
+
+- ❌ 改完 A1 不跑 `validate-version.ps1` — 历史已证明会漏
+- ❌ 直接 `git tag` 不 commit — tag 指向空 commit
+- ❌ tag 不带 `v` 前缀（违反 §9.1）
+- ❌ 在 C 类别用 sed/awk 全局替换 — 会破坏白名单豁免位置（CHANGELOG / GATE_REFERENCE 等）
 
 ---
 
