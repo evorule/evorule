@@ -293,7 +293,7 @@ TCB = while 循环 + InstructionExecutor
 
 - SemVer 规定 0.x 阶段**任何 MINOR 升级都允许包含破坏性变更**
 - evorule 采纳:0.x 阶段 API 本来就不稳定
-- 用户应**锁版本**(`evorule = "=0.2.0"`,精确版本)
+- 用户应**锁版本**(`evorule = "=0.3.1"`,精确版本)
 
 **CHANGELOG 规则**:
 

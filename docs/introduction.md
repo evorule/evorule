@@ -27,6 +27,6 @@
 
 按 EvoRule 公开边界约定:
 - **根 `*.md`**(README、CHANGELOG、ROADMAP、DESIGN_PHILOSOPHY 等)是 L1 公开
-- **本目录 `docs/`** 是 L1 公开的结构化补充
+- **本目录 `docs/`**(含 `explanation/` 下的哲学/立场白皮书 00-/01-/02- 系列)是 L1 公开的结构化补充
 - **各 crate 的 README/SPEC/NOTICE/CHANGELOG** 是 L1 公开
 - **`文档/`**(gitignore 保护)是 L2/L3 内部,**新内容改走 vault,本目录保留作历史归档**
