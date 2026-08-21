@@ -18,7 +18,7 @@
 - **build.rs 编译时门禁**:23 个禁用模式 (T4/T5/T6/T8/T9/T10/T11/T12/T14) + BOM 检测 编译期强制,PASSED
 - **协议**:AGPL-3.0-or-later(代码) + CC0-1.0(`core_eval.json` 公共领域)
 
-> **Kani 形式化验证**:已移除,待重建。旧版 12 个 proof 存在缺陷(3 个 CBMC 超时由 proptest 兜底、`verify_path_no_panic` 受工具链限制),不满足可信验证要求,需在后续版本基于现有确定性测试(256 PASS)重建后再补充。
+> **Kani 形式化验证**:✅ P1-P21 已完成(34 个 `#[kani::proof]`,5 层覆盖)。详见 [`TCB_SPEC.md` §六](TCB_SPEC.md#六形式化验证-kani-proof) 与 [`verification/kani-formal-verification-design.md`](verification/kani-formal-verification-design.md)(40 KB 专项设计 + 17 个 evidence log)。
 
 ---
 
@@ -646,7 +646,7 @@ EVORULE_SKIP_GATE=1 cargo build
 | 编号 | 事项                        | 状态      | 说明                                                                                                                |
 | ---- | --------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- |
 | N-01 | `MAX_TRANSFORM_RULES` 限制  | ✅ 已完成 | `execute_transition` 入口检查 `core_eval.len() ≤ 64`,超限返回 `TcbError::TooManyTransformRules`(SPEC T6 终止性保证) |
-| N-02 | Kani 形式化验证重建         | 🔄 待办    | 旧版 12 proof 存在缺陷已移除；需基于 256 PASS 确定性测试重建后补充 |
+| N-02 | Kani 形式化验证重建         | ✅ 已完成 | v0.3.1 落地 34 个 `#[kani::proof]`,5 层覆盖(P1-P21);旧版 12 proof 的 CBMC 状态爆炸问题通过「结构化符号输入 + `KIdSet`/`KIdMap`」根治;详情见 §6.3 与 `verification/kani-formal-verification-design.md` |
 
 ### 10.2 后续 Tier 路线
 

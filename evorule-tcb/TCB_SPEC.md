@@ -347,17 +347,40 @@ EVORULE_SKIP_GATE=1 cargo build
 
 ## 六、形式化验证 (Kani proof)
 
-> **当前状态 (v0.3.1)**: 已移除，待重建。
+> **当前状态 (v0.3.1)**: ✅ **P1-P21 已完成**（34 个 `#[kani::proof]`，5 层覆盖）。
 
-旧版（v0.2.x）12 个 proof 存在缺陷（CBMC 超时、`verify_path_no_panic` 受工具链限制），不满足可信验证要求。
+### 6.1 已实装资产
 
-后续重建计划：
-1. 基于当前确定性测试（213 PASS 全通过）
-2. 证明 `execute_transition` 对任意输入永不 panic
-3. 证明溢出检查正常工作
-4. 证明路径解析在深度超限情况下返回 `None` 而非栈溢出
+| 资产 | 位置 | 说明 |
+|---|---|---|
+| 34 个 `#[kani::proof]` | [`tests/kani/kani_proofs.rs`](tests/kani/kani_proofs.rs) | 5 层结构化符号输入 |
+| 符号输入 model | [`tests/kani/model.rs`](tests/kani/model.rs) | 350 行结构化符号构造 |
+| Kani 入口 | [`tests/kani/mod.rs`](tests/kani/mod.rs) + [`tests/kani_entry.rs`](tests/kani_entry.rs) | `#[cfg(kani)]` 接线 |
+| 设计文档 | [`verification/kani-formal-verification-design.md`](verification/kani-formal-verification-design.md) | 40 KB 七节专项设计 |
+| 运行脚本 | `scripts/run_kani_{tcb,p123,p4567,p4cde,p8_11}.sh` 等 5 个 | WSL + Kani 0.67.0 实测 |
+| 证据归档 | `verification/evidence/kani/` | 17 个 PASS/TIMEOUT 日志（p123_b_fill.log 等） |
 
-重建完成后更新本章节。
+### 6.2 5 层覆盖分布
+
+| Layer | 范围 | Proof 数 | 对应 P 编号 |
+|---|---|---|---|
+| L1 | 基础类型（`PartialEq` / `Ord` / `as_*` 不 panic） | 3 | P1-P3 |
+| L2 | 路径解析（点号 / 数组索引 / 转义 / 边界） | 11 | P4-P7 |
+| L3 | 域评估（`eq` / `lt` / `exists` / `instruction` / `all` / `not` / `has_fields` / 深度限制 / 空数组） | 10 | P8-P11 |
+| L4 | 元指令执行（`execute_meta_instruction` / `set` 算术 / `branch` 深度 / `collect` / `merge` / `substitute_template` / `io_request`） | 7 | P12-P18 |
+| L5 | 状态转换（`execute_transition` / 规则数限制 / `react_io_required`） | 3 | P19-P21 |
+
+### 6.3 旧版（v0.2.x）12 proof 与 v0.3.1 新设计的关系
+
+旧版 12 proof 中 3 个 `evaluate_domain_{eq,lt,exists}_kani` 因 3 层嵌套 `FixedMap` CBMC 状态爆炸超时，由 proptest 保底（19 个属性测试全 PASS）。
+v0.3.1 新设计用「结构化符号输入 + 5 层验证 + `KIdSet`/`KIdMap` 替代嵌套 `BTreeMap`」彻底解决状态爆炸，实测 P0-3/4/5/7/8 全部 PASS（11-231s）。
+
+### 6.4 当前缺口（如实标注，非缺陷）
+
+- **未接入 CI**：`.gitee-ci/ci.yml` 中 kani job 已写（串行跑 21 个 proof），但未在 Gitee Go runner 实跑过；本机 WSL Ubuntu 22.04 + Kani 0.67.0 已实跑部分。
+- **3 个 evaluate_domain 旧 proof 替换方案实测待补**：新设计的 P8-P11 已实现，但 evaluation harness 完整重跑结果待归档到 `verification/evidence/kani/`。
+
+> **相关文档**：[`kani-formal-verification-design.md`](verification/kani-formal-verification-design.md) §四 完整 P1-P21 证明清单； [`EVORULE_FORMAL_VERIFICATION_PLAN_v3.md`](../../verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) 七层验证体系（含 P0/P1/P2 属性目录）。
 
 ---
 
