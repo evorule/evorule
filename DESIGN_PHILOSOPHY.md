@@ -221,7 +221,7 @@ TCB = while 循环 + InstructionExecutor
 - 把 Rust 代码"展开"成等价的中间表示
 - 穷举所有可能的输入(在合理范围内)
 - 验证"对所有输入,程序都不违反性质"
-- 12 个 proof(2026-08-05 实测 9 PASS + 3 TIMEOUT, `evaluate_domain` 系列由 proptest 保底):见 `evorule-tcb/verification/kani-formal-verification-design.md`
+- **34 个 proof**(P1-P21, 5 层覆盖 — L1 基础类型 3 / L2 路径解析 11 / L3 域评估 10 / L4 元指令 7 / L5 状态转换 3),2026-08-05 历史实测 9 PASS + 3 TIMEOUT(`evaluate_domain` 系列旧版由 proptest 保底;新版结构化符号输入已根治):见 `evorule-tcb/verification/kani-formal-verification-design.md`
 
 **TLA+**(TLC 模型检测):
 

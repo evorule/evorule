@@ -25,7 +25,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 [![Version](https://img.shields.io/badge/version-0.3.1-green.svg)](Cargo.toml)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
-[![Kani](https://img.shields.io/badge/Kani-t0_12p_t1_11p-blue.svg)](evorule-tcb/verification/kani_proofs.rs)
+[![Kani](https://img.shields.io/badge/Kani-t0_34p_5layer_t1_11p-blue.svg)](evorule-tcb/verification/kani-formal-verification-design.md)
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0-green.svg)]()
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=dark)](https://gitee.com/evorule/evorule/stargazers)
 
@@ -52,7 +52,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 > | ⏪ 时间机器（replay/rewind/fork/diff API）   | ✅                      |
 > | 🐛 调试控制（phase/queue/pending_io）        | ✅（[evorule-server](https://gitee.com/evorule/evorule-server) 实现） |
 > | HTTP API 会话管理（命令/状态/事件流/审计）   | ✅（应用层实现）        |
-> | Kani 验证（tier0 14 proof + tier1 11 proof） | ✅（tier0 9 PASS + 5 TIMEOUT + 19 proptest 保底；tier1 10 PASS + 1 TIMEOUT） |
+> | Kani 验证（tier0 34 proof 5 层覆盖 + tier1 11 proof） | ✅（tier0 9 PASS + 3 TIMEOUT + 17 evidence log；tier1 10 PASS + 1 TIMEOUT） |
 > | musl static CLI（x86_64 + aarch64）          | ✅                      |
 > | API 版本化（`/api/v1/`）                     | ❌ **1.0 之前不承诺**   |
 > | 多反应器协作原语（join/channel/shared）      | ❌ **规划中** |
