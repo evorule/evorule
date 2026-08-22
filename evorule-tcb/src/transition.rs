@@ -40,6 +40,21 @@ pub enum TransitionResult {
         new_queue: Vec<JsonValue>,
     },
     /// I/O 请求：需要上层反应器执行 I/O
+    ///
+    /// # 重放契约（D11，v0.3.2 审计治理）
+    ///
+    /// `IoRequired` 是**纯信号**——返回值不携带新状态，调用方无法获得半成品 payload/queue。
+    /// 首次执行中 core_eval 前序规则产生的状态修改**全部丢弃**（不提交），
+    /// 反应器收到 I/O 结果后必须**从原始输入整体重放** `execute_transition`：
+    ///
+    /// 1. **纯信号语义** — 仅含 `io_type` 与 `params`（路径引用已解析为具体值）。
+    /// 2. **部分修改丢弃** — 首次执行到 `io_request` 前的状态变更不返回；正确性由 D5（`io_request` 必须是叶子）保证。
+    /// 3. **重放确定性** — 重放 = 以相同 `(core_eval, instruction, payload, queue)` 再次调用；TCB 纯函数性质保证路径一致。
+    /// 4. **传播即停** — `IoRequired` 立即向上传播，其后 transform 规则不执行。
+    ///
+    /// **错误实现代价**：若反应器错误地持久化中间 payload 再增量续跑，
+    /// `io_request` 之前的 `add` / `sub` 会被应用两次（state 污染）。
+    /// 跨层协议详见 `TCB_SPEC.md` §四 D11。
     IoRequired {
         /// I/O 类型（如 "call_external"、"query_db" 等）
         io_type: String,
@@ -1881,6 +1896,382 @@ mod tests {
                 );
             }
             _ => panic!("应返回 State 或 Ignored"),
+        }
+    }
+
+    // ===== P1 级补充测试（B1, B2, I1） =====
+
+    /// B1: instruction domain 指向其他指令类型（increment 规则，while_loop 指令）
+    /// 验证 instruction domain 的精确匹配逻辑
+    #[test]
+    fn test_while_loop_instruction_domain_mismatch_returns_ignored() {
+        // 规则用 instruction("increment") domain，但指令是 while_loop
+        let rule_increment = branch_rule(
+            instruction_domain("increment"),
+            vec![JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("set")),
+                (
+                    "params",
+                    JsonValue::object_from_pairs(&[
+                        ("attr", JsonValue::string("counter")),
+                        ("value", JsonValue::Integer(1)),
+                    ]),
+                ),
+            ])],
+            vec![],
+        );
+
+        let core_eval = vec![rule_increment];
+
+        // while_loop 指令
+        let while_loop_instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("while_loop")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("condition", lt_domain("__exec__.payload.counter", 3)),
+                    (
+                        "body",
+                        make_instruction(
+                            "increment",
+                            &[
+                                ("attr", JsonValue::string("counter")),
+                                ("delta", JsonValue::Integer(1)),
+                            ],
+                        ),
+                    ),
+                ]),
+            ),
+        ]);
+
+        let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
+
+        let result =
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+
+        // 期望返回 Ignored（instruction domain 精确匹配失败）
+        match result {
+            TransitionResult::Ignored {
+                instruction_type,
+                reason,
+            } => {
+                assert_eq!(instruction_type, "while_loop");
+                assert!(reason.contains("not matched"), "reason should indicate no match, got: {}", reason);
+            }
+            other => panic!(
+                "期望返回 Ignored（instruction domain 不匹配），实际返回: {:?}",
+                other
+            ),
+        }
+    }
+
+    /// B2: all 域 with 非空子域返回 false
+    /// 验证边界条件：all 域中有子域返回 false → on_false 执行但无副作用 → Ignored
+    #[test]
+    fn test_while_loop_instruction_domain_missing_type_returns_ignored() {
+        // all 域中有一个子域 (counter == 100)，由于 counter=0，子域返回 false
+        // 因此 all 域整体返回 false，on_false 分支被选中
+        // on_false 为空，无副作用，且 all 不是业务规则 → Ignored
+        let rule_all = branch_rule(
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("all")),
+                ("inner", JsonValue::array(vec![JsonValue::object_from_pairs(&[
+                    ("type", JsonValue::string("eq")),
+                    ("path", JsonValue::string("__exec__.payload.counter")),
+                    ("value", JsonValue::Integer(100)),
+                ])])),
+            ]),
+            vec![JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("set")),
+                (
+                    "params",
+                    JsonValue::object_from_pairs(&[
+                        ("attr", JsonValue::string("counter")),
+                        ("operation", JsonValue::string("set")),
+                        ("value", JsonValue::Integer(1)),
+                    ]),
+                ),
+            ])], // on_true: 有操作但不会被执行
+            vec![], // on_false: 空（无副作用）
+        );
+
+        let core_eval = vec![rule_all];
+
+        let while_loop_instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("while_loop")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("condition", lt_domain("__exec__.payload.counter", 3)),
+                    (
+                        "body",
+                        make_instruction(
+                            "increment",
+                            &[
+                                ("attr", JsonValue::string("counter")),
+                                ("delta", JsonValue::Integer(1)),
+                            ],
+                        ),
+                    ),
+                ]),
+            ),
+        ]);
+
+        let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
+
+        let result =
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+
+        // 期望返回 Ignored（all 子域返回 false → on_false 空 → 无副作用 → Ignored）
+        match result {
+            TransitionResult::Ignored {
+                instruction_type,
+                reason,
+            } => {
+                assert_eq!(instruction_type, "while_loop");
+                assert!(reason.contains("not matched"), "reason should indicate no match, got: {}", reason);
+            }
+            other => panic!(
+                "期望返回 Ignored（all 子域 false → on_false 空），实际返回: {:?}",
+                other
+            ),
+        }
+    }
+
+    /// I1: 指令无 type 字段
+    /// 验证 instruction_type 回退到 "unknown" 的逻辑
+    #[test]
+    fn test_while_loop_instruction_missing_type_returns_ignored() {
+        let rule_while_loop = branch_rule(
+            instruction_domain("while_loop"),
+            vec![],
+            vec![],
+        );
+
+        let core_eval = vec![rule_while_loop];
+
+        // 指令结构缺少 type 字段
+        let instr_no_type = JsonValue::object_from_pairs(&[(
+            "params",
+            JsonValue::object_from_pairs(&[
+                ("condition", lt_domain("__exec__.payload.counter", 3)),
+                (
+                    "body",
+                    make_instruction(
+                        "increment",
+                        &[
+                            ("attr", JsonValue::string("counter")),
+                            ("delta", JsonValue::Integer(1)),
+                        ],
+                    ),
+                ),
+            ]),
+        )]);
+
+        let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
+
+        let result =
+            execute_transition(&core_eval, &instr_no_type, &payload, &[]).expect("执行应成功");
+
+        // 期望返回 Ignored（instruction_type 回退到 "unknown"，规则无匹配）
+        match result {
+            TransitionResult::Ignored {
+                instruction_type,
+                reason,
+            } => {
+                assert_eq!(instruction_type, "unknown");
+                assert!(reason.contains("not matched"), "reason should indicate no match, got: {}", reason);
+            }
+            other => panic!(
+                "期望返回 Ignored（指令缺少 type 字段），实际返回: {:?}",
+                other
+            ),
+        }
+    }
+
+    // ===== P2 级补充测试（B6, I2, E1） =====
+
+    /// B6: 混合规则场景（第一条不匹配，第二条匹配）
+    /// 验证多条规则时的匹配逻辑
+    #[test]
+    fn test_while_loop_mixed_rules_second_matches_returns_state() {
+        // 第一条规则：increment domain（不匹配 while_loop）
+        let rule_increment = branch_rule(
+            instruction_domain("increment"),
+            vec![],
+            vec![],
+        );
+
+        // 第二条规则：while_loop domain（匹配）
+        let rule_while_loop = branch_rule(
+            instruction_domain("while_loop"),
+            vec![],
+            vec![],
+        );
+
+        let core_eval = vec![rule_increment, rule_while_loop];
+
+        let while_loop_instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("while_loop")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("condition", lt_domain("__exec__.payload.counter", 3)),
+                    (
+                        "body",
+                        make_instruction(
+                            "increment",
+                            &[
+                                ("attr", JsonValue::string("counter")),
+                                ("delta", JsonValue::Integer(1)),
+                            ],
+                        ),
+                    ),
+                ]),
+            ),
+        ]);
+
+        let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
+
+        let result =
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+
+        // 期望返回 State（第二条规则匹配）
+        match result {
+            TransitionResult::State { .. } => { /* OK */ }
+            other => panic!(
+                "期望返回 State（混合规则中第二条匹配），实际返回: {:?}",
+                other
+            ),
+        }
+    }
+
+    /// I2: 指令 type 为 null
+    /// 验证 type 为 null 时的处理
+    #[test]
+    fn test_while_loop_instruction_null_type_returns_ignored() {
+        let rule_while_loop = branch_rule(
+            instruction_domain("while_loop"),
+            vec![],
+            vec![],
+        );
+
+        let core_eval = vec![rule_while_loop];
+
+        // 指令 type 为 null
+        let instr_null_type = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::Null),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("condition", lt_domain("__exec__.payload.counter", 3)),
+                    (
+                        "body",
+                        make_instruction(
+                            "increment",
+                            &[
+                                ("attr", JsonValue::string("counter")),
+                                ("delta", JsonValue::Integer(1)),
+                            ],
+                        ),
+                    ),
+                ]),
+            ),
+        ]);
+
+        let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
+
+        let result =
+            execute_transition(&core_eval, &instr_null_type, &payload, &[]).expect("执行应成功");
+
+        // 期望返回 Ignored（type 为 null 时 instruction_type 回退到 "unknown"）
+        match result {
+            TransitionResult::Ignored {
+                instruction_type,
+                reason,
+            } => {
+                assert_eq!(instruction_type, "unknown");
+                assert!(reason.contains("not matched"), "reason should indicate no match, got: {}", reason);
+            }
+            other => panic!(
+                "期望返回 Ignored（type 为 null 时），实际返回: {:?}",
+                other
+            ),
+        }
+    }
+
+    /// E1: on_false 分支有操作
+    /// 验证 on_false 分支的执行：内层 branch 检查 condition，false 时执行 on_false
+    #[test]
+    fn test_while_loop_on_false_executes_operations() {
+        // while_loop 规则：外层匹配 while_loop 指令，内层检查 condition
+        // 当 condition=false (counter >= 3) 时，执行 on_false 中的 set 操作
+        let rule_while_loop = branch_rule(
+            instruction_domain("while_loop"),
+            vec![branch_rule(
+                lt_domain("__exec__.payload.counter", 3),
+                vec![], // condition=true (on_true): 空操作
+                vec![JsonValue::object_from_pairs(&[
+                    ("type", JsonValue::string("set")),
+                    (
+                        "params",
+                        JsonValue::object_from_pairs(&[
+                            ("attr", JsonValue::string("flag")),
+                            ("operation", JsonValue::string("set")),
+                            ("value", JsonValue::Integer(1)),
+                        ]),
+                    ),
+                ])], // condition=false (on_false): 设置 flag=1
+            )],
+            vec![],
+        );
+
+        let core_eval = vec![rule_while_loop];
+
+        // while_loop 指令，condition=false（counter >= 3）
+        let while_loop_instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("while_loop")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("condition", lt_domain("__exec__.payload.counter", 3)),
+                    (
+                        "body",
+                        make_instruction(
+                            "increment",
+                            &[
+                                ("attr", JsonValue::string("counter")),
+                                ("delta", JsonValue::Integer(1)),
+                            ],
+                        ),
+                    ),
+                ]),
+            ),
+        ]);
+
+        // counter 初始值为 5，condition (5 < 3) = false
+        let payload = JsonValue::object_from_pairs(&[
+            ("counter", JsonValue::Integer(5)),
+            ("flag", JsonValue::Integer(0)),
+        ]);
+
+        let result =
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+
+        // 期望返回 State（内层 branch 的 on_false 分支被执行）
+        match result {
+            TransitionResult::State { new_payload, .. } => {
+                // on_false 中的 set 操作应被执行，flag 变为 1
+                assert_eq!(
+                    new_payload.get("flag"),
+                    Some(&JsonValue::Integer(1)),
+                    "on_false 中的 set 操作应被执行，flag 应变为 1"
+                );
+            }
+            other => panic!(
+                "期望返回 State（on_false 分支有操作），实际返回: {:?}",
+                other
+            ),
         }
     }
 
