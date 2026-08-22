@@ -56,7 +56,7 @@
 - **形式化验证 Kani proofs 重建完成** ([kani_proofs.rs](evorule-tcb/tests/kani/kani_proofs.rs) / [kani-formal-verification-design.md](evorule-tcb/verification/kani-formal-verification-design.md)):
   - 34 个 `#[kani::proof]`,5 层覆盖(L1 基础类型 3 / L2 路径解析 11 / L3 域评估 10 / L4 元指令 7 / L5 状态转换 3)
   - 覆盖 P0-P21 关键不变式:类型转换安全 / 路径解析不 panic / 域评估语义 / 元指令转换语义
-  - 缺口:Kani 未接入 CI(`.gitee-ci/ci.yml` 无 kani job)—— 留待后续 PR
+  - 接入 CI: `.gitee-ci/ci.yml` 新增 `kani` job(L188-209),runner 自动装 Kani 0.67+ 工具链 + 串行跑全套 proof(由 `evorule-tcb/scripts/run_kani_tcb.sh` 调度),任何 fail exit 1
 
 ### 🔄 变更
 
@@ -93,6 +93,12 @@
   - `evorule-cli::output::fact_to_human` 加格式化示例
 - GATE_REFERENCE.md 同步更新(豁免列表减少 33 → 27 mod tests、14 → 8 file-level、12 → 10 cognitive/too_many_lines)
 - `evorule-tcb/core_eval.json` 撤销 `query_db` / `http_get` / `save_memory` 内置指令类型(改由 `call_service` + governance service_name 路由实现)
+- **2 份新 examples 落地**:
+  - `evorule-tcb/examples/basic_transition.rs` — 5 步上手核心 API `execute_transition`(构造 payload / core_eval / 指令 / 调转换 / 读新 payload)
+  - `evorule-cli/examples/programmatic_run.rs` — 把 `evorule` 当 library 嵌入 Rust 应用(跳过 CLI 解析,直接调 `executor::execute` 跑规则)
+- **SPDX 许可证头补全**: 7 个 L1 `.md` + 13 个 `scripts/*.ps1/.sh/.py` 加 `AGPL-3.0-or-later` header;`CODE_OF_CONDUCT.md` / `SECURITY.md` 用 `CC0-1.0` 短头(社区规范/披露流程,非协议条款)
+  - 修正: 172ea51 commit msg 原文 "6 L1 + 39 scripts" 系笔误,实数 7 L1 + 13 scripts(`scripts/` 目录真实清单,不含 verification/evidence/*.log)
+- **3 份 v0.3.1 发布状态文档** (`文档/RELEASE_FILE_INDEX_v0.3.1.md` / `文档/RELEASE_STATE_v0.3.1.md` / `文档/CI_CD_v0.3.1.md`): 按 L2/L3 约定存仓外 vault(`文档/` 目录被 `.gitignore` 第 66-68 行排除,不入 git),作为发布期 release-blocker / 状态 / CI/CD 配置快照
 
 ### 向后兼容
 
