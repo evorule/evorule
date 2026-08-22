@@ -1575,3 +1575,149 @@ async fn test_inspect_returns_pending_io() {
     drop(tx);
     let _ = handle.join().await;
 }
+
+// === D11 REPLAY TEST START (DELETE_RANGE: 整段从下一行到 D11 REPLAY TEST END) ===
+// D11 IoRequired 重放契约差分测试
+//
+// 验证: 跨层不变式 "重放等价性" (TCB_SPEC.md §四 D11)
+//   - 路径 A (首次执行): submit Command -> 收 IoRequest -> submit IoResponse -> Stable
+//   - 路径 B (重放执行): submit PayloadUpdate (预注入 __io_results__) -> submit Command -> Stable (走 on_true, 跳过 IoRequest)
+//   - 差分断言: snap_a.llm_response == snap_b.llm_response (业务结果一致)
+//   - D11 步骤 4: 两条路径最终 __io_results__.call_external 都被清除 (exists == false)
+//
+// 删除指南: 失败时用 PowerShell [System.IO.File] 截断 L1577 之后
+#[tokio::test]
+async fn test_d11_replay_consistency_first_vs_preresult() {
+    let core_eval = load_core_eval();
+    let mock_obj = JsonValue::object_from_pairs(&[
+        ("llm_response", JsonValue::string("d11_diff_mock")),
+    ]);
+
+    // ============================================================
+    // 路径 A: 首次执行 (标准 IoRequest -> IoResponse -> 重放)
+    // ============================================================
+    let (tx_a, mut rx_a, _event_a, handle_a, _facts_a) =
+        Reactor::builder(core_eval.clone()).max_rounds(100).build().spawn();
+    let mut gen_a = FactIdGenerator::new();
+
+    // 1. 提交 call_external 指令
+    tx_a.send(Fact::Command {
+        id: gen_a.next_id(),
+        instruction: make_call_external_instruction("d11_test"),
+    })
+    .unwrap();
+
+    // 2. 等待 IoRequest (首次执行应触发)
+    let request_id_a = timeout(Duration::from_secs(5), async {
+        while let Ok(fact) = rx_a.recv().await {
+            match fact {
+                Fact::IoRequest { id, .. } => return Some(id),
+                Fact::Error { message, .. } => panic!("D11 路径 A Error: {}", message),
+                _ => {}
+            }
+        }
+        None
+    })
+    .await
+    .expect("D11 路径 A: 等待 IoRequest 超时")
+    .expect("D11 路径 A: 未收到 IoRequest");
+
+    // 3. 提交 IoResponse (D11 步骤 2: 注入 __io_results__ + io_recovery=true + 原指令重放)
+    tx_a.send(Fact::IoResponse {
+        id: gen_a.next_id(),
+        request_id: request_id_a,
+        result: mock_obj.clone(),
+        error: None,
+    })
+    .unwrap();
+
+    // 4. 等待 Stable (D11 步骤 3 重放后,步骤 4 清除 __io_results__)
+    let snap_a = wait_for_stable(&mut rx_a)
+        .await
+        .expect("D11 路径 A: IoResponse 后应 Stable");
+
+    drop(tx_a);
+    let _ = handle_a.join().await;
+
+    // ============================================================
+    // 路径 B: 重放执行 (预注入 __io_results__, 模拟 D11 步骤 2 完成态)
+    // ============================================================
+    let (tx_b, mut rx_b, _event_b, handle_b, _facts_b) =
+        Reactor::builder(core_eval).max_rounds(100).build().spawn();
+    let mut gen_b = FactIdGenerator::new();
+
+    // 1. 预注入 __io_results__.call_external (模拟步骤 2 完成态)
+    tx_b.send(Fact::PayloadUpdate {
+        id: gen_b.next_id(),
+        path: "__io_results__.call_external".to_string(),
+        value: mock_obj.clone(),
+    })
+    .unwrap();
+
+    // 2. 提交同一条 call_external 指令
+    tx_b.send(Fact::Command {
+        id: gen_b.next_id(),
+        instruction: make_call_external_instruction("d11_test"),
+    })
+    .unwrap();
+
+    // 3. 收集事实流,断言不应收到 IoRequest (走 on_true 跳过)
+    let mut got_io_request_b = false;
+    let mut snap_b = None;
+    while let Ok(fact) = rx_b.recv().await {
+        match fact {
+            Fact::IoRequest { .. } => got_io_request_b = true,
+            Fact::Stable { final_snapshot, .. } => {
+                snap_b = Some(final_snapshot);
+                break;
+            }
+            Fact::Error { message, .. } => panic!("D11 路径 B Error: {}", message),
+            _ => {}
+        }
+    }
+    let snap_b = snap_b.expect("D11 路径 B: 应 Stable");
+
+    drop(tx_b);
+    let _ = handle_b.join().await;
+
+    // ============================================================
+    // 差分断言 (D11 跨层不变式: 重放等价性)
+    // ============================================================
+
+    // 1. 业务结果一致 (核心差分断言)
+    assert_eq!(
+        snap_a.get("llm_response"),
+        snap_b.get("llm_response"),
+        "D11 重放契约 (跨层不变式): snap_a.llm_response 应 == snap_b.llm_response"
+    );
+
+    // 2. 路径 B 不应收 IoRequest (D11 步骤 3: 重放走 on_true, 跳过 IoRequest)
+    assert!(
+        !got_io_request_b,
+        "D11 重放契约: 预注入 __io_results__ 后路径 B 不应触发 IoRequest, 应走 on_true"
+    );
+
+    // 3. D11 步骤 4: 两条路径殊途同归 — 都不再可消费 __io_results__.call_external
+    //    - 路径 A: reactor 整体移除 __io_results__ 容器 (reactor.rs L609-613)
+    //    - 路径 B: on_true 分支 set null 到 call_external (core_eval.json L247-254)
+    //    两者都让后续 `exists __io_results__.call_external == false`
+    let is_consumable_a = snap_a
+        .get("__io_results__")
+        .and_then(|v| v.get("call_external"))
+        .map(|v| !matches!(v, JsonValue::Null))
+        .unwrap_or(false);
+    let is_consumable_b = snap_b
+        .get("__io_results__")
+        .and_then(|v| v.get("call_external"))
+        .map(|v| !matches!(v, JsonValue::Null))
+        .unwrap_or(false);
+    assert!(
+        !is_consumable_a,
+        "D11 步骤 4: 路径 A __io_results__.call_external 应不可消费 (exists == false)"
+    );
+    assert!(
+        !is_consumable_b,
+        "D11 步骤 4: 路径 B __io_results__.call_external 应不可消费 (exists == false)"
+    );
+}
+// === D11 REPLAY TEST END ===
