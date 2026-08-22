@@ -59,7 +59,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 > | 第三方安全审计                               | ❌ **不做**（1.0 之前） |
 >
 > **诚实记账**:见 [CHANGELOG.md](CHANGELOG.md)
-> **安全审计**:见 [docs/security/SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md)
+> **安全审计**:见 [evorule-tcb-audit-report.md](evorule-tcb-audit-report.md)(仓根目录,v0.3.1 时期 24KB 前置数据,1.0 升门 SECURITY_AUDIT.md 升版前过渡)
 >
 > **使用风险自负**。issue / PR 欢迎，但不保证响应时间。
 
@@ -434,7 +434,7 @@ EvoRule 文档按四层架构组织（公开 → 仓内共享 → 本地私有�
 | 读文档总索引（所有公开文档） | [DOCS_INDEX.md](DOCS_INDEX.md) — **首读** |
 | 查形式化验证 P0/P1 属性状态 | [verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)（当前有效）；资产总索引见 [verification/INDEX.md](verification/INDEX.md) |
 | 查 SPEC 架构规范（tier0/tier1/tier2/cli） | DOCS_INDEX.md §4 Crate 级文档，4 份 SPEC 串联 |
-| 查安全/依赖审计结果 | [docs/security/SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md) |
+| 查安全/依赖审计结果 | [evorule-tcb-audit-report.md](evorule-tcb-audit-report.md)(仓根目录) |
 | 写贡献代码 / 提 PR | [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md) — 提交流程 / 检查清单 |
 
 > **文档维护原则**：新增公开文档必须在 `DOCS_INDEX.md` 登记；版本号必须与 `Cargo.toml` 同步；废弃文档顶部加 `[已废弃]` 横幅。
@@ -625,7 +625,9 @@ cargo kani -p evorule-reactor
 cargo test -p evorule-tcb --test proptest_props
 ```
 
-当前已就位的 12 个 proof(都是为"JSON 状态机正确"服务):
+当前已就位 **34 个 #[kani::proof]**,5 层覆盖(P1-P21,详见 [`evorule-tcb/verification/kani-formal-verification-design.md`](evorule-tcb/verification/kani-formal-verification-design.md)):
+
+**本机 WSL 已实测的 12 个**(2026-08-05,Kani 0.67.0,9 PASS + 3 TIMEOUT):
 
 - `verify_value_roundtrip` — JsonValue 序列化往返一致性 ✅ PASS
 - `verify_path_no_panic` — JSON 路径解析永不 panic ✅ PASS
@@ -640,7 +642,15 @@ cargo test -p evorule-tcb --test proptest_props
 - `verify_termination_kani` — max_steps 终止性 ✅ PASS
 - `verify_depth_enforcement_kani` — 嵌套深度限制 ✅ PASS
 
-> ✅ **9/12 PASS + 3 TIMEOUT + 19 proptest 全 PASS**（`evaluate_domain` 系列 3 个因 CBMC 对嵌套 FixedMap 状态爆炸超时,由 proptest 保底覆盖）。实测环境: Kani 0.67.0, WSL Ubuntu 22.04。详见 [`evorule-tcb/TCB_SPEC.md`](evorule-tcb/TCB_SPEC.md)。
+**v0.3.x 新增 22 个** (本机 WSL 未实跑,等 Gitee Go CI):
+
+- Layer 1 基础类型(3):`verify_partial_eq_never_panics` / `verify_ord_never_panics` / `verify_as_methods_never_panic`
+- Layer 2 路径解析(11):`verify_resolve_path_{simple_field, nested_dot, array_index, double_dot, escaped_dot, deterministic, empty_returns_none, trailing_dot, invalid_index_char, missing_close_bracket, array_index_bounds}`
+- Layer 3 域评估(7):`verify_evaluate_domain_{instruction, all, not, has_fields}_never_panics` / `verify_evaluate_domain_deterministic` / `verify_domain_depth_limit` / `verify_has_fields_empty_array`
+- Layer 4 元指令(7):`verify_execute_meta_instruction_never_panics` / `verify_exec_set_arithmetic_safe` / `verify_branch_depth_limit` / `verify_collect_safe_with_after` / `verify_merge_safe` / `verify_substitute_template_never_panics` / `verify_io_request_safe`
+- Layer 5 状态转换(3):`verify_execute_transition_never_panics` / `verify_transform_rules_limit` / `verify_react_io_required`
+
+> ✅ **34 proof / 5 层** (P1-P21) — 12 个已实测(9 PASS + 3 TIMEOUT,2026-08-05) + 22 个新加待 CI 实跑。`evaluate_domain` 系列 3 个因 CBMC 对嵌套 FixedMap 状态爆炸超时,由 19 proptest 保底覆盖。详见 [`evorule-tcb/TCB_SPEC.md`](evorule-tcb/TCB_SPEC.md) §六 与 [`evorule-tcb/verification/kani-formal-verification-design.md`](evorule-tcb/verification/kani-formal-verification-design.md)。
 
 evorule-reactor 11 个 proof（都是为"反应器不变式正确"服务）:
 
@@ -656,7 +666,7 @@ evorule-reactor 11 个 proof（都是为"反应器不变式正确"服务）:
 - `proof_reactor_invariants_preserved_after_pure_ops` (C1-3) — 纯操作序列后不变量保持 ✅ PASS
 - `proof_phase_state_machine_cannot_jump` (C1-4) — Phase 状态机不跳级 ✅ PASS
 
-> ✅ **10/11 PASS + 1 TIMEOUT**（`invariant_io_count_force_remove` 因 BTreeSet force_remove 状态爆炸超时;C1-1~C1-4 为 v0.2.0 达标条件新增）。实测环境: Kani 0.67.0, WSL Ubuntu 22.04。详见 [`evorule-reactor/verification/kani_proofs.rs`](evorule-reactor/verification/kani_proofs.rs)。
+> ✅ **10/11 PASS + 1 TIMEOUT**（`invariant_io_count_force_remove` 因 BTreeSet force_remove 状态爆炸超时;C1-1~C1-4 为 **v0.2.4 期间补入**,已在 v0.3.1 整体 release 合并）。实测环境: Kani 0.67.0, WSL Ubuntu 22.04。详见 [`evorule-reactor/verification/kani_proofs.rs`](evorule-reactor/verification/kani_proofs.rs)。
 
 ---
 
