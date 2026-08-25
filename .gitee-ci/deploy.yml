@@ -1,0 +1,129 @@
+# =============================================================================
+# Deploy workflow for EvoRule (Gitee Go)
+#
+# 触发:  push v* tag  /  workflow_dispatch 手动
+# 行为:  build musl static 二进制  →  scp 到服务器  →  systemctl restart
+# 凭据:  全部走 Gitee Web 配的 Secrets,这里不写死
+#
+# 推荐在 Gitee Web 配置的 Secrets (仓库 -> CI -> 环境变量 / Secrets):
+#   DEPLOY_SSH_KEY   SSH 私钥 (ed25519,整段含 BEGIN/END)
+#   DEPLOY_HOST      服务器 IP / 域名
+#   DEPLOY_PORT      SSH 端口 (默认 22,可省)
+#   DEPLOY_USER      SSH 用户名 (需有 sudo 权限)
+#   DEPLOY_PATH      目标路径 (例 /opt/evorule/bin/evorule)
+#   DEPLOY_SERVICE   systemd 服务名 (例 evorule.service)
+# =============================================================================
+name: Deploy
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要部署的 tag (例 v0.3.1,留空 = 用当前 ref)"
+        required: false
+        type: string
+
+env:
+  RUSTUP_TOOLCHAIN: "1.97.1"   # 与 rust-toolchain.toml 对齐
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # --------------------------------------------------------------------------
+  # build + deploy (Linux musl static)
+  #
+  # 自包含: 不依赖 release workflow 的 artifact
+  # 原因:  Gitee Go 跨 workflow download-artifact 兼容性有坑
+  #        本地重新 build 一次更稳(5~10 分钟,大项目可接受)
+  # --------------------------------------------------------------------------
+  deploy:
+    name: build & deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: 安装 Rust 工具链
+        uses: actions/setup-rust@v2
+        with:
+          rust-version: ${{ env.RUSTUP_TOOLCHAIN }}
+          targets: x86_64-unknown-linux-musl
+
+      - name: 安装 musl 工具链
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: 构建 evorule (musl static)
+        run: cargo build -p evorule-cli --release --target x86_64-unknown-linux-musl --bin evorule
+
+      - name: 二进制完整性校验
+        run: |
+          cd target/x86_64-unknown-linux-musl/release
+          chmod +x evorule
+          ./evorule --version
+          sha256sum evorule > evorule.sha256
+          ls -la evorule*
+
+      - name: 部署到服务器 (SSH + systemctl)
+        env:
+          DEPLOY_SSH_KEY:  ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST:     ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT:     ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER:     ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH:     ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SERVICE:  ${{ secrets.DEPLOY_SERVICE }}
+        run: |
+          set -e
+          # 必填校验
+          MISSING=0
+          for v in DEPLOY_SSH_KEY DEPLOY_HOST DEPLOY_USER DEPLOY_PATH DEPLOY_SERVICE; do
+            if [ -z "${!v}" ]; then
+              echo "ERROR: secret $v 未配置"
+              MISSING=1
+            fi
+          done
+          if [ "$MISSING" -eq 1 ]; then
+            echo ""
+            echo "请到 Gitee 仓库 -> CI -> 环境变量/Secrets 配齐:"
+            echo "  DEPLOY_SSH_KEY   SSH 私钥 (整段,含 BEGIN/END 行)"
+            echo "  DEPLOY_HOST      服务器 IP / 域名"
+            echo "  DEPLOY_PORT      SSH 端口 (可省,默认 22)"
+            echo "  DEPLOY_USER      SSH 用户名 (需 sudo 权限)"
+            echo "  DEPLOY_PATH      目标路径 (例 /opt/evorule/bin/evorule)"
+            echo "  DEPLOY_SERVICE   systemd 服务名 (例 evorule.service)"
+            exit 1
+          fi
+          PORT="${DEPLOY_PORT:-22}"
+
+          # 1. 配 SSH 私钥
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          # 2. scp 到服务器 .new (避免半截文件)
+          scp -P "$PORT" target/x86_64-unknown-linux-musl/release/evorule \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/evorule.new"
+
+          # 3. 服务器端: 原子替换 + 重启服务
+          ssh -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_PATH='$DEPLOY_PATH' DEPLOY_SERVICE='$DEPLOY_SERVICE' bash -s" <<'REMOTE'
+            set -e
+            TARGET_DIR="$(dirname "$DEPLOY_PATH")"
+            sudo install -d -m 0755 -o root -g root "$TARGET_DIR"
+            sudo install -m 0755 /tmp/evorule.new "$DEPLOY_PATH"
+            rm -f /tmp/evorule.new
+            sudo systemctl restart "$DEPLOY_SERVICE"
+            sleep 2
+            echo "---- service status ----"
+            sudo systemctl is-active "$DEPLOY_SERVICE" || {
+              echo "ERROR: $DEPLOY_SERVICE 未处于 active 状态"
+              sudo systemctl status "$DEPLOY_SERVICE" --no-pager
+              exit 1
+            }
+            echo "---- health check ----"
+            "$DEPLOY_PATH" --version
+            echo "部署完成"
+          REMOTE

@@ -92,9 +92,9 @@ EvoRule 涉及一些需要特别注意的安全边界:
 
 **重要提示**: 请勿在公共论坛、社交媒体或 issue tracker 中公开未修复的安全漏洞。
 
-**作者**: EvoRule Project
+**作者**: EvoRule Project Team
 **邮箱**: <evorulelab@gmail.com>
 
 ---
 
-**本政策遵循 evorule-core-backup 的发布原则。**
+

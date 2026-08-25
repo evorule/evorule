@@ -108,12 +108,6 @@ EvoRule 的"代码"和"宪法"采用**不同协议**:
 | EvoRule 代码(Rust) | AGPL-3.0-or-later | copyleft,保护当前实现 |
 | `core_eval.json`(宪法) | **CC0 1.0 公共领域** | 解释器规范,任何人都可自由实现 |
 
-**战略意义**:
-
-- 代码 AGPL-3.0:阻止大厂"白嫖 fork 后卖闭源 SaaS"
-- 宪法 CC0:鼓励广泛采用,任何人都可以基于宪法实现兼容的 EvoRule 引擎
-- 这把"标准"和"实现"分开,类似 HTTP 规范(W3C 公共)vs Apache HTTP Server(版权)
-
 ---
 
 ## 常见问题
@@ -179,4 +173,4 @@ EvoRule 的知识产权归 EvoRule Project 所有。
 **最后更新**: 2026-07-19
 **文档版本**: 1.0
 
-*本协议遵循 evorule-core-backup 的发布原则。*
+
