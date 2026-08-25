@@ -458,7 +458,9 @@ impl Auditor {
     /// 生成审计报告（JSON 格式）
     ///
     /// 包含审计器元信息（已审计版本、条目数、末尾哈希）与全部审计条目。
-    pub fn report(&self) -> String {
+    ///
+    /// 序列化失败时返回 `Err`（不静默退化为 `"{}"`，防止审计数据被误判为"空"）。
+    pub fn report(&self) -> Result<String, serde_json::Error> {
         let entries_json: Vec<serde_json::Value> = self
             .entries
             .iter()
@@ -481,7 +483,7 @@ impl Auditor {
             "entries": entries_json,
         });
 
-        serde_json::to_string_pretty(&report).unwrap_or_else(|_| String::from("{}"))
+        serde_json::to_string_pretty(&report)
     }
 
     /// 获取因果链（从指定 FactId 开始追溯 cause 链）
@@ -802,7 +804,9 @@ impl Auditor {
     /// # 安全说明
     /// 导出数据包含完整的哈希链信息，可作为审计证据。
     /// 调用方应妥善保护导出数据，防止被篡改。
-    pub fn export(&self) -> String {
+    ///
+    /// 序列化失败时返回 `Err`（不静默退化为 `"{}"`，防止审计数据被误判为"空"）。
+    pub fn export(&self) -> Result<String, serde_json::Error> {
         let entries_json: Vec<serde_json::Value> = self
             .entries
             .iter()
@@ -826,7 +830,7 @@ impl Auditor {
             "entries": entries_json,
         });
 
-        serde_json::to_string_pretty(&export).unwrap_or_else(|_| String::from("{}"))
+        serde_json::to_string_pretty(&export)
     }
 
     /// 从 JSON 导入审计链（P04）
@@ -980,7 +984,7 @@ impl Auditor {
         use flate2::Compression;
         use std::io::Write;
 
-        let export_str = self.export();
+        let export_str = self.export().map_err(|e| e.to_string())?;
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         encoder
             .write_all(export_str.as_bytes())
@@ -1039,13 +1043,17 @@ impl Auditor {
 ///
 /// 包含所有已知的 Fact 变体类型名，加载 WAL 时从中查找匹配项，
 /// 以获取 `&'static str` 引用。
+///
+/// P0-02：对齐 evorule-reactor/src/fact.rs::Fact::type_name()（7 种）。
+/// 修前缺 `Stable`（终止事实，WAL 重载被映射为 Unknown、丢失类型语义）、
+/// 多 `ControlSignal`（Fact 枚举无此变体）。`Unknown` 保留作导入 fallback 表项。
 const FACT_TYPE_STATIC_TABLE: &[&str] = &[
-    "StateTransition",
     "Command",
     "PayloadUpdate",
+    "StateTransition",
     "IoRequest",
     "IoResponse",
-    "ControlSignal",
+    "Stable",
     "Error",
     "Unknown",
 ];
@@ -1392,7 +1400,7 @@ mod tests {
         let mut auditor = Auditor::new(log);
         auditor.audit_new();
 
-        let report = auditor.report();
+        let report = auditor.report().expect("report 序列化不应失败");
         let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
         assert_eq!(parsed["entry_count"], 1);
         assert_eq!(parsed["entries"].as_array().unwrap().len(), 1);
@@ -1444,7 +1452,7 @@ mod tests {
         let auditor = Auditor::new(log);
         // 初始 last_hash 为 "genesis"
         // 通过 report 间接验证
-        let report = auditor.report();
+        let report = auditor.report().expect("report 序列化不应失败");
         let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
         assert_eq!(parsed["last_hash"], "genesis");
     }
@@ -1686,7 +1694,7 @@ mod tests {
     #[test]
     fn test_export_format() {
         let auditor = build_auditor_with_entries();
-        let json_str = auditor.export();
+        let json_str = auditor.export().expect("export 序列化不应失败");
 
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed["version"], "1.0");
@@ -1708,7 +1716,7 @@ mod tests {
     fn test_export_empty_auditor() {
         let log = make_facts_log();
         let auditor = Auditor::new(log);
-        let json_str = auditor.export();
+        let json_str = auditor.export().expect("export 序列化不应失败");
 
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed["version"], "1.0");
@@ -1720,7 +1728,7 @@ mod tests {
     #[test]
     fn test_import_export_roundtrip() {
         let auditor = build_auditor_with_entries();
-        let export_str = auditor.export();
+        let export_str = auditor.export().expect("export 序列化不应失败");
         let original_verify = auditor.verify();
         assert!(original_verify);
 
@@ -1877,7 +1885,7 @@ mod tests {
     #[test]
     fn test_import_preserves_causal_chain() {
         let auditor = build_auditor_with_entries();
-        let export_str = auditor.export();
+        let export_str = auditor.export().expect("export 序列化不应失败");
 
         // 验证原审计器的因果链
         let original_chain = auditor.causal_chain(FactId(11));
@@ -1903,7 +1911,7 @@ mod tests {
         assert_eq!(auditor.audit_new_count, 2);
 
         // 导入应重置 audit_new_count
-        let export_str = auditor.export();
+        let export_str = auditor.export().expect("export 序列化不应失败");
         let log2 = make_facts_log();
         let mut imported = Auditor::new(log2);
         imported.import(&export_str).unwrap();
@@ -1937,7 +1945,7 @@ mod tests {
         let mut auditor = Auditor::new(log);
         auditor.audit_new();
 
-        let json_size = auditor.export().len();
+        let json_size = auditor.export().expect("export 序列化不应失败").len();
         let compressed = auditor.export_compressed().unwrap();
         let compressed_size = compressed.len();
 

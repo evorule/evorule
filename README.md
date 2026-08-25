@@ -59,7 +59,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 > | 第三方安全审计                               | ❌ **不做**（1.0 之前） |
 >
 > **诚实记账**:见 [CHANGELOG.md](CHANGELOG.md)
-> **安全审计**:见 [evorule-tcb-audit-report.md](evorule-tcb-audit-report.md)(仓根目录,v0.3.1 时期 24KB 前置数据,1.0 升门 SECURITY_AUDIT.md 升版前过渡)
+> **安全审计**: 1.0 升门时将提供 `SECURITY_AUDIT.md`（见 `VERSION_STRATEGY.md` §4.2）；当前 v0.3.x 阶段仅提供 `SECURITY.md`（漏洞披露流程）
 >
 > **使用风险自负**。issue / PR 欢迎，但不保证响应时间。
 
@@ -434,7 +434,7 @@ EvoRule 文档按四层架构组织（公开 → 仓内共享 → 本地私有�
 | 读文档总索引（所有公开文档） | [DOCS_INDEX.md](DOCS_INDEX.md) — **首读** |
 | 查形式化验证 P0/P1 属性状态 | [verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)（当前有效）；资产总索引见 [verification/INDEX.md](verification/INDEX.md) |
 | 查 SPEC 架构规范（tier0/tier1/tier2/cli） | DOCS_INDEX.md §4 Crate 级文档，4 份 SPEC 串联 |
-| 查安全/依赖审计结果 | [evorule-tcb-audit-report.md](evorule-tcb-audit-report.md)(仓根目录) |
+| 查安全/依赖审计结果 | 1.0 升门时提供 `SECURITY_AUDIT.md`；当前见 `SECURITY.md`（漏洞披露流程） |
 | 写贡献代码 / 提 PR | [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md) — 提交流程 / 检查清单 |
 
 > **文档维护原则**：新增公开文档必须在 `DOCS_INDEX.md` 登记；版本号必须与 `Cargo.toml` 同步；废弃文档顶部加 `[已废弃]` 横幅。
@@ -767,7 +767,7 @@ evorule/
 │       ├── shared_facts_log.rs       # 共享事实日志
 │       └── time_machine.rs           # 时间机器（rewind/fork/diff）
 │
-├── 文档/                              # 内部设计文档(.gitignore 保护,不发布)
+├── (本地 vault，gitignore 保护)        # 内部设计文档,不发布
 ├── monitoring/                       # Prometheus + Grafana 配置
 ├── .gitee-ci/                        # CI(Gitee 主仓库)
 ├── .github/workflows/                # CI(GitHub 镜像)
@@ -869,17 +869,17 @@ evorule verify-chain fact.log     # 验证 fact log 哈希链完整性
 
 ## 协议
 
-[AGPL-3.0](LICENSE) — 详见 [`docs/oss_strategy.md`](docs/oss_strategy.md)。
+[AGPL-3.0](LICENSE) — 开源策略详见 `DUAL_LICENSE.md`、`COMMERCIAL_LICENSE.md`、`FREE_COMMERCIAL_LICENSE.md`。
 
 > 这是**整个 EvoRule 生态**的协议,不只是 evorule 单独。
 > 我们的立场是"不白送":大厂 fork 之后想"卖闭源 SaaS"也得开源他们的服务。
-> 内部用 AGPL 管不到(也没必要),但 fork 这个行为本身 = 我们的胜利。
+> 内部使用场景 AGPL 不强制开源（亦无此必要）；fork 行为本身即符合项目的传播目标。
 
 ---
 
 ## 贡献
 
-欢迎 PR、Issue、Discussion。但请先读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [`docs/constitution.md`](docs/constitution.md)。
+欢迎 PR、Issue、Discussion。但请先读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md)。
 
 特别欢迎:
 
@@ -910,6 +910,17 @@ evorule verify-chain fact.log     # 验证 fact log 哈希链完整性
 <div align="center">
 
 **"JSON in, JSON out, JSON forever."**
+
+## v0.3.2 更新
+
+- **新增 `permission` 模块**（governance）: 机制层权限原语（PermissionGate/PermissionTable/Verdict 等）
+- **新增 `io_context` 模块**（reactor）: I/O 调用上下文与角色解析（CallerRole/IoCallContext/CallerRoleResolver）
+- **3 个 Breaking Change**: `verify_hash_chain` 删除（假验证陷阱）；`auditor.report()/export()` 返回值 `String→Result`；`session.audit_report()/audit_export()` 返回值 `String→Result`
+- **规则校验收紧**: 元指令白名单修正为 6 种（移除误混的 noop/increment/decrement）；MAX_NESTING_DEPTH 8→64；set 非法 operation 提升为 error；merge 新增 tool_result 校验
+- **build.rs 新增 L1b 变更治理门禁**: CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"；新增策略层反模式检测；三仓 build.rs 同步
+- **core_eval.json 格式规范化**: 新增 `$schema`/`kind`/`id` 元数据字段
+
+---
 
 **透明、可解释、可审计——不是特性，是 JSON 表达的必然属性。**
 

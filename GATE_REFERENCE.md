@@ -26,19 +26,27 @@
 
 ---
 
-## 一、三层门控总览
+## 一、门控总览
 
 | 层                       | 机制                    | 强度 | 实施位置                                                  |
 | ------------------------ | ----------------------- | ---- | --------------------------------------------------------- |
-| **L1 编译时字面量门禁** | `build.rs` 字节子串扫描 | 高   | 各 crate 自己的 `build.rs` (扫描 `src/`)                  |
+| **L1a 编译时字面量门禁** | `build.rs` 字节子串扫描 | 高   | 各 crate 自己的 `build.rs` (扫描 `src/`)                  |
+| **L1b 编译时变更治理门禁** | `build.rs` CHANGE_REQUEST.md 校验 + 策略层反模式检测 | 高 | 各 crate 自己的 `build.rs` (v0.3.2 新增) |
 | **L2 编译时 lint**       | clippy workspace lints  | 中   | 根 `Cargo.toml` `[workspace.lints]` + 4 crate `[lints]`   |
 | **L3 评审**              | code review (PR review) | 高   | 人工                                                      |
 
 **协作关系**:
-- L1 挡**字面量违规** (e.g. `.unwrap(` 在生产代码 = panic-prone 构造)
+- L1a 挡**字面量违规** (e.g. `.unwrap(` 在生产代码 = panic-prone 构造)
+- L1b 挡**变更治理违规** (e.g. 无 CHANGE_REQUEST.md / 审查状态未批准 / 策略层代码混入机制层)
 - L2 挡**结构违规** (e.g. 认知复杂度 > 25 / 函数 > 100 行)
 - L3 挡**语义违规** (e.g. 业务规则 / API 设计 / 跨文件调用图)
-- 三层**独立兜底**: L1 漏了 L2 拦, L2 漏了 L3 拦
+- 四层**独立兜底**: L1a 漏了 L1b 拦, L1b 漏了 L2 拦, L2 漏了 L3 拦
+
+**L1b 变更治理门禁 (v0.3.2 新增)**:
+- **CHANGE_REQUEST.md 校验**: 构建时检查仓根 `CHANGE_REQUEST.md` 是否存在、是否包含所有必填字段、审查状态是否为"已批准"或"紧急通过"
+- **策略层反模式检测**: 扫描 `src/` 目录(自动剥离 `mod tests` 块),禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层
+- **跳过方式**: `EVORULE_SKIP_CR_GATE=1` 环境变量可跳过(仅限本地开发,跳过必须临时且有书面理由)
+- **三仓同步**: `evorule-tcb` / `evorule-reactor` / `evorule-governance` 的 build.rs 保持同一份内联副本实现,任何修改必须三仓同步
 
 ---
 
@@ -76,7 +84,8 @@
 
 **豁免机制**:
 - `strip_test_mod()`: 剥离 `#[cfg(test)] mod tests { ... }` 块, 不扫描测试代码
-- `EVORULE_SKIP_GATE=1`: 紧急跳过, 编译警告
+- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁, 编译警告
+- `EVORULE_SKIP_CR_GATE=1`: 跳过 L1b 变更治理门禁 (仅限本地开发, v0.3.2 新增)
 
 ### 2.2 evorule-reactor — 14 模式 (G8 + F11 + S5.2)
 
@@ -102,7 +111,8 @@
 **豁免机制**:
 - `strip_test_mod()`: 剥离测试模块
 - `fact.rs` 豁免: G8/S5.2 模式在 `fact.rs` 豁免 (IoType/ControlFlowType 字符串映射唯一真值来源)
-- `EVORULE_SKIP_GATE=1`: 紧急跳过
+- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁
+- `EVORULE_SKIP_CR_GATE=1`: 跳过 L1b 变更治理门禁 (v0.3.2 新增)
 
 ### 2.3 evorule-governance — 14 模式 (跟 tier1 相同)
 
@@ -124,6 +134,8 @@
 | F11-expect        | `.expect(`             | G1 panic-prone          |
 
 **豁免**: `VALID_TRANSFORM_TYPES` 白名单 (允许 G8 控制流指令名出现在类型白名单定义中)
+- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁
+- `EVORULE_SKIP_CR_GATE=1`: 跳过 L1b 变更治理门禁 (v0.3.2 新增)
 
 **注意**: evorule-cli 是 binary crate, 不需要 `F11-panic` 模式 (tier1/tier2 的 lib crate 才需要检测 `panic!(`, 因为 lib 可能被多处调用, panic 影响范围更大; binary 直接 panic 等于进程退出, 由 `Result<>` 链强制保证)。
 

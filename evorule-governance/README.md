@@ -158,7 +158,7 @@ let verified = auditor.verify_chain()?;
 
 ### 历史安全审计基线
 
-> 历史审计报告: [`docs/security/SECURITY_AUDIT_v0.1.0.md`](../docs/security/SECURITY_AUDIT_v0.1.0.md)（历史全栈审计快照，含已迁出的应用层代码风险项 H6-H9/M1）
+> 历史审计报告: 安全审计基线（待发布，1.0 升门时提供）（历史全栈审计快照，含已迁出的应用层代码风险项 H6-H9/M1）
 
 本 crate 为纯机制层库，不包含 HTTP API、I/O handler、认证中间件等应用层代码。历史审计中的 H6（SSRF）、H7（SQL 注入）、H8（CORS）、H9（DB URL 回退）、M1（auth 默认禁用）等风险项均针对已迁出的应用层实现，由应用层各自承担修复责任。
 
@@ -173,6 +173,16 @@ let verified = auditor.verify_chain()?;
 > `metrics` 和 `auth` feature 已随应用层代码迁出移除。IoMetrics trait 总是可用（机制层接口），Prometheus 实现和认证中间件由应用层提供。
 
 ---
+
+## v0.3.2 更新
+
+- **新增 `permission` 模块**: PermissionGate / PermissionTable / PermissionEntry / Verdict / ConditionEvaluator / DefaultPolicy / PermissionState / PermissionError（机制层权限原语，具体权限策略由应用层注入）
+- **`auditor.report()` / `auditor.export()` 返回值变更**: 从 `String` 改为 `Result<String, serde_json::Error>`，不再静默退化为 `"{}"`
+- **`session.audit_report()` / `session.audit_export()` 返回值变更**: 从 `String` 改为 `Result<String, String>`
+- **`verify_hash_chain` 已删除**: 原函数始终返回 `true` 是"假验证"陷阱，已彻底删除。替代方案：用 `compute_chain_hash` 重算后与存储的链哈希比对
+- **规则校验行为变更**: 元指令白名单修正为 6 种（branch/set/push/io_request/collect/merge），移除误混的 noop/increment/decrement；MAX_NESTING_DEPTH 8→64；set 非法 operation 提升为 error；merge 新增 tool_result/tool_results 校验
+- **Fact 类型映射修正**: 移除 ControlSignal（Fact 枚举无此变体），新增 Stable（终止事实）
+- **build.rs 新增 L1b 变更治理门禁**: CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"；新增策略层反模式检测
 
 ## 设计文档参考
 

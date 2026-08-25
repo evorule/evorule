@@ -11,7 +11,7 @@
 > **适用范围**: evorule-reactor
 > **协议**: AGPL-3.0-or-later
 > **状态**: 权威 (本文档是 `build.rs` 编译时门禁的依据)
-> **跨模块设计**: 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)
+> **跨模块设计**: 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)
 
 ---
 
@@ -133,15 +133,18 @@
 - `src/fact.rs` (G8/§5.2 模式) — IoType 内置字符串值 / ControlFlowType 枚举映射的唯一真值来源
 
 **紧急跳过**: `EVORULE_SKIP_GATE=1 cargo build` (须有书面理由, 永不永久禁用)
+`EVORULE_SKIP_CR_GATE=1 cargo build` (跳过 L1b 变更治理门禁, 仅限本地开发, v0.3.2 新增)
+
+**L1b 变更治理门禁 (v0.3.2 新增)**: 除上述 L1a 字面量门禁外, `build.rs` 还执行 CHANGE_REQUEST.md 校验(必须存在且审查状态为"已批准"/"紧急通过")和策略层反模式检测(扫描 src/ 禁止策略层代码)。三仓(evorule-tcb / evorule-reactor / evorule-governance)build.rs 保持同一份内联副本实现。
 
 ---
 
 ## 五、跨模块引用
 
-- **G1-G8** (全局门): 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §四
-- **F1-F11** (模块门): 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §二.2 + §五.2
+- **G1-G8** (全局门): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四
+- **F1-F11** (模块门): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §二.2 + §五.2
 - **T1** (tier0 指令集有限性): 见 `../evorule-tcb/TCB_SPEC.md` §一
-- **D1-D10** (数据流约束): 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §四
+- **D1-D10** (数据流约束): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四
 
 evorule-governance 的 `GOVERNANCE_SPEC.md` 与本文档**结构相同** (G8 + F11 + §5.2),
 这是有意的双层一致 (避免 tier1/tier2 走偏)。

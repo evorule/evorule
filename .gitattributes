@@ -1,0 +1,29 @@
+# EvoRule .gitattributes
+# 控制 git 换行符和文件类型处理
+
+# Git hooks (bash scripts) must use LF, otherwise CRLF causes "$'\r': command not found"
+.githooks/pre-commit text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+
+# PowerShell scripts (Windows native)
+*.ps1 text eol=crlf
+
+# Source and config files - let git handle normalization
+*.rs text
+*.toml text
+*.md text
+*.json text
+*.yml text
+*.yaml text
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.svg text
+*.ico binary
+*.woff binary
+*.woff2 binary

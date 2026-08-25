@@ -47,6 +47,7 @@ pub mod io_handler;
 // 具体 handler 实现(DbHandler/HttpHandler/MemoryHandler)不再属于本 crate
 pub mod io_subscriber;
 pub mod metrics;
+pub mod permission;
 // object_pool 已移除（性能优化，非核心功能）
 pub mod rule_validation;
 // H6: session 模块从 api/ 提升到顶层（机制层，管理反应器实例生命周期）
@@ -64,6 +65,10 @@ pub use io_dispatcher::{IoDispatcher, IoDispatcherBuilder};
 pub use io_handler::{IoHandler, IoResult};
 pub use io_subscriber::IoSubscriber;
 pub use metrics::{noop_metrics, IoMetrics, NoOpMetrics, SharedMetrics};
+pub use permission::{
+    ConditionEvaluator, DefaultPolicy, PermissionEntry, PermissionError, PermissionGate,
+    PermissionState, PermissionTable, Verdict,
+};
 pub use session::{Session, SessionError, SessionId, SessionManager};
 // ObjectPool 已移除（性能优化，非核心功能）
 pub use shared_facts_log::{SharedFact, SharedFactsLog};

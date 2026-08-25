@@ -13,9 +13,10 @@
 //! 故改用 core_eval 元指令白名单。此白名单不含 G8 禁止词
 //!（conditional/while_loop/sequence），故 build.rs 无需任何豁免（零豁免原则保持）。
 //!
-//! # 白名单来源
-//! evorule-tcb/src/executor.rs 的 `execute_meta_instruction` 处理的元指令类型：
-//! branch / set / push / io_request / noop / increment / decrement / collect / merge
+/// # 白名单来源
+/// evorule-tcb/src/executor.rs 的 `execute_meta_instruction` dispatch（L95-105）处理的
+/// 元指令类型：branch / set / push / io_request / collect / merge。
+/// noop / increment / decrement 是指令层类型，不属于元指令层（P2-01/P0-01）。
 
 use std::path::Path;
 
@@ -24,17 +25,16 @@ use crate::io_util;
 
 /// 合法 core_eval 元指令类型白名单
 ///
-/// 来源：evorule-tcb/src/executor.rs::execute_meta_instruction 处理的元指令。
+/// 来源：evorule-tcb/src/executor.rs::execute_meta_instruction 的 dispatch（L95-105），
+/// 仅 6 种：branch / set / push / io_request / collect / merge。
+/// noop/increment/decrement 是**指令层（instruction）**类型，不属于元指令层，
+/// 不得混入本白名单（P0-01；修前曾误混导致假阳性）。
 /// 不含 G8 禁止词（conditional/while_loop/sequence），故无需 build.rs 豁免。
-/// v0.3.1：新增 ReAct 元指令 `collect` / `merge`（多工具扇出与消息历史合并）。
 const VALID_TRANSFORM_TYPES: &[&str] = &[
     "branch",
     "set",
     "push",
     "io_request",
-    "noop",
-    "increment",
-    "decrement",
     "collect",
     "merge",
 ];
@@ -112,6 +112,11 @@ mod tests {
         assert!(VALID_TRANSFORM_TYPES.contains(&"set"));
         assert!(VALID_TRANSFORM_TYPES.contains(&"push"));
         assert!(VALID_TRANSFORM_TYPES.contains(&"io_request"));
-        assert!(VALID_TRANSFORM_TYPES.contains(&"noop"));
+        assert!(VALID_TRANSFORM_TYPES.contains(&"collect"));
+        assert!(VALID_TRANSFORM_TYPES.contains(&"merge"));
+        // P0-01：指令层类型不得混入元指令白名单
+        assert!(!VALID_TRANSFORM_TYPES.contains(&"noop"));
+        assert!(!VALID_TRANSFORM_TYPES.contains(&"increment"));
+        assert!(!VALID_TRANSFORM_TYPES.contains(&"decrement"));
     }
 }

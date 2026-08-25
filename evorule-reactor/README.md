@@ -217,6 +217,12 @@ evorule_reactor_free(reactor);
 - **MINOR**：向后兼容的功能新增
 - **PATCH**：向后兼容的 bug 修复
 
+## v0.3.2 更新
+
+- **新增 `io_context` 模块**: CallerRole / IoCallContext / CallerRoleResolver（I/O 调用上下文与角色解析）
+- **build.rs 新增 L1b 变更治理门禁**: CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"；新增策略层反模式检测；三仓（evorule-tcb/reactor/governance）build.rs 保持同一份内联副本实现
+- **`EVORULE_SKIP_CR_GATE=1`** 环境变量可跳过 L1b 变更治理门禁（仅限本地开发）
+
 ## 设计文档参考
 
 - 项目级文档总索引: [`DOCS_INDEX.md`](../DOCS_INDEX.md)（所有 L1 公开文档的唯一入口）

@@ -160,12 +160,15 @@ impl Session {
     }
 
     /// 获取审计报告（JSON 字符串）
-    pub fn audit_report(&self) -> String {
-        if let Ok(auditor) = self.auditor.lock() {
-            auditor.report()
-        } else {
-            String::from("{}")
-        }
+    ///
+    /// mutex 中毒或序列化失败时返回 `Err`（不静默退化为 `"{}"`，
+    /// 防止审计数据被误判为"空"）。
+    pub fn audit_report(&self) -> Result<String, String> {
+        let auditor = self
+            .auditor
+            .lock()
+            .map_err(|_| "auditor mutex poisoned".to_string())?;
+        auditor.report().map_err(|e| e.to_string())
     }
 
     /// 验证审计链完整性
@@ -182,12 +185,14 @@ impl Session {
     /// 返回包含 `version`、`last_hash`、`last_audited_version`、
     /// `entry_count` 和 `entries` 数组的 JSON 字符串。
     /// 可用于跨实例迁移、离线分析或备份。
-    pub fn audit_export(&self) -> String {
-        if let Ok(auditor) = self.auditor.lock() {
-            auditor.export()
-        } else {
-            String::from("{}")
-        }
+    ///
+    /// mutex 中毒或序列化失败时返回 `Err`（不静默退化为 `"{}"`）。
+    pub fn audit_export(&self) -> Result<String, String> {
+        let auditor = self
+            .auditor
+            .lock()
+            .map_err(|_| "auditor mutex poisoned".to_string())?;
+        auditor.export().map_err(|e| e.to_string())
     }
 
     /// 从 JSON 字符串导入审计链（P04）

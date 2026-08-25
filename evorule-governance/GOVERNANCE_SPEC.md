@@ -11,7 +11,7 @@
 > **适用范围**: evorule-governance
 > **协议**: AGPL-3.0-or-later
 > **状态**: 权威 (本文档是 `build.rs` 编译时门禁的依据)
-> **跨模块设计**: 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)
+> **跨模块设计**: 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)
 
 ---
 
@@ -45,11 +45,20 @@
 ### 紧急跳过
 
 ```bash
-EVORULE_SKIP_GATE=1 cargo build
+EVORULE_SKIP_GATE=1 cargo build       # 跳过 L1a 字面量门禁
+EVORULE_SKIP_CR_GATE=1 cargo build    # 跳过 L1b 变更治理门禁 (仅限本地开发, v0.3.2 新增)
 ```
 
 跳过必须临时且有书面理由。**永不永久禁用。** 当门控触发时, 正确做法几乎总是:
 将违规字面量移入 `core_eval.json` 并通过元指令层引用, 或重命名它。
+
+### L1b 变更治理门禁 (v0.3.2 新增)
+
+除上述 L1a 字面量门禁外, `build.rs` 还执行以下变更治理门禁:
+
+- **CHANGE_REQUEST.md 校验**: 构建时检查仓根 `CHANGE_REQUEST.md` 是否存在、是否包含所有必填字段、审查状态是否为"已批准"或"紧急通过"。未批准的变更禁止构建。
+- **策略层反模式检测**: 扫描 `src/` 目录(自动剥离 `mod tests` 块), 禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。检测到违规时构建失败。
+- **三仓同步**: `evorule-tcb` / `evorule-reactor` / `evorule-governance` 的 build.rs 保持同一份内联副本实现, 任何修改必须三仓同步。
 
 ---
 
@@ -71,12 +80,13 @@ EVORULE_SKIP_GATE=1 cargo build
 
 - 共享 fact log（跨会话审计）
 
-### 2.4 会话 / 规则验证 / 时间机器 / 指标 (`session.rs`, `rule_validation.rs`, `time_machine.rs`, `metrics.rs`)
+### 2.4 会话 / 规则验证 / 时间机器 / 指标 / 权限 (`session.rs`, `rule_validation.rs`, `time_machine.rs`, `metrics.rs`, `permission.rs`)
 
 - `session.rs` — SessionManager（多反应器实例生命周期管理）
 - `rule_validation.rs` — 基于 tier0 `core_eval.json` 的 JSON Schema 规则验证（RuleValidator）
 - `time_machine.rs` — replay / rewind / fork / diff 4 个 API（机制层能力；仅"可视化调试器 UI"在应用层）
 - `metrics.rs` — IoMetrics trait（机制层接口，Prometheus 实现由应用层提供）
+- `permission.rs` — **v0.3.2 新增** 权限门控模块（PermissionGate / PermissionTable / PermissionEntry / Verdict / ConditionEvaluator / DefaultPolicy / PermissionState / PermissionError），机制层权限原语，具体权限策略由应用层注入
 
 ### 2.5 已迁出（H5/H6 边界清理 + v0.2.0 下沉）
 
@@ -98,9 +108,9 @@ EVORULE_SKIP_GATE=1 cargo build
 
 ## 四、跨模块引用
 
-- **G1-G8** (全局门): 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §四
-- **F1-F11** (模块门): 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §二.2 + §五.3
-- **D1-D10** (数据流约束): 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §四
+- **G1-G8** (全局门): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四
+- **F1-F11** (模块门): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §二.2 + §五.3
+- **D1-D10** (数据流约束): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四
 - **T1** (tier0 指令集有限性): 见 `../evorule-tcb/TCB_SPEC.md` §一
 - **tier1 双层一致**: 见 `../evorule-reactor/REACTOR_SPEC.md`
 
@@ -108,14 +118,15 @@ EVORULE_SKIP_GATE=1 cargo build
 
 ## 五、build.rs 一致性
 
-evorule-governance/build.rs 跟 evorule-reactor/build.rs **结构相同** (13 模式完全相同),
+evorule-governance/build.rs 跟 evorule-reactor/build.rs **结构相同** (字面量门禁模式完全相同),
 这是有意的双层一致 (避免 tier1/tier2 走偏)。
 
 **关键一致性要求**:
 
-- FORBIDDEN 数组: 13 模式完全相同
+- FORBIDDEN 数组: 字面量门禁模式完全相同
 - `strip_test_mod` 函数: 实现方式相同
 - `fact.rs` 豁免: **两者都必须包含** (G8/§5.2 模式在 fact.rs 中豁免)
+- **L1b 变更治理门禁 (v0.3.2 新增)**: `validate_change_request_gate` + `detect_strategy_patterns` 函数必须三仓(evorule-tcb / evorule-reactor / evorule-governance)同步, 防止三个核心模块的审查标准走偏
 
 ---
 

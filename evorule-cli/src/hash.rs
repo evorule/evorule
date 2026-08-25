@@ -17,10 +17,9 @@
 //! ## 已移除的符号
 //! - `tcb_to_serde`：内部函数，已统一到 tier1
 //! - `log_hash_error`：依赖 `Backtrace` 的日志函数，已移除
-//!
-//! ## 向后兼容
-//! [`verify_hash_chain`] 作为 deprecated 包装器保留，内部调用 [`compute_chain_hash`]
-//! 并返回 `true`，保持原有 API 语义（自洽重算，不报错）。
+//! - `verify_hash_chain`：始终返回 `true` 的误导函数（"假验证"陷阱），已彻底删除。
+//!   真正的完整性验证请使用 [`compute_chain_hash`] 重算后与存储的链哈希比对，
+//!   或使用 `verify_chain` 命令读取带哈希字段的 WAL 并逐一校验。
 //!
 //! # 与 tier1/tier2 的关系
 //! - 算法源：`evorule_reactor::hash`（单一真相源）
@@ -36,44 +35,17 @@ pub use evorule_reactor::{
     compute_chain_hash, content_hash, fact_hash, fact_to_stable_json, HashError,
 };
 
-/// 验证哈希链完整性（deprecated，保留向后兼容）
-///
-/// # ⚠️ 已废弃
-/// 本函数始终返回 `true`，仅自洽地重算链式哈希，**不验证**已存储的哈希。
-/// 真正的完整性验证应使用 [`compute_chain_hash`] 比对存储的链哈希，
+/// 验证哈希链完整性的正确姿势：用 [`compute_chain_hash`] 重算后与存储的链哈希比对，
 /// 或在 `verify_chain` 命令中读取带哈希字段的 WAL 并逐一校验。
-///
-/// # 算法
-/// - `prev_hash` 初始为 `"genesis"`
-/// - 对每个 Fact，计算 `blake3(prev_hash + fact_hash)` 作为当前哈希
-/// - 更新 `prev_hash` 为当前哈希，继续处理下一个 Fact
-///
-/// # 返回值
-/// 始终返回 `true`：本函数仅以 Fact 列表为输入，按上述算法自洽地重算链式哈希。
-/// 空列表视为完整（`true`）。
 ///
 /// # 迁移指南
 /// ```ignore
-/// // 旧代码（不验证）：
-/// let ok = verify_hash_chain(&facts);
-///
-/// // 新代码（真正验证）：
+/// // 正确做法（真正验证）：
 /// let computed = compute_chain_hash(&facts)?;
 /// if computed != stored_last_hash {
 ///     return Err("审计链断裂");
 /// }
 /// ```
-#[deprecated(
-    since = "0.2.0",
-    note = "verify_hash_chain 始终返回 true，不验证存储的哈希。请使用 compute_chain_hash 比对存储的链哈希"
-)]
-#[allow(deprecated, dead_code)]
-pub fn verify_hash_chain(facts: &[evorule_reactor::Fact]) -> bool {
-    // 调用 compute_chain_hash 重算链哈希（忽略结果，仅验证算法可执行）
-    let _ = compute_chain_hash(facts);
-    true
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(deprecated, clippy::unwrap_used, clippy::panic, clippy::expect_used)]
@@ -280,9 +252,6 @@ mod tests {
         let result1 = compute_chain_hash(&facts).unwrap();
         let result2 = compute_chain_hash(&facts).unwrap();
         assert_eq!(result1, result2);
-
-        // verify_hash_chain（deprecated）仍可调用，返回 true
-        assert!(verify_hash_chain(&facts));
     }
 
     #[test]

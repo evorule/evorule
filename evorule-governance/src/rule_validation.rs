@@ -30,18 +30,20 @@ use serde::Serialize;
 // 元指令白名单
 // ============================================================================
 
-/// 合法 core_eval 元指令类型白名单
+/// 合法元指令类型白名单（P0-01：对齐 executor.rs 6 元指令）
 ///
-/// 来源：evorule-tcb/src/executor.rs::execute_meta_instruction 处理的元指令。
+/// 来源：evorule-tcb/src/executor.rs::execute_meta_instruction 的 dispatch（L95-105），
+/// 仅 6 种：set / push / branch / io_request / collect / merge。
+/// noop/increment/decrement 是**指令层（instruction）**类型，不是元指令层，不得混入本白名单
+/// （双层语言框架，records/75；P0-01 修前曾误混，导致假阳性/假阴性）。
 /// 不含 G8 禁止词（conditional/while_loop/sequence），故无需 build.rs 豁免。
 const VALID_TRANSFORM_TYPES: &[&str] = &[
     "branch",
     "set",
     "push",
     "io_request",
-    "noop",
-    "increment",
-    "decrement",
+    "collect",
+    "merge",
 ];
 
 /// `branch` 指令的必填参数
@@ -52,10 +54,10 @@ const SET_REQUIRED: &[&str] = &["attr", "operation", "value"];
 const PUSH_REQUIRED: &[&str] = &["instructions"];
 /// `io_request` 指令的必填参数
 const IO_REQUEST_REQUIRED: &[&str] = &["io_type"];
-/// `increment` 指令的必填参数
-const INCREMENT_REQUIRED: &[&str] = &["attr", "delta"];
-/// `decrement` 指令的必填参数
-const DECREMENT_REQUIRED: &[&str] = &["attr", "delta"];
+/// `collect` 指令的必填参数
+const COLLECT_REQUIRED: &[&str] = &["from", "each"];
+/// `merge` 指令的必填参数
+const MERGE_REQUIRED: &[&str] = &["messages", "next_instruction"];
 
 /// `set` 指令的合法 operation 值
 const VALID_OPERATIONS: &[&str] = &["set", "add", "sub"];
@@ -67,7 +69,10 @@ const VALID_OPERATIONS: &[&str] = &["set", "add", "sub"];
 /// 最大 transform 规则数量（与 transition.rs 的 MAX_TRANSFORM_RULES 一致）
 const MAX_TRANSFORM_RULES: usize = 64;
 /// 最大嵌套深度（branch 内的 branch 等）
-const MAX_NESTING_DEPTH: usize = 8;
+///
+/// P2-02：对齐 TCB MAX_BRANCH_DEPTH=64（executor.rs L28），避免校验器比引擎更严
+/// 造成假阳性（SSOT：同一上限不得多处不同定义）。防御性建议上限见 check_recursive_nesting。
+const MAX_NESTING_DEPTH: usize = 64;
 /// 单个 io_request 内最大参数大小（字节）
 const MAX_IO_PARAMS_SIZE: usize = 1024 * 10; // 10KB
 /// 安全分析中检测到的最大循环深度阈值
@@ -334,9 +339,8 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
         "set" => SET_REQUIRED,
         "push" => PUSH_REQUIRED,
         "io_request" => IO_REQUEST_REQUIRED,
-        "increment" => INCREMENT_REQUIRED,
-        "decrement" => DECREMENT_REQUIRED,
-        "noop" => &[], // noop 不需要参数
+        "collect" => COLLECT_REQUIRED,
+        "merge" => MERGE_REQUIRED,
         _ => {
             return ValidationCheck {
                 name: "params_complete",
@@ -357,7 +361,9 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
         }
     }
 
-    // 额外检查：set 的 operation 值
+    // 额外检查：set 的 operation 值（P1-02：非法 operation 提升为 error 阻断，
+    // 因 TCB exec_set 对未知 operation 硬失败 UnknownOperation，校验层不得降级为 warn）
+    let mut operation_invalid = false;
     if type_str == "set" && missing.is_empty() {
         if let Some(op) = t
             .get("params")
@@ -365,12 +371,29 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
             .and_then(|v| v.as_str())
         {
             if !VALID_OPERATIONS.contains(&op) {
+                operation_invalid = true;
                 extra_checks.push(format!(
                     "operation '{}' 不在合法值中 ({})",
                     op,
                     VALID_OPERATIONS.join(", ")
                 ));
             }
+        }
+    }
+
+    // 额外检查：merge 必须声明 tool_result 或 tool_results（二选一，
+    // 否则引擎 exec_merge 缺任一报 MissingField）
+    let mut merge_missing_tool = false;
+    if type_str == "merge" && missing.is_empty() {
+        let params = t.get("params");
+        let has_tool = params.and_then(|p| p.get("tool_result")).is_some()
+            || params.and_then(|p| p.get("tool_results")).is_some();
+        if !has_tool {
+            merge_missing_tool = true;
+            extra_checks.push(
+                "merge 需要 tool_result 或 tool_results 之一（引擎 exec_merge 缺任一报 MissingField）"
+                    .to_string(),
+            );
         }
     }
 
@@ -394,11 +417,11 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
     let passed = missing.is_empty() && extra_checks.is_empty();
     let level = if passed {
         "info"
-    } else if !missing.is_empty() || params_too_large {
-        // missing 参数缺失 或 params 过大 → error 级别
+    } else if !missing.is_empty() || params_too_large || operation_invalid || merge_missing_tool {
+        // 缺失必填 / params 过大 / operation 非法 / merge 缺工具结果 → error 级别（阻断）
         "error"
     } else {
-        // operation 不合法等其他额外检查 → warn 级别
+        // 其他额外检查 → warn 级别
         "warn"
     };
 
@@ -519,8 +542,9 @@ fn check_infinite_loop_risk(transforms: &[JsonValue]) -> ValidationCheck {
                 }
             }
 
-            // 检查是否有状态变更指令
-            if matches!(type_str, "set" | "increment" | "decrement") {
+            // 检查是否有状态变更指令（P0-01：元指令层无 increment/decrement，
+            // 状态变更由 set/collect/merge 承担；指令层 increment/decrement 不在 transform 层）
+            if matches!(type_str, "set" | "collect" | "merge") {
                 has_state_change = true;
             }
         }
@@ -532,7 +556,7 @@ fn check_infinite_loop_risk(transforms: &[JsonValue]) -> ValidationCheck {
         passed: !risk,
         level: if risk { "warn" } else { "info" },
         message: if risk {
-            "检测到 while_loop 但未找到状态变更指令 (set/increment/decrement)，可能导致无限循环"
+            "检测到 while_loop 但未找到状态变更指令 (set/collect/merge)，可能导致无限循环"
                 .to_string()
         } else if has_while_loop {
             "while_loop 存在配套的状态变更指令，循环可终止".to_string()
@@ -852,10 +876,10 @@ mod tests {
     #[test]
     fn test_validate_valid_rules() {
         let transforms = vec![
-            json_to_tcb(r#"{"type":"noop"}"#),
+            json_to_tcb(r#"{"type":"set","params":{"attr":"x","operation":"set","value":1}}"#),
             json_to_tcb(r#"{"type":"set","params":{"attr":"x","operation":"set","value":0}}"#),
             json_to_tcb(
-                r#"{"type":"branch","params":{"domain":{"type":"instruction","instruction_type":"increment"},"on_true":[{"type":"set","params":{"attr":"x","operation":"add","delta":1}}]}}"#,
+                r#"{"type":"branch","params":{"domain":{"type":"instruction","instruction_type":"increment"},"on_true":[{"type":"set","params":{"attr":"x","operation":"set","value":1}}]}}"#,
             ),
         ];
 
@@ -902,19 +926,19 @@ mod tests {
             r#"{"type":"set","params":{"attr":"x","operation":"invalid_op","value":0}}"#,
         )];
         let result = validate_rules(&transforms);
-        // 无效 operation 是 warn 级别，不阻断 passed
+        // P1-02：非法 operation 提升为 error，阻断 passed
+        //（TCB exec_set 对未知 operation 硬失败 UnknownOperation，校验层不得降级为 warn）
         assert!(
-            result.passed,
-            "Invalid operation is warn-level, not blocking"
+            !result.passed,
+            "Invalid operation should be error-level and block"
         );
-        // 但应在静态验证中产生警告
         let params_check = result
             .static_validation
             .checks
             .iter()
             .find(|c| c.name == "params_complete");
         assert!(params_check.is_some());
-        assert_eq!(params_check.unwrap().level, "warn");
+        assert_eq!(params_check.unwrap().level, "error");
     }
 
     // ====================================================================
@@ -924,8 +948,9 @@ mod tests {
     #[test]
     fn test_security_infinite_loop_detection() {
         // while_loop 但没有状态变更指令
+        //（P0-01：on_true 用合法元指令 push——非状态变更，保持"无状态变更"检测场景）
         let transforms = vec![json_to_tcb(
-            r#"{"type":"branch","params":{"domain":{"type":"instruction","instruction_type":"while_loop"},"on_true":[{"type":"noop"}]}}"#,
+            r#"{"type":"branch","params":{"domain":{"type":"instruction","instruction_type":"while_loop"},"on_true":[{"type":"push","params":{"instructions":[]}}]}}"#,
         )];
         let result = validate_rules(&transforms);
         // 应该有 infinite_loop 警告
@@ -1006,7 +1031,7 @@ mod tests {
 
     #[test]
     fn test_validate_rules_from_json() {
-        let json = r#"{"transform":[{"type":"noop"},{"type":"set","params":{"attr":"x","operation":"set","value":0}}]}"#;
+        let json = r#"{"transform":[{"type":"set","params":{"attr":"x","operation":"set","value":1}},{"type":"set","params":{"attr":"x","operation":"set","value":0}}]}"#;
         let result = validate_rules_from_json(json).unwrap();
         assert!(result.passed);
     }
@@ -1014,7 +1039,7 @@ mod tests {
     #[test]
     fn test_validate_rules_from_json_array() {
         let json =
-            r#"[{"type":"noop"},{"type":"set","params":{"attr":"x","operation":"set","value":0}}]"#;
+            r#"[{"type":"set","params":{"attr":"x","operation":"set","value":1}},{"type":"set","params":{"attr":"x","operation":"set","value":0}}]"#;
         let result = validate_rules_from_json(json).unwrap();
         assert!(result.passed);
     }
@@ -1030,7 +1055,9 @@ mod tests {
         // 超过 64 条规则应该报错
         let mut transforms = Vec::new();
         for _ in 0..65 {
-            transforms.push(json_to_tcb(r#"{"type":"noop"}"#));
+            transforms.push(json_to_tcb(
+                r#"{"type":"set","params":{"attr":"x","operation":"set","value":1}}"#,
+            ));
         }
         let result = validate_rules(&transforms);
         let count_check = result
