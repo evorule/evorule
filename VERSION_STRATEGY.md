@@ -174,7 +174,7 @@ evorule 仓包含**机制层**与**工具**两类子 crate：
 
 ## 8. 发版流程
 
-详细的发版操作手册见 [docs/release/RELEASE_PROCESS_v0.1.1.md](docs/release/RELEASE_PROCESS_v0.1.1.md)，包含发版前 checklist、验证脚本（validate-all.ps1 + check_doc_safety.py）、tag 流程。
+详细的发版操作可参考 `scripts/validate-release.ps1`、`scripts/validate-all.ps1`、`scripts/check_doc_safety.py` 等发布校验脚本，包含发版前 checklist、验证流程、tag 流程。
 
 ### 发布频率建议
 

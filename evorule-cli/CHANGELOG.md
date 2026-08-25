@@ -104,7 +104,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ✅ CLI 行为不变(透传 io_type,无 handler → Error)
 - ✅ fact log 格式不变(io_type 字符串值不变)
 
-详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.2.0]` 段 + [MIGRATION_v0.2.0.md](../MIGRATION_v0.2.0.md)。
+详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.2.0]` 段 + 各 crate 源码（`evorule-reactor/src/io_handler.rs`、`evorule-reactor/src/fact.rs`）。
 
 ---
 
@@ -272,8 +272,8 @@ src/
 
 ### 配套示例
 
-- [`examples/hospital/`](examples/hospital/) —— 医院 HIPAA / 等保 2.0 合规规则
-- [`examples/law-firm/`](examples/law-firm/) —— 律所客户保密 / GDPR 合规规则
+- `examples/hospital/` —— 医院 HIPAA / 等保 2.0 合规规则（待发布）
+- `examples/law-firm/` —— 律所客户保密 / GDPR 合规规则（待发布）
 
 详见 [`README.md`](README.md) + [`CLI_SPEC.md`](CLI_SPEC.md)。
 

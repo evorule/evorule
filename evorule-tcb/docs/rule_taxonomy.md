@@ -373,17 +373,17 @@ Ok(TransitionResult::State { new_payload, new_queue })
 ## 6. 相关文件
 
 ### 核心定义
-- [README.md](file:///D:/evorule/README.md) - 项目关键概念定义
-- [core_eval.json](file:///D:/evorule/evorule-tcb/core_eval.json) - 宪法规则定义
+- [README.md](../../README.md) - 项目关键概念定义
+- [core_eval.json](../core_eval.json) - 宪法规则定义
 
 ### 代码实现
-- [transition.rs](file:///D:/evorule/evorule-tcb/src/transition.rs) - TCB 转换逻辑
-- [pure.rs](file:///D:/evorule/evorule-reactor/src/pure.rs) - Reactor 纯函数
-- [reactor.rs](file:///D:/evorule/evorule-reactor/src/reactor.rs) - Reactor 主循环
+- [transition.rs](../src/transition.rs) - TCB 转换逻辑
+- [pure.rs](../../evorule-reactor/src/pure.rs) - Reactor 纯函数
+- [reactor.rs](../../evorule-reactor/src/reactor.rs) - Reactor 主循环
 
 ### 设计规范
-- [TCB_SPEC.md](file:///D:/evorule/evorule-tcb/TCB_SPEC.md) - TCB 系统规范
-- [CLI_SPEC.md](file:///D:/evorule/evorule-cli/CLI_SPEC.md) - CLI 设计规范
+- [TCB_SPEC.md](../TCB_SPEC.md) - TCB 系统规范
+- [CLI_SPEC.md](../../evorule-cli/CLI_SPEC.md) - CLI 设计规范
 
 ---
 

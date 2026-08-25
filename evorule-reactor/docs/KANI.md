@@ -195,7 +195,7 @@ cd /path/to/evorule
 
 ## 📊 CI
 
-[`.github/workflows/kani.yml`](../../.github/workflows/kani.yml) 在以下情况触发：
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) 在以下情况触发：
 
 - push 到 main 且修改 `evorule-reactor/src/**` 或 `evorule-tcb/src/**`
 - 任何修改这些路径的 PR

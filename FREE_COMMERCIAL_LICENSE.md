@@ -117,7 +117,7 @@ EvoRule 采用 **AGPL-3.0-or-later 许可证** 作为基础开源协议,以确�
 
 ### 步骤 2:在线提交申请
 
-访问 [https://gitee.com/evorule/evorule/issues](申请表单),填写以下信息:
+访问 [申请表单](https://gitee.com/evorule/evorule/issues),填写以下信息:
 
 - 机构全名、统一社会信用代码
 - 机构类型(下拉选择)
@@ -199,4 +199,4 @@ EvoRule Project 审核团队将在 10 个工作日内:
 
 **本政策最终解释权归 EvoRule Project 所有,并保留根据法律变化或项目发展进行合理调整的权利。**
 
-_本协议遵循 evorule-core-backup 的发布原则,采用 Contributor License Agreement 标准结构。_
+

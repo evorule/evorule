@@ -19,10 +19,9 @@
 | 文档                                                                   | 用途     | 一句话说明                                                                       |
 | :--------------------------------------------------------------------- | :------- | :------------------------------------------------------------------------------- |
 | [README.md](README.md)                                                 | 项目总览 | EvoRule 是什么、快速开始、架构概览 — **新用户首读**                      |
-| [docs/tutorial/evorule-tutorial.md](docs/tutorial/evorule-tutorial.md) | 技术教程 | 从设计哲学到 UR5 实战的系统性教程（8 章，连接 README 与 SPEC）— **系统学习必读** |
-| [00-有所得必有所失-EvoRule的取舍立场.md](00-有所得必有所失-EvoRule的取舍立场.md) | 立场篇 01 | 为什么 EvoRule 敢于做减法——"有所得必有所失"的取舍立场 |
-| [01-智能时代选择不智能-什么是确定性智能.md](01-智能时代选择不智能-什么是确定性智能.md) | 立场篇 02 | "确定性智能"——智能负责方向，EvoRule 负责确定性可信 |
-| [02-哥德尔不自证与逼近真相-EvoRule对正确的诚实立场.md](02-哥德尔不自证与逼近真相-EvoRule对正确的诚实立场.md) | 立场篇 03 | 不声称绝对正确，而是在现有技术条件下最大化逼近事实真相 |
+| [docs/explanation/00-有所得必有所失-EvoRule的取舍立场.md](docs/explanation/00-有所得必有所失-EvoRule的取舍立场.md) | 立场篇 01 | 为什么 EvoRule 敢于做减法——"有所得必有所失"的取舍立场 |
+| [docs/explanation/01-智能时代选择不智能-什么是确定性智能.md](docs/explanation/01-智能时代选择不智能-什么是确定性智能.md) | 立场篇 02 | "确定性智能"——智能负责方向，EvoRule 负责确定性可信 |
+| [docs/explanation/02-哥德尔不自证与逼近真相-EvoRule对正确的诚实立场.md](docs/explanation/02-哥德尔不自证与逼近真相-EvoRule对正确的诚实立场.md) | 立场篇 03 | 不声称绝对正确，而是在现有技术条件下最大化逼近事实真相 |
 
 ---
 
@@ -35,7 +34,7 @@
 | [VERSION_STRATEGY.md](VERSION_STRATEGY.md)                                       | 版本策略          | 语义化版本规则、升 1.0 条件、第三方安全审计触发条件（VERSION_STRATEGY v1.1）                    |
 | [ROADMAP.md](ROADMAP.md)                                                         | 路线图            | 版本方向、升 1.0 条件、形式化验证阶段、功能规划、治理过渡、许可证变更（未来计划单一真相源）      |
 | [CHANGELOG.md](CHANGELOG.md)                                                     | 更新日志          | Keep a Changelog v1.0 格式；每版所有重大变更                                                    |
-| [MIGRATION_v0.2.0.md](MIGRATION_v0.2.0.md)                                       | 迁移指南          | v0.1.x → v0.2.0 破坏性变更迁移指南（IoType 重构 / IoHandler 下沉）；破坏性变更发布时必需        |
+| MIGRATION_v0.2.0.md（待发布） | 迁移指南          | v0.1.x → v0.2.0 破坏性变更迁移指南（IoType 重构 / IoHandler 下沉）；破坏性变更发布时必需        |
 | [GATE_REFERENCE.md](GATE_REFERENCE.md)                                           | build.rs 门控参考 | 所有 tier0/1/2 build.rs 编译时门禁（T4/T5/T6/T8/T9/T10/T11/T12/T14 + G8 架构原则）              |
 | [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) | 形式化验证白皮书  | 七层验证体系、P0/P1/P2 属性目录（三档状态：✅实跑 / 🔧已实现未跑 / ⏳未实现）— **当前有效版本** |
 | [verification/INDEX.md](verification/INDEX.md)                                                   | 验证资产总索引    | 验证方案/脚本/证据/证明源码的一站式查询入口（形式化验证文档系统，v0.3.1）                  |
@@ -50,7 +49,7 @@
 | [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)                                | 商业许可        | 不希望开源派生的商业场景购买方式                   |
 | [FREE_COMMERCIAL_LICENSE.md](FREE_COMMERCIAL_LICENSE.md)                      | 免费商用许可    | 个人/小团队年收入门槛以下免费商用                  |
 | [CLA-individual.md](CLA-individual.md)                                        | 个人 CLA        | 贡献者许可协议（个人版）                           |
-| [NOTICE](NOTICE)                                                              | 通知文件        | 第三方版权通知                                     |
+| [NOTICE.md](NOTICE.md)                                                              | 通知文件        | 第三方版权通知                                     |
 | [AUTHORS.md](AUTHORS.md)                                                      | 作者列表        | 核心贡献者名单                                     |
 | [TRADEMARK.md](TRADEMARK.md)                                                  | 商标政策        | "EvoRule"、"元则"、"则灵"商标使用规范              |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)                                      | 行为准则        | 贡献者行为守则（Contributor Covenant 2.1）         |
@@ -61,24 +60,13 @@
 
 ## 三、发布文档（`docs/` 目录）
 
-### 3.1 安全与审计（`docs/security/`）
+### 3.1 安全与审计
 
-| 文档                                                                                                       | 版本   | 对应项目版本              | 说明                                                                         |
-| :--------------------------------------------------------------------------------------------------------- | :----- | :------------------------ | :--------------------------------------------------------------------------- |
-| [SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md)                                         | 0.1.0  | 2026-07-30 首发独立版     | evorule 仓独立范围(纯机制层)— **当前有效版本**                               |
-| [DEPENDENCY_AUDIT_v0.1.0.md](docs/security/DEPENDENCY_AUDIT_v0.1.0.md)                                     | 0.1.0  | 2026-07-30                | cargo-audit 实跑,0 CVE,0 warnings — **当前有效版本**                         |
-| [THREAT_MODEL_v0.1.0.md](docs/security/THREAT_MODEL_v0.1.0.md)                                             | 0.1.0  | 2026-07-30                | evorule 仓机制层威胁模型(STRIDE + 攻击树)— **当前有效版本**                  |
-| [SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md](docs/security/SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md)     | 0.1.0  | 2026-07-20 生态全栈预览版 | **[已废弃]** 2026-07-30 被 SECURITY_AUDIT_v0.1.0.md 取代（原生态全栈预览版） |
-| [DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md](docs/security/DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md) | 0.1.0  | 2026-07-20 生态全栈预览版 | **[已废弃]** 2026-07-30 被 DEPENDENCY_AUDIT_v0.1.0.md 取代（手动审查版）     |
-| [THREAT_MODEL.md](docs/security/THREAT_MODEL.md)                                                           | —      | 2026-07-20                | 生态全栈威胁模型 — **[已废弃]** 2026-07-30 被 THREAT_MODEL_v0.1.0.md 取代    |
-| [SECURITY_AUDIT_v1.0.0.md](docs/security/SECURITY_AUDIT_v1.0.0.md)                                         | v1.0.0 | **未来版本占位**          | 1.0 之前不承诺（与 VERSION_STRATEGY §4.4 对齐）                              |
-| [DEPENDENCY_AUDIT_v1.0.0.md](docs/security/DEPENDENCY_AUDIT_v1.0.0.md)                                     | v1.0.0 | **未来版本占位**          | —                                                                            |
+> 安全审计文档（SECURITY_AUDIT / DEPENDENCY_AUDIT / THREAT_MODEL）按版本策略在 1.0 升门时正式发布（见 `VERSION_STRATEGY.md` §4.2）。当前 v0.3.x 阶段仅提供 `SECURITY.md`（漏洞披露流程）。正式审计报告发布后将在此处登记。
 
-### 3.2 发布流程（`docs/release/`）
+### 3.2 发布流程
 
-| 文档                                                                | 对应版本 | 说明                                                                          |
-| :------------------------------------------------------------------ | :------- | :---------------------------------------------------------------------------- |
-| [RELEASE_PROCESS_v0.1.1.md](docs/release/RELEASE_PROCESS_v0.1.1.md) | 0.1.1    | 5 个 validate-\*.ps1 脚本 + check_doc_safety + 发布前完整检查流程（当前有效） |
+> 发布流程文档（RELEASE_PROCESS）按版本策略在对应版本发布时同步提供。当前可参考 `scripts/validate-release.ps1`、`scripts/validate-all.ps1` 等发布校验脚本。
 
 ### 3.3 基准评估（D2：内部共享，不公开发布）
 
@@ -94,8 +82,8 @@
 
 | 文档                                     | 说明                                               |
 | :--------------------------------------- | :------------------------------------------------- |
-| [constitution.md](docs/constitution.md)  | 治理结构：治理模型、决策层级、贡献者阶梯、冲突解决 |
-| [oss_strategy.md](docs/oss_strategy.md)  | 开源策略：仓组织、贡献模型、发布模型、商业化模型   |
+| constitution.md（待发布）  | 治理结构：治理模型、决策层级、贡献者阶梯、冲突解决 |
+| oss_strategy.md（待发布）  | 开源策略：仓组织、贡献模型、发布模型、商业化模型   |
 | **HTTP API 文档**                        | 见 evorule-server 独立仓                           |
 | **全量应用 CLI（HTTP 调用/规则脚手架）** | 见 evorule-application 仓                          |
 
@@ -168,10 +156,10 @@
 | :--------------- | :------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 形式化验证白皮书 | [verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)（v3，**当前有效**；配套验证资产总索引 [verification/INDEX.md](verification/INDEX.md)） | `EVORULE_FORMAL_VERTIFICATION_PLAN.md` — 2026-07-29 已删除（v1，含拼写错误）；历史 v2 草稿保留在私有集合（不公开） |
 | 首发检查清单     | 私有不公开（仅团队内部访问）                                                                                                                 | 私有 v1.0（已被 v2.0 取代，不公开）                                                                                                                     |
-| 安全审计报告     | [docs/security/SECURITY_AUDIT_v0.1.0.md](docs/security/SECURITY_AUDIT_v0.1.0.md)（0.1.0 首发，evorule 仓独立范围，**当前有效版本**）         | SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（0.1.0 生态全栈版，**[已废弃]** 2026-07-30 旧版）；SECURITY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位，未到承诺期） |
-| 依赖审计报告     | [docs/security/DEPENDENCY_AUDIT_v0.1.0.md](docs/security/DEPENDENCY_AUDIT_v0.1.0.md)（0.1.0 首发，cargo-audit 实跑 0 CVE，**当前有效版本**） | DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（0.1.0 生态全栈版，**[已废弃]** 2026-07-30 旧版）；DEPENDENCY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位）         |
-| 威胁模型         | [docs/security/THREAT_MODEL_v0.1.0.md](docs/security/THREAT_MODEL_v0.1.0.md)（0.1.0 首发，evorule 仓机制层，**当前有效版本**）               | THREAT_MODEL.md（生态全栈版，2026-07-20，**[已废弃]** 2026-07-30 被三份独立文档取代）                                                                   |
-| 发布流程         | [docs/release/RELEASE_PROCESS_v0.1.1.md](docs/release/RELEASE_PROCESS_v0.1.1.md)（0.1.1，当前有效，含 validate-all + check_doc_safety 流程） | RELEASE_PROCESS_v0.1.0.md（0.1.0，**[已废弃]** 2026-08-01 被取代；2026-08-10 因含本地路径泄露从仓库移除，历史保留在 v0.1.0 tag）    |
+| 安全审计报告     | 待发布（1.0 升门时提供，见 `VERSION_STRATEGY.md` §4.2）         | SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（0.1.0 生态全栈版，**[已废弃]** 2026-07-30 旧版）；SECURITY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位，未到承诺期） |
+| 依赖审计报告     | 待发布（1.0 升门时提供） | DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（0.1.0 生态全栈版，**[已废弃]** 2026-07-30 旧版）；DEPENDENCY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位）         |
+| 威胁模型         | 待发布（1.0 升门时提供）               | THREAT_MODEL.md（生态全栈版，2026-07-20，**[已废弃]** 2026-07-30 被三份独立文档取代）                                                                   |
+| 发布流程         | 待发布（可参考 `scripts/validate-release.ps1` 等发布校验脚本） | RELEASE_PROCESS_v0.1.0.md（0.1.0，**[已废弃]** 2026-08-01 被取代；2026-08-10 因含本地路径泄露从仓库移除，历史保留在 v0.1.0 tag）    |
 
 ---
 
@@ -195,11 +183,11 @@
 │
 ├─► "版本相关 / 下版本有什么 / 怎么升版本"
 │    └─► CHANGELOG.md + VERSION_STRATEGY.md
-│         + docs/release/RELEASE_PROCESS_vX.Y.Z.md
+│         + 发布流程文档（待发布，可参考 scripts/validate-release.ps1）
 │
 ├─► "安全 / 漏洞 / 依赖有问题吗"
-│    └─► SECURITY.md（报告流程） + docs/security/*_AUDIT_v*.md
-│         + docs/security/THREAT_MODEL.md
+│    └─► SECURITY.md（报告流程） + 安全审计报告（1.0 升门时发布）
+│         + 威胁模型（1.0 升门时发布）
 │
 ├─► "我要贡献代码 / 写 PR"
 │    └─► AGENTS.md → CONTRIBUTING_ZH.md → crate README + SPEC

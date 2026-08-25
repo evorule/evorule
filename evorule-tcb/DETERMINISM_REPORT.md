@@ -29,7 +29,7 @@
 
 ### 1.1 依赖声明为空
 
-[cargo.toml](file:///d:/evorule/evorule-tcb/cargo.toml#L12-L19) 中 `[dependencies]` 为**空**，无 `[dev-dependencies]`、无 `[build-dependencies]`：
+[cargo.toml](cargo.toml#L12-L19) 中 `[dependencies]` 为**空**，无 `[dev-dependencies]`、无 `[build-dependencies]`：
 
 ```toml
 [dependencies]
@@ -47,7 +47,7 @@ std = []
 
 ### 1.3 build.rs 零依赖
 
-[build.rs](file:///d:/evorule/evorule-tcb/build.rs#L33-L40) 仅用 `std::fs` / `std::path` / `std::process`，禁止模式用**字节子串匹配**而非 regex，注释明确"保持 build.rs 零依赖"。
+[build.rs](build.rs#L33-L40) 仅用 `std::fs` / `std::path` / `std::process`，禁止模式用**字节子串匹配**而非 regex，注释明确"保持 build.rs 零依赖"。
 
 ### 1.4 serde 隔离
 
@@ -61,7 +61,7 @@ std = []
 
 ### 2.1 库级声明
 
-[lib.rs](file:///d:/evorule/evorule-tcb/src/lib.rs#L36-L45)：
+[lib.rs](src/lib.rs#L36-L45)：
 
 ```rust
 #![no_std]
@@ -87,7 +87,7 @@ extern crate alloc;
 
 ### 2.3 std feature 的唯一边界
 
-[error.rs](file:///d:/evorule/evorule-tcb/src/error.rs#L165-L167)：`std` feature 仅用于 `Display` 实现（错误展示），是可选项：
+[error.rs](src/error.rs#L165-L167)：`std` feature 仅用于 `Display` 实现（错误展示），是可选项：
 
 ```rust
 #[cfg(feature = "std")]
@@ -105,18 +105,18 @@ mod display_impl {
 
 ### 3.1 确定性数据模型（ObjectMap = BTreeMap）
 
-[value.rs](file:///d:/evorule/evorule-tcb/src/value.rs#L24-L25)：
+[value.rs](src/value.rs#L24-L25)：
 
 ```rust
 /// Object 后端类型（BTreeMap 保证确定性迭代）
 pub type ObjectMap = BTreeMap<String, JsonValue>;
 ```
 
-`JsonValue` 手动实现 `Ord`（[value.rs](file:///d:/evorule/evorule-tcb/src/value.rs#L111-L157)），保证任意 JSON 值可排序——BTreeMap 迭代顺序完全确定，与序列化顺序无关。
+`JsonValue` 手动实现 `Ord`（[value.rs](src/value.rs#L111-L157)），保证任意 JSON 值可排序——BTreeMap 迭代顺序完全确定，与序列化顺序无关。
 
 ### 3.2 编译时门禁（build.rs，23 模式）
 
-[build.rs](file:///d:/evorule/evorule-tcb/build.rs#L40-L72) 扫描 `src/` 禁止以下破坏确定性的构造（测试模块自动剥离后扫描）：
+[build.rs](build.rs#L40-L72) 扫描 `src/` 禁止以下破坏确定性的构造（测试模块自动剥离后扫描）：
 
 | 类别 | 禁止模式 | 破坏点 |
 |------|---------|--------|
@@ -145,7 +145,7 @@ pub type ObjectMap = BTreeMap<String, JsonValue>;
 | 集成测试（tests/integration_test.rs） | 20 | 通过（确定性 10 次重复调用、状态隔离、错误类型匹配、完整 ReAct 循环） |
 | doctest（lib 文档示例） | 18 | 通过 |
 
-集成测试中的确定性专项用例（[tests/integration_test.rs](file:///d:/evorule/evorule-tcb/tests/integration_test.rs)）：
+集成测试中的确定性专项用例（[tests/integration_test.rs](tests/integration_test.rs)）：
 - `test_determinism_repeated_calls`：同一输入执行 10 次，结果完全一致
 - `test_state_isolation_independent_calls`：独立调用互不污染
 - `test_io_result_null_cleared_exists_returns_false`：null 清除后 `exists` 为 false
