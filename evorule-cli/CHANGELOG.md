@@ -13,6 +13,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.3.2 - 2026-08-26
+
+**G-A1 审计锚点签名 + 治理门禁同步（MINOR）** — 新增 `anchor-keygen` / `verify-anchors` 子命令；与 evorule-tcb / evorule-reactor / evorule-governance v0.3.2 同步。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.3.2]` 段。
+
+### 🆕 新增
+
+- **`anchor-keygen` 子命令**（[anchor_keygen.rs](src/commands/anchor_keygen.rs)）：
+  - 生成 G-A1 审计锚点签名密钥对（ed25519，RFC 8032 确定性签名，无 RNG）
+  - 产出私钥种子（32 字节，64 位 hex，需私密保存）+ 公钥（可公开分发供验证）
+  - `--output` 将私钥种子写入文件（公钥仍打印到 stdout），缺省直接打印到 stdout
+- **`verify-anchors` 子命令**（[verify_anchors.rs](src/commands/verify_anchors.rs)）：
+  - 离线校验 `evorule-governance` `Auditor::export()` 产生的审计导出 JSON
+  - 校验每个锚点的**链式链接**（防截断/删改）+ 用公钥重算载荷**验签**（证明审计链确由私钥持有者生成）
+  - `--pubkey` 指定公钥 hex，缺省使用导出物内嵌 `verifying_key`
+- **`signing` 模块**（[signing.rs](src/signing.rs)）：审计锚点签名最小自包含实现（复制自 evorule-governance，遵循 CLI 不引入 governance 的架构约束）
+
+### 🔄 变更
+
+- 版本同步 bump 至 0.3.2
+- `Cargo.toml` 依赖版本对齐：`evorule-tcb` / `evorule-reactor` 由 `0.3.1` → `0.3.2`；新增 `ed25519-dalek` / `getrandom`（仅密钥生成一次性运维用）
+- build.rs 变更治理门禁（L2）与策略层反模式检测（与三仓同步）
+- 发版计划：crates.io 同步发布 v0.3.2（crates.io 当前停在 v0.2.1）
+
+### 向后兼容
+
+- ✅ 既有子命令（validate / run / replay / diff / verify-chain）与输出格式不变
+- ✅ fact log 格式不变
+- ✅ 新增命令为纯增量，不改变既有行为
+
+---
+
 ## v0.2.4 - 2026-08-15
 
 **版本同步 + 形式化验证 P0 完善（PATCH）** — 机制层 evaluate_domain 分层 Kani harness 落地与验证证据归档。CLI 无功能变更，依赖版本同步 bump。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.2.4]` 段。

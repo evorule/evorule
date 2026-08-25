@@ -10,13 +10,14 @@
 //!
 //! # 模块
 //! - `cli` — clap 参数定义（子命令解析）
-//! - `commands` — 各子命令实现（validate / run / replay / diff / verify-chain）
+//! - `commands` — 各子命令实现（validate / run / replay / diff / verify-chain / anchor-keygen / verify-anchors）
 //! - `error` — `CliError` 统一错误类型与退出码映射
 //! - `executor` — 规则执行（调 evorule-tcb 纯函数）
 //! - `fact_log` — fact log 读写
 //! - `hash` — BLAKE3 哈希（re-export evorule-reactor 单一真相源）
 //! - `io_util` — I/O 工具
 //! - `output` — 人类可读输出格式化
+//! - `signing` — G-A1 审计锚点签名（ed25519 确定性签名，anchor-keygen / verify-anchors 依赖）
 //!
 //! # 设计原则
 //! - **零网络**：任何外联必须显式 opt-in（本版本无网络调用）
@@ -34,6 +35,7 @@ pub mod fact_log;
 pub mod hash;
 pub mod io_util;
 pub mod output;
+pub mod signing;
 
 // 顶层 re-export：doc-tests 使用 `use evorule_cli::CliError;`
 pub use error::CliError;

@@ -52,6 +52,8 @@ pub mod permission;
 pub mod rule_validation;
 // H6: session 模块从 api/ 提升到顶层（机制层，管理反应器实例生命周期）
 pub mod session;
+// G-A1: 审计锚点签名（真实性/防抵赖），可选能力——未配置签名器时审计行为与旧版完全一致
+pub mod signing;
 pub mod shared_facts_log;
 pub mod time_machine;
 
@@ -70,5 +72,7 @@ pub use permission::{
     PermissionState, PermissionTable, Verdict,
 };
 pub use session::{Session, SessionError, SessionId, SessionManager};
+// G-A1: 审计锚点签名（真实性/防抵赖）
+pub use signing::{AuditSigner, SignError, verify_signature};
 // ObjectPool 已移除（性能优化，非核心功能）
 pub use shared_facts_log::{SharedFact, SharedFactsLog};

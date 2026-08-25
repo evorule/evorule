@@ -9,9 +9,13 @@
 //! - `replay`：pretty-print fact log
 //! - `diff`：按 FactId 对齐对比两个 fact log
 //! - `verify_chain`：验证 fact log 哈希链完整性
+//! - `anchor_keygen`：生成 G-A1 审计锚点签名密钥对（一次性运维）
+//! - `verify_anchors`：离线校验 G-A1 审计锚点真实性（防抵赖）
 
+pub mod anchor_keygen;
 pub mod diff;
 pub mod replay;
 pub mod run;
 pub mod validate;
+pub mod verify_anchors;
 pub mod verify_chain;

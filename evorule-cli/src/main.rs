@@ -10,6 +10,8 @@
 //! evorule replay fact.log             # 播放 fact log(pretty-print)
 //! evorule diff a.log b.log            # 对比两个 fact log(按 FactId 对齐)
 //! evorule verify-chain fact.log       # 验证 fact log 哈希链完整性(blake3)
+//! evorule anchor-keygen               # 生成 G-A1 审计锚点签名密钥对(一次性运维)
+//! evorule verify-anchors audit.json   # 离线校验审计锚点真实性(防抵赖)
 //! ```
 //!
 //! # 设计原则
@@ -55,6 +57,10 @@ fn main() -> ExitCode {
         Command::Diff { a, b } => commands::diff::run(&a, &b),
         Command::Validate { rules_dir } => commands::validate::run(&rules_dir),
         Command::VerifyChain { fact_log } => commands::verify_chain::run(&fact_log),
+        Command::AnchorKeygen { output } => commands::anchor_keygen::run(output.as_deref()),
+        Command::VerifyAnchors { audit, pubkey } => {
+            commands::verify_anchors::run(&audit, pubkey.as_deref())
+        }
     };
 
     match result {

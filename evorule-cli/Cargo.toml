@@ -46,8 +46,8 @@ workspace = true
 # - evorule-governance 虽 H6 已去应用层依赖，但 CLI 目前仅需 tier0+tier1 功能，故不引入
 # - CLI 主执行路径同步（execute_transition 是纯函数），tokio 仅用于 reactor spawn + WAL flush
 # - persistence feature 启用 WAL 读写（含哈希链验证），serde_json/blake3 均 pure Rust，支持 musl
-evorule-tcb = { path = "../evorule-tcb", version = "0.3.1" }
-evorule-reactor = { path = "../evorule-reactor", version = "0.3.1", features = [
+evorule-tcb = { path = "../evorule-tcb", version = "0.3.2" }
+evorule-reactor = { path = "../evorule-reactor", version = "0.3.2", features = [
     "persistence",
 ] }
 
@@ -59,6 +59,11 @@ thiserror = "2"
 
 # 哈希链验证（verify-chain 命令需要直接调用 blake3 验证存储的哈希）
 blake3 = "1"
+
+# G-A1：审计锚点签名（anchor-keygen / verify-anchors）。ed25519（RFC 8032）确定性签名，无 RNG
+ed25519-dalek = "2"
+# G-A1：仅密钥生成（一次性运维）用 OS 熵源，不进入确定性执行路径
+getrandom = { version = "0.2", features = ["std"] }
 
 # Tracing (optional but useful for the user to see what evorule is doing)
 tracing = "0.1"

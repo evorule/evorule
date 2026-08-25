@@ -36,9 +36,11 @@
 
 ---
 
-## [0.3.2] - Unreleased
+## [Unreleased]
 
-**API 正确性修正 + 门禁治理增强 + 新模块** — 删除"假验证"陷阱函数 `verify_hash_chain`；审计/会话 API 从静默退化 `"{}"` 改为显式 `Result`；元指令白名单对齐 TCB 6 元指令（移除误混的指令层类型）；build.rs 新增 L2 变更治理门禁与策略层反模式检测；governance 新增 permission 模块、reactor 新增 io_context 模块。
+## [0.3.2] - 2026-08-26
+
+**API 正确性修正 + 门禁治理增强 + 新模块 + G-A1 审计锚点签名** — 删除"假验证"陷阱函数 `verify_hash_chain`；审计/会话 API 从静默退化 `"{}"` 改为显式 `Result`；元指令白名单对齐 TCB 6 元指令（移除误混的指令层类型）；build.rs 新增 L2 变更治理门禁与策略层反模式检测；governance 新增 permission 模块、reactor 新增 io_context 模块；新增 G-A1 审计锚点签名（ed25519 确定性签名，真实性/防抵赖）。
 
 ### ⚠️ Breaking Changes
 
@@ -82,6 +84,10 @@
   - 新增公开导出:`ConditionEvaluator` / `DefaultPolicy` / `PermissionEntry` / `PermissionError` / `PermissionGate` / `PermissionState` / `PermissionTable` / `Verdict`
 - **reactor `io_context` 模块**(`evorule-reactor/src/lib.rs`):
   - 新增公开导出:`CallerRole` / `IoCallContext` / `CallerRoleResolver`
+- **G-A1 审计锚点签名**(`evorule-governance/src/signing.rs` / `evorule-cli/src/signing.rs`):
+  - governance 新增 `signing` 模块 + 公开导出 `AuditSigner` / `SignError` / `verify_signature`
+  - CLI 新增 `anchor-keygen`（生成 ed25519 密钥对）与 `verify-anchors`（离线校验审计锚点真实性）子命令
+  - ed25519（RFC 8032）确定性签名（无 RNG），与确定性执行纪律兼容；私钥不落盘审计资产/规则库，由调用方注入 32 字节种子
 - **`core_eval.json` 新增元数据字段**(`evorule-tcb/core_eval.json`):
   - 新增 `$schema` / `kind` / `id` 字段,规范化规则集格式
 
