@@ -8,7 +8,7 @@
 
 # `evorule` CLI
 
-[![版本 v0.3.1](https://img.shields.io/badge/version-v0.3.1-blue)](../Cargo.toml)
+[![版本 v0.3.2](https://img.shields.io/badge/version-v0.3.2-blue)](../Cargo.toml)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-green)](../LICENSE)
 [![文档索引 DOCS_INDEX](https://img.shields.io/badge/docs-DOCS_INDEX-8A2BE2)](../DOCS_INDEX.md)
 
@@ -37,6 +37,7 @@
 - ✅ **可对比** —— 两个 fact log 按 FactId 对齐 diff(非 HashSet)
 - ✅ **可重放** —— `replay` 子命令播放 fact log
 - ✅ **可验真** —— `verify-chain` 子命令验证 fact log 完整性
+- ✅ **可证来源（G-A1）** —— `anchor-keygen` 生成 ed25519 审计锚点密钥对，`verify-anchors` 离线校验锚点真实性（防抵赖，哈希链之上的密钥签名）
 - ✅ **可重现构建** —— 同源码两次构建 SHA256 一致(圈 2 监管可独立复现)
 - ✅ **G8 门控** —— 编译期拦截"硬编码控制流"违规(与 tier1/tier2 同套规则)
 - ✅ **多架构** —— `x86_64-unknown-linux-musl` + `aarch64-unknown-linux-musl`(AWS Graviton / RPi 适用)
@@ -69,6 +70,12 @@ evorule replay /var/log/evorule-fact.log
 
 # 8) 监管检查?导出 fact log
 cat /var/log/evorule-fact.log
+
+# 9) 生成 G-A1 审计锚点签名密钥对(一次性运维;私钥种子请私密保存,公钥可分发给验证方)
+evorule anchor-keygen --output /root/.evorule/audit-sk-seed.txt
+
+# 10) 离线校验审计锚点真实性(防抵赖;公钥缺省用导出物内嵌 verifying_key)
+evorule verify-anchors audit-export.json
 ```
 
 ## 编译(开发者)

@@ -70,11 +70,12 @@ EVORULE_SKIP_CR_GATE=1 cargo build    # 跳过 L1b 变更治理门禁 (仅限本
 - `io_dispatcher.rs` / `io_handler.rs` — **v0.2.0 起为 re-export**，`IoDispatcher` / `IoHandler` trait 定义已下沉至 `evorule-reactor`（机制层基座统一，agent 可直接依赖 reactor）；本 crate 保留 re-export 向后兼容
 - 具体 I/O Handler 实现（db / http / memory）属应用层，已迁出本 crate（见 §2.5）
 
-### 2.2 审计与哈希 (`auditor.rs`, `hash.rs`, `clock.rs`)
+### 2.2 审计与哈希 (`auditor.rs`, `hash.rs`, `clock.rs`, `signing.rs`)
 
 - 记录 TCB 返回的 `before`/`after` 快照 (只记录, 不判断内容)
 - 计算 BLAKE3 哈希、维护逻辑时钟 (审计工具是机制)
 - `hash.rs` 为 re-export（单一真相源在 `evorule-reactor::hash`）
+- `signing.rs` — **v0.3.2 新增** G-A1 审计锚点签名（`AuditSigner` / `verify_signature`），ed25519（RFC 8032）确定性签名，在哈希链之上提供真实性/防抵赖；私钥不落盘审计资产，由调用方注入 32 字节种子（未配置签名器时审计行为与旧版完全一致）
 
 ### 2.3 共享状态 (`shared_facts_log.rs`)
 

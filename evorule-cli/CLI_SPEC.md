@@ -41,18 +41,21 @@
 | 模块 | 职责 | 关键 API |
 |---|---|---|
 | `main.rs` | 入口:tracing 初始化 + 子命令分发 + 退出码 | `main() -> ExitCode` |
-| `cli.rs` | clap derive 参数定义(5 个子命令) | `Cli`, `Command` |
+| `cli.rs` | clap derive 参数定义(7 个子命令) | `Cli`, `Command` |
 | `error.rs` | 统一错误枚举 + 退出码映射(0/1/2) | `CliError`, `exit_code()` |
 | `executor.rs` | 同步反应器循环(FIFO + max_steps + I/O 两阶段) | `execute()` |
 | `fact_log.rs` | JSONL 读写(tier1 WAL 格式) | `write_facts()`, `read_facts()` |
 | `hash.rs` | blake3 哈希链(复制自 evorule-governance) | `compute_chain_hash()`, `fact_hash()` |
 | `io_util.rs` | 规则加载(确定性排序)+ payload 解析 | `load_rules()`, `parse_initial_payload()` |
 | `output.rs` | human-readable 格式化 + diff 前缀 | `fact_to_human()`, `facts_to_human()` |
+| `signing.rs` | G-A1 审计锚点签名(复制自 evorule-governance,ed25519 确定性签名) | `AuditSigner`, `verify_signature()` |
 | `commands/validate.rs` | validate 子命令:core_eval 元指令白名单 | `run()` |
 | `commands/run.rs` | run 子命令:加载→执行→输出 fact log | `run()` |
 | `commands/replay.rs` | replay 子命令:读 fact log → pretty-print | `run()` |
 | `commands/diff.rs` | diff 子命令:按 FactId 数组下标对齐 | `run()` |
 | `commands/verify_chain.rs` | verify-chain 子命令:哈希链 + 结构不变量 | `run()` |
+| `commands/anchor_keygen.rs` | anchor-keygen 子命令:生成 G-A1 签名密钥对(一次性运维) | `run()` |
+| `commands/verify_anchors.rs` | verify-anchors 子命令:离线校验审计锚点真实性 | `run()` |
 
 ---
 
@@ -121,6 +124,15 @@ disable permanently.**
 1. **哈希链**:`hash::verify_hash_chain`(blake3,与 evorule-governance 字节级一致)
 2. **FactId 单调递增**:每个 Fact 的 id 必须严格大于前一个
 3. **cause 引用有效性**:`StateTransition.cause` / `IoRequest.cause` 必须指向已存在的 FactId
+
+### signing.rs / anchor_keygen.rs / verify_anchors.rs(G-A1 审计锚点)
+
+G-A1 在 blake3 哈希链之上引入**密钥签名锚点**,提供"真实性/防抵赖"(哈希链只能证明完整性/被动篡改,不能证明来源)。
+
+1. **确定性签名**:ed25519(RFC 8032)确定性 nonce,无 RNG,同一私钥 + 同一载荷 → 同一签名,与 evorule 确定性执行纪律兼容
+2. **私钥供给**:不落盘于审计资产/规则库,由调用方注入 32 字节种子;`anchor-keygen` 仅作一次性运维生成
+3. **`anchor-keygen`**:生成密钥对,`--output` 将私钥种子写入文件,公钥打印到 stdout(可公开分发)
+4. **`verify-anchors`**:校验 `Auditor::export()` 导出物——锚点链式链接(首锚为 `genesis`,防截断)+ 用公钥重算规范化载荷验签(防抵赖)
 
 ---
 

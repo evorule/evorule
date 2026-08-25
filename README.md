@@ -23,7 +23,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.3.1-green.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-0.3.2-green.svg)](Cargo.toml)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Kani](https://img.shields.io/badge/Kani-t0_34p_5layer_t1_11p-blue.svg)](evorule-tcb/verification/kani-formal-verification-design.md)
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0-green.svg)]()
@@ -41,7 +41,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 ---
 
-> ## ⚠️ v0.3.x — ReAct 循环 + I/O 隔离 + TCB Ignored 语义 (当前 0.3.1, 2026-08-18)
+> ## ⚠️ v0.3.x — ReAct 循环 + I/O 隔离 + TCB Ignored 语义 (当前 0.3.2, 2026-08-26)
 >
 > 这是 EvoRule **v0.3.x 公开基座**（v0.3.1 起 ReAct 循环 + I/O 结果按 io_type 隔离 + TCB Ignored 变体；v0.2.0 起 `IoType` 重构为动态 `Arc<str>`，支持自定义 IoType；v0.2.0 起 `IoHandler` trait 与 `IoDispatcher` 从 `evorule-governance` 下沉至 `evorule-reactor`，`evorule-governance` 保留 re-export 向后兼容），提供核心执行引擎 + HTTP API + CLI 工具。**不是 production-ready**。
 >

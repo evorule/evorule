@@ -10,8 +10,8 @@
 
 > EvoRule 三层架构的 Tier 2 治理层 —— I/O 订阅者、审计链、HTTP API。
 
-- **版本**:v0.3.1
-- **依赖**:evorule-tcb = "0.3.1" + evorule-reactor = { version = "0.3.1", features = ["persistence"] }
+- **版本**:v0.3.2
+- **依赖**:evorule-tcb = "0.3.2" + evorule-reactor = { version = "0.3.2", features = ["persistence"] }
 - **协议**:AGPL-3.0-or-later
 - **测试**:`cargo test` 全部 PASS
 - **build.rs 编译时门禁**:F11 禁止 `unwrap`/`expect`/`panic!`/`debug_assert!`(非测试代码),**G8 控制流白盒化**,PASSED
@@ -60,9 +60,11 @@ src/
 ├── io_handler.rs           # IoHandler trait + IoResult（v0.2.0 起为 re-export，定义已下沉至 evorule-reactor）
 ├── io_subscriber.rs        # I/O 订阅者(消费 IoRequest → 分发 → 回写 IoResponse)
 ├── metrics.rs              # IoMetrics trait(机制层接口, Prometheus 实现由应用层提供)
+├── permission/             # 权限门控(机制层原语, 具体策略由应用层注入)
 ├── rule_validation.rs      # 规则验证器(RuleValidator, 基于 tier0 core_eval.json)
 ├── session.rs              # 会话管理器(SessionManager, 多反应器实例生命周期管理)
 ├── shared_facts_log.rs     # 共享 FactsLog(跨 session 审计)
+├── signing.rs              # G-A1 审计锚点签名(ed25519 确定性签名, 真实性/防抵赖)
 └── time_machine.rs         # 时间机器(replay / rewind / fork / diff)
 ```
 
@@ -85,7 +87,7 @@ evorule-governance 现为**纯机制层库**（无 bin target），应作为 lib
 ```toml
 # 在你自己的应用仓的 Cargo.toml 中
 [dependencies]
-evorule-governance = { version = "0.3.1" }
+evorule-governance = { version = "0.3.2" }
 ```
 
 快速开始示例：

@@ -9,6 +9,8 @@
 //! - `diff`：对比两个 fact log（按 FactId 对齐）
 //! - `validate`：校验 JSON 规则文件（用 tier1 RuleValidator）
 //! - `verify-chain`：验证 fact log 哈希链完整性
+//! - `anchor-keygen`：生成 G-A1 审计锚点签名密钥对（一次性运维）
+//! - `verify-anchors`：离线校验 G-A1 审计锚点真实性（防抵赖）
 
 use std::path::PathBuf;
 
@@ -77,5 +79,27 @@ pub enum Command {
     VerifyChain {
         /// fact log 文件
         fact_log: PathBuf,
+    },
+
+    /// 生成 G-A1 审计锚点签名密钥对(一次性运维操作)
+    ///
+    /// 产出私钥种子(32 字节, 64 位 hex)与公钥(32 字节, 64 位 hex)。
+    /// 私钥必须私密保存,用于配置审计器签名锚点;公钥可分发给第三方用 `verify-anchors` 离线验证。
+    AnchorKeygen {
+        /// 私钥种子写入文件(缺省打印到 stdout)
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+
+    /// 离线校验 G-A1 审计锚点真实性(防抵赖)
+    ///
+    /// 输入为 `evorule-governance` `Auditor::export()` 产生的审计导出 JSON。
+    /// 校验每个锚点的链式链接 + 用公钥重算载荷验签,证明审计链确由私钥持有者生成。
+    VerifyAnchors {
+        /// 审计导出 JSON 文件
+        audit: PathBuf,
+        /// 公钥 hex(缺省使用导出物内嵌 verifying_key)
+        #[arg(long)]
+        pubkey: Option<String>,
     },
 }
