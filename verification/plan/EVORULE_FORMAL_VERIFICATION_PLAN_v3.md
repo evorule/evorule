@@ -12,7 +12,7 @@
 > **协议**：AGPL-3.0-or-later（代码）+ CC0-1.0（core_eval.json）
 > **最后更新**：2026-08-17
 > **版本对齐**：与 `Cargo.toml` 顶层 `version = "0.3.1"` 同步
-> **配套文档**：本文档是七层验证体系的指导性"宪法"；各 crate 的专项实施见 [verification 验证文档系统](../verification/README.md)（总索引在 [verification/INDEX.md](../verification/INDEX.md)），TCB 的 Kani 专项设计见 `evorule-tcb/verification/kani-formal-verification-design.md`
+> **配套文档**：本文档是七层验证体系的指导性"宪法"；各 crate 的专项实施见 [验证文档系统](../README.md)（总索引在 [INDEX.md](../INDEX.md)），TCB 的 Kani 专项设计见 `evorule-tcb/verification/kani-formal-verification-design.md`
 
 ---
 

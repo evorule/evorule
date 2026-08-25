@@ -92,7 +92,7 @@
 1. Kani（≥0.40）原生支持 std collections，可直接验证生产代码中的 `BTreeMap`/`Vec`/`Cow`/`String`；
 2. 替代映射需要在插入时引入容量上限检查（`unreachable!()` 等 panic 分支），与"永不 panic"验证目标冲突；
 3. 验证替代映射无法保证生产 `BTreeMap` 的真实行为（确定性迭代顺序、插入语义）；
-4. 生产 `JsonValue::String` 是 `Cow<'static, str>`（[value.rs](file:///d:/evorule/evorule-tcb/src/value.rs)），替代映射的类型无法与之直接对应。
+4. 生产 `JsonValue::String` 是 `Cow<'static, str>`（[value.rs](../src/value.rs)），替代映射的类型无法与之直接对应。
 
 因此对 `ObjectMap`（`BTreeMap<String, JsonValue>`）不做任何替换，直接验证生产代码，通过"结构化符号输入"控制展开成本。
 
@@ -151,7 +151,7 @@ fn any_instruction() -> JsonValue {
 /// 构造"已知形状、符号叶子"的 exec_state（供 evaluate_domain 使用）。
 ///
 /// ⚠️ 重要：`evaluate_domain` 内部经 `resolve_domain_path` 解析路径，
-/// 要求 exec_state **顶层必须有 `__exec__` 键**（[domain.rs](file:///d:/evorule/evorule-tcb/src/domain.rs#L37-L41)），
+/// 要求 exec_state **顶层必须有 `__exec__` 键**（[domain.rs](../src/domain.rs#L37-L41)），
 /// 否则所有 `resolve_domain_path` 均返回 `None`，域评估恒为 `false`。
 /// 因此 `any_payload()` 不能直接作为 exec_state 传入，必须用本函数包裹：
 fn any_exec_state() -> JsonValue {
@@ -378,7 +378,7 @@ fn verify_has_fields_empty_array() {
 > 私有元指令（`exec_set`/`exec_push`/`exec_branch`/`exec_io_request`/`exec_collect`/`exec_merge`/`substitute_template`）
 > 无法从外部直接调用，统一经 `execute_meta_instruction`（公开）按指令类型间接验证。
 >
-> 导入说明：`MAX_BRANCH_DEPTH` 是 [executor.rs](file:///d:/evorule/evorule-tcb/src/executor.rs#L27) 的 `pub const`，
+> 导入说明：`MAX_BRANCH_DEPTH` 是 [executor.rs](../src/executor.rs#L27) 的 `pub const`，
 > 但 lib.rs **未重导出**（仅重导出 `MAX_TRANSFORM_RULES`）。外部 test 需 `use evorule_tcb::executor::MAX_BRANCH_DEPTH;`
 > 或直接写字面量 64。
 
@@ -587,7 +587,7 @@ fn verify_react_io_required() {
 }
 ```
 
-> `model::react_core_eval()` 为 P21 专用辅助：在 tests/kani/model.rs 中按 [transition.rs](file:///d:/evorule/evorule-tcb/src/transition.rs#L1063-L1157) 的 `react_core_eval()` 复制三条规则（固定形状、无符号值），Kani 按具体常量展开，成本可控。
+> `model::react_core_eval()` 为 P21 专用辅助：在 tests/kani/model.rs 中按 [transition.rs](../src/transition.rs#L1063-L1157) 的 `react_core_eval()` 复制三条规则（固定形状、无符号值），Kani 按具体常量展开，成本可控。
 
 ---
 
@@ -714,7 +714,7 @@ default-unwind = "70"   # 递归深度 64，需 > 64（实测：该配置被 Car
 
 > **不需要把 `kani` 加为 dev-dependency**：Kani 构建时会自动注入 `kani` crate（提供 `kani::any`/`#[kani::proof]`）并设置 `cfg(kani)`，
 > 因此 `tests/kani/` 中的 proof 无需声明依赖。`--tests` 模式会以 `cfg(test)` 编译且 dev-dependencies 可用，
-> 现有 `proptest` dev-dependency 不受影响。`unexpected_cfgs` 的 `check-cfg` 配置已在 [Cargo.toml](file:///d:/evorule/evorule-tcb/Cargo.toml#L26-L28) 中就位（官方推荐做法）。
+> 现有 `proptest` dev-dependency 不受影响。`unexpected_cfgs` 的 `check-cfg` 配置已在 [Cargo.toml](../Cargo.toml#L26-L28) 中就位（官方推荐做法）。
 
 ---
 
