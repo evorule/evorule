@@ -18,6 +18,11 @@ authors = ["EvoRule Project"]
 rust-version = "1.74"
 homepage = "https://gitee.com/evorule/evorule"
 repository = "https://gitee.com/evorule/evorule"
+documentation = "https://docs.rs/evorule-tcb"
+description = "evorule:确定性规则引擎 + BLAKE3 不可篡改审计链 + ReAct 循环 (Deterministic rule engine with BLAKE3 audit chain and ReAct loop)"
+readme = "README.md"
+keywords = ["rule-engine", "audit-chain", "blake3", "react", "deterministic"]
+categories = ["data-structures", "parser-implementations"]
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
