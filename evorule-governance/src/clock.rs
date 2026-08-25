@@ -29,7 +29,11 @@ impl LogicalClock {
     /// 创建新时钟，初始值为 0
     ///
     /// # 示例
-    /// ```
+    ///
+    /// > `no_run`：本示例仅作编译期用法演示。运行时行为由下方单元测试验证——
+    /// > Windows 杀软/WDAC 会间歇性拦截批量 `cargo test --doc` 时刚编译的 doctest
+    /// > 二进制（`os error 4551`，应用控制策略），为保证测试确定性，不在此执行。
+    /// ```no_run
     /// use evorule_governance::LogicalClock;
     ///
     /// let clock = LogicalClock::new();
@@ -89,5 +93,43 @@ impl LogicalClock {
 impl Default for LogicalClock {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LogicalClock;
+
+    #[test]
+    fn new_starts_at_zero() {
+        assert_eq!(LogicalClock::new().current(), 0);
+    }
+
+    #[test]
+    fn tick_is_monotonic() {
+        let clock = LogicalClock::new();
+        assert_eq!(clock.tick(), 1);
+        assert_eq!(clock.tick(), 2);
+        assert_eq!(clock.tick(), 3);
+    }
+
+    #[test]
+    fn merge_takes_max_plus_one() {
+        let clock = LogicalClock::new();
+        clock.merge(10);
+        assert_eq!(clock.current(), 11);
+        clock.merge(100);
+        assert_eq!(clock.current(), 101);
+        // 小于当前值时不回退：max(101, 1) + 1 = 102
+        clock.merge(1);
+        assert_eq!(clock.current(), 102);
+    }
+
+    #[test]
+    fn clone_shares_counter() {
+        let clock = LogicalClock::new();
+        let clone = clock.clone();
+        clone.tick();
+        assert_eq!(clock.current(), 1);
     }
 }

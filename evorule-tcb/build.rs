@@ -31,7 +31,8 @@
 //! # 紧急跳过
 //!
 //! ```bash
-//! EVORULE_SKIP_GATE=1 cargo build
+//! EVORULE_SKIP_GATE=1 cargo build       # 跳过 L1 字面量门禁
+//! EVORULE_SKIP_CR_GATE=1 cargo build    # 跳过 L2 变更治理门禁 (仅限本地开发)
 //! ```
 //! 跳过必须临时且有书面理由, 永不永久禁用。
 
@@ -329,18 +330,18 @@ fn is_test_tolerant(label: &str) -> bool {
 }
 
 fn main() -> ExitCode {
-    // 检查是否跳过变更治理门禁
+    // 变更治理门禁 (L2): CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"
     if std::env::var("EVORULE_SKIP_CR_GATE").is_ok() {
         println!("cargo:warning=evorule-tcb change governance gate SKIPPED via EVORULE_SKIP_CR_GATE");
     } else {
         // 执行变更治理门禁验证
-        if let Err(e) = validate_change_request_gate() {
+        if let Err(e) = validate_change_request_gate("evorule-tcb") {
             eprintln!("{}", e);
             return ExitCode::FAILURE;
         }
-        
+
         // 执行策略层反模式检测
-        if let Err(e) = detect_strategy_patterns() {
+        if let Err(e) = detect_strategy_patterns("evorule-tcb") {
             eprintln!("{}", e);
             return ExitCode::FAILURE;
         }
@@ -450,6 +451,9 @@ fn main() -> ExitCode {
 }
 
 // ===== 变更治理门禁 (Change Governance Gate) =====
+//
+// 与 evorule-reactor/build.rs、evorule-governance/build.rs 保持同一份实现 (内联副本)。
+// 任何对门禁逻辑的修改必须三仓同步, 防止三个核心模块的审查标准走偏。
 
 /// CHANGE_REQUEST.md 文件名
 const CR_FILENAME: &str = "CHANGE_REQUEST.md";
@@ -472,7 +476,7 @@ const CR_REQUIRED_FIELDS: &[&str] = &[
     "### 3.6 回滚方案",
 ];
 
-/// 有效审查状态
+/// 有效审查状态 (用于错误提示)
 const CR_VALID_STATUSES: &[&str] = &[
     "待审查",
     "已批准",
@@ -480,30 +484,44 @@ const CR_VALID_STATUSES: &[&str] = &[
     "紧急通过",
 ];
 
+/// 可放行构建的审查状态: 必须为"已批准"或"紧急通过"
+const CR_APPROVED_STATUSES: &[&str] = &["已批准", "紧急通过"];
+
+/// 从 CHANGE_REQUEST.md 提取"审查状态"行的值
+///
+/// 表格格式: `| **审查状态** | 已批准 |`
+/// 返回第二列去除空白后的值; 字段行缺失或格式异常返回 None。
+fn find_review_status(content: &str) -> Option<String> {
+    for line in content.lines() {
+        if line.contains("**审查状态**") {
+            let mut cells = line.split('|').map(|c| c.trim()).filter(|c| !c.is_empty());
+            let _name = cells.next();
+            return cells.next().map(|s| s.to_string());
+        }
+    }
+    None
+}
+
 /// 验证 CHANGE_REQUEST.md 的完整性
 ///
 /// 此函数在每次构建时调用，确保：
 /// 1. CHANGE_REQUEST.md 文件存在
 /// 2. 文件包含所有必填字段
-/// 3. 审查状态为有效值
+/// 3. 审查状态必须为"已批准"或"紧急通过" (未批准的变更禁止构建)
 ///
 /// # 返回
 ///
 /// - Ok(()) 验证通过
 /// - Err(String) 验证失败，包含详细错误信息
-fn validate_change_request_gate() -> Result<(), String> {
-    let crate_name = "evorule-tcb";
-
-    // 获取 manifest 目录
-    let manifest_dir = if let Ok(s) = std::env::var("CARGO_MANIFEST_DIR") {
-        PathBuf::from(s)
-    } else {
-        return Err("build.rs: CARGO_MANIFEST_DIR not set".to_string());
+fn validate_change_request_gate(crate_name: &str) -> Result<(), String> {
+    let manifest_dir = match std::env::var("CARGO_MANIFEST_DIR") {
+        Ok(s) => PathBuf::from(s),
+        Err(_) => return Err("build.rs: CARGO_MANIFEST_DIR not set".to_string()),
     };
 
     let cr_path = manifest_dir.join(CR_FILENAME);
 
-    // 检查 CHANGE_REQUEST.md 是否存在
+    // 1. 检查 CHANGE_REQUEST.md 是否存在
     if !cr_path.exists() {
         return Err(format!(
             "==== {} 变更治理门禁 FAILED ====\n\
@@ -515,27 +533,22 @@ fn validate_change_request_gate() -> Result<(), String> {
              \n\
              模板位置: /CHANGE_REQUEST_TEMPLATE.md\n\
              \n\
-             紧急通道: 可在 CHANGE_REQUEST.md 中标记 `emergency: true` 临时绕过，\n\
-             但必须在 48 小时内补交完整审查表。\n\
-             \n\
              跳过验证: 设置环境变量 EVORULE_SKIP_CR_GATE=1 (仅限本地开发)",
             crate_name, CR_FILENAME
         ));
     }
 
-    // 读取 CHANGE_REQUEST.md
+    // 2. 读取 CHANGE_REQUEST.md
     let content = fs::read_to_string(&cr_path)
         .map_err(|e| format!("无法读取 {}: {}", CR_FILENAME, e))?;
 
-    // 检查必填字段
+    // 3. 检查必填字段
     let mut missing_fields = Vec::new();
-
     for field in CR_REQUIRED_FIELDS {
         if !content.contains(field) {
             missing_fields.push(*field);
         }
     }
-
     if !missing_fields.is_empty() {
         return Err(format!(
             "==== {} 变更治理门禁 FAILED ====\n\
@@ -549,27 +562,38 @@ fn validate_change_request_gate() -> Result<(), String> {
         ));
     }
 
-    // 验证审查状态
-    let status_found = CR_VALID_STATUSES.iter().any(|status| content.contains(status));
+    // 4. 强制审查状态: 必须为"已批准"或"紧急通过"
+    let status = match find_review_status(&content) {
+        Some(s) => s,
+        None => {
+            return Err(format!(
+                "==== {} 变更治理门禁 FAILED ====\n\
+                 \n\
+                 CHANGE_REQUEST.md 中未找到\"审查状态\"字段的有效值。\n\
+                 请按模板填写: `| **审查状态** | 已批准 |`",
+                crate_name
+            ));
+        }
+    };
 
-    if !status_found {
+    if !CR_APPROVED_STATUSES.iter().any(|s| *s == status) {
         return Err(format!(
             "==== {} 变更治理门禁 FAILED ====\n\
              \n\
-             CHANGE_REQUEST.md 中未找到有效的审查状态。\n\
+             CHANGE_REQUEST.md 的审查状态为 \"{}\"，未获批准。\n\
+             仅 \"{}\" 可放行构建。\n\
              \n\
-             有效状态: {}\n\
-             \n\
-             当前文件可能缺少\"审查状态\"字段或状态值无效。",
+             请获得审查批准后更新该字段再重新构建。\n\
+             有效状态参考: {}",
             crate_name,
+            status,
+            CR_APPROVED_STATUSES.join("\" / \""),
             CR_VALID_STATUSES.join(", ")
         ));
     }
 
-    // 检查紧急通道标记
-    let is_emergency = content.contains("emergency: true") || content.contains("紧急通过");
-
-    if is_emergency {
+    // 5. 紧急通道提醒
+    if status == "紧急通过" {
         eprintln!("cargo:warning={} 变更使用了紧急通道，请确保在 48 小时内补交完整审查表", crate_name);
     }
 
@@ -654,9 +678,7 @@ const STRATEGY_PATTERNS: &[StrategyPattern<'static>] = &[
 ///
 /// - Ok(()) 未检测到策略层反模式
 /// - Err(String) 检测到策略层反模式，包含详细违规信息
-fn detect_strategy_patterns() -> Result<(), String> {
-    let crate_name = "evorule-tcb";
-
+fn detect_strategy_patterns(crate_name: &str) -> Result<(), String> {
     // 获取 manifest 目录
     let manifest_dir = match std::env::var("CARGO_MANIFEST_DIR") {
         Ok(s) => PathBuf::from(s),

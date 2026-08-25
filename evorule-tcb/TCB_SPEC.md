@@ -12,7 +12,7 @@
 > **协议**: AGPL-3.0-or-later
 > **状态**: 权威 (本文档是 `build.rs` 编译时门禁的依据)
 > **版本**: v0.3.2 (审计治理版；路径约定统一 D1a、域错误显式化、M6 执行预算、M8 去持久化、D11 重放契约)
-> **跨模块设计**: 见 [GATE_REFERENCE.md](../../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)
+> **跨模块设计**: 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)
 
 ---
 
@@ -103,6 +103,11 @@
 
 **必须**: `core_eval` 规则数上限 = `MAX_TRANSFORM_RULES = 64` (SPEC T6)。
 
+**v0.3.2 格式规范化**: `core_eval.json` 新增元数据字段：
+- `$schema`: JSON Schema 引用（`https://evorule.org/schemas/rule_set/v1.0.json`）
+- `kind`: 固定值 `"rule_set"`，标识文件类型
+- `id`: 规则集唯一标识（如 `"org.evorule.core.eval"`）
+
 **当前实现**: `transition.rs` `execute_transition` 入口检查规则数，超限返回 `TcbError::TooManyTransformRules`。
 
 **代码实现已强制，超限编译/执行失败**。
@@ -191,6 +196,8 @@
 **必须**: 所有路径引用必须以点分隔，从 `__exec__` 根开始逐级展开，不得隐式缺省根路径。
 
 **当前实现 (v0.3.1)**: `set` 的 `attr` 引用 `payload` 内以 `__` 开头的字段时必须写显式前缀（如 `__exec__.payload.__io_results__.call_external`），否则会被误判为状态根路径。
+
+**v0.3.2 边界收紧**: 以点号结尾的路径（如 `"x."`）现在返回 `None`（非法语法），之前会被静默接受为前缀路径。点号是分隔符，必须有后续段；不检查会掩盖拼写错误。
 
 ### D1a: 路径约定统一表（v0.3.2 审计治理）
 
@@ -380,7 +387,7 @@ v0.3.1 新设计用「结构化符号输入 + 5 层验证 + `KIdSet`/`KIdMap` �
 - **未接入 CI**：`.gitee-ci/ci.yml` 中 kani job 已写（串行跑 21 个 proof），但未在 Gitee Go runner 实跑过；本机 WSL Ubuntu 22.04 + Kani 0.67.0 已实跑部分。
 - **3 个 evaluate_domain 旧 proof 替换方案实测待补**：新设计的 P8-P11 已实现，但 evaluation harness 完整重跑结果待归档到 `verification/evidence/kani/`。
 
-> **相关文档**：[`kani-formal-verification-design.md`](verification/kani-formal-verification-design.md) §四 完整 P1-P21 证明清单； [`EVORULE_FORMAL_VERIFICATION_PLAN_v3.md`](../../verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) 七层验证体系（含 P0/P1/P2 属性目录）。
+> **相关文档**：[`kani-formal-verification-design.md`](verification/kani-formal-verification-design.md) §四 完整 P1-P21 证明清单； [`EVORULE_FORMAL_VERIFICATION_PLAN_v3.md`](../verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) 七层验证体系（含 P0/P1/P2 属性目录）。
 
 ---
 
@@ -443,4 +450,4 @@ v0.3.1 新设计用「结构化符号输入 + 5 层验证 + `KIdSet`/`KIdMap` �
 - [README.md](./README.md) — 使用说明与公开 API
 - [DETERMINISM_REPORT.md](./DETERMINISM_REPORT.md) — 确定性保障现状报告
 - [core_eval.json](./core_eval.json) — v0.3.1 宪法（ReAct 循环完整支持）
-- [GATE_REFERENCE.md](../../GATE_REFERENCE.md) — 跨模块门控索引
+- [GATE_REFERENCE.md](../GATE_REFERENCE.md) — 跨模块门控索引

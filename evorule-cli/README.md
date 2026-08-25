@@ -613,6 +613,13 @@ evorule-cli
 
 ---
 
+## v0.3.2 更新
+
+- **`verify_hash_chain` 已删除**: 原函数始终返回 `true` 是"假验证"陷阱，已彻底删除。替代方案：用 `verify-chain` 命令读取带哈希字段的 WAL 并逐一校验
+- **`validate` 元指令白名单修正**: 仅 6 种真元指令（branch/set/push/io_request/collect/merge）。noop/increment/decrement 是指令层类型，不是元指令，不得混入白名单
+- **build.rs 新增 L1b 变更治理门禁**: CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"；新增策略层反模式检测
+- **`EVORULE_SKIP_CR_GATE=1`** 环境变量可跳过 L1b 变更治理门禁（仅限本地开发）
+
 ## 参见(项目级治理文档)
 
 - [**DOCS_INDEX.md**](../DOCS_INDEX.md) —— **所有 L1 公开文档的唯一入口(必读)**
@@ -621,7 +628,7 @@ evorule-cli
 - [`CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md) —— 社区行为准则
 - [`CLA-individual.md`](../CLA-individual.md) —— 个人贡献者许可协议
 - [`VERSION_STRATEGY.md`](../VERSION_STRATEGY.md) —— 版本号标准
-- [`docs/constitution.md`](../docs/constitution.md) —— evorule 仓治理结构(治理模型/决策层级/贡献者阶梯)
-- [`docs/oss_strategy.md`](../docs/oss_strategy.md) —— 开源治理策略(AGPL-3.0 解释 + 商业 license 路径)
-- [`docs/security/SECURITY_AUDIT_v0.1.0.md`](../docs/security/SECURITY_AUDIT_v0.1.0.md) —— 安全审计基线
-- [`docs/security/THREAT_MODEL.md`](../docs/security/THREAT_MODEL.md) —— 威胁模型
+- `docs/constitution.md`（待发布）—— evorule 仓治理结构(治理模型/决策层级/贡献者阶梯)
+- `docs/oss_strategy.md`（待发布）—— 开源治理策略(AGPL-3.0 解释 + 商业 license 路径)
+- 安全审计基线（待发布，1.0 升门时提供）
+- 威胁模型（待发布，1.0 升门时提供）

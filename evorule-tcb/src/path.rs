@@ -252,6 +252,12 @@ pub(crate) fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
         // 转义未结束（如 "x\. "），非法
         return None;
     }
+    // 以点号结尾的路径（如 "x."）属于非法语法：点号是分隔符，必须有后续段。
+    // 此处 current 必为空（点号在前面已被消耗并清空 current），但 segments 可能非空，
+    // 若不检查会被静默接受为前缀路径，掩盖拼写错误。
+    if current.is_empty() && !just_closed_index {
+        return None;
+    }
     if !current.is_empty() {
         segments.push(PathSegment::Field(current));
     }

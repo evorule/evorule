@@ -45,7 +45,7 @@
 | `error.rs` | 统一错误枚举 + 退出码映射(0/1/2) | `CliError`, `exit_code()` |
 | `executor.rs` | 同步反应器循环(FIFO + max_steps + I/O 两阶段) | `execute()` |
 | `fact_log.rs` | JSONL 读写(tier1 WAL 格式) | `write_facts()`, `read_facts()` |
-| `hash.rs` | blake3 哈希链(复制自 evorule-governance) | `verify_hash_chain()`, `fact_hash()` |
+| `hash.rs` | blake3 哈希链(复制自 evorule-governance) | `compute_chain_hash()`, `fact_hash()` |
 | `io_util.rs` | 规则加载(确定性排序)+ payload 解析 | `load_rules()`, `parse_initial_payload()` |
 | `output.rs` | human-readable 格式化 + diff 前缀 | `fact_to_human()`, `facts_to_human()` |
 | `commands/validate.rs` | validate 子命令:core_eval 元指令白名单 | `run()` |
@@ -126,10 +126,15 @@ disable permanently.**
 
 ## 退出码约定
 
+> P1-01 裁定（error-as-fact 哲学）：**Error 是事实（Fact），不是进程失败**。
+> `evorule run` 执行过程中产生 `Error` fact（TCB 报错 / 超时）时，事实已进入审计链，
+> 进程仍以退出码 0 正常退出——保持幂等、可观测、可重放。只有**执行器基础设施错误**
+> （如规则文件读取失败）才以退出码 1 返回。
+
 | 退出码 | 含义 | 触发场景 |
 |---|---|---|
-| 0 | 成功 | 所有子命令正常完成 |
-| 1 | 通用错误 | validate 有 error / run 执行错误 / replay/diff/verify-chain 文件读取失败 / verify-chain 验证失败 |
+| 0 | 成功 | 所有子命令正常完成；`run` 执行中产生 Error fact 时也返回 0（Error 是事实而非进程失败） |
+| 1 | 通用错误 | validate 有 error / run 执行器基础设施错误 / replay/diff/verify-chain 文件读取失败 / verify-chain 验证失败 |
 | 2 | 规则目录错误 | validate/run 的 `rules_dir` 不存在或无 .json 文件 |
 
 ---
@@ -171,3 +176,9 @@ See also:
 If a build is failing and you believe the gate is wrong, the question
 to ask is not "can I bypass it" but "does the spec need updating". If
 the spec needs updating, update it **first**, then update `build.rs`.
+
+**L1b 变更治理门禁 (v0.3.2 新增)**: 除 L1a 字面量门禁外, `build.rs` 还执行 CHANGE_REQUEST.md 校验(必须存在且审查状态为"已批准"/"紧急通过")和策略层反模式检测。可用 `EVORULE_SKIP_CR_GATE=1` 跳过(仅限本地开发)。
+
+**`verify_hash_chain` 已删除 (v0.3.2)**: 原函数始终返回 `true` 是"假验证"陷阱,已彻底删除。替代方案:用 `compute_chain_hash` 重算后与存储的链哈希比对,或用 `verify-chain` 命令读取带哈希字段的 WAL 并逐一校验。
+
+**validate 元指令白名单 (v0.3.2 修正)**: 仅 6 种真元指令(branch / set / push / io_request / collect / merge)。noop / increment / decrement 是**指令层**类型,不是元指令,不得混入白名单(之前误混导致假阳性/假阴性)。
