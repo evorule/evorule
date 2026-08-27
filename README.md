@@ -41,9 +41,9 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 ---
 
-> ## ⚠️ v0.3.x — ReAct 循环 + I/O 隔离 + TCB Ignored 语义 (当前 0.3.2, 2026-08-26)
+> ## ⚠️ v0.3.x — I/O 指令原语 + I/O 隔离 + TCB Ignored 语义 (当前 0.3.2, 2026-08-26)
 >
-> 这是 EvoRule **v0.3.x 公开基座**（v0.3.1 起 ReAct 循环 + I/O 结果按 io_type 隔离 + TCB Ignored 变体；v0.2.0 起 `IoType` 重构为动态 `Arc<str>`，支持自定义 IoType；v0.2.0 起 `IoHandler` trait 与 `IoDispatcher` 从 `evorule-governance` 下沉至 `evorule-reactor`，`evorule-governance` 保留 re-export 向后兼容），提供核心执行引擎 + HTTP API + CLI 工具。**不是 production-ready**。
+> 这是 EvoRule **v0.3.x 公开基座**（v0.3.x 提供 io_request / collect / merge 等 I/O 循环指令原语与 I/O 结果按 io_type 隔离 + TCB Ignored 变体；**ReAct 应用剧本自 T8 起由消费方自持**,核心仓 `core_eval.json` v0.4.0 回归最小评估集,范式见 `examples/reactive_researcher`；v0.2.0 起 `IoType` 重构为动态 `Arc<str>`，支持自定义 IoType；v0.2.0 起 `IoHandler` trait 与 `IoDispatcher` 从 `evorule-governance` 下沉至 `evorule-reactor`，`evorule-governance` 保留 re-export 向后兼容），提供核心执行引擎 + HTTP API + CLI 工具。**不是 production-ready**。
 >
 > | 承诺                                         | 状态                    |
 > | -------------------------------------------- | ----------------------- |

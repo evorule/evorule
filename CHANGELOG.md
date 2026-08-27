@@ -38,6 +38,16 @@
 
 ## [Unreleased]
 
+### 🔄 变更
+
+- **T8 核心仓最小化：ReAct 应用剧本整体迁出至消费方**(依据 [system-rules T8 调查报告],2026-08-27 定调方案 A"应用自持运行宪法"):
+  - `evorule-tcb/core_eval.json` v0.3.1 → **v0.4.0**:移除三条 ReAct 循环规则(约全文 54%),回归最小引擎自评估集(increment/decrement/set/sequence/conditional/while_loop/noop/兜底);经 rule_set v1.0 门禁校验
+  - **机制零改动**:6 元指令白名单、9 指令类型(call_external 等)、has_fields/collect/merge 语言层能力全部保留——迁出的是剧本不是语言
+  - `transition.rs` 测试去 ReAct 化改名:`react_e2e_tests` → `io_loop_e2e_tests`(断言零改动)
+  - `reactive_researcher` 示例自带 `assets/constitution.json`(app.evorule.example.researcher v0.4.0),CLI 参数 `--core-eval`/`EVORULE_CORE_EVAL` 改为 `--constitution`/`EVORULE_CONSTITUTION`,解除对核心仓资产的跨路径加载
+  - 消费方范式:evo-agent 已自持 `app.evoagent.agent` v0.4.0(evo-agent 仓先行提交 `0845282`)
+  - 迁移指引:凡依赖 org.evorule.core.eval v0.3.1 中 call_external/call_service 规则的部署,请改用消费方自持的运行宪法(副作用:未知指令交兜底规则处理,不再产生 LLM 循环)
+
 ### ❌ 移除
 
 - **T7 核心仓瘦身：一次性战地脚本退场（25 个）**(依据 [system-rules T7 调查报告],2026-08-27 定调"四 crate 内核论"):

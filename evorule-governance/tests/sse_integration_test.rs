@@ -54,6 +54,48 @@ fn load_core_eval() -> Vec<JsonValue> {
         .unwrap_or_default()
 }
 
+/// 最小 I/O 循环规则集（内联构造，不依赖任何资产文件）。
+/// 背景：T8 迁出后核心仓 core_eval.json 为最小评估集，不再含 call_external 规则；
+/// 本测试需要引擎发出 IoRequest，故自带应用剧本形态的最小规则。
+fn io_loop_rules() -> Vec<JsonValue> {
+    // 外层: 匹配 call_external 指令; 内层: 结果不存在时经 on_false 分支叶子发出 io_request
+    let json = serde_json::json!({
+        "type": "branch",
+        "params": {
+            "domain": {
+                "type": "instruction",
+                "instruction_type": "call_external"
+            },
+            "on_true": [
+                {
+                    "type": "branch",
+                    "params": {
+                        "domain": {
+                            "type": "not",
+                            "inner": {
+                                "type": "exists",
+                                "path": "__exec__.payload.__io_results__.call_external"
+                            }
+                        },
+                        "on_true": [
+                            {
+                                "type": "io_request",
+                                "params": {
+                                    "io_type": "call_external",
+                                    "messages": "__exec__.instruction.params.messages"
+                                }
+                            }
+                        ],
+                        "on_false": []
+                    }
+                }
+            ],
+            "on_false": []
+        }
+    });
+    vec![serde_to_tcb(json)]
+}
+
 fn make_instruction(typ: &str, attr: &str, delta: i64) -> JsonValue {
     let mut params = BTreeMap::new();
     params.insert("attr".to_string(), JsonValue::string(attr));
@@ -178,7 +220,7 @@ async fn test_sse_multiple_commands_in_long_running_mode() {
 
 #[tokio::test]
 async fn test_sse_io_request_event() {
-    let core_eval = load_core_eval();
+    let core_eval = io_loop_rules();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
     let (tx, _rx, event_tx, _handle, _facts_log) = reactor.spawn();
 

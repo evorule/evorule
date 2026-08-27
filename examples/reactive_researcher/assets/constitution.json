@@ -1,0 +1,412 @@
+{
+  "$schema": "https://evorule.org/schemas/rule_set/v1.0.json",
+  "kind": "rule_set",
+  "id": "app.evorule.example.researcher",
+  "rule_id": "example.constitution",
+  "version": "0.4.0",
+  "description": "reactive_researcher 示例的运行宪法 - 完整 ReAct 循环规则集（示例自持剧本范式演示）",
+  "metadata": {
+    "author": "evorule-examples",
+    "license": "CC0-1.0 Universal (Public Domain)",
+    "public_domain_notice": "本文件以 CC0 1.0 公共领域奉献。任何人都可以自由使用、修改、再分发,无需保留版权声明。EvoRule 代码本身采用 AGPL-3.0-or-later。",
+    "spdx_license_id": "CC0-1.0",
+    "provenance": {
+      "derived_from": [
+        "org.evorule.core.eval v0.3.1"
+      ],
+      "date": "2026-08-27",
+      "workstream": "T8 ReAct 职能迁出专项",
+      "note": "示例自持运行宪法的范式实现；生产应用可参照 evo-agent 的 app.evoagent.agent"
+    },
+    "sections": [
+      "1. 原子计算指令: increment, decrement, set",
+      "2. 控制流指令: sequence, conditional, while_loop",
+      "3. ReAct 循环: call_external → tool_calls → collect → call_service → merge → 循环",
+      "4. 默认处理: all([]) 兜底规则"
+    ],
+    "constraints": [
+      "每条 transform 规则中最多包含一个 io_request 元指令",
+      "I/O 结果按类型隔离: __io_results__.{io_type}；消费后以 JSON null 清除（exists 将 null 视为不存在）",
+      "ReAct 循环最大迭代次数: 10（call_service 消费结果时检查计数 < 10，达标后不再 merge）",
+      "call_external 参数: messages（LLM 消息历史数组）与 tools（可选工具描述）",
+      "语义澄清: 业务 set 指令为纯覆盖语义；算术更新必须使用 increment/decrement 指令"
+    ]
+  },
+  "transform": [
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "instruction",
+          "instruction_type": "increment"
+        },
+        "on_true": [
+          {
+            "type": "set",
+            "params": {
+              "attr": "__exec__.instruction.params.attr",
+              "operation": "add",
+              "value": "__exec__.instruction.params.delta"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "instruction",
+          "instruction_type": "decrement"
+        },
+        "on_true": [
+          {
+            "type": "set",
+            "params": {
+              "attr": "__exec__.instruction.params.attr",
+              "operation": "sub",
+              "value": "__exec__.instruction.params.delta"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "instruction",
+          "instruction_type": "set"
+        },
+        "on_true": [
+          {
+            "type": "set",
+            "params": {
+              "attr": "__exec__.instruction.params.attr",
+              "operation": "set",
+              "value": "__exec__.instruction.params.value"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "instruction",
+          "instruction_type": "sequence"
+        },
+        "on_true": [
+          {
+            "type": "push",
+            "params": {
+              "instructions": "__exec__.instruction.params.instructions"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "instruction",
+          "instruction_type": "conditional"
+        },
+        "on_true": [
+          {
+            "type": "branch",
+            "params": {
+              "domain": "__exec__.instruction.params.domain",
+              "on_true": [
+                {
+                  "type": "push",
+                  "params": {
+                    "instructions": [
+                      "__exec__.instruction.params.then"
+                    ]
+                  }
+                }
+              ],
+              "on_false": [
+                {
+                  "type": "push",
+                  "params": {
+                    "instructions": [
+                      "__exec__.instruction.params.else"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "instruction",
+          "instruction_type": "while_loop"
+        },
+        "on_true": [
+          {
+            "type": "branch",
+            "params": {
+              "domain": "__exec__.instruction.params.condition",
+              "on_true": [
+                {
+                  "type": "push",
+                  "params": {
+                    "instructions": [
+                      "__exec__.instruction.params.body",
+                      "__exec__.instruction"
+                    ]
+                  }
+                }
+              ],
+              "on_false": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "all",
+          "inner": [
+            { "type": "instruction", "instruction_type": "call_external" },
+            {
+              "type": "not",
+              "inner": {
+                "type": "exists",
+                "path": "__exec__.payload.react_iteration"
+              }
+            }
+          ]
+        },
+        "on_true": [
+          {
+            "type": "set",
+            "params": {
+              "attr": "react_iteration",
+              "operation": "set",
+              "value": 0
+            }
+          }
+        ],
+        "on_false": []
+      }
+    },
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "instruction",
+          "instruction_type": "call_external"
+        },
+        "on_true": [
+          {
+            "type": "branch",
+            "params": {
+              "domain": {
+                "type": "exists",
+                "path": "__exec__.payload.__io_results__.call_external"
+              },
+              "on_true": [
+                {
+                  "type": "set",
+                  "params": {
+                    "attr": "llm_response",
+                    "operation": "set",
+                    "value": "__exec__.payload.__io_results__.call_external"
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "exists",
+                      "path": "__exec__.instruction.params.tools"
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "tools",
+                          "operation": "set",
+                          "value": "__exec__.instruction.params.tools"
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "set",
+                  "params": {
+                    "attr": "__exec__.payload.__io_results__.call_external",
+                    "operation": "set",
+                    "value": null
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "has_fields",
+                      "path": "__exec__.payload.llm_response",
+                      "fields": ["tool_calls"]
+                    },
+                    "on_true": [
+                      {
+                        "type": "collect",
+                        "params": {
+                          "from": "__exec__.payload.llm_response.tool_calls",
+                          "each": {
+                            "type": "call_service",
+                            "params": {
+                              "service_name": "{{name}}",
+                              "args": "{{args}}"
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "on_false": [
+                      {
+                        "type": "push",
+                        "params": {
+                          "instructions": [{ "type": "noop" }]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "on_false": [
+                {
+                  "type": "io_request",
+                  "params": {
+                    "io_type": "call_external",
+                    "messages": "__exec__.instruction.params.messages",
+                    "tools?": "__exec__.instruction.params.tools"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "branch",
+      "params": {
+        "domain": {
+          "type": "instruction",
+          "instruction_type": "call_service"
+        },
+        "on_true": [
+          {
+            "type": "branch",
+            "params": {
+              "domain": {
+                "type": "exists",
+                "path": "__exec__.payload.__io_results__.call_service"
+              },
+              "on_true": [
+                {
+                  "type": "set",
+                  "params": {
+                    "attr": "service_result",
+                    "operation": "set",
+                    "value": "__exec__.payload.__io_results__.call_service"
+                  }
+                },
+                {
+                  "type": "set",
+                  "params": {
+                    "attr": "__exec__.payload.__io_results__.call_service",
+                    "operation": "set",
+                    "value": null
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "lt",
+                      "path": "__exec__.payload.react_iteration",
+                      "value": 10
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "react_iteration",
+                          "operation": "add",
+                          "value": 1
+                        }
+                      },
+                      {
+                        "type": "merge",
+                        "params": {
+                          "messages": "__exec__.payload.llm_response.messages",
+                          "tool_result": "__exec__.payload.service_result",
+                          "next_instruction": {
+                            "type": "call_external",
+                            "params": {
+                              "messages": "{{messages}}",
+                              "tools": "{{tools}}"
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "on_false": [
+                      {
+                        "type": "push",
+                        "params": {
+                          "instructions": [{ "type": "noop" }]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "on_false": [
+                {
+                  "type": "io_request",
+                  "params": {
+                    "io_type": "call_service",
+                    "service_name": "__exec__.instruction.params.service_name",
+                    "args?": "__exec__.instruction.params.args"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "branch",
+      "params": {
+        "domain": { "type": "instruction", "instruction_type": "noop" },
+        "on_true": []
+      }
+    },
+    {
+      "type": "branch",
+      "params": {
+        "domain": { "type": "all", "inner": [] },
+        "on_true": []
+      }
+    }
+  ]
+}
+

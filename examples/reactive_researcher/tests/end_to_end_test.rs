@@ -212,16 +212,16 @@ impl TestSubscriber {
 // 辅助函数
 // ============================================================================
 
-/// 加载 core_eval.json
+/// 加载运行宪法（示例自持的 assets/constitution.json）
 fn load_core_eval() -> Vec<JsonValue> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = manifest_dir.join("../../evorule-tcb/core_eval.json");
+    let path = manifest_dir.join("assets/constitution.json");
     let json_str = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("读取 core_eval.json 失败 ({:?}): {e}", path));
-    let json: serde_json::Value = serde_json::from_str(&json_str).expect("解析 core_eval.json 失败");
+        .unwrap_or_else(|e| panic!("读取运行宪法失败 ({:?}): {e}", path));
+    let json: serde_json::Value = serde_json::from_str(&json_str).expect("解析运行宪法失败");
     json.get("transform")
         .and_then(|v| v.as_array())
-        .expect("core_eval.json 缺少 transform 数组")
+        .expect("运行宪法缺少 transform 数组")
         .iter()
         .map(serde_to_tcb)
         .collect()

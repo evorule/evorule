@@ -76,7 +76,7 @@ evorule-tcb = "0.3"
 **规则含义**:
 - 当 `instruction.type == "increment"` 时,把 `payload.<attr>` 增加 `<delta>`
 - `attr` / `delta` 来自指令的 `params`
-- 这是宪法级的"increment 业务规则"——evorule 自带 `core_eval.json` 也是这么写的
+- 这是宪法级的"increment 业务规则"——evorule 核心仓自带的 `evorule-tcb/core_eval.json` 也是这么写的（该资产现为最小评估集；ReAct 剧本范例见 reactive_researcher 示例自带的 `assets/constitution.json`）
 
 ## 5. 写主程序
 

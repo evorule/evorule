@@ -6,7 +6,7 @@
 
 本示例是 EvoRule 1.0.0 发布的 §4.4 门槛之一("1 reference 实现")。它演示:
 
-- 如何用 `evorule-tcb` 的 `core_eval.json` 驱动规则引擎
+- 如何用示例自带的运行宪法 `assets/constitution.json` 驱动规则引擎（核心仓 `evorule-tcb/core_eval.json` 自 T8 起回归最小评估集，应用剧本由消费方自持）
 - 如何用 `evorule-reactor` 的 `Reactor` 构建事实驱动执行器
 - 如何用 `evorule-reactor` 的 `IoHandler` trait 实现 I/O 外挂（v0.2.0 起 trait 下沉至 reactor；`MemoryHandler` 本例内联实现，生产版见 evorule-server 独立仓）
 - 如何通过 Fact 通道(command / event)在用户、反应器、I/O 订阅者之间通信
@@ -17,7 +17,7 @@
 ```
                               ┌─────────────────────────────┐
                               │   evorule-reactor::Reactor     │
-                              │   (执行 core_eval.json 规则)  │
+                              │   (执行运行宪法中的规则)       │
                               └──────────┬──────────────────┘
                                          │
                           command_tx ────┤──── event_tx (broadcast)
@@ -65,7 +65,7 @@ cargo run -p reactive_researcher
 
 预期输出:
 
-1. 配置信息(core_eval 路径、memory 目录、LLM 模式等)
+1. 配置信息(运行宪法路径、memory 目录、LLM 模式等)
 2. 步骤 1:LLM 响应(dry-run canned 文本)
 3. 步骤 2:Memory 保存结果(`memory_result = true`)
 4. 审计链(10 条 Fact,展示完整事实流)
@@ -84,7 +84,7 @@ Get-Content .\examples\reactive_researcher\reactive_researcher_memory\research_n
 
 | 参数            | 环境变量              | 默认值                                        | 说明                                   |
 | --------------- | --------------------- | --------------------------------------------- | -------------------------------------- |
-| `--core-eval`   | `EVORULE_CORE_EVAL`   | `<manifest>/../../evorule-tcb/core_eval.json` | core_eval.json 路径                    |
+| `--constitution` | `EVORULE_CONSTITUTION` | `<manifest>/assets/constitution.json`        | 运行宪法(rule_set)路径                 |
 | `--memory-dir`  | `EVORULE_MEMORY_DIR`  | `<manifest>/reactive_researcher_memory`       | Memory 持久化目录                      |
 | `--llm-mode`    | `EVORULE_LLM_MODE`    | `dry-run`                                     | LLM 模式:`dry-run` 或 `live`           |
 | `--llm-url`     | `EVORULE_LLM_URL`     | (无)                                          | live 模式下的 LLM API URL(OpenAI 兼容) |
@@ -111,7 +111,7 @@ cargo run -p reactive_researcher -- --llm-mode live --topic "对比 tokio 和 as
 ### 步骤 1:call_external(LLM 分析)
 
 1. main 构造 `Fact::Command { instruction: { type: "call_external", params: { prompt: <topic> } } }`,通过 `command_tx` 发送
-2. 反应器执行 `core_eval.json` 的 `call_external` 分支:
+2. 反应器执行运行宪法的 `call_external` 分支:
    - 检查 `payload.__io_result__` 是否存在 → 不存在
    - 发出 `Fact::IoRequest { io_type: CALL_EXTERNAL, params: { prompt: ... } }`
 3. `ExampleSubscriber` 收到 `IoRequest`,分发到 `LlmHandler.execute()`:
@@ -161,7 +161,7 @@ cargo run -p reactive_researcher -- --llm-mode live --topic "对比 tokio 和 as
 
 ### 为何不使用核心 `IoDispatcher`/`IoSubscriber`?
 
-核心 `IoDispatcher::new(db, http, memory)` 强制要求 `DbHandler`(SQLite 连接),且把 `call_external` 路由到 `HttpHandler`(期望 `url` 参数)。但 `core_eval.json` 的 `call_external` 传的是 LLM 风格参数(`prompt`/`system`/`model` 等),不是 HTTP URL。
+核心 `IoDispatcher::new(db, http, memory)` 强制要求 `DbHandler`(SQLite 连接),且把 `call_external` 路由到 `HttpHandler`(期望 `url` 参数)。但运行宪法的 `call_external` 传的是 LLM 风格参数(`prompt`/`system`/`model` 等),不是 HTTP URL。
 
 因此本示例在包内实现 `ExampleSubscriber`,直接按 `io_type` 分发到合适的 handler。这正是 `IoHandler` trait 公开导出的设计意图:**用户可以自带 subscriber,只用单个 handler**。
 
@@ -187,7 +187,7 @@ impl IoHandler for MyHandler {
 
 > v0.2.0 起 `IoType` 失去 `Copy` 且旧 `const` 变体移除，`match` 改为对 `io_type.as_str()` 匹配字符串字面量（见 `src/main.rs` 的 `dispatch_and_respond`）。
 
-3. 在 `core_eval.json` 中添加对应的 transform 规则(把 `instruction_type` 映射到 `io_request`)
+3. 在运行宪法中添加对应的 transform 规则(把 `instruction_type` 映射到 `io_request`)
 
 ### AGENTS.md 合规
 
