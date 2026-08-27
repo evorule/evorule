@@ -1573,26 +1573,27 @@ mod tests {
         }
     }
 
-    /// 真实场景验证：使用 ReAct 宪法规则，未知指令类型应返回 Ignored
+    /// 语义验证：未知指令类型在"全部规则未命中 → 兜底规则无操作"下返回 Ignored
     ///
     /// # 背景
     ///
-    /// 验证在使用真实 core_eval.json 规则结构时，
-    /// 未知指令类型（如 query_db）是否仍然正确返回 Ignored。
+    /// 规则集为应用剧本形态的 I/O 循环组合（同名测试曾称 ReAct 宪法；
+    /// 资产自 T8 迁出后，此类剧本不再属于核心仓），本用例守护的是
+    /// transition 层第三态语义：所有规则都未产生效果且无副作用时返回 Ignored。
     ///
-    /// # 规则结构
+    /// # 边界澄清
     ///
-    /// ReAct 宪法规则包含：
-    /// - instruction domain 规则（call_external, call_service, noop）
-    /// - all domain 规则（兜底）
+    /// 元指令层未知类型走 executor 硬拒绝（UnknownMetaInstruction），
+    /// 本用例针对的是指令层类型（如 query_db）未被任何 transform 规则命中的情形，
+    /// 两者正交。
     ///
     /// # 验证点
     ///
     /// 未知指令类型应被正确识别为 Ignored，
     /// 即使存在动态 domain 规则的嵌套。
     #[test]
-    fn test_unknown_instruction_with_react_constitution_returns_ignored() {
-        // 构造简化的 ReAct 宪法规则
+    fn test_unknown_instruction_unmatched_by_all_rules_returns_ignored() {
+        // 构造简化的 I/O 循环规则集
         let rule_noop = branch_rule(instruction_domain("noop"), vec![], vec![]);
 
         let rule_catch_all = branch_rule(
@@ -2275,12 +2276,13 @@ mod tests {
         }
     }
 
-    // ===== ReAct 循环端到端测试（docs/06.修复 回归） =====
-    // 规则结构与 core_eval.json v0.3.1 的 ReAct 部分逐条对应：
-    // 1) react_iteration 自初始化；2) call_external；3) call_service（lt + merge）。
+    // ===== I/O 循环组合语义端到端测试（io_request + collect + merge 的语言层组合回归） =====
+    // 规则集为内联构造的应用剧本形态：1) 计数器自初始化；2) call_external；3) call_service（lt + merge）。
+    // 核心仓最小评估集不再携带此类剧本（T8 迁出）；此模块守护的是元指令组合的执行语义，
+    // 资产级范例如 app.evoagent.agent v0.4.0。
     // 嵌套子 mod（不写 `#[cfg(test)]`，继承父 mod 的 cfg(test)，
     // build.rs L1 门禁的 strip_test_mod 会把整个 mod tests 块一起剥掉）
-    mod react_e2e_tests {
+    mod io_loop_e2e_tests {
         use super::*;
         use alloc::vec;
 
@@ -2342,12 +2344,13 @@ mod tests {
             ])
         }
 
-        /// 与 core_eval.json v0.3.1 的 ReAct 三条规则一一对应
-        // 149 行: 三条 ReAct 规则构造 (call_external + collect + merge) 必须在同一函数
+        /// 应用剧本式 I/O 循环规则集（与 io_loop 组合语义测试配套，此前曾镜像旧版
+        /// core_eval.json 的 ReAct 部分——该资产自 T8 迁出后不再是核心仓职责）
+        // 三条循环规则构造 (call_external + collect + merge) 必须在同一函数
         // 内构造完整 context (queue / payload), 拆函数会让 3 条规则的协作上下文散落
         #[allow(clippy::too_many_lines)]
-        fn react_core_eval() -> Vec<JsonValue> {
-            // 1) react_iteration 自初始化（缺失时置 0，否则跳过）
+        fn io_loop_rules() -> Vec<JsonValue> {
+            // 1) 计数器自初始化（缺失时置 0，否则跳过）
             let self_init = branch(
                 obj(&[
                     ("type", s("all")),
@@ -2546,12 +2549,12 @@ mod tests {
 
         /// 轮次 1：无 I/O 结果 → 发起第一次 call_external（LLM）请求
         #[test]
-        fn test_react_round1_first_llm_io_request_fires() {
+        fn test_io_loop_round1_first_llm_io_request_fires() {
             let instruction = call_external_instr(user_messages(), tools_def());
             let payload = obj(&[]); // 空 payload：react_iteration 尚未初始化
 
             let result =
-                execute_transition(&react_core_eval(), &instruction, &payload, &[]).unwrap();
+                execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
             match result {
                 TransitionResult::IoRequired { io_type, params } => {
                     assert_eq!(io_type, "call_external");
@@ -2563,9 +2566,10 @@ mod tests {
         }
 
         /// 轮次 2：消费 LLM 结果 → collect 生成 call_service，且不再重复 push call_external。
-        /// docs/06 修复的核心回归：旧 react_iteration 独立规则会在同轮多 push 一条 call_external。
+        /// docs/06 修复的核心回归：若把计数器自初始化写成独立的前置规则，
+        /// 会与消费轮在同轮多 push 一条 call_external。
         #[test]
-        fn test_react_round2_collect_without_duplicate_push() {
+        fn test_io_loop_round2_collect_without_duplicate_push() {
             let llm_response = obj(&[("tool_calls", tool_calls(2)), ("messages", user_messages())]);
             let payload = obj(&[
                 ("react_iteration", iv(0)),
@@ -2577,7 +2581,7 @@ mod tests {
             let instruction = call_external_instr(user_messages(), tools_def());
 
             let result =
-                execute_transition(&react_core_eval(), &instruction, &payload, &[]).unwrap();
+                execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
             let TransitionResult::State {
                 new_payload,
                 new_queue,
@@ -2616,7 +2620,7 @@ mod tests {
 
         /// 轮次 3：消费工具结果 → merge 生成下一条 call_external（携带合并消息 + tools）
         #[test]
-        fn test_react_round3_merge_generates_next_call_external() {
+        fn test_io_loop_round3_merge_generates_next_call_external() {
             let service_result = obj(&[("temperature", iv(25))]);
             let payload = obj(&[
                 ("react_iteration", iv(0)),
@@ -2632,7 +2636,7 @@ mod tests {
             ]);
 
             let result =
-                execute_transition(&react_core_eval(), &call_service_instr(), &payload, &[])
+                execute_transition(&io_loop_rules(), &call_service_instr(), &payload, &[])
                     .unwrap();
             let TransitionResult::State {
                 new_payload,
@@ -2670,7 +2674,7 @@ mod tests {
         /// 轮次 4：上一轮 I/O 结果已用 null 清除 → exists 判定不存在 → 发起第二次 LLM 请求。
         /// 回归：修复前 null 被视为"存在"，陈旧结果被消费，第二次 LLM 调用永远无法发起。
         #[test]
-        fn test_react_round4_second_llm_io_request_fires_after_null_clear() {
+        fn test_io_loop_round4_second_llm_io_request_fires_after_null_clear() {
             let payload = obj(&[
                 ("react_iteration", iv(1)),
                 ("llm_response", obj(&[("messages", user_messages())])),
@@ -2680,7 +2684,7 @@ mod tests {
             let instruction = call_external_instr(user_messages(), tools_def());
 
             let result =
-                execute_transition(&react_core_eval(), &instruction, &payload, &[]).unwrap();
+                execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
             match result {
                 TransitionResult::IoRequired { io_type, .. } => {
                     assert_eq!(io_type, "call_external");
@@ -2699,7 +2703,7 @@ mod tests {
 
         /// 迭代上限：react_iteration >= 10 时不再 merge，改为 push noop 终止循环
         #[test]
-        fn test_react_iteration_cap_blocks_merge() {
+        fn test_io_loop_iteration_cap_blocks_merge() {
             let payload = obj(&[
                 ("react_iteration", iv(10)),
                 ("llm_response", obj(&[("messages", user_messages())])),
@@ -2710,7 +2714,7 @@ mod tests {
             ]);
 
             let result =
-                execute_transition(&react_core_eval(), &call_service_instr(), &payload, &[])
+                execute_transition(&io_loop_rules(), &call_service_instr(), &payload, &[])
                     .unwrap();
             let TransitionResult::State {
                 new_payload,
@@ -2732,7 +2736,7 @@ mod tests {
 
         /// 终止轮：LLM 最终回答不含 tool_calls → push noop，且 react_iteration 被自动初始化
         #[test]
-        fn test_react_final_round_without_tool_calls_terminates() {
+        fn test_io_loop_final_round_without_tool_calls_terminates() {
             let final_response = obj(&[("messages", user_messages())]); // 无 tool_calls
             let payload = obj(&[
                 (
@@ -2744,7 +2748,7 @@ mod tests {
             let instruction = call_external_instr(user_messages(), tools_def());
 
             let result =
-                execute_transition(&react_core_eval(), &instruction, &payload, &[]).unwrap();
+                execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
             let TransitionResult::State {
                 new_payload,
                 new_queue,

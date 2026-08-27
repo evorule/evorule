@@ -1,6 +1,6 @@
 [book]
 title = "evorule 文档"
-description = "evorule 规则引擎:确定性智能 + BLAKE3 不可篡改审计链 + ReAct 循环"
+description = "evorule 规则引擎:确定性智能 + BLAKE3 不可篡改审计链 + 应用自持剧本的 I/O 循环"
 authors = ["EvoRule Project"]
 language = "zh"
 src = "."

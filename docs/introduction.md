@@ -3,7 +3,7 @@
 
 # evorule 文档导航
 
-> evorule 是一个**确定性智能规则引擎**:基于 ReAct 循环 + BLAKE3 不可篡改审计链,
+> evorule 是一个**确定性智能规则引擎**:基于 I/O 循环指令原语(可组合出 ReAct 等应用模式,剧本由应用自带) + BLAKE3 不可篡改审计链,
 > 把业务规则作为可执行 JSON 处理,保证"同输入必同输出 + 全过程可回放可审计"。
 > 本目录按 [Diátaxis](https://diataxis.fr/) 框架组织,四类文档各司其职,不要混在一起写。
 > 内部工作文档(PLAN/REPORT/验证/调试)走本地 vault（不进入公开仓，见文档边界约定 doc-boundaries.md）。

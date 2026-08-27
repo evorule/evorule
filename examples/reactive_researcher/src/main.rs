@@ -101,13 +101,14 @@ impl IoHandler for MemoryHandler {
     about = "EvoRule reference implementation — reactive researcher demo (1.0 §4.4 gate)"
 )]
 struct Cli {
-    /// core_eval.json 路径(默认指向仓库根的 evorule-tcb/core_eval.json)
+    /// 运行宪法(rule_set)路径(默认为本示例自带的 assets/constitution.json;
+    /// 核心仓 evorule-tcb/core_eval.json 自 T8 起回归最小评估集,不再携带 ReAct 剧本)
     #[arg(
         long,
-        env = "EVORULE_CORE_EVAL",
-        default_value = concat!(env!("CARGO_MANIFEST_DIR"), "/../../evorule-tcb/core_eval.json")
+        env = "EVORULE_CONSTITUTION",
+        default_value = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/constitution.json")
     )]
-    core_eval: PathBuf,
+    constitution: PathBuf,
 
     /// Memory 持久化目录
     #[arg(
@@ -442,16 +443,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("═══════════════════════════════════════════════════════════════");
     println!();
     println!("配置:");
-    println!("  core_eval  = {}", cli.core_eval.display());
+    println!("  constitution = {}", cli.constitution.display());
     println!("  memory_dir = {}", cli.memory_dir.display());
     println!("  llm_mode   = {:?}", cli.llm_mode);
     println!("  topic      = {}", cli.topic);
     println!("  memory_key = {}", cli.memory_key);
     println!();
 
-    // 1. 加载 core_eval.json
-    let core_eval = load_core_eval(&cli.core_eval)?;
-    tracing::info!(rules_count = core_eval.len(), "core_eval.json 加载完成");
+    // 1. 加载运行宪法
+    let core_eval = load_core_eval(&cli.constitution)?;
+    tracing::info!(rules_count = core_eval.len(), "运行宪法加载完成");
 
     // 2. 创建 handlers
     std::fs::create_dir_all(&cli.memory_dir)?;
@@ -526,19 +527,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 // 段 5:辅助函数
 // ============================================================================
 
-/// 从文件加载 core_eval.json,返回 transform 规则列表
+/// 从文件加载运行宪法 rule_set,返回 transform 规则列表
 ///
 /// 复用 `evorule_reactor::wal::serde_to_tcb` 把 `serde_json::Value` 转为
 /// `evorule_tcb::JsonValue`(evorule-tcb 是 no_std crate,未实现 serde)。
 fn load_core_eval(path: &PathBuf) -> Result<Vec<JsonValue>, Box<dyn std::error::Error>> {
     let json_str = std::fs::read_to_string(path)
-        .map_err(|e| format!("读取 core_eval.json 失败 ({}): {e}", path.display()))?;
+        .map_err(|e| format!("读取运行宪法失败 ({}): {e}", path.display()))?;
     let json: serde_json::Value =
-        serde_json::from_str(&json_str).map_err(|e| format!("解析 core_eval.json 失败: {e}"))?;
+        serde_json::from_str(&json_str).map_err(|e| format!("解析运行宪法失败: {e}"))?;
     let transform = json
         .get("transform")
         .and_then(|v| v.as_array())
-        .ok_or("core_eval.json 缺少 transform 数组")?;
+        .ok_or("运行宪法缺少 transform 数组")?;
     let core_eval: Vec<JsonValue> = transform.iter().map(serde_to_tcb).collect();
     Ok(core_eval)
 }

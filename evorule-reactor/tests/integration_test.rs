@@ -44,6 +44,11 @@ fn serde_to_tcb(v: serde_json::Value) -> JsonValue {
 }
 
 /// 从 core_eval.json 加载 transform 列表
+///
+/// 背景：T8 迁出后核心仓 core_eval.json 为最小评估集，不再含 call_external /
+/// call_external 应用剧本规则；本文件大量用例依赖完整 I/O 循环行为，故在
+/// 最小评估集基础上内联追加同构的 I/O 循环规则链（忠实复刻消费方自持宪法
+/// evo-agent agent_constitution.json 的对应规则），测试夹具自足、不依赖被迁出资产。
 fn load_core_eval() -> Vec<JsonValue> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let core_eval_path = manifest_dir.join("../evorule-tcb/core_eval.json");
@@ -58,10 +63,280 @@ fn load_core_eval() -> Vec<JsonValue> {
     let json: serde_json::Value =
         serde_json::from_str(&json_str).expect("Failed to parse core_eval.json");
 
-    json.get("transform")
+    let mut rules: Vec<JsonValue> = json
+        .get("transform")
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().cloned().map(serde_to_tcb).collect())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    rules.extend(io_loop_rules());
+    rules
+}
+
+/// 内联最小 I/O 循环（应用剧本）规则链：react_iteration 初始化 +
+/// call_external 触发/消费 + call_service 触发/消费 + 兜底。
+/// 与宪法对应规则的唯一差异：无批处理聚合与 while 循环回边以外的裁剪——逐条对齐宪法。
+fn io_loop_rules() -> Vec<JsonValue> {
+    let rules = serde_json::json!([
+        // ReAct 迭代计数器初始化（首次执行 call_external 时置 0）
+        {
+            "type": "branch",
+            "params": {
+                "domain": {
+                    "type": "all",
+                    "inner": [
+                        { "type": "instruction", "instruction_type": "call_external" },
+                        {
+                            "type": "not",
+                            "inner": {
+                                "type": "exists",
+                                "path": "__exec__.payload.react_iteration"
+                            }
+                        }
+                    ]
+                },
+                "on_true": [
+                    {
+                        "type": "set",
+                        "params": {
+                            "attr": "react_iteration",
+                            "operation": "set",
+                            "value": 0
+                        }
+                    }
+                ],
+                "on_false": []
+            }
+        },
+        // call_external: 无结果 → io_request；有结果 → 消费到 llm_response
+        {
+            "type": "branch",
+            "params": {
+                "domain": {
+                    "type": "instruction",
+                    "instruction_type": "call_external"
+                },
+                "on_true": [
+                    {
+                        "type": "branch",
+                        "params": {
+                            "domain": {
+                                "type": "exists",
+                                "path": "__exec__.payload.__io_results__.call_external"
+                            },
+                            "on_true": [
+                                {
+                                    "type": "set",
+                                    "params": {
+                                        "attr": "llm_response",
+                                        "operation": "set",
+                                        "value":
+                                            "__exec__.payload.__io_results__.call_external"
+                                    }
+                                },
+                                {
+                                    "type": "branch",
+                                    "params": {
+                                        "domain": {
+                                            "type": "exists",
+                                            "path": "__exec__.instruction.params.tools"
+                                        },
+                                        "on_true": [
+                                            {
+                                                "type": "set",
+                                                "params": {
+                                                    "attr": "tools",
+                                                    "operation": "set",
+                                                    "value":
+                                                        "__exec__.instruction.params.tools"
+                                                }
+                                            }
+                                        ],
+                                        "on_false": []
+                                    }
+                                },
+                                {
+                                    "type": "set",
+                                    "params": {
+                                        "attr":
+                                            "__exec__.payload.__io_results__.call_external",
+                                        "operation": "set",
+                                        "value": null
+                                    }
+                                },
+                                {
+                                    "type": "branch",
+                                    "params": {
+                                        "domain": {
+                                            "type": "has_fields",
+                                            "path": "__exec__.payload.llm_response",
+                                            "fields": ["tool_calls"]
+                                        },
+                                        "on_true": [
+                                            {
+                                                "type": "collect",
+                                                "params": {
+                                                    "from":
+                                                        "__exec__.payload.llm_response.tool_calls",
+                                                    "each": {
+                                                        "type": "call_service",
+                                                        "params": {
+                                                            "service_name": "{{name}}",
+                                                            "args": "{{args}}"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        ],
+                                        "on_false": [
+                                            {
+                                                "type": "push",
+                                                "params": {
+                                                    "instructions":
+                                                        [{ "type": "noop" }]
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ],
+                            "on_false": [
+                                {
+                                    "type": "io_request",
+                                    "params": {
+                                        "io_type": "call_external",
+                                        "messages":
+                                            "__exec__.instruction.params.messages",
+                                        "tools?": "__exec__.instruction.params.tools"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "on_false": []
+            }
+        },
+        // call_service: 无结果 → io_request；有结果 → 消费到 service_result 并驱动循环
+        {
+            "type": "branch",
+            "params": {
+                "domain": {
+                    "type": "instruction",
+                    "instruction_type": "call_service"
+                },
+                "on_true": [
+                    {
+                        "type": "branch",
+                        "params": {
+                            "domain": {
+                                "type": "exists",
+                                "path": "__exec__.payload.__io_results__.call_service"
+                            },
+                            "on_true": [
+                                {
+                                    "type": "set",
+                                    "params": {
+                                        "attr": "service_result",
+                                        "operation": "set",
+                                        "value":
+                                            "__exec__.payload.__io_results__.call_service"
+                                    }
+                                },
+                                {
+                                    "type": "set",
+                                    "params": {
+                                        "attr":
+                                            "__exec__.payload.__io_results__.call_service",
+                                        "operation": "set",
+                                        "value": null
+                                    }
+                                },
+                                {
+                                    "type": "branch",
+                                    "params": {
+                                        "domain": {
+                                            "type": "lt",
+                                            "path": "__exec__.payload.react_iteration",
+                                            "value": 10
+                                        },
+                                        "on_true": [
+                                            {
+                                                "type": "set",
+                                                "params": {
+                                                    "attr": "react_iteration",
+                                                    "operation": "add",
+                                                    "value": 1
+                                                }
+                                            },
+                                            {
+                                                "type": "merge",
+                                                "params": {
+                                                    "messages":
+                                                        "__exec__.payload.llm_response.messages",
+                                                    "tool_result":
+                                                        "__exec__.payload.service_result",
+                                                    "next_instruction": {
+                                                        "type": "call_external",
+                                                        "params": {
+                                                            "messages": "{{messages}}",
+                                                            "tools": "{{tools}}"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        ],
+                                        "on_false": [
+                                            {
+                                                "type": "push",
+                                                "params": {
+                                                    "instructions":
+                                                        [{ "type": "noop" }]
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ],
+                            "on_false": [
+                                {
+                                    "type": "io_request",
+                                    "params": {
+                                        "io_type": "call_service",
+                                        "service_name":
+                                            "__exec__.instruction.params.service_name",
+                                        "args?": "__exec__.instruction.params.args"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "on_false": []
+            }
+        },
+        // noop + all([]) 兜底（与核心评估集收尾形态一致）
+        {
+            "type": "branch",
+            "params": {
+                "domain": { "type": "instruction", "instruction_type": "noop" },
+                "on_true": []
+            }
+        },
+        {
+            "type": "branch",
+            "params": {
+                "domain": { "type": "all", "inner": [] },
+                "on_true": []
+            }
+        }
+    ]);
+    rules
+        .as_array()
+        .expect("inline io-loop rules must be an array")
+        .iter()
+        .cloned()
+        .map(serde_to_tcb)
+        .collect()
 }
 
 fn make_instruction(typ: &str, attr: &str, delta: i64) -> JsonValue {

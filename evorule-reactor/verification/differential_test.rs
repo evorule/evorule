@@ -107,6 +107,162 @@ fn load_core_eval() -> Vec<JsonValue> {
     transform.iter().cloned().map(serde_to_tcb).collect()
 }
 
+/// 最小 I/O 循环（call_external 应用剧本）规则集——内联构造，不依赖任何资产文件。
+///
+/// 背景：T8 迁出后核心仓 core_eval.json 为最小评估集，不再含 call_external 规则；
+/// I/O 循环差分用例需要应用剧本形态的完整触发/消费路径，故按消费方自持宪法
+/// （evo-agent agent_constitution.json）内联同构的最小规则链。
+fn io_loop_rules() -> Vec<JsonValue> {
+    let rules = serde_json::json!([
+        // ReAct 迭代计数器初始化（首次执行 call_external 时置 0）
+        {
+            "type": "branch",
+            "params": {
+                "domain": {
+                    "type": "all",
+                    "inner": [
+                        { "type": "instruction", "instruction_type": "call_external" },
+                        {
+                            "type": "not",
+                            "inner": {
+                                "type": "exists",
+                                "path": "__exec__.payload.react_iteration"
+                            }
+                        }
+                    ]
+                },
+                "on_true": [
+                    {
+                        "type": "set",
+                        "params": {
+                            "attr": "react_iteration",
+                            "operation": "set",
+                            "value": 0
+                        }
+                    }
+                ],
+                "on_false": []
+            }
+        },
+        // call_external: 无结果 → io_request；有结果 → 消费到 llm_response
+        {
+            "type": "branch",
+            "params": {
+                "domain": {
+                    "type": "instruction",
+                    "instruction_type": "call_external"
+                },
+                "on_true": [
+                    {
+                        "type": "branch",
+                        "params": {
+                            "domain": {
+                                "type": "exists",
+                                "path": "__exec__.payload.__io_results__.call_external"
+                            },
+                            "on_true": [
+                                {
+                                    "type": "set",
+                                    "params": {
+                                        "attr": "llm_response",
+                                        "operation": "set",
+                                        "value":
+                                            "__exec__.payload.__io_results__.call_external"
+                                    }
+                                },
+                                {
+                                    "type": "branch",
+                                    "params": {
+                                        "domain": {
+                                            "type": "exists",
+                                            "path": "__exec__.instruction.params.tools"
+                                        },
+                                        "on_true": [
+                                            {
+                                                "type": "set",
+                                                "params": {
+                                                    "attr": "tools",
+                                                    "operation": "set",
+                                                    "value":
+                                                        "__exec__.instruction.params.tools"
+                                                }
+                                            }
+                                        ],
+                                        "on_false": []
+                                    }
+                                },
+                                {
+                                    "type": "set",
+                                    "params": {
+                                        "attr":
+                                            "__exec__.payload.__io_results__.call_external",
+                                        "operation": "set",
+                                        "value": null
+                                    }
+                                },
+                                {
+                                    "type": "branch",
+                                    "params": {
+                                        "domain": {
+                                            "type": "has_fields",
+                                            "path": "__exec__.payload.llm_response",
+                                            "fields": ["tool_calls"]
+                                        },
+                                        "on_true": [],
+                                        "on_false": [
+                                            {
+                                                "type": "push",
+                                                "params": {
+                                                    "instructions":
+                                                        [{ "type": "noop" }]
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ],
+                            "on_false": [
+                                {
+                                    "type": "io_request",
+                                    "params": {
+                                        "io_type": "call_external",
+                                        "messages":
+                                            "__exec__.instruction.params.messages",
+                                        "tools?": "__exec__.instruction.params.tools"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "on_false": []
+            }
+        },
+        // noop 兜底 + all([]) 兜底（与核心评估集收尾形态一致）
+        {
+            "type": "branch",
+            "params": {
+                "domain": { "type": "instruction", "instruction_type": "noop" },
+                "on_true": []
+            }
+        },
+        {
+            "type": "branch",
+            "params": {
+                "domain": { "type": "all", "inner": [] },
+                "on_true": []
+            }
+        }
+    ]);
+    rules
+        .as_array()
+        .expect("inline io-loop rules must be an array")
+        .iter()
+        .cloned()
+        .map(serde_to_tcb)
+        .collect()
+}
+
 // =============================================================================
 // 辅助:构造指令
 // =============================================================================
@@ -901,10 +1057,10 @@ fn diff_reactor_vs_pure_noop() {
 }
 
 // =============================================================================
-// P0-12: ReAct 循环（v0.3.1 核心新逻辑）
+// P0-12: I/O 循环（v0.3.1 语言层组合语义，应用剧本自持）
 // =============================================================================
 //
-// 用例 5/6 覆盖 ReAct 循环的 I/O 触发与结果消费两条路径：
+// 用例 5/6 覆盖 I/O 循环（call_external 应用剧本）的触发与结果消费两条路径：
 // - call_external 无 __io_results__ 结果 → io_request（路径 A 触发 IoRequest fact）
 // - call_external 有 __io_results__ 结果 → 消费到 llm_response，__io_results__ 按类型隔离
 // 路径 B 分别与 execute_transition 返回的 IoRequired / 注入结果后的 State 全等。
@@ -912,14 +1068,14 @@ fn diff_reactor_vs_pure_noop() {
 
 /// P0-12: call_external 指令 —— Reactor 与 execute_transition 的 I/O 触发一致
 ///
-/// v0.3.1 ReAct 循环入口：call_external 无 `__io_results__.call_external` 结果时，
+/// v0.3.1 I/O 循环入口：call_external 无 `__io_results__.call_external` 结果时，
 /// 触发 io_request（io_type=call_external，messages/tools 透传）。
 /// Reactor 应发出 IoRequest fact，execute_transition 应返回 IoRequired，二者参数一致。
 #[test]
 fn diff_reactor_vs_pure_call_external_io_request() {
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async move {
-        let core_eval = load_core_eval();
+        let core_eval = io_loop_rules();
         let messages = JsonValue::Array(vec![JsonValue::object_from_pairs(&[
             ("role", JsonValue::string("user")),
             ("content", JsonValue::string("hello from differential test")),
@@ -979,14 +1135,14 @@ fn diff_reactor_vs_pure_call_external_io_request() {
 
 /// P0-12: call_external 结果消费 —— Reactor 与 execute_transition 状态一致
 ///
-/// v0.3.1 ReAct 循环：注入 IoResponse 结果后，Reactor 恢复执行原指令，
+/// v0.3.1 I/O 循环：注入 IoResponse 结果后，Reactor 恢复执行原指令，
 /// 消费 `__io_results__.call_external`（按类型隔离）到 `llm_response`，
 /// 并清除 `__io_results__` 容器。路径 B 用预设结果 + 模拟清理做纯函数对比。
 #[test]
 fn diff_reactor_vs_pure_call_external_consume() {
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async move {
-        let core_eval = load_core_eval();
+        let core_eval = io_loop_rules();
         let messages = JsonValue::Array(vec![JsonValue::object_from_pairs(&[
             ("role", JsonValue::string("user")),
             ("content", JsonValue::string("hello")),
