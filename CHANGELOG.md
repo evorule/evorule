@@ -38,6 +38,16 @@
 
 ## [Unreleased]
 
+### ❌ 移除
+
+- **T7 核心仓瘦身：一次性战地脚本退场（25 个）**(依据 [system-rules T7 调查报告],2026-08-27 定调"四 crate 内核论"):
+  - markdownlint 清洗群(15):`fix-md040{,.js,-v2}.ps1`、`show-{errors,md013*,md037,md051}`、`list-md013`、`find-md040`、`count-errors`、`show-remaining`、`fix-corrupted-{lines,newlines,quotes}`
+  - SPDX 头灌装群(4):`add-spdx-ffi`、`add-spdx-safe`、`add_spdx_headers`、`update-spdx.js`(头部已全线就位)
+  - 迁移/调试残留(4):`migrate-cli-examples-to-application.{ps1,sh}`、`agents-md-to-schema.py`(输入 AGENTS.md 已不存在)、`test-api-with-hash-diagnosis.ps1`
+  - 历史演变工具(2):`update-sdk-license.js`(许可证格局已定型)、`start-server.ps1`(零引用零文档,2026-08-27 明示批准删除)
+  - 全部经全仓调用方取证为零存活引用;生产链路零依赖;git 历史可考古
+- **保留判据入档**:evorule 仓 = 四 crate(tcb/reactor/governance/cli) + 支撑测试验证 CI 门禁 + 对外契约文档;新增 `scripts/` 文件须能回答"谁还在用它"。
+
 ## [0.3.2] - 2026-08-26
 
 **API 正确性修正 + 门禁治理增强 + 新模块 + G-A1 审计锚点签名** — 删除"假验证"陷阱函数 `verify_hash_chain`；审计/会话 API 从静默退化 `"{}"` 改为显式 `Result`；元指令白名单对齐 TCB 6 元指令（移除误混的指令层类型）；build.rs 新增 L2 变更治理门禁与策略层反模式检测；governance 新增 permission 模块、reactor 新增 io_context 模块；新增 G-A1 审计锚点签名（ed25519 确定性签名，真实性/防抵赖）。
