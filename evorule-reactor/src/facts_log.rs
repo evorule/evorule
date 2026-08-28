@@ -24,6 +24,8 @@ use evorule_tcb::JsonValue;
 #[cfg(kani)]
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+#[cfg(feature = "persistence")]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 #[cfg(not(kani))]
 use std::sync::RwLock;
@@ -197,6 +199,42 @@ impl FactsLogLock {
 #[derive(Clone)]
 pub struct FactsLog {
     inner: Arc<FactsLogLock>,
+    /// WAL 写入连续失败计数（W1 修复，2026-08-27）
+    ///
+    /// - `append()` 中 WAL 写失败时递增、成功时清零
+    /// - 达到 `WAL_FAIL_TERMINATE_THRESHOLD`（3）后，后续每次失败调用
+    ///   `on_wal_failure_exhausted` 回调通知 reactor 终止会话
+    /// - AtomicU64 而非放 FactsLogInner：重试路径需要避免长时间持写锁
+    #[cfg(feature = "persistence")]
+    wal_fail_count: Arc<AtomicU64>,
+    /// 连续失败达阈值后的升级回调（由 reactor 设置，用于终止会话并
+    /// 发射面向用户的 Error fact）
+    #[cfg(feature = "persistence")]
+    on_wal_failure_exhausted:
+        Arc<std::sync::Mutex<Option<Box<dyn Fn(&str) + Send + Sync>>>>,
+}
+
+#[cfg(feature = "persistence")]
+/// WAL 写入连续失败终止阈值（用户决策：方案 b，2026-08-27）
+pub const WAL_FAIL_TERMINATE_THRESHOLD: u64 = 3;
+
+#[cfg(feature = "persistence")]
+/// 生成面向用户的 WAL 故障自助诊断信息（W1 方案 b 用户指导要求）
+///
+/// 根因均为部署环境问题而非代码缺陷；信息按可能性排序给出操作指引，
+/// 使运维/用户无需阅读源码即可自行恢复。
+fn wal_failure_guidance(error_msg: &str) -> String {
+    format!(
+        "审计日志(WAL)写入已连续 {} 次失败，本会话已被终止以保证可回放性不被静默破坏。\
+错误详情: {error_msg}。\
+该故障源于磁盘/权限等部署环境问题，请按以下顺序排查：
+1. 检查磁盘空间是否已满（df -h / Windows 资源管理器查看 WAL 所在盘剩余空间），清理后重启服务即可自动恢复；
+2. 检查进程对 WAL 目录是否有写权限（目录可能被迁移或 ACL 变更）；
+3. 若 WAL 位于网络盘/NAS，检查挂载是否掉线；
+4. 排查后重启 evorule-server；recover 会从已有 WAL 完整重建状态，不丢数据。
+注意：本会话中断前的事实已在最后成功写入的 WAL 记录内，重启后可通过 /replay 审计。",
+        WAL_FAIL_TERMINATE_THRESHOLD
+    )
 }
 
 impl std::fmt::Debug for FactsLog {
@@ -214,28 +252,37 @@ impl std::fmt::Debug for FactsLog {
 }
 
 impl FactsLog {
+    /// 统一构造（W1：初始化 WAL 失败计数器与升级回调）
+    fn with_inner(inner: FactsLogInner) -> Self {
+        Self {
+            inner: Arc::new(FactsLogLock::new(inner)),
+            #[cfg(feature = "persistence")]
+            wal_fail_count: Arc::new(AtomicU64::new(0)),
+            #[cfg(feature = "persistence")]
+            on_wal_failure_exhausted: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
     /// 创建空的 FactsLog（初始版本为 0，payload 为空对象，无 WAL）
     pub fn new() -> Self {
-        Self {
-            inner: Arc::new(FactsLogLock::new(FactsLogInner {
-                history: Vec::new(),
-                current_snapshot: JsonValue::empty_object(),
-                current_queue: Vec::new(),
-                version: 0,
-                last_stable_version: 0,
-                last_hash: String::from("genesis"),
-                #[cfg(feature = "persistence")]
-                wal: None,
-                #[cfg(feature = "persistence")]
-                fsync_on_flush: false,
-                #[cfg(feature = "persistence")]
-                max_wal_size_bytes: DEFAULT_MAX_WAL_SIZE_BYTES,
-                version_index: BTreeMap::new(),
-                fact_id_index: BTreeMap::new(),
-                path_index: BTreeMap::new(),
-                compacted_snapshot: None,
-            })),
-        }
+        Self::with_inner(FactsLogInner {
+            history: Vec::new(),
+            current_snapshot: JsonValue::empty_object(),
+            current_queue: Vec::new(),
+            version: 0,
+            last_stable_version: 0,
+            last_hash: String::from("genesis"),
+            #[cfg(feature = "persistence")]
+            wal: None,
+            #[cfg(feature = "persistence")]
+            fsync_on_flush: false,
+            #[cfg(feature = "persistence")]
+            max_wal_size_bytes: DEFAULT_MAX_WAL_SIZE_BYTES,
+            version_index: BTreeMap::new(),
+            fact_id_index: BTreeMap::new(),
+            path_index: BTreeMap::new(),
+            compacted_snapshot: None,
+        })
     }
 
     /// 创建空的 FactsLog 并设置初始 payload
@@ -246,6 +293,27 @@ impl FactsLog {
             inner.current_snapshot = payload;
         }
         log
+    }
+
+    #[cfg(feature = "persistence")]
+    /// 注册 WAL 连续失败达阈值的升级回调（W1 方案 b）
+    ///
+    /// 回调在 `append()` 持有写锁之外被调用，参数为面向用户的
+    /// 自助诊断信息（含恢复指导）。reactor 用它终止会话并发射 Error fact。
+    /// 首次 `append` 前设置；重复调用覆盖旧回调。
+    pub fn set_on_wal_failure_exhausted<F>(&self, callback: F)
+    where
+        F: Fn(&str) + Send + Sync + 'static,
+    {
+        if let Ok(mut guard) = self.on_wal_failure_exhausted.lock() {
+            *guard = Some(Box::new(callback));
+        }
+    }
+
+    #[cfg(feature = "persistence")]
+    /// 当前 WAL 连续失败计数（监控/测试用）
+    pub fn wal_fail_count(&self) -> u64 {
+        self.wal_fail_count.load(Ordering::SeqCst)
     }
 
     /// 设置初始状态（用于 fork 场景）
@@ -306,23 +374,21 @@ impl FactsLog {
     ) -> Result<Self, FactsLogError> {
         let wal = WalWriter::create_with_options(path, max_wal_size_bytes, fsync)
             .map_err(|e| FactsLogError::WalError(e.to_string()))?;
-        Ok(Self {
-            inner: Arc::new(FactsLogLock::new(FactsLogInner {
-                history: Vec::new(),
-                current_snapshot: JsonValue::empty_object(),
-                current_queue: Vec::new(),
-                version: 0,
-                last_stable_version: 0,
-                last_hash: String::from("genesis"),
-                wal: Some(wal),
-                fsync_on_flush: fsync,
-                max_wal_size_bytes,
-                version_index: BTreeMap::new(),
-                fact_id_index: BTreeMap::new(),
-                path_index: BTreeMap::new(),
-                compacted_snapshot: None,
-            })),
-        })
+        Ok(Self::with_inner(FactsLogInner {
+            history: Vec::new(),
+            current_snapshot: JsonValue::empty_object(),
+            current_queue: Vec::new(),
+            version: 0,
+            last_stable_version: 0,
+            last_hash: String::from("genesis"),
+            wal: Some(wal),
+            fsync_on_flush: fsync,
+            max_wal_size_bytes,
+            version_index: BTreeMap::new(),
+            fact_id_index: BTreeMap::new(),
+            path_index: BTreeMap::new(),
+            compacted_snapshot: None,
+        }))
     }
 
     #[cfg(feature = "persistence")]
@@ -589,14 +655,43 @@ impl FactsLog {
         {
             // P0-1: WAL write-ahead —— 内存更新前先写磁盘 + flush（含哈希字段）
             if let Some(wal) = inner.wal.as_mut() {
-                wal.append_record_with_hash(
+                match wal.append_record_with_hash(
                     version_before,
                     &fact,
                     &content_hash,
                     &prev_hash,
                     &chain_hash,
-                )
-                .map_err(|e| FactsLogError::WalError(e.to_string()))?;
+                ) {
+                    Ok(()) => {
+                        // 成功 → 清零连续失败计数（W1 方案 b：瞬时故障自愈不累计）
+                        self.wal_fail_count.store(0, Ordering::SeqCst);
+                    }
+                    Err(e) => {
+                        let fail_count = self.wal_fail_count.fetch_add(1, Ordering::SeqCst) + 1;
+                        if fail_count >= WAL_FAIL_TERMINATE_THRESHOLD {
+                            // W1 方案 b：连续失败达阈值 → 触发升级回调（reactor
+                            // 据此终止会话并向用户发射含自助指导的 Error fact）。
+                            // 阈值后每次失败都重复触发，保证最终一定能终止。
+                            let guidance = wal_failure_guidance(&e.to_string());
+                            tracing::error!(
+                                fail_count,
+                                "WAL write failed {} times consecutively; escalating session termination",
+                                WAL_FAIL_TERMINATE_THRESHOLD
+                            );
+                            drop(inner); // 释放写锁再回调，回调可能需要访问 FactsLog
+                            if let Ok(guard) = self.on_wal_failure_exhausted.lock() {
+                                if let Some(cb) = guard.as_ref() {
+                                    cb(&guidance);
+                                }
+                            }
+                            return Err(FactsLogError::WalError(guidance));
+                        }
+                        return Err(FactsLogError::WalError(format!(
+                            "WAL write failed (consecutive #{fail_count}/{}): {e}",
+                            WAL_FAIL_TERMINATE_THRESHOLD
+                        )));
+                    }
+                }
             }
         }
 
@@ -1566,6 +1661,80 @@ mod tests {
         .unwrap();
         assert_eq!(log.history_len(), 1);
         // 无需清理文件 —— 没有创建任何文件
+    }
+
+    /// W1 方案 b 回归（2026-08-27）：
+    /// WAL 持续写失败 → 连续失败计数递增 → 达阈值后返回含自助指导的错误
+    /// 并触发升级回调。
+    ///
+    /// 失败构造方式（跨平台稳定）：设置极小的 max_wal_size_bytes 触发文件
+    /// 轮换，并把轮换目标路径 `wal.1.jsonl` 预先替换为同名目录——
+    /// OpenOptions::open 对目录必失败，之后每次 append 都在 rotate 处报错。
+    #[cfg(feature = "persistence")]
+    #[test]
+    fn test_wal_consecutive_failure_escalates_with_guidance() {
+        use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+        use std::sync::Arc as StdArc;
+
+        let base = std::env::temp_dir().join(format!("evorule_w1_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let wal_path = base.join("wal.jsonl");
+
+        // max=1 字节：首条 append 后 current_size 超阈值，
+        // 第二条 append 将触发 rotate → 打开 wal.1.jsonl 失败
+        let log = FactsLog::with_wal_options(&wal_path, 1, false).unwrap();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::empty_object(),
+        })
+        .unwrap(); // 基线写入成功（写后触发轮换条件）
+
+        // 预置多个轮换目标为目录 → 持续 WalError。
+        // 注意：rotate 内部先 file_sequence += 1 再 open_file，单次 open
+        // 失败后下一次会跳到新路径"意外自愈"，因此预置足够多的目录
+        // 覆盖阈值次数的连续失败。
+        for seq in 1..=(WAL_FAIL_TERMINATE_THRESHOLD + 3) {
+            std::fs::create_dir(base.join(format!("wal.{seq}.jsonl"))).unwrap();
+        }
+
+        let escalated = StdArc::new(AtomicUsize::new(0));
+        let escalated_cb = escalated.clone();
+        log.set_on_wal_failure_exhausted(move |guidance| {
+            escalated_cb.fetch_add(1, Ordering::SeqCst);
+            assert!(
+                guidance.contains("磁盘") && guidance.contains("权限"),
+                "guidance must contain self-service recovery hints"
+            );
+        });
+
+        // 连续失败 WAL_FAIL_TERMINATE_THRESHOLD 次：
+        for i in 1..=WAL_FAIL_TERMINATE_THRESHOLD {
+            let result = log.append(Fact::Command {
+                id: FactId(i + 10),
+                instruction: JsonValue::empty_object(),
+            });
+            assert!(result.is_err(), "attempt {i} should fail on dir-as-rotate-target");
+            let err_msg = format!("{}", result.unwrap_err());
+            if i < WAL_FAIL_TERMINATE_THRESHOLD {
+                assert!(
+                    err_msg.contains("#"),
+                    "pre-threshold error carries consecutive count, got: {err_msg}"
+                );
+            } else {
+                assert!(
+                    err_msg.contains("自助诊断") || err_msg.contains("排查"),
+                    "escalated error should carry user guidance, got: {err_msg}"
+                );
+            }
+        }
+        assert_eq!(
+            escalated.load(Ordering::SeqCst),
+            1,
+            "callback should fire exactly once at threshold"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[cfg(feature = "persistence")]

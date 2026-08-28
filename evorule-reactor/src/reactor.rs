@@ -296,6 +296,26 @@ impl Reactor {
         // 执行中断标志（共享在 reactor 主循环与 ReactorHandle 之间）
         let interrupt_flag = self.interrupt_flag.clone();
         let interrupt_flag_for_run = self.interrupt_flag.clone();
+
+        // W1 方案 b（2026-08-27）：WAL 连续写失败达阈值 → 触发中断标志 +
+        // 发射含用户自助指导的 Error fact，终止当前执行以保护可回放性。
+        // Error fact 无法经 emit_fact 写入（那正是失败的路径），改经 event
+        // 通道直接下发，保证客户端必收到指导信息。
+        #[cfg(feature = "persistence")]
+        {
+            let interrupt_for_cb = interrupt_flag.clone();
+            let event_tx_for_cb = channels.event_tx.clone();
+            facts_log.set_on_wal_failure_exhausted(move |guidance: &str| {
+                tracing::error!("WAL failure escalation: terminating session. {guidance}");
+                interrupt_for_cb.store(true, std::sync::atomic::Ordering::Release);
+                // 尽力发送；broadcast 无接收者时错误可忽略（客户端重连后从状态查询感知）
+                let _ = event_tx_for_cb.send(Fact::Error {
+                    id: FactId(u64::MAX),
+                    message: guidance.to_string(),
+                });
+            });
+        }
+
         let handle = tokio::spawn(self.run(
             channels.command_rx,
             channels.event_tx,
