@@ -799,6 +799,16 @@ impl FactsLog {
     ///
     /// 返回所有 `version_before >= from_version` 的事实。
     /// 如果 `from_version` 为 0，返回完整历史。
+    ///
+    /// # 压缩点语义（F6，audit-chain 专项 2026-08-28 标注；P1-F4/B3）
+    ///
+    /// 实例运行期间发生过压缩（compact）时，压缩点之前的历史已从内存投影
+    /// 丢弃：`from_version < compacted.version` 将返回**空 Vec 而非报错**。
+    /// 调用方拿到空结果时，应以 [`Self::compacted_info`] 区分两种语义：
+    /// - `compacted_info() == None` → 真空历史（该版本前无任何事实）；
+    /// - `compacted_info() == Some((version, _))` 且 `from_version < version`
+    ///   → 历史已被压缩，**空结果不代表无历史**。训练/回放工具需要压缩点
+    ///   前的完整前缀历史时，必须基于 WAL 文件离线重放，不能依赖本方法。
     pub fn read_from(&self, from_version: u64) -> Vec<Fact> {
         let inner = self.inner.read();
         // A-3：压缩点之前的事实已丢弃，返回空 Vec
