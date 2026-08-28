@@ -27,6 +27,9 @@
 //! | `set_facts_log_version` | `evorule_facts_log_version` | FactsLog 当前版本号 |
 //! | `inc_sse_connections` / `dec_sse_connections` / `set_sse_connections` | `evorule_sse_connections_active` | SSE 连接数 |
 //! | `inc_http_requests` | `evorule_http_requests_total` | HTTP 请求总数 |
+//! | `inc_sanitize_hits` | `evorule_sanitize_hits_total` | 输入净化命中数（P5-A1，2026-08-27） |
+//! | `inc_auto_verify_failures` | `evorule_auto_verify_failures_total` | 实时审计验证失败次数（P5-A2，2026-08-27） |
+//! | `inc_auto_verify_skips` | `evorule_auto_verify_skips_total` | 自动验证跳过次数（P5-A2，2026-08-27） |
 //! | `render_as_text` | `/metrics` 端点输出 | 渲染为 Prometheus 文本格式 |
 
 use std::sync::Arc;
@@ -78,6 +81,18 @@ pub trait IoMetrics: Send + Sync {
 
     /// HTTP 请求计数 +1（按 method/path/status 打标签）
     fn inc_http_requests(&self, _method: &str, _path: &str, _status: &str) {}
+
+    /// 输入净化命中计数 +1（P5-A1：攻击态势可指标化）
+    ///
+    /// 按 rule 打标签（如 "role_override_ignore_previous"），使 L1 防线
+    /// 的命中情况可被监控告警，而非仅 stderr 日志。
+    fn inc_sanitize_hits(&self, _rule: &str) {}
+
+    /// 实时审计验证失败计数 +1（P5-A2：审计链篡改探测结果可观测）
+    fn inc_auto_verify_failures(&self) {}
+
+    /// 自动审计验证跳过计数 +1（P5-A2：因阈值/间隔跳过时留痕）
+    fn inc_auto_verify_skips(&self) {}
 
     /// 渲染为 Prometheus 文本格式（供 `/metrics` 端点返回）
     ///

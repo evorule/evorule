@@ -172,6 +172,13 @@ pub struct Auditor {
     auto_verify_interval: usize,
     /// audit_new 调用计数（P06，用于间隔控制）
     audit_new_count: u64,
+    /// 实时审计验证失败计数（P5-A2 修复，2026-08-27）
+    ///
+    /// 篡改探测结果不再只走 stderr 一条通道；server 可通过
+    /// [`Auditor::auto_verify_failure_count`] 读取并上报指标/告警。
+    auto_verify_failure_count: std::sync::atomic::AtomicU64,
+    /// 自动验证跳过计数（P5-A2 修复，2026-08-27：阈值/间隔跳过留痕可观测）
+    auto_verify_skip_count: std::sync::atomic::AtomicU64,
 }
 
 impl Auditor {
@@ -191,6 +198,8 @@ impl Auditor {
             auto_verify_threshold: 1000,
             auto_verify_interval: 1,
             audit_new_count: 0,
+            auto_verify_failure_count: std::sync::atomic::AtomicU64::new(0),
+            auto_verify_skip_count: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -223,6 +232,8 @@ impl Auditor {
                 auto_verify_interval
             },
             audit_new_count: 0,
+            auto_verify_failure_count: std::sync::atomic::AtomicU64::new(0),
+            auto_verify_skip_count: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -376,6 +387,8 @@ impl Auditor {
         // P06: 实时审计验证
         if self.should_auto_verify() {
             if !self.verify() {
+                self.auto_verify_failure_count
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 tracing::error!(
                     entries = self.entries.len(),
                     audit_new_count = self.audit_new_count,
@@ -389,6 +402,24 @@ impl Auditor {
         count
     }
 
+    /// 实时审计验证累计失败次数（P5-A2 修复）
+    ///
+    /// 非零即表示审计链曾出现断裂/疑似篡改。server 应周期性读取此值
+    /// 上报到指标系统并配置告警（阈值 >0 即告警）。
+    pub fn auto_verify_failure_count(&self) -> u64 {
+        self.auto_verify_failure_count
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// 自动验证累计跳过次数（P5-A2 修复：阈值/间隔跳过留痕）
+    ///
+    /// 用于评估真实验证覆盖率——跳过比例过高说明 auto_verify 配置
+    /// 形同虚设。
+    pub fn auto_verify_skip_count(&self) -> u64 {
+        self.auto_verify_skip_count
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     /// 判断本次是否应执行自动验证（P06）
     ///
     /// 综合考虑三个条件：
@@ -400,6 +431,9 @@ impl Auditor {
             return false;
         }
         if self.auto_verify_threshold > 0 && self.entries.len() > self.auto_verify_threshold {
+            // P5-A2：跳过不再完全静默——计数留痕 + debug 日志
+            self.auto_verify_skip_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             tracing::debug!(
                 entries = self.entries.len(),
                 threshold = self.auto_verify_threshold,
@@ -410,6 +444,8 @@ impl Auditor {
         if self.auto_verify_interval > 1
             && self.audit_new_count % (self.auto_verify_interval as u64) != 0
         {
+            self.auto_verify_skip_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             return false;
         }
         true
@@ -1081,6 +1117,50 @@ mod tests {
 
     fn make_facts_log() -> FactsLog {
         FactsLog::new()
+    }
+
+    /// P5-A2 修复回归（2026-08-27）：auto_verify 失败/跳过必须可观测
+    #[test]
+    fn test_auto_verify_counters_exposed() {
+        let log = make_facts_log();
+        // 制造哈希链断裂：先追加一条，再手动改写条目模拟篡改后的验证失败场景
+        // —— 更直接的方式：配置 auto_verify 且制造 verify 失败很难从外部注入，
+        // 这里用"间隔跳过"路径验证 skip 计数器；failure 计数通过 getter 默认 0 验证暴露。
+        let mut auditor = Auditor::new_with_auto_verify(log, true, 0, 3);
+        assert_eq!(auditor.auto_verify_failure_count(), 0);
+        assert_eq!(auditor.auto_verify_skip_count(), 0);
+
+        let f = |i: u64| Fact::PayloadUpdate {
+            id: FactId(i),
+            path: format!("k{i}"),
+            value: JsonValue::string("v"),
+        };
+        for i in 1..=6 {
+            auditor.facts_log.append(f(i)).unwrap();
+            auditor.audit_new();
+        }
+        // audit_new 6 次,auto_verify_interval=3 → 第 1、4 次验证执行,
+        // 其余 4 次跳过（interval 不满足）→ skip_count == 4
+        assert_eq!(
+            auditor.auto_verify_skip_count(),
+            4,
+            "interval skips must be counted"
+        );
+        assert_eq!(auditor.auto_verify_failure_count(), 0);
+
+        // 阈值跳过路径：threshold=2 且 entries > 2 → 之后每次都因超阈值跳过
+        let log2 = make_facts_log();
+        let mut a2 = Auditor::new_with_auto_verify(log2.clone(), true, 2, 1);
+        for i in 1..=5 {
+            a2.facts_log.append(f(i)).unwrap();
+            a2.audit_new();
+        }
+        // entries 达到 3 时开始每次都超阈值 → 跳过 3 次（第 3、4、5 次 audit_new）
+        assert_eq!(
+            a2.auto_verify_skip_count(),
+            3,
+            "threshold skips must be counted"
+        );
     }
 
     #[test]
