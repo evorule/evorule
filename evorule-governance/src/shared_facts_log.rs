@@ -195,6 +195,25 @@ impl SharedFactsLog {
 
         let rolled_up: BTreeSet<FactId> = metadata.rolled_up.into_iter().map(FactId).collect();
 
+        // F1（audit-chain 专项 2026-08-28）：孤立 fact 结构性检测（P1-F2 兑现）。
+        // 崩溃窗口（append 三步分离：fact 先落 WAL、fact_sources 后写 metadata）
+        // 会产生"WAL 中有 PayloadUpdate、fact_sources 无映射"的孤立 fact——
+        // 该段审计链不可归因。不自动伪造映射（source 无法从 fact 内容恢复，
+        // 伪造即撒谎，与 P4-O2 消费关系单向信任原则一致），只检测 + 显式告警。
+        let orphans = detect_orphan_facts(&facts_log, &fact_sources);
+        if !orphans.is_empty() {
+            for id in &orphans {
+                tracing::warn!(
+                    fact_id = id,
+                    "孤立共享 fact：WAL 中存在但 fact_sources 缺失（崩溃窗口产物，因果映射永久丢失，该段审计链不可归因）"
+                );
+            }
+            tracing::warn!(
+                count = orphans.len(),
+                "孤立共享 fact 检测汇总：恢复的审计链中存在不可归因段，建议人工核对 WAL 与 metadata 文件"
+            );
+        }
+
         Ok(Self {
             inner: Arc::new(RwLock::new(SharedFactsLogInner {
                 facts_log,
@@ -205,6 +224,23 @@ impl SharedFactsLog {
                 metadata_path: Some(metadata_path.as_ref().to_path_buf()),
             })),
         })
+    }
+
+    /// 因果一致性校验：返回孤立 fact_id 列表
+    ///
+    /// 孤立 fact = WAL 历史中存在该 `Fact::PayloadUpdate`，但 `fact_sources`
+    /// 无对应映射（崩溃窗口产物，因果映射永久丢失）。
+    ///
+    /// - [`recover`](Self::recover) 完成时会自动检测并逐条 `warn!`；
+    /// - 本方法供运行期健康检查 / 外部审计工具调用。
+    ///
+    /// # 已知边界
+    /// 若实例运行期间发生过压缩（compact），压缩点前的 fact 已从内存投影
+    /// 丢弃，`read_from(0)` 拿不到完整集合——此时**漏检但不误报**。
+    /// 精确的全量校验应基于 WAL 离线重放工具。
+    pub fn verify_causal_consistency(&self) -> Vec<u64> {
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        detect_orphan_facts(&inner.facts_log, &inner.fact_sources)
     }
 
     /// 追加共享事实
@@ -428,6 +464,27 @@ impl Default for SharedFactsLog {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// 孤立 fact 检测：WAL 历史中的 PayloadUpdate 集合 − fact_sources 键集
+///
+/// 只认 `Fact::PayloadUpdate`（SharedFactsLog.append 的唯一产物形态）。
+/// 若 facts_log 发生过压缩，历史前缀已从内存投影丢弃——漏检但不误报
+/// （见 [`SharedFactsLog::verify_causal_consistency`] 文档）。
+fn detect_orphan_facts(facts_log: &FactsLog, fact_sources: &BTreeMap<FactId, u64>) -> Vec<u64> {
+    let wal_fact_ids: BTreeSet<u64> = facts_log
+        .read_from(0)
+        .iter()
+        .filter_map(|f| match f {
+            Fact::PayloadUpdate { id, .. } => Some(id.0),
+            _ => None,
+        })
+        .collect();
+    wal_fact_ids
+        .iter()
+        .filter(|id| !fact_sources.contains_key(&FactId(**id)))
+        .copied()
+        .collect()
 }
 
 #[cfg(test)]
@@ -682,6 +739,65 @@ mod tests {
         assert!(
             !tmp_path.exists(),
             "孤儿 metadata.tmp 未被 recover 清理：P4-D 回归失败"
+        );
+    }
+
+    /// F1 回归（audit-chain 专项 2026-08-28）：崩溃窗口产生的孤立 fact
+    /// （WAL 有 PayloadUpdate、fact_sources 缺映射）必须被检出并可查询。
+    /// 模拟方式：正常 append 两条后 drop，再手写一份"只有一条映射"的
+    /// metadata（模拟 fact_sources 写入前进程崩溃）。
+    #[test]
+    fn test_recover_detects_orphan_facts_from_crash_window() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("shared.wal");
+        let meta_path = dir.path().join("shared_meta.json");
+
+        {
+            let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
+            log.append("shared.ns.a", JsonValue::string("v1"), 100)
+                .unwrap();
+            log.append("shared.ns.b", JsonValue::string("v2"), 101)
+                .unwrap();
+        } // drop：模拟进程退出（此时两条映射都已持久化）
+
+        // 模拟崩溃窗口：metadata 只含 fact_id=1 的映射（fact_id=2 的映射丢失）
+        let degraded = serde_json::json!({
+            "fact_sources": {"1": 100},
+            "next_fact_id": 2,
+            "rolled_up": [],
+            "used_at_startup": {}
+        });
+        std::fs::write(&meta_path, degraded.to_string()).unwrap();
+
+        let log2 = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
+        let orphans = log2.verify_causal_consistency();
+        assert_eq!(
+            orphans,
+            vec![2],
+            "崩溃窗口产生的孤立 fact 未被检出：F1 回归失败"
+        );
+    }
+
+    /// F1 对照：完整 metadata（无崩溃窗口）时不得误报。
+    #[test]
+    fn test_verify_causal_consistency_no_false_positive_when_consistent() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("shared.wal");
+        let meta_path = dir.path().join("shared_meta.json");
+
+        let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
+        log.append("shared.ns.a", JsonValue::string("v1"), 100)
+            .unwrap();
+        log.append("shared.ns.b", JsonValue::string("v2"), 101)
+            .unwrap();
+
+        assert!(
+            log.verify_causal_consistency().is_empty(),
+            "一致的 WAL+metadata 被误报为孤立：F1 对照测试失败"
         );
     }
 }
