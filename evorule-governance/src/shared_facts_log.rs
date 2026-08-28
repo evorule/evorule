@@ -70,7 +70,7 @@ struct SharedFactsLogInner {
     used_at_startup: BTreeMap<u64, Vec<FactId>>,
     /// 已标记为 rollup 的 fact_id 集合（`facts_by_path_prefix` 过滤，`fact_by_id` 不过滤）
     rolled_up: BTreeSet<FactId>,
-    /// metadata 文件路径（`Some` 时 `append`/`mark_as_rollup` 写入；`None` 时纯内存）
+    /// metadata 文件路径（`Some` 时写操作后持久化；`None` 时纯内存）
     metadata_path: Option<PathBuf>,
 }
 
@@ -81,6 +81,26 @@ impl std::fmt::Debug for SharedFactsLogInner {
             .field("next_fact_id", &self.next_fact_id)
             .field("fact_sources_len", &self.fact_sources.len())
             .finish()
+    }
+}
+
+impl SharedFactsLogInner {
+    /// 持久化 metadata 到文件（须持有写锁调用）
+    ///
+    /// 统一持久化契约（P4-DESIGN ADR，2026-08-27）：
+    /// 所有修改 `fact_sources` / `used_at_startup` / `rolled_up` / `next_fact_id`
+    /// 的写操作完成后必须调用本方法。策略为 best-effort——写入失败只记 warn
+    /// 日志、不阻塞调用方（metadata 是 WAL 事实历史的辅助索引，WAL 本身
+    /// 才是权威数据源；重启后 recover 以 WAL 为准重建事实，metadata 缺失
+    /// 仅损失消费关系/rollup 标记等治理元数据）。
+    ///
+    /// 已覆盖的调用方：`append`、`record_used_at_startup`、`mark_as_rollup`。
+    fn persist_metadata_locked(&self) {
+        if let Some(ref meta_path) = self.metadata_path {
+            if let Err(e) = write_metadata_atomic(meta_path, self) {
+                tracing::warn!("SharedFactsLog metadata persist failed: {e}");
+            }
+        }
     }
 }
 
@@ -140,6 +160,17 @@ impl SharedFactsLog {
         } else {
             FactsLog::with_wal(&wal_path)?
         };
+
+        // P4-D：清理上次写入中断留下的孤儿 tmp 文件（write 与 rename 之间
+        // 崩溃/断电会产生）；不影响正确性——正式文件从未被触碰——但残留
+        // 会随时间堆积，且下次原子写入会被直接覆盖，无需保留。
+        let tmp_path = metadata_path.as_ref().with_extension("tmp");
+        if tmp_path.exists() {
+            match std::fs::remove_file(&tmp_path) {
+                Ok(()) => tracing::info!(tmp = %tmp_path.display(), "已清理孤儿 metadata.tmp"),
+                Err(e) => tracing::warn!(tmp = %tmp_path.display(), error = %e, "清理孤儿 metadata.tmp 失败"),
+            }
+        }
 
         // 读取 metadata 文件（不存在时使用默认值）
         let metadata = match std::fs::read_to_string(&metadata_path) {
@@ -209,11 +240,7 @@ impl SharedFactsLog {
         inner.fact_sources.insert(fact_id, source_session_id);
 
         // 持久化 metadata（best-effort：失败只记日志，不阻塞 append）
-        if let Some(ref meta_path) = inner.metadata_path {
-            if let Err(e) = write_metadata_atomic(meta_path, &inner) {
-                tracing::warn!("SharedFactsLog metadata persist failed: {e}");
-            }
-        }
+        inner.persist_metadata_locked();
 
         Ok(version)
     }
@@ -312,9 +339,16 @@ impl SharedFactsLog {
     /// 记录会话启动时使用的事实 ID
     ///
     /// 用于追踪共享事实的消费关系，支持跨会话因果追溯。
+    /// 如果设置了 `metadata_path`，状态会持久化到文件（原子写入），
+    /// 确保重启后消费关系链不丢失。
+    ///
+    /// # 参数
+    /// - `session_id`: 会话 ID
+    /// - `fact_ids`: 该会话启动时使用的事实 ID 列表
     pub fn record_used_at_startup(&self, session_id: u64, fact_ids: &[FactId]) {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.used_at_startup.insert(session_id, fact_ids.to_vec());
+        inner.persist_metadata_locked();
     }
 
     /// 查询会话启动时使用的事实 ID
@@ -348,11 +382,7 @@ impl SharedFactsLog {
             inner.rolled_up.insert(*id);
         }
         // 持久化 metadata（best-effort）
-        if let Some(ref meta_path) = inner.metadata_path {
-            if let Err(e) = write_metadata_atomic(meta_path, &inner) {
-                tracing::warn!("SharedFactsLog metadata persist failed: {e}");
-            }
-        }
+        inner.persist_metadata_locked();
     }
 
     /// 重置 SharedFactsLog 到初始状态
@@ -601,5 +631,57 @@ mod tests {
         let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
         assert_eq!(log.history_len(), 0);
         assert_eq!(log.version(), 0);
+    }
+
+    /// P4-BUG 回归：record_used_at_startup 必须持久化，
+    /// 重启（recover）后消费关系链不得丢失。
+    #[test]
+    fn test_record_used_at_startup_persists_across_recover() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("shared.wal");
+        let meta_path = dir.path().join("shared_meta.json");
+
+        {
+            let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
+            log.append("shared.ns.key", JsonValue::string("v1"), 100)
+                .unwrap();
+            log.record_used_at_startup(42, &[FactId(1), FactId(2)]);
+            log.record_used_at_startup(43, &[FactId(1)]);
+        } // drop：模拟进程退出
+
+        // 模拟重启恢复
+        let log2 = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
+        assert_eq!(
+            log2.get_used_at_startup(42),
+            Some(vec![FactId(1), FactId(2)]),
+            "重启后 used_at_startup(42) 丢失：P4-BUG 回归失败"
+        );
+        assert_eq!(log2.get_used_at_startup(43), Some(vec![FactId(1)]));
+        assert_eq!(
+            log2.get_sessions_using_fact(FactId(2)),
+            vec![42],
+            "重启后消费关系查询结果不完整"
+        );
+    }
+
+    /// P4-D 回归：recover 时清理孤儿 metadata.tmp。
+    #[test]
+    fn test_recover_removes_orphan_tmp_file() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("shared.wal");
+        let meta_path = dir.path().join("shared_meta.json");
+
+        let tmp_path = meta_path.with_extension("tmp");
+        std::fs::write(&tmp_path, b"{orphan").unwrap();
+
+        let _log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
+        assert!(
+            !tmp_path.exists(),
+            "孤儿 metadata.tmp 未被 recover 清理：P4-D 回归失败"
+        );
     }
 }
