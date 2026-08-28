@@ -422,6 +422,18 @@ impl SharedFactsLog {
     }
 
     /// 重置 SharedFactsLog 到初始状态
+    ///
+    /// # 安全性边界（F6，audit-chain 专项 2026-08-28 标注）
+    ///
+    /// **仅限纯内存实例调用**。底层 [`FactsLog::reset`](evorule_reactor::FactsLog::reset)
+    /// 只丢弃内存投影并将 WAL 写入器置为 `None`，**不会删除磁盘上的 WAL 文件**。
+    /// 若实例配置了 `metadata_path`（含 WAL 持久化），调用本方法后：
+    /// - 已落盘的旧事实在重启重放时会**全部复活**；
+    /// - metadata（`fact_sources` 等）虽同步清空，但与复活的事实形成新的
+    ///   孤儿状态，破坏审计链完整性。
+    ///
+    /// 需要彻底清空持久化实例时，必须先删除 WAL 与 metadata 文件再重建实例，
+    /// 而不是调用本方法。
     pub fn reset(&self) {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.facts_log.reset();
