@@ -25,7 +25,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use evorule_reactor::{EventSender, Fact, FactId, FactSender, FactsLog, Reactor, ReactorHandle};
+use evorule_reactor::{
+    EventSender, Fact, FactId, FactSender, FactsLog, FactsLogError, Reactor, ReactorHandle,
+};
 use evorule_tcb::JsonValue;
 
 use crate::auditor::{AuditEntry, Auditor};
@@ -485,11 +487,17 @@ impl SessionManager {
             .map(|_| Arc::new(Mutex::new(BTreeMap::new())))
             .collect();
 
+        // AUDIT-A3 修复（2026-08-27）：配置 wal_dir 时扫描既有 session_*.wal
+        // 恢复会话 ID 计数器。否则重启后 next_session_id 归 1，首个新会话会以
+        // truncate 模式覆盖已存在的 session_1.wal，静默清除上一轮审计链。
+        let initial_session_id =
+            wal_dir.as_deref().map(Self::scan_max_session_id).unwrap_or(0) + 1;
+
         Self {
             core_eval,
             max_rounds,
             shards,
-            next_session_id: AtomicU64::new(1),
+            next_session_id: AtomicU64::new(initial_session_id),
             max_sessions,
             session_ttl,
             wal_dir,
@@ -505,6 +513,38 @@ impl SessionManager {
             count: AtomicU64::new(0),
             pending_recycle: Mutex::new(Vec::new()),
         }
+    }
+
+    /// 扫描 WAL 目录，返回既有会话 WAL 文件的最大序号（无文件时为 0）
+    ///
+    /// 仅匹配 `session_{n}.wal` 精确命名；轮换分片 `session_{n}.wal.{seq}`
+    /// 与共享事实 `shared_facts.wal` 均不会被误判。
+    fn scan_max_session_id(wal_dir: &std::path::Path) -> u64 {
+        let mut max = 0u64;
+        let Ok(entries) = std::fs::read_dir(wal_dir) else {
+            tracing::warn!(
+                dir = %wal_dir.display(),
+                "无法读取 WAL 目录，会话 ID 计数器从 1 开始（若该目录曾有会话，旧 WAL 可能被覆盖）"
+            );
+            return 0;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            if let Some(num) = name
+                .strip_prefix("session_")
+                .and_then(|s| s.strip_suffix(".wal"))
+                .and_then(|s| s.parse::<u64>().ok())
+            {
+                max = max.max(num);
+            }
+        }
+        if max > 0 {
+            tracing::info!(max_session_wal_id = max, "已从 WAL 目录恢复会话 ID 计数器");
+        }
+        max
     }
 
     /// 获取分片索引
@@ -524,6 +564,7 @@ impl SessionManager {
     /// # 返回
     /// - `Ok(SessionId)`：新会话的 SessionId
     /// - `Err(SessionError::LimitExceeded)`：超过最大会话数限制
+    /// - `Err(SessionError::WalUnavailable)`：WAL 不可用，拒绝创建（不允许审计链残缺的会话）
     pub fn create_session(&self) -> Result<SessionId, SessionError> {
         let current = self.count.load(Ordering::Relaxed);
         if current >= self.max_sessions as u64 {
@@ -540,7 +581,17 @@ impl SessionManager {
 
         let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
 
-        let facts_log = self.create_facts_log(session_id);
+        let facts_log = match self.create_facts_log(session_id) {
+            Ok(fl) => fl,
+            Err(source) => {
+                tracing::error!(
+                    session_id,
+                    error = %source,
+                    "拒绝创建会话：WAL 不可用（确定性引擎不允许无审计链的会话）"
+                );
+                return Err(SessionError::WalUnavailable { session_id, source });
+            }
+        };
 
         let reactor = Reactor::builder(self.core_eval.clone())
             .max_rounds(self.max_rounds)
@@ -621,6 +672,7 @@ impl SessionManager {
     /// - `Err(SessionError::NotFound)`: 父会话不存在
     /// - `Err(SessionError::LimitExceeded)`: 超过最大会话数
     /// - `Err(SessionError::InvalidVersion)`: 指定的版本号无效
+    /// - `Err(SessionError::WalUnavailable)`: WAL 不可用，拒绝派生（不允许审计链残缺的会话）
     pub fn create_session_from_parent_at_version(
         &self,
         parent_id: SessionId,
@@ -664,7 +716,17 @@ impl SessionManager {
             }
         };
 
-        let facts_log = self.create_facts_log(session_id);
+        let facts_log = match self.create_facts_log(session_id) {
+            Ok(fl) => fl,
+            Err(source) => {
+                tracing::error!(
+                    session_id,
+                    error = %source,
+                    "拒绝派生会话：WAL 不可用（确定性引擎不允许无审计链的会话）"
+                );
+                return Err(SessionError::WalUnavailable { session_id, source });
+            }
+        };
         facts_log.set_initial_state(initial_payload, initial_version);
 
         let reactor = Reactor::builder(self.core_eval.clone())
@@ -918,22 +980,22 @@ impl SessionManager {
 
     /// 创建 FactsLog（根据配置选择内存模式或 WAL 模式）
     ///
-    /// 创建新的 FactsLog（对象池已移除，简化为直接创建）。
-    fn create_facts_log(&self, session_id: SessionId) -> FactsLog {
+    /// 配置了 `wal_dir` 时创建带 WAL 的 FactsLog；创建失败返回 `Err`
+    /// （调用方必须拒绝创建会话，禁止静默降级为内存模式——
+    /// 确定性引擎不允许产生审计链残缺的会话）。
+    /// 未配置 `wal_dir` 时为纯内存模式（显式配置，非降级）。
+    fn create_facts_log(&self, session_id: SessionId) -> Result<FactsLog, FactsLogError> {
         if let Some(ref wal_dir) = self.wal_dir {
             let wal_path = wal_dir.join(format!("session_{}.wal", session_id));
             match FactsLog::with_wal_options(&wal_path, self.max_wal_size_bytes, self.wal_fsync) {
                 Ok(facts_log) => {
                     tracing::debug!(session_id, wal_path = %wal_path.display(), fsync = self.wal_fsync, max_wal_size_bytes = self.max_wal_size_bytes, "FactsLog created with WAL");
-                    facts_log
+                    Ok(facts_log)
                 }
-                Err(e) => {
-                    tracing::warn!(session_id, error = %e, "Failed to create WAL FactsLog, falling back to memory mode");
-                    FactsLog::new()
-                }
+                Err(e) => Err(e),
             }
         } else {
-            FactsLog::new()
+            Ok(FactsLog::new())
         }
     }
 
@@ -972,6 +1034,18 @@ pub enum SessionError {
     InvalidVersion {
         /// 无效的版本号
         version: u64,
+    },
+    /// WAL 不可用，拒绝创建会话
+    ///
+    /// 确定性引擎不允许存在无审计链的会话：WAL 创建失败时宁可不服务，
+    /// 也绝不静默降级为内存模式（否则该会话事实不落盘、审计链永久残缺）。
+    #[error("WAL unavailable, session creation rejected: session {session_id}: {source}")]
+    WalUnavailable {
+        /// 目标会话 ID
+        session_id: SessionId,
+        /// 底层 WAL 错误
+        #[source]
+        source: FactsLogError,
     },
 }
 
@@ -1026,6 +1100,68 @@ mod tests {
     use super::*;
     use evorule_reactor::Fact;
     use std::collections::BTreeMap;
+
+    /// AUDIT-A3 回归：重启后从 wal_dir 恢复会话 ID 计数器，
+    /// 新会话不得以 truncate 覆盖既有审计链。
+    #[tokio::test]
+    async fn test_session_id_counter_restored_from_wal_dir() {
+        let dir = std::env::temp_dir().join(format!("evorule_audit_a3_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // 模拟上一轮运行留下的 WAL：最大序号 7，含轮换分片与共享事实干扰项
+        std::fs::write(dir.join("session_7.wal"), b"old-audit-chain-7").unwrap();
+        std::fs::write(dir.join("session_3.wal"), b"old-audit-chain-3").unwrap();
+        std::fs::write(dir.join("session_7.wal.2"), b"rotated-shard").unwrap();
+        std::fs::write(dir.join("shared_facts.wal"), b"shared").unwrap();
+
+        let core_eval = make_core_eval();
+        let mgr = SessionManager::with_limits_and_wal_and_auto_verify(
+            core_eval,
+            100,
+            100,
+            Duration::from_secs(3600),
+            Some(dir.clone()),
+            4,
+            false,
+            0,
+            false,
+            1000,
+            1,
+        );
+
+        // 首个新会话必须是 8（= max+1），不能复用 1~7 中任何一个
+        let id = mgr.create_session().unwrap();
+        assert_eq!(id, 8, "重启后首个会话 ID 必须接续既有 WAL 最大序号");
+
+        // 旧审计链文件必须原样保留
+        assert_eq!(
+            std::fs::read(dir.join("session_7.wal")).unwrap(),
+            b"old-audit-chain-7",
+            "既有 WAL 被覆盖：AUDIT-A3 回归失败"
+        );
+
+        // 模拟二次重启：计数器应继续接续
+        drop(mgr);
+        let core_eval2 = make_core_eval();
+        let mgr2 = SessionManager::with_limits_and_wal_and_auto_verify(
+            core_eval2,
+            100,
+            100,
+            Duration::from_secs(3600),
+            Some(dir.clone()),
+            4,
+            false,
+            0,
+            false,
+            1000,
+            1,
+        );
+        let id2 = mgr2.create_session().unwrap();
+        assert_eq!(id2, 9, "二次重启后计数器必须继续接续");
+
+        let _handle = mgr2.close_session(id2).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     fn make_core_eval() -> Vec<JsonValue> {
         let mut params = BTreeMap::new();
