@@ -33,6 +33,37 @@ use evorule_tcb::JsonValue;
 use crate::auditor::{AuditEntry, Auditor};
 // ObjectPool 已移除（性能优化，非核心功能）
 
+/// 会话初始内容哈希口径（审计⑥ C2: 消除 TCB Display 与审计链 serde_json 紧凑口径的分叉）
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ContentHashScheme {
+    /// 旧口径: `blake3(TCB Display 字符串)`（带空格,历史 fork 会话）
+    #[default]
+    #[allow(dead_code)]
+    TcbDisplay,
+    /// 当前口径: `blake3(serde_json 紧凑序列化)` — 与审计链 `hash::content_hash` 同源
+    AuditChainCompact,
+}
+
+/// 计算 fork 会话的初始内容哈希
+///
+/// 优先使用审计链口径（`evorule_reactor::hash::content_hash`,serde_json 紧凑序列化）,
+/// 使跨会话因果锚与审计链内容哈希可互证;转换失败时 fallback 旧 Display 口径并告警
+/// （确定性引擎内该分支实际不可达,tcb_to_serde 覆盖全部 JsonValue 变体）。
+fn compute_initial_hash(payload: &JsonValue) -> (String, ContentHashScheme) {
+    match evorule_reactor::content_hash(payload) {
+        Ok(h) => (h, ContentHashScheme::AuditChainCompact),
+        Err(e) => {
+            tracing::warn!(error = %e, "审计链口径内容哈希失败, fallback 到旧 Display 口径");
+            (
+                blake3::hash(payload.to_string().as_bytes())
+                    .to_hex()
+                    .to_string(),
+                ContentHashScheme::TcbDisplay,
+            )
+        }
+    }
+}
+
 /// 默认最大会话数
 pub const DEFAULT_MAX_SESSIONS: usize = 1000;
 /// 默认会话 TTL（30 分钟无活动自动过期）
@@ -63,6 +94,8 @@ pub struct Session {
     /// 初始内容哈希（基于父会话最终状态或初始 payload 计算）
     /// 用于跨会话因果链的完整性校验
     pub initial_content_hash: Option<String>,
+    /// 初始内容哈希口径（审计⑥ C2,验证方按口径分派验证算法）
+    pub content_hash_scheme: ContentHashScheme,
     created_at: Arc<Instant>,
     last_activity_ms: Arc<AtomicU64>,
 }
@@ -135,6 +168,11 @@ impl Session {
     /// 计算的内容哈希，用于跨会话因果链完整性校验。
     pub fn initial_content_hash(&self) -> Option<&str> {
         self.initial_content_hash.as_deref()
+    }
+
+    /// 获取初始内容哈希口径（审计⑥ C2）
+    pub fn content_hash_scheme(&self) -> ContentHashScheme {
+        self.content_hash_scheme
     }
 
     /// 获取最后活动时间
@@ -634,6 +672,7 @@ impl SessionManager {
                 auditor,
                 parent_session_id: None,
                 initial_content_hash: None,
+                content_hash_scheme: ContentHashScheme::default(),
                 created_at: Arc::new(Instant::now()),
                 last_activity_ms: Arc::new(AtomicU64::new(0)),
             },
@@ -692,29 +731,21 @@ impl SessionManager {
 
         let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
 
-        let (initial_content_hash, initial_payload, initial_version) = match version {
-            Some(v) => {
-                let payload = rewind_payload(&parent.facts_log, v)
-                    .ok_or(SessionError::InvalidVersion { version: v })?;
-                (
-                    blake3::hash(payload.to_string().as_bytes())
-                        .to_hex()
-                        .to_string(),
-                    payload,
-                    v,
-                )
-            }
-            None => {
-                let (payload, _, version) = parent.facts_log.snapshot();
-                (
-                    blake3::hash(payload.to_string().as_bytes())
-                        .to_hex()
-                        .to_string(),
-                    payload,
-                    version,
-                )
-            }
-        };
+        // 审计⑥ C2: 锚哈希统一到审计链口径（带口径标记,旧验证方按 scheme 分派）
+        let (initial_content_hash, content_hash_scheme, initial_payload, initial_version) =
+            match version {
+                Some(v) => {
+                    let payload = rewind_payload(&parent.facts_log, v)
+                        .ok_or(SessionError::InvalidVersion { version: v })?;
+                    let (h, scheme) = compute_initial_hash(&payload);
+                    (h, scheme, payload, v)
+                }
+                None => {
+                    let (payload, _, version) = parent.facts_log.snapshot();
+                    let (h, scheme) = compute_initial_hash(&payload);
+                    (h, scheme, payload, version)
+                }
+            };
 
         let facts_log = match self.create_facts_log(session_id) {
             Ok(fl) => fl,
@@ -771,6 +802,7 @@ impl SessionManager {
                 auditor,
                 parent_session_id: Some(parent_id),
                 initial_content_hash: Some(initial_content_hash),
+                content_hash_scheme,
                 created_at: Arc::new(Instant::now()),
                 last_activity_ms: Arc::new(AtomicU64::new(0)),
             },
@@ -1418,11 +1450,9 @@ mod tests {
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-        // 3. 记录父会话当前 payload 哈希，作为预期值
+        // 3. 记录父会话当前 payload 哈希，作为预期值（审计⑥ C2: 审计链口径）
         let (parent_payload, _, _) = parent.facts_log.snapshot();
-        let expected_hash = blake3::hash(parent_payload.to_string().as_bytes())
-            .to_hex()
-            .to_string();
+        let expected_hash = evorule_reactor::content_hash(&parent_payload).unwrap();
 
         // 4. 从父会话派生子会话
         let child_id = mgr.create_session_from_parent(parent_id).unwrap();
@@ -1431,6 +1461,10 @@ mod tests {
         // 5. 验证子会话的父会话 ID 和初始内容哈希
         assert_eq!(child.parent_session_id(), Some(parent_id));
         assert_eq!(child.initial_content_hash(), Some(expected_hash.as_str()));
+        assert_eq!(
+            child.content_hash_scheme(),
+            ContentHashScheme::AuditChainCompact
+        );
         assert_ne!(child_id, parent_id);
         assert_eq!(mgr.len(), 2);
 
@@ -1465,9 +1499,7 @@ mod tests {
         // 孙会话的初始内容哈希应等于子会话创建时的 payload 快照哈希
         // （子会话刚创建还没执行命令时，状态等于初始状态）
         let (child_payload, _, _) = child.facts_log.snapshot();
-        let child_hash = blake3::hash(child_payload.to_string().as_bytes())
-            .to_hex()
-            .to_string();
+        let child_hash = evorule_reactor::content_hash(&child_payload).unwrap();
         assert_eq!(grandchild.initial_content_hash(), Some(child_hash.as_str()));
 
         assert_eq!(mgr.len(), 3);
