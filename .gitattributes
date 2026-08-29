@@ -18,6 +18,9 @@
 *.yml text
 *.yaml text
 
+# TCB 宪法双仓同步:钉死 LF,保证 evorule-tcb/ 与 evorule-server/resources/ 工作区字节一致
+evorule-tcb/core_eval.json text eol=lf
+
 # Binary files
 *.png binary
 *.jpg binary
