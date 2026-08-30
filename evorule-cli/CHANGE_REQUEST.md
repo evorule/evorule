@@ -114,4 +114,50 @@ ed25519 确定性签名 + 审计锚点链式校验是通用安全原语，不包
 
 ---
 
+## 7. 变更记录 CR-20260830-001: build.rs 门禁状态机生命周期撇号判别修复
+
+### 7.1 基本信息
+
+| 字段 | 值 |
+|------|------|
+| **变更 ID** | CR-20260830-001 |
+| **变更标题** | build.rs 门禁状态机生命周期撇号判别修复（strip_test_mod 误报消除） |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-08-30 |
+| **审查状态** | 已批准 |
+
+### 7.2 变更层级声明
+
+**本次变更属于**: ✅ **机制层 (Mechanism)**
+
+### 7.3 判定理由
+
+```
+本变更只修改 build.rs 门禁自身实现，不触及任何 src/ 执行语义：
+- strip_test_mod/find_inline_lbrace/match_brace 状态机在撇号处新增
+  char_lit_starts() 判别（字符字面量 vs 生命周期），新增 skip_lifetime() 跳过
+- 修复前 'static 等生命周期撇号被误判为字符态开头，吞掉后续所有花括号，
+  令 match_brace 永不闭合、tests 模块整体不被剥离、门禁对测试代码全量误报
+- 五仓（tcb/reactor/governance/cli/server）同一份实现同步修复，
+  每仓 build.rs 内含 3 个单元测试（探针 crate 验证）
+- 不新增/删除任何扫描模式，语言规范能力不变
+```
+
+### 7.4 变更详情
+
+- build.rs：新增 `char_lit_starts`/`skip_lifetime` 两个函数；`find_inline_lbrace`/
+  `match_brace` 撇号入口处按判别结果分流；新增 `#[cfg(test)] mod tests`（3 个测试）
+- 根 `GATE_REFERENCE.md`：登记修复说明与 evorule-server S 系列条目
+- 门禁判定结果只会更精确（减少误报），不会放行任何原本被拦截的生产代码模式
+
+### 7.5 测试计划
+
+- [x] build.rs 内嵌 3 个单元测试（match_brace 生命周期/剥离存活/判别规则）
+- [x] 探针 crate 以 lib.rs 方式加载真实 build.rs 运行（cargo test 不运行 build script 测试）
+- [x] 核心四仓串行 cargo build 门禁 PASSED + evorule-server 全 workspace 编译通过
+
+回滚：git revert 本提交即恢复旧状态机。
+
+---
+
 > 注意：这是机制层变更，后续每次修改都需要更新此文件。
