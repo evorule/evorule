@@ -157,4 +157,51 @@ ed25519 确定性签名 + 审计锚点校验是通用安全原语，不包含任
 
 ---
 
+## 8. 变更记录 CR-20260830-002: IoSubscriber 跳过谓词（外部执行者应答权保障）
+
+### 8.1 基本信息
+
+| 字段 | 值 |
+|------|------|
+| **变更 ID** | CR-20260830-002 |
+| **变更标题** | IoSubscriber 新增可选 skip 谓词（LLM 审计形态 IoRequest 不自动应答） |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-08-30 |
+| **审查状态** | 已批准 |
+
+### 8.2 变更层级声明
+
+**本次变更属于**: ✅ **机制层 (Mechanism)**
+
+### 8.3 判定理由
+
+```
+跳过谓词是通用订阅者能力：命中谓词的 IoRequest 不由订阅者自动应答，
+留给外部执行者处理。不含任何业务语义（LLM 审计形态的具体判定由应用层
+evorule-server 挂载时注入，本仓只提供机制）。
+```
+
+### 8.4 变更详情
+
+- `io_subscriber.rs`：新增 `SkipPredicate` 类型别名与 `with_skip` builder 方法；
+  `handle_fact` 的 IoRequest 分支在 dispatch 之前先判谓词，命中则 trace 留痕并忽略
+  （不回写任何 IoResponse）
+- 默认 `skip = None`，历史行为完全不变（全部 IoRequest 照常自动应答）
+- 解决的架构问题：server 侧 IoSubscriber 对 LLM 审计形态的 `call_external`
+  （带 `messages`、无 `service_name`）会以 "missing service_name" 快速错误应答，
+  抢占外部执行者（evo-agent AuditedLlm / console-cloud 浏览器审计桥）的应答权——
+  外部执行者的 io_response 被反应器按 Unknown IoResponse 忽略，审计回路永远失败
+- 谓词判定留在应用层（server），机制层不感知"LLM 审计"语义
+
+### 8.5 测试计划
+
+- [x] `test_skip_predicate_leaves_io_request_unanswered`：skip 命中 → 无任何 IoResponse 回写
+- [x] `test_without_skip_error_response_is_written`：对照组，默认行为不变（错误应答回写）
+- [x] `test_skip_predicate_does_not_hit_service_calls`：带 service_name 的调用不跳过
+- [x] `cargo test -p evorule-governance --lib` 全绿；CR 门禁 + 策略层检测 PASSED
+
+回滚：git revert 本提交即恢复无谓词状态。
+
+---
+
 > 注意：这是机制层变更，后续每次修改都需要更新此文件。

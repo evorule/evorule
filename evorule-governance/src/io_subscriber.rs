@@ -80,6 +80,10 @@ pub enum IoSubscriberError {
     CommandClosed(String),
 }
 
+/// 跳过谓词：返回 `true` 时该 IoRequest **不由本订阅者自动应答**，
+/// 留给外部执行者（如审计桥的浏览器/agent 侧本地 LLM 执行）处理。
+pub type SkipPredicate = Arc<dyn Fn(&IoType, &JsonValue) -> bool + Send + Sync>;
+
 /// I/O 订阅者
 ///
 /// 订阅反应器的 event broadcast 通道，过滤出 `Fact::IoRequest`，交由
@@ -89,6 +93,11 @@ pub enum IoSubscriberError {
 /// - 持有自己的 ID 计数器（从 `10000` 起），与反应器 ID 隔离
 /// - 对 `Lagged` 容错（记录日志并继续），不中断订阅循环
 /// - 非阻塞处理：忽略非 `IoRequest` 类型 Fact，不影响其他订阅者
+/// - 可选 `skip` 谓词：命中时**不自动应答**（不回写任何 IoResponse），
+///   留给外部执行者处理。用于 LLM 审计形态的 `call_external`（prompt 全文
+///   经命令事实入审计链，结果由外部执行者经 `submit_io_response` 回写）——
+///   若本订阅者抢先以"missing service_name"错误应答，外部执行者的
+///   io_response 将被反应器忽略（Unknown IoResponse），审计回路永远失败
 ///
 /// # 示例
 /// ```ignore
@@ -106,6 +115,8 @@ pub struct IoSubscriber {
     next_id: u64,
     /// I/O 指标收集器（默认 NoOpMetrics，应用层可通过 `with_metrics()` 注入 Prometheus 实现）
     metrics: SharedMetrics,
+    /// 可选跳过谓词（默认 None = 全部自动应答，行为与历史版本一致）
+    skip: Option<SkipPredicate>,
 }
 
 impl IoSubscriber {
@@ -118,7 +129,17 @@ impl IoSubscriber {
             dispatcher,
             next_id: ID_OFFSET,
             metrics: Arc::new(NoOpMetrics),
+            skip: None,
         }
+    }
+
+    /// 注入跳过谓词（builder 模式）
+    ///
+    /// 谓词命中的 IoRequest **不自动应答**（不回写任何 IoResponse），
+    /// 留给外部执行者（审计桥）处理。
+    pub fn with_skip(mut self, predicate: SkipPredicate) -> Self {
+        self.skip = Some(predicate);
+        self
     }
 
     /// 注入指标收集器（builder 模式）
@@ -198,6 +219,19 @@ impl IoSubscriber {
                 params,
                 ..
             } => {
+                // 跳过谓词命中 → 不自动应答，留给外部执行者（审计桥）。
+                // 必须在 dispatch 之前判断：一旦回写（哪怕错误），外部执行者的
+                // io_response 会被反应器忽略（Unknown IoResponse）。
+                if let Some(skip) = &self.skip {
+                    if skip(&io_type, &params) {
+                        tracing::trace!(
+                            fact_id = %id,
+                            io_type = %io_type,
+                            "IoSubscriber 命中跳过谓词，IoRequest 留待外部执行者应答"
+                        );
+                        return Ok(());
+                    }
+                }
                 self.dispatch_and_respond(id, io_type, params, command_tx)
                     .await
             }
@@ -407,6 +441,108 @@ mod tests {
         assert_eq!(
             INITIAL_BACKOFF.saturating_mul(2u32.saturating_pow(2)),
             Duration::from_millis(800)
+        );
+    }
+
+    // ===== skip 谓词（审计桥 2026-08-30）：命中时不自动应答 =====
+
+    /// 构造 LLM 审计形态的 call_external params（有 messages、无 service_name）
+    fn llm_audit_params() -> JsonValue {
+        JsonValue::object_from_pairs(&[(
+            "messages",
+            JsonValue::array(vec![JsonValue::object_from_pairs(&[
+                ("role", JsonValue::string("user")),
+                ("content", JsonValue::string("hi")),
+            ])]),
+        )])
+    }
+
+    /// skip 命中 → handle_fact 返回 Ok 且**不回写任何 IoResponse**（留给外部执行者）
+    #[tokio::test]
+    async fn test_skip_predicate_leaves_io_request_unanswered() {
+        // 空 dispatcher：若未跳过而走 dispatch，必然回写错误 IoResponse
+        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build()).with_skip(Arc::new(
+            |io_type: &IoType, params: &JsonValue| {
+                io_type.as_str() == "call_external"
+                    && params.get("messages").is_some()
+                    && params.get("service_name").is_none()
+                    && params.get("name").is_none()
+            },
+        ));
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let fact = Fact::IoRequest {
+            id: FactId(1),
+            cause: FactId(0),
+            io_type: IoType::call_external(),
+            params: llm_audit_params(),
+        };
+
+        let result = subscriber.handle_fact(fact, &tx).await;
+        assert!(result.is_ok());
+        // 关键断言：command 通道无任何 IoResponse（外部执行者的 io_response 不会被抢答）
+        assert!(
+            rx.try_recv().is_err(),
+            "skip 命中时不应回写任何 IoResponse"
+        );
+    }
+
+    /// 对照组：默认（无 skip）→ dispatch 失败 → 回写错误 IoResponse（历史行为不变）
+    #[tokio::test]
+    async fn test_without_skip_error_response_is_written() {
+        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build());
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let fact = Fact::IoRequest {
+            id: FactId(2),
+            cause: FactId(0),
+            io_type: IoType::call_external(),
+            params: llm_audit_params(),
+        };
+
+        let result = subscriber.handle_fact(fact, &tx).await;
+        assert!(result.is_ok());
+        // 空 dispatcher → dispatch Err → 错误 IoResponse 回写
+        match rx.try_recv() {
+            Ok(Fact::IoResponse { request_id, error, .. }) => {
+                assert_eq!(request_id, FactId(2));
+                assert!(error.is_some(), "未注册类型应回写错误 IoResponse");
+            }
+            other => panic!("应回写错误 IoResponse，实际: {other:?}"),
+        }
+    }
+
+    /// 谓词只命中 LLM 审计形态：带 service_name 的 call_external 不跳过（照常分发）
+    #[tokio::test]
+    async fn test_skip_predicate_does_not_hit_service_calls() {
+        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build()).with_skip(Arc::new(
+            |io_type: &IoType, params: &JsonValue| {
+                io_type.as_str() == "call_external"
+                    && params.get("messages").is_some()
+                    && params.get("service_name").is_none()
+                    && params.get("name").is_none()
+            },
+        ));
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        // service 调用形态：service_name 存在、无 messages
+        let params = JsonValue::object_from_pairs(&[(
+            "service_name",
+            JsonValue::string("inverse_kinematics_solver"),
+        )]);
+        let fact = Fact::IoRequest {
+            id: FactId(3),
+            cause: FactId(0),
+            io_type: IoType::call_external(),
+            params,
+        };
+
+        let result = subscriber.handle_fact(fact, &tx).await;
+        assert!(result.is_ok());
+        // 未跳过 → dispatch（空 dispatcher）→ 错误 IoResponse 回写
+        assert!(
+            rx.try_recv().is_ok(),
+            "带 service_name 的调用不应被跳过，应照常分发并回写"
         );
     }
 }
