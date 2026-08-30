@@ -267,6 +267,34 @@ fn skip_to_mod_tests(src: &str) -> Option<usize> {
     None
 }
 
+/// `'` 处判别：字符字面量（`'x'` / `'\n'` / `'\''`）还是生命周期（`'a` / `'static` / `'_`）。
+///
+/// 判别规则（Rust 语法保证无歧义）：
+/// - `'` 后跟 `\` → 转义字符字面量；
+/// - `'` 后跟单字符且再下一位是 `'` → 单字符字面量；
+/// - 其余（`'ident`）→ 生命周期/标签。
+///
+/// 合法源码不存在 `'ab'`（多字符字面量非法），故该判别不会误判。
+/// 不判别的后果：`fn f() -> &'static str {` 的 `'static` 进入字符态后吞掉
+/// 直到下一个 `'` 之间的所有 `{}`，令 match_brace 永不闭合、tests 模块
+/// 整体不被剥离，门禁对全文件测试代码全量误报。
+fn char_lit_starts(bytes: &[u8], i: usize) -> bool {
+    match bytes.get(i + 1) {
+        Some(b'\\') => true,
+        Some(_) => bytes.get(i + 2) == Some(&b'\''),
+        None => false,
+    }
+}
+
+/// 生命周期跳过：从 `'` 起越过标识符字符（`'static` / `'a` / `'_`），停在非 ident 处。
+fn skip_lifetime(bytes: &[u8], mut i: usize) -> usize {
+    i += 1; // 越过 '
+    while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+        i += 1;
+    }
+    i
+}
+
 /// 查找下一个不在注释/字符串内的 `{`, 遇到 `;` 返回 None (`mod tests;` 无体)。
 fn find_inline_lbrace(src: &str) -> Option<usize> {
     let bytes = src.as_bytes();
@@ -331,8 +359,14 @@ fn find_inline_lbrace(src: &str) -> Option<usize> {
             continue;
         }
         if b == b'\'' {
-            in_char = true;
-            i += 1;
+            if char_lit_starts(bytes, i) {
+                in_char = true;
+                i += 1;
+            } else {
+                // 生命周期/标签（`'a` / `'static` / `'outer:`）：不进入字符态，
+                // 跳过标识符——否则字符态误吞后续 `{}`（见 char_lit_starts 文档）
+                i = skip_lifetime(bytes, i);
+            }
             continue;
         }
         if b == b'{' {
@@ -414,8 +448,14 @@ fn match_brace(src: &str, open_idx: usize) -> Option<usize> {
             continue;
         }
         if b == b'\'' {
-            in_char = true;
-            i += 1;
+            if char_lit_starts(bytes, i) {
+                in_char = true;
+                i += 1;
+            } else {
+                // 生命周期/标签（`'a` / `'static` / `'outer:`）：不进入字符态，
+                // 跳过标识符——否则字符态误吞后续 `{}`（见 char_lit_starts 文档）
+                i = skip_lifetime(bytes, i);
+            }
             continue;
         }
         if b == b'{' {
@@ -926,4 +966,48 @@ fn strip_test_modules(content: &str) -> String {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    #[test]
+    fn test_match_brace_ignores_lifetime() {
+        // 注意：'static 必须在首个 { 之后且其后整段无撇号，才能复现旧缺陷
+        let src = "fn outer() { let mk: fn() -> &'static str; }";
+        let open = src.find('{').unwrap();
+        let close = match_brace(src, open).unwrap();
+        assert_eq!(src.chars().nth(close), Some('}'));
+    }
+
+    #[test]
+    fn test_strip_survives_lifetime_apostrophe() {
+        // 撇号在 tests 体内、其后整个文件无撇号 → 旧行为 match_brace 永不闭合
+        let src = concat!(
+            "#[cfg(test)]\n",
+            "mod tests {\n",
+            "    fn schema() -> &'static str { \"x\" }\n",
+            "    fn helper() { let x = something.unwrap(); }\n",
+            "}\n",
+        );
+        let stripped = strip_test_mod(src);
+        assert_eq!(
+            stripped.matches(".unwrap(").count(),
+            0,
+            "生命周期撇号后的 tests 体须被剥离, got: {stripped:?}"
+        );
+    }
+
+    #[test]
+    fn test_char_lit_starts_discrimination() {
+        // 转义字符字面量
+        assert!(char_lit_starts(b"let c = '\\n';", 8));
+        // 单字符字面量
+        assert!(char_lit_starts(b"let c = 'x';", 8));
+        // 生命周期
+        assert!(!char_lit_starts(b"fn f() -> &'static str {", 12));
+        assert!(!char_lit_starts(b"fn f<'a>(x: &'a u8) {}", 5));
+    }
 }
