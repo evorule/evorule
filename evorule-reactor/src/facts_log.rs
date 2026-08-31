@@ -18,7 +18,7 @@
 
 use crate::fact::{Fact, FactId};
 #[cfg(feature = "persistence")]
-use crate::wal::{WalWriter, DEFAULT_MAX_WAL_SIZE_BYTES};
+use crate::wal::{FactWalStore, WalWriter, DEFAULT_MAX_WAL_SIZE_BYTES};
 use evorule_tcb::path::resolve_path_mut;
 use evorule_tcb::JsonValue;
 #[cfg(kani)]
@@ -110,13 +110,15 @@ struct FactsLogInner {
     last_hash: String,
 
     #[cfg(feature = "persistence")]
-    /// 可选的 WAL 写入器（P0-1）
+    /// 可选的 WAL 存储后端（P0-1；UV-026 起为可替换 trait 对象）
     ///
-    /// - `Some`：`append()` 时先 write-ahead 写磁盘再更新内存
+    /// - `Some`：`append()` 时先 write-ahead 写后端再更新内存
     /// - `None`：纯内存模式（兼容旧 API，如 `new()` / `with_initial_payload()`）
     ///
-    /// `recover()` 重放期间临时为 `None`，重放完成后挂载为 `Some` 以继续追加。
-    wal: Option<WalWriter>,
+    /// 默认后端 = 文件 `WalWriter`（`recover*` 恢复后挂载，行为不变）；
+    /// 自定义后端经 `with_wal_store` 挂载（如 `MemoryWalStore`）。
+    /// `recover()` 重放期间临时为 `None`，重放完成后挂载以继续追加。
+    wal: Option<Box<dyn FactWalStore>>,
 
     #[cfg(feature = "persistence")]
     /// 是否在 WAL flush 后执行 fsync（P02）
@@ -381,7 +383,7 @@ impl FactsLog {
             version: 0,
             last_stable_version: 0,
             last_hash: String::from("genesis"),
-            wal: Some(wal),
+            wal: Some(Box::new(wal)),
             fsync_on_flush: fsync,
             max_wal_size_bytes,
             version_index: BTreeMap::new(),
@@ -389,6 +391,35 @@ impl FactsLog {
             path_index: BTreeMap::new(),
             compacted_snapshot: None,
         }))
+    }
+
+    #[cfg(feature = "persistence")]
+    /// 创建挂载自定义存储后端的 FactsLog（UV-026 存储层 trait 抽象）
+    ///
+    /// 与 `with_wal*` 系列同语义（write-ahead：`append()` 先写后端再更新内存），
+    /// 但后端由调用方注入——如 [`crate::wal::MemoryWalStore`]（无文件系统/
+    /// 嵌入式/测试）或第三方实现。哈希链计算与内存推进逻辑与文件后端完全一致。
+    ///
+    /// # 注意
+    /// `Box` 会取得后端所有权；需要事后检视记录的后端（如
+    /// `MemoryWalStore`）应利用其共享句柄语义（先 `clone` 再注入）。
+    /// 本构造器不改变 `new()/recover*` 的任何既有行为。
+    pub fn with_wal_store(store: Box<dyn FactWalStore>) -> Self {
+        Self::with_inner(FactsLogInner {
+            history: Vec::new(),
+            current_snapshot: JsonValue::empty_object(),
+            current_queue: Vec::new(),
+            version: 0,
+            last_stable_version: 0,
+            last_hash: String::from("genesis"),
+            wal: Some(store),
+            fsync_on_flush: false,
+            max_wal_size_bytes: DEFAULT_MAX_WAL_SIZE_BYTES,
+            version_index: BTreeMap::new(),
+            fact_id_index: BTreeMap::new(),
+            path_index: BTreeMap::new(),
+            compacted_snapshot: None,
+        })
     }
 
     #[cfg(feature = "persistence")]
@@ -577,7 +608,7 @@ impl FactsLog {
             // 重放完成，挂载 WAL 继续追加
             let wal = WalWriter::append_with_options(path, max_wal_size_bytes, fsync)
                 .map_err(|e| FactsLogError::WalError(e.to_string()))?;
-            inner.wal = Some(wal);
+            inner.wal = Some(Box::new(wal));
             inner.fsync_on_flush = fsync;
             inner.max_wal_size_bytes = max_wal_size_bytes;
         }
@@ -2126,6 +2157,108 @@ mod tests {
                 let _ = std::fs::remove_file(e.path());
             }
         }
+    }
+
+    // ===== UV-026 存储层 trait 抽象测试 =====
+
+    #[cfg(feature = "persistence")]
+    #[test]
+    fn test_memory_wal_store_roundtrip_preserves_hash_fields() {
+        use crate::wal::{FactWalStore, MemoryWalStore};
+
+        let mut store = MemoryWalStore::new();
+        assert!(store.is_empty());
+
+        store
+            .append_record_with_hash(0, &Fact::Command { id: FactId(1), instruction: JsonValue::empty_object() }, "c1", "genesis", "h1")
+            .unwrap();
+        store
+            .append_record_with_hash(1, &Fact::Error { id: FactId(2), message: "e".into() }, "c2", "h1", "h2")
+            .unwrap();
+        assert_eq!(store.len(), 2);
+
+        let records = store.into_records();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].version_before, 0);
+        assert_eq!(records[0].content_hash.as_deref(), Some("c1"));
+        assert_eq!(records[0].prev_hash.as_deref(), Some("genesis"));
+        assert_eq!(records[0].chain_hash.as_deref(), Some("h1"));
+        assert_eq!(records[1].version_before, 1);
+        assert_eq!(records[1].chain_hash.as_deref(), Some("h2"));
+    }
+
+    #[cfg(feature = "persistence")]
+    #[test]
+    fn test_with_wal_store_memory_backend_same_hash_chain_as_pure_memory() {
+        use crate::wal::MemoryWalStore;
+
+        // 同一事实序列:纯内存模式 vs 内存后端模式,哈希链必须一致
+        let mut store = MemoryWalStore::new();
+        let probe = store.clone();
+        let log = FactsLog::with_wal_store(Box::new(store));
+
+        let log_pure = FactsLog::new();
+        let mut expected_vb: Vec<u64> = Vec::new();
+        let mut cur_version: u64 = 0;
+        for i in 0..5u64 {
+            let fact = if i % 2 == 0 {
+                Fact::PayloadUpdate {
+                    id: FactId(i + 1),
+                    path: format!("k{i}"),
+                    value: JsonValue::Integer(i as i64),
+                }
+            } else {
+                Fact::Command {
+                    id: FactId(i + 1),
+                    instruction: JsonValue::empty_object(),
+                }
+            };
+            // 版本规则:PayloadUpdate +1,Command 不变(facts_log append 契约)
+            expected_vb.push(cur_version);
+            if matches!(fact, Fact::PayloadUpdate { .. }) {
+                cur_version += 1;
+            }
+            log.append(fact.clone()).unwrap();
+            log_pure.append(fact).unwrap();
+        }
+
+        // 版本与历史一致
+        assert_eq!(log.version(), log_pure.version());
+        assert_eq!(log.history_len(), log_pure.history_len());
+        // 哈希链一致(通过 FactsLog 公开访问器;探测句柄记录数一致)
+        assert_eq!(log.last_hash(), log_pure.last_hash());
+        assert_eq!(probe.len(), 5);
+        // write-ahead 语义:后端记录与内存 history 一一同相(version_before 对齐、均带哈希)
+        let records = probe.records();
+        let hist = log.history();
+        assert_eq!(records.len(), hist.len());
+        for (r, vb) in records.iter().zip(expected_vb.iter()) {
+            assert_eq!(r.version_before, *vb);
+            assert!(r.has_hash());
+        }
+    }
+
+    #[cfg(feature = "persistence")]
+    #[test]
+    fn test_file_backend_via_trait_unchanged_roundtrip() {
+        use crate::wal::FactWalStore;
+
+        // 默认文件后端经 trait 对象分发,行为与直挂 WalWriter 一致(回归锁)
+        let path = temp_wal_path("uv026_file_trait");
+        let log = FactsLog::with_wal(&path).unwrap();
+        log.append(Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "a".into(),
+            value: JsonValue::Integer(7),
+        })
+        .unwrap();
+        let expected_last = log.last_hash();
+        drop(log);
+
+        let recovered = FactsLog::recover(&path).unwrap();
+        assert_eq!(recovered.history_len(), 1);
+        assert_eq!(recovered.last_hash(), expected_last);
+        let _ = std::fs::remove_file(&path);
     }
 
     // ===== A-3 索引与压缩测试 =====

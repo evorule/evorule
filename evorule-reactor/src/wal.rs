@@ -117,6 +117,124 @@ impl WalRecord {
     }
 }
 
+/// 事实 WAL 存储后端契约（UV-026 存储层 trait 抽象）
+///
+/// write-ahead 语义：`FactsLog::append` 在更新内存状态**之前**调用本方法，
+/// 实现 `Ok` 返回即承诺记录已落（后端自行承担崩溃/断电不丢语义）。
+///
+/// 默认实现 = [`WalWriter`]（文件后端，行为与历史上 WAL 直挂完全一致）；
+/// 备选实现 = [`MemoryWalStore`]（纯内存，嵌入式/测试/离线场景）。
+/// 第三方可实现本 trait 接入自有存储（SQLite/远程等）。
+///
+/// 契约要点：
+/// - 哈希链字段（content_hash/prev_hash/chain_hash）必须原样保存，不得重算或丢弃；
+///   回放/审计一致性依赖"写入即所见"
+/// - 同一实例上记录的追加顺序即调用顺序（append-only，不提供改删）
+pub trait FactWalStore: Send + Sync {
+    /// 追加一条带哈希链的记录（write-ahead：内存更新前调用）
+    fn append_record_with_hash(
+        &mut self,
+        version_before: u64,
+        fact: &Fact,
+        content_hash: &str,
+        prev_hash: &str,
+        chain_hash: &str,
+    ) -> Result<(), WalError>;
+}
+
+impl FactWalStore for WalWriter {
+    fn append_record_with_hash(
+        &mut self,
+        version_before: u64,
+        fact: &Fact,
+        content_hash: &str,
+        prev_hash: &str,
+        chain_hash: &str,
+    ) -> Result<(), WalError> {
+        // 纯委托：文件后端行为与历史实现逐字节一致（UV-026 默认实现行为不变）
+        WalWriter::append_record_with_hash(
+            self,
+            version_before,
+            fact,
+            content_hash,
+            prev_hash,
+            chain_hash,
+        )
+    }
+}
+
+/// 纯内存事实 WAL 后端（UV-026：离线/嵌入式/测试受益项）
+///
+/// - 记录保存在进程内存（`Arc<Mutex<Vec<WalRecord>>>`），哈希链字段原样保存；
+/// - 进程退出即失（与 FactsLog 纯内存模式同语义），适用于无文件系统、
+///   短命嵌入式会话、以及需要检视 WAL 内容的单测；
+/// - `Clone` 为共享句柄语义：clone 与原实例看到同一条记录序列，
+///   调用方在把实例交给 `FactsLog::with_wal_store` 前先保留一个 clone
+///   即可事后检视（`records()` / `into_records()`）。
+#[derive(Debug, Clone, Default)]
+pub struct MemoryWalStore {
+    records: std::sync::Arc<std::sync::Mutex<Vec<WalRecord>>>,
+}
+
+impl MemoryWalStore {
+    /// 创建空内存后端
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 已追加的记录数
+    pub fn len(&self) -> usize {
+        self.records.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
+    /// 是否为空
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// 当前全部记录快照（顺序 = 追加顺序；后续追加不反映在返回值中）
+    pub fn records(&self) -> Vec<WalRecord> {
+        self.records
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// 取出全部已追加记录（消耗共享句柄；顺序 = 追加顺序）
+    pub fn into_records(self) -> Vec<WalRecord> {
+        match std::sync::Arc::try_unwrap(self.records) {
+            Ok(mutex) => mutex.into_inner().unwrap_or_else(|e| e.into_inner()),
+            Err(arc) => {
+                let mut guard = arc.lock().unwrap_or_else(|e| e.into_inner());
+                guard.drain(..).collect()
+            }
+        }
+    }
+}
+
+impl FactWalStore for MemoryWalStore {
+    fn append_record_with_hash(
+        &mut self,
+        version_before: u64,
+        fact: &Fact,
+        content_hash: &str,
+        prev_hash: &str,
+        chain_hash: &str,
+    ) -> Result<(), WalError> {
+        self.records
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(WalRecord {
+                version_before,
+                fact: fact.clone(),
+                content_hash: Some(content_hash.to_string()),
+                prev_hash: Some(prev_hash.to_string()),
+                chain_hash: Some(chain_hash.to_string()),
+            });
+        Ok(())
+    }
+}
+
 /// tier0 `JsonValue` → `serde_json::Value`
 ///
 /// 直接映射，因 tier0 无 Float 类型，故整数/字符串/布尔/null/数组/对象一一对应。
