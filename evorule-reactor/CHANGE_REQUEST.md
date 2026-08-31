@@ -4,10 +4,10 @@
 
 | 字段 | 值 |
 |------|------|
-| **变更 ID** | CR-20260830-001 |
-| **变更标题** | build.rs 门禁状态机生命周期撇号判别修复（strip_test_mod 误报消除） |
+| **变更 ID** | CR-20260831-001 |
+| **变更标题** | 存储层 trait 抽象：FactWalStore 后端契约 + MemoryWalStore 内存后端（UV-026） |
 | **提交人** | EvoRule Team |
-| **提交日期** | 2026-08-30 |
+| **提交日期** | 2026-08-31 |
 | **审查状态** | 已批准 |
 
 ## 2. 变更层级判定（必填）
@@ -19,63 +19,75 @@
 ### 2.2 判定理由
 
 ```
-本变更只修改 build.rs 门禁自身实现，不触及任何 src/ 执行语义：
-- strip_test_mod/find_inline_lbrace/match_brace 状态机在撇号处新增
-  char_lit_starts() 判别（字符字面量 vs 生命周期），新增 skip_lifetime() 跳过
-- 修复前 'static 等生命周期撇号被误判为字符态开头，吞掉后续所有花括号，
-  令 match_brace 永不闭合、tests 模块整体不被剥离、门禁对测试代码全量误报
-- 五仓（tcb/reactor/governance/cli/server）同一份实现同步修复，
-  每仓 build.rs 内含 3 个单元测试（探针 crate 验证）
-- 不新增/删除任何扫描模式，语言规范能力不变
+本变更为 FactsLog 的 WAL 持久化层提供可替换后端契约，不触及任何业务语义：
+- wal.rs 新增 FactWalStore trait（单方法 append_record_with_hash，write-ahead
+  语义：内存更新前调用，Ok 即承诺记录不丢失）与 MemoryWalStore 内存后端
+  （Arc<Mutex<Vec<WalRecord>>>，Clone 为共享句柄语义，供无文件系统/嵌入式/
+  测试场景与事后检视）；WalWriter 经纯委托实现 trait（逐字节行为不变）
+- facts_log.rs：FactsLogInner.wal 由 Option<WalWriter> 改为
+  Option<Box<dyn FactWalStore>>（事实：FactsLog 对 WAL 的写调用本就仅此一处）；
+  新增构造器 with_wal_store；new/with_wal*/recover*/compact/reset 公开 API
+  与文件后端行为零改动
+- 哈希链计算、版本推进、恢复重放逻辑全部不动；消费方（governance
+  SharedFactsLog / server SessionManager）公开 API 零改动
 ```
 
 ### 2.3 机制层判定标准检查
 
 **✅ 机制层变更的特征**:
-- [x] 提供通用基础设施能力（门禁判定精度修正）
+- [x] 提供通用基础设施能力（存储后端可替换契约）
 - [x] 不包含任何特定业务语义
-- [x] 可被任何业务场景无差别复用
+- [x] 可被任何业务场景无差别复用（第三方可接 SQLite/远程后端）
 
 ## 3. 变更分类
 
-- **变更类型**: B - 机制修正
-- **影响模块**: evorule-reactor/build.rs、CHANGE_REQUEST.md、根 GATE_REFERENCE.md
+- **变更类型**: B - 机制扩展
+- **影响模块**: evorule-reactor/src/wal.rs、src/facts_log.rs、src/lib.rs、CHANGE_REQUEST.md
 
 ## 4. 变更详情
 
 ### 3.1 变更理由
 
-门禁状态机对生命周期撇号的处理存在缺陷，凡被门禁扫描的源文件在 tests 模块内
-（或其后）出现 `'static`/`'a` 等生命周期标注且后文再无撇号时，测试模块体不被剥离，
-`.unwrap()` 等测试合法构造被误报为违规，阻碍合法代码合入。
+"一切皆 plugin" 架构原则第四章第3项（UV-026）：WAL/事实存储后端可替换，
+当前实现与引擎耦合。盘点确认 FactsLog 内存层与文件层本已分离（`new()` 纯内存、
+`recover*()` 文件恢复），缺的只是写侧可替换点——抽为 trait 即得最小真边界。
 
 ### 3.2 变更范围
 
-- build.rs：新增 `char_lit_starts`/`skip_lifetime` 两个函数；`find_inline_lbrace`/
-  `match_brace` 撇号入口处按判别结果分流；新增 `#[cfg(test)] mod tests`（3 个测试）
-- CHANGE_REQUEST.md：本表
-- GATE_REFERENCE.md：登记修复说明与 evorule-server S 系列条目
+- wal.rs：`FactWalStore` trait、`impl FactWalStore for WalWriter`（纯委托）、
+  `MemoryWalStore`（含 len/is_empty/records/into_records）
+- facts_log.rs：`wal` 字段类型改为 trait 对象；`recover_with_options`/
+  `with_wal_options` 挂载点包 `Box::new`；新增 `with_wal_store`
+- lib.rs：导出 `FactWalStore`、`MemoryWalStore`
+- 新增 3 个单测：内存后端往返哈希字段保真 / 内存后端与纯内存模式哈希链一致 /
+  文件后端经 trait 分发回归锁
 
 ### 3.3 破坏性分析
 
-无对外契约变化。门禁判定结果只会更精确（减少误报），不会放行任何原本被拦截的
-生产代码模式；扫描模式集合零改动。
+无对外契约变化。`FactsLog` 公开 API（new/with_wal*/recover*/compact/reset/
+append/read_from 等）签名与行为不变；默认文件后端经 trait 纯委托，WAL 文件
+格式与字节行为不变；`--no-default-features` 构建不受影响（trait 同在
+persistence 门控内）。
 
 ### 3.4 影响评估
 
-- 全量 workspace 测试须绿；核心四仓串行构建门禁 PASSED
-- 判别规则由 Rust 语法保证无歧义（合法源码不存在 `'ab'` 多字符字面量）
-- 五仓实现一致，防止审查标准走偏
+- evorule-reactor：137 过（no-default）+ 181 过（all-features，含 3 新测试）；
+  变更治理门禁 PASSED
+- evorule-governance：144 过（消费方零改动回归）
+- evorule-server：192 过（path 依赖直接吸收，零改动回归）
 
 ### 3.5 测试计划
 
-- [x] build.rs 内嵌 3 个单元测试（match_brace 生命周期/剥离存活/判别规则）
-- [x] 探针 crate 以 lib.rs 方式加载真实 build.rs 运行（cargo test 不运行 build script 测试）
-- [x] 核心四仓串行 cargo build 门禁 PASSED + evorule-server 全 workspace 编译通过
+- [x] MemoryWalStore 往返：哈希三字段与 version_before 逐项保真
+- [x] FactsLog::with_wal_store + MemoryWalStore 与纯内存模式 last_hash/version/
+  历史长度一致（哈希链语义不变）；后端记录与内存 history 按 version_before 同相
+- [x] 文件后端经 trait 分发：recover 后 last_hash 与追加时一致（回归锁）
+- [x] 三仓全量库测试绿（reactor/governance/server）
 
 ### 3.6 回滚方案
 
-git revert 本提交即恢复旧状态机；误报场景在旧实现下可通过重排撇号位置临时规避。
+git revert 本提交即恢复 `Option<WalWriter>` 直挂形态；MemoryWalStore 与
+with_wal_store 为纯新增，revert 无残留影响。
 
 ## 5. 审查清单
 
@@ -95,6 +107,24 @@ git revert 本提交即恢复旧状态机；误报场景在旧实现下可通过
 ---
 
 ## 附 · 历史变更归档
+
+### CR-20260830-001（已批准）：build.rs 门禁状态机生命周期撇号判别修复（strip_test_mod 误报消除）
+
+> 归档说明：原 CR 整表收录于 2026-08-31，完整内容见 git 历史。
+
+| 字段 | 值 |
+|------|------|
+| **变更 ID** | CR-20260830-001 |
+| **变更标题** | build.rs 门禁状态机生命周期撇号判别修复 |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-08-30 |
+| **审查状态** | 已批准 |
+
+机制层变更：strip_test_mod/find_inline_lbrace/match_brace 状态机在撇号处新增
+char_lit_starts() 判别（字符字面量 vs 生命周期），修复 'static 被误判为字符态
+致 tests 模块不剥离、门禁全量误报；五仓同一份实现同步修复。回滚：git revert。
+
+---
 
 ### CR-20260820-002（已批准）：添加变更治理门禁机制和策略层检测
 

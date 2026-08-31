@@ -116,5 +116,5 @@ pub use stable_detector::StableDetector;
 #[cfg(feature = "persistence")]
 pub use wal::{
     fact_from_json, fact_to_json, read_wal, read_wal_with_hash, serde_to_tcb, tcb_to_serde,
-    WalError, WalRecord, WalWriter,
+    FactWalStore, MemoryWalStore, WalError, WalRecord, WalWriter,
 };
