@@ -13,6 +13,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.4.0 - 2026-09-01
+
+**单会话长跑 O(n²) 缺陷修复配套（MINOR，含破坏性）** — 适配 `evorule-reactor` v0.4.0 `Fact::Stable` 瘦身（CR-20260901-001）。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.4.0]` 段。
+
+### 🔄 变更
+
+- **`executor::execute` 返回 `(Vec<Fact>, JsonValue)`**：最终 payload 由执行器持有并直接返回，不再经事实链（Stable 已不携带快照）
+- `fact_to_human` 的 Stable 行显示 `version=N`
+- `Cargo.toml` 依赖版本对齐：`evorule-tcb` / `evorule-reactor` 由 `0.3.2` → `0.4.0`
+
+### 向后兼容
+
+- ⚠️ 库接口：`executor::execute` 返回值类型变更（CLI 命令行为不变）
+- ✅ `run` / `validate` / `replay` / `diff` / `verify-chain` / `anchor-keygen` / `verify-anchors` 命令行为与退出码不变
+- ✅ **旧格式 fact log（≤0.3.x 含 `final_snapshot`）仍可解析**（容错读取，version 兜底）
+
+---
+
 ## v0.3.2 - 2026-08-26
 
 **G-A1 审计锚点签名 + 治理门禁同步（MINOR）** — 新增 `anchor-keygen` / `verify-anchors` 子命令；与 evorule-tcb / evorule-reactor / evorule-governance v0.3.2 同步。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.3.2]` 段。

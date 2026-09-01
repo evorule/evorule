@@ -204,4 +204,50 @@ evorule-server 挂载时注入，本仓只提供机制）。
 
 ---
 
+## 9. 变更记录 CR-20260901-001: 审计增量化——audit_new 全量 clone 消除（UV-032 O(n²) 修复配套）
+
+### 9.1 基本信息
+
+| 字段 | 值 |
+|------|------|
+| **变更 ID** | CR-20260901-001 |
+| **变更标题** | 审计增量化——audit_new 全量 clone 消除（配套 evorule-reactor Stable 瘦身） |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-09-01 |
+| **审查状态** | 已批准 |
+
+### 9.2 变更层级声明
+
+**本次变更属于**: ✅ **机制层 (Mechanism)**
+
+### 9.3 判定理由
+
+```
+本变更只改 audit_new 的遍历方式（全量 clone → 增量迭代），审计语义
+（去重游标 entries.len() / 条目结构 / 哈希链算法 / verify 与 replay）
+逐条等价，不触及任何业务语义，可被任何审计场景无差别复用。
+```
+
+### 9.4 变更详情
+
+- `auditor.rs` `audit_new()`：原每命令调用 `FactsLog::history()` 全量 clone
+  全部历史事实（长驻会话 ~1500 命令时每命令近 GB 级内存复制，构成 O(n²)
+  CPU 瓶颈主体）——改经 tier1 新增的 `FactsLog::for_each_fact_from`
+  锁内零 clone 增量遍历尾部新事实
+- 去重策略不变：仍以 `entries.len()` 为游标；哈希失败跳过与 entry_index
+  计数语义与原 enumerate 对齐
+- 配套 evorule-reactor CR-20260901-001（Fact::Stable 瘦身为 version）：
+  hash.rs 测试构造、sse_integration_test 状态断言改经 FactsLog::snapshot()、
+  end_to_end_audit_chain make_stable 适配
+
+### 9.5 测试计划
+
+- [x] `cargo test -p evorule-governance` 全绿（144 lib + 集成测试）
+- [x] 增量遍历与全量 history() 语义一致性经既有 audit_new/verify 全量回归覆盖
+- [x] 哈希快照重生成后 tier2 与 tier1 一致性测试通过
+
+回滚：git revert 本提交即恢复全量 clone 形态。
+
+---
+
 > 注意：这是机制层变更，后续每次修改都需要更新此文件。
