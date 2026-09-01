@@ -1230,8 +1230,8 @@ mod tests {
         let records = read_wal(&path).expect("旧格式 WAL(含 final_snapshot)必须可读");
         assert_eq!(records.len(), 3);
 
-        match &records[2].1 {
-            Fact::Stable { id, version } => {
+        match records.get(2).map(|(_, f)| f) {
+            Some(Fact::Stable { id, version }) => {
                 assert_eq!(id.0, 3);
                 assert_eq!(
                     *version, 1,
@@ -1255,8 +1255,8 @@ mod tests {
         std::fs::write(&path, lines.join("\n") + "\n").unwrap();
 
         let records = read_wal(&path).expect("新格式 WAL 必须可读");
-        match &records[0].1 {
-            Fact::Stable { id, version } => {
+        match records.first().map(|(_, f)| f) {
+            Some(Fact::Stable { id, version }) => {
                 assert_eq!(id.0, 3);
                 assert_eq!(*version, 7, "新格式显式 version 不得被 version_before 覆盖");
             }

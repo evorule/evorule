@@ -159,7 +159,7 @@ fn bench_execute_transition_increment(c: &mut Criterion) {
                 black_box(&payload),
                 black_box(&[]),
             );
-            black_box(result);
+            let _ = black_box(result);
         });
     });
 }
@@ -179,7 +179,7 @@ fn bench_execute_transition_set(c: &mut Criterion) {
                 black_box(&payload),
                 black_box(&[]),
             );
-            black_box(result);
+            let _ = black_box(result);
         });
     });
 }
@@ -199,7 +199,7 @@ fn bench_execute_transition_noop(c: &mut Criterion) {
                 black_box(&payload),
                 black_box(&[]),
             );
-            black_box(result);
+            let _ = black_box(result);
         });
     });
 }
@@ -326,7 +326,7 @@ fn bench_queue_operations(c: &mut Criterion) {
                 black_box(&payload),
                 black_box(&queue),
             );
-            black_box(result);
+            let _ = black_box(result);
         });
     });
 }

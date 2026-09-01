@@ -2,7 +2,8 @@
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 // 测试代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 GATE_REFERENCE.md §六(豁免索引)
-#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
+// too_many_lines: 测试 fixture(长 JSON 规则字面量)豁免
+#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used, clippy::too_many_lines)]
 //! 反应式执行器集成测试
 
 use evorule_reactor::{Fact, FactId, FactIdGenerator, IoType, Reactor};

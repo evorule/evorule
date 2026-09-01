@@ -158,6 +158,7 @@ pub(crate) fn hex_decode(hex: &str) -> Result<Vec<u8>, SignError> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
 
     #[test]

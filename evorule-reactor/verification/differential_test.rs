@@ -112,6 +112,8 @@ fn load_core_eval() -> Vec<JsonValue> {
 /// 背景：T8 迁出后核心仓 core_eval.json 为最小评估集，不再含 call_external 规则；
 /// I/O 循环差分用例需要应用剧本形态的完整触发/消费路径，故按消费方自持宪法
 /// （evo-agent agent_constitution.json）内联同构的最小规则链。
+// 测试 fixture(长 JSON 规则字面量)豁免行数门禁
+#[allow(clippy::too_many_lines)]
 fn io_loop_rules() -> Vec<JsonValue> {
     let rules = serde_json::json!([
         // ReAct 迭代计数器初始化（首次执行 call_external 时置 0）
