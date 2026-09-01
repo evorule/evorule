@@ -160,4 +160,51 @@ ed25519 确定性签名 + 审计锚点链式校验是通用安全原语，不包
 
 ---
 
+## 8. 变更记录 CR-20260901-001: executor 最终 payload 直接返回 + Stable 新结构适配（UV-032 O(n²) 修复配套）
+
+### 8.1 基本信息
+
+| 字段 | 值 |
+|------|------|
+| **变更 ID** | CR-20260901-001 |
+| **变更标题** | executor 最终 payload 直接返回 + Stable 新结构适配 |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-09-01 |
+| **审查状态** | 已批准 |
+
+### 8.2 变更层级声明
+
+**本次变更属于**: ✅ **机制层 (Mechanism)**
+
+### 8.3 判定理由
+
+```
+本变更适配 tier1 Fact::Stable 瘦身（快照字段移除，CR-20260901-001），
+CLI 单次运行结果的取值路径从事实链改为执行器返回值——机制层取值路径
+调整，不含任何业务语义。
+```
+
+### 8.4 变更详情
+
+- `executor.rs`：`execute()` 返回值 `Vec<Fact>` → `(Vec<Fact>, JsonValue)`，
+  最终 payload 由执行器持有并直接返回（不经事实链）；内部新增 version
+  计数（每条 StateTransition +1，对齐 reactor 语义），Stable 发射
+  `version` 字段
+- `run.rs` / `examples/programmatic_run.rs`：解构新返回值
+- `fact_log.rs` / `output.rs` / `diff.rs` / `verify_chain.rs` / `hash.rs`：
+  测试构造适配（Stable 用 version）；`fact_to_human` Stable 行显示
+  `version=N`；fact_log 保留旧格式字符串样例兼作向后兼容解析测试
+- `tests/cli_test.rs`：FIFO 断言从"末行 Stable 快照"改为"最后一条
+  StateTransition 的 new_payload"
+
+### 8.5 测试计划
+
+- [x] `cargo test -p evorule-cli` 全绿（61 lib + 20 集成）
+- [x] 旧格式（≤0.3.x 含 final_snapshot）fact log 解析兼容性测试保留通过
+- [x] FIFO / 确定性加载 / verify-chain / diff 端到端命令回归通过
+
+回滚：git revert 本提交即恢复快照取值路径。
+
+---
+
 > 注意：这是机制层变更，后续每次修改都需要更新此文件。

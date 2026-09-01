@@ -46,8 +46,8 @@ workspace = true
 # - evorule-governance 虽 H6 已去应用层依赖，但 CLI 目前仅需 tier0+tier1 功能，故不引入
 # - CLI 主执行路径同步（execute_transition 是纯函数），tokio 仅用于 reactor spawn + WAL flush
 # - persistence feature 启用 WAL 读写（含哈希链验证），serde_json/blake3 均 pure Rust，支持 musl
-evorule-tcb = { path = "../evorule-tcb", version = "0.3.2" }
-evorule-reactor = { path = "../evorule-reactor", version = "0.3.2", features = [
+evorule-tcb = { path = "../evorule-tcb", version = "0.4.0" }
+evorule-reactor = { path = "../evorule-reactor", version = "0.4.0", features = [
     "persistence",
 ] }
 

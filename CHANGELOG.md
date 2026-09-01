@@ -36,6 +36,39 @@
 
 ---
 
+## [0.4.0] - 2026-09-01
+
+### 🐛 修复
+
+- **单会话长跑 O(n²) 性能缺陷修复（UV-032 实战检验发现，CR-20260901-001）**:
+  - 现象:长驻会话每命令耗时随事实数线性恶化(~1500 命令 → 2.5s/命令)、
+    单会话 WAL 膨胀至 100MB
+  - 根因一:`Fact::Stable.final_snapshot`(全量 payload 快照)每命令 O(n)
+    入链累计 O(n²)——恢复路径从不读取该快照,属纯冗余 → **瘦身为
+    `version: u64`**(状态本体由最近一条 StateTransition 确定,消费方经
+    snapshot API 获取,信息零丢失)
+  - 根因二:`Auditor::audit_new` 每命令全量 clone 全部历史事实 → 改经
+    **`FactsLog::for_each_fact_from` 锁内零 clone 增量迭代**(审计语义
+    逐条等价)
+  - CLI `executor::execute` 最终 payload 改由返回值直接交付(不经事实链)
+
+### ⚠️ Breaking Change
+
+- **审计链哈希输入变更**:Stable 哈希由含全量快照变为含 version——旧 WAL
+  的 `chain_hash` 在新代码 verify 下不匹配(恢复不受影响:recover 与链
+  校验解耦);新写 WAL 与审计链均为新格式
+- **WAL 磁盘格式变更**:`Stable` 记录以 `version` 字段替代 `final_snapshot`
+  ——**新代码可读旧格式**(容错:忽略快照内容,version 以 version_before
+  兜底);**旧代码不可读新格式,升级单向**
+- `evorule-cli` 库接口:`executor::execute` 返回 `(Vec<Fact>, JsonValue)`
+- 语义化版本:0.x 阶段 MINOR 承载破坏性变更(semver 0.x 约定)
+
+### 🔄 变更
+
+- 版本 0.3.2 → 0.4.0(tcb / reactor / governance / cli 四仓同步)
+
+---
+
 ## [Unreleased]
 
 ### 🔄 变更
