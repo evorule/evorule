@@ -60,8 +60,8 @@
 //!
 //! // 等待 Stable 事实（broadcast recv 返回 Result）
 //! while let Ok(fact) = rx.recv().await {
-//!     if let Fact::Stable { final_snapshot, .. } = fact {
-//!         println!("完成: {:?}", final_snapshot);
+//!     if let Fact::Stable { version, .. } = fact {
+//!         println!("会话于版本 {} 稳定", version);
 //!         break;
 //!     }
 //! }

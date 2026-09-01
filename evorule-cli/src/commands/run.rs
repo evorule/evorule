@@ -44,7 +44,9 @@ pub fn run(
 
     tracing::info!(rules = transforms.len(), max_steps, "starting execution");
 
-    let facts = executor::execute(&transforms, initial_payload, initial_instruction, max_steps)?;
+    // 最终 payload 经返回值直接交付（CR-20260901-001：Stable 不再内嵌快照）
+    let (facts, _final_payload) =
+        executor::execute(&transforms, initial_payload, initial_instruction, max_steps)?;
 
     // 输出 fact log（tier1 WAL 格式）
     fact_log::write_facts(output, &facts)?;

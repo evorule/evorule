@@ -220,7 +220,8 @@ async fn test_vip_order_processing() {
     let final_state = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
-                Fact::Stable { final_snapshot, .. } => return Some(final_snapshot),
+                // Stable 不再携带快照(CR-20260901-001),状态经 FactsLog 快照取
+                Fact::Stable { .. } => return Some(facts_log.snapshot().0),
                 Fact::Error { message, .. } => {
                     panic!("Error during execution: {}", message);
                 }
@@ -335,8 +336,9 @@ async fn test_normal_order_processing() {
         let mut final_state = None;
         while let Ok(fact) = rx.recv().await {
             match &fact {
-                Fact::Stable { final_snapshot, .. } => {
-                    final_state = Some(final_snapshot.clone());
+                // Stable 不再携带快照(CR-20260901-001),状态经 FactsLog 快照取
+                Fact::Stable { .. } => {
+                    final_state = Some(facts_log.snapshot().0);
                     break;
                 }
                 Fact::Error { message, .. } => {

@@ -53,13 +53,10 @@ fn make_state_transition(id: u64, cause: u64, payload_val: i64) -> Fact {
 }
 
 /// 构造一个 Stable Fact
-fn make_stable(id: u64, final_val: i64) -> Fact {
-    let mut snapshot = BTreeMap::new();
-    snapshot.insert("x".to_string(), JsonValue::Integer(final_val));
-    snapshot.insert("completed".to_string(), JsonValue::Bool(true));
+fn make_stable(id: u64, version: u64) -> Fact {
     Fact::Stable {
         id: FactId(id),
-        final_snapshot: JsonValue::Object(snapshot),
+        version,
     }
 }
 
@@ -94,7 +91,7 @@ fn build_fact_sequence() -> Vec<Fact> {
         make_state_transition(4, 3, 2),
         make_io_request(5, 4),
         make_io_response(6, 5),
-        make_stable(7, 2),
+        make_stable(7, 2), // id=7，于版本 2 稳定
     ]
 }
 

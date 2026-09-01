@@ -92,13 +92,10 @@ fn make_state_transition(id: u64, cause: u64, payload_val: i64) -> Fact {
     }
 }
 
-fn make_stable(id: u64, final_val: i64) -> Fact {
-    let mut snapshot = BTreeMap::new();
-    snapshot.insert("x".to_string(), JsonValue::Integer(final_val));
-    snapshot.insert("completed".to_string(), JsonValue::Bool(true));
+fn make_stable(id: u64, version: u64) -> Fact {
     Fact::Stable {
         id: FactId(id),
-        final_snapshot: JsonValue::Object(snapshot),
+        version,
     }
 }
 

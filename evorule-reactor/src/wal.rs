@@ -371,10 +371,10 @@ pub fn fact_to_json(fact: &Fact) -> serde_json::Value {
                 },
             );
         }
-        Fact::Stable { id, final_snapshot } => {
+        Fact::Stable { id, version } => {
             obj.insert("type".into(), serde_json::Value::String("Stable".into()));
             obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
-            obj.insert("final_snapshot".into(), tcb_to_serde(final_snapshot));
+            obj.insert("version".into(), serde_json::Value::Number((*version).into()));
         }
         Fact::Error { id, message } => {
             obj.insert("type".into(), serde_json::Value::String("Error".into()));
@@ -497,13 +497,13 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
             })
         }
         "Stable" => {
-            let final_snapshot = obj
-                .get("final_snapshot")
-                .ok_or_else(|| WalError::InvalidFact("Stable missing 'final_snapshot'".into()))?;
-            Ok(Fact::Stable {
-                id,
-                final_snapshot: serde_to_tcb(final_snapshot),
-            })
+            // 新格式读取 version;旧格式(≤0.3.x 含 final_snapshot)缺失时先返回 0,
+            // 由调用方(read_wal_file_with_hash)以外层 version_before 兜底。
+            // 旧格式的 final_snapshot 字段若存在则忽略——recover 对 Stable 仅记
+            // last_stable_version 不读内容,状态重建由 StateTransition.new_payload
+            // 承担(见 CR-20260901-001)。
+            let version = obj.get("version").and_then(|v| v.as_u64()).unwrap_or(0);
+            Ok(Fact::Stable { id, version })
         }
         "Error" => {
             let message = obj
@@ -812,6 +812,17 @@ fn read_wal_file_with_hash<P: AsRef<Path>>(
             .get("fact")
             .ok_or_else(|| WalError::InvalidFact(format!("line {line_no}: missing fact")))?;
         let fact = fact_from_json(fact_value)?;
+        // 旧格式容错(CR-20260901-001):≤0.3.x 的 Stable 无 version 字段,
+        // 以外层 version_before 兜底(状态重建不读此字段,仅供审计/展示)
+        let fact = match fact {
+            Fact::Stable { id, version: 0 } if fact_value.get("version").is_none() => {
+                Fact::Stable {
+                    id,
+                    version: version_before,
+                }
+            }
+            f => f,
+        };
 
         // 可选哈希字段（新格式有，旧格式无）
         let content_hash = obj
@@ -1173,7 +1184,7 @@ mod tests {
     fn test_fact_stable_roundtrip() {
         let fact = Fact::Stable {
             id: FactId(6),
-            final_snapshot: JsonValue::object_from_pairs(&[("done", JsonValue::Bool(true))]),
+            version: 7,
         };
         assert_fact_roundtrip(&fact);
     }
@@ -1241,7 +1252,7 @@ mod tests {
                 1u64,
                 Fact::Stable {
                     id: FactId(3),
-                    final_snapshot: JsonValue::object_from_pairs(&[("x", JsonValue::Integer(5))]),
+                    version: 1,
                 },
             ),
         ];
@@ -1280,7 +1291,7 @@ mod tests {
             0,
             &Fact::Stable {
                 id: FactId(2),
-                final_snapshot: JsonValue::empty_object(),
+                version: 1,
             },
         )
         .unwrap();

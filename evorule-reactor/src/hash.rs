@@ -200,15 +200,11 @@ pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> 
                     .unwrap_or(serde_json::Value::Null),
             );
         }
-        Fact::Stable { id, final_snapshot } => {
-            trace!(
-                事实ID = ?id,
-                快照大小 = final_snapshot.to_string().len(),
-                "处理稳定状态类型事实"
-            );
+        Fact::Stable { id, version } => {
+            trace!(事实ID = ?id, 版本 = version, "处理稳定状态类型事实");
             obj.insert("type".into(), serde_json::Value::String("Stable".into()));
             obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
-            obj.insert("final_snapshot".into(), tcb_to_serde(final_snapshot));
+            obj.insert("version".into(), serde_json::Value::Number((*version).into()));
         }
         Fact::Error { id, message } => {
             trace!(
@@ -519,7 +515,7 @@ mod tests {
             },
             Fact::Stable {
                 id: FactId(7),
-                final_snapshot: JsonValue::empty_object(),
+                version: 0,
             },
             Fact::Error {
                 id: FactId(8),
@@ -601,7 +597,7 @@ mod tests {
             },
             Fact::Stable {
                 id: FactId(6),
-                final_snapshot: JsonValue::empty_object(),
+                version: 0,
             },
             Fact::Error {
                 id: FactId(7),
@@ -710,7 +706,7 @@ mod tests {
             },
             Fact::Stable {
                 id: FactId(6),
-                final_snapshot: JsonValue::empty_object(),
+                version: 0,
             },
             Fact::Error {
                 id: FactId(7),

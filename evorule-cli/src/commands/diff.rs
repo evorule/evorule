@@ -100,7 +100,7 @@ mod tests {
     fn test_compare_identical() {
         let facts = vec![Fact::Stable {
             id: FactId(1),
-            final_snapshot: JsonValue::empty_object(),
+            version: 1,
         }];
         // 不调用 compare_facts（它会打印到 stdout），只验证逻辑
         // 这里通过 max_len 逻辑验证
@@ -116,7 +116,7 @@ mod tests {
             },
             Fact::Stable {
                 id: FactId(2),
-                final_snapshot: JsonValue::empty_object(),
+                version: 1,
             },
         ];
         let b = vec![Fact::Command {

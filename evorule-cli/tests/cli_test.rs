@@ -409,11 +409,15 @@ fn test_fifo_queue_order() {
 
     let content = std::fs::read_to_string(&fact_log).expect("读取 fifo log 失败");
     // FIFO 顺序：step1 先执行（order="first"），step2 后执行（order="second"）
-    // 最后 Stable 的 payload 中 order="second"
-    let last_line = content.lines().last().expect("fifo log 为空");
+    // Stable 不再携带快照（CR-20260901-001），末次状态以最后一条 StateTransition 判定
+    let last_transition = content
+        .lines()
+        .rev()
+        .find(|l| l.contains(r#""type":"StateTransition""#))
+        .expect("fifo log 无 StateTransition");
     assert!(
-        last_line.contains(r#""order":"second"#),
-        "FIFO 顺序断言失败: 期望 order=second, 实际末行: {last_line}"
+        last_transition.contains(r#""order":"second"#),
+        "FIFO 顺序断言失败: 期望最后一条 StateTransition 中 order=second, 实际: {last_transition}"
     );
 }
 

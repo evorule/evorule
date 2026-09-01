@@ -119,7 +119,7 @@ mod tests {
         tx_clone
             .send(Fact::Stable {
                 id: FactId(1),
-                final_snapshot: JsonValue::empty_object(),
+                version: 0,
             })
             .unwrap();
 
@@ -127,7 +127,7 @@ mod tests {
         pair.command_tx
             .send(Fact::Stable {
                 id: FactId(2),
-                final_snapshot: JsonValue::empty_object(),
+                version: 0,
             })
             .unwrap();
     }
@@ -143,7 +143,7 @@ mod tests {
         pair.event_tx
             .send(Fact::Stable {
                 id: FactId(1),
-                final_snapshot: JsonValue::empty_object(),
+                version: 0,
             })
             .unwrap();
 

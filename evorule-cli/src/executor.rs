@@ -23,7 +23,10 @@
 //! 2. 若干 `StateTransition`（每步执行）
 //! 3. 可选 `IoRequest` + `Error`（I/O 请求但无 handler）
 //! 4. 可选 `Error`（TCB 错误或 max_steps 超限）
-//! 5. `Stable`（最终快照，始终发射）
+//! 5. `Stable`（稳定标记，始终发射）
+//!
+//! 最终 payload 经返回值直接交给调用方（CR-20260901-001：Stable 不再
+//! 内嵌全量快照，状态本体从执行器持有的 payload 返回，不经事实链）。
 
 use std::collections::{HashMap, VecDeque};
 
@@ -44,7 +47,8 @@ pub const DEFAULT_MAX_STEPS: usize = 10000;
 /// - `max_steps`：最大执行步数上界（先检后 pop）
 ///
 /// # 返回
-/// `Vec<Fact>`：包含 Command、若干 StateTransition、可选 Error、结尾 Stable
+/// `(Vec<Fact>, JsonValue)`：fact 序列（Command、若干 StateTransition、
+/// 可选 Error、结尾 Stable）+ 最终 payload（执行器持有，直接返回）
 ///
 /// # 不变量
 /// - FIFO 队列：`VecDeque::pop_front`，不能用 `Vec::pop`
@@ -58,13 +62,15 @@ pub fn execute(
     initial_payload: JsonValue,
     initial_instruction: JsonValue,
     max_steps: usize,
-) -> Result<Vec<Fact>, CliError> {
+) -> Result<(Vec<Fact>, JsonValue), CliError> {
     let mut facts: Vec<Fact> = Vec::new();
     let mut id_gen = FactIdGenerator::new();
     let mut queue: VecDeque<JsonValue> = VecDeque::new();
     queue.push_back(initial_instruction);
     let mut payload = initial_payload;
     let mut steps = 0;
+    // 会话版本号：对齐 reactor 语义，每条 StateTransition +1
+    let mut version: u64 = 0;
     // 0.2.0 无 I/O handler，pending_io 仅缓存不消费（为 0.3.0 铺路）
     let mut pending_io: HashMap<FactId, JsonValue> = HashMap::new();
 
@@ -107,6 +113,7 @@ pub fn execute(
             }) => {
                 payload = new_payload;
                 queue = new_queue.into_iter().collect();
+                version += 1;
                 let id = id_gen.next_id();
                 let new_queue_snapshot: Vec<JsonValue> = queue.iter().cloned().collect();
                 facts.push(Fact::StateTransition {
@@ -177,14 +184,15 @@ pub fn execute(
         }
     }
 
-    // 始终发射 Stable（即使是 Error 退出，也记录最终 payload 快照）
+    // 始终发射 Stable（即使是 Error 退出，也标记当前版本稳定）。
+    // 最终 payload 经返回值直接交付（CR-20260901-001：不再内嵌快照）
     let stable_id = id_gen.next_id();
     facts.push(Fact::Stable {
         id: stable_id,
-        final_snapshot: payload,
+        version,
     });
 
-    Ok(facts)
+    Ok((facts, payload))
 }
 
 #[cfg(test)]
@@ -230,7 +238,7 @@ mod tests {
     fn test_execute_empty_core_eval_noop() {
         // v0.3.1：空 core_eval + noop 指令 → TCB 显式返回 `Ignored`（无匹配 transform 规则）
         // cli executor 按 reactor 一致行为产生 `Error` 事实（不再静默失败）
-        let facts = execute(
+        let (facts, _) = execute(
             &[],
             JsonValue::empty_object(),
             noop_instruction(),
@@ -257,7 +265,7 @@ mod tests {
     #[test]
     fn test_execute_max_steps_zero() {
         // max_steps=0：立即发 Error，不执行任何指令
-        let facts = execute(&[], JsonValue::empty_object(), noop_instruction(), 0).unwrap();
+        let (facts, _) = execute(&[], JsonValue::empty_object(), noop_instruction(), 0).unwrap();
 
         // 应产生：Command + Error + Stable
         assert_eq!(facts.len(), 3, "expected Command + Error + Stable");
@@ -275,7 +283,8 @@ mod tests {
     fn test_execute_max_steps_exceeded_with_push() {
         // core_eval 含 push 规则（无限循环），max_steps=3 限制
         let core_eval = vec![push_noop_rule()];
-        let facts = execute(&core_eval, JsonValue::empty_object(), noop_instruction(), 3).unwrap();
+        let (facts, _) =
+            execute(&core_eval, JsonValue::empty_object(), noop_instruction(), 3).unwrap();
 
         // 应产生：Command + 3×StateTransition + Error + Stable = 6
         // (steps 0,1,2 各产生 StateTransition，step 3 触发 max_steps)
@@ -300,7 +309,8 @@ mod tests {
     fn test_execute_push_produces_nonempty_queue() {
         // core_eval 含 push 规则，max_steps=1 只执行一步
         let core_eval = vec![push_noop_rule()];
-        let facts = execute(&core_eval, JsonValue::empty_object(), noop_instruction(), 1).unwrap();
+        let (facts, _) =
+            execute(&core_eval, JsonValue::empty_object(), noop_instruction(), 1).unwrap();
 
         // 第一个 StateTransition 的 new_queue 应非空（push 生效）
         let st = facts.iter().find_map(|f| {
@@ -321,7 +331,7 @@ mod tests {
     fn test_execute_io_request_produces_io_fact() {
         // core_eval 含 io_request 规则
         let core_eval = vec![io_request_rule("call_external")];
-        let facts = execute(
+        let (facts, _) = execute(
             &core_eval,
             JsonValue::empty_object(),
             noop_instruction(),
@@ -347,7 +357,7 @@ mod tests {
         // v0.2.0：io_type 透传不校验，"unknown_io_type" 不再被 parse 拒绝，
         // 而是透传后由 cli（无 handler）发 "no I/O handler for io_type=unknown_io_type" Error
         let core_eval = vec![io_request_rule("unknown_io_type")];
-        let facts = execute(
+        let (facts, _) = execute(
             &core_eval,
             JsonValue::empty_object(),
             noop_instruction(),
@@ -368,7 +378,7 @@ mod tests {
     fn test_execute_tcb_error_produces_error() {
         // 构造会触发 TCB 错误的场景：core_eval 含非法规则（缺 params）
         let bad_rule = JsonValue::object_from_pairs(&[("type", JsonValue::string("set"))]);
-        let facts = execute(
+        let (facts, _) = execute(
             &[bad_rule],
             JsonValue::empty_object(),
             noop_instruction(),
@@ -386,7 +396,7 @@ mod tests {
     #[test]
     fn test_execute_fact_ids_monotonic() {
         // 验证 FactId 单调递增
-        let facts = execute(
+        let (facts, _) = execute(
             &[],
             JsonValue::empty_object(),
             noop_instruction(),
@@ -420,7 +430,8 @@ mod tests {
         ]);
         let core_eval = vec![push_two];
         // max_steps=3：初始指令执行 push（step1），然后执行 push 的两条 noop（step2,3）
-        let facts = execute(&core_eval, JsonValue::empty_object(), noop_instruction(), 3).unwrap();
+        let (facts, _) =
+            execute(&core_eval, JsonValue::empty_object(), noop_instruction(), 3).unwrap();
 
         // 验证：每次执行都通过 pop_front 取指令（FIFO）
         // step1: pop_front 初始 noop → push [noop, noop] → queue=[noop, noop]

@@ -107,7 +107,7 @@ mod tests {
             },
             Fact::Stable {
                 id: FactId(7),
-                final_snapshot: JsonValue::empty_object(),
+                version: 1,
             },
             Fact::Error {
                 id: FactId(8),
@@ -193,7 +193,7 @@ mod tests {
             },
             Fact::Stable {
                 id: FactId(6),
-                final_snapshot: JsonValue::empty_object(),
+                version: 1,
             },
             Fact::Error {
                 id: FactId(7),
@@ -260,7 +260,7 @@ mod tests {
             },
             Fact::Stable {
                 id: FactId(6),
-                final_snapshot: JsonValue::empty_object(),
+                version: 1,
             },
             Fact::Error {
                 id: FactId(7),
