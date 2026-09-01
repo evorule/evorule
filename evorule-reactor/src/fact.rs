@@ -229,8 +229,16 @@ pub enum Fact {
     Stable {
         /// 事实唯一标识符
         id: FactId,
-        /// 最终的 payload 快照
-        final_snapshot: JsonValue,
+        /// 稳定时的会话版本号
+        ///
+        /// # 设计（UV-032 O(n²) 修复，CR-20260901-001）
+        /// 原字段 `final_snapshot: JsonValue`（全量 payload 快照）在长驻会话下
+        /// 每命令 O(n) 写入事实链，累计 O(n²)（实测 ~1500 命令 → 100MB WAL、
+        /// 2.5s/命令）。恢复路径（FactsLog::recover）对 Stable 仅更新
+        /// last_stable_version、从不读取快照内容，快照为纯冗余 → 瘦身为版本号。
+        /// 状态本体由最近一条 StateTransition.new_payload 确定，消费方经
+        /// snapshot API 获取，信息零丢失。
+        version: u64,
     },
 
     /// 系统错误（超时或 TCB 内部错误）
@@ -337,10 +345,10 @@ impl Fact {
                 ];
                 J::object_from_pairs(&pairs)
             }
-            Fact::Stable { id, final_snapshot } => J::object_from_pairs(&[
+            Fact::Stable { id, version } => J::object_from_pairs(&[
                 ("type", J::string("Stable")),
                 ("id", J::integer(id.0 as i64)),
-                ("final_snapshot", final_snapshot.clone()),
+                ("version", J::integer(*version as i64)),
             ]),
             Fact::Error { id, message } => J::object_from_pairs(&[
                 ("type", J::string("Error")),
@@ -393,7 +401,7 @@ mod tests {
 
         let fact = Fact::Stable {
             id: FactId(2),
-            final_snapshot: JsonValue::empty_object(),
+            version: 0,
         };
         assert_eq!(fact.type_name(), "Stable");
         assert_eq!(fact.id(), FactId(2));
@@ -498,7 +506,7 @@ mod tests {
         // 终止事实
         assert!(Fact::Stable {
             id: FactId(1),
-            final_snapshot: JsonValue::empty_object(),
+            version: 0,
         }
         .is_terminal());
         assert!(Fact::Error {
@@ -594,7 +602,7 @@ mod tests {
         assert_eq!(
             Fact::Stable {
                 id: FactId(1),
-                final_snapshot: JsonValue::empty_object(),
+                version: 0,
             }
             .type_name(),
             "Stable"

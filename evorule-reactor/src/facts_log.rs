@@ -896,6 +896,39 @@ impl FactsLog {
         inner.history.iter().map(|(_, f)| f.clone()).collect()
     }
 
+    /// 从指定下标起增量遍历历史事实（零 clone，锁内回调）
+    ///
+    /// 用于 tier2 Auditor 的增量审计（CR-20260901-001）：调用方以自持游标
+    /// （如已审计条目数）为起点，只遍历尾部新事实，避免 [`Self::history`]
+    /// 每次全量 clone——长驻会话下全量 clone 构成 O(n²) CPU 瓶颈
+    /// （实测 ~1500 命令时每命令近 GB 级内存复制）。
+    ///
+    /// # 约束
+    /// - 回调在内部读锁持有期间执行，回调内**不得**再访问本 `FactsLog`
+    ///   （重入将死锁）
+    /// - `start` 不小于当前历史长度时返回 0（与切片越界空语义对齐）
+    /// - 实例运行期间发生过 compact 时，历史前缀已从内存投影丢弃，
+    ///   持久游标可能越过历史头部——调用方语义与 [`Self::read_from`]
+    ///   的压缩注意事项相同
+    ///
+    /// # 参数
+    /// - `start`：起始下标（含）
+    /// - `f`：回调，参数为 `(version_before, &Fact)`
+    ///
+    /// # 返回值
+    /// 实际遍历的事实条数。
+    pub fn for_each_fact_from(&self, start: usize, mut f: impl FnMut(u64, &Fact)) -> usize {
+        let inner = self.inner.read();
+        let tail = match inner.history.get(start..) {
+            Some(t) => t,
+            None => return 0,
+        };
+        for (vb, fact) in tail.iter() {
+            f(*vb, fact);
+        }
+        tail.len()
+    }
+
     /// 返回带版本号的完整历史（阶段5：时间机器 rewind/diff/replay 使用）
     ///
     /// 每个元素为 `(version_before, Fact)`，其中 `version_before` 是该 Fact
@@ -1163,7 +1196,7 @@ mod tests {
         // 再追加 Stable
         log.append(Fact::Stable {
             id: FactId(2),
-            final_snapshot: JsonValue::empty_object(),
+            version: 0,
         })
         .unwrap();
         assert_eq!(log.last_stable_version(), 1);
@@ -1360,7 +1393,7 @@ mod tests {
         // Stable: 记录 last_stable_version = 2，版本不变
         log.append(Fact::Stable {
             id: FactId(5),
-            final_snapshot: JsonValue::empty_object(),
+            version: 0,
         })
         .unwrap();
         assert_eq!(log.version(), 2);
@@ -1599,7 +1632,7 @@ mod tests {
         .unwrap();
         log.append(Fact::Stable {
             id: FactId(3),
-            final_snapshot: JsonValue::object_from_pairs(&[("x", JsonValue::Integer(42))]),
+            version: 1,
         })
         .unwrap();
 
@@ -1649,7 +1682,7 @@ mod tests {
         .unwrap();
         log.append(Fact::Stable {
             id: FactId(2),
-            final_snapshot: JsonValue::empty_object(),
+            version: 0,
         })
         .unwrap();
         drop(log);
@@ -1819,7 +1852,7 @@ mod tests {
         .unwrap();
         log.append(Fact::Stable {
             id: FactId(6),
-            final_snapshot: JsonValue::object_from_pairs(&[("x", JsonValue::Integer(5))]),
+            version: 2,
         })
         .unwrap();
         log.append(Fact::Error {
@@ -2352,7 +2385,7 @@ mod tests {
             .unwrap();
             log.append(Fact::Stable {
                 id: FactId(i * 3 + 3),
-                final_snapshot: JsonValue::empty_object(),
+                version: 0,
             })
             .unwrap();
         }
@@ -2422,7 +2455,7 @@ mod tests {
             .unwrap();
             log.append(Fact::Stable {
                 id: FactId(i * 3 + 3),
-                final_snapshot: JsonValue::empty_object(),
+                version: 0,
             })
             .unwrap();
         }

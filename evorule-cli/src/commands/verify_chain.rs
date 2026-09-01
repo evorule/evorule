@@ -226,7 +226,7 @@ mod tests {
             },
             Fact::Stable {
                 id: FactId(3),
-                final_snapshot: JsonValue::empty_object(),
+                version: 1,
             },
         ];
         let errors = verify_structural_invariants(&facts);
@@ -246,7 +246,7 @@ mod tests {
             },
             Fact::Stable {
                 id: FactId(1), // same id, not strictly greater
-                final_snapshot: JsonValue::empty_object(),
+                version: 1,
             },
         ];
         let errors = verify_structural_invariants(&facts);

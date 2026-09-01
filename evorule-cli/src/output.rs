@@ -35,9 +35,9 @@ use evorule_reactor::Fact;
 ///
 /// let stable = Fact::Stable {
 ///     id: FactId(4),
-///     final_snapshot: JsonValue::empty_object(),
+///     version: 1,
 /// };
-/// assert_eq!(fact_to_human(&stable), "[F4] Stable");
+/// assert_eq!(fact_to_human(&stable), "[F4] Stable version=1");
 /// ```
 pub fn fact_to_human(fact: &Fact) -> String {
     match fact {
@@ -76,7 +76,7 @@ pub fn fact_to_human(fact: &Fact) -> String {
             ),
             None => format!("[F{}] IoResponse request_id=F{} ok", id.0, request_id.0),
         },
-        Fact::Stable { id, .. } => format!("[F{}] Stable", id.0),
+        Fact::Stable { id, version } => format!("[F{}] Stable version={}", id.0, version),
         Fact::Error { id, message } => format!("[F{}] Error: {}", id.0, message),
     }
 }
@@ -136,10 +136,10 @@ mod tests {
     fn test_fact_to_human_stable() {
         let fact = Fact::Stable {
             id: FactId(3),
-            final_snapshot: JsonValue::empty_object(),
+            version: 1,
         };
         let s = fact_to_human(&fact);
-        assert!(s.contains("[F3] Stable"));
+        assert!(s.contains("[F3] Stable version=1"));
     }
 
     #[test]
@@ -164,7 +164,7 @@ mod tests {
             },
             Fact::Stable {
                 id: FactId(2),
-                final_snapshot: JsonValue::empty_object(),
+                version: 1,
             },
         ];
         let s = facts_to_human(&facts);

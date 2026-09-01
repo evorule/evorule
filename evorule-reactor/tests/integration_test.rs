@@ -370,7 +370,7 @@ fn make_call_external_instruction(prompt: &str) -> JsonValue {
 async fn test_simple_increment() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
     let instruction = make_instruction("increment", "x", 5);
@@ -383,7 +383,8 @@ async fn test_simple_increment() {
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
-                Fact::Stable { final_snapshot, .. } => return Some(final_snapshot),
+                // Stable 不再携带快照(CR-20260901-001),状态经 FactsLog 快照取
+                Fact::Stable { .. } => return Some(()),
                 Fact::Error { message, .. } => panic!("Error: {}", message),
                 _ => {}
             }
@@ -394,7 +395,7 @@ async fn test_simple_increment() {
     .unwrap();
 
     assert!(result.is_some());
-    let snapshot = result.unwrap();
+    let (snapshot, _, _) = facts_log.snapshot();
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(5)));
 }
 
@@ -402,7 +403,7 @@ async fn test_simple_increment() {
 async fn test_io_request_detection() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
     let instruction = make_call_external_instruction("Hello");
@@ -458,7 +459,8 @@ async fn test_io_request_detection() {
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
-                Fact::Stable { final_snapshot, .. } => return Some(final_snapshot),
+                // Stable 不再携带快照(CR-20260901-001),状态经 FactsLog 快照取
+                Fact::Stable { .. } => return Some(()),
                 Fact::Error { message, .. } => panic!("Error: {}", message),
                 _ => {}
             }
@@ -469,7 +471,7 @@ async fn test_io_request_detection() {
     .unwrap();
 
     assert!(result.is_some());
-    let snapshot = result.unwrap();
+    let (snapshot, _, _) = facts_log.snapshot();
     // v0.3.1：I/O 结果应被消费为业务字段 llm_response，
     // 恢复执行完成后 __io_results__ 应被整体移除（防止残留影响后续 I/O 指令）。
     assert_eq!(
@@ -487,7 +489,7 @@ async fn test_io_request_detection() {
 async fn test_unknown_io_response_ignored() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -511,7 +513,8 @@ async fn test_unknown_io_response_ignored() {
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
-                Fact::Stable { final_snapshot, .. } => return Some(final_snapshot),
+                // Stable 不再携带快照(CR-20260901-001),状态经 FactsLog 快照取
+                Fact::Stable { .. } => return Some(()),
                 Fact::Error { message, .. } => panic!("Error: {}", message),
                 _ => {}
             }
@@ -522,7 +525,7 @@ async fn test_unknown_io_response_ignored() {
     .unwrap();
 
     assert!(result.is_some());
-    let snapshot = result.unwrap();
+    let (snapshot, _, _) = facts_log.snapshot();
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(5)));
 }
 
@@ -768,12 +771,15 @@ fn make_sequence_instruction(instructions: Vec<JsonValue>) -> JsonValue {
     JsonValue::Object(instr)
 }
 
-/// 等待 Stable 事实，返回最终快照
-async fn wait_for_stable(rx: &mut evorule_reactor::EventReceiver) -> Option<JsonValue> {
+/// 等待 Stable 事实（不再携带快照，CR-20260901-001），返回 FactsLog 当前快照
+async fn wait_for_stable(
+    rx: &mut evorule_reactor::EventReceiver,
+    facts_log: &evorule_reactor::FactsLog,
+) -> Option<JsonValue> {
     timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
-                Fact::Stable { final_snapshot, .. } => return Some(final_snapshot),
+                Fact::Stable { .. } => return Some(()),
                 Fact::Error { message, .. } => panic!("Error: {}", message),
                 _ => {}
             }
@@ -782,13 +788,14 @@ async fn wait_for_stable(rx: &mut evorule_reactor::EventReceiver) -> Option<Json
     })
     .await
     .unwrap()
+    .map(|_| facts_log.snapshot().0)
 }
 
 #[tokio::test]
 async fn test_decrement_instruction() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -806,7 +813,7 @@ async fn test_decrement_instruction() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(7)));
 }
 
@@ -814,7 +821,7 @@ async fn test_decrement_instruction() {
 async fn test_set_instruction() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
     tx.send(Fact::Command {
@@ -823,7 +830,7 @@ async fn test_set_instruction() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
     assert_eq!(snapshot.get("y"), Some(&JsonValue::Integer(99)));
 }
 
@@ -831,7 +838,7 @@ async fn test_set_instruction() {
 async fn test_sequence_instruction_expansion() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -847,7 +854,7 @@ async fn test_sequence_instruction_expansion() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
     // x = 1 + 2 + 3 = 6
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(6)));
 }
@@ -903,7 +910,7 @@ async fn test_max_rounds_exceeded() {
 async fn test_payload_update() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -924,7 +931,7 @@ async fn test_payload_update() {
 
     // drain 会同时处理两个 Fact：PayloadUpdate 设置 x=42，Command push increment
     // 执行 increment: x = 42 + 5 = 47
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(47)));
 }
 
@@ -932,7 +939,7 @@ async fn test_payload_update() {
 async fn test_payload_update_existing_field() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -960,7 +967,7 @@ async fn test_payload_update_existing_field() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
     // set x=10 执行，PayloadUpdate 创建 y="hello"
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(10)));
     assert_eq!(snapshot.get("y").and_then(|v| v.as_str()), Some("hello"));
@@ -971,7 +978,7 @@ async fn test_multiple_commands_batch() {
     // ISSUE-1 修复验证：快速连续发送多个 Command，确保都被执行
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -994,7 +1001,7 @@ async fn test_multiple_commands_batch() {
 
     // 所有 3 个 Command 应该在同一轮 drain 中被处理
     // x = 5 + 10 + 20 = 35
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
     assert_eq!(
         snapshot.get("x"),
         Some(&JsonValue::Integer(35)),
@@ -1038,7 +1045,7 @@ async fn test_state_transition_cause_chain() {
     })
     .unwrap();
 
-    let _ = wait_for_stable(&mut rx).await.expect("Stable not received");
+    let _ = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
 
     // 验证 FactsLog 中的 StateTransition 的 cause 指向 Command 的 id
     let history = facts_log.history();
@@ -1070,7 +1077,7 @@ async fn test_state_transition_cause_chain() {
 async fn test_noop_instruction() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -1083,7 +1090,7 @@ async fn test_noop_instruction() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
     // noop 不修改 payload，仍为空对象
     assert_eq!(snapshot, JsonValue::empty_object());
 }
@@ -1147,7 +1154,7 @@ async fn test_facts_log_version_tracking() {
     })
     .unwrap();
 
-    let _ = wait_for_stable(&mut rx).await.expect("Stable not received");
+    let _ = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
 
     // 验证版本号 > 0（至少一次 StateTransition）
     let version = facts_log.version();
@@ -1182,7 +1189,7 @@ async fn test_read_from_for_audit_replay() {
     })
     .unwrap();
 
-    let _ = wait_for_stable(&mut rx).await.expect("Stable not received");
+    let _ = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
 
     // 审计重放：读取所有事实
     let all_facts = facts_log.read_from(0);
@@ -1233,7 +1240,7 @@ async fn test_consecutive_different_io_requests_no_interference() {
     //    清除后 → IoRequest → IoResponse → 重新执行 → set service_result
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -1274,7 +1281,7 @@ async fn test_consecutive_different_io_requests_no_interference() {
     send_io_response_value(&tx, &mut gen, request_id_3, final_llm.clone());
 
     // 4. 等待 Stable
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
     assert_eq!(
         snapshot.get("llm_response"),
         Some(&final_llm),
@@ -1316,7 +1323,7 @@ async fn test_io_result_consumed_to_business_field() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
 
     // 业务字段 llm_response 应被设置为 I/O 结果
     assert_eq!(
@@ -1422,7 +1429,7 @@ async fn test_two_different_io_types_sequence() {
     // call_external(#1) → call_service(#2) → call_external(#3, 由 merge 生成)。
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(200).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -1454,7 +1461,7 @@ async fn test_two_different_io_types_sequence() {
     send_io_response_value(&tx, &mut gen, rid_3, final_llm.clone());
 
     // 4. 验证最终快照
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
     assert_eq!(
         snapshot.get("llm_response"),
         Some(&final_llm),
@@ -1477,7 +1484,7 @@ async fn test_same_io_type_twice_no_stale_consumption() {
     // 第二次必须发起新的 io_request，不能消费第一次的残留 __io_results__
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(200).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -1505,7 +1512,7 @@ async fn test_same_io_type_twice_no_stale_consumption() {
     send_io_response(&tx, &mut gen, rid_2, "second-answer");
 
     // 3. 验证：llm_response 应为第二次的结果（覆盖第一次）
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
     assert_eq!(
         snapshot.get("llm_response").and_then(|v| v.as_str()),
         Some("second-answer"),
@@ -1526,7 +1533,7 @@ async fn test_io_interleaved_with_normal_instructions() {
     // 3. increment y=10（普通指令，不应受 I/O 残留影响）
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(200).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -1548,7 +1555,7 @@ async fn test_io_interleaved_with_normal_instructions() {
     send_io_response(&tx, &mut gen, rid, "mixed-result");
 
     // 2. 等待 Stable
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
 
     // 3. 验证所有指令都正确执行
     assert_eq!(
@@ -1578,7 +1585,7 @@ async fn test_all_supported_io_types_sequence() {
     // call_external + call_service（ReAct 循环：call_service 恢复时 merge 生成新 call_external）
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(500).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -1622,7 +1629,7 @@ async fn test_all_supported_io_types_sequence() {
     }
 
     // 验证最终快照
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
     let final_llm = make_llm_response("llm-final");
     assert_eq!(
         snapshot.get("llm_response"),
@@ -1654,7 +1661,7 @@ async fn test_io_response_with_null_result_clears_properly() {
     // 2. call_external #2 仍在队列 → 必须发起新 IoRequest → 回复结果 → set llm_response
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(200).build();
-    let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
@@ -1686,7 +1693,7 @@ async fn test_io_response_with_null_result_clears_properly() {
     send_io_response(&tx, &mut gen, rid_2, "second-answer");
 
     // 3. 验证
-    let snapshot = wait_for_stable(&mut rx).await.expect("Stable");
+    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
     // llm_response 应来自第二次 I/O 的结果（第一次 Null 的指令被丢弃，未消费任何字段）
     assert_eq!(
         snapshot.get("llm_response").and_then(|v| v.as_str()),
@@ -1785,7 +1792,7 @@ async fn test_snapshot_updates_during_executing_loop() {
 async fn test_inspect_returns_pending_io() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, mut rx, _event_tx, handle, _facts_log) = reactor.spawn();
+    let (tx, mut rx, _event_tx, handle, facts_log) = reactor.spawn();
 
     // 1. 发送 call_llm 指令
     let mut gen = FactIdGenerator::new();
@@ -1830,7 +1837,7 @@ async fn test_inspect_returns_pending_io() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx)
+    let snapshot = wait_for_stable(&mut rx, &facts_log)
         .await
         .expect("回复 IoResponse 后应收到 Stable");
     assert_eq!(
@@ -1871,7 +1878,7 @@ async fn test_d11_replay_consistency_first_vs_preresult() {
     // ============================================================
     // 路径 A: 首次执行 (标准 IoRequest -> IoResponse -> 重放)
     // ============================================================
-    let (tx_a, mut rx_a, _event_a, handle_a, _facts_a) =
+    let (tx_a, mut rx_a, _event_a, handle_a, facts_a) =
         Reactor::builder(core_eval.clone()).max_rounds(100).build().spawn();
     let mut gen_a = FactIdGenerator::new();
 
@@ -1907,7 +1914,7 @@ async fn test_d11_replay_consistency_first_vs_preresult() {
     .unwrap();
 
     // 4. 等待 Stable (D11 步骤 3 重放后,步骤 4 清除 __io_results__)
-    let snap_a = wait_for_stable(&mut rx_a)
+    let snap_a = wait_for_stable(&mut rx_a, &facts_a)
         .await
         .expect("D11 路径 A: IoResponse 后应 Stable");
 
@@ -1917,7 +1924,7 @@ async fn test_d11_replay_consistency_first_vs_preresult() {
     // ============================================================
     // 路径 B: 重放执行 (预注入 __io_results__, 模拟 D11 步骤 2 完成态)
     // ============================================================
-    let (tx_b, mut rx_b, _event_b, handle_b, _facts_b) =
+    let (tx_b, mut rx_b, _event_b, handle_b, facts_b) =
         Reactor::builder(core_eval).max_rounds(100).build().spawn();
     let mut gen_b = FactIdGenerator::new();
 
@@ -1938,19 +1945,21 @@ async fn test_d11_replay_consistency_first_vs_preresult() {
 
     // 3. 收集事实流,断言不应收到 IoRequest (走 on_true 跳过)
     let mut got_io_request_b = false;
-    let mut snap_b = None;
+    let mut stable_b = false;
     while let Ok(fact) = rx_b.recv().await {
         match fact {
             Fact::IoRequest { .. } => got_io_request_b = true,
-            Fact::Stable { final_snapshot, .. } => {
-                snap_b = Some(final_snapshot);
+            // Stable 不再携带快照(CR-20260901-001),状态经 FactsLog 快照取
+            Fact::Stable { .. } => {
+                stable_b = true;
                 break;
             }
             Fact::Error { message, .. } => panic!("D11 路径 B Error: {}", message),
             _ => {}
         }
     }
-    let snap_b = snap_b.expect("D11 路径 B: 应 Stable");
+    assert!(stable_b, "D11 路径 B: 应 Stable");
+    let (snap_b, _, _) = facts_b.snapshot();
 
     drop(tx_b);
     let _ = handle_b.join().await;

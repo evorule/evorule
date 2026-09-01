@@ -110,7 +110,7 @@ fn make_instruction(typ: &str, attr: &str, delta: i64) -> JsonValue {
 async fn test_sse_session_event_flow() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, _rx, event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, _rx, event_tx, _handle, facts_log) = reactor.spawn();
 
     // 在提交命令前订阅事件流
     let mut event_rx = event_tx.subscribe();
@@ -149,21 +149,20 @@ async fn test_sse_session_event_flow() {
     // 最后一个事件应该是 Stable
     assert!(matches!(events.last().unwrap(), Fact::Stable { .. }));
 
-    // 验证 Stable 中的 payload
-    if let Fact::Stable { final_snapshot, .. } = events.last().unwrap() {
-        assert_eq!(
-            final_snapshot.get("x"),
-            Some(&JsonValue::Integer(7)),
-            "Expected x=7 in Stable snapshot"
-        );
-    }
+    // Stable 不再携带快照（CR-20260901-001），状态经 FactsLog 快照验证
+    let (snapshot, _, _) = facts_log.snapshot();
+    assert_eq!(
+        snapshot.get("x"),
+        Some(&JsonValue::Integer(7)),
+        "Expected x=7 in final state snapshot"
+    );
 }
 
 #[tokio::test]
 async fn test_sse_multiple_commands_in_long_running_mode() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
-    let (tx, _rx, event_tx, _handle, _facts_log) = reactor.spawn();
+    let (tx, _rx, event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut event_rx = event_tx.subscribe();
 
@@ -174,11 +173,11 @@ async fn test_sse_multiple_commands_in_long_running_mode() {
     })
     .unwrap();
 
-    // 等待第一个 Stable
-    let first_stable = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    // 等待第一个 Stable（不再携带快照，CR-20260901-001）
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while let Ok(fact) = event_rx.recv().await {
-            if let Fact::Stable { final_snapshot, .. } = fact {
-                return final_snapshot;
+            if matches!(fact, Fact::Stable { .. }) {
+                return;
             }
         }
         panic!("No Stable received");
@@ -186,8 +185,9 @@ async fn test_sse_multiple_commands_in_long_running_mode() {
     .await
     .expect("timeout");
 
+    let first_state = facts_log.snapshot().0;
     assert_eq!(
-        first_stable.get("x"),
+        first_state.get("x"),
         Some(&JsonValue::Integer(3)),
         "After first command: x should be 3"
     );
@@ -200,10 +200,10 @@ async fn test_sse_multiple_commands_in_long_running_mode() {
     .unwrap();
 
     // 等待第二个 Stable
-    let second_stable = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while let Ok(fact) = event_rx.recv().await {
-            if let Fact::Stable { final_snapshot, .. } = fact {
-                return final_snapshot;
+            if matches!(fact, Fact::Stable { .. }) {
+                return;
             }
         }
         panic!("No second Stable received");
@@ -211,8 +211,9 @@ async fn test_sse_multiple_commands_in_long_running_mode() {
     .await
     .expect("timeout for second command");
 
+    let second_state = facts_log.snapshot().0;
     assert_eq!(
-        second_stable.get("x"),
+        second_state.get("x"),
         Some(&JsonValue::Integer(7)),
         "After second command: x should be 3+4=7 (long-running mode accumulates state)"
     );

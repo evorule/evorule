@@ -397,7 +397,7 @@ impl Reactor {
                 let stable_id = id_gen.next_id();
                 let stable_fact = Fact::Stable {
                     id: stable_id,
-                    final_snapshot: state.payload.clone(),
+                    version: state.version,
                 };
                 Self::emit_fact(&self.facts_log, &event_tx, stable_fact);
                 steps = 0;
@@ -452,7 +452,7 @@ impl Reactor {
                 let id = id_gen.next_id();
                 let fact = Fact::Stable {
                     id,
-                    final_snapshot: state.payload.clone(),
+                    version: state.version,
                 };
                 Self::emit_fact(&self.facts_log, &event_tx, fact);
                 // 长驻模式：重置步数，继续等待下一命令（不退出）
@@ -533,7 +533,7 @@ impl Reactor {
                     let stable_id = id_gen.next_id();
                     let stable_fact = Fact::Stable {
                         id: stable_id,
-                        final_snapshot: state.payload.clone(),
+                        version: state.version,
                     };
                     Self::emit_fact(&self.facts_log, &event_tx, stable_fact);
                     state.phase = ReactorPhase::Idle;
@@ -605,7 +605,7 @@ impl Reactor {
                             let stable_id = id_gen.next_id();
                             let stable_fact = Fact::Stable {
                                 id: stable_id,
-                                final_snapshot: state.payload.clone(),
+                                version: state.version,
                             };
                             Self::emit_fact(&self.facts_log, &event_tx, stable_fact);
                             steps = 0;

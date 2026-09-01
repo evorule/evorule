@@ -14,7 +14,6 @@
 
 use evorule_cli::executor::execute;
 use evorule_cli::output::fact_to_human;
-use evorule_reactor::Fact;
 use evorule_tcb::JsonValue;
 use std::collections::BTreeMap;
 
@@ -44,8 +43,10 @@ fn main() {
     let instruction = JsonValue::object(instr);
 
     // 4. 执行(最多 100 步)
-    let facts = match execute(&core_eval, payload, instruction, 100) {
-        Ok(facts) => facts,
+    //    返回 (fact 序列, 最终 payload)——最终 payload 经返回值直接交付
+    //    (CR-20260901-001:Stable 不再内嵌全量快照)
+    let (facts, final_payload) = match execute(&core_eval, payload, instruction, 100) {
+        Ok(result) => result,
         Err(e) => {
             eprintln!("❌ 执行失败: {e:?}");
             std::process::exit(1);
@@ -58,17 +59,12 @@ fn main() {
         println!("  {}", fact_to_human(fact));
     }
 
-    // 6. 验证最终 Stable
-    if let Some(Fact::Stable { final_snapshot, .. }) = facts.last() {
-        let x = final_snapshot.get("x").and_then(|v| v.as_i64());
-        if x == Some(42) {
-            println!("\n✅ 最终 x = 42,符合预期");
-        } else {
-            eprintln!("\n❌ 最终 x = {x:?},期望 42");
-            std::process::exit(1);
-        }
+    // 6. 验证最终 payload
+    let x = final_payload.get("x").and_then(|v| v.as_i64());
+    if x == Some(42) {
+        println!("\n✅ 最终 x = 42,符合预期");
     } else {
-        eprintln!("\n❌ 没有 Stable 事实,执行异常");
+        eprintln!("\n❌ 最终 x = {x:?},期望 42");
         std::process::exit(1);
     }
 }

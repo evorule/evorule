@@ -318,7 +318,13 @@ impl Auditor {
     /// 由于 `FactsLog::read_from` 按 `version_before` 过滤，而同一版本下可能
     /// 存在多条不改变版本号的事实（如 `Command`/`IoRequest`），直接以版本号
     /// 做去重会导致重复审计。故本实现以 `entries.len()` 作为已审计进度，
-    /// 从 `FactsLog::history()` 中读取尚未审计的尾部事实，保证每条事实仅审计一次。
+    /// 读取尚未审计的尾部事实，保证每条事实仅审计一次。
+    ///
+    /// # 增量遍历（CR-20260901-001）
+    /// 原实现每命令调用 `FactsLog::history()` 全量 clone 全部历史事实——
+    /// 长驻会话（千级命令）下每命令近 GB 级内存复制，构成 O(n²) CPU 瓶颈。
+    /// 现改经 [`FactsLog::for_each_fact_from`] 锁内零 clone 增量遍历尾部
+    /// 新事实，语义（去重游标/条目结构/哈希链）与原实现逐条等价。
     ///
     /// # 返回值
     /// 本次新增的审计条目数量。
@@ -328,19 +334,31 @@ impl Auditor {
         // P06: 计数始终递增（按调用次数，而非新事实数），用于自动验证间隔控制
         self.audit_new_count += 1;
 
-        let history = self.facts_log.history();
+        let history_len = self.facts_log.history_len();
         let start = self.entries.len();
-        if start >= history.len() {
+        if start >= history_len {
             self.last_audited_version = self.facts_log.version();
             tracing::debug!(version = self.last_audited_version, "audit_new: 无新增事实");
             return 0;
         }
 
-        let count = history.len() - start;
-        for (idx_offset, fact) in history[start..].iter().enumerate() {
+        let count = history_len - start;
+        // 增量审计：字段级拆借以并存 facts_log 只读借与其他字段可变借
+        let facts_log = &self.facts_log;
+        let entries = &mut self.entries;
+        let clock = &mut self.clock;
+        let last_hash = &mut self.last_hash;
+        let index = &mut self.index;
+        let mut idx_offset = 0usize;
+        facts_log.for_each_fact_from(start, |_version_before, fact| {
+            // idx_offset 对齐原 enumerate 语义：计入所有遍历过的事实
+            // （含哈希失败被跳过者），entry_index 保持与历史下标一致
+            let entry_index = start + idx_offset;
+            idx_offset += 1;
+
             let fact_id = fact.id();
             let fact_type = fact.type_name();
-            let logical_time = self.clock.tick();
+            let logical_time = clock.tick();
             let content_hash = match hash::fact_hash(fact) {
                 Ok(h) => h,
                 Err(e) => {
@@ -350,21 +368,20 @@ impl Auditor {
                         错误 = %e,
                         "审计器: 事实哈希计算失败，跳过损坏事实"
                     );
-                    continue;
+                    return;
                 }
             };
-            let prev_hash = self.last_hash.clone();
+            let prev_hash = last_hash.clone();
             let cause = extract_cause(fact);
 
             // 计算新的链哈希：blake3(prev_hash + content_hash)
             let combined = format!("{}{}", prev_hash, content_hash);
             let new_hash = blake3::hash(combined.as_bytes()).to_hex().to_string();
-            self.last_hash = new_hash;
+            *last_hash = new_hash;
 
-            let entry_index = start + idx_offset;
-            self.index.insert(fact_id, entry_index);
+            index.insert(fact_id, entry_index);
 
-            self.entries.push(AuditEntry {
+            entries.push(AuditEntry {
                 fact_id,
                 fact_type,
                 logical_time,
@@ -375,7 +392,7 @@ impl Auditor {
 
             // 两套 WAL 合并：不再写入 auditor WAL
             // 哈希链已由 tier1 FactsLog::append() 自动写入 tier1 WAL
-        }
+        });
 
         self.last_audited_version = self.facts_log.version();
         tracing::debug!(

@@ -667,7 +667,7 @@ pub fn proof_fact_log_append_monotonic() {
     let stable_before = log.last_stable_version();
     let res = log.append(Fact::Stable {
         id: FactId(3),
-        final_snapshot: JsonValue::Null, // 用 Null 避免 BTreeMap 创建
+        version: v2,
     });
     kani::assert(res.is_ok(), "append Stable: Ok");
     kani::assert(log.version() == v2, "Stable: version unchanged");

@@ -10,7 +10,7 @@
 //! ```json
 //! {"type":"Command","id":1,"instruction":{"type":"noop"}}
 //! {"type":"StateTransition","id":2,"cause":1,"new_payload":{},"new_queue":[]}
-//! {"type":"Stable","id":3,"final_snapshot":{}}
+//! {"type":"Stable","id":3,"version":1}
 //! ```
 //!
 //! # 设计决策
@@ -113,7 +113,7 @@ mod tests {
             },
             Fact::Stable {
                 id: FactId(3),
-                final_snapshot: JsonValue::empty_object(),
+                version: 1,
             },
         ];
 
@@ -136,7 +136,7 @@ mod tests {
     fn test_write_to_stdout_does_not_panic() {
         let facts = vec![Fact::Stable {
             id: FactId(1),
-            final_snapshot: JsonValue::empty_object(),
+            version: 1,
         }];
         // stdout 写入应成功（None 路径）
         let result = write_facts(None, &facts);
@@ -145,14 +145,16 @@ mod tests {
 
     #[test]
     fn test_read_facts_skips_empty_lines() {
-        let content = "{\"type\":\"Stable\",\"id\":1,\"final_snapshot\":{}}\n\n\n{\"type\":\"Stable\",\"id\":2,\"final_snapshot\":{}}\n";
+        // 旧格式（≤0.3.x 含 final_snapshot）字符串兼作向后兼容解析测试：
+        // fact_from_json 容错忽略 final_snapshot，version 兜底 0（CR-20260901-001）
+        let content = "{\"type\":\"Stable\",\"id\":1,\"final_snapshot\":{}}\n\n\n{\"type\":\"Stable\",\"id\":2,\"version\":1}\n";
         let facts = parse_facts(content).unwrap();
         assert_eq!(facts.len(), 2);
     }
 
     #[test]
     fn test_read_facts_invalid_json_reports_line() {
-        let content = "{\"type\":\"Stable\",\"id\":1,\"final_snapshot\":{}}\nnot json at all\n";
+        let content = "{\"type\":\"Stable\",\"id\":1,\"version\":1}\nnot json at all\n";
         let result = parse_facts(content);
         match result {
             Err(CliError::FactLogParse { line, .. }) => assert_eq!(line, 2),
