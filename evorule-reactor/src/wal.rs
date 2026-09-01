@@ -1212,6 +1212,60 @@ mod tests {
         assert!(matches!(result, Err(WalError::InvalidFact(_))));
     }
 
+    // === CR-20260901-001 旧格式 WAL(≤0.3.x 含 final_snapshot)兼容专项 ===
+
+    /// 旧格式(≤0.3.x)Stable 事实内嵌 final_snapshot 全量快照、无 version 字段。
+    /// 新代码读旧 WAL: 忽略 final_snapshot,version 以外层 version_before 兜底。
+    /// 验收门禁 4.3 第 7 项(UV-032)。
+    #[test]
+    fn test_read_legacy_wal_stable_with_final_snapshot() {
+        let path = temp_wal_path("legacy_stable");
+        let lines = [
+            r#"{"version_before":0,"fact":{"type":"Command","id":1,"instruction":{"type":"increment","params":{"attr":"x","delta":1}}}}"#,
+            r#"{"version_before":0,"fact":{"type":"StateTransition","id":2,"cause":1,"new_payload":{"x":1},"new_queue":[]}}"#,
+            r#"{"version_before":1,"fact":{"type":"Stable","id":3,"final_snapshot":{"x":1}}}"#,
+        ];
+        std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+
+        let records = read_wal(&path).expect("旧格式 WAL(含 final_snapshot)必须可读");
+        assert_eq!(records.len(), 3);
+
+        match &records[2].1 {
+            Fact::Stable { id, version } => {
+                assert_eq!(id.0, 3);
+                assert_eq!(
+                    *version, 1,
+                    "旧格式缺失 version 字段时应以外层 version_before 兜底"
+                );
+            }
+            other => panic!("expected Stable, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 新格式 Stable 含显式 version 字段时,不得被外层 version_before 覆盖
+    /// (与新写入的 WAL 往返一致性,防兜底逻辑误伤新格式)。
+    #[test]
+    fn test_read_new_wal_stable_version_preserved() {
+        let path = temp_wal_path("new_stable");
+        let lines = [
+            r#"{"version_before":1,"fact":{"type":"Stable","id":3,"version":7}}"#,
+        ];
+        std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+
+        let records = read_wal(&path).expect("新格式 WAL 必须可读");
+        match &records[0].1 {
+            Fact::Stable { id, version } => {
+                assert_eq!(id.0, 3);
+                assert_eq!(*version, 7, "新格式显式 version 不得被 version_before 覆盖");
+            }
+            other => panic!("expected Stable, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
     // === WalWriter + read_wal 集成测试 ===
 
     fn temp_wal_path(name: &str) -> std::path::PathBuf {
