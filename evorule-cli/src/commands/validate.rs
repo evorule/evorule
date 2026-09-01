@@ -13,10 +13,10 @@
 //! 故改用 core_eval 元指令白名单。此白名单不含 G8 禁止词
 //!（conditional/while_loop/sequence），故 build.rs 无需任何豁免（零豁免原则保持）。
 //!
-/// # 白名单来源
-/// evorule-tcb/src/executor.rs 的 `execute_meta_instruction` dispatch（L95-105）处理的
-/// 元指令类型：branch / set / push / io_request / collect / merge。
-/// noop / increment / decrement 是指令层类型，不属于元指令层（P2-01/P0-01）。
+//! # 白名单来源
+//! evorule-tcb/src/executor.rs 的 `execute_meta_instruction` dispatch（L95-105）处理的
+//! 元指令类型：branch / set / push / io_request / collect / merge。
+//! noop / increment / decrement 是指令层类型，不属于元指令层（P2-01/P0-01）。
 
 use std::path::Path;
 

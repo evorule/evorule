@@ -212,9 +212,13 @@ pub struct FactsLog {
     /// 连续失败达阈值后的升级回调（由 reactor 设置，用于终止会话并
     /// 发射面向用户的 Error fact）
     #[cfg(feature = "persistence")]
-    on_wal_failure_exhausted:
-        Arc<std::sync::Mutex<Option<Box<dyn Fn(&str) + Send + Sync>>>>,
+    on_wal_failure_exhausted: WalFailureExhaustedCallback,
 }
+
+/// WAL 连续失败升级回调类型（W1）
+#[cfg(feature = "persistence")]
+type WalFailureExhaustedCallback =
+    Arc<std::sync::Mutex<Option<Box<dyn Fn(&str) + Send + Sync>>>>;
 
 #[cfg(feature = "persistence")]
 /// WAL 写入连续失败终止阈值（用户决策：方案 b，2026-08-27）
@@ -1747,7 +1751,7 @@ mod tests {
     #[cfg(feature = "persistence")]
     #[test]
     fn test_wal_consecutive_failure_escalates_with_guidance() {
-        use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+        use std::sync::atomic::AtomicUsize;
         use std::sync::Arc as StdArc;
 
         let base = std::env::temp_dir().join(format!("evorule_w1_test_{}", std::process::id()));
@@ -2226,7 +2230,7 @@ mod tests {
         use crate::wal::MemoryWalStore;
 
         // 同一事实序列:纯内存模式 vs 内存后端模式,哈希链必须一致
-        let mut store = MemoryWalStore::new();
+        let store = MemoryWalStore::new();
         let probe = store.clone();
         let log = FactsLog::with_wal_store(Box::new(store));
 
@@ -2274,8 +2278,6 @@ mod tests {
     #[cfg(feature = "persistence")]
     #[test]
     fn test_file_backend_via_trait_unchanged_roundtrip() {
-        use crate::wal::FactWalStore;
-
         // 默认文件后端经 trait 对象分发,行为与直挂 WalWriter 一致(回归锁)
         let path = temp_wal_path("uv026_file_trait");
         let log = FactsLog::with_wal(&path).unwrap();

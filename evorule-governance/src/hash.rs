@@ -38,7 +38,6 @@ pub use evorule_reactor::{
 ///     return Err("审计链断裂");
 /// }
 /// ```
-
 #[cfg(test)]
 mod tests {
     #![allow(deprecated, clippy::unwrap_used, clippy::panic, clippy::expect_used)]
