@@ -516,39 +516,14 @@ fn perform_security_analysis(transforms: &[JsonValue]) -> Vec<ValidationCheck> {
 ///
 /// 检查 while_loop 类型的 domain 中是否包含条件判定，
 /// 以及 body 是否包含状态变更指令。
+/// B9（UV-046 report-002）：递归遍历 branch 的 on_true/on_false 子节点，
+/// 嵌套在 branch 内的 while_loop / 状态变更不再漏检。
+/// 会话状态全局共享——任意层级的 set/collect/merge 均可为任意层级的
+/// while_loop 提供终止条件，故信号跨层级累加。
 fn check_infinite_loop_risk(transforms: &[JsonValue]) -> ValidationCheck {
     let mut has_while_loop = false;
     let mut has_state_change = false;
-
-    for t in transforms {
-        if let Some(type_str) = t.get("type").and_then(|v| v.as_str()) {
-            if type_str == "branch" {
-                // 检查 domain 是否引用控制流指令
-                // 使用 ControlFlowType::parse 而非字面量比较，满足 G8 门禁
-                if let Some(domain) = t.get("params").and_then(|p| p.get("domain")) {
-                    if let Some(inner_type) = domain.get("type").and_then(|v| v.as_str()) {
-                        if inner_type == "instruction" {
-                            if let Some(inst_type) =
-                                domain.get("instruction_type").and_then(|v| v.as_str())
-                            {
-                                if evorule_reactor::ControlFlowType::parse(inst_type)
-                                    == Some(evorule_reactor::ControlFlowType::WhileLoop)
-                                {
-                                    has_while_loop = true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 检查是否有状态变更指令（P0-01：元指令层无 increment/decrement，
-            // 状态变更由 set/collect/merge 承担；指令层 increment/decrement 不在 transform 层）
-            if matches!(type_str, "set" | "collect" | "merge") {
-                has_state_change = true;
-            }
-        }
-    }
+    collect_loop_risk_signals(transforms, &mut has_while_loop, &mut has_state_change);
 
     let risk = has_while_loop && !has_state_change;
     ValidationCheck {
@@ -564,6 +539,51 @@ fn check_infinite_loop_risk(transforms: &[JsonValue]) -> ValidationCheck {
             "未检测到 while_loop 指令".to_string()
         },
         transform_index: -1,
+    }
+}
+
+/// 递归收集 while_loop 与状态变更信号（含 branch 子节点）
+fn collect_loop_risk_signals(
+    transforms: &[JsonValue],
+    has_while_loop: &mut bool,
+    has_state_change: &mut bool,
+) {
+    for t in transforms {
+        if let Some(type_str) = t.get("type").and_then(|v| v.as_str()) {
+            if type_str == "branch" {
+                // 检查 domain 是否引用控制流指令
+                // 使用 ControlFlowType::parse 而非字面量比较，满足 G8 门禁
+                if let Some(domain) = t.get("params").and_then(|p| p.get("domain")) {
+                    if let Some(inner_type) = domain.get("type").and_then(|v| v.as_str()) {
+                        if inner_type == "instruction" {
+                            if let Some(inst_type) =
+                                domain.get("instruction_type").and_then(|v| v.as_str())
+                            {
+                                if evorule_reactor::ControlFlowType::parse(inst_type)
+                                    == Some(evorule_reactor::ControlFlowType::WhileLoop)
+                                {
+                                    *has_while_loop = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                // B9：递归 branch 子节点 on_true / on_false
+                if let Some(params) = t.get("params") {
+                    for key in ["on_true", "on_false"] {
+                        if let Some(sub) = params.get(key).and_then(|v| v.as_array()) {
+                            collect_loop_risk_signals(sub, has_while_loop, has_state_change);
+                        }
+                    }
+                }
+            }
+
+            // 检查是否有状态变更指令（P0-01：元指令层无 increment/decrement，
+            // 状态变更由 set/collect/merge 承担；指令层 increment/decrement 不在 transform 层）
+            if matches!(type_str, "set" | "collect" | "merge") {
+                *has_state_change = true;
+            }
+        }
     }
 }
 
@@ -961,6 +981,62 @@ mod tests {
             .find(|c| c.name == "infinite_loop");
         assert!(infinite_loop.is_some());
         assert!(!infinite_loop.unwrap().passed);
+    }
+
+    #[test]
+    fn test_security_infinite_loop_nested_branch_detection() {
+        // B9（UV-046 report-002）：嵌套在 branch 子节点内的 while_loop 不再漏检
+        // 外层 branch domain 为 comparison（非 while_loop），while_loop 藏在
+        // on_false 子数组的内层 branch domain 中——旧实现只扫顶层会漏检
+        let v = serde_json::json!({
+            "type": "branch",
+            "params": {
+                "domain": {"type": "comparison", "field": "x", "operator": "gt", "value": 0},
+                "on_true": [{"type": "push", "params": {"instructions": []}}],
+                "on_false": [
+                    {"type": "branch", "params": {
+                        "domain": {"type": "instruction", "instruction_type": "while_loop"},
+                        "on_true": [{"type": "push", "params": {"instructions": []}}],
+                    }},
+                ],
+            },
+        });
+        let transforms = vec![evorule_reactor::serde_to_tcb(&v)];
+        let result = validate_rules(&transforms);
+        let infinite_loop = result
+            .security_analysis
+            .checks
+            .iter()
+            .find(|c| c.name == "infinite_loop");
+        assert!(infinite_loop.is_some(), "嵌套 while_loop 仍须产出检查项");
+        assert!(!infinite_loop.unwrap().passed, "嵌套 branch 内的 while_loop 无状态变更必须告警");
+    }
+
+    #[test]
+    fn test_security_infinite_loop_nested_state_change_covers() {
+        // B9 补充：嵌套 while_loop 存在时，任意层级的状态变更（含嵌套层级）
+        // 均提供终止条件 → 不告警
+        let v = serde_json::json!({
+            "type": "branch",
+            "params": {
+                "domain": {"type": "comparison", "field": "x", "operator": "gt", "value": 0},
+                "on_false": [
+                    {"type": "branch", "params": {
+                        "domain": {"type": "instruction", "instruction_type": "while_loop"},
+                        "on_true": [{"type": "set", "params": {"attr": "i", "operation": "set", "value": 1}}],
+                    }},
+                ],
+            },
+        });
+        let transforms = vec![evorule_reactor::serde_to_tcb(&v)];
+        let result = validate_rules(&transforms);
+        let infinite_loop = result
+            .security_analysis
+            .checks
+            .iter()
+            .find(|c| c.name == "infinite_loop");
+        assert!(infinite_loop.is_some());
+        assert!(infinite_loop.unwrap().passed, "嵌套层级的状态变更应覆盖嵌套 while_loop");
     }
 
     #[test]

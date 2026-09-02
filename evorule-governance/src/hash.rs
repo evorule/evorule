@@ -25,7 +25,7 @@
 /// 所有哈希计算函数均在 `evorule_reactor::hash` 中实现，
 /// 本模块通过 re-export 对外暴露相同的 API。
 pub use evorule_reactor::{
-    compute_chain_hash, content_hash, fact_hash, fact_to_stable_json, HashError,
+    chain_step, compute_chain_hash, content_hash, fact_hash, fact_to_stable_json, HashError,
 };
 
 /// 验证哈希链完整性的正确姿势：用 [`compute_chain_hash`] 重算后与存储的链哈希比对。

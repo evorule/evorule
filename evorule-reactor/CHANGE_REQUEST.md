@@ -54,6 +54,8 @@ UV-046 A1：确定性执行引擎的审计链必须自解释。unknown IoRespons
 
 - reactor.rs：`handle_fact` 签名扩展（+facts_log/event_tx/id_gen）；
   IoResponse unknown 路径发射 `Fact::Error` 后返回
+- lib.rs：hash 根导出补 `chain_step`（governance auditor 消除内联
+  blake3 重复实现所需，B1 配套）
 - tests/integration_test.rs：`test_unknown_io_response_ignored` 改名
   `test_unknown_io_response_records_error_fact`，断言 Error fact 入链
 

@@ -55,6 +55,9 @@ UV-046 report-002：
 - run.rs：执行完成统计 Error fact 数量，>0 返回 `ExecutionHadErrors`
 - validate.rs：删除本地 `VALID_TRANSFORM_TYPES` 硬编码，改引
   `evorule_tcb::META_INSTRUCTION_TYPES`（含测试）
+- verify_anchors.rs：N1 注释失实修正——删除对不存在的
+  `AuditAnchor::payload_bytes` 的引用，改为"cli 侧锚点规范定义处"
+  的如实表述
 
 ### 3.3 破坏性分析
 
