@@ -4,10 +4,10 @@
 
 | 字段 | 值 |
 |------|------|
-| **变更 ID** | CR-20260820-002 |
-| **变更标题** | 添加变更治理门禁机制和策略层检测 |
+| **变更 ID** | CR-20260902-001 |
+| **变更标题** | run 命令 Error fact 退出码 3 + validate 白名单 SSOT 化（UV-046 C1/C3 + C2 消费侧） |
 | **提交人** | EvoRule Team |
-| **提交日期** | 2026-08-20 |
+| **提交日期** | 2026-09-02 |
 | **审查状态** | 已批准 |
 
 ## 2. 变更层级判定（必填）
@@ -19,43 +19,64 @@
 ### 2.2 判定理由
 
 ```
-本次变更提供通用的变更治理基础设施，可被任何机制层代码复用。
+- C1/C3：`evorule run` 执行含 Error fact 时原返回退出码 0（仅 tracing
+  告警）——CI/自动化管道以退出码判定成败，Error fact 静默成功让
+  "确定性执行"承诺在自动化场景失效。新增 CliError::ExecutionHadErrors
+  （退出码 3）；fact log 仍正常写出供审计定位失败原因
+- C2：validate 命令的元指令白名单由本地硬编码副本改引
+  evorule_tcb::META_INSTRUCTION_TYPES（SSOT），消除与 tcb dispatch
+  的漂移风险（tcb 侧 CR-20260902-001 提供常量与漂移防线单测）
 ```
 
 ### 2.3 机制层判定标准检查
 
 **✅ 机制层变更的特征**:
-- [x] 提供通用基础设施能力
+- [x] 提供通用基础设施能力（自动化管道可感知的失败信号 / 类型清单单一事实源）
 - [x] 不包含任何特定业务语义
 - [x] 可被任何业务场景无差别复用
 
 ## 3. 变更分类
 
-- **变更类型**: A - 新增机制
-- **影响模块**: evorule-cli
+- **变更类型**: B - 机制扩展（含 ⚠️ 行为变化：run 退出码语义）
+- **影响模块**: evorule-cli/src/{error.rs,commands/run.rs,commands/validate.rs}
 
 ## 4. 变更详情
 
 ### 3.1 变更理由
-添加变更治理门禁，防止未经审查的修改和策略层代码混入机制层。
+
+UV-046 report-002：
+- C1/C3：CI 场景 `evorule run` 对规则执行失败返回 0，自动化管道无法感知
+- C2：validate 白名单与 tcb dispatch 双份维护，存在漂移风险
 
 ### 3.2 变更范围
-- build.rs: 添加 CHANGE_REQUEST.md 验证逻辑和策略检测
-- CHANGE_REQUEST.md: 更新为新模板
+
+- error.rs：新增 `ExecutionHadErrors { count }` 变体（退出码 3），
+  `exit_code()` 映射 + 文档/单测跟随
+- run.rs：执行完成统计 Error fact 数量，>0 返回 `ExecutionHadErrors`
+- validate.rs：删除本地 `VALID_TRANSFORM_TYPES` 硬编码，改引
+  `evorule_tcb::META_INSTRUCTION_TYPES`（含测试）
 
 ### 3.3 破坏性分析
-无破坏性变更。
+
+⚠️ 行为变化（0.x MINOR 承载）：`evorule run` 含 Error fact 时退出码
+0 → 3。这是修复目的；依赖"总是返回 0"的脚本需改按退出码分支。
+fact log 输出行为不变。
 
 ### 3.4 影响评估
-构建时间略有增加，对运行时性能无影响。
+
+- 全 workspace 测试须绿；`exit_code` 文档测试覆盖新映射
+- 退出码表：0 成功 / 1 通用错误 / 2 规则加载错误 / 3 执行含 Error fact
 
 ### 3.5 测试计划
-- [x] CHANGE_REQUEST.md 验证通过
-- [x] 策略检测通过
-- [x] CLI 命令测试通过
+
+- [x] `test_exit_code_mapping`：ExecutionHadErrors → 3
+- [x] validate 白名单断言测试改引常量后全绿
+- [x] 全 workspace `cargo test` 回归
 
 ### 3.6 回滚方案
-删除 build.rs 中的验证代码即可回滚
+
+git revert 本提交即恢复退出码 0 形态（与 reactor 侧 Error fact 入链
+变更同批实施，回滚需同批处理——否则 run 仍会收到 Error fact 但静默成功）。
 
 ## 5. 审查清单
 
@@ -74,9 +95,24 @@
 
 ---
 
-## 6. 变更记录 CR-20260826-001: G-A1 审计锚点签名（v0.3.2 新增）
+## 6. 变更记录 CR-20260820-002: 添加变更治理门禁机制和策略层检测
 
-### 6.1 基本信息
+> 归档说明：原 CR 整表置于顶层至 2026-09-02（CR-20260902-001 置顶），完整内容见 git 历史。
+
+| 字段 | 值 |
+|------|------|
+| **变更 ID** | CR-20260820-002 |
+| **变更标题** | 添加变更治理门禁机制和策略层检测 |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-08-20 |
+| **审查状态** | 已批准 |
+
+build.rs 添加 CHANGE_REQUEST.md 验证逻辑和策略检测：通用的变更治理
+基础设施，不含业务语义。回滚：删除 build.rs 中的验证代码。
+
+## 7. 变更记录 CR-20260826-001: G-A1 审计锚点签名（v0.3.2 新增）
+
+### 7.1 基本信息
 
 | 字段 | 值 |
 |------|------|

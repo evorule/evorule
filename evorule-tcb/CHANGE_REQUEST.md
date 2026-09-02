@@ -4,10 +4,10 @@
 
 | 字段 | 值 |
 |------|------|
-| **变更 ID** | CR-20260830-001 |
-| **变更标题** | build.rs 门禁状态机生命周期撇号判别修复（strip_test_mod 误报消除） |
+| **变更 ID** | CR-20260902-001 |
+| **变更标题** | 元指令类型白名单 SSOT 化：META_INSTRUCTION_TYPES 常量导出 + 漂移防线（UV-046 C2） |
 | **提交人** | EvoRule Team |
-| **提交日期** | 2026-08-30 |
+| **提交日期** | 2026-09-02 |
 | **审查状态** | 已批准 |
 
 ## 2. 变更层级判定（必填）
@@ -19,53 +19,64 @@
 ### 2.2 判定理由
 
 ```
-本变更只修改 build.rs 门禁自身实现，不触及任何 src/ 执行语义：
-- strip_test_mod/find_inline_lbrace/match_brace 状态机在撇号处新增
-  char_lit_starts() 判别（字符字面量 vs 生命周期），新增 skip_lifetime() 跳过
-- 修复前 'static 等生命周期撇号被误判为字符态开头，吞掉后续所有花括号，
-  令 match_brace 永不闭合、tests 模块整体不被剥离、门禁对测试代码全量误报
-- 五仓（tcb/reactor/governance/cli/server）同一份实现同步修复，
-  每仓 build.rs 内含 3 个单元测试（探针 crate 验证）
-- 不新增/删除任何扫描模式，语言规范能力不变
+本变更将元指令类型白名单（branch/set/push/io_request/collect/merge）
+提升为 tcb 权威常量 META_INSTRUCTION_TYPES 并在 crate 根重导出，
+配套 SSOT 漂移防线单测（白名单中每个类型都必须被 dispatch 实际处理，
+不得返回 UnknownMetaInstruction——防止白名单比执行器更严导致消费方误报）：
+- 纯常量导出 + 测试，执行语义零改动
+- 消费方 evorule-cli validate 同批改引本常量，消除本地硬编码副本漂移
 ```
 
 ### 3.1 变更理由
 
-门禁状态机对生命周期撇号的处理存在缺陷，凡被门禁扫描的源文件在 tests 模块内
-（或其后）出现 `'static`/`'a` 等生命周期标注且后文再无撇号时，测试模块体不被剥离，
-`.unwrap()` 等测试合法构造被误报为违规，阻碍合法代码合入。
+UV-046 C2：CLI validate 与 tcb dispatch 各自维护白名单，存在漂移风险——
+tcb 新增元指令时 CLI 会误报合法规则；两处清单必须单一事实源。
 
 ### 3.2 变更范围
 
-- build.rs：新增 `char_lit_starts`/`skip_lifetime` 两个函数；`find_inline_lbrace`/
-  `match_brace` 撇号入口处按判别结果分流；新增 `#[cfg(test)] mod tests`（3 个测试）
-- CHANGE_REQUEST.md：本表
-- GATE_REFERENCE.md：登记修复说明与 evorule-server S 系列条目
+- executor.rs：新增 `pub const META_INSTRUCTION_TYPES` + SSOT 漂移防线单测
+- lib.rs：重导出 `META_INSTRUCTION_TYPES`
 
 ### 3.3 破坏性分析
 
-无对外契约变化。门禁判定结果只会更精确（减少误报），不会放行任何原本被拦截的
-生产代码模式；扫描模式集合零改动。
+无。纯增量导出，既有 API 与行为零改动。
 
 ### 3.4 影响评估
 
-- 全量 workspace 测试须绿；四仓串行构建门禁 PASSED
-- 判别规则由 Rust 语法保证无歧义（合法源码不存在 `'ab'` 多字符字面量）
-- 五仓实现一致，防止审查标准走偏
+- 全 workspace 测试须绿；SSOT 单测保证白名单与 dispatch 不漂移
+- 消费方（cli validate）改引常量后类型清单自动同步
 
 ### 3.5 测试计划
 
-- [x] 每仓 build.rs 内嵌 3 个单元测试（match_brace 生命周期/剥离存活/判别规则）
-- [x] 探针 crate 以 lib.rs 方式加载真实 build.rs 运行（cargo test 不运行 build script 测试）
-- [x] 四仓串行 cargo build 门禁 PASSED + evorule-server 全 workspace 编译通过
+- [x] `test_meta_instruction_types_ssot`：白名单 6 类型逐一经 dispatch 验证非 UnknownMetaInstruction
+- [x] cli 侧白名单断言测试改引常量后全绿
+- [x] 全 workspace `cargo test` 回归
 
 ### 3.6 回滚方案
 
-git revert 本提交即恢复旧状态机；误报场景在旧实现下可通过重排撇号位置临时规避。
+git revert 本提交即恢复 CLI 本地白名单形态（注意需与 cli 侧同批回滚）。
 
 ---
 
 ## 附 · 历史变更归档
+
+### CR-20260830-001（已批准）：build.rs 门禁状态机生命周期撇号判别修复（strip_test_mod 误报消除）
+
+> 归档说明：原 CR 整表置于顶层至 2026-09-02（CR-20260902-001 置顶），完整内容见 git 历史。
+
+| 字段 | 值 |
+|------|------|
+| **变更 ID** | CR-20260830-001 |
+| **变更标题** | build.rs 门禁状态机生命周期撇号判别修复（strip_test_mod 误报消除） |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-08-30 |
+| **审查状态** | 已批准 |
+
+本变更只修改 build.rs 门禁自身实现，不触及任何 src/ 执行语义：
+strip_test_mod/find_inline_lbrace/match_brace 状态机在撇号处新增
+char_lit_starts() 判别（字符字面量 vs 生命周期），新增 skip_lifetime() 跳过；
+修复前 'static 等生命周期撇号被误判为字符态开头，令 tests 模块整体不被剥离、
+门禁对测试代码全量误报。五仓同一份实现同步修复。回滚：git revert。
 
 ### CR-20260827-001（已批准）：core_eval.json v0.4.0：ReAct 应用剧本整体迁出至消费方（T8 最小化专项）
 

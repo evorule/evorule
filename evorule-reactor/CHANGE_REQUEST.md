@@ -4,10 +4,10 @@
 
 | 字段 | 值 |
 |------|------|
-| **变更 ID** | CR-20260901-001 |
-| **变更标题** | 单会话长跑 O(n²) 缺陷修复：Fact::Stable 瘦身 + WAL 旧格式容错 + FactsLog 增量迭代接口（UV-032） |
+| **变更 ID** | CR-20260902-001 |
+| **变更标题** | 未知 IoResponse 显式入链：Error fact 记录替代静默忽略（UV-046 A1，处置方案：Error fact） |
 | **提交人** | EvoRule Team |
-| **提交日期** | 2026-09-01 |
+| **提交日期** | 2026-09-02 |
 | **审查状态** | 已批准 |
 
 ## 2. 变更层级判定（必填）
@@ -19,84 +19,66 @@
 ### 2.2 判定理由
 
 ```
-本变更修复事实模型在长驻会话场景下的结构性膨胀与审计遍历的全量 clone，
-不触及任何业务语义：
-- Fact::Stable 由 final_snapshot（全量 payload 快照）瘦身为 version: u64——
-  recover 对 Stable 仅更新 last_stable_version、从不读取快照内容，快照为
-  纯冗余；状态本体由最近一条 StateTransition.new_payload 确定，消费方经
-  snapshot API 获取，信息零丢失
-- wal.rs 序列化对齐新结构；反序列化对旧格式（≤0.3.x 含 final_snapshot）
-  容错：忽略快照内容，version 缺失以 version_before 兜底
-- facts_log.rs 新增 for_each_fact_from(start, f)：锁内零 clone 增量遍历
-  尾部事实，供 tier2 Auditor 增量审计，消除每命令全量 clone 的 O(n²) CPU 瓶颈
-- reactor.rs 4 个 Stable 发射点全部改传 state.version，哈希链算法与
-  WAL 写入路径语义不变
+本变更修复 IoResponse 异常路径的可审计性缺口，不触及任何业务语义：
+- 状态层拒绝消费 unknown/stale request_id 的 IoResponse 时，原仅 tracing
+  告警——IoResponse 事实本身已入链（command 通道先 emit 再 handle），但
+  链上无异常标记，审计重放无法自解释地对账"响应事实 vs 拒绝消费"
+- 现发射 Fact::Error（duplicate / late-after-timeout / forged 三种成因
+  提示），与超时路径既有 Error-fact 机制同构；Error 为可恢复事实，
+  不影响会话可用性
+- handle_fact 签名扩展（facts_log/event_tx/id_gen），均为既有内部机制
+  句柄的传递，无新外部依赖
 ```
 
 ### 2.3 机制层判定标准检查
 
 **✅ 机制层变更的特征**:
-- [x] 提供通用基础设施能力（事实模型瘦身 + 增量迭代接口）
+- [x] 提供通用基础设施能力（异常路径审计自解释）
 - [x] 不包含任何特定业务语义
-- [x] 可被任何业务场景无差别复用（长驻/单次运行均受益）
+- [x] 可被任何业务场景无差别复用
 
 ## 3. 变更分类
 
-- **变更类型**: B - 机制扩展（含 ⚠️ 破坏性：审计链哈希输入与 WAL 磁盘格式变更，0.x MINOR 承载）
-- **影响模块**: evorule-reactor/src/{fact,reactor,hash,wal,facts_log,channel,lib}.rs、
-  tests/、examples/、verification/kani_proofs.rs、README.md；
-  消费方 evorule-governance / evorule-cli（同批适配）
+- **变更类型**: B - 机制扩展
+- **影响模块**: evorule-reactor/src/reactor.rs、tests/integration_test.rs
 
 ## 4. 变更详情
 
 ### 3.1 变更理由
 
-UV-032 实战检验发现单会话长跑性能线性恶化（~1500 命令 → 100MB WAL、
-2.52s/命令）：Stable 全量快照每命令 O(n) 入链累计 O(n²)；恢复路径从不
-读取该快照，属纯冗余。审计器全量 clone 为另一 O(n²) 源（governance 侧
-配套修复）。完整方案见知识库《24-UV032-单会话O2缺陷-修复方案设计.md》。
+UV-046 A1：确定性执行引擎的审计链必须自解释。unknown IoResponse 是
+安全敏感事件（重复/超时迟到/伪造），静默忽略让审计重放看到"有响应事实
+但状态未消费"却无异常标记，破坏"链上事实可逐条对账"的核心承诺。
 
 ### 3.2 变更范围
 
-- fact.rs：`Stable { id, final_snapshot }` → `Stable { id, version: u64 }`，
-  to_json/type_name 等跟随
-- reactor.rs：4 个 Stable 发射点（中断恢复/正常稳定/MaxRounds/队列上限）
-  改传 `state.version`
-- hash.rs：`fact_to_stable_json` 序列化对齐（审计链哈希输入变更）
-- wal.rs：fact_to_json 写 version；fact_from_json 旧格式容错
-  （final_snapshot 忽略 + version_before 兜底，由 read_wal_file_with_hash 补齐）
-- facts_log.rs：新增 `for_each_fact_from`（零 clone 锁内增量迭代）
-- channel.rs / lib.rs / README.md：测试构造与文档注释同步
-- tests/{integration,complex_rule}_test.rs：状态断言改经 `FactsLog::snapshot()`
-- examples/generate_hashed_wal.rs、verification/kani_proofs.rs：构造适配
+- reactor.rs：`handle_fact` 签名扩展（+facts_log/event_tx/id_gen）；
+  IoResponse unknown 路径发射 `Fact::Error` 后返回
+- tests/integration_test.rs：`test_unknown_io_response_ignored` 改名
+  `test_unknown_io_response_records_error_fact`，断言 Error fact 入链
 
 ### 3.3 破坏性分析
 
-⚠️ 两处破坏性（0.x 阶段以 MINOR 承载，CHANGELOG 声明）：
-1. 审计链哈希输入变化：Stable 哈希由含全量快照变为含 version → 旧 WAL 的
-   chain_hash 在新代码 verify 下不匹配（恢复不受影响：recover 与链校验解耦）
-2. WAL 磁盘格式：新代码可读旧格式（容错设计）；旧代码不可读新格式——
-   升级单向，Release Notes 声明
+- `handle_fact` 为私有关联函数，签名扩展无外部影响
+- 行为变化：unknown IoResponse 现在产生 Error fact（链上新增事实）——
+  消费方若对 Error fact 计数敏感会观察到新增条目；这正是修复目的
+  （配套 cli 侧同批变更：Error fact → 退出码 3）
 
 ### 3.4 影响评估
 
-- 全 workspace `cargo test` 全绿（reactor 180 / governance 144+ / cli 61+20）
-- lib clippy 无新增告警；无 panic 路径新增（for_each_fact_from 用 get 切片）
-- 长会话 WAL 体积仍随命令数线性增长（StateTransition payload 为恢复机制
-  本体，本轮不动，边界已在方案文档声明）
+- 全 workspace 测试须绿；既有超时 Error-fact 语义不变
+- Error 为可恢复事实：会话继续可用，不触发恢复/终止路径
 
 ### 3.5 测试计划
 
-- [x] 全部既有测试适配后通过（含 recover 往返、WAL 轮换、哈希快照重生成）
-- [x] 旧格式 WAL 解析兼容性测试（fact_log.rs 保留旧格式字符串样例）
-- [x] 增量迭代接口与 history() 语义一致性经 governance audit_new 全量回归覆盖
-- [ ] bench_long_session 10000 命令复测（验收门禁 4.3，另行执行）
+- [x] `test_unknown_io_response_records_error_fact`：unknown IoResponse → Error fact 入链
+- [x] 全 workspace `cargo test` 回归（含 recover 往返、WAL 轮换）
+- [x] 变更治理门禁 + 策略层检测 PASSED
 
 ### 3.6 回滚方案
 
-分支 fix/uv032-o2-stable-slim 独立实施，基线 tag pre-o2-fix-20260901；
-`git revert` 提交 7da4045 即整体回滚。新格式 WAL 不能被旧代码恢复，
-回滚需连同沙箱验证数据一并丢弃（验证均在 TEMP 沙箱，无生产数据影响）。
+git revert 本提交即恢复静默忽略形态；与 governance/cli 侧 CR-20260902-001
+同批实施，回滚需同批处理。
 
 ## 5. 审查清单
 
@@ -116,6 +98,25 @@ UV-032 实战检验发现单会话长跑性能线性恶化（~1500 命令 → 10
 ---
 
 ## 附 · 历史变更归档
+
+### CR-20260901-001（已批准）：单会话长跑 O(n²) 缺陷修复：Fact::Stable 瘦身 + WAL 旧格式容错 + FactsLog 增量迭代接口（UV-032）
+
+> 归档说明：原 CR 整表置于顶层至 2026-09-02（CR-20260902-001 置顶），完整内容见 git 历史。
+
+| 字段 | 值 |
+|------|------|
+| **变更 ID** | CR-20260901-001 |
+| **变更标题** | 单会话长跑 O(n²) 缺陷修复：Fact::Stable 瘦身 + WAL 旧格式容错 + FactsLog 增量迭代接口（UV-032） |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-09-01 |
+| **审查状态** | 已批准 |
+
+Fact::Stable 由 final_snapshot（全量 payload 快照）瘦身为 version: u64
+（恢复路径从不读取快照，纯冗余；状态本体由最近一条 StateTransition 确定）；
+wal.rs 反序列化对旧格式（≤0.3.x 含 final_snapshot）容错；facts_log.rs 新增
+for_each_fact_from 锁内零 clone 增量遍历供 tier2 审计增量化。⚠️ 审计链哈希
+输入与 WAL 磁盘格式变更（0.x MINOR 承载，新代码可读旧格式，升级单向）。
+回滚：git revert 提交 7da4045。
 
 ### CR-20260831-001（已批准）：存储层 trait 抽象：FactWalStore 后端契约 + MemoryWalStore 内存后端（UV-026）
 

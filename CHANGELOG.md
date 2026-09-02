@@ -36,6 +36,49 @@
 
 ---
 
+## [0.4.1] - 2026-09-02
+
+### 🐛 修复
+
+- **未知 IoResponse 显式入链（UV-046 A1，处置方案：Error fact）**:
+  状态层拒绝消费 unknown/stale request_id 的 IoResponse 时（重复/
+  超时迟到/伪造），原仅日志告警——审计重放无法自解释对账。现发射
+  `Fact::Error` 标记异常成因（可恢复事实，会话继续可用），
+  链上"响应事实 + 异常标记"可逐条对账
+- **审计 WAL 损坏显式拒绝（UV-046 B2）**:`Auditor::load_from_wal`
+  对损坏行（非法 JSON / 条目校验失败）由静默跳过改为拒绝加载，
+  错误含 `[EVO-AUDIT-WAL-CORRUPT]` 标记 + 文件/行号/原因 + 分级
+  补救指引（勿删改 WAL、备份、恢复快照、保留送检）
+- **会话创建 TOCTOU 修复（UV-046 B4）**:`max_sessions` 检查-占用
+  改为 CAS 原子占位（reserve/release），并发创建不再可能超额
+- **diff rewind 不可达显式报错（UV-046 B8b）**:`diff` 由静默回退
+  空 payload 改为返回 `Result<PayloadDiff, TimeMachineError>`
+
+### 🆕 新增
+
+- **权限门装配接口（UV-046 B6）**:`IoSubscriber::with_permission_gate`
+  —— IoRequest 分派前经 `PermissionGate::check` 做"入口仲裁"，
+  拒绝时回写错误 IoResponse 且不分派；谓词判定留在应用层
+- **元指令类型白名单 SSOT（UV-046 C2）**:`evorule_tcb::
+  META_INSTRUCTION_TYPES` 权威常量导出 + 漂移防线单测（白名单类型
+  必须全部被 dispatch 实际处理）；`evorule validate` 改引常量
+
+### ⚠️ Breaking Change
+
+- **`evorule run` 退出码语义（UV-046 C1/C3）**:执行含 Error fact 时
+  退出码 0 → **3**（CI/自动化管道可正确感知规则执行失败；fact log
+  照常写出）。退出码表：0 成功 / 1 通用错误 / 2 规则加载错误 /
+  3 执行含 Error fact
+- `evorule-governance` 库接口:`diff` 返回 `Result`（B8b）
+- 语义化版本:0.x 阶段 MINOR 承载破坏性变更(semver 0.x 约定)
+
+### 🔄 变更
+
+- 版本 0.4.0 → 0.4.1(tcb / reactor / governance / cli 四仓同步)
+- CR 登记:四仓 CHANGE_REQUEST.md 置顶 CR-20260902-001
+
+---
+
 ## [0.4.0] - 2026-09-01
 
 ### 🐛 修复
