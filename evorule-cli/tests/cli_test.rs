@@ -251,10 +251,12 @@ fn test_run_with_output_file() {
 #[test]
 fn test_run_max_steps_zero() {
     let dir = fixtures_dir().join("valid");
+    // CR-20260902-001（UV-046 C1/C3）：--max-steps 0 产生 Error fact
+    // （max_steps 违规），run 现返回退出码 3（不再静默成功）。
     assert_stdout_contains(
         "run --max-steps 0",
         &["run", &dir.to_string_lossy(), "--max-steps", "0"],
-        0,
+        3,
         "max_steps",
     );
 }

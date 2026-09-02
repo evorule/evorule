@@ -421,7 +421,7 @@ impl Reactor {
                         );
                         // 断点 1 修复：cause 在 handle_fact 中通过 push_back(instruction, fact_id) 关联
                         Self::emit_fact(&self.facts_log, &event_tx, fact.clone());
-                        Self::handle_fact(&mut state, fact)?;
+                        Self::handle_fact(&mut state, fact, &self.facts_log, &event_tx, &mut id_gen)?;
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => {
@@ -491,7 +491,7 @@ impl Reactor {
                 tracing::trace!("Processing fact: {} (id={})", fact.type_name(), fact.id());
                 // 断点 1 修复：cause 在 handle_fact 中通过 push_back(instruction, fact_id) 关联
                 Self::emit_fact(&self.facts_log, &event_tx, fact.clone());
-                Self::handle_fact(&mut state, fact)?;
+                Self::handle_fact(&mut state, fact, &self.facts_log, &event_tx, &mut id_gen)?;
             }
 
             // 4. 持续执行队列指令（pending_io==0 时）
@@ -856,9 +856,18 @@ impl Reactor {
     }
 
     /// 处理 Fact（仅更新状态，不执行 TCB）
+    ///
+    /// `facts_log`/`event_tx`/`id_gen`：用于异常路径发射 `Fact::Error`
+    /// （CR-20260902-001 / UV-046 A1：unknown IoResponse 不再静默忽略）。
     // 7 种 Fact 变体 match, 拆函数需暴露内部状态。详见 GATE_REFERENCE.md §六(豁免索引)
     #[allow(clippy::cognitive_complexity)]
-    fn handle_fact(state: &mut ReactorState, fact: Fact) -> Result<(), ReactorError> {
+    fn handle_fact(
+        state: &mut ReactorState,
+        fact: Fact,
+        facts_log: &FactsLog,
+        event_tx: &EventSender,
+        id_gen: &mut FactIdGenerator,
+    ) -> Result<(), ReactorError> {
         match fact {
             Fact::Command { id, instruction } => {
                 tracing::debug!("Received Command");
@@ -886,7 +895,24 @@ impl Reactor {
                 // 用于将结果注入 `__io_results__.{io_type}`（按类型隔离）。
                 let io_type = state.get_io_type(&request_id).cloned();
                 if !state.complete_io_request(request_id) {
-                    tracing::warn!("Unknown IoResponse: {}, ignoring", request_id);
+                    // CR-20260902-001（UV-046 A1）：unknown IoResponse 不再静默忽略。
+                    // IoResponse 事实本身已入链（command 通道先 emit 再 handle），但
+                    // 状态层拒绝消费——链上需有显式异常标记才能自解释（审计重放可
+                    // 逐条对账"响应事实 + 异常标记"）。与上方超时路径的 Error-fact
+                    // 机制同构；Error 为可恢复事实，不影响会话可用性。
+                    let err_fact_id = id_gen.next_id();
+                    let err_fact = Fact::Error {
+                        id: err_fact_id,
+                        message: format!(
+                            "IoResponse for unknown/stale request_id {} ignored (duplicate, late-after-timeout, or forged)",
+                            request_id
+                        ),
+                    };
+                    Self::emit_fact(facts_log, event_tx, err_fact);
+                    tracing::warn!(
+                        "Unknown IoResponse: {}, recorded as Error fact",
+                        request_id
+                    );
                     return Ok(());
                 }
                 // v0.3.1 修复：null 结果与错误响应没有可消费的结果。

@@ -14,30 +14,20 @@
 //!（conditional/while_loop/sequence），故 build.rs 无需任何豁免（零豁免原则保持）。
 //!
 //! # 白名单来源
-//! evorule-tcb/src/executor.rs 的 `execute_meta_instruction` dispatch（L95-105）处理的
+//! evorule-tcb/src/executor.rs 的 `execute_meta_instruction` dispatch 处理的
 //! 元指令类型：branch / set / push / io_request / collect / merge。
 //! noop / increment / decrement 是指令层类型，不属于元指令层（P2-01/P0-01）。
+//!
+//! CR-20260902-001（UV-046 C2）：白名单改为引用 tcb 权威常量
+//! `evorule_tcb::META_INSTRUCTION_TYPES`（SSOT）——禁止本地硬编码副本，
+//! 防 tcb 新增元指令时本命令误报合法规则（漂移防线见 tcb 单测）。
 
 use std::path::Path;
 
+use evorule_tcb::META_INSTRUCTION_TYPES;
+
 use crate::error::CliError;
 use crate::io_util;
-
-/// 合法 core_eval 元指令类型白名单
-///
-/// 来源：evorule-tcb/src/executor.rs::execute_meta_instruction 的 dispatch（L95-105），
-/// 仅 6 种：branch / set / push / io_request / collect / merge。
-/// noop/increment/decrement 是**指令层（instruction）**类型，不属于元指令层，
-/// 不得混入本白名单（P0-01；修前曾误混导致假阳性）。
-/// 不含 G8 禁止词（conditional/while_loop/sequence），故无需 build.rs 豁免。
-const VALID_TRANSFORM_TYPES: &[&str] = &[
-    "branch",
-    "set",
-    "push",
-    "io_request",
-    "collect",
-    "merge",
-];
 
 /// 执行 validate 子命令
 ///
@@ -56,7 +46,7 @@ pub fn run(rules_dir: &Path) -> Result<(), CliError> {
     for (i, t) in transforms.iter().enumerate() {
         let type_str = t.get("type").and_then(|v| v.as_str());
         match type_str {
-            Some(ts) if VALID_TRANSFORM_TYPES.contains(&ts) => {
+            Some(ts) if META_INSTRUCTION_TYPES.contains(&ts) => {
                 println!("[OK]   transform[{}]: type='{}'", i, ts);
             }
             Some(ts) => {
@@ -96,7 +86,7 @@ mod tests {
     fn test_whitelist_excludes_g8_words() {
         // 确保白名单不含 G8 禁止词（conditional/while_loop/sequence）
         // 否则 build.rs 会拦截本文件
-        for t in VALID_TRANSFORM_TYPES {
+        for t in META_INSTRUCTION_TYPES {
             assert!(
                 !matches!(*t, "conditional" | "while_loop" | "sequence"),
                 "whitelist must not contain G8-forbidden words: {}",
@@ -108,15 +98,15 @@ mod tests {
     #[test]
     fn test_whitelist_includes_core_meta_instructions() {
         // 确保白名单包含 core_eval 核心元指令
-        assert!(VALID_TRANSFORM_TYPES.contains(&"branch"));
-        assert!(VALID_TRANSFORM_TYPES.contains(&"set"));
-        assert!(VALID_TRANSFORM_TYPES.contains(&"push"));
-        assert!(VALID_TRANSFORM_TYPES.contains(&"io_request"));
-        assert!(VALID_TRANSFORM_TYPES.contains(&"collect"));
-        assert!(VALID_TRANSFORM_TYPES.contains(&"merge"));
+        assert!(META_INSTRUCTION_TYPES.contains(&"branch"));
+        assert!(META_INSTRUCTION_TYPES.contains(&"set"));
+        assert!(META_INSTRUCTION_TYPES.contains(&"push"));
+        assert!(META_INSTRUCTION_TYPES.contains(&"io_request"));
+        assert!(META_INSTRUCTION_TYPES.contains(&"collect"));
+        assert!(META_INSTRUCTION_TYPES.contains(&"merge"));
         // P0-01：指令层类型不得混入元指令白名单
-        assert!(!VALID_TRANSFORM_TYPES.contains(&"noop"));
-        assert!(!VALID_TRANSFORM_TYPES.contains(&"increment"));
-        assert!(!VALID_TRANSFORM_TYPES.contains(&"decrement"));
+        assert!(!META_INSTRUCTION_TYPES.contains(&"noop"));
+        assert!(!META_INSTRUCTION_TYPES.contains(&"increment"));
+        assert!(!META_INSTRUCTION_TYPES.contains(&"decrement"));
     }
 }
