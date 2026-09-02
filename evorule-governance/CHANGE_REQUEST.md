@@ -4,10 +4,10 @@
 
 | 字段 | 值 |
 |------|------|
-| **变更 ID** | CR-20260820-002 |
-| **变更标题** | 添加变更治理门禁机制和策略层检测 |
+| **变更 ID** | CR-20260902-001 |
+| **变更标题** | 审计/IO/会话四项强化：权限门 + WAL 显式拒绝 + 会话 CAS + diff 显式错误（UV-046 B6/B2/B4/B8b） |
 | **提交人** | EvoRule Team |
-| **提交日期** | 2026-08-20 |
+| **提交日期** | 2026-09-02 |
 | **审查状态** | 已批准 |
 
 ## 2. 变更层级判定（必填）
@@ -19,43 +19,81 @@
 ### 2.2 判定理由
 
 ```
-本次变更提供通用的变更治理基础设施，可被任何机制层代码复用。
+四项均为机制层强化，不含任何业务语义：
+
+- B6 权限门（io_subscriber.rs）：IoSubscriber 新增 gate 字段与
+  with_permission_gate 装配方法，dispatch_and_respond 前经
+  PermissionGate::check 做"入口仲裁"（拒绝时回写错误 IoResponse 并
+  不分派）；谓词判定（谁能过门）留在应用层，机制层只提供门本身
+- B2 WAL 显式拒绝（auditor.rs）：已弃用的 load_from_wal 对损坏行
+  （非法 JSON / 条目校验失败）由静默跳过改为 InvalidData 错误，
+  附 [EVO-AUDIT-WAL-CORRUPT] 标记与分级补救指引——审计完整性政策
+  不允许静默丢证据
+- B4 会话原子化（session.rs）：max_sessions 检查-占用改为 CAS
+  循环（reserve_session_slot / release_session_slot），先原子占位
+  再做昂贵操作，修复 TOCTOU 并发超额
+- B8b diff 显式化（time_machine.rs）：diff 对 rewind 不可达版本由
+  静默回退空 payload 改为返回 Result<PayloadDiff, TimeMachineError>
 ```
 
 ### 2.3 机制层判定标准检查
 
 **✅ 机制层变更的特征**:
-- [x] 提供通用基础设施能力
+- [x] 提供通用基础设施能力（权限仲裁点 / 审计完整性 / 并发正确性 / 显式错误）
 - [x] 不包含任何特定业务语义
 - [x] 可被任何业务场景无差别复用
 
 ## 3. 变更分类
 
-- **变更类型**: A - 新增机制
-- **影响模块**: evorule-governance
+- **变更类型**: B - 机制扩展
+- **影响模块**: evorule-governance/src/{io_subscriber,auditor,session,time_machine}.rs
 
 ## 4. 变更详情
 
 ### 3.1 变更理由
-添加变更治理门禁，防止未经审查的修改和策略层代码混入机制层。
+
+UV-046 report-002 四项发现：
+- B6：`with_permission_gate` 文档承诺但未实现（文档-代码不符）
+- B2：WAL 损坏行静默跳过 → 审计链不完整且无告警，违背审计完整性政策
+- B4：会话计数 check-then-increment 非原子 → 并发创建可超 max_sessions
+- B8b：diff 静默回退空 payload → 产生无告警的错误 diff 结果
 
 ### 3.2 变更范围
-- build.rs: 添加 CHANGE_REQUEST.md 验证逻辑和策略检测
-- CHANGE_REQUEST.md: 更新为新模板
+
+- io_subscriber.rs：gate 字段 + `with_permission_gate` + dispatch 前检查
+  + 拒绝路径错误 IoResponse 回写 + 3 个单测
+- auditor.rs：`load_from_wal` 三处静默路径改显式 InvalidData
+  （[EVO-AUDIT-WAL-CORRUPT] + 文件/行号/原因/分级补救指引）
+- session.rs：`reserve_session_slot`/`release_session_slot`（CAS），
+  `create_session`/`create_session_from_parent_at_version` 先占位
+- time_machine.rs：`TimeMachineError` + `diff` 返回 Result + 测试适配
 
 ### 3.3 破坏性分析
-无破坏性变更。
+
+- B6：纯增量（不装配 gate 时行为与原来一致）
+- B2：⚠️ 行为变化——损坏 WAL 从"跳过继续"变为"拒绝加载"；这是修复目的
+  （静默丢证据不可接受），错误信息含补救指引
+- B4：对外错误类型不变（LimitExceeded），仅时序正确性修复
+- B8b：⚠️ API 签名变化——`diff` 返回 `Result`；调用方需适配
+  （0.x 阶段以 MINOR 承载）
 
 ### 3.4 影响评估
-构建时间略有增加，对运行时性能无影响。
+
+- 全 workspace 测试须绿；evorule-server 消费侧同批适配（session_diff
+  对 Err 映射 400 BAD_REQUEST，依赖升至 0.4.1）
+- 权限门默认不装配，既有部署零行为变化
 
 ### 3.5 测试计划
-- [x] CHANGE_REQUEST.md 验证通过
-- [x] 策略检测通过
-- [x] 单元测试通过
+
+- [x] B6：gate 拒绝 → 错误 IoResponse 回写且不分派；放行 → 正常分派；skip 谓词兼容
+- [x] B2：损坏行/校验失败 → 显式错误含补救指引
+- [x] B4：并发占位测试（CAS 语义）
+- [x] B8b：不可达版本 → Err(TimeMachineError)
+- [x] 全 workspace `cargo test` 回归
 
 ### 3.6 回滚方案
-删除 build.rs 中的验证代码即可回滚
+
+git revert 本提交即恢复原形态（B8b 调用方适配需同批回滚）。
 
 ## 5. 审查清单
 
@@ -74,9 +112,25 @@
 
 ---
 
-## 6. 变更记录 CR-20260826-001: G-A1 审计锚点签名（v0.3.2 新增）
+## 6. 变更记录 CR-20260820-002: 添加变更治理门禁机制和策略层检测
 
-### 6.1 基本信息
+> 归档说明：原 CR 整表置于顶层至 2026-09-02（CR-20260902-001 置顶），完整内容见 git 历史。
+
+| 字段 | 值 |
+|------|------|
+| **变更 ID** | CR-20260820-002 |
+| **变更标题** | 添加变更治理门禁机制和策略层检测 |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-08-20 |
+| **审查状态** | 已批准 |
+
+build.rs 添加 CHANGE_REQUEST.md 验证逻辑和策略检测：通用的变更治理
+基础设施（审查流程管理 + 代码质量保障），不含业务语义。回滚：删除
+build.rs 中的验证代码。
+
+## 7. 变更记录 CR-20260826-001: G-A1 审计锚点签名（v0.3.2 新增）
+
+### 7.1 基本信息
 
 | 字段 | 值 |
 |------|------|
