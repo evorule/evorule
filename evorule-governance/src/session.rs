@@ -595,6 +595,46 @@ impl SessionManager {
         &self.shards[self.get_shard_idx(id)]
     }
 
+    /// 原子预留会话名额（CR-20260902-001 / UV-046 B4）
+    ///
+    /// 以 CAS 自旋替代"先 load 检查、后 fetch_add"的两步模式——原模式下检查
+    /// 与递增之间存在窗口（其间含 create_facts_log/spawn 等慢操作），高并发
+    /// 并发创建可突破 `max_sessions`（TOCTOU）。
+    ///
+    /// # 返回
+    /// - `Ok(())`：成功预留 1 个名额（调用方创建失败时必须调用
+    ///   [`Self::release_session_slot`] 归还）
+    /// - `Err(SessionError::LimitExceeded)`：已达上限
+    fn reserve_session_slot(&self) -> Result<(), SessionError> {
+        loop {
+            let current = self.count.load(Ordering::Relaxed);
+            if current >= self.max_sessions as u64 {
+                tracing::warn!(
+                    current,
+                    max = self.max_sessions,
+                    "Session creation rejected: limit exceeded"
+                );
+                return Err(SessionError::LimitExceeded {
+                    current: current as usize,
+                    max: self.max_sessions,
+                });
+            }
+            if self
+                .count
+                .compare_exchange(current, current + 1, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                return Ok(());
+            }
+            // CAS 失败 = 并发竞争，重读重试
+        }
+    }
+
+    /// 归还 1 个会话名额（与 [`Self::reserve_session_slot`] 配对）
+    fn release_session_slot(&self) {
+        self.count.fetch_sub(1, Ordering::Relaxed);
+    }
+
     /// 创建新会话
     ///
     /// spawn 一个新的长驻反应器实例，分配唯一 SessionId。
@@ -604,24 +644,15 @@ impl SessionManager {
     /// - `Err(SessionError::LimitExceeded)`：超过最大会话数限制
     /// - `Err(SessionError::WalUnavailable)`：WAL 不可用，拒绝创建（不允许审计链残缺的会话）
     pub fn create_session(&self) -> Result<SessionId, SessionError> {
-        let current = self.count.load(Ordering::Relaxed);
-        if current >= self.max_sessions as u64 {
-            tracing::warn!(
-                current,
-                max = self.max_sessions,
-                "Session creation rejected: limit exceeded"
-            );
-            return Err(SessionError::LimitExceeded {
-                current: current as usize,
-                max: self.max_sessions,
-            });
-        }
+        // B4：先原子预留名额，再做慢操作（create_facts_log/spawn）；失败路径必须归还
+        self.reserve_session_slot()?;
 
         let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
 
         let facts_log = match self.create_facts_log(session_id) {
             Ok(fl) => fl,
             Err(source) => {
+                self.release_session_slot();
                 tracing::error!(
                     session_id,
                     error = %source,
@@ -646,7 +677,7 @@ impl SessionManager {
             }
         };
 
-        let new_count = self.count.fetch_add(1, Ordering::Relaxed) + 1;
+        let new_count = self.count.load(Ordering::Relaxed);
 
         tracing::info!(
             session_id,
@@ -721,25 +752,24 @@ impl SessionManager {
             .get_session(parent_id)
             .ok_or(SessionError::NotFound { id: parent_id })?;
 
-        let current = self.count.load(Ordering::Relaxed);
-        if current >= self.max_sessions as u64 {
-            return Err(SessionError::LimitExceeded {
-                current: current as usize,
-                max: self.max_sessions,
-            });
-        }
+        // B4：先原子预留名额，再做慢操作（rewind/create_facts_log/spawn）；失败路径必须归还
+        self.reserve_session_slot()?;
 
         let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
 
         // 审计⑥ C2: 锚哈希统一到审计链口径（带口径标记,旧验证方按 scheme 分派）
         let (initial_content_hash, content_hash_scheme, initial_payload, initial_version) =
             match version {
-                Some(v) => {
-                    let payload = rewind_payload(&parent.facts_log, v)
-                        .ok_or(SessionError::InvalidVersion { version: v })?;
-                    let (h, scheme) = compute_initial_hash(&payload);
-                    (h, scheme, payload, v)
-                }
+                Some(v) => match rewind_payload(&parent.facts_log, v) {
+                    Some(payload) => {
+                        let (h, scheme) = compute_initial_hash(&payload);
+                        (h, scheme, payload, v)
+                    }
+                    None => {
+                        self.release_session_slot();
+                        return Err(SessionError::InvalidVersion { version: v });
+                    }
+                },
                 None => {
                     let (payload, _, version) = parent.facts_log.snapshot();
                     let (h, scheme) = compute_initial_hash(&payload);
@@ -750,6 +780,7 @@ impl SessionManager {
         let facts_log = match self.create_facts_log(session_id) {
             Ok(fl) => fl,
             Err(source) => {
+                self.release_session_slot();
                 tracing::error!(
                     session_id,
                     error = %source,
@@ -775,7 +806,7 @@ impl SessionManager {
             }
         };
 
-        let new_count = self.count.fetch_add(1, Ordering::Relaxed) + 1;
+        let new_count = self.count.load(Ordering::Relaxed);
 
         tracing::info!(
             session_id,
@@ -1203,6 +1234,58 @@ mod tests {
         instr.insert("type".to_string(), JsonValue::string("increment"));
         instr.insert("params".to_string(), JsonValue::Object(params));
         vec![JsonValue::Object(instr)]
+    }
+
+    /// B4 回归（CR-20260902-001）：max_sessions 限额在高并发下不可突破。
+    /// 原实现 check（load）与 reserve（fetch_add）分离，其间含 spawn 慢操作，
+    /// 并发创建可越过限额（TOCTOU）。现 CAS 预留，N 线程 × max=1 恰成功 1 个。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_max_sessions_concurrent_creation_cannot_exceed() {
+        use std::sync::atomic::AtomicUsize;
+        use std::sync::Arc as StdArc;
+
+        let core_eval = make_core_eval();
+        // 注意：new() 第二参数是 max_rounds；B4 专项需显式 with_limits 设 max_sessions=1
+        let mgr = StdArc::new(SessionManager::with_limits(
+            core_eval,
+            100,
+            1,
+            Duration::from_secs(3600),
+        ));
+
+        let ok = StdArc::new(AtomicUsize::new(0));
+        let exceeded = StdArc::new(AtomicUsize::new(0));
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let mgr = mgr.clone();
+            let ok = ok.clone();
+            let exceeded = exceeded.clone();
+            handles.push(tokio::task::spawn(async move {
+                for _ in 0..25 {
+                    match mgr.create_session() {
+                        Ok(_) => {
+                            ok.fetch_add(1, Ordering::SeqCst);
+                        }
+                        Err(SessionError::LimitExceeded { .. }) => {
+                            exceeded.fetch_add(1, Ordering::SeqCst);
+                        }
+                        Err(e) => panic!("unexpected error: {e}"),
+                    }
+                }
+            }));
+        }
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        // 恰好成功 1 个（计数与在册一致），其余全部被限额拒绝
+        assert_eq!(
+            ok.load(Ordering::SeqCst),
+            1,
+            "max=1 时并发 200 次创建恰成功 1 次（TOCTOU 修复实证）"
+        );
+        assert_eq!(exceeded.load(Ordering::SeqCst), 199);
+        assert_eq!(mgr.len(), 1);
     }
 
     #[tokio::test]

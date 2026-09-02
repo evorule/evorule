@@ -38,6 +38,26 @@ pub const MAX_BRANCH_DEPTH: usize = 64;
 /// 覆盖 ReAct 宪法的实际需求（每条规则 < 15 条指令）并留有余量。
 pub const MAX_TOTAL_META_INSTRUCTIONS: usize = 1024;
 
+/// 合法 core_eval 元指令类型权威清单（SSOT，CR-20260902-001 / UV-046 C2）
+///
+/// 与下方 `execute_meta_instruction_budgeted` 的 dispatch 分支一一对应。
+/// 消费方（如 evorule-cli validate 的规则白名单）**必须引用本常量**，
+/// 禁止自行硬编码副本——防止 tcb 新增元指令时消费方误报合法规则。
+///
+/// # 漂移防线
+/// - 本表 → dispatch：`test_meta_instruction_types_ssot` 逐类型断言
+///   dispatch 不返回 `UnknownMetaInstruction`；
+/// - dispatch → 本表：新增 dispatch 分支时须同步更新本表并登记变更
+///   （该方向不可由枚举自动穷尽，靠 CR 门禁约束）。
+pub const META_INSTRUCTION_TYPES: &[&str] = &[
+    "branch",
+    "set",
+    "push",
+    "io_request",
+    "collect",
+    "merge",
+];
+
 /// 元指令执行结果
 #[derive(Debug, Clone, PartialEq)]
 pub enum MetaInstructionResult {
@@ -102,6 +122,28 @@ pub(crate) fn execute_meta_instruction_budgeted(
         _ => Err(TcbError::UnknownMetaInstruction {
             meta_type: instr_type.to_string(),
         }),
+    }
+}
+
+#[cfg(test)]
+mod executor_ssot_tests {
+    use super::*;
+
+    /// SSOT 漂移防线（CR-20260902-001 / UV-046 C2）：
+    /// `META_INSTRUCTION_TYPES` 中每个类型都必须被 dispatch 实际处理
+    /// （不得返回 `UnknownMetaInstruction`）——防止白名单比执行器更严，
+    /// 导致消费方（evorule-cli validate）误报合法规则。
+    #[test]
+    fn test_meta_instruction_types_ssot() {
+        assert_eq!(META_INSTRUCTION_TYPES.len(), 6);
+        for t in META_INSTRUCTION_TYPES {
+            let instr = JsonValue::object_from_pairs(&[("type", JsonValue::string(*t))]);
+            let err = execute_meta_instruction(&instr, JsonValue::Null, 0).unwrap_err();
+            assert!(
+                !matches!(err, TcbError::UnknownMetaInstruction { .. }),
+                "META_INSTRUCTION_TYPES 含未实现类型 '{t}'——白名单与 dispatch 漂移"
+            );
+        }
     }
 }
 

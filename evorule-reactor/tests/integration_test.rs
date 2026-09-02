@@ -487,14 +487,15 @@ async fn test_io_request_detection() {
 }
 
 #[tokio::test]
-async fn test_unknown_io_response_ignored() {
+async fn test_unknown_io_response_records_error_fact() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
-    // 发送一个未知的 IoResponse（不应影响状态）
+    // 发送一个未知的 IoResponse（CR-20260902-001 / UV-046 A1：状态不变，
+    // 但必须发射 Error fact 入链——不再静默忽略）
     tx.send(Fact::IoResponse {
         id: gen.next_id(),
         request_id: FactId(999),
@@ -511,12 +512,19 @@ async fn test_unknown_io_response_ignored() {
     })
     .unwrap();
 
+    let mut seen_error = false;
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
                 // Stable 不再携带快照(CR-20260901-001),状态经 FactsLog 快照取
                 Fact::Stable { .. } => return Some(()),
-                Fact::Error { message, .. } => panic!("Error: {}", message),
+                Fact::Error { message, .. } => {
+                    assert!(
+                        message.contains("unknown/stale request_id F999"),
+                        "unknown IoResponse 必须以 Error fact 显式入链，实际消息: {message}"
+                    );
+                    seen_error = true;
+                }
                 _ => {}
             }
         }
@@ -526,7 +534,12 @@ async fn test_unknown_io_response_ignored() {
     .unwrap();
 
     assert!(result.is_some());
+    assert!(
+        seen_error,
+        "未观察到 unknown IoResponse 对应的 Error fact"
+    );
     let (snapshot, _, _) = facts_log.snapshot();
+    // 状态不受 spurious 响应影响
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(5)));
 }
 

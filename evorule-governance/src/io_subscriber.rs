@@ -22,11 +22,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use evorule_reactor::{EventReceiver, Fact, FactId, FactSender, IoType};
+use evorule_reactor::{EventReceiver, Fact, FactId, FactSender, IoCallContext, IoType};
 use evorule_tcb::JsonValue;
 
 use crate::io_dispatcher::IoDispatcher;
 use crate::metrics::{NoOpMetrics, SharedMetrics};
+use crate::permission::{PermissionGate, Verdict};
 
 /// ID 起始偏移量，避免与反应器自身的 FactId 冲突
 const ID_OFFSET: u64 = 10000;
@@ -117,6 +118,10 @@ pub struct IoSubscriber {
     metrics: SharedMetrics,
     /// 可选跳过谓词（默认 None = 全部自动应答，行为与历史版本一致）
     skip: Option<SkipPredicate>,
+    /// 可选 I/O 权限前置判定门（CR-20260902-001 / UV-046 B6）。
+    /// 默认 None = 不做权限判定（行为与历史版本一致）；注入后每次自动分发的
+    /// IoRequest 在 dispatch 前按权限快照做"入口仲裁"（`PermissionGate::check`）。
+    gate: Option<PermissionGate>,
 }
 
 impl IoSubscriber {
@@ -130,7 +135,31 @@ impl IoSubscriber {
             next_id: ID_OFFSET,
             metrics: Arc::new(NoOpMetrics),
             skip: None,
+            gate: None,
         }
+    }
+
+    /// 注入 I/O 权限前置判定门（builder 模式；CR-20260902-001 / UV-046 B6）
+    ///
+    /// 注入后，本订阅者自动分发的每条 IoRequest 在 dispatch 之前先经
+    /// [`PermissionGate::check`] 做"入口仲裁"（而非事后审计）：
+    /// - `Allow` → 照常 dispatch；
+    /// - `Deny` / `Candidate` → 不 dispatch，回写错误 IoResponse
+    ///   （反应器恢复执行，IoRequest 不会悬空）。
+    ///
+    /// # 判定上下文
+    /// 以 IoRequest 的 `cause` 构造 `IoCallContext`（默认 caller_role=Unknown，
+    /// 应用层可经 `PermissionGate::with_caller_role_resolver` 注入解析器）；
+    /// `v_trigger` 由门内部冻结为 SharedFactsLog 当前版本（D8 语义）。
+    ///
+    /// # 与 skip 谓词的顺序
+    /// skip 谓词**先**于权限门：skip 命中 = 请求交由外部执行者（审计桥 LLM）
+    /// 处理，不属本订阅者分发器的权限域——若先门后跳，默认策略下 LLM 角色
+    /// Deny 会抢答错误响应，外部执行者的应答将被反应器忽略（Unknown
+    /// IoResponse），审计回路断裂。权限门只仲裁本订阅者自己分发的 I/O。
+    pub fn with_permission_gate(mut self, gate: PermissionGate) -> Self {
+        self.gate = Some(gate);
+        self
     }
 
     /// 注入跳过谓词（builder 模式）
@@ -215,12 +244,12 @@ impl IoSubscriber {
         match fact {
             Fact::IoRequest {
                 id,
+                cause,
                 io_type,
                 params,
-                ..
             } => {
                 // 跳过谓词命中 → 不自动应答，留给外部执行者（审计桥）。
-                // 必须在 dispatch 之前判断：一旦回写（哪怕错误），外部执行者的
+                // 必须在 dispatch（与权限门）之前判断：一旦回写（哪怕错误），外部执行者的
                 // io_response 会被反应器忽略（Unknown IoResponse）。
                 if let Some(skip) = &self.skip {
                     if skip(&io_type, &params) {
@@ -232,7 +261,7 @@ impl IoSubscriber {
                         return Ok(());
                     }
                 }
-                self.dispatch_and_respond(id, io_type, params, command_tx)
+                self.dispatch_and_respond(id, cause, io_type, params, command_tx)
                     .await
             }
             other => {
@@ -260,6 +289,7 @@ impl IoSubscriber {
     async fn dispatch_and_respond(
         &mut self,
         request_id: FactId,
+        cause: FactId,
         io_type: IoType,
         params: JsonValue,
         command_tx: &FactSender,
@@ -269,6 +299,45 @@ impl IoSubscriber {
             io_type = %io_type,
             "处理 IoRequest"
         );
+
+        // CR-20260902-001（UV-046 B6）：权限前置判定门（可选装配）。
+        // Deny/Candidate → 不 dispatch，回写错误 IoResponse 让反应器恢复
+        // （IoRequest 不会悬空）；Candidate 需审批人裁决，自动路径按拒绝处理
+        // （fail-closed）。
+        if let Some(gate) = &self.gate {
+            let mut ctx = IoCallContext::new(cause, 0, None);
+            let verdict = gate.check(&mut ctx, io_type.as_str(), Some(&params));
+            if verdict != Verdict::Allow {
+                let reason = match verdict {
+                    Verdict::Deny => "denied by permission gate",
+                    Verdict::Candidate => "pending permission approval (fail-closed)",
+                    Verdict::Allow => unreachable!(),
+                };
+                tracing::warn!(
+                    request_id = %request_id,
+                    io_type = %io_type.as_str(),
+                    caller_role = ?ctx.caller_role,
+                    verdict = ?verdict,
+                    "IoRequest 权限判定未通过，回写错误 IoResponse"
+                );
+                self.metrics.inc_io_errors(io_type.as_str());
+                let response = Fact::IoResponse {
+                    id: self.next_fact_id(),
+                    request_id,
+                    result: JsonValue::Null,
+                    error: Some(format!(
+                        "permission denied: io_type={} {}, resource={}{}",
+                        io_type.as_str(),
+                        reason,
+                        "io:",
+                        io_type.as_str()
+                    )),
+                };
+                return command_tx
+                    .send(response)
+                    .map_err(|_| IoSubscriberError::CommandClosed(format!("request_id={request_id}")));
+            }
+        }
 
         // 记录整体 I/O 耗时（包含重试）。通过 trait object 分发，
         // 默认 NoOpMetrics 空转，应用层注入的 PrometheusMetrics 会实际记录。
@@ -543,6 +612,113 @@ mod tests {
         assert!(
             rx.try_recv().is_ok(),
             "带 service_name 的调用不应被跳过，应照常分发并回写"
+        );
+    }
+
+    // ===== 权限前置判定门（CR-20260902-001 / UV-046 B6）=====
+
+    /// 构造一个 service 调用形态的 IoRequest（供门测试用）
+    fn service_call_request(id: u64) -> Fact {
+        let params = JsonValue::object_from_pairs(&[(
+            "service_name",
+            JsonValue::string("inverse_kinematics_solver"),
+        )]);
+        Fact::IoRequest {
+            id: FactId(id),
+            cause: FactId(1),
+            io_type: IoType::call_external(),
+            params,
+        }
+    }
+
+    /// 门 Deny（默认 Unknown 角色 + 空表 → fail-closed Deny）→ 回写
+    /// "permission denied" 错误 IoResponse，不进入 dispatch
+    #[tokio::test]
+    async fn test_permission_gate_deny_writes_error_response() {
+        use crate::permission::PermissionGate;
+        use std::sync::Arc as StdArc;
+
+        let gate = PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()));
+        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build()).with_permission_gate(gate);
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        subscriber
+            .handle_fact(service_call_request(10), &tx)
+            .await
+            .unwrap();
+
+        match rx.try_recv() {
+            Ok(Fact::IoResponse { request_id, error, .. }) => {
+                assert_eq!(request_id, FactId(10));
+                let err = error.expect("Deny 必须回写错误 IoResponse");
+                assert!(
+                    err.contains("permission denied"),
+                    "错误消息应表明权限拒绝，实际: {err}"
+                );
+            }
+            other => panic!("Deny 应回写错误 IoResponse，实际: {other:?}"),
+        }
+    }
+
+    /// 门 Allow（resolver→Human，空表默认 human=Allow）→ 照常进入 dispatch
+    /// （空 dispatcher 报"分发失败"类错误，而非权限拒绝）
+    #[tokio::test]
+    async fn test_permission_gate_allow_proceeds_to_dispatch() {
+        use crate::permission::PermissionGate;
+        use evorule_reactor::CallerRole;
+        use std::sync::Arc as StdArc;
+
+        let gate = PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()))
+            .with_caller_role_resolver(StdArc::new(|_| CallerRole::Human));
+        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build()).with_permission_gate(gate);
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        subscriber
+            .handle_fact(service_call_request(11), &tx)
+            .await
+            .unwrap();
+
+        match rx.try_recv() {
+            Ok(Fact::IoResponse { error, .. }) => {
+                let err = error.expect("空 dispatcher 必然分发失败");
+                assert!(
+                    !err.contains("permission denied"),
+                    "Allow 后错误应来自 dispatch 而非权限门，实际: {err}"
+                );
+            }
+            other => panic!("Allow 应照常 dispatch 并回写，实际: {other:?}"),
+        }
+    }
+
+    /// skip 命中优先于权限门：外部执行者（审计桥 LLM）请求不被门抢答
+    #[tokio::test]
+    async fn test_permission_gate_does_not_override_skip() {
+        use crate::permission::PermissionGate;
+        use std::sync::Arc as StdArc;
+
+        let gate = PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()));
+        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build())
+            .with_permission_gate(gate)
+            .with_skip(StdArc::new(
+                |io_type: &IoType, params: &JsonValue| {
+                    io_type.as_str() == "call_external"
+                        && params.get("messages").is_some()
+                        && params.get("service_name").is_none()
+                },
+            ));
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let fact = Fact::IoRequest {
+            id: FactId(12),
+            cause: FactId(1),
+            io_type: IoType::call_external(),
+            params: llm_audit_params(),
+        };
+        subscriber.handle_fact(fact, &tx).await.unwrap();
+
+        assert!(
+            rx.try_recv().is_err(),
+            "skip 命中时权限门不得抢答（审计回路依赖外部执行者应答）"
         );
     }
 }

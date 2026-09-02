@@ -52,14 +52,18 @@ pub fn run(
     fact_log::write_facts(output, &facts)?;
 
     // stderr 摘要（不影响 fact log 输出）
-    let has_error = facts
+    // CR-20260902-001（UV-046 C1/C3）：Error fact 不再静默成功——返回
+    // ExecutionHadErrors → 退出码 3，CI/自动化管道可正确感知规则执行失败。
+    // fact log 已写出，供审计回放定位失败原因。
+    let error_count = facts
         .iter()
-        .any(|f| matches!(f, evorule_reactor::Fact::Error { .. }));
-    if has_error {
-        tracing::warn!(facts = facts.len(), "execution completed with Error facts");
-    } else {
-        tracing::info!(facts = facts.len(), "execution completed successfully");
+        .filter(|f| matches!(f, evorule_reactor::Fact::Error { .. }))
+        .count();
+    if error_count > 0 {
+        tracing::warn!(facts = facts.len(), error_count, "execution completed with Error facts");
+        return Err(CliError::ExecutionHadErrors { count: error_count });
     }
+    tracing::info!(facts = facts.len(), "execution completed successfully");
 
     Ok(())
 }

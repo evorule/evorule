@@ -599,22 +599,67 @@ impl Auditor {
                 continue;
             }
 
-            let parsed: serde_json::Value = match serde_json::from_str(&line) {
-                Ok(v) => v,
-                Err(_) => {
-                    tracing::warn!(line = idx, "load_from_wal: 跳过无效 JSON 行");
-                    continue;
-                }
-            };
+            // CR-20260902-001（UV-046 B2）：损坏行不再静默跳过（审计完整性铁律：
+            // 链可能不完整而调用方毫无感知），显式拒绝加载并内嵌客户自助处理意见
+            // （结构化固定错误码，便于 LLM 助手逐条引导用户）。
+            let parsed: serde_json::Value = serde_json::from_str(&line).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "[EVO-AUDIT-WAL-CORRUPT] audit WAL is corrupted; refusing to load \
+                         (audit integrity policy: no silent skip).\n\
+                         File: {}; Line: {}; Reason: invalid JSON: {e}.\n\
+                         Remediation:\n  \
+                         1. Do NOT delete or edit the WAL file - it is evidence for forensic audit.\n  \
+                         2. Back up the entire data directory before any further action.\n  \
+                         3. Restore from a verified backup/snapshot if one exists.\n  \
+                         4. If no backup exists, keep this file and re-initialize the session; \
+                         the corrupt file can be submitted for later analysis.",
+                        path.display(),
+                        idx + 1
+                    ),
+                )
+            })?;
 
-            let fact_id_num = match parsed.get("fact_id").and_then(|v| v.as_u64()) {
-                Some(n) => n,
-                None => continue,
-            };
-            let fact_type = match parsed.get("fact_type").and_then(|v| v.as_str()) {
-                Some(s) => s,
-                None => continue,
-            };
+            let fact_id_num = parsed.get("fact_id").and_then(|v| v.as_u64()).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "[EVO-AUDIT-WAL-CORRUPT] audit WAL entry rejected; refusing to load \
+                         (audit integrity policy: no silent skip).\n\
+                         File: {}; Line: {}; Reason: missing 'fact_id' field.\n\
+                         Remediation:\n  \
+                         1. Do NOT delete or edit the WAL file - it is evidence for forensic audit.\n  \
+                         2. Back up the entire data directory before any further action.\n  \
+                         3. Restore from a verified backup/snapshot if one exists.\n  \
+                         4. If no backup exists, keep this file and re-initialize the session; \
+                         the corrupt file can be submitted for later analysis.",
+                        path.display(),
+                        idx + 1
+                    ),
+                )
+            })?;
+            let fact_type = parsed
+                .get("fact_type")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "[EVO-AUDIT-WAL-CORRUPT] audit WAL entry rejected; refusing to load \
+                             (audit integrity policy: no silent skip).\n\
+                             File: {}; Line: {}; Reason: missing 'fact_type' field.\n\
+                             Remediation:\n  \
+                             1. Do NOT delete or edit the WAL file - it is evidence for forensic audit.\n  \
+                             2. Back up the entire data directory before any further action.\n  \
+                             3. Restore from a verified backup/snapshot if one exists.\n  \
+                             4. If no backup exists, keep this file and re-initialize the session; \
+                             the corrupt file can be submitted for later analysis.",
+                            path.display(),
+                            idx + 1
+                        ),
+                    )
+                })?;
             let logical_time = parsed
                 .get("logical_time")
                 .and_then(|v| v.as_u64())
@@ -1575,12 +1620,22 @@ mod tests {
 
         let log = make_facts_log();
         let mut auditor = Auditor::new(log);
-        auditor.load_from_wal(&tmp).expect("load wal");
-
-        // 只有 1 条有效条目
-        assert_eq!(auditor.entries().len(), 1);
-        assert_eq!(auditor.entries()[0].fact_id, FactId(5));
-        assert_eq!(auditor.entries()[0].fact_type, "PayloadUpdate");
+        // CR-20260902-001（UV-046 B2）：损坏行不再静默跳过——显式拒绝加载
+        // 并附 [EVO-AUDIT-WAL-CORRUPT] 标记与补救指引（审计完整性政策）。
+        let err = auditor.load_from_wal(&tmp).expect_err("损坏 WAL 必须拒绝加载");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("EVO-AUDIT-WAL-CORRUPT"),
+            "错误信息须含 [EVO-AUDIT-WAL-CORRUPT] 标记: {msg}"
+        );
+        assert!(
+            msg.contains("Line: 1"),
+            "错误信息须含损坏行号: {msg}"
+        );
+        assert!(
+            auditor.entries().is_empty(),
+            "拒绝加载后不得残留部分条目（要么完整要么为零）"
+        );
 
         let _ = std::fs::remove_file(&tmp);
     }

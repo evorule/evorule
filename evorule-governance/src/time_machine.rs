@@ -77,6 +77,17 @@ impl PayloadDiff {
     }
 }
 
+/// 时间机器错误（CR-20260902-001 / UV-046 B8b）
+///
+/// `diff` 在 rewind 不可达时不再静默回退空 payload（旧行为会产生无告警的
+/// 错误 diff 结果），而是显式返回本错误。
+#[derive(Debug, thiserror::Error)]
+#[error("time machine: rewind to version {version} unavailable (facts history insufficient or version out of range)")]
+pub struct TimeMachineError {
+    /// 不可达的版本号
+    pub version: u64,
+}
+
 /// 应用 PayloadUpdate 的路径更新（与 reactor::update_payload 逻辑一致）
 ///
 /// 断点 9 修复：rewind/rewind_payload 需要正确应用 PayloadUpdate 对 payload
@@ -233,16 +244,22 @@ pub fn rewind(facts: &[Fact], target_version: u64) -> Option<RewindSnapshot> {
 ///
 /// # 返回
 ///
-/// 返回 `PayloadDiff`，包含 added/removed/changed/unchanged 四类字段。
-pub fn diff(facts: &[Fact], v_a: u64, v_b: u64) -> PayloadDiff {
+/// 返回 `Ok(PayloadDiff)`，包含 added/removed/changed/unchanged 四类字段。
+///
+/// # 错误（CR-20260902-001 / UV-046 B8b）
+///
+/// 任一版本 rewind 不可达（事实历史不足/版本越界）时返回
+/// [`TimeMachineError`]——**不再**静默回退空 payload（旧行为会产生无告警的
+/// 错误 diff 结果，直接动摇回放工具的可信性）。
+pub fn diff(facts: &[Fact], v_a: u64, v_b: u64) -> Result<PayloadDiff, TimeMachineError> {
     let payload_a = rewind(facts, v_a)
         .map(|s| s.payload)
-        .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
+        .ok_or(TimeMachineError { version: v_a })?;
     let payload_b = rewind(facts, v_b)
         .map(|s| s.payload)
-        .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
+        .ok_or(TimeMachineError { version: v_b })?;
 
-    compute_diff(&payload_a, &payload_b)
+    Ok(compute_diff(&payload_a, &payload_b))
 }
 
 /// 计算两个 JSON 对象的 diff
@@ -404,7 +421,7 @@ mod tests {
             make_state_transition(2, serde_json::json!({"a": 1, "b": 2})),
         ];
 
-        let diff_result = diff(&facts, 1, 2);
+        let diff_result = diff(&facts, 1, 2).unwrap();
         assert_eq!(diff_result.added.len(), 1);
         assert_eq!(diff_result.added[0].0, "b");
         assert_eq!(diff_result.removed.len(), 0);
@@ -420,7 +437,7 @@ mod tests {
             make_state_transition(2, serde_json::json!({"a": 1})),
         ];
 
-        let diff_result = diff(&facts, 1, 2);
+        let diff_result = diff(&facts, 1, 2).unwrap();
         assert_eq!(diff_result.removed.len(), 1);
         assert_eq!(diff_result.removed[0].0, "b");
         assert_eq!(diff_result.added.len(), 0);
@@ -434,7 +451,7 @@ mod tests {
             make_state_transition(2, serde_json::json!({"a": 99})),
         ];
 
-        let diff_result = diff(&facts, 1, 2);
+        let diff_result = diff(&facts, 1, 2).unwrap();
         assert_eq!(diff_result.changed.len(), 1);
         assert_eq!(diff_result.changed[0].0, "a");
         assert_eq!(diff_result.changed[0].1, serde_json::json!(1));
@@ -450,7 +467,7 @@ mod tests {
             make_state_transition(2, serde_json::json!({"a": 1, "b": 2})),
         ];
 
-        let diff_result = diff(&facts, 1, 2);
+        let diff_result = diff(&facts, 1, 2).unwrap();
         assert!(diff_result.is_empty());
         assert_eq!(diff_result.unchanged.len(), 2);
     }
@@ -468,6 +485,19 @@ mod tests {
         assert!(summary.contains("-1"));
         assert!(summary.contains("~1"));
         assert!(summary.contains("=1"));
+    }
+
+    /// B8b 回归（CR-20260902-001）：rewind 不可达时 diff 必须显式报错，
+    /// 绝不静默回退空 payload（旧 unwrap_or_else 行为会产生无告警的错误 diff）。
+    #[test]
+    fn test_diff_unreachable_version_is_error_not_empty() {
+        let facts = vec![make_state_transition(1, serde_json::json!({"a": 1}))];
+
+        let err = diff(&facts, 1, 99).unwrap_err();
+        assert_eq!(err.version, 99, "越界版本必须返回 TimeMachineError 并携带版本号");
+
+        let err = diff(&facts, 50, 1).unwrap_err();
+        assert_eq!(err.version, 50);
     }
 
     // ========================================================================
@@ -571,7 +601,7 @@ mod tests {
             make_payload_update(2, "b", serde_json::json!(2)),
         ];
 
-        let diff_result = diff(&facts, 1, 2);
+        let diff_result = diff(&facts, 1, 2).unwrap();
         assert_eq!(diff_result.added.len(), 1);
         assert_eq!(diff_result.added[0].0, "b");
         assert_eq!(diff_result.removed.len(), 0);
@@ -588,7 +618,7 @@ mod tests {
             make_payload_update(2, "a", serde_json::json!(99)),
         ];
 
-        let diff_result = diff(&facts, 1, 2);
+        let diff_result = diff(&facts, 1, 2).unwrap();
         assert_eq!(diff_result.changed.len(), 1);
         assert_eq!(diff_result.changed[0].0, "a");
         assert_eq!(diff_result.changed[0].1, serde_json::json!(1));
