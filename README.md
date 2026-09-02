@@ -23,10 +23,9 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.3.2-green.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-0.4.1-green.svg)](Cargo.toml)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Kani](https://img.shields.io/badge/Kani-t0_34p_5layer_t1_11p-blue.svg)](evorule-tcb/verification/kani-formal-verification-design.md)
-[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0-green.svg)]()
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=dark)](https://gitee.com/evorule/evorule/stargazers)
 
 **为谁而做**：AI 基建工程师 · 确定性执行爱好者 · 合规/审计工具开发者
@@ -41,9 +40,9 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 ---
 
-> ## ⚠️ v0.3.x — I/O 指令原语 + I/O 隔离 + TCB Ignored 语义 (当前 0.3.2, 2026-08-26)
+> ## ⚠️ v0.4.x — I/O 指令原语 + I/O 隔离 + TCB Ignored 语义 + 性能/完整性加固 (当前 0.4.1, 2026-09-02)
 >
-> 这是 EvoRule **v0.3.x 公开基座**（v0.3.x 提供 io_request / collect / merge 等 I/O 循环指令原语与 I/O 结果按 io_type 隔离 + TCB Ignored 变体；**ReAct 应用剧本自 T8 起由消费方自持**,核心仓 `core_eval.json` v0.4.0 回归最小评估集,范式见 `examples/reactive_researcher`；v0.2.0 起 `IoType` 重构为动态 `Arc<str>`，支持自定义 IoType；v0.2.0 起 `IoHandler` trait 与 `IoDispatcher` 从 `evorule-governance` 下沉至 `evorule-reactor`，`evorule-governance` 保留 re-export 向后兼容），提供核心执行引擎 + HTTP API + CLI 工具。**不是 production-ready**。
+> 这是 EvoRule **v0.4.x 公开基座**（v0.3.x 提供 io_request / collect / merge 等 I/O 循环指令原语与 I/O 结果按 io_type 隔离 + TCB Ignored 变体；**ReAct 应用剧本自 T8 起由消费方自持**,核心仓 `core_eval.json` v0.4.0 回归最小评估集,范式见 `examples/reactive_researcher`；v0.2.0 起 `IoType` 重构为动态 `Arc<str>`，支持自定义 IoType；v0.2.0 起 `IoHandler` trait 与 `IoDispatcher` 从 `evorule-governance` 下沉至 `evorule-reactor`，`evorule-governance` 保留 re-export 向后兼容；v0.4.0 修复长驻会话 O(n²) 性能缺陷——`final_snapshot` 瘦身 + 审计零 clone 增量迭代；v0.4.1 未知 IoResponse 显式 Error fact 入链 + 审计 WAL 损坏显式拒绝），提供核心执行引擎 + HTTP API + CLI 工具。**不是 production-ready**。
 >
 > | 承诺                                         | 状态                    |
 > | -------------------------------------------- | ----------------------- |
@@ -67,7 +66,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 > 🇨🇳 **本仓库为 EvoRule 中文版,主仓库发布在 [Gitee](https://gitee.com/evorule/evorule)。**
 >
-> 文档 / issue / PR 优先在 Gitee 处理。GitHub 镜像仅供国际用户参考。
+> 文档 / issue / PR 优先在 Gitee 处理。GitHub 已建 evo-agent / evorule-sdk / evorule-server / evorule-console 等镜像仓，国际用户以 Gitee 为准。
 
 ---
 
@@ -399,7 +398,7 @@ EvoRule 是**通用反应式执行引擎**，不是为某一个场景设计的�
 把 LLM 的决策（JSON）交给 EvoRule 确定性执行，每一步留痕、可回放、可审计。
 LLM 负责"想"，EvoRule 负责"做"——身体和大脑分离。
 
-→ 配套项目：[evo-agent](https://github.com/evorule/evo-agent)
+→ 配套项目：[evo-agent](https://gitee.com/evorule/evo-agent)
 
 ### 📋 确定性工作流
 
@@ -584,7 +583,7 @@ loop {
 
 ### SDK 客户端
 
-多语言 SDK 见 [evorule-sdk 独立仓](https://github.com/evorule/evorule-sdk)：
+多语言 SDK 见 [evorule-sdk 独立仓](https://gitee.com/evorule/evorule-sdk)：
 
 | 语言       | 状态      |
 | ---------- | --------- |
@@ -860,9 +859,8 @@ evorule verify-chain fact.log     # 验证 fact log 哈希链完整性
 
 ## 相关项目
 
-- [evo-agent](https://github.com/evorule/evo-agent) — AI Agent 编排层，在 EvoRule 之上实现 LLM + 工具 + 记忆闭环
-- [evorule-sdk](https://github.com/evorule/evorule-sdk) — 多语言客户端 SDK（TypeScript / Python / Go / Java）
-- [evorule-application](https://github.com/evorule/evorule-application) — 可视化工作台、时间旅行调试器等上层应用
+- [evo-agent](https://gitee.com/evorule/evo-agent) — AI Agent 编排层，在 EvoRule 之上实现 LLM + 工具 + 记忆闭环
+- [evorule-sdk](https://gitee.com/evorule/evorule-sdk) — 多语言客户端 SDK（TypeScript / Python / Go / Java）
 - [evorule-cli](evorule-cli/) — 单文件 CLI，圈 2 合规刚需场景，musl 静态链接、零网络、可重现
 
 ---
