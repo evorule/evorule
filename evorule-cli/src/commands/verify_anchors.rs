@@ -45,7 +45,7 @@ fn parse_signature(hex: &str) -> Result<[u8; 64], CliError> {
     Ok(arr)
 }
 
-/// 重算锚点的规范化载荷（与 evorule-governance `AuditAnchor::payload_bytes` 字节级一致）
+/// 重算锚点的规范化载荷（cli 侧锚点规范的定义处）
 ///
 /// 字段固定为 seq/version/entry_count/last_hash/prev_anchor_hash，经 `serde_json::json!` 按
 /// BTree 字典序序列化（无 preserve_order）→ 确定性载荷，验签时同法重算。

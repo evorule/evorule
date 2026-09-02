@@ -375,8 +375,8 @@ impl Auditor {
             let cause = extract_cause(fact);
 
             // 计算新的链哈希：blake3(prev_hash + content_hash)
-            let combined = format!("{}{}", prev_hash, content_hash);
-            let new_hash = blake3::hash(combined.as_bytes()).to_hex().to_string();
+            // B1（UV-046 report-002）：改用 reactor SSOT chain_step，消除本地重复实现漂移风险
+            let new_hash = hash::chain_step(&prev_hash, &content_hash);
             *last_hash = new_hash;
 
             index.insert(fact_id, entry_index);
@@ -486,9 +486,8 @@ impl Auditor {
                 );
                 return false;
             }
-            // 重新计算当前条目的链哈希，作为下一跳的预期 prev_hash
-            let combined = format!("{}{}", entry.prev_hash, entry.content_hash);
-            let recomputed = blake3::hash(combined.as_bytes()).to_hex().to_string();
+            // 重新计算当前条目的链哈希，作为下一跳的预期 prev_hash（SSOT：reactor chain_step）
+            let recomputed = hash::chain_step(&entry.prev_hash, &entry.content_hash);
             prev_hash = recomputed;
         }
         tracing::debug!(entries = self.entries.len(), "verify: 审计链完整");
@@ -696,18 +695,12 @@ impl Auditor {
             self.index.insert(fact_id, self.entries.len());
             self.entries.push(entry);
 
-            // 重算链哈希（验证并更新 last_hash）
-            let combined = format!("{}{}", prev_hash, content_hash);
-            self.last_hash = blake3::hash(combined.as_bytes()).to_hex().to_string();
+            // 重算链哈希（验证并更新 last_hash；SSOT：reactor chain_step）
+            self.last_hash = hash::chain_step(&prev_hash, &content_hash);
 
-            // 更新时钟到最大值
-            if logical_time > self.clock.current() {
-                // 逻辑时钟通过 tick 推进；从 WAL 恢复时直接设置到最大值+1
-                // 这里我们用一个小技巧：多次 tick 直到达到目标
-                while self.clock.current() < logical_time {
-                    self.clock.tick();
-                }
-            }
+            // 更新时钟到已见最大值（B3：advance_to O(1) 对齐，替代 O(n) 逐次 tick；
+            // 终态与原 while-tick 循环逐字节一致 = max(current, logical_time)）
+            self.clock.advance_to(logical_time);
         }
 
         self.wal_path = Some(path.to_path_buf());
@@ -796,13 +789,12 @@ impl Auditor {
                 }
             }
 
-            // 重算链哈希
+            // 重算链哈希（SSOT：reactor chain_step）
             let content_hash = record
                 .content_hash
                 .clone()
                 .unwrap_or_else(|| hash::fact_hash(fact).unwrap_or_else(|_| String::new()));
-            let combined = format!("{}{}", prev_hash, content_hash);
-            let recomputed_chain = blake3::hash(combined.as_bytes()).to_hex().to_string();
+            let recomputed_chain = hash::chain_step(&prev_hash, &content_hash);
 
             // 验证 chain_hash（新格式）
             if let Some(stored_chain) = &record.chain_hash {

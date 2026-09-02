@@ -5,7 +5,7 @@
 | 字段 | 值 |
 |------|------|
 | **变更 ID** | CR-20260902-001 |
-| **变更标题** | 审计/IO/会话四项强化：权限门 + WAL 显式拒绝 + 会话 CAS + diff 显式错误（UV-046 B6/B2/B4/B8b） |
+| **变更标题** | 审计/IO/会话强化 + report-002 全项核销：权限门 + WAL 显式拒绝 + 会话 CAS + diff 显式错误 + 哈希 SSOT + 时钟 O(1) + 循环检测递归（UV-046 A1/B1/B2/B3/B4/B6/B8a/B8b/B9/B10） |
 | **提交人** | EvoRule Team |
 | **提交日期** | 2026-09-02 |
 | **审查状态** | 已批准 |
@@ -19,7 +19,7 @@
 ### 2.2 判定理由
 
 ```
-四项均为机制层强化，不含任何业务语义：
+各项均为机制层强化，不含任何业务语义：
 
 - B6 权限门（io_subscriber.rs）：IoSubscriber 新增 gate 字段与
   with_permission_gate 装配方法，dispatch_and_respond 前经
@@ -34,6 +34,20 @@
   再做昂贵操作，修复 TOCTOU 并发超额
 - B8b diff 显式化（time_machine.rs）：diff 对 rewind 不可达版本由
   静默回退空 payload 改为返回 Result<PayloadDiff, TimeMachineError>
+
+复核补充（report-002 全项核销，同批）：
+
+- B1 哈希 SSOT（auditor.rs）：4 处内联 blake3(prev+content) 改用
+  reactor chain_step（governance/hash.rs 补 re-export）
+- B3 时钟 O(1)（clock.rs/auditor.rs）：新增 advance_to（CAS 对齐
+  max，不 +1），WAL 恢复替代逐次 tick 的 O(n) 循环，终态语义不变
+- B9 循环检测递归（rule_validation.rs）：infinite_loop 检查递归
+  branch on_true/on_false 子节点，嵌套 while_loop 不再漏检；信号
+  跨层级累加（会话状态全局共享），新增 2 个回归测试
+- B8a/N2 注释失实修正（session.rs）："time_machine 已移至
+  application 层"改为与实现一致表述
+- B10 文档补声明（GOVERNANCE_SPEC.md）：SharedFactsLog reset 使用
+  约束与孤儿检测已知局限
 ```
 
 ### 2.3 机制层判定标准检查
@@ -63,10 +77,16 @@ UV-046 report-002 四项发现：
 - io_subscriber.rs：gate 字段 + `with_permission_gate` + dispatch 前检查
   + 拒绝路径错误 IoResponse 回写 + 3 个单测
 - auditor.rs：`load_from_wal` 三处静默路径改显式 InvalidData
-  （[EVO-AUDIT-WAL-CORRUPT] + 文件/行号/原因/分级补救指引）
+  （[EVO-AUDIT-WAL-CORRUPT] + 文件/行号/原因/分级补救指引）；
+  4 处链哈希改 `hash::chain_step`；恢复时钟改 `advance_to`
 - session.rs：`reserve_session_slot`/`release_session_slot`（CAS），
-  `create_session`/`create_session_from_parent_at_version` 先占位
+  `create_session`/`create_session_from_parent_at_version` 先占位；
+  rewind_payload 注释修正
 - time_machine.rs：`TimeMachineError` + `diff` 返回 Result + 测试适配
+- clock.rs：`advance_to` + 单测
+- rule_validation.rs：循环检测递归 + 2 个回归测试
+- hash.rs：补 `chain_step` re-export
+- GOVERNANCE_SPEC.md：B10 约束声明 + B6/B8b 现状对齐
 
 ### 3.3 破坏性分析
 

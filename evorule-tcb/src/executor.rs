@@ -127,6 +127,7 @@ pub(crate) fn execute_meta_instruction_budgeted(
 
 #[cfg(test)]
 mod executor_ssot_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     use super::*;
 
     /// SSOT 漂移防线（CR-20260902-001 / UV-046 C2）：
@@ -138,11 +139,12 @@ mod executor_ssot_tests {
         assert_eq!(META_INSTRUCTION_TYPES.len(), 6);
         for t in META_INSTRUCTION_TYPES {
             let instr = JsonValue::object_from_pairs(&[("type", JsonValue::string(*t))]);
-            let err = execute_meta_instruction(&instr, JsonValue::Null, 0).unwrap_err();
-            assert!(
-                !matches!(err, TcbError::UnknownMetaInstruction { .. }),
-                "META_INSTRUCTION_TYPES 含未实现类型 '{t}'——白名单与 dispatch 漂移"
-            );
+            if let Err(TcbError::UnknownMetaInstruction { .. }) =
+                execute_meta_instruction(&instr, JsonValue::Null, 0)
+            {
+                panic!("META_INSTRUCTION_TYPES 含未实现类型 '{t}'——白名单与 dispatch 漂移");
+            }
+            // Ok 或其他错误（如缺字段路径）均不算白名单漂移
         }
     }
 }

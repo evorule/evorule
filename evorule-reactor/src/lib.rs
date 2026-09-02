@@ -105,7 +105,9 @@ pub use error::ReactorError;
 pub use fact::{ControlFlowType, Fact, FactId, FactIdGenerator, IoType};
 // H5: IoHandler/IoResult 从 evorule-governance 下沉,供应用层 crate 使用
 pub use facts_log::{FactsLog, FactsLogError};
-pub use hash::{compute_chain_hash, content_hash, fact_hash, fact_to_stable_json, HashError};
+pub use hash::{
+    chain_step, compute_chain_hash, content_hash, fact_hash, fact_to_stable_json, HashError,
+};
 pub use invariants::InvariantViolation;
 pub use io_dispatcher::{IoDispatcher, IoDispatcherBuilder};
 pub use io_handler::{IoHandler, IoResult};

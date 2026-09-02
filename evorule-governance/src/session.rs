@@ -1115,7 +1115,9 @@ pub enum SessionError {
 /// 从 FactsLog 回溯到指定 version，返回当时的 payload 快照
 ///
 /// 用于 fork_session 时获取父会话的历史版本状态。
-/// time_machine 已移至 application 层，此处保留 fork 所需的最小 rewind 逻辑。
+/// 与 time_machine 模块同源同语义（同 apply_payload_update 更新规则）；
+/// time_machine 仍在 governance 内提供 rewind/diff 公开 API，fork 经此
+/// 轻量入口复用 FactsLog 增量遍历。
 ///
 /// 断点 9 修复：添加 PayloadUpdate 分支，正确应用路径更新并递增 version。
 /// 原实现忽略 PayloadUpdate（`_ => {}`），导致 fork_session 获取的初始状态

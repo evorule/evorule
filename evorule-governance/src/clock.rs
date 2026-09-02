@@ -72,6 +72,26 @@ impl LogicalClock {
         self.counter.load(Ordering::SeqCst)
     }
 
+    /// 推进到目标值（终态为 `max(local, target)`，不额外 +1）
+    ///
+    /// 供 WAL 恢复路径 O(1) 对齐已见最大逻辑时间，替代逐次 tick 的 O(n) 循环
+    /// （B3，UV-046 report-002）。CAS 循环保证并发安全。
+    pub fn advance_to(&self, target: u64) {
+        loop {
+            let current = self.counter.load(Ordering::SeqCst);
+            if current >= target {
+                break;
+            }
+            if self
+                .counter
+                .compare_exchange(current, target, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                break;
+            }
+        }
+    }
+
     /// 合并外部时钟值（取 `max(local, other) + 1`）
     ///
     /// 使用 CAS 循环保证读-改-写的原子性，避免并发更新丢失。
@@ -131,5 +151,21 @@ mod tests {
         let clone = clock.clone();
         clone.tick();
         assert_eq!(clock.current(), 1);
+    }
+
+    #[test]
+    fn advance_to_aligns_to_max_without_plus_one() {
+        let clock = LogicalClock::new();
+        // 空时钟推进到目标：终态 = target（与原 while-tick 循环终态一致，不 +1）
+        clock.advance_to(42);
+        assert_eq!(clock.current(), 42);
+        // 目标小于当前值时不回退
+        clock.advance_to(1);
+        assert_eq!(clock.current(), 42);
+        // 目标等于当前值时不变
+        clock.advance_to(42);
+        assert_eq!(clock.current(), 42);
+        // 与 tick 混用：后续 tick 从当前值继续递增
+        assert_eq!(clock.tick(), 43);
     }
 }

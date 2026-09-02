@@ -53,6 +53,15 @@
   改为 CAS 原子占位（reserve/release），并发创建不再可能超额
 - **diff rewind 不可达显式报错（UV-046 B8b）**:`diff` 由静默回退
   空 payload 改为返回 `Result<PayloadDiff, TimeMachineError>`
+- **auditor 链哈希收敛 SSOT（UV-046 B1）**:4 处内联 blake3
+  (prev+content) 改用 reactor `chain_step`，消除重复实现漂移风险
+- **逻辑时钟恢复 O(1) 对齐（UV-046 B3）**:`LogicalClock::advance_to`
+  替代 WAL 恢复时逐次 tick 的 O(n) 循环（终态语义不变）
+- **infinite_loop 检测递归 branch 子节点（UV-046 B9）**:嵌套在
+  branch on_true/on_false 内的 while_loop / 状态变更不再漏检
+- **失实注释修正（UV-046 B8a/N2/N1）**:session.rs "time_machine
+  已移至 application 层"（实际模块在用）、verify_anchors.rs 引用
+  不存在的 `AuditAnchor::payload_bytes`——均改为与实现一致的表述
 
 ### 🆕 新增
 
@@ -71,6 +80,11 @@
   3 执行含 Error fact
 - `evorule-governance` 库接口:`diff` 返回 `Result`（B8b）
 - 语义化版本:0.x 阶段 MINOR 承载破坏性变更(semver 0.x 约定)
+
+### 📚 文档
+
+- GOVERNANCE_SPEC.md 补 `SharedFactsLog` reset 使用约束与孤儿检测
+  已知局限（UV-046 B10），permission 装配点与 diff 签名现状对齐
 
 ### 🔄 变更
 
