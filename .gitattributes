@@ -18,7 +18,9 @@
 *.yml text
 *.yaml text
 
-# TCB 宪法双仓同步:钉死 LF,保证 evorule-tcb/ 与 evorule-server/resources/ 工作区字节一致
+# TCB 宪法双仓关系:钉死 LF,消除行尾检出伪影。两份宪法自 server v0.4.1 起为
+# 同源分叉(核心=最小评估集,server=最小集+会话桥接规则,见 server CHANGELOG
+# v0.4.1/v0.4.2),版本号与内容均不要求一致;核心最小集变更仍应人工合入 server 副本
 evorule-tcb/core_eval.json text eol=lf
 
 # Binary files
