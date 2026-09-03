@@ -780,6 +780,8 @@ fn exec_io_request(instr: &JsonValue, state: JsonValue) -> Result<MetaInstructio
 /// 1. 从 `from` 路径读取数组
 /// 2. 对每个数组元素，用 `each` 模板生成一条指令（支持 `{{path}}` 替换）
 /// 3. 将所有生成的指令推入队列前端
+///
+/// 空源数组视为 no-op，不返回错误。
 pub(crate) fn exec_collect(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbError> {
     let params = instr.get("params").ok_or(TcbError::MissingField {
         field: "params".to_string(),
@@ -806,26 +808,26 @@ pub(crate) fn exec_collect(instr: &JsonValue, mut state: JsonValue) -> Result<Js
         context: format!("collect.from: {}", from_path),
     })?;
 
-    // 4. 如果源数组为空，直接返回（no-op）
+    // 空源数组 = no-op
     if source_arr.is_empty() {
         return Ok(state);
     }
 
-    // 5. 为每个元素生成指令
+    // 4. 为每个元素生成指令
     let mut generated_instructions = Vec::with_capacity(source_arr.len() + 1);
     for item in source_arr {
         let instr = substitute_template(each_template, item)?;
         generated_instructions.push(instr);
     }
 
-    // 5.1 after 参数：将指定指令追加到生成列表末尾
+    // 4.1 after 参数：将指定指令追加到生成列表末尾
     // 解决队列顺序依赖问题：无需在规则中先 push(merge) 再 collect，
     // collect 自动把 after 指令排在所有生成指令之后
     if let Some(after_instr) = params.get("after") {
         generated_instructions.push(after_instr.clone());
     }
 
-    // 6. 推入队列前端
+    // 5. 推入队列前端
     let queue = resolve_path_mut(&mut state, "__exec__.queue")
         .and_then(|v| v.as_array_mut())
         .ok_or_else(|| TcbError::InvalidState {
