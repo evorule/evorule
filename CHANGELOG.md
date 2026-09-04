@@ -124,9 +124,6 @@
 
 - 版本 0.3.2 → 0.4.0(tcb / reactor / governance / cli 四仓同步)
 
----
-
-## [Unreleased]
 
 ### 🔄 变更
 

@@ -298,6 +298,9 @@ def check_sibling_mention(docs: List[Path], root: Path) -> List[Tuple[Path, int,
             continue
         # 审计/威胁模型文档跳过(版本绑定的历史审计快照,审计范围覆盖生态,
         # 与 validate-version 跳过审计文档版本号检查一致;本仓当前安全状态见 docs/security/SECURITY_AUDIT_v0.1.0.md)
+        # CHANGELOG 为历史发布记录:记录的是"已实现/已发布"的跨仓事实,同审计快照不深查待核实表述
+        if doc.name.lower() == 'changelog.md':
+            continue
         if re.search(r'AUDIT|THREAT_MODEL', doc.name):
             continue
         for i, line in enumerate(lines, 1):

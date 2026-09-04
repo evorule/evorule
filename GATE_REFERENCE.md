@@ -140,24 +140,10 @@
 
 **注意**: evorule-cli 是 binary crate, 不需要 `F11-panic` 模式 (tier1/tier2 的 lib crate 才需要检测 `panic!(`, 因为 lib 可能被多处调用, panic 影响范围更大; binary 直接 panic 等于进程退出, 由 `Result<>` 链强制保证)。
 
-### 2.5 evorule-server — 4 模式 (S 编号)
+### 2.5 panic-prone 门控的跨仓一致性
 
-实施文件: `D:\evorule-server\evorule-server\build.rs` (只守 panic-prone)
-
-| 编号              | 模式 (字节子串)  | 门控含义       |
-| ----------------- | ----------------- | -------------- |
-| S1-debug_assert   | `debug_assert!`   | S1 panic-prone |
-| S1-unwrap         | `.unwrap(`        | S1 panic-prone |
-| S1-expect         | `.expect(`        | S1 panic-prone |
-| S1-panic          | `panic!(`         | S1 panic-prone |
-
-**与核心四仓的区别**: server 仓必需 async/tokio/std::fs/std::net/HashMap/SystemTime 等,
-故 **不扫描** T/G 系列确定性模式; S1 = F11 = G1 (panic-prone) 是跨仓一致的安全约束。
-
-**豁免机制**:
-- `strip_test_mod()`: 剥离测试模块（含 2026-08-30 生命周期判别修复, 见 2.1）
-- `EVORULE_SKIP_GATE=1`: 紧急跳过（须书面理由）
-- `#![forbid(unsafe_code)]`: unsafe 由编译器级 forbid 守护（比 build.rs 扫描更强）
+> 跨仓说明:evorule-server 为**独立仓**, panic-prone 门控与本仓一致 (S1 = F11 = G1),
+> 其构建脚本实现与豁免细则见 evorule-server 仓自身文档, 本仓不承载兄弟仓内部细节。
 
 ---
 

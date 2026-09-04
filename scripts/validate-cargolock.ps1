@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: AGPL-3.0-or-later
-﻿#!/usr/bin/env pwsh
+﻿# SPDX-License-Identifier: AGPL-3.0-or-later
+#!/usr/bin/env pwsh
 # validate-cargolock.ps1
 # VERSION_STRATEGY.md 8
 # Check: binary projects commit Cargo.lock, lib projects do not
