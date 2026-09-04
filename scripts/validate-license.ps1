@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: AGPL-3.0-or-later
-﻿#!/usr/bin/env pwsh
+﻿# SPDX-License-Identifier: AGPL-3.0-or-later
+#!/usr/bin/env pwsh
 # validate-license.ps1
 # Check: LICENSE file + AGPL/CC0 identifier + .rs SPDX header + SDK license field
 # Exit code: 0 = pass, 1 = fail

@@ -66,7 +66,7 @@ _规则不言语。它们只运行。而我们是首批见证者。_
 
 > 🇨🇳 **本仓库为 EvoRule 中文版,主仓库发布在 [Gitee](https://gitee.com/evorule/evorule)。**
 >
-> 文档 / issue / PR 优先在 Gitee 处理。GitHub 已建 evo-agent / evorule-sdk / evorule-server / evorule-console 等镜像仓，国际用户以 Gitee 为准。
+> 文档 / issue / PR 优先在 Gitee 处理。GitHub 已发布 evo-agent / evorule-sdk / evorule-server / evorule-console 等镜像仓，国际用户以 Gitee 为准。
 
 ---
 
