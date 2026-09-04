@@ -72,7 +72,7 @@ if ($Test) {
         if (-not (Test-Path $LibPath)) {
             # 生成 import library
             $DefFile = Join-Path $PSScriptRoot "evorule.def"
-            "@LIBRARY evorule_reactor.dll`nEXPORTS`nevorule_version`nevorule_free_string`nevorule_reactor_new`nevorule_reactor_free`nevorule_reactor_send_command`nevorule_reactor_pause`nevorule_reactor_resume`nevorule_reactor_step`nevorule_reactor_current_queue_size`nevorule_reactor_is_paused`nevorule_result_get_output`nevorule_result_free" | Out-File -FilePath $DefFile -Encoding ascii
+            "@LIBRARY evorule_reactor.dll`nEXPORTS`nevorule_version`nevorule_free_string`nevorule_reactor_new`nevorule_reactor_free`nevorule_reactor_send_command`nevorule_reactor_current_queue_size`nevorule_result_get_output`nevorule_result_free" | Out-File -FilePath $DefFile -Encoding ascii
             lib /def:$DefFile /out:$LibPath 2>&1 | Out-Null
         }
         Push-Location $PSScriptRoot

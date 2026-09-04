@@ -81,59 +81,6 @@ int test_send_command(void) {
   return 0;
 }
 
-int test_pause_resume(void) {
-  printf("\n=== Test: Pause/Resume ===\n");
-
-  evorule_reactor *reactor = evorule_reactor_new();
-  ASSERT_TRUE(reactor != NULL, "reactor_new() returns non-null");
-
-  int initial_paused = evorule_reactor_is_paused(reactor);
-  printf("Initial paused state: %d\n", initial_paused);
-
-  evorule_error_code_t err = evorule_reactor_pause(reactor);
-  ASSERT_TRUE(err == EVORULE_OK, "pause() returns EVORULE_OK");
-
-  int paused = evorule_reactor_is_paused(reactor);
-  ASSERT_TRUE(paused == 1, "is_paused() returns 1 after pause");
-  printf("Paused state: %d\n", paused);
-
-  err = evorule_reactor_resume(reactor);
-  ASSERT_TRUE(err == EVORULE_OK, "resume() returns EVORULE_OK");
-
-  paused = evorule_reactor_is_paused(reactor);
-  ASSERT_TRUE(paused == 0, "is_paused() returns 0 after resume");
-  printf("Resumed state: %d\n", paused);
-
-  evorule_reactor_free(reactor);
-  TEST_PASS("reactor_free() after pause/resume");
-
-  return 0;
-}
-
-int test_step(void) {
-  printf("\n=== Test: Step ===\n");
-
-  evorule_reactor *reactor = evorule_reactor_new();
-  ASSERT_TRUE(reactor != NULL, "reactor_new() returns non-null");
-
-  evorule_result *result = evorule_reactor_step(reactor, 5);
-  ASSERT_TRUE(result != NULL, "step() returns non-null result");
-
-  const char *output = evorule_result_get_output(result);
-  printf("Step output: %s\n", output ? output : "(null)");
-
-  evorule_result_free(result);
-  TEST_PASS("result_free() succeeds");
-
-  int paused = evorule_reactor_is_paused(reactor);
-  printf("Paused after step: %d\n", paused);
-
-  evorule_reactor_free(reactor);
-  TEST_PASS("reactor_free() after step");
-
-  return 0;
-}
-
 int test_null_handling(void) {
   printf("\n=== Test: Null Handling ===\n");
 
@@ -141,15 +88,8 @@ int test_null_handling(void) {
   ASSERT_TRUE(err == EVORULE_ERROR_INVALID_ARG,
               "send_command(null) returns INVALID_ARG");
 
-  err = evorule_reactor_pause(NULL);
-  ASSERT_TRUE(err == EVORULE_ERROR_INVALID_ARG,
-              "pause(null) returns INVALID_ARG");
-
   int val = evorule_reactor_current_queue_size(NULL);
   ASSERT_TRUE(val == -1, "current_queue_size(null) returns -1");
-
-  val = evorule_reactor_is_paused(NULL);
-  ASSERT_TRUE(val == -1, "is_paused(null) returns -1");
 
   evorule_reactor_free(NULL);
   TEST_PASS("free(null) does not crash");
@@ -194,8 +134,6 @@ int main(void) {
   failed += test_version();
   failed += test_reactor_lifecycle();
   failed += test_send_command();
-  failed += test_pause_resume();
-  failed += test_step();
   failed += test_null_handling();
   failed += test_multiple_commands();
 

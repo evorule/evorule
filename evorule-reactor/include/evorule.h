@@ -14,14 +14,8 @@
  *     // 发送命令
  *     evorule_reactor_send_command(reactor, "{\"type\": \"increment\"}");
  *
- *     // 调试控制
- *     evorule_reactor_pause(reactor);
- *     evorule_reactor_step(reactor, 5);
- *     evorule_reactor_resume(reactor);
- *
  *     // 查询状态
  *     int queue_size = evorule_reactor_current_queue_size(reactor);
- *     int is_paused = evorule_reactor_is_paused(reactor);
  *
  *     evorule_reactor_free(reactor);
  *     return 0;
@@ -94,27 +88,11 @@ evorule_error_code_t evorule_reactor_send_command(
     const char* instruction_json
 );
 
-/**
- * @brief 暂停反应器执行
- * @param reactor 反应器句柄
- * @return 错误码
+/*
+ * 注：历史遗留的 pause/resume/step/is_paused 四个调试控制声明已删除。
+ * 反应器为事件驱动模型，无原生“暂停/单步执行”语义；
+ * 调试能力由 evorule-server 的 debug_control（中断 + 回放伪单步）提供。
  */
-evorule_error_code_t evorule_reactor_pause(evorule_reactor* reactor);
-
-/**
- * @brief 恢复反应器执行
- * @param reactor 反应器句柄
- * @return 错误码
- */
-evorule_error_code_t evorule_reactor_resume(evorule_reactor* reactor);
-
-/**
- * @brief 执行指定步数后暂停
- * @param reactor 反应器句柄
- * @param n 步数
- * @return 结果句柄，失败返回 NULL
- */
-evorule_result* evorule_reactor_step(evorule_reactor* reactor, int n);
 
 /**
  * @brief 获取当前队列大小
@@ -122,13 +100,6 @@ evorule_result* evorule_reactor_step(evorule_reactor* reactor, int n);
  * @return 队列大小，失败返回 -1
  */
 int evorule_reactor_current_queue_size(evorule_reactor* reactor);
-
-/**
- * @brief 查询反应器是否暂停
- * @param reactor 反应器句柄
- * @return 1=暂停，0=运行中，-1=错误
- */
-int evorule_reactor_is_paused(evorule_reactor* reactor);
 
 /**
  * @brief 获取结果输出

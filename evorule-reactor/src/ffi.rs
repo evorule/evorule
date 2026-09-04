@@ -23,12 +23,8 @@
 //!     // 创建反应器
 //!     evorule_reactor* reactor = evorule_reactor_new();
 //!
-//!     // 运行一步
-//!     evorule_result* result = evorule_reactor_step(reactor);
-//!     if (result) {
-//!         printf("Output: %s\n", evorule_result_get_output(result));
-//!         evorule_result_free(result);
-//!     }
+//!     // 发送命令
+//!     evorule_reactor_send_command(reactor, "{\"type\": \"increment\"}");
 //!
 //!     // 销毁反应器
 //!     evorule_reactor_free(reactor);
