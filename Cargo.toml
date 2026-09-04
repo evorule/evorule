@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
-# D:\evorule 是 v0.3.1 工作目录（原 evorule-b 副本 + 主仓 reactor/governance/cli 联调）。
-# 2026-08-17：4 仓 (tcb / reactor / governance / cli) 统一以 v0.3.1 准备发布。
-# TCB 含 collect/merge/has_fields + ReAct 循环，reactor/governance/cli 同步升至 v0.3.1。
+# D:\evorule 是 v0.4.1 工作目录（原 evorule-b 副本 + 主仓 reactor/governance/cli 联调）。
+# 2026-08-17：4 仓 (tcb / reactor / governance / cli) 统一以 v0.4.1 准备发布。
+# TCB 含 collect/merge/has_fields + ReAct 循环，reactor/governance/cli 同步升至 v0.4.1。
 members = [
     "evorule-tcb",
     "evorule-reactor",
