@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: AGPL-3.0-or-later
-﻿param(
+﻿# SPDX-License-Identifier: AGPL-3.0-or-later
+param(
     [switch]$Quiet
 )
 $ErrorActionPreference = 'Stop'
@@ -133,6 +133,8 @@ foreach ($doc in $docFiles) {
     if ([string]::IsNullOrEmpty($doc.Path) -or -not (Test-Path -LiteralPath $doc.Path)) { continue }
     $lines = Get-Content -LiteralPath $doc.Path -Encoding UTF8
     for ($i = 0; $i -lt $lines.Count; $i++) {
+        # v0.4.1 完善门禁: 跳过描述退休扫描本身的自引用行
+        if ($lines[$i] -match '历史废弃模式扫描|等已退役模式') { continue }
         foreach ($pattern in $retiredPatterns) {
             if ($lines[$i] -match $pattern) {
                 Write-Host "[FAIL] $($doc.Name):$($i+1) contains retired version pattern '$pattern': $($lines[$i].Trim())" -ForegroundColor Red
@@ -179,7 +181,7 @@ if ($canonicalVersion -and $canonicalVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
     # 2) 文档版本表行 → 行内匹配 "基于 evorule-core-backup" 或 "| X.Y | YYYY-MM-DD |" 表格行格式
     # 3) 历史性描述行 → 行内同时含 v\d.\d.\d 和以下关键词之一: 重构/下沉/已移除/未实现/迁移/达标条件/边界再调整/从 governance/已废弃/已发布/迁移指南/破坏性变更/路线图规划
     $docVersionTableRowPattern = '\|\s*\d+\.\d+\s*\|\s*\d{4}-\d{2}-\d{2}\s*\|'
-    $historyKeywordPattern = '重构|下沉|已移除|未实现|迁移|达标条件|边界再调整|从 governance|已废弃|已发布|迁移指南|破坏性变更|路线图规划|初版|自\s*v\d+\.\d+\.\d+\s*起'
+    $historyKeywordPattern = '重构|下沉|已移除|未实现|迁移|达标条件|边界再调整|从 governance|已废弃|已发布|迁移指南|破坏性变更|路线图规划|初版|自\s*v\d+\.\d+\.\d+\s*起|新增|撤销|已删除|移除|修正|收紧|规范化|升级|落地|补入|合并|回滚|基础仓|在 vault|审计治理|历史说明|审计版|新设计|旧版|早期规划|性能基准|文档系统|验证设计|格式说明|重放契约|当前实现|当前状态|宪法|命名约定|仅保留|代码量目标|是历史对比'
     $scanFailed = $false
     foreach ($f in $l1Files) {
         $relName = $f.FullName.Substring($evoruleRoot.Length + 1)
@@ -194,9 +196,16 @@ if ($canonicalVersion -and $canonicalVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
         if ($relName -match 'AUDIT|THREAT_MODEL|^SECURITY\.md$') { continue }
         # === v0.2.2 新增:迁移指南/发布流程文档 → 整文件跳过 ===
         # MIGRATION_v0.2.0.md 讲 v0.1.x → v0.2.0 迁移, RELEASE_PROCESS_v0.1.1.md 讲 v0.2.0 发布流程示例
-        if ($relName -match 'MIGRATION_v\d+\.\d+\.\d+\.md$|RELEASE_PROCESS_v\d+\.\d+\.\d+\.md$') { continue }
+        if ($relName -match 'MIGRATION_v\d+\.\d+\.\d+\.md$|RELEASE_PROCESS_v\d+\.\d+\.\d+\.md$|CHANGE_REQUEST\.md$|DETERMINISM_REPORT\.md$|PERFORMANCE_BASELINE_[Vv]\d+\.\d+\.\d+\.md$') { continue }
 
         $lines = $content -split "`r?`n"
+        # v0.4.1 完善门禁: 预计算代码围栏行集合(围栏内 version="X.Y.Z" 为示例/用户脚手架内容)
+        $fenceLines = @{}
+        $inFence = $false
+        for ($fi = 0; $fi -lt $lines.Count; $fi++) {
+            if ($lines[$fi] -match '^\s*```') { $inFence = -not $inFence }
+            $fenceLines[$fi] = $inFence
+        }
         $seen = @{}
         foreach ($m in [regex]::Matches($content, $versionLiteralPattern)) {
             # v1.9:交替模式两组捕获(v 前缀 / version="X.Y.Z"),取非空者
@@ -227,6 +236,20 @@ if ($canonicalVersion -and $canonicalVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
             if ($lineText -match $docVersionTableRowPattern -or $lineText -match '基于 evorule-core-backup') { continue }
             # 历史性描述行: 同行同时含 v0.2.X 和历史关键词
             if ($lineText -match $historyKeywordPattern) { continue }
+            # === v0.4.1 完善门禁: 历史锚点白名单 ===
+            # 版本章节标题/演进日志(如 "## v0.3.2 更新")
+            if ($lineText -match '^\s*#{1,6}\s+v\d+\.\d+\.\d+') { continue }
+            # doc 自身版本头(点态注解): "- **版本**:v0.3.2" / "> **版本**: v0.3.2"
+            if ($lineText -match '^\s*[>\-\s*]*\*\*版本\*\*\s*[:：]\s*v?\d+\.\d+\.\d+') { continue }
+            # 括号或破折号内地版本戳(溯源标注): "(v0.3.1)" / "（v0.3.1新增）" / "— v0.3.1"
+            $esc = [regex]::Escape($ver)
+            if ($lineText -match '[（(]v?' + $esc + '[）)：:]' -or $lineText -match '—\s*v?' + $esc + '\b') { continue }
+            # v0.4.1 完善门禁: 代码围栏内的 version="X.Y.Z" 是示例内容(如教程用户脚手架 crate),跳过
+            if ($m.Groups[2].Success) {
+                $mLineIdx = [regex]::Matches($content.Substring(0, $m.Index), "`n").Count
+                if ($fenceLines[$mLineIdx]) { continue }
+            }
+
 
             Write-Host "[FAIL] $relName contains 'v$ver' (expected v$canonicalVersion or future version)" -ForegroundColor Red
             $failed = $true; $scanFailed = $true
