@@ -65,8 +65,18 @@ const FORBIDDEN: &[(&str, &str)] = &[
     ("S5.2-teacher", "\"teacher\""),
     ("S5.2-call_external", "\"call_external\""),
     ("S5.2-call_service", "\"call_service\""),
+    // G2/T10: unsafe 关键字 (禁止内存非确定行为; 非豁免文件裸 unsafe 一律拦截)
+    ("T10-unsafe-keyword", "unsafe"),
 ];
 
+/// T10 文件级豁免: 文件级显式允许 unsafe, 或整模块受 feature/cfg gate 保护。
+///
+/// - `ffi.rs`: 文件级 `#![allow(unsafe_code)]` + 仅 `feature="ffi"` 编译
+///   (lib.rs `#[cfg_attr(feature = "ffi", allow(unsafe_code))]`)
+/// - `facts_log.rs`: `unsafe impl Sync` 由 `#[cfg(kani)]` + `#[allow(unsafe_code)]` 单点保护 (L167-169)
+///
+/// 其余 src 文件出现裸 `unsafe` 一律 fail-fast 拦截, 防止未来无 gate 的新增 unsafe。
+const T10_FILE_EXEMPT: &[&str] = &["ffi.rs", "facts_log.rs"];
 /// T15 白名单: Fact match 中的合法 `_ =>` 兜底模式
 ///
 /// 这些模式不会"吞掉"新的 Fact 变体(返回中性值或控制流转移),
@@ -543,10 +553,20 @@ fn main() -> ExitCode {
         for (label, needle) in FORBIDDEN {
             // 所有模式 test-tolerant: 测试中可构造这些指令做 fixture
             let content = strip_test_mod(&raw);
+            // T10: 文件级豁免 — ffi.rs/facts_log.rs 由 feature/cfg gate 显式保护,
+            // 其余 src 文件裸 unsafe 一律 fail-fast 拦截 (防无 gate 新增 unsafe)。
+            let t10_fname = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            if label.starts_with("T10") && T10_FILE_EXEMPT.contains(&t10_fname) {
+                continue;
+            }
 
             for (lineno, line) in content.lines().enumerate() {
                 // 豁免注释行 (含 ///、//!、//)
                 let trimmed = line.trim_start();
+                // T10: unsafe 额外跳过 lint/attr 行 (#[allow(unsafe_code)] / #![deny(unsafe_code)] / #[cfg(...)])
+                if label.starts_with("T10") && (trimmed.starts_with("#[") || trimmed.starts_with("#!")) {
+                    continue;
+                }
                 if trimmed.starts_with("//") {
                     continue;
                 }
@@ -587,7 +607,7 @@ fn main() -> ExitCode {
         eprintln!("  [{}] {}: {}", label, path.display(), detail);
     }
     eprintln!();
-    eprintln!("违规类型: G8=控制流指令字面量 | F11=panic-prone构造 | §5.2=业务术语硬编码 | T15=Fact match通配符");
+    eprintln!("违规类型: G8=控制流指令字面量 | F11=panic-prone构造 | §5.2=业务术语硬编码 | T15=Fact match通配符 | T10=裸unsafe(ffi.rs/facts_log.rs 由 feature/cfg gate 豁免)");
     eprintln!("紧急跳过: EVORULE_SKIP_GATE=1 cargo build (须有书面理由)");
     ExitCode::FAILURE
 }
