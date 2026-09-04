@@ -896,7 +896,7 @@ evorule verify-chain fact.log     # 验证 fact log 哈希链完整性
 ```bibtex
 @software{evorule,
   title = {EvoRule: A JSON-Data-Set Execution Engine with Append-Only Facts Log},
-  version = {0.3.1},
+  version = {0.4.1},
   year = {2026},
   url = {https://gitee.com/evorule/evorule},
   license = {AGPL-3.0}
