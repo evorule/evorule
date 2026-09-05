@@ -108,29 +108,40 @@ jobs:
           generate_release_notes: true
 
   # ==========================================================================
-  # 3. Windows 产物附加到 Gitee Release (gitee 是主仓/发布主入口)
-  #    Gitee Go 无 Windows 构建机(仅 Linux),故 Windows 二进制由本侧构建,
-  #    经 Gitee OpenAPI 附加到 gitee 流水线创建的同一 Release。
+  # 3. 双平台产物附加到 Gitee Release (gitee 是主仓/发布主入口)
+  #    Gitee Go 云端 agent 对当前账号不可用(agents not available,资源侧问题
+  #    登记台账 UV-098),故双平台二进制均由本侧构建并经 Gitee OpenAPI 附加到
+  #    gitee Release;Gitee Go agent 就绪后可切回原生构建(脚本见 .workflow/release.yml)。
   #    幂等: gitee release 不存在则创建,存在则复用。
   #    需在 github 仓库 Settings → Secrets and variables → Actions 配置 GITEE_TOKEN
   #    (Gitee 个人令牌,勾选 releases + projects 权限)
   # ==========================================================================
   attach-gitee:
-    name: attach-windows-to-gitee
+    name: attach-all-to-gitee
     needs: [build]
     runs-on: ubuntu-latest
     steps:
+      - name: 下载 Linux 构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: evorule-linux-x86_64
+          path: gitee-assets/linux
+
       - name: 下载 Windows 构建产物
         uses: actions/download-artifact@v4
         with:
           name: evorule-windows-x86_64
-          path: gitee-assets
+          path: gitee-assets/windows
 
       - name: 补平台后缀并计算 sha256
         run: |
+          mv gitee-assets/linux/evorule gitee-assets/evorule-linux-x86_64
+          mv gitee-assets/windows/evorule.exe gitee-assets/evorule-windows-x86_64.exe
           cd gitee-assets
-          mv evorule.exe evorule-windows-x86_64.exe
+          sha256sum evorule-linux-x86_64 evorule-windows-x86_64.exe > sha256-checks.txt
+          sha256sum evorule-linux-x86_64 > evorule-linux-x86_64.sha256
           sha256sum evorule-windows-x86_64.exe > evorule-windows-x86_64.exe.sha256
+          cat sha256-checks.txt
           ls -la
 
       - name: 附加到 Gitee Release
@@ -159,13 +170,13 @@ jobs:
             RELEASE_ID=$(echo "${RELEASE_RESP}" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || echo "")
           fi
           if [ -z "$RELEASE_ID" ]; then
-            echo "ERROR: 无法获取 gitee release id(gitee 流水线可能尚未创建 release)"
+            echo "ERROR: 无法获取 gitee release id"
             exit 1
           fi
           echo "gitee Release id: ${RELEASE_ID}"
 
           cd gitee-assets
-          for f in evorule-windows-x86_64.exe evorule-windows-x86_64.exe.sha256; do
+          for f in evorule-linux-x86_64 evorule-linux-x86_64.sha256 evorule-windows-x86_64.exe evorule-windows-x86_64.exe.sha256; do
             echo "上传 ${f} ..."
             curl --retry 3 --retry-delay 5 --retry-connrefused -fsS -X POST \
               "https://gitee.com/api/v5/repos/${REPO}/releases/${RELEASE_ID}/attach_files" \
