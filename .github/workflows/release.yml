@@ -88,11 +88,16 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: 校验产物存在
+      # merge-multiple=true 时 artifacts/ 内是构建产物本体(evorule / evorule.exe),
+      # 不是 artifact 名 —— 校验后重命名补平台后缀,发布资产名即平台名
+      - name: 校验产物并补平台后缀
         run: |
           ls -la artifacts/
-          test -f artifacts/evorule-linux-x86_64
-          test -f artifacts/evorule-windows-x86_64.exe
+          test -f artifacts/evorule
+          test -f artifacts/evorule.exe
+          mv artifacts/evorule artifacts/evorule-linux-x86_64
+          mv artifacts/evorule.exe artifacts/evorule-windows-x86_64.exe
+          ls -la artifacts/
 
       - name: 创建 Release 并附加二进制
         uses: softprops/action-gh-release@v2
