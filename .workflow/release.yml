@@ -36,15 +36,34 @@ stages:
               TAG=$(git describe --tags --exact-match)
               echo "TAG=$TAG  commit=$(git rev-parse --short HEAD)"
 
-              # 1. Rust 工具链(对齐 rust-toolchain.toml 1.97.1;Gitee 原生支持到 1.93,超出版本用 rustup 自装)
+              # 1. Rust 工具链(对齐 rust-toolchain.toml 1.97.1;Gitee 原生支持到 1.93,超出版本自装)
               source "$HOME/.cargo/env" 2>/dev/null || true
+              # 国内构建机走 rsproxy 镜像,失败再退官方源
+              export RUSTUP_DIST_SERVER="${RUSTUP_DIST_SERVER:-https://rsproxy.cn}"
+              export RUSTUP_UPDATE_ROOT="${RUSTUP_UPDATE_ROOT:-https://rsproxy.cn/rustup}"
               if ! rustc --version 2>/dev/null | grep -q '1.97'; then
-                echo "安装 Rust 1.97.1 ..."
-                curl --retry 3 --retry-delay 5 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.97.1 --profile minimal
-                source "$HOME/.cargo/env"
+                echo "安装 Rust 1.97.1 (dist=$RUSTUP_DIST_SERVER) ..."
+                if ! rustup toolchain install 1.97.1 --profile minimal --no-self-update 2>/dev/null; then
+                  curl --retry 3 --retry-delay 5 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.97.1 --profile minimal --no-modify-path
+                  source "$HOME/.cargo/env"
+                fi
               fi
+              rustup default 1.97.1 2>/dev/null || true
               rustc --version
               rustup target add x86_64-unknown-linux-musl
+              # cargo 拉依赖走 rsproxy(无该配置则写一份;已有 config 跳过)
+              if ! grep -q rsproxy "$HOME/.cargo/config.toml" 2>/dev/null && ! grep -q rsproxy "$HOME/.cargo/config" 2>/dev/null; then
+                mkdir -p "$HOME/.cargo"
+                cat > "$HOME/.cargo/config.toml" <<'CARGOEOF'
+              [source.crates-io]
+              replace-with = 'rsproxy-sparse'
+              [source.rsproxy-sparse]
+              registry = "sparse+https://rsproxy.cn/index/"
+              [registries.rsproxy]
+              index = "sparse+https://rsproxy.cn/index/"
+              CARGOEOF
+                echo "cargo 已配置 rsproxy 镜像"
+              fi
 
               # 2. musl 系统工具(glibc 侧静态链接支撑)
               if command -v apt-get >/dev/null 2>&1; then
