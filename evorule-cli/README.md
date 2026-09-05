@@ -29,7 +29,7 @@
 - ✅ **零网络** —— 不调用任何外部服务
 - ✅ **零遥测** —— 无任何隐式上报
 - ✅ **零 AI 决策** —— 不调用 LLM
-- ✅ **零系统依赖** —— musl 静态链接,1.8 MB 单文件
+- ✅ **零系统依赖** —— musl 静态链接,单文件分发(v0.4.1 Linux 产物约 2.3 MB,以实际构建为准)
 - ✅ **完整审计** —— 每步 fact 落盘(tier1 WAL JSONL 格式,与 evorule-governance 互通)
 - ✅ **哈希链** —— blake3 哈希链 + 结构不变量校验(防篡改)
 - ✅ **FIFO 队列** —— 修复原 LIFO bug,正确执行 push 语义
@@ -38,23 +38,23 @@
 - ✅ **可重放** —— `replay` 子命令播放 fact log
 - ✅ **可验真** —— `verify-chain` 子命令验证 fact log 完整性
 - ✅ **可证来源（G-A1）** —— `anchor-keygen` 生成 ed25519 审计锚点密钥对，`verify-anchors` 离线校验锚点真实性（防抵赖，哈希链之上的密钥签名）
-- ✅ **可重现构建** —— 同源码两次构建 SHA256 一致(圈 2 监管可独立复现)
+- ✅ **可重现构建(设计 + 工具)** —— 已知不确定性来源全部消除(固定 `SOURCE_DATE_EPOCH` / 禁用增量编译 / 去 linker build-id,见 `build-musl.sh`);`build-musl.sh --repro` 双构建 SHA256 比对可独立复现;开发期曾完成 10,000 次重复构建实测(SHA256 全部一致)。该验证暂未纳入 CI 自动化(见路线图)
 - ✅ **G8 门控** —— 编译期拦截"硬编码控制流"违规(与 tier1/tier2 同套规则)
-- ✅ **多架构** —— `x86_64-unknown-linux-musl` + `aarch64-unknown-linux-musl`(AWS Graviton / RPi 适用)
+- ✅ **静态链接分发** —— Linux x86_64 musl + Windows x86_64 为 CI 产物;aarch64 支持源码交叉编译(未提供预编译产物)
 
 ## 快速开始(圈 2 用户)
 
 ```bash
-# 1) 下载(根据 CPU 架构选)
-wget https://gitee.com/evorule/evorule/releases/download/v0.4.1/evorule-x86_64
-wget https://gitee.com/evorule/evorule/releases/download/v0.4.1/evorule-aarch64
+# 1) 下载(按平台选,直达 v0.4.1 release 产物)
+wget https://github.com/evorule/evorule/releases/download/v0.4.1/evorule-linux-x86_64   # Linux x86_64
+# Windows x86_64: https://github.com/evorule/evorule/releases/download/v0.4.1/evorule-windows-x86_64.exe
 
-# 2) 验证(可选,确认下载完整)
-sha256sum -c evorule-x86_64.sha256
+# 2) 验证(可选,记录哈希备查)
+sha256sum evorule-linux-x86_64
 
 # 3) 装上
-chmod +x evorule
-mv evorule /usr/local/bin/evorule
+chmod +x evorule-linux-x86_64
+mv evorule-linux-x86_64 /usr/local/bin/evorule
 
 # 4) 校验你的合规规则
 evorule validate /etc/company-rules/
@@ -420,7 +420,7 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 > 4. 出事故?`evorule replay fact.log` 重放
 > 5. 监管检查?fact.log 本身就是审计证据
 > 6. 验真?`evorule verify-chain fact.log` 验证哈希链 + 结构完整性
-> 7. 供应链可信?同源码两次构建 SHA256 一致,监管可独立复现"
+> 7. 供应链可信?构建过程已消除全部已知不确定性来源,提供 `build-musl.sh --repro` 双构建比对,监管可独立复现"
 
 **对比 Excel 宏 / VBA**:
 

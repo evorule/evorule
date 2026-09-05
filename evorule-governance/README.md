@@ -10,14 +10,16 @@
 
 > EvoRule 三层架构的 Tier 2 治理层 —— I/O 订阅者、审计链、HTTP API。
 
-- **版本**:v0.3.2
-- **依赖**:evorule-tcb = "0.3.2" + evorule-reactor = { version = "0.3.2", features = ["persistence"] }
+- **版本**:v0.4.1
+- **依赖**:evorule-tcb = "0.4.1" + evorule-reactor = { version = "0.4.1", features = ["persistence"] }
 - **协议**:AGPL-3.0-or-later
-- **测试**:`cargo test` 全部 PASS
+- **测试**:`cargo test` 175 PASS / 0 failed(152 单元 + 5 `differential_test` + 9 e2e + 3 `session` + 3 `sse` + 3 doc；2026-09-05 实测，workspace 全量 758 PASS / 0 failed)
 - **build.rs 编译时门禁**:F11 禁止 `unwrap`/`expect`/`panic!`/`debug_assert!`(非测试代码),**G8 控制流白盒化**,PASSED
 - **G8 门控遵守**:治理层的业务语义(审计/会话/调试端点)全部通过 **结构不变式 + Fact 数据驱动**,不在 `src/**/*.rs`(非测试代码)中展开 if/else 业务控制流。
 - **`unsafe`**:`#![forbid(unsafe_code)]`
 - **P0 修复(2026-07-25)**:锁中毒改为 `e.into_inner()` 恢复(非 panic);`auditor.rs` 哈希失败改为跳过损坏 Fact(非 panic);SIGTERM handler 安装失败降级为仅监听 SIGINT(非 panic)
+
+> 本 crate 属于 [EvoRule](https://gitee.com/evorule) 生态:[主仓](https://gitee.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://gitee.com/evorule/evorule-server)
 
 ## 定位声明
 
@@ -87,7 +89,7 @@ evorule-governance 现为**纯机制层库**（无 bin target），应作为 lib
 ```toml
 # 在你自己的应用仓的 Cargo.toml 中
 [dependencies]
-evorule-governance = { version = "0.3.2" }
+evorule-governance = { version = "0.4.1" }
 ```
 
 快速开始示例：
