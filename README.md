@@ -275,7 +275,7 @@ cargo test --workspace --features persistence
 | 未知 IoResponse 当前 warn 忽略 | 收到无法配对的 IoResponse 时记录 warning，不产生 Error（设计待确认） |
 | macOS 未经 CI 验证 | 预编译产物与 CI 仅覆盖 Linux / Windows；macOS 可源码构建，但未经测试验证，请自行评估 |
 | 业务规则热重载为应用层能力 | 核心仓 core_eval 启动时加载、运行中不可变；evorule-server 通过 notify watch 实现业务规则热重载 |
-| 可重现构建未验证 | "同源码两次构建 SHA256 一致"尚无 CI 验证，属规划目标 |
+| 可重现构建未纳入 CI | 设计上已消除全部已知不确定性来源(固定 `SOURCE_DATE_EPOCH` / 禁用增量编译 / 去 build-id,见 `evorule-cli/build-musl.sh`);开发期曾实测 10,000 次重复构建 SHA256 全部一致;验证脚本 `--repro` 保留可随时独立复现,但尚未纳入 CI 自动执行;恢复后计划在每个 release 附双构建比对结果 |
 
 ---
 

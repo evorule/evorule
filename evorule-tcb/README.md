@@ -10,15 +10,17 @@
 
 > EvoRule 三层架构的 Tier 0 可信计算基 (Trusted Computing Base) ——零依赖、`no_std` 兼容的纯计算内核。
 
-- **版本**:v0.3.2
+- **版本**:v0.4.1
 - **定位**:纯函数 + 确定性 + 永不 panic
 - **外部依赖**:0（`Cargo.toml` `[dependencies]` 为空；`Cargo.lock` 确认无第三方 crate）
-- **测试**:`cargo test` 256 PASS / 0 failed(212 单元 + 5 `determinism_proptest` + 21 集成 + 18 doc)
+- **测试**:`cargo test` 272 PASS / 0 failed(228 单元 + 5 `determinism_proptest` + 21 集成 + 18 doc；2026-09-05 实测，workspace 全量 758 PASS / 0 failed)
 - **Clippy**:零警告(`deny(unwrap_used/expect_used/indexing_slicing/panic)`)
 - **build.rs 编译时门禁**:23 个禁用模式 (T4/T5/T6/T8/T9/T10/T11/T12/T14) + BOM 检测 编译期强制,PASSED
 - **协议**:AGPL-3.0-or-later(代码) + CC0-1.0(`core_eval.json` 公共领域)
 
 > **Kani 形式化验证**:✅ P1-P21 已完成(34 个 `#[kani::proof]`,5 层覆盖)。详见 [`TCB_SPEC.md` §六](TCB_SPEC.md#六形式化验证-kani-proof) 与 [`verification/kani-formal-verification-design.md`](verification/kani-formal-verification-design.md)(40 KB 专项设计 + 17 个 evidence log)。
+
+> 本 crate 属于 [EvoRule](https://gitee.com/evorule) 生态:[主仓](https://gitee.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://gitee.com/evorule/evorule-server)
 
 ---
 
