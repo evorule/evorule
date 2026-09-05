@@ -36,6 +36,15 @@
 
 ---
 
+## [0.4.2] - 2026-09-05
+
+> 补丁发布：将 workspace 与四个核心 crate 版本提升至 0.4.2，并重新发布至 crates.io，携带已合入源码的 UV-046 修复（未知 IoResponse 显式入链）。Linux / Windows 预编译二进制同步更新至 0.4.2。
+
+### 🔄 变更
+
+- **四核心 crate 重发（0.4.1 → 0.4.2）**：`evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli` 以 0.4.2 重新发布至 crates.io，内容与 0.4.1 源码一致并含 UV-046 修复。
+- **预编译二进制对齐 0.4.2**：Linux / Windows 单文件可执行更新至 v0.4.2。
+
 ## [0.4.1] - 2026-09-02
 
 ### 🐛 修复
