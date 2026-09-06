@@ -12,7 +12,7 @@
 
 use crate::channel::ChannelPair;
 use crate::error::ReactorError;
-use crate::fact::{Fact, FactId, FactIdGenerator, IoType};
+use crate::fact::{Fact, FactId, FactIdGenerator, IoType, TraceHit};
 use crate::facts_log::FactsLog;
 use crate::phase::ReactorPhase;
 use crate::stable_detector::StableDetector;
@@ -570,6 +570,7 @@ impl Reactor {
                     Ok(TransitionResult::State {
                         new_payload,
                         new_queue,
+                        rule_hits,
                     }) => {
                         state.payload = new_payload;
                         // 断点 1 修复：同步重建 cause 队列
@@ -639,10 +640,27 @@ impl Reactor {
                             new_queue: state.queue.iter().cloned().collect(),
                         };
                         Self::emit_fact(&self.facts_log, &event_tx, fact);
+                        // 收敛转换的命中归因轨迹（紧随 StateTransition，
+                        // cause 指向它；记录性事实，不推进版本）
+                        let trace_id = id_gen.next_id();
+                        let trace_fact = Fact::TransitionTrace {
+                            id: trace_id,
+                            cause: id,
+                            rule_hits: rule_hits
+                                .into_iter()
+                                .map(|h| TraceHit {
+                                    index: h.index as u64,
+                                    instr_type: h.instr_type,
+                                    hit: h.hit,
+                                })
+                                .collect(),
+                        };
+                        Self::emit_fact(&self.facts_log, &event_tx, trace_fact);
                     }
                     Ok(TransitionResult::Ignored {
                         instruction_type,
                         reason,
+                        rule_hits,
                     }) => {
                         // 指令被静默忽略：产生 Error 事实，使系统显式感知此问题
                         // 注意：Error 事实不 bump log version（与 FactsLog 行为对齐），
@@ -656,6 +674,22 @@ impl Reactor {
                         tracing::warn!(phase = %state.phase.as_str(), "{}", msg);
                         let fact = Fact::Error { id, message: msg };
                         Self::emit_fact(&self.facts_log, &event_tx, fact);
+                        // 静默失败的命中归因（全未命中是死规则检测的
+                        // 直接数据源；cause 指向本 Error 事实）
+                        let trace_id = id_gen.next_id();
+                        let trace_fact = Fact::TransitionTrace {
+                            id: trace_id,
+                            cause: id,
+                            rule_hits: rule_hits
+                                .into_iter()
+                                .map(|h| TraceHit {
+                                    index: h.index as u64,
+                                    instr_type: h.instr_type,
+                                    hit: h.hit,
+                                })
+                                .collect(),
+                        };
+                        Self::emit_fact(&self.facts_log, &event_tx, trace_fact);
                         state.phase = ReactorPhase::Idle;
                         continue 'main;
                     }
@@ -954,7 +988,8 @@ impl Reactor {
             Fact::IoRequest { .. }
             | Fact::StateTransition { .. }
             | Fact::Stable { .. }
-            | Fact::Error { .. } => {
+            | Fact::Error { .. }
+            | Fact::TransitionTrace { .. } => {
                 tracing::trace!("Ignoring self-produced fact");
             }
         }

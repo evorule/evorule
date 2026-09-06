@@ -110,6 +110,8 @@ pub(crate) fn next_step(
         Ok(TransitionResult::State {
             new_payload,
             new_queue,
+            // 纯函数路径（Kani 验证准备）：不采集命中归因（运行时路径在 reactor.rs）
+            rule_hits: _,
         }) => {
             state.payload = new_payload;
             state.update_queue_with_causes(new_queue, cause);
@@ -133,6 +135,8 @@ pub(crate) fn next_step(
         Ok(TransitionResult::Ignored {
             instruction_type,
             reason,
+            // 纯函数路径（Kani 验证准备）：不采集命中归因（运行时路径在 reactor.rs）
+            rule_hits: _,
         }) => {
             // 指令被静默忽略：记录告警并返回 Ignored 结果
             // 这使得上层（reactor）可以产生 Error 事实，不再静默失败

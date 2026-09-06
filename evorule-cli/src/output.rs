@@ -78,6 +78,16 @@ pub fn fact_to_human(fact: &Fact) -> String {
         },
         Fact::Stable { id, version } => format!("[F{}] Stable version={}", id.0, version),
         Fact::Error { id, message } => format!("[F{}] Error: {}", id.0, message),
+        Fact::TransitionTrace { id, cause, rule_hits } => {
+            let hit_count = rule_hits.iter().filter(|h| h.hit).count();
+            format!(
+                "[F{}] TransitionTrace cause=F{} hits={}/{}",
+                id.0,
+                cause.0,
+                hit_count,
+                rule_hits.len()
+            )
+        }
     }
 }
 

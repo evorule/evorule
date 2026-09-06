@@ -48,7 +48,7 @@ use std::path::{Path, PathBuf};
 
 use evorule_tcb::JsonValue;
 
-use crate::fact::{Fact, FactId, IoType};
+use crate::fact::{Fact, FactId, IoType, TraceHit};
 
 /// WAL 错误类型
 #[derive(Debug)]
@@ -381,6 +381,29 @@ pub fn fact_to_json(fact: &Fact) -> serde_json::Value {
             obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
             obj.insert("message".into(), serde_json::Value::String(message.clone()));
         }
+        Fact::TransitionTrace {
+            id,
+            cause,
+            rule_hits,
+        } => {
+            obj.insert(
+                "type".into(),
+                serde_json::Value::String("TransitionTrace".into()),
+            );
+            obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
+            obj.insert("cause".into(), serde_json::Value::Number(cause.0.into()));
+            let hits: Vec<serde_json::Value> = rule_hits
+                .iter()
+                .map(|h| {
+                    serde_json::json!({
+                        "index": h.index,
+                        "instr_type": h.instr_type,
+                        "hit": h.hit,
+                    })
+                })
+                .collect();
+            obj.insert("rule_hits".into(), serde_json::Value::Array(hits));
+        }
     }
     serde_json::Value::Object(obj)
 }
@@ -513,6 +536,43 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
             Ok(Fact::Error {
                 id,
                 message: message.into(),
+            })
+        }
+        "TransitionTrace" => {
+            let cause_raw = obj
+                .get("cause")
+                .and_then(|c| c.as_i64())
+                .ok_or_else(|| WalError::InvalidFact("TransitionTrace missing 'cause'".into()))?;
+            let hits_raw = obj
+                .get("rule_hits")
+                .and_then(|h| h.as_array())
+                .ok_or_else(|| WalError::InvalidFact("TransitionTrace missing 'rule_hits'".into()))?;
+            let mut rule_hits = Vec::with_capacity(hits_raw.len());
+            for h in hits_raw {
+                let index = h
+                    .get("index")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| WalError::InvalidFact("TransitionTrace hit missing 'index'".into()))?;
+                let instr_type = h
+                    .get("instr_type")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        WalError::InvalidFact("TransitionTrace hit missing 'instr_type'".into())
+                    })?;
+                let hit = h
+                    .get("hit")
+                    .and_then(|v| v.as_bool())
+                    .ok_or_else(|| WalError::InvalidFact("TransitionTrace hit missing 'hit'".into()))?;
+                rule_hits.push(TraceHit {
+                    index,
+                    instr_type: instr_type.into(),
+                    hit,
+                });
+            }
+            Ok(Fact::TransitionTrace {
+                id,
+                cause: FactId(cause_raw as u64),
+                rule_hits,
             })
         }
         other => Err(WalError::InvalidFact(format!("unknown fact type: {other}"))),

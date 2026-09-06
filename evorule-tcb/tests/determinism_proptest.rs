@@ -161,15 +161,17 @@ proptest! {
         match (r1, r2) {
             (Ok(a), Ok(b)) => {
                 match (a, b) {
-                    (evorule_tcb::TransitionResult::State { new_payload: p1, new_queue: q1 },
-                     evorule_tcb::TransitionResult::State { new_payload: p2, new_queue: q2 }) => {
+                    (evorule_tcb::TransitionResult::State { new_payload: p1, new_queue: q1, rule_hits: h1 },
+                     evorule_tcb::TransitionResult::State { new_payload: p2, new_queue: q2, rule_hits: h2 }) => {
                         assert_eq!(p1, p2, "确定性被破坏: 相同输入产生不同 payload");
                         assert_eq!(q1, q2, "确定性被破坏: 相同输入产生不同 queue");
+                        assert_eq!(h1, h2, "确定性被破坏: 相同输入产生不同命中归因");
                     }
-                    (evorule_tcb::TransitionResult::Ignored { instruction_type: t1, reason: r1 },
-                     evorule_tcb::TransitionResult::Ignored { instruction_type: t2, reason: r2 }) => {
+                    (evorule_tcb::TransitionResult::Ignored { instruction_type: t1, reason: r1, rule_hits: h1 },
+                     evorule_tcb::TransitionResult::Ignored { instruction_type: t2, reason: r2, rule_hits: h2 }) => {
                         assert_eq!(t1, t2, "确定性被破坏: 不同 instruction_type");
                         assert_eq!(r1, r2, "确定性被破坏: 不同 reason");
+                        assert_eq!(h1, h2, "确定性被破坏: 相同输入产生不同命中归因");
                     }
                     (evorule_tcb::TransitionResult::IoRequired { io_type: t1, params: rp1 },
                      evorule_tcb::TransitionResult::IoRequired { io_type: t2, params: rp2 }) => {

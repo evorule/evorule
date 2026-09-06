@@ -83,18 +83,33 @@ pub fn execute_meta_instruction(
     depth: usize,
 ) -> Result<MetaInstructionResult, TcbError> {
     let mut budget = MAX_TOTAL_META_INSTRUCTIONS;
-    execute_meta_instruction_budgeted(instr, state, depth, &mut budget)
+    let mut hit = false;
+    execute_meta_instruction_budgeted(instr, state, depth, &mut budget, &mut hit)
 }
 
 /// 执行一条元指令（受共享预算约束，M6 终止性宽度防线）
 ///
 /// 每执行一条指令（含 branch 的子指令递归）消耗 1 个预算单位；
 /// 预算耗尽返回 `TooManyExecutedInstructions`。
+///
+/// # 命中归因（结构命中口径）
+///
+/// `hit_out` 在执行成功时写入该条指令是否**结构命中**：
+/// - 直接指令（set/push/collect/merge）：执行成功即命中；
+/// - `io_request`：产生信号即命中；
+/// - `branch`：所选分支（on_true/on_false）**存在且非空**即命中——
+///   空数组或缺失分支不命中（无效果路径）。
+///
+/// 口径为**结构命中**而非副作用命中：与值是否实际变化无关（幂等重放
+/// 如 `set` 同值仍算命中），判定稳定且零状态对比开销。调用方在
+/// `Err` 返回时不得采信 `hit_out`（未定义）。递归子指令的命中
+/// 不计入顶层规则（命中粒度 = 顶层规则级，见 `TransitionResult`）。
 pub(crate) fn execute_meta_instruction_budgeted(
     instr: &JsonValue,
     state: JsonValue,
     depth: usize,
     budget: &mut usize,
+    hit_out: &mut bool,
 ) -> Result<MetaInstructionResult, TcbError> {
     // 预算检查：先扣减后执行（失败指令同样计入，防止用错误路径消耗无界资源）
     if let Some(next) = budget.checked_sub(1) {
@@ -113,12 +128,12 @@ pub(crate) fn execute_meta_instruction_budgeted(
         })?;
 
     match instr_type {
-        "set" => exec_set(instr, state).map(MetaInstructionResult::State),
-        "push" => exec_push(instr, state).map(MetaInstructionResult::State),
-        "branch" => exec_branch(instr, state, depth, budget),
-        "io_request" => exec_io_request(instr, state),
-        "collect" => exec_collect(instr, state).map(MetaInstructionResult::State),
-        "merge" => exec_merge(instr, state).map(MetaInstructionResult::State),
+        "set" => exec_set(instr, state).map(MetaInstructionResult::State).inspect(|_| *hit_out = true),
+        "push" => exec_push(instr, state).map(MetaInstructionResult::State).inspect(|_| *hit_out = true),
+        "branch" => exec_branch(instr, state, depth, budget, hit_out),
+        "io_request" => exec_io_request(instr, state).inspect(|_| *hit_out = true),
+        "collect" => exec_collect(instr, state).map(MetaInstructionResult::State).inspect(|_| *hit_out = true),
+        "merge" => exec_merge(instr, state).map(MetaInstructionResult::State).inspect(|_| *hit_out = true),
         _ => Err(TcbError::UnknownMetaInstruction {
             meta_type: instr_type.to_string(),
         }),
@@ -683,6 +698,7 @@ fn exec_branch(
     mut state: JsonValue,
     depth: usize,
     budget: &mut usize,
+    hit_out: &mut bool,
 ) -> Result<MetaInstructionResult, TcbError> {
     if depth >= MAX_BRANCH_DEPTH {
         return Err(TcbError::NestingTooDeep {
@@ -702,8 +718,15 @@ fn exec_branch(
     let branch_instrs = params.get(branch_key).and_then(|v| v.as_array());
 
     if let Some(instrs) = branch_instrs {
+        // 结构命中：所选分支存在且非空即命中；子指令命中不细记
+        // （命中粒度 = 顶层规则级）。空数组/缺失分支 = 无效果路径，不命中。
+        if !instrs.is_empty() {
+            *hit_out = true;
+        }
         for sub_instr in instrs {
-            let result = execute_meta_instruction_budgeted(sub_instr, state, depth + 1, budget)?;
+            let mut sub_hit = false;
+            let result =
+                execute_meta_instruction_budgeted(sub_instr, state, depth + 1, budget, &mut sub_hit)?;
             match result {
                 MetaInstructionResult::State(new_state) => state = new_state,
                 io_required @ MetaInstructionResult::IoRequired { .. } => return Ok(io_required),
@@ -1945,12 +1968,14 @@ mod tests {
 
         // depth = 63 (MAX-1) 应该可以执行（预算充足）
         let mut budget = MAX_TOTAL_META_INSTRUCTIONS;
-        let result = exec_branch(&instr, state.clone(), 63, &mut budget);
+        let mut hit = false;
+        let result = exec_branch(&instr, state.clone(), 63, &mut budget, &mut hit);
         assert!(result.is_ok());
 
         // depth = 64 (MAX) 应该返回 NestingTooDeep（深度检查先于预算扣减）
         let mut budget2 = MAX_TOTAL_META_INSTRUCTIONS;
-        let result = exec_branch(&instr, state, MAX_BRANCH_DEPTH, &mut budget2);
+        let mut hit2 = false;
+        let result = exec_branch(&instr, state, MAX_BRANCH_DEPTH, &mut budget2, &mut hit2);
         assert!(matches!(result, Err(TcbError::NestingTooDeep { .. })));
     }
 
@@ -1969,7 +1994,8 @@ mod tests {
         );
 
         let mut budget = 0usize;
-        let result = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget);
+        let mut hit = false;
+        let result = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit);
         assert!(
             matches!(result, Err(TcbError::TooManyExecutedInstructions { limit }) if limit == MAX_TOTAL_META_INSTRUCTIONS)
         );
@@ -1988,7 +2014,8 @@ mod tests {
         );
 
         let mut budget = 1usize;
-        let result = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget).unwrap();
+        let mut hit = false;
+        let result = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit).unwrap();
         assert!(matches!(result, MetaInstructionResult::State(_)));
         // 单条指令恰好耗尽预算
         assert_eq!(budget, 0);
@@ -2038,7 +2065,8 @@ mod tests {
         // 预算 = 2（不足 3）：应报错，不允许部分执行后静默成功
         let state = make_exec_state("branch", make_payload(0), vec![]);
         let mut budget = 2usize;
-        let result = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget);
+        let mut hit = false;
+        let result = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit);
         assert!(matches!(
             result,
             Err(TcbError::TooManyExecutedInstructions { .. })
@@ -2047,7 +2075,8 @@ mod tests {
         // 预算 = 3（恰好）：应成功
         let state = make_exec_state("branch", make_payload(0), vec![]);
         let mut budget = 3usize;
-        let result = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget).unwrap();
+        let mut hit2 = false;
+        let result = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit2).unwrap();
         match result {
             MetaInstructionResult::State(new_state) => {
                 let x = resolve_path(&new_state, "__exec__.payload.x").unwrap();
@@ -2071,7 +2100,8 @@ mod tests {
         );
 
         let mut budget = 0usize;
-        let err = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget).unwrap_err();
+        let mut hit = false;
+        let err = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit).unwrap_err();
         match err {
             TcbError::TooManyExecutedInstructions { limit } => {
                 assert_eq!(limit, MAX_TOTAL_META_INSTRUCTIONS);

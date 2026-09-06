@@ -161,6 +161,20 @@ impl Default for FactIdGenerator {
     }
 }
 
+/// 单条规则命中归因的 trace 条目
+///
+/// 事实层自有类型（不绑定 tcb 类型，保持 crate 边界解耦）。
+/// `index` 为规则在合并规则列表中的下标，来源标签由装载层映射。
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraceHit {
+    /// 规则在合并规则列表中的下标
+    pub index: u64,
+    /// 规则顶层指令类型（如 "branch"、"set"）
+    pub instr_type: String,
+    /// 是否结构命中
+    pub hit: bool,
+}
+
 /// 事实（Fact）—— 系统的原子通信单元
 ///
 /// 所有组件之间仅通过事实通信，无直接函数调用。
@@ -248,6 +262,22 @@ pub enum Fact {
         /// 错误描述
         message: String,
     },
+
+    /// 规则命中归因轨迹（由反应器在收敛转换后追加）
+    ///
+    /// 每次收敛（State/Ignored）追加一条：`cause` 指向同次转换的
+    /// `StateTransition` 或 `Error`(ignored) 事实；`rule_hits` 与合并
+    /// 规则列表等长。`IoRequired` 中途信号**不产生**本事实（D11 重放
+    /// 契约：以收敛后重放为准，避免重复计数）。
+    /// 本事实不推进会话版本（记录性事实，不改变业务状态）。
+    TransitionTrace {
+        /// 事实唯一标识符
+        id: FactId,
+        /// 同次转换的 StateTransition / Error(ignored) 事实 ID
+        cause: FactId,
+        /// 各规则命中归因（与合并规则列表等长，按执行顺序）
+        rule_hits: Vec<TraceHit>,
+    },
 }
 
 impl Fact {
@@ -261,6 +291,7 @@ impl Fact {
             Fact::IoResponse { .. } => "IoResponse",
             Fact::Stable { .. } => "Stable",
             Fact::Error { .. } => "Error",
+            Fact::TransitionTrace { .. } => "TransitionTrace",
         }
     }
 
@@ -273,7 +304,8 @@ impl Fact {
             | Fact::IoRequest { id, .. }
             | Fact::IoResponse { id, .. }
             | Fact::Stable { id, .. }
-            | Fact::Error { id, .. } => *id,
+            | Fact::Error { id, .. }
+            | Fact::TransitionTrace { id, .. } => *id,
         }
     }
 
@@ -355,6 +387,28 @@ impl Fact {
                 ("id", J::integer(id.0 as i64)),
                 ("message", J::string(message.clone())),
             ]),
+            Fact::TransitionTrace {
+                id,
+                cause,
+                rule_hits,
+            } => {
+                let hits: Vec<J> = rule_hits
+                    .iter()
+                    .map(|h| {
+                        J::object_from_pairs(&[
+                            ("index", J::integer(h.index as i64)),
+                            ("instr_type", J::string(h.instr_type.clone())),
+                            ("hit", J::Bool(h.hit)),
+                        ])
+                    })
+                    .collect();
+                J::object_from_pairs(&[
+                    ("type", J::string("TransitionTrace")),
+                    ("id", J::integer(id.0 as i64)),
+                    ("cause", J::integer(cause.0 as i64)),
+                    ("rule_hits", J::array(hits)),
+                ])
+            }
         }
     }
 }

@@ -368,6 +368,7 @@ fn test_determinism_repeated_calls() {
         TransitionResult::State {
             new_payload,
             new_queue,
+            ..
         } => {
             assert_eq!(new_payload.get("x"), Some(&iv(42)));
             assert!(new_queue.is_empty());
@@ -620,6 +621,7 @@ fn test_react_round2_consume_and_collect() {
     let TransitionResult::State {
         new_payload,
         new_queue,
+        rule_hits: _,
     } = result
     else {
         panic!("round 2: 应返回 State")
@@ -705,6 +707,7 @@ fn test_react_round4_merge_generates_next_call_external() {
     let TransitionResult::State {
         new_payload,
         new_queue,
+        rule_hits: _,
     } = result
     else {
         panic!("round 4: 应返回 State")
@@ -759,6 +762,7 @@ fn test_react_iteration_cap_blocks_merge() {
     let TransitionResult::State {
         new_payload,
         new_queue,
+        rule_hits: _,
     } = result
     else {
         panic!("cap: 应返回 State")
@@ -852,6 +856,7 @@ fn test_unknown_instruction_falls_to_catch_all() {
         TransitionResult::Ignored {
             instruction_type,
             reason,
+            ..
         } => {
             assert_eq!(instruction_type, "unknown_instruction");
             assert!(reason.contains("not matched"));
@@ -880,6 +885,7 @@ fn test_no_tool_calls_terminates_via_noop() {
     let TransitionResult::State {
         new_payload,
         new_queue,
+        rule_hits: _,
     } = result
     else {
         panic!("应返回 State")
@@ -997,6 +1003,7 @@ fn test_empty_queue_input() {
         TransitionResult::State {
             new_payload,
             new_queue,
+            ..
         } => {
             assert_eq!(new_payload.get("x"), Some(&iv(1)));
             assert!(new_queue.is_empty(), "空队列输入应返回空队列");
@@ -1130,6 +1137,7 @@ fn test_rule_chain_sequential_execution() {
         TransitionResult::State {
             new_payload,
             new_queue,
+            ..
         } => (new_payload, new_queue),
         _ => panic!("step 1: 应返回 State"),
     };
@@ -1147,6 +1155,7 @@ fn test_rule_chain_sequential_execution() {
         TransitionResult::State {
             new_payload,
             new_queue,
+            ..
         } => (new_payload, new_queue),
         _ => panic!("step 2: 应返回 State"),
     };
@@ -1164,6 +1173,7 @@ fn test_rule_chain_sequential_execution() {
         TransitionResult::State {
             new_payload,
             new_queue,
+            ..
         } => (new_payload, new_queue),
         _ => panic!("step 3: 应返回 State"),
     };
@@ -1199,6 +1209,7 @@ fn run_queue_with_step_limit(
             Ok(TransitionResult::State {
                 new_payload,
                 new_queue,
+                ..
             }) => {
                 payload = new_payload;
                 queue = new_queue;
@@ -1206,6 +1217,7 @@ fn run_queue_with_step_limit(
             Ok(TransitionResult::Ignored {
                 instruction_type,
                 reason,
+                ..
             }) => {
                 panic!(
                     "Step {}: 指令类型 '{}' 被忽略: {}",

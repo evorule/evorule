@@ -102,7 +102,7 @@ mod wal;
 
 pub use channel::{ChannelPair, EventReceiver, EventSender, FactReceiver, FactSender};
 pub use error::ReactorError;
-pub use fact::{ControlFlowType, Fact, FactId, FactIdGenerator, IoType};
+pub use fact::{ControlFlowType, Fact, FactId, FactIdGenerator, IoType, TraceHit};
 // H5: IoHandler/IoResult 从 evorule-governance 下沉,供应用层 crate 使用
 pub use facts_log::{FactsLog, FactsLogError};
 pub use hash::{

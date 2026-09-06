@@ -110,6 +110,8 @@ pub fn execute(
             Ok(TransitionResult::State {
                 new_payload,
                 new_queue,
+                // cli 为校验工具，不采集命中归因（运行时归因在 server 链路）
+                rule_hits: _,
             }) => {
                 payload = new_payload;
                 queue = new_queue.into_iter().collect();
@@ -152,6 +154,8 @@ pub fn execute(
             Ok(TransitionResult::Ignored {
                 instruction_type,
                 reason,
+                // cli 为校验工具，不采集命中归因（运行时归因在 server 链路）
+                rule_hits: _,
             }) => {
                 // v0.3.1：指令被静默忽略（无匹配 transform 规则或规则产生 noop 效果）。
                 // 与 reactor 行为一致：产生 Error 事实使系统显式感知此问题

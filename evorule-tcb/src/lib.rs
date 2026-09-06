@@ -55,5 +55,5 @@ pub mod value;
 // 核心类型重导出（仅公开稳定的 API）
 pub use error::TcbError;
 pub use executor::META_INSTRUCTION_TYPES;
-pub use transition::{execute_transition, TransitionResult, MAX_TRANSFORM_RULES};
+pub use transition::{execute_transition, RuleHit, TransitionResult, MAX_TRANSFORM_RULES};
 pub use value::JsonValue;
