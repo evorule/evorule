@@ -38,67 +38,66 @@
 
 ## [0.4.2] - 2026-09-05
 
-> 补丁发布：将 workspace 与四个核心 crate 版本提升至 0.4.2，并重新发布至 crates.io，携带已合入源码的 UV-046 修复（未知 IoResponse 显式入链）。Linux / Windows 预编译二进制同步更新至 0.4.2。
+> 补丁发布：将 workspace 与四个核心 crate 版本提升至 0.4.2，并重新发布至 crates.io，携带已合入源码的 修复（未知 IoResponse 显式入链）。Linux / Windows 预编译二进制同步更新至 0.4.2。
 
 ### 🔄 变更
 
-- **四核心 crate 重发（0.4.1 → 0.4.2）**：`evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli` 以 0.4.2 重新发布至 crates.io，内容与 0.4.1 源码一致并含 UV-046 修复。
+- **四核心 crate 重发（0.4.1 → 0.4.2）**：`evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli` 以 0.4.2 重新发布至 crates.io，内容与 0.4.1 源码一致并含 修复。
 - **预编译二进制对齐 0.4.2**：Linux / Windows 单文件可执行更新至 v0.4.2。
 
 ## [0.4.1] - 2026-09-02
 
 ### 🐛 修复
 
-- **未知 IoResponse 显式入链（UV-046 A1，处置方案：Error fact）**:
+- **未知 IoResponse 显式入链**:
   状态层拒绝消费 unknown/stale request_id 的 IoResponse 时（重复/
   超时迟到/伪造），原仅日志告警——审计重放无法自解释对账。现发射
   `Fact::Error` 标记异常成因（可恢复事实，会话继续可用），
   链上"响应事实 + 异常标记"可逐条对账
-- **审计 WAL 损坏显式拒绝（UV-046 B2）**:`Auditor::load_from_wal`
+- **审计 WAL 损坏显式拒绝**:`Auditor::load_from_wal`
   对损坏行（非法 JSON / 条目校验失败）由静默跳过改为拒绝加载，
   错误含 `[EVO-AUDIT-WAL-CORRUPT]` 标记 + 文件/行号/原因 + 分级
   补救指引（勿删改 WAL、备份、恢复快照、保留送检）
-- **会话创建 TOCTOU 修复（UV-046 B4）**:`max_sessions` 检查-占用
+- **会话创建 TOCTOU 修复**:`max_sessions` 检查-占用
   改为 CAS 原子占位（reserve/release），并发创建不再可能超额
-- **diff rewind 不可达显式报错（UV-046 B8b）**:`diff` 由静默回退
+- **diff rewind 不可达显式报错**:`diff` 由静默回退
   空 payload 改为返回 `Result<PayloadDiff, TimeMachineError>`
-- **auditor 链哈希收敛 SSOT（UV-046 B1）**:4 处内联 blake3
+- **auditor 链哈希收敛 SSOT**:4 处内联 blake3
   (prev+content) 改用 reactor `chain_step`，消除重复实现漂移风险
-- **逻辑时钟恢复 O(1) 对齐（UV-046 B3）**:`LogicalClock::advance_to`
+- **逻辑时钟恢复 O(1) 对齐**:`LogicalClock::advance_to`
   替代 WAL 恢复时逐次 tick 的 O(n) 循环（终态语义不变）
-- **infinite_loop 检测递归 branch 子节点（UV-046 B9）**:嵌套在
+- **infinite_loop 检测递归 branch 子节点**:嵌套在
   branch on_true/on_false 内的 while_loop / 状态变更不再漏检
-- **失实注释修正（UV-046 B8a/N2/N1）**:session.rs "time_machine
+- **失实注释修正**:session.rs "time_machine
   已移至 application 层"（实际模块在用）、verify_anchors.rs 引用
   不存在的 `AuditAnchor::payload_bytes`——均改为与实现一致的表述
 
 ### 🆕 新增
 
-- **权限门装配接口（UV-046 B6）**:`IoSubscriber::with_permission_gate`
+- **权限门装配接口**:`IoSubscriber::with_permission_gate`
   —— IoRequest 分派前经 `PermissionGate::check` 做"入口仲裁"，
   拒绝时回写错误 IoResponse 且不分派；谓词判定留在应用层
-- **元指令类型白名单 SSOT（UV-046 C2）**:`evorule_tcb::
+- **元指令类型白名单 SSOT**:`evorule_tcb::
   META_INSTRUCTION_TYPES` 权威常量导出 + 漂移防线单测（白名单类型
   必须全部被 dispatch 实际处理）；`evorule validate` 改引常量
 
 ### ⚠️ Breaking Change
 
-- **`evorule run` 退出码语义（UV-046 C1/C3）**:执行含 Error fact 时
+- **`evorule run` 退出码语义**:执行含 Error fact 时
   退出码 0 → **3**（CI/自动化管道可正确感知规则执行失败；fact log
   照常写出）。退出码表：0 成功 / 1 通用错误 / 2 规则加载错误 /
   3 执行含 Error fact
-- `evorule-governance` 库接口:`diff` 返回 `Result`（B8b）
+- `evorule-governance` 库接口:`diff` 返回 `Result`
 - 语义化版本:0.x 阶段 MINOR 承载破坏性变更(semver 0.x 约定)
 
 ### 📚 文档
 
 - GOVERNANCE_SPEC.md 补 `SharedFactsLog` reset 使用约束与孤儿检测
-  已知局限（UV-046 B10），permission 装配点与 diff 签名现状对齐
+  已知局限，permission 装配点与 diff 签名现状对齐
 
 ### 🔄 变更
 
 - 版本 0.4.0 → 0.4.1(tcb / reactor / governance / cli 四仓同步)
-- CR 登记:四仓 CHANGE_REQUEST.md 置顶 CR-20260902-001
 
 ---
 
@@ -106,7 +105,7 @@
 
 ### 🐛 修复
 
-- **单会话长跑 O(n²) 性能缺陷修复（UV-032 实战检验发现，CR-20260901-001）**:
+- **单会话长跑 O(n²) 性能缺陷修复**:
   - 现象:长驻会话每命令耗时随事实数线性恶化(~1500 命令 → 2.5s/命令)、
     单会话 WAL 膨胀至 100MB
   - 根因一:`Fact::Stable.final_snapshot`(全量 payload 快照)每命令 O(n)
