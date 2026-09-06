@@ -117,7 +117,7 @@ impl WalRecord {
     }
 }
 
-/// 事实 WAL 存储后端契约（UV-026 存储层 trait 抽象）
+/// 事实 WAL 存储后端契约（存储层 trait 抽象）
 ///
 /// write-ahead 语义：`FactsLog::append` 在更新内存状态**之前**调用本方法，
 /// 实现 `Ok` 返回即承诺记录已落（后端自行承担崩溃/断电不丢语义）。
@@ -151,7 +151,7 @@ impl FactWalStore for WalWriter {
         prev_hash: &str,
         chain_hash: &str,
     ) -> Result<(), WalError> {
-        // 纯委托：文件后端行为与历史实现逐字节一致（UV-026 默认实现行为不变）
+        // 纯委托：文件后端行为与历史实现逐字节一致（默认实现行为不变）
         WalWriter::append_record_with_hash(
             self,
             version_before,
@@ -163,7 +163,7 @@ impl FactWalStore for WalWriter {
     }
 }
 
-/// 纯内存事实 WAL 后端（UV-026：离线/嵌入式/测试受益项）
+/// 纯内存事实 WAL 后端（：离线/嵌入式/测试受益项）
 ///
 /// - 记录保存在进程内存（`Arc<Mutex<Vec<WalRecord>>>`），哈希链字段原样保存；
 /// - 进程退出即失（与 FactsLog 纯内存模式同语义），适用于无文件系统、
@@ -501,7 +501,7 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
             // 由调用方(read_wal_file_with_hash)以外层 version_before 兜底。
             // 旧格式的 final_snapshot 字段若存在则忽略——recover 对 Stable 仅记
             // last_stable_version 不读内容,状态重建由 StateTransition.new_payload
-            // 承担(见 CR-20260901-001)。
+            // 承担(见)。
             let version = obj.get("version").and_then(|v| v.as_u64()).unwrap_or(0);
             Ok(Fact::Stable { id, version })
         }
@@ -812,7 +812,7 @@ fn read_wal_file_with_hash<P: AsRef<Path>>(
             .get("fact")
             .ok_or_else(|| WalError::InvalidFact(format!("line {line_no}: missing fact")))?;
         let fact = fact_from_json(fact_value)?;
-        // 旧格式容错(CR-20260901-001):≤0.3.x 的 Stable 无 version 字段,
+        // 旧格式容错():≤0.3.x 的 Stable 无 version 字段,
         // 以外层 version_before 兜底(状态重建不读此字段,仅供审计/展示)
         let fact = match fact {
             Fact::Stable { id, version: 0 } if fact_value.get("version").is_none() => {
@@ -1212,11 +1212,11 @@ mod tests {
         assert!(matches!(result, Err(WalError::InvalidFact(_))));
     }
 
-    // === CR-20260901-001 旧格式 WAL(≤0.3.x 含 final_snapshot)兼容专项 ===
+    // === 旧格式 WAL(≤0.3.x 含 final_snapshot)兼容专项 ===
 
     /// 旧格式(≤0.3.x)Stable 事实内嵌 final_snapshot 全量快照、无 version 字段。
     /// 新代码读旧 WAL: 忽略 final_snapshot,version 以外层 version_before 兜底。
-    /// 验收门禁 4.3 第 7 项(UV-032)。
+    /// 验收门禁 4.3 第 7 项()。
     #[test]
     fn test_read_legacy_wal_stable_with_final_snapshot() {
         let path = temp_wal_path("legacy_stable");

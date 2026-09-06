@@ -149,7 +149,7 @@ async fn test_sse_session_event_flow() {
     // 最后一个事件应该是 Stable
     assert!(matches!(events.last().unwrap(), Fact::Stable { .. }));
 
-    // Stable 不再携带快照（CR-20260901-001），状态经 FactsLog 快照验证
+    // Stable 不再携带快照（），状态经 FactsLog 快照验证
     let (snapshot, _, _) = facts_log.snapshot();
     assert_eq!(
         snapshot.get("x"),
@@ -173,7 +173,7 @@ async fn test_sse_multiple_commands_in_long_running_mode() {
     })
     .unwrap();
 
-    // 等待第一个 Stable（不再携带快照，CR-20260901-001）
+    // 等待第一个 Stable（不再携带快照）
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while let Ok(fact) = event_rx.recv().await {
             if matches!(fact, Fact::Stable { .. }) {
@@ -230,7 +230,7 @@ async fn test_sse_io_request_event() {
     // 发送 call_external 指令触发 IoRequest
     // v0.3.1 语义：call_external 仅接受 messages（必选）/ tools（可选），
     // prompt/system 已废除；io_request 的 messages 为必选参数，
-    // 缺失时 TCB 报 PathResolutionFailed（M4：fail-fast）而非发出残缺请求。
+    // 缺失时 TCB 报 PathResolutionFailed（fail-fast）而非发出残缺请求。
     let mut message = BTreeMap::new();
     message.insert("role".to_string(), JsonValue::string("user"));
     message.insert("content".to_string(), JsonValue::string("test"));

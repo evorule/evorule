@@ -44,7 +44,7 @@ pub fn run(
 
     tracing::info!(rules = transforms.len(), max_steps, "starting execution");
 
-    // 最终 payload 经返回值直接交付（CR-20260901-001：Stable 不再内嵌快照）
+    // 最终 payload 经返回值直接交付（：Stable 不再内嵌快照）
     let (facts, _final_payload) =
         executor::execute(&transforms, initial_payload, initial_instruction, max_steps)?;
 
@@ -52,7 +52,7 @@ pub fn run(
     fact_log::write_facts(output, &facts)?;
 
     // stderr 摘要（不影响 fact log 输出）
-    // CR-20260902-001（UV-046 C1/C3）：Error fact 不再静默成功——返回
+    //（C1/C3）：Error fact 不再静默成功——返回
     // ExecutionHadErrors → 退出码 3，CI/自动化管道可正确感知规则执行失败。
     // fact log 已写出，供审计回放定位失败原因。
     let error_count = facts

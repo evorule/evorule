@@ -44,7 +44,7 @@ fn main() {
 
     // 4. 执行(最多 100 步)
     //    返回 (fact 序列, 最终 payload)——最终 payload 经返回值直接交付
-    //    (CR-20260901-001:Stable 不再内嵌全量快照)
+    //    (:Stable 不再内嵌全量快照)
     let (facts, final_payload) = match execute(&core_eval, payload, instruction, 100) {
         Ok(result) => result,
         Err(e) => {

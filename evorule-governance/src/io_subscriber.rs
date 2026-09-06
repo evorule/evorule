@@ -118,7 +118,7 @@ pub struct IoSubscriber {
     metrics: SharedMetrics,
     /// 可选跳过谓词（默认 None = 全部自动应答，行为与历史版本一致）
     skip: Option<SkipPredicate>,
-    /// 可选 I/O 权限前置判定门（CR-20260902-001 / UV-046 B6）。
+    /// 可选 I/O 权限前置判定门（ / B6）。
     /// 默认 None = 不做权限判定（行为与历史版本一致）；注入后每次自动分发的
     /// IoRequest 在 dispatch 前按权限快照做"入口仲裁"（`PermissionGate::check`）。
     gate: Option<PermissionGate>,
@@ -139,7 +139,7 @@ impl IoSubscriber {
         }
     }
 
-    /// 注入 I/O 权限前置判定门（builder 模式；CR-20260902-001 / UV-046 B6）
+    /// 注入 I/O 权限前置判定门（builder 模式； / B6）
     ///
     /// 注入后，本订阅者自动分发的每条 IoRequest 在 dispatch 之前先经
     /// [`PermissionGate::check`] 做"入口仲裁"（而非事后审计）：
@@ -300,7 +300,7 @@ impl IoSubscriber {
             "处理 IoRequest"
         );
 
-        // CR-20260902-001（UV-046 B6）：权限前置判定门（可选装配）。
+        //：权限前置判定门（可选装配）。
         // Deny/Candidate → 不 dispatch，回写错误 IoResponse 让反应器恢复
         // （IoRequest 不会悬空）；Candidate 需审批人裁决，自动路径按拒绝处理
         // （fail-closed）。
@@ -615,7 +615,7 @@ mod tests {
         );
     }
 
-    // ===== 权限前置判定门（CR-20260902-001 / UV-046 B6）=====
+    // ===== 权限前置判定门（ / B6）=====
 
     /// 构造一个 service 调用形态的 IoRequest（供门测试用）
     fn service_call_request(id: u64) -> Fact {

@@ -38,7 +38,7 @@ pub const MAX_BRANCH_DEPTH: usize = 64;
 /// 覆盖 ReAct 宪法的实际需求（每条规则 < 15 条指令）并留有余量。
 pub const MAX_TOTAL_META_INSTRUCTIONS: usize = 1024;
 
-/// 合法 core_eval 元指令类型权威清单（SSOT，CR-20260902-001 / UV-046 C2）
+/// 合法 core_eval 元指令类型权威清单（SSOT / C2）
 ///
 /// 与下方 `execute_meta_instruction_budgeted` 的 dispatch 分支一一对应。
 /// 消费方（如 evorule-cli validate 的规则白名单）**必须引用本常量**，
@@ -130,7 +130,7 @@ mod executor_ssot_tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     use super::*;
 
-    /// SSOT 漂移防线（CR-20260902-001 / UV-046 C2）：
+    /// SSOT 漂移防线（ / C2）：
     /// `META_INSTRUCTION_TYPES` 中每个类型都必须被 dispatch 实际处理
     /// （不得返回 `UnknownMetaInstruction`）——防止白名单比执行器更严，
     /// 导致消费方（evorule-cli validate）误报合法规则。
@@ -183,7 +183,7 @@ pub(crate) fn json_type_name(v: &JsonValue) -> &'static str {
     }
 }
 
-/// 解析 collect/merge 的路径参数（M3：统一路径约定）
+/// 解析 collect/merge 的路径参数（统一路径约定）
 ///
 /// 与 domain 的 `path` 字段共用同一约定（`path::resolve_exec_path`）：
 /// - `__exec__.` 开头：绝对路径兼容写法
@@ -415,7 +415,7 @@ enum WriteSlot<'a> {
     Index(&'a mut [JsonValue], usize),
 }
 
-/// 沿段序列下降到可写位置（M2：支持数组索引写入）
+/// 沿段序列下降到可写位置（支持数组索引写入）
 ///
 /// # 下降语义（结构错误显式报错）
 ///
@@ -677,7 +677,7 @@ fn exec_push(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbEr
 /// branch 元指令：条件执行子指令列表
 ///
 /// 如果子指令返回 `IoRequired`，立即传播信号，不继续执行后续子指令。
-/// 子指令递归共享外层执行预算（M6 终止性宽度防线）。
+/// 子指令递归共享外层执行预算（终止性宽度防线）。
 fn exec_branch(
     instr: &JsonValue,
     mut state: JsonValue,
@@ -724,7 +724,7 @@ fn exec_branch(
 /// - 键名**带** `?` 后缀（如 `"tools?"`）：可选参数。路径引用解析失败时
 ///   跳过该参数（业务性缺省），请求参数使用去掉 `?` 的键名（`"tools"`）。
 ///
-/// 「可选」必须显式声明而非由解析失败隐式推断（M4 审计决策）：
+/// 「可选」必须显式声明而非由解析失败隐式推断（审计决策）：
 /// 静默跳过会把拼写错误伪装成「参数未提供」，错误在远离根因的
 /// 上游（外部系统行为异常）才暴露。
 fn exec_io_request(instr: &JsonValue, state: JsonValue) -> Result<MetaInstructionResult, TcbError> {
@@ -2224,7 +2224,7 @@ mod tests {
         let state = make_exec_state_with_instruction(instruction, make_payload(0), vec![]);
 
         // messaegs 是拼写错误的必选参数（正确应为 messages）：
-        // 必须显式报错，不得静默跳过（M4）
+        // 必须显式报错，不得静默跳过
         let io_instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("io_request")),
             (

@@ -320,7 +320,7 @@ impl Auditor {
     /// 做去重会导致重复审计。故本实现以 `entries.len()` 作为已审计进度，
     /// 读取尚未审计的尾部事实，保证每条事实仅审计一次。
     ///
-    /// # 增量遍历（CR-20260901-001）
+    /// # 增量遍历（）
     /// 原实现每命令调用 `FactsLog::history()` 全量 clone 全部历史事实——
     /// 长驻会话（千级命令）下每命令近 GB 级内存复制，构成 O(n²) CPU 瓶颈。
     /// 现改经 [`FactsLog::for_each_fact_from`] 锁内零 clone 增量遍历尾部
@@ -375,7 +375,7 @@ impl Auditor {
             let cause = extract_cause(fact);
 
             // 计算新的链哈希：blake3(prev_hash + content_hash)
-            // B1（UV-046 report-002）：改用 reactor SSOT chain_step，消除本地重复实现漂移风险
+            // B1（report-002）：改用 reactor SSOT chain_step，消除本地重复实现漂移风险
             let new_hash = hash::chain_step(&prev_hash, &content_hash);
             *last_hash = new_hash;
 
@@ -598,7 +598,7 @@ impl Auditor {
                 continue;
             }
 
-            // CR-20260902-001（UV-046 B2）：损坏行不再静默跳过（审计完整性铁律：
+            //：损坏行不再静默跳过（审计完整性铁律：
             // 链可能不完整而调用方毫无感知），显式拒绝加载并内嵌客户自助处理意见
             // （结构化固定错误码，便于 LLM 助手逐条引导用户）。
             let parsed: serde_json::Value = serde_json::from_str(&line).map_err(|e| {
@@ -698,7 +698,7 @@ impl Auditor {
             // 重算链哈希（验证并更新 last_hash；SSOT：reactor chain_step）
             self.last_hash = hash::chain_step(&prev_hash, &content_hash);
 
-            // 更新时钟到已见最大值（B3：advance_to O(1) 对齐，替代 O(n) 逐次 tick；
+            // 更新时钟到已见最大值（advance_to O(1） 对齐，替代 O(n) 逐次 tick；
             // 终态与原 while-tick 循环逐字节一致 = max(current, logical_time)）
             self.clock.advance_to(logical_time);
         }
@@ -1612,7 +1612,7 @@ mod tests {
 
         let log = make_facts_log();
         let mut auditor = Auditor::new(log);
-        // CR-20260902-001（UV-046 B2）：损坏行不再静默跳过——显式拒绝加载
+        //：损坏行不再静默跳过——显式拒绝加载
         // 并附 [EVO-AUDIT-WAL-CORRUPT] 标记与补救指引（审计完整性政策）。
         let err = auditor.load_from_wal(&tmp).expect_err("损坏 WAL 必须拒绝加载");
         let msg = err.to_string();
