@@ -595,7 +595,7 @@ impl SessionManager {
         &self.shards[self.get_shard_idx(id)]
     }
 
-    /// 原子预留会话名额（CR-20260902-001 / UV-046 B4）
+    /// 原子预留会话名额（ / B4）
     ///
     /// 以 CAS 自旋替代"先 load 检查、后 fetch_add"的两步模式——原模式下检查
     /// 与递增之间存在窗口（其间含 create_facts_log/spawn 等慢操作），高并发
@@ -1238,7 +1238,7 @@ mod tests {
         vec![JsonValue::Object(instr)]
     }
 
-    /// B4 回归（CR-20260902-001）：max_sessions 限额在高并发下不可突破。
+    /// B4 回归（）：max_sessions 限额在高并发下不可突破。
     /// 原实现 check（load）与 reserve（fetch_add）分离，其间含 spawn 慢操作，
     /// 并发创建可越过限额（TOCTOU）。现 CAS 预留，N 线程 × max=1 恰成功 1 个。
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -25,7 +25,7 @@
 //! 4. 可选 `Error`（TCB 错误或 max_steps 超限）
 //! 5. `Stable`（稳定标记，始终发射）
 //!
-//! 最终 payload 经返回值直接交给调用方（CR-20260901-001：Stable 不再
+//! 最终 payload 经返回值直接交给调用方（：Stable 不再
 //! 内嵌全量快照，状态本体从执行器持有的 payload 返回，不经事实链）。
 
 use std::collections::{HashMap, VecDeque};
@@ -185,7 +185,7 @@ pub fn execute(
     }
 
     // 始终发射 Stable（即使是 Error 退出，也标记当前版本稳定）。
-    // 最终 payload 经返回值直接交付（CR-20260901-001：不再内嵌快照）
+    // 最终 payload 经返回值直接交付（：不再内嵌快照）
     let stable_id = id_gen.next_id();
     facts.push(Fact::Stable {
         id: stable_id,

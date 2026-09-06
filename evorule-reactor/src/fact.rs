@@ -231,7 +231,7 @@ pub enum Fact {
         id: FactId,
         /// 稳定时的会话版本号
         ///
-        /// # 设计（UV-032 O(n²) 修复，CR-20260901-001）
+        /// # 设计（O(n²) 修复）
         /// 原字段 `final_snapshot: JsonValue`（全量 payload 快照）在长驻会话下
         /// 每命令 O(n) 写入事实链，累计 O(n²)（实测 ~1500 命令 → 100MB WAL、
         /// 2.5s/命令）。恢复路径（FactsLog::recover）对 Stable 仅更新

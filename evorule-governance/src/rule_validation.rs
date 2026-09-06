@@ -516,7 +516,7 @@ fn perform_security_analysis(transforms: &[JsonValue]) -> Vec<ValidationCheck> {
 ///
 /// 检查 while_loop 类型的 domain 中是否包含条件判定，
 /// 以及 body 是否包含状态变更指令。
-/// B9（UV-046 report-002）：递归遍历 branch 的 on_true/on_false 子节点，
+/// B9（report-002）：递归遍历 branch 的 on_true/on_false 子节点，
 /// 嵌套在 branch 内的 while_loop / 状态变更不再漏检。
 /// 会话状态全局共享——任意层级的 set/collect/merge 均可为任意层级的
 /// while_loop 提供终止条件，故信号跨层级累加。
@@ -985,7 +985,7 @@ mod tests {
 
     #[test]
     fn test_security_infinite_loop_nested_branch_detection() {
-        // B9（UV-046 report-002）：嵌套在 branch 子节点内的 while_loop 不再漏检
+        // B9（report-002）：嵌套在 branch 子节点内的 while_loop 不再漏检
         // 外层 branch domain 为 comparison（非 while_loop），while_loop 藏在
         // on_false 子数组的内层 branch domain 中——旧实现只扫顶层会漏检
         let v = serde_json::json!({

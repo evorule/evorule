@@ -56,7 +56,7 @@ pub enum CliError {
 
     /// 执行完成但产生 Error 事实（规则执行失败）
     ///
-    /// CR-20260902-001（UV-046 C1/C3）：执行含 Error fact 时不再返回退出码 0。
+    ///（C1/C3）：执行含 Error fact 时不再返回退出码 0。
     /// CI/自动化管道以退出码判定成败，Error fact 静默成功会让"确定性执行"
     /// 的核心承诺在自动化场景下失效。fact log 仍正常写出供审计。
     #[error("Execution completed with {count} Error fact(s); fact log written for audit (exit code 3)")]
@@ -91,7 +91,7 @@ impl CliError {
 /// - 0：成功
 /// - 1：通用错误（默认）
 /// - 2：规则加载错误（目录不存在、无 .json）
-/// - 3：执行完成但产生 Error 事实（CR-20260902-001：不再静默成功）
+/// - 3：执行完成但产生 Error 事实（：不再静默成功）
 impl CliError {
     /// 返回该错误对应的退出码
     ///
@@ -99,7 +99,7 @@ impl CliError {
     /// - 0：成功
     /// - 1：通用错误（默认）
     /// - 2：规则加载错误（目录不存在、无 .json）
-    /// - 3：执行完成但产生 Error 事实（CR-20260902-001）
+    /// - 3：执行完成但产生 Error 事实（）
     ///
     /// # 示例
     /// ```

@@ -858,7 +858,7 @@ impl Reactor {
     /// 处理 Fact（仅更新状态，不执行 TCB）
     ///
     /// `facts_log`/`event_tx`/`id_gen`：用于异常路径发射 `Fact::Error`
-    /// （CR-20260902-001 / UV-046 A1：unknown IoResponse 不再静默忽略）。
+    /// （ / A1：unknown IoResponse 不再静默忽略）。
     // 7 种 Fact 变体 match, 拆函数需暴露内部状态。详见 GATE_REFERENCE.md §六(豁免索引)
     #[allow(clippy::cognitive_complexity)]
     fn handle_fact(
@@ -895,7 +895,7 @@ impl Reactor {
                 // 用于将结果注入 `__io_results__.{io_type}`（按类型隔离）。
                 let io_type = state.get_io_type(&request_id).cloned();
                 if !state.complete_io_request(request_id) {
-                    // CR-20260902-001（UV-046 A1）：unknown IoResponse 不再静默忽略。
+                    //（A1）：unknown IoResponse 不再静默忽略。
                     // IoResponse 事实本身已入链（command 通道先 emit 再 handle），但
                     // 状态层拒绝消费——链上需有显式异常标记才能自解释（审计重放可
                     // 逐条对账"响应事实 + 异常标记"）。与上方超时路径的 Error-fact

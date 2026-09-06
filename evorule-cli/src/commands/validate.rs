@@ -18,7 +18,7 @@
 //! 元指令类型：branch / set / push / io_request / collect / merge。
 //! noop / increment / decrement 是指令层类型，不属于元指令层（P2-01/P0-01）。
 //!
-//! CR-20260902-001（UV-046 C2）：白名单改为引用 tcb 权威常量
+//!（C2）：白名单改为引用 tcb 权威常量
 //! `evorule_tcb::META_INSTRUCTION_TYPES`（SSOT）——禁止本地硬编码副本，
 //! 防 tcb 新增元指令时本命令误报合法规则（漂移防线见 tcb 单测）。
 

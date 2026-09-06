@@ -384,7 +384,7 @@ async fn test_simple_increment() {
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
-                // Stable 不再携带快照(CR-20260901-001),状态经 FactsLog 快照取
+                // Stable 不再携带快照(),状态经 FactsLog 快照取
                 Fact::Stable { .. } => return Some(()),
                 Fact::Error { message, .. } => panic!("Error: {}", message),
                 _ => {}
@@ -460,7 +460,7 @@ async fn test_io_request_detection() {
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
-                // Stable 不再携带快照(CR-20260901-001),状态经 FactsLog 快照取
+                // Stable 不再携带快照(),状态经 FactsLog 快照取
                 Fact::Stable { .. } => return Some(()),
                 Fact::Error { message, .. } => panic!("Error: {}", message),
                 _ => {}
@@ -494,7 +494,7 @@ async fn test_unknown_io_response_records_error_fact() {
 
     let mut gen = FactIdGenerator::new();
 
-    // 发送一个未知的 IoResponse（CR-20260902-001 / UV-046 A1：状态不变，
+    // 发送一个未知的 IoResponse（ / A1：状态不变，
     // 但必须发射 Error fact 入链——不再静默忽略）
     tx.send(Fact::IoResponse {
         id: gen.next_id(),
@@ -516,7 +516,7 @@ async fn test_unknown_io_response_records_error_fact() {
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
-                // Stable 不再携带快照(CR-20260901-001),状态经 FactsLog 快照取
+                // Stable 不再携带快照(),状态经 FactsLog 快照取
                 Fact::Stable { .. } => return Some(()),
                 Fact::Error { message, .. } => {
                     assert!(
@@ -785,7 +785,7 @@ fn make_sequence_instruction(instructions: Vec<JsonValue>) -> JsonValue {
     JsonValue::Object(instr)
 }
 
-/// 等待 Stable 事实（不再携带快照，CR-20260901-001），返回 FactsLog 当前快照
+/// 等待 Stable 事实（不再携带快照），返回 FactsLog 当前快照
 async fn wait_for_stable(
     rx: &mut evorule_reactor::EventReceiver,
     facts_log: &evorule_reactor::FactsLog,
@@ -1963,7 +1963,7 @@ async fn test_d11_replay_consistency_first_vs_preresult() {
     while let Ok(fact) = rx_b.recv().await {
         match fact {
             Fact::IoRequest { .. } => got_io_request_b = true,
-            // Stable 不再携带快照(CR-20260901-001),状态经 FactsLog 快照取
+            // Stable 不再携带快照(),状态经 FactsLog 快照取
             Fact::Stable { .. } => {
                 stable_b = true;
                 break;

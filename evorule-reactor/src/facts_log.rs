@@ -110,7 +110,7 @@ struct FactsLogInner {
     last_hash: String,
 
     #[cfg(feature = "persistence")]
-    /// 可选的 WAL 存储后端（P0-1；UV-026 起为可替换 trait 对象）
+    /// 可选的 WAL 存储后端（P0-1；起为可替换 trait 对象）
     ///
     /// - `Some`：`append()` 时先 write-ahead 写后端再更新内存
     /// - `None`：纯内存模式（兼容旧 API，如 `new()` / `with_initial_payload()`）
@@ -201,7 +201,7 @@ impl FactsLogLock {
 #[derive(Clone)]
 pub struct FactsLog {
     inner: Arc<FactsLogLock>,
-    /// WAL 写入连续失败计数（W1 修复，2026-08-27）
+    /// WAL 写入连续失败计数（修复，2026-08-27）
     ///
     /// - `append()` 中 WAL 写失败时递增、成功时清零
     /// - 达到 `WAL_FAIL_TERMINATE_THRESHOLD`（3）后，后续每次失败调用
@@ -215,7 +215,7 @@ pub struct FactsLog {
     on_wal_failure_exhausted: WalFailureExhaustedCallback,
 }
 
-/// WAL 连续失败升级回调类型（W1）
+/// WAL 连续失败升级回调类型
 #[cfg(feature = "persistence")]
 type WalFailureExhaustedCallback =
     Arc<std::sync::Mutex<Option<Box<dyn Fn(&str) + Send + Sync>>>>;
@@ -225,7 +225,7 @@ type WalFailureExhaustedCallback =
 pub const WAL_FAIL_TERMINATE_THRESHOLD: u64 = 3;
 
 #[cfg(feature = "persistence")]
-/// 生成面向用户的 WAL 故障自助诊断信息（W1 方案 b 用户指导要求）
+/// 生成面向用户的 WAL 故障自助诊断信息（方案 b 用户指导要求）
 ///
 /// 根因均为部署环境问题而非代码缺陷；信息按可能性排序给出操作指引，
 /// 使运维/用户无需阅读源码即可自行恢复。
@@ -258,7 +258,7 @@ impl std::fmt::Debug for FactsLog {
 }
 
 impl FactsLog {
-    /// 统一构造（W1：初始化 WAL 失败计数器与升级回调）
+    /// 统一构造（初始化 WAL 失败计数器与升级回调）
     fn with_inner(inner: FactsLogInner) -> Self {
         Self {
             inner: Arc::new(FactsLogLock::new(inner)),
@@ -302,7 +302,7 @@ impl FactsLog {
     }
 
     #[cfg(feature = "persistence")]
-    /// 注册 WAL 连续失败达阈值的升级回调（W1 方案 b）
+    /// 注册 WAL 连续失败达阈值的升级回调（方案 b）
     ///
     /// 回调在 `append()` 持有写锁之外被调用，参数为面向用户的
     /// 自助诊断信息（含恢复指导）。reactor 用它终止会话并发射 Error fact。
@@ -398,7 +398,7 @@ impl FactsLog {
     }
 
     #[cfg(feature = "persistence")]
-    /// 创建挂载自定义存储后端的 FactsLog（UV-026 存储层 trait 抽象）
+    /// 创建挂载自定义存储后端的 FactsLog（存储层 trait 抽象）
     ///
     /// 与 `with_wal*` 系列同语义（write-ahead：`append()` 先写后端再更新内存），
     /// 但后端由调用方注入——如 [`crate::wal::MemoryWalStore`]（无文件系统/
@@ -669,7 +669,7 @@ impl FactsLog {
                 Fact::Stable { .. } => {
                     inner.last_stable_version = inner.version;
                 }
-                // 显式匹配剩余变体（T15 门禁禁止 Fact match 通配符 _）
+                // 显式匹配剩余变体（门禁禁止 Fact match 通配符 _）
                 Fact::Command { .. } | Fact::IoRequest { .. } | Fact::Error { .. } => {}
             }
             inner.history.push((version_before, fact));
@@ -698,7 +698,7 @@ impl FactsLog {
                     &chain_hash,
                 ) {
                     Ok(()) => {
-                        // 成功 → 清零连续失败计数（W1 方案 b：瞬时故障自愈不累计）
+                        // 成功 → 清零连续失败计数（方案 b：瞬时故障自愈不累计）
                         self.wal_fail_count.store(0, Ordering::SeqCst);
                     }
                     Err(e) => {
@@ -902,7 +902,7 @@ impl FactsLog {
 
     /// 从指定下标起增量遍历历史事实（零 clone，锁内回调）
     ///
-    /// 用于 tier2 Auditor 的增量审计（CR-20260901-001）：调用方以自持游标
+    /// 用于 tier2 Auditor 的增量审计（）：调用方以自持游标
     /// （如已审计条目数）为起点，只遍历尾部新事实，避免 [`Self::history`]
     /// 每次全量 clone——长驻会话下全量 clone 构成 O(n²) CPU 瓶颈
     /// （实测 ~1500 命令时每命令近 GB 级内存复制）。
@@ -2196,7 +2196,7 @@ mod tests {
         }
     }
 
-    // ===== UV-026 存储层 trait 抽象测试 =====
+    // ===== 存储层 trait 抽象测试 =====
 
     #[cfg(feature = "persistence")]
     #[test]

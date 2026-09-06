@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn test_read_facts_skips_empty_lines() {
         // 旧格式（≤0.3.x 含 final_snapshot）字符串兼作向后兼容解析测试：
-        // fact_from_json 容错忽略 final_snapshot，version 兜底 0（CR-20260901-001）
+        // fact_from_json 容错忽略 final_snapshot，version 兜底 0（）
         let content = "{\"type\":\"Stable\",\"id\":1,\"final_snapshot\":{}}\n\n\n{\"type\":\"Stable\",\"id\":2,\"version\":1}\n";
         let facts = parse_facts(content).unwrap();
         assert_eq!(facts.len(), 2);

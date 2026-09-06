@@ -75,7 +75,7 @@ impl LogicalClock {
     /// 推进到目标值（终态为 `max(local, target)`，不额外 +1）
     ///
     /// 供 WAL 恢复路径 O(1) 对齐已见最大逻辑时间，替代逐次 tick 的 O(n) 循环
-    /// （B3，UV-046 report-002）。CAS 循环保证并发安全。
+    /// （，report-002）。CAS 循环保证并发安全。
     pub fn advance_to(&self, target: u64) {
         loop {
             let current = self.counter.load(Ordering::SeqCst);

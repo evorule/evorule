@@ -251,7 +251,7 @@ fn test_run_with_output_file() {
 #[test]
 fn test_run_max_steps_zero() {
     let dir = fixtures_dir().join("valid");
-    // CR-20260902-001（UV-046 C1/C3）：--max-steps 0 产生 Error fact
+    //（C1/C3）：--max-steps 0 产生 Error fact
     // （max_steps 违规），run 现返回退出码 3（不再静默成功）。
     assert_stdout_contains(
         "run --max-steps 0",
@@ -411,7 +411,7 @@ fn test_fifo_queue_order() {
 
     let content = std::fs::read_to_string(&fact_log).expect("读取 fifo log 失败");
     // FIFO 顺序：step1 先执行（order="first"），step2 后执行（order="second"）
-    // Stable 不再携带快照（CR-20260901-001），末次状态以最后一条 StateTransition 判定
+    // Stable 不再携带快照（），末次状态以最后一条 StateTransition 判定
     let last_transition = content
         .lines()
         .rev()

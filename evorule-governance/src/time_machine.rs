@@ -77,7 +77,7 @@ impl PayloadDiff {
     }
 }
 
-/// 时间机器错误（CR-20260902-001 / UV-046 B8b）
+/// 时间机器错误（ / B8b）
 ///
 /// `diff` 在 rewind 不可达时不再静默回退空 payload（旧行为会产生无告警的
 /// 错误 diff 结果），而是显式返回本错误。
@@ -246,7 +246,7 @@ pub fn rewind(facts: &[Fact], target_version: u64) -> Option<RewindSnapshot> {
 ///
 /// 返回 `Ok(PayloadDiff)`，包含 added/removed/changed/unchanged 四类字段。
 ///
-/// # 错误（CR-20260902-001 / UV-046 B8b）
+/// # 错误（ / B8b）
 ///
 /// 任一版本 rewind 不可达（事实历史不足/版本越界）时返回
 /// [`TimeMachineError`]——**不再**静默回退空 payload（旧行为会产生无告警的
@@ -487,7 +487,7 @@ mod tests {
         assert!(summary.contains("=1"));
     }
 
-    /// B8b 回归（CR-20260902-001）：rewind 不可达时 diff 必须显式报错，
+    /// B8b 回归（）：rewind 不可达时 diff 必须显式报错，
     /// 绝不静默回退空 payload（旧 unwrap_or_else 行为会产生无告警的错误 diff）。
     #[test]
     fn test_diff_unreachable_version_is_error_not_empty() {
