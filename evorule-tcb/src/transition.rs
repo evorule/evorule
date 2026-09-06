@@ -29,6 +29,26 @@ use alloc::vec::Vec;
 /// `execute_transition` 迭代时间不可控。
 pub const MAX_TRANSFORM_RULES: usize = 64;
 
+/// 单条 transform 规则的命中归因
+///
+/// 记录一次 `execute_transition` 中第 `index` 条规则（对输入列表的下标）
+/// 是否**结构命中**。口径与字段语义见 [`executor` 模块]
+/// （`execute_meta_instruction_budgeted` 的命中归因小节）：
+/// 直接指令执行成功即命中；`branch` 所选分支存在且非空即命中。
+///
+/// 归因标识：引擎只产出列表下标（引擎无来源知识）；来源标签
+/// （core_eval / rules/<相对路径>）由装载层按合并分段映射——
+/// 见 server 侧 `RulesetLayout`。
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuleHit {
+    /// 规则在输入 `core_eval` 列表中的下标
+    pub index: usize,
+    /// 规则顶层指令类型（如 "branch"、"set"；缺失记 "unknown"）
+    pub instr_type: String,
+    /// 是否结构命中
+    pub hit: bool,
+}
+
 /// 状态转换结果
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransitionResult {
@@ -38,6 +58,8 @@ pub enum TransitionResult {
         new_payload: JsonValue,
         /// 新的指令队列
         new_queue: Vec<JsonValue>,
+        /// 本步各 transform 规则的命中归因（按执行顺序，与输入列表等长）
+        rule_hits: Vec<RuleHit>,
     },
     /// I/O 请求：需要上层反应器执行 I/O
     ///
@@ -55,6 +77,10 @@ pub enum TransitionResult {
     /// **错误实现代价**：若反应器错误地持久化中间 payload 再增量续跑，
     /// `io_request` 之前的 `add` / `sub` 会被应用两次（state 污染）。
     /// 跨层协议详见 `TCB_SPEC.md` §四 D11。
+    ///
+    /// **命中归因**：`IoRequired` **不携带** `rule_hits`——中途
+    /// 命中属于"半成品"（同状态修改一并丢弃），以收敛后的重放结果为准，
+    /// 避免重放导致重复计数。归因只随 `State` / `Ignored` 收敛变体交付。
     IoRequired {
         /// I/O 类型（如 "call_external"、"query_db" 等）
         io_type: String,
@@ -69,6 +95,9 @@ pub enum TransitionResult {
         instruction_type: String,
         /// 说明：通常为 "no matching transform rule" 或 "rule matched but produced no effect"
         reason: String,
+        /// 本步各 transform 规则的命中归因（静默失败时全为未命中，
+        /// 是死规则检测的直接数据源）
+        rule_hits: Vec<RuleHit>,
     },
 }
 
@@ -153,15 +182,36 @@ pub fn execute_transition(
 
     // 2. 执行 core_eval transform 列表（整棵规则树共享单一执行预算，
     //    M6 终止性宽度防线：约束 branch 子指令列表的宽度）
+    //    同步收集每条规则的结构命中（命中口径见 RuleHit / executor 文档）。
     let mut state = exec_state;
     let mut budget = MAX_TOTAL_META_INSTRUCTIONS;
+    let mut rule_hits: Vec<RuleHit> = Vec::with_capacity(core_eval.len());
 
-    for transform_rule in core_eval {
-        let result = execute_meta_instruction_budgeted(transform_rule, state, 0, &mut budget)?;
+    for (index, transform_rule) in core_eval.iter().enumerate() {
+        let instr_type = transform_rule
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let mut hit = false;
+        let result = execute_meta_instruction_budgeted(
+            transform_rule,
+            state,
+            0,
+            &mut budget,
+            &mut hit,
+        )?;
+        rule_hits.push(RuleHit {
+            index,
+            instr_type,
+            hit,
+        });
 
         match result {
             MetaInstructionResult::State(new_state) => state = new_state,
-            // I/O 请求信号：立即返回，不继续执行后续 transform
+            // I/O 请求信号：立即返回，不继续执行后续 transform。
+            // 不携带 rule_hits（D11 重放契约：中途命中随半成品状态一并丢弃，
+            // 归因以收敛后的重放结果为准，避免重复计数）。
             MetaInstructionResult::IoRequired { io_type, params } => {
                 return Ok(TransitionResult::IoRequired { io_type, params });
             }
@@ -244,12 +294,14 @@ pub fn execute_transition(
         return Ok(TransitionResult::Ignored {
             instruction_type: instruction_type.to_string(),
             reason: "instruction not matched by any constitution rule".to_string(),
+            rule_hits,
         });
     }
 
     Ok(TransitionResult::State {
         new_payload,
         new_queue,
+        rule_hits,
     })
 }
 
@@ -1150,6 +1202,7 @@ mod tests {
             TransitionResult::State {
                 new_payload,
                 new_queue,
+                ..
             } => (new_payload, new_queue),
             _ => panic!("round 1: expected State"),
         };
@@ -1172,6 +1225,7 @@ mod tests {
         let TransitionResult::State {
             new_payload: payload_round3,
             new_queue: queue_round3,
+            ..
         } = result_round2
         else {
             panic!("round 2: expected State")
@@ -1189,6 +1243,7 @@ mod tests {
             TransitionResult::State {
                 new_payload,
                 new_queue,
+                ..
             } => {
                 assert_eq!(new_payload.get("x"), Some(&JsonValue::Integer(15)));
                 assert!(new_queue.is_empty());
@@ -1360,6 +1415,7 @@ mod tests {
             TransitionResult::State {
                 new_payload,
                 new_queue,
+                ..
             } => {
                 // payload 保持不变（counter 仍为 5，因为条件为 false 不执行 body）
                 assert_eq!(new_payload.get("counter"), Some(&JsonValue::Integer(5)));
@@ -1369,6 +1425,7 @@ mod tests {
             TransitionResult::Ignored {
                 instruction_type,
                 reason,
+                ..
             } => {
                 panic!(
                     "while_loop 指令不应被标记为 Ignored (type={}, reason={})。\n\
@@ -1494,6 +1551,7 @@ mod tests {
             TransitionResult::Ignored {
                 instruction_type,
                 reason,
+                ..
             } => {
                 assert_eq!(instruction_type, "while_loop");
                 assert!(reason.contains("not matched"), "reason 应说明指令未被匹配");
@@ -1558,6 +1616,7 @@ mod tests {
             TransitionResult::Ignored {
                 instruction_type,
                 reason,
+                ..
             } => {
                 assert_eq!(instruction_type, "while_loop");
                 assert!(reason.contains("not matched"));
@@ -1631,6 +1690,7 @@ mod tests {
             TransitionResult::Ignored {
                 instruction_type,
                 reason,
+                ..
             } => {
                 assert_eq!(instruction_type, "query_db");
                 assert!(reason.contains("constitution rule"));
@@ -1879,6 +1939,7 @@ mod tests {
             TransitionResult::State {
                 new_payload,
                 new_queue,
+                ..
             } => {
                 // payload 和 queue 保持不变
                 assert_eq!(new_payload.get("counter"), Some(&JsonValue::Integer(0)));
@@ -1887,6 +1948,7 @@ mod tests {
             TransitionResult::Ignored {
                 instruction_type,
                 reason,
+                ..
             } => {
                 panic!(
                     "规则匹配但 on_true 为空时不应返回 Ignored。\n\
@@ -1955,6 +2017,7 @@ mod tests {
             TransitionResult::Ignored {
                 instruction_type,
                 reason,
+                ..
             } => {
                 assert_eq!(instruction_type, "while_loop");
                 assert!(reason.contains("not matched"), "reason should indicate no match, got: {}", reason);
@@ -2028,6 +2091,7 @@ mod tests {
             TransitionResult::Ignored {
                 instruction_type,
                 reason,
+                ..
             } => {
                 assert_eq!(instruction_type, "while_loop");
                 assert!(reason.contains("not matched"), "reason should indicate no match, got: {}", reason);
@@ -2079,6 +2143,7 @@ mod tests {
             TransitionResult::Ignored {
                 instruction_type,
                 reason,
+                ..
             } => {
                 assert_eq!(instruction_type, "unknown");
                 assert!(reason.contains("not matched"), "reason should indicate no match, got: {}", reason);
@@ -2190,6 +2255,7 @@ mod tests {
             TransitionResult::Ignored {
                 instruction_type,
                 reason,
+                ..
             } => {
                 assert_eq!(instruction_type, "unknown");
                 assert!(reason.contains("not matched"), "reason should indicate no match, got: {}", reason);
@@ -2585,6 +2651,7 @@ mod tests {
             let TransitionResult::State {
                 new_payload,
                 new_queue,
+                ..
             } = result
             else {
                 panic!("round 2: expected State")
@@ -2641,6 +2708,7 @@ mod tests {
             let TransitionResult::State {
                 new_payload,
                 new_queue,
+                ..
             } = result
             else {
                 panic!("round 3: expected State")
@@ -2719,6 +2787,7 @@ mod tests {
             let TransitionResult::State {
                 new_payload,
                 new_queue,
+                ..
             } = result
             else {
                 panic!("cap: expected State")
@@ -2752,6 +2821,7 @@ mod tests {
             let TransitionResult::State {
                 new_payload,
                 new_queue,
+                ..
             } = result
             else {
                 panic!("final: expected State")

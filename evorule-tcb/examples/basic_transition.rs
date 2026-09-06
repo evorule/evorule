@@ -49,11 +49,8 @@ fn main() {
             assert_eq!(x, Some(42), "x 应被 set 改成 42");
             println!("✅ x 已被正确改成 42");
         }
-        Ok(TransitionResult::Ignored {
-            instruction_type,
-            reason,
-        }) => {
-            eprintln!("⚠️ 指令被忽略: type={instruction_type}, reason={reason}");
+        Ok(TransitionResult::Ignored { .. }) => {
+            eprintln!("⚠️ 指令被忽略（无匹配规则）");
             std::process::exit(1);
         }
         Ok(TransitionResult::IoRequired { .. }) => {

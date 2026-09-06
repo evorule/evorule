@@ -584,7 +584,12 @@ impl FactsLog {
                             .checked_add(1)
                             .ok_or(FactsLogError::VersionOverflow)?;
                     }
-                    Fact::Command { .. } | Fact::IoRequest { .. } | Fact::Error { .. } => {}
+                    // TransitionTrace：记录性事实，不更新快照、不推进版本
+                    // （与 Command/IoRequest/Error 同类）
+                    Fact::Command { .. }
+                    | Fact::IoRequest { .. }
+                    | Fact::Error { .. }
+                    | Fact::TransitionTrace { .. } => {}
                 }
             }
 
@@ -670,7 +675,11 @@ impl FactsLog {
                     inner.last_stable_version = inner.version;
                 }
                 // 显式匹配剩余变体（门禁禁止 Fact match 通配符 _）
-                Fact::Command { .. } | Fact::IoRequest { .. } | Fact::Error { .. } => {}
+                // TransitionTrace：记录性事实，版本不变
+                Fact::Command { .. }
+                | Fact::IoRequest { .. }
+                | Fact::Error { .. }
+                | Fact::TransitionTrace { .. } => {}
             }
             inner.history.push((version_before, fact));
             return Ok(inner.version);
@@ -796,6 +805,9 @@ impl FactsLog {
             }
             Fact::Command { .. } | Fact::IoRequest { .. } | Fact::Error { .. } => {
                 // 这些事实不直接修改快照，版本号不变
+            }
+            Fact::TransitionTrace { .. } => {
+                // 记录性事实，不修改快照，版本号不变（与 Command 同类）
             }
         }
 

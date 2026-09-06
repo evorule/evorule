@@ -216,6 +216,31 @@ pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> 
             obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
             obj.insert("message".into(), serde_json::Value::String(message.clone()));
         }
+        Fact::TransitionTrace {
+            id,
+            cause,
+            rule_hits,
+        } => {
+            // 归因轨迹参与哈希链（审计链防篡改覆盖归因事实）
+            trace!(事实ID = ?id, 原因ID = ?cause, 命中数 = rule_hits.len(), "处理命中归因轨迹事实");
+            obj.insert(
+                "type".into(),
+                serde_json::Value::String("TransitionTrace".into()),
+            );
+            obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
+            obj.insert("cause".into(), serde_json::Value::Number(cause.0.into()));
+            let hits: Vec<serde_json::Value> = rule_hits
+                .iter()
+                .map(|h| {
+                    serde_json::json!({
+                        "index": h.index,
+                        "instr_type": h.instr_type,
+                        "hit": h.hit,
+                    })
+                })
+                .collect();
+            obj.insert("rule_hits".into(), serde_json::Value::Array(hits));
+        }
     }
 
     let value = serde_json::Value::Object(obj);

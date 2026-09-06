@@ -431,6 +431,7 @@ fn simulate_execution(
             Ok(TransitionResult::State {
                 new_payload,
                 new_queue,
+                ..
             }) => {
                 payload = new_payload;
                 queue = new_queue;
