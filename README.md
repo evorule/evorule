@@ -1,3 +1,496 @@
+# EvoRule — A deterministic-first reactive rule execution engine
+
+![EvoRule — deterministic-first reactive rule execution engine](assets/evorule-banner.svg)
+
+[![CI](https://github.com/evorule/evorule/actions/workflows/ci.yml/badge.svg)](https://github.com/evorule/evorule/actions/workflows/ci.yml)
+[![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
+[![Version](https://img.shields.io/badge/version-0.4.2-green.svg)](CHANGELOG.md)
+[![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-758%20passed%20%C2%B7%202026--09--05-brightgreen.svg)](#testing--verification)
+[![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2812%20verified%29-blue.svg)](#formal-verification)
+[![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb--minimal-trusted-computing-base)
+
+> **Determinism is first-class**: same input → same output. No randomness, no time dependence, no implicit state.
+> Every execution trace is persisted append-only as JSONL; a BLAKE3 hash chain makes it auditable, replayable, and tamper-evident.
+
+**Language / 语言**: [English](#english) · [中文 / Chinese](#chinese)
+
+---
+
+<a id="english"></a>
+
+## Experience & Navigation
+
+- **Online console (no install)**: [evorule-console-cloud live demo](https://evorule.github.io/evorule-console-cloud/)
+- **evorule-server** — HTTP API / SSE / debug control / I/O Handler (application layer): [Gitee](https://gitee.com/evorule/evorule-server) ｜ [GitHub](https://github.com/evorule/evorule-server)
+- **evorule-console-cloud** — governance & audit console (web frontend): [Gitee](https://gitee.com/evorule/evorule-console-cloud) ｜ [GitHub](https://github.com/evorule/evorule-console-cloud)
+- **Organization home**: [Gitee @evorule](https://gitee.com/evorule) ｜ [GitHub @evorule](https://github.com/evorule)
+
+---
+
+## Highlights of the current release (v0.4.2)
+
+- **Slimmer Stable fact**: carries only the `version` number, not a full payload snapshot; WAL volume for long-lived sessions is O(n). Code: `evorule-reactor/src/fact.rs:228-242`
+- **Meta-instruction SSOT**: the tcb exports the authoritative `META_INSTRUCTION_TYPES` constant (6 types); the cli `validate` references it. Code: `evorule-tcb/src/executor.rs:52-59`; test: `test_meta_instruction_types_ssot`
+- **WAL failure escalation**: 3 consecutive WAL write failures auto-terminate the session (fail-closed). Code: `evorule-reactor/src/facts_log.rs` (`WAL_FAIL_TERMINATE_THRESHOLD=3`)
+- **Hash-chain SSOT**: the BLAKE3 algorithm lives in the reactor and is re-exported by governance/cli; the three-way `cross_validate` agrees. Code: `evorule-reactor/src/hash.rs`; test: `test_three_way_hash_consistency`
+- **Full suite 758 passed / 0 failed** (`cargo test --workspace --features persistence`, EXIT=0, measured 2026-09-05)
+
+---
+
+## Core features
+
+| Feature | Status | Description | Evidence anchor |
+|---|---|---|---|
+| Deterministic execution | ✅ | `JsonValue` has no Float, BTreeMap ordered, BLAKE3, no randomness/time dependence, explicit serialization | Code: `evorule-tcb/src/value.rs`; test: `deterministic_same_input_same_output` |
+| Auditable provenance | ✅ | All Facts append-only JSONL + BLAKE3 hash chain + WAL persistence | Code: `evorule-reactor/src/facts_log.rs`, `hash.rs`; test: `test_three_way_hash_consistency` |
+| No silent pass-through | ✅ | Ignored instruction → explicit Error fact; 3 consecutive WAL failures → session terminated; fail-closed | Code: `evorule-reactor/src/reactor.rs`; test: `test_wal_consecutive_failure_escalates_with_guidance` |
+| Time machine | ✅ | replay / rewind / fork / diff (implemented in the **governance** layer) | Code: `evorule-governance/src/time_machine.rs`; tests: `test_rewind_basic_state_transition` and 15 more |
+| Tamper detection | ✅ | All three tamper classes (content / chain_hash / prev_hash) are detected | Tests: `test_tier2_detects_content_tamper` and others |
+| Debug queries | ✅ | phase / queue / pending_io / snapshot queries (implemented by evorule-server) | Code: `evorule-reactor/src/reactor.rs` ReactorHandle API |
+| Pseudo single-step replay | ✅ | `step` is a rewind-based replay (not a real single step); `pause` suspends SSE polling (not reactor execution) | Code: evorule-server application layer |
+| Multi-session isolation | ✅ | session management + WAL sharding + cross-session causal-chain tracking | Code: `evorule-governance/src/session.rs`; test: `concurrent_sessions_state_isolation` |
+| Rule safety validation | ✅ | infinite-loop detection / payload-growth detection / unbounded-I/O detection | Code: `evorule-governance/src/rule_validation.rs`; test: `test_security_infinite_loop_detection` |
+| Permission gate | ✅ | `permission_gate` (fail-closed, resolver injectable) | Code: `evorule-governance/src/permission/`; test: `resolver_llm_is_fail_closed_on_default` |
+| Signing & anchoring | ✅ | Ed25519 signing + `AuditAnchor` verification | Code: `evorule-governance/src/signing.rs`; test: `test_sign_and_verify_ok` |
+| C FFI | ✅ | Under `feature="ffi"`, 8 C APIs (create/destroy/send-instruction/read-result/queue-length/…); the event-driven state machine does not offer traditional debugger semantics `pause`/`resume`/`step`/`is_paused` — debug capability is provided by a purpose-built debug scheme | Code: `evorule-reactor/src/ffi.rs`, `include/evorule.h` |
+| Multi-reactor collaboration | 🔧 planned | — | — |
+
+> **On evidence anchors**: every feature is traceable to a code line or a test name. Test totals and pass rates are measured results from 2026-09-05.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Application layer (evorule-server)           │
+│   HTTP API / SSE / debug control / business-rule hot-reload /     │
+│   I/O Handler implementation                                       │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│                  evorule-governance (tier2)                       │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐    │
+│  │ auditor  │ │ session  │ │time_machine│ │ rule_validation  │    │
+│  │ audit    │ │ multi-   │ │ replay/   │ │ security         │    │
+│  │ chain    │ │ session  │ │ fork/diff │ │ checks           │    │
+│  │ verify   │ │ mgmt     │ │          │ │                  │    │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘    │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐    │
+│  │ signing  │ │permission│ │  clock   │ │ io_subscriber    │    │
+│  │ sign &   │ │ perm gate│ │ logical  │ │ I/O subscribe    │    │
+│  │ anchor   │ │          │ │ clock    │ │ & retry          │    │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘    │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│                    evorule-reactor (tier1)                        │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐    │
+│  │ reactor  │ │ facts_log│ │  state   │ │ stable_detector  │    │
+│  │ exec     │ │ audit    │ │ internal │ │ stability        │    │
+│  │ engine   │ │ chain    │ │ state    │ │ detection        │    │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘    │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐    │
+│  │   fact   │ │   wal    │ │   hash   │ │ io_handler/disp. │    │
+│  │ Fact     │ │ WAL rw   │ │ BLAKE3   │ │ I/O dispatch     │    │
+│  │ enum     │ │          │ │ SSOT     │ │                  │    │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘    │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐                         │
+│  │invariants│ │   pure   │ │   ffi    │                         │
+│  │ invariant│ │ pure fns │ │ C FFI    │                         │
+│  │ checks   │ │          │ │          │                         │
+│  └──────────┘ └──────────┘ └──────────┘                         │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│                      evorule-tcb (tier0)                          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐    │
+│  │  value   │ │  domain  │ │ executor │ │   transition     │    │
+│  │ JsonValue│ │ cond.    │ │ meta-instr│ │ transform rule   │    │
+│  │          │ │ eval     │ │ exec     │ │ engine           │    │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘    │
+│  ┌──────────┐ ┌──────────┐                                       │
+│  │   path   │ │  error   │   no_std · forbid(unsafe_code)        │
+│  │ path     │ │ error    │   zero deps · 6 meta-instrs          │
+│  │ resolve  │ │ type     │                                       │
+│  └──────────┘ └──────────┘                                       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Data flow**: user instruction → FactSender → command mpsc → reactor → calls TCB → produces a new Fact → event broadcast → every Fact appended to FactsLog (WAL persistence + BLAKE3 hash chain)
+
+---
+
+## Quick start
+
+### 0. Prebuilt binaries (recommended)
+
+v0.4.2 ships single-file executables for Linux / Windows, zero-dependency, run directly:
+
+| Platform | Download |
+|---|---|
+| Linux x86_64 | [evorule-linux-x86_64](https://gitee.com/evorule/evorule/releases/download/v0.4.2/evorule-linux-x86_64) |
+| Windows x86_64 | [evorule-windows-x86_64.exe](https://gitee.com/evorule/evorule/releases/download/v0.4.2/evorule-windows-x86_64.exe) |
+
+> All versions & source packages: [Gitee Releases](https://gitee.com/evorule/evorule/releases) ｜ [GitHub Releases](https://github.com/evorule/evorule/releases)
+
+### 1. Use as a library
+
+```rust
+use evorule_reactor::{Reactor, Fact, FactId};
+use evorule_tcb::JsonValue;
+
+// Load the transform rule set (the "constitution") from core_eval.json
+// Note: core_eval.json defines the *user instruction types* (increment/decrement/set/
+// sequence/conditional/while_loop/noop). After matching via the `branch` meta-instruction,
+// they are executed by the `set`/`push` meta-instructions. This is a different layer from
+// the tcb's 6 meta-instructions.
+let core_eval = vec![]; // load from core_eval.json in practice
+
+let reactor = Reactor::builder(core_eval)
+    .max_rounds(1000)
+    .build();
+
+// spawn returns a 5-tuple: (FactSender, EventReceiver, EventSender, ReactorHandle, FactsLog)
+let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
+
+// Submit an `increment` instruction (a user instruction type defined in core_eval.json)
+tx.send(Fact::Command {
+    id: FactId(1),
+    instruction: JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string("increment")),
+        ("params", JsonValue::object_from_pairs(&[
+            ("attr", JsonValue::string("x")),
+            ("delta", JsonValue::Integer(5)),
+        ])),
+    ]),
+}).unwrap();
+
+// Receive execution events (StateTransition → Stable)
+while let Ok(fact) = rx.recv() {
+    println!("{:?}", fact);
+}
+```
+
+### 2. Command-line usage
+
+```bash
+# Validate a rule set
+evorule validate ./rules/
+
+# Execute an instruction and emit the fact chain
+echo '{"type":"increment","params":{"attr":"x","delta":5}}' | evorule run --rules ./rules/
+
+# Verify the integrity of a fact chain
+evorule verify-chain ./output/facts.jsonl
+
+# Replay a fact chain
+evorule replay ./output/facts.jsonl
+```
+
+---
+
+## The four crates in detail
+
+### evorule-tcb — minimal trusted computing base
+
+- **Positioning**: pure computation layer — no side effects, no I/O, no async. The deterministic foundation of the whole ecosystem.
+- **Size**: 7 files / 8,244 LoC (src/); largest file `executor.rs` at 2,872 LoC.
+- **Constraints**: `#![no_std]` · `#![forbid(unsafe_code)]` · `#![deny(clippy::unwrap_used, clippy::panic, clippy::expect_used, clippy::indexing_slicing)]` · zero external dependencies.
+- **6 meta-instructions** (non-extensible, SSOT constant): `branch` / `set` / `push` / `io_request` / `collect` / `merge`
+  - Code: `evorule-tcb/src/executor.rs:52-59`
+  - Test: `test_meta_instruction_types_ssot` (asserts `len() == 6` and that every type is actually dispatched)
+- **JsonValue**: no Float (Integer + String instead), BTreeMap ordered, explicit serialization — eliminates float nondeterminism and HashMap random ordering.
+- **Domain condition language**: `eq` / `ne` / `lt` / `gt` / `le` / `ge` / `exists` / `has_fields` / `all` / `not` / `instruction_eq`, with path references and nesting.
+- **Determinism verification**: proptest `never_panics_on_valid_input` / `deterministic_same_input_same_output`.
+
+### evorule-reactor — execution engine layer
+
+- **Positioning**: async reactive executor; manages the instruction queue, I/O scheduling, stability detection, and the audit chain.
+- **Size**: 17 files / 9,143 LoC (src/); largest file `facts_log.rs` at 2,241 LoC.
+- **Constraints**: `#![deny(unsafe_code)]` (zero unsafe in the default build); under the `ffi` feature a local `allow` (9 necessary `unsafe`, the C ABI boundary).
+- **Fact enum (7 variants, fixed)**: Command / PayloadUpdate / StateTransition / IoRequest / IoResponse / Stable / Error
+  - Code: `evorule-reactor/src/fact.rs:173-251`
+- **Stable fact**: carries only `version: u64`, not a full snapshot; WAL volume for long-lived sessions is O(n)
+  - Code: `evorule-reactor/src/fact.rs:228-242`
+- **Hash-chain SSOT**: BLAKE3 `chain_step(prev_hash, content_hash)`, `prev_hash` initialized to `"genesis"`
+  - Code: `evorule-reactor/src/hash.rs`; re-exported by governance/cli; `test_cross_validate_with_tier2` guarantees agreement
+- **IoType**: dynamic `Arc<str>` (customizable), with 5 built-in constructors: `call_external` / `query_db` / `http_get` / `save_memory` / `call_service`
+  - Code: `evorule-reactor/src/fact.rs:37,41-57`
+- **WAL failure escalation**: 3 consecutive write failures → terminate the session (fail-closed); the callback emits `Fact::Error` directly via `event_tx`
+- **ReactorHandle API**: `join` / `abort` / `is_finished` / `current_phase` / `causal_depth` / `pending_io_count` / `current_step` / `snapshot` / `interrupt`
+  - Note: **no `pause` / `resume` / `step`** — debug control is implemented by the evorule-server application layer.
+
+### evorule-governance — governance layer
+
+- **Positioning**: audit, multi-session, time machine, rule validation, permission, signing.
+- **Size**: 13 files / 7,239 LoC (src/); largest file `auditor.rs` at 2,041 LoC.
+- **Constraints**: `#![forbid(unsafe_code)]`
+- **Time machine** (replay / rewind / fork / diff): implemented in **this** layer, not the reactor layer
+  - Code: `evorule-governance/src/time_machine.rs`; all 16 tests pass
+- **Auditor**: incremental audit-chain verification + auto-verification (configurable interval/threshold) + gzip-compressed import/export + tamper detection
+- **Session**: multi-session management + WAL sharding + expiry reclamation + cross-session causal chain + concurrency isolation
+- **RuleValidation**: infinite-loop detection / payload-growth detection / unbounded-I/O detection / transform-count limit
+- **PermissionGate**: fail-closed permission gate, resolver injectable (LLM role defaults to deny)
+- **IoSubscriber**: I/O subscription + retry (retryable error classes: timeout / 5xx / connection) + `permission_gate` integration
+- **Signing**: Ed25519 signing + `AuditAnchor` verification + deterministic signing (test: `test_signature_is_deterministic`)
+
+### evorule-cli — command-line tool
+
+- **Positioning**: local CLI with zero network, zero telemetry; for compliance-sensitive scenarios.
+- **Size**: 10 files / 1,797 LoC (src/)
+- **Constraints**: `#![forbid(unsafe_code)]`
+- **Subcommands**: `validate` / `run` / `replay` / `verify-chain` / `verify-anchors` / `diff` / `version` / `help`
+- **Capability boundary**: the cli has no I/O handler — on `IoRequest` it emits an Error fact and stops (this is a **feature**: auditable failure, not silent skip)
+- **musl static linking**: single-file distributable (size per actual build)
+
+---
+
+## Testing & verification
+
+### Full test suite (measured 2026-09-05)
+
+```bash
+cargo test --workspace --features persistence
+# Result: 758 passed / 0 failed / EXIT=0
+```
+
+| crate | unit tests | integration/verification | doc-test | total |
+|---|---|---|---|---|
+| evorule-tcb | 228 | determinism 5 + integration 21 | 18 | 272 |
+| evorule-reactor | 182 | complex_rule 2 + differential 11 + integration 29 | 3 | 227 |
+| evorule-governance | 152 | differential 5 + e2e 9 + session 3 + sse 3 | 3 | 175 |
+| evorule-cli | 61 | integration 20 | 3 | 84 |
+| **total** | **623** | **84** | **27** | **758** |
+
+> `persistence` is a non-default feature (`default=[]`); enabling it adds the WAL file-backend tests. Without it the test count is lower.
+
+### Formal verification
+
+- **Kani proofs**: **45 total** (tcb 34 + reactor 11)
+  - tcb: `evorule-tcb/tests/kani/kani_proofs.rs` (34, covering value/path/domain/executor across 5 layers)
+  - reactor: `evorule-reactor/verification/kani_proofs.rs` (11, covering pure functions)
+  - **Measured**: 12 (9 PASS + 3 TIMEOUT)
+  - **Pending CI verification**: 33 (awaiting a CI environment)
+- **Differential testing**: reactor vs pure module, 11 items (`differential_test.rs`), ensuring the side-effecting executor agrees with the pure reference implementation
+- **Deterministic proptest**: tcb `determinism_proptest.rs`, 5 items, including `never_panics_on_valid_input`
+
+---
+
+## Capability boundaries
+
+> Honestly stating capability boundaries is the trust basis in compliance-sensitive markets (government / defense / medical / finance / legal).
+
+| Boundary | Description |
+|---|---|
+| cli has no I/O handler | On `IoRequest` it errors and stops; for I/O needs use evorule-server or implement the `IoHandler` trait yourself |
+| Legacy WAL: structure-only check | Legacy WAL (no hash field): `verify-chain` does structure-only validation, not hash validation; new WAL gets full hash validation |
+| ffi debug semantics | The reactor is an event-driven state machine; traditional debugger controls `pause`/`resume`/`step`/`is_paused` do not apply; debug capability is provided by a purpose-built debug scheme (evorule-server application layer) |
+| Debug control is an application-layer capability | `pause` suspends SSE polling (not execution); `step` is a rewind replay (not a real single step); implemented by evorule-server, not the core repo |
+| Unknown IoResponse: currently warn-and-ignore | On an unpairable `IoResponse`, a warning is logged and no Error is produced (design to be confirmed) |
+| macOS not CI-verified | Prebuilt artifacts and CI cover Linux / Windows only; macOS can be built from source but is unverified — evaluate at your own risk |
+| Business-rule hot-reload is application-layer | The core `core_eval` loads at startup and is immutable at runtime; evorule-server achieves hot-reload via `notify` watch |
+| Reproducible builds not yet in CI | All known nondeterminism sources are already eliminated by design (fixed `SOURCE_DATE_EPOCH` / incremental compilation disabled / build-id stripped, see `evorule-cli/build-musl.sh`); during development 10,000 repeated builds were measured with identical SHA256; the `--repro` verification script is retained for on-demand reproduction, but is not yet run automatically in CI; once restored, each release will include a dual-build comparison |
+
+---
+
+## Build & run
+
+### Prerequisites
+
+- Rust stable (1.75+ recommended)
+- Supported platforms: **Linux x86_64 / Windows x86_64** (prebuilt artifacts & CI coverage)
+- macOS: buildable from source, but outside CI coverage and unverified
+
+### Build
+
+```bash
+# Default build (zero unsafe)
+cargo build --release
+
+# Enable persistence (WAL file backend)
+cargo build --release --features persistence
+
+# Enable C FFI
+cargo build --release -p evorule-reactor --features ffi
+```
+
+### Run tests
+
+```bash
+# Full suite (recommended, with persistence)
+cargo test --workspace --features persistence
+
+# Single crate
+cargo test -p evorule-tcb
+cargo test -p evorule-reactor --features persistence
+cargo test -p evorule-governance
+cargo test -p evorule-cli
+```
+
+### Change-governance gate
+
+This repo enables a `build.rs` change-governance gate: every build automatically checks the registration status in `CHANGE_REQUEST.md` and policy-layer anti-patterns. All four crates print `变更治理门禁 PASSED` / `策略层检测 PASSED` (change-governance gate passed / policy-layer check passed).
+
+---
+
+## Directory structure
+
+```
+evorule/
+├── evorule-tcb/                  # tier0 — minimal trusted computing base (8,244 LoC)
+│   ├── src/
+│   │   ├── lib.rs                # no_std + forbid(unsafe_code)
+│   │   ├── value.rs              # JsonValue (no Float, BTreeMap ordered)
+│   │   ├── domain.rs             # condition evaluation language
+│   │   ├── path.rs               # path resolution (array index, escaping)
+│   │   ├── executor.rs           # 6 meta-instruction execution (SSOT constant)
+│   │   ├── transition.rs         # transform rule engine
+│   │   └── error.rs              # TcbError type
+│   ├── tests/
+│   │   ├── determinism_proptest.rs
+│   │   ├── integration_test.rs
+│   │   └── kani/                 # 34 Kani proofs
+│   └── core_eval.json            # the constitution (transform rule set, CC0 public domain)
+│
+├── evorule-reactor/              # tier1 — execution engine (9,143 LoC)
+│   ├── src/
+│   │   ├── lib.rs                # deny(unsafe_code) + module map
+│   │   ├── reactor.rs            # reactor main loop + ReactorBuilder + ReactorHandle
+│   │   ├── fact.rs               # Fact enum (7 variants) + IoType + FactId
+│   │   ├── state.rs              # reactor internal state
+│   │   ├── facts_log.rs          # append-only audit chain + WAL integration
+│   │   ├── wal.rs                # WAL read/write (JSONL + hash field)
+│   │   ├── hash.rs               # BLAKE3 hash chain (SSOT)
+│   │   ├── stable_detector.rs    # stability detection (queue empty + no pending I/O)
+│   │   ├── invariants.rs         # structural invariant checks (5)
+│   │   ├── channel.rs            # dual-channel wrapper (command + event)
+│   │   ├── io_handler.rs         # IoHandler trait (object-safe)
+│   │   ├── io_dispatcher.rs      # I/O dispatch by type
+│   │   ├── io_context.rs         # I/O context
+│   │   ├── phase.rs              # reactor phase state machine
+│   │   ├── pure.rs               # pure reference implementation (Kani verification target)
+│   │   ├── ffi.rs                # C FFI (feature="ffi", 9 unsafe)
+│   │   └── error.rs              # ReactorError
+│   ├── verification/
+│   │   ├── kani_proofs.rs        # 11 Kani proofs
+│   │   └── differential_test.rs  # reactor vs pure differential test
+│   ├── tests/
+│   │   ├── integration_test.rs   # 29 integration tests
+│   │   └── complex_rule_test.rs  # complex rule scenarios
+│   └── include/evorule.h         # C API header
+│
+├── evorule-governance/           # tier2 — governance layer (7,239 LoC)
+│   ├── src/
+│   │   ├── lib.rs                # forbid(unsafe_code)
+│   │   ├── auditor.rs            # audit chain verification + tamper detection
+│   │   ├── session.rs            # multi-session management + WAL sharding
+│   │   ├── time_machine.rs       # time machine (replay/rewind/fork/diff)
+│   │   ├── rule_validation.rs    # rule safety validation
+│   │   ├── permission/           # permission gate (fail-closed)
+│   │   ├── signing.rs            # Ed25519 signing + AuditAnchor
+│   │   ├── io_subscriber.rs      # I/O subscription + retry
+│   │   ├── shared_facts_log.rs   # cross-session shared fact log
+│   │   ├── clock.rs              # logical clock (VectorClock)
+│   │   ├── metrics.rs            # metrics trait
+│   │   ├── hash.rs               # hash re-export (SSOT in reactor)
+│   │   ├── io_handler.rs         # IoHandler re-export
+│   │   └── io_dispatcher.rs      # IoDispatcher re-export
+│   ├── verification/
+│   │   └── differential_test.rs  # differential test
+│   └── tests/                    # e2e / session / sse integration tests
+│
+├── evorule-cli/                  # command-line tool (1,797 LoC)
+│   └── src/
+│       ├── main.rs               # CLI entry
+│       ├── lib.rs                # forbid(unsafe_code)
+│       ├── cli.rs                # command parsing
+│       ├── executor.rs           # local executor (no I/O handler)
+│       ├── commands/             # validate/run/replay/verify-chain/diff
+│       ├── fact_log.rs           # fact chain read/write
+│       ├── hash.rs               # hash re-export
+│       ├── io_util.rs            # rule/payload loading
+│       ├── output.rs             # human-readable output
+│       ├── signing.rs            # signature verification
+│       └── error.rs              # CliError + exit-code mapping
+│
+├── CHANGE_REQUEST.md             # change request registry (build gate checks)
+├── CHANGELOG.md                  # version history
+├── LICENSE                       # AGPL-3.0-or-later
+└── README.md                     # this file
+```
+
+---
+
+## Known limitations & roadmap
+
+### Limitations of the current release (v0.4.2)
+
+- **Core repo has no hot-reload**: `core_eval` loads at startup and is immutable at runtime (the application layer evorule-server supports business-rule hot-reload)
+- **cli has no I/O handler**: `IoRequest` errors and stops (auditable failure)
+- **ffi has no traditional debug semantics**: the event-driven state machine offers no `pause`/`resume`/`step`/`is_paused`; debug is provided by a purpose-built scheme
+- **Debug control is application-layer**: not a real single step, but a rewind replay
+- **Kani proofs partially pending CI**: 12 of 45 measured, 33 awaiting a CI environment
+- **Unknown IoResponse warn-ignored**: design to be confirmed
+
+### Roadmap
+
+- **v0.5.x**: purpose-built debug scheme design, reproducible-build CI verification, full Kani proof measurement
+- **v0.6.x**: multi-reactor collaboration, performance benchmarking & optimization
+- **v1.0**: stable API, complete docs, production-grade deployment guide
+
+---
+
+## Design philosophy
+
+1. **Determinism is first-class**: eliminate every source of nondeterminism (Float, HashMap random ordering, randomness, time dependence, implicit state)
+2. **No silent pass-through**: any anomaly must produce an explicit Error fact or terminate the session — fail-closed beats fail-open
+3. **Auditable provenance**: every execution trace is persisted append-only; the BLAKE3 hash chain guarantees tamper-evidence
+4. **Minimal trusted computing base**: the TCB layer is pure computation, `no_std`, zero-dependency, `forbid unsafe` — independently auditable
+5. **Honest capability boundaries**: can / cannot / unreliable are clearly separated — honest boundaries are the trust basis in compliance markets
+6. **Evidence-driven**: every technical claim is traceable to a code line or a test name; no evidence-free marketing
+
+---
+
+## Contributing
+
+> **The primary repo is on Gitee**: <https://gitee.com/evorule/evorule>. GitHub is a sync mirror; **please file Issues and Pull Requests on Gitee**.
+
+1. Fork the repo (Gitee)
+2. Create a feature branch (`git checkout -b feature/xxx`)
+3. Commit your change (`git commit -m 'feat: xxx'`)
+4. Push the branch (`git push origin feature/xxx`)
+5. Open a Pull Request on Gitee
+
+**Change requirements**:
+- Every change must be registered in `CHANGE_REQUEST.md` (enforced by the build gate)
+- New features must ship with tests
+- No `unsafe` (forbidden in tcb/governance/cli; only allowed under the `ffi` feature in reactor)
+- No silent pass-through — every error path must raise explicitly
+
+---
+
+## License
+
+- **Code**: AGPL-3.0-or-later (see [LICENSE](LICENSE))
+- **core_eval.json (the constitution)**: CC0-1.0 Universal (public domain — anyone may use, modify, and redistribute freely)
+
+---
+
+## Related resources
+
+- **Formal verification plan**: `evorule-reactor/verification/plan/`
+- Entry points for the other repos and the live demo are at the top under [Experience & Navigation](#experience--navigation)
+
+---
+
+*Every technical claim in this README has a code-line or test-name evidence anchor. Test data are measured results from 2026-09-05. If any statement disagrees with the code, please open an Issue.*
+
+---
+
+<a id="chinese"></a>
+
 # EvoRule — 确定性为第一性的反应式规则执行引擎
 
 [![CI](https://github.com/evorule/evorule/actions/workflows/ci.yml/badge.svg)](https://github.com/evorule/evorule/actions/workflows/ci.yml)
@@ -439,7 +932,7 @@ evorule/
 
 ## 贡献
 
-> **本仓库主站在 Gitee**：<https://gitee.com/evorule/evorule>。GitHub 为同步镜像，**Issue 与 Pull Request 请提交到 Gitee**。
+> **本仓库主站在 Gitee**：<https://gitee.com/evorule/evorule>。GitHub 为同步镜像，**Issue 和 Pull Request 请提交到 Gitee**。
 
 1. Fork 本仓库（Gitee）
 2. 创建特性分支（`git checkout -b feature/xxx`）

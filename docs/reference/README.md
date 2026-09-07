@@ -22,3 +22,18 @@
 ## 命名规范
 
 按"对象"命名(API 名 / CLI 子命令 / 配置文件名),**不**按"任务"命名。
+
+## 已有参考
+
+| 文档 | 内容 | 代码依据 |
+|------|------|---------|
+| [cli-reference.md](./cli-reference.md) | evorule CLI 全部 7 个子命令参考（参数/默认值/示例/退出码） | evorule-cli/src/cli.rs |
+| [fact-types.md](./fact-types.md) | Fact 类型参考（8 种变体的字段说明，含 Stable 瘦身设计） | evorule-reactor/src/fact.rs |
+| [json-rule-schema.md](./json-rule-schema.md) | JSON 规则集格式参考（transform 规则/6 种元指令/7 种 domain/指令格式） | evorule-tcb/{executor,domain,transition}.rs + core_eval.json |
+
+> 所有参考文档的技术结论均有源码行号依据，无"待核实"内容。
+
+## 外部参考
+
+- **API 文档**：[docs.rs/evorule-tcb](https://docs.rs/evorule-tcb) / [docs.rs/evorule-reactor](https://docs.rs/evorule-reactor) / [docs.rs/evorule-governance](https://docs.rs/evorule-governance)
+- **crates.io**：[crates.io/crates/evorule-cli](https://crates.io/crates/evorule-cli)
