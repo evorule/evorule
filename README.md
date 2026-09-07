@@ -10,8 +10,18 @@
 [![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2812%20verified%29-blue.svg)](#formal-verification)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb--minimal-trusted-computing-base)
 
-> **Determinism is first-class**: same input → same output. No randomness, no time dependence, no implicit state.
-> Every execution trace is persisted append-only as JSONL; a BLAKE3 hash chain makes it auditable, replayable, and tamper-evident.
+> **EvoRule is a deterministic rule-governance engine.** A BLAKE3 cryptographically-signed, tamper-evident audit chain and time-machine replay make critical decisions *provable and replayable* — not just *logged*.
+
+**Where EvoRule sits**
+
+| If you have… | Existing tools give you… | EvoRule adds |
+|---|---|---|
+| an LLM / agent that *acts* | observability (LangSmith, AgentV): *see* what it did, after the fact | a gate that *stops* what it shouldn't do, before it runs |
+| a policy decision point | policy-as-code (OPA, Cedar): *allow / deny* at a point | the same decision, written to a signed hash chain you can *prove* and *replay* |
+| a compliance requirement | "keep a log" | a decision artifact that survives audit and tampering challenges |
+
+**For:** teams that must *prove* how a decision was made — regulated finance, healthcare, 等保 / EU AI Act / DORA, offline or air-gapped Rust backends, and agent-platform builders.
+**Not for:** simple allow/deny already on AWS (→ Cedar); full BPMN workflows (→ Temporal / Camunda); "just log it" (→ OpenTelemetry).
 
 **Language / 语言**: [English](#english) · [中文 / Chinese](#chinese)
 
@@ -501,8 +511,18 @@ evorule/
 [![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2812%20verified%29-blue.svg)](#形式化验证)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb---最小信任基)
 
-> **确定性为第一性**：同一输入 → 同一输出，无随机、无时间依赖、无隐式状态。
-> 所有执行轨迹以 append-only JSONL 落盘，BLAKE3 哈希链可审计、可重放、可篡改检测。
+> **EvoRule 是确定性规则治理引擎。** BLAKE3 密码学签名、不可篡改审计链 + 时光机回放，让关键决策**可被证明、可重放**，而不只是被记录下来。
+
+**EvoRule 的定位**
+
+| 如果你有… | 现有工具给你… | EvoRule 补上 |
+|---|---|---|
+| 一个会*行动*的 LLM / agent | 观测工具（LangSmith、AgentV）：事后*看见*它做了什么 | 一道闸门，在它运行前*挡下*不该做的动作 |
+| 一个策略决策点 | 策略即代码（OPA、Cedar）：在某点 *allow / deny* | 同样的决策，写入可*证明*、可*重放*的签名哈希链 |
+| 一条合规要求 | "留一份日志" | 能经受审计与篡改质疑的决策工件 |
+
+**适合：**必须*证明*决策如何做出的团队——受监管金融、医疗、等保 / EU AI Act / DORA、离线或空气隔离的 Rust 后端、agent 平台构建者。
+**不适合：**已在 AWS 上的简单 allow/deny（→ Cedar）；完整 BPMN 工作流（→ Temporal / Camunda）；"记一笔日志就行"（→ OpenTelemetry）。
 
 ---
 
