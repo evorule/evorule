@@ -23,3 +23,16 @@
 
 `动词-对象.md`(如 `integrate-with-ai-agent.md`、`run-kani-proof.md`),
 **不**带日期或版本号 —— 文件是"长期有效"的任务说明。
+
+## 已有指南
+
+| 文档 | 任务 | 代码依据 |
+|------|------|---------|
+| [validate-rules.md](./validate-rules.md) | 如何校验 JSON 规则集（元指令类型白名单） | evorule-cli/src/commands/validate.rs |
+| [execute-rules.md](./execute-rules.md) | 如何执行规则并查看事实链（noop 触发 + FIFO 循环） | evorule-cli/src/commands/run.rs + executor.rs |
+| [verify-hash-chain.md](./verify-hash-chain.md) | 如何验证事实链的哈希完整性（三层验证） | evorule-cli/src/commands/verify_chain.rs |
+| [replay-fact-log.md](./replay-fact-log.md) | 如何重放并查看事实链（人类可读格式） | evorule-cli/src/commands/replay.rs |
+| [diff-fact-logs.md](./diff-fact-logs.md) | 如何对比两个事实链（按 FactId 对齐） | evorule-cli/src/commands/diff.rs |
+| [audit-anchors.md](./audit-anchors.md) | 如何使用审计锚点签名（ed25519 防抵赖） | evorule-cli/src/commands/{anchor_keygen,verify_anchors}.rs |
+
+> 所有指南的技术结论均有源码行号依据，无"待核实"内容。
