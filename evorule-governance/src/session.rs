@@ -27,6 +27,7 @@ use std::time::{Duration, Instant};
 
 use evorule_reactor::{
     EventSender, Fact, FactId, FactSender, FactsLog, FactsLogError, Reactor, ReactorHandle,
+    WalRecord, fact_hash,
 };
 use evorule_tcb::JsonValue;
 
@@ -752,30 +753,46 @@ impl SessionManager {
             .get_session(parent_id)
             .ok_or(SessionError::NotFound { id: parent_id })?;
 
-        // B4：先原子预留名额，再做慢操作（rewind/create_facts_log/spawn）；失败路径必须归还
+        // 审计⑥ C2: 锚哈希统一到审计链口径（带口径标记,旧验证方按 scheme 分派）
+        let (initial_payload, initial_version) = match version {
+            Some(v) => rewind_payload(&parent.facts_log, v)
+                .map(|payload| (payload, v))
+                .ok_or(SessionError::InvalidVersion { version: v })?,
+            None => {
+                let (payload, _, version) = parent.facts_log.snapshot();
+                (payload, version)
+            }
+        };
+
+        self.create_session_from_initial_state(Some(parent_id), initial_payload, initial_version)
+    }
+
+    /// 从给定初始状态创建新会话（fork-from-archive 的统一落点）
+    ///
+    /// [`SessionManager::create_session_from_parent_at_version`]（内存父会话，
+    /// 经 `rewind_payload`）与 [`SessionManager::payload_from_wal_records`]（磁盘归档链，
+    /// 经全链哈希校验 + 重放）算出的初始状态都经此落地，保证两条 fork 路径
+    /// 共享同一套建链/注册逻辑：预留名额 → 分配 ID → WAL 版 FactsLog（fail-closed）
+    /// → spawn reactor → 注册 shard。
+    ///
+    /// # 参数
+    ///
+    /// - `parent_id`: 因果父会话 ID（None = 不记录因果链接，仅建会话）
+    /// - `initial_payload`: 初始 payload
+    /// - `initial_version`: 初始版本号（新会话审计链从此续起）
+    pub fn create_session_from_initial_state(
+        &self,
+        parent_id: Option<SessionId>,
+        initial_payload: JsonValue,
+        initial_version: u64,
+    ) -> Result<SessionId, SessionError> {
+        // B4：先原子预留名额，再做慢操作（create_facts_log/spawn）；失败路径必须归还
         self.reserve_session_slot()?;
 
         let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
 
         // 审计⑥ C2: 锚哈希统一到审计链口径（带口径标记,旧验证方按 scheme 分派）
-        let (initial_content_hash, content_hash_scheme, initial_payload, initial_version) =
-            match version {
-                Some(v) => match rewind_payload(&parent.facts_log, v) {
-                    Some(payload) => {
-                        let (h, scheme) = compute_initial_hash(&payload);
-                        (h, scheme, payload, v)
-                    }
-                    None => {
-                        self.release_session_slot();
-                        return Err(SessionError::InvalidVersion { version: v });
-                    }
-                },
-                None => {
-                    let (payload, _, version) = parent.facts_log.snapshot();
-                    let (h, scheme) = compute_initial_hash(&payload);
-                    (h, scheme, payload, version)
-                }
-            };
+        let (initial_content_hash, content_hash_scheme) = compute_initial_hash(&initial_payload);
 
         let facts_log = match self.create_facts_log(session_id) {
             Ok(fl) => fl,
@@ -831,7 +848,7 @@ impl SessionManager {
                 event_tx,
                 handle: Arc::new(handle),
                 auditor,
-                parent_session_id: Some(parent_id),
+                parent_session_id: parent_id,
                 initial_content_hash: Some(initial_content_hash),
                 content_hash_scheme,
                 created_at: Arc::new(Instant::now()),
@@ -1110,6 +1127,16 @@ pub enum SessionError {
         #[source]
         source: FactsLogError,
     },
+    /// 归档 WAL 链校验失败，拒绝 fork-from-archive
+    ///
+    /// fail-closed 口径：审计链校验不过（内容哈希/链哈希不匹配、旧格式无哈希、
+    /// 内容损坏）的归档，绝不能作为新会话的父状态——否则篡改数据可经
+    /// fork"洗白"进新链，破坏"可证明"承诺。
+    #[error("Archive WAL integrity check failed: {reason}")]
+    ArchiveCorrupted {
+        /// 失败原因
+        reason: String,
+    },
 }
 
 /// 从 FactsLog 回溯到指定 version，返回当时的 payload 快照
@@ -1156,6 +1183,102 @@ fn rewind_payload(facts_log: &FactsLog, target_version: u64) -> Option<JsonValue
         return None;
     }
     Some(payload)
+}
+
+/// 从归档 WAL 记录重建 fork 初始状态（fork-from-archive 的核心）
+///
+/// 数据源是磁盘上的归档 WAL 记录（`read_wal_with_hash` 产物，只读）而非内存
+/// FactsLog，重放语义与 [`rewind_payload`] 完全同源（StateTransition 整体替换 /
+/// IoResponse 递增 / PayloadUpdate 经 `apply_payload_update` 路径更新）。
+///
+/// fail-closed：先做全链哈希校验，再做重放——
+/// 1. `content_hash` 必须与 `fact_hash(fact)` 重算一致（与写入侧 `FactsLog::append`
+///    同一单一真相源）；
+/// 2. `chain_hash = blake3(prev_hash + content_hash)` 逐条续链，prev 从 `"genesis"` 起
+///    （与审计档案 `rebuild_chain` 同一口径）；
+/// 3. 存在旧格式（无哈希）记录 → `ArchiveCorrupted`（无法证明未被篡改）。
+/// 任一条不过即拒绝派生，防篡改数据经 fork "洗白"进新链。
+///
+/// # 参数
+///
+/// - `records`: 归档 WAL 的全部记录（含轮换分片，按序拼接）
+/// - `target_version`: `None` = 回放到链尾；`Some(0)` = 空状态；超出链尾 → `InvalidVersion`
+///
+/// # 返回
+///
+/// `(payload, version)`——fork 新会话的初始状态
+pub fn payload_from_wal_records(
+    records: &[WalRecord],
+    target_version: Option<u64>,
+) -> Result<(JsonValue, u64), SessionError> {
+    // —— 1. 全链哈希校验（fail-closed，先于任何重放）——
+    let mut prev_hash = String::from("genesis");
+    for rec in records {
+        let content_hash = fact_hash(&rec.fact).map_err(|e| SessionError::ArchiveCorrupted {
+            reason: format!("content hash failure at fact {}: {e}", rec.fact.id().0),
+        })?;
+        match &rec.content_hash {
+            Some(stored) if stored != &content_hash => {
+                return Err(SessionError::ArchiveCorrupted {
+                    reason: format!("content_hash mismatch at fact {}", rec.fact.id().0),
+                });
+            }
+            // content_hash 与 chain_hash 由写入侧成对落盘；缺哈希 = 旧格式，拒收
+            None => {
+                return Err(SessionError::ArchiveCorrupted {
+                    reason: format!(
+                        "legacy (hashless) record at fact {} — cannot prove integrity",
+                        rec.fact.id().0
+                    ),
+                });
+            }
+            Some(_) => {}
+        }
+        let chain_hash = blake3::hash(format!("{prev_hash}{content_hash}").as_bytes())
+            .to_hex()
+            .to_string();
+        if let Some(stored_chain) = &rec.chain_hash {
+            if stored_chain != &chain_hash {
+                return Err(SessionError::ArchiveCorrupted {
+                    reason: format!("chain_hash mismatch at fact {}", rec.fact.id().0),
+                });
+            }
+        }
+        prev_hash = chain_hash;
+    }
+
+    // —— 2. 重放 payload（与 rewind_payload 同语义）——
+    if target_version == Some(0) {
+        return Ok((JsonValue::empty_object(), 0));
+    }
+    let mut payload = JsonValue::empty_object();
+    let mut version: u64 = 0;
+    for rec in records {
+        let version_before = rec.version_before;
+        match &rec.fact {
+            Fact::StateTransition { new_payload, .. } => {
+                payload = new_payload.clone();
+                version = version_before + 1;
+            }
+            Fact::IoResponse { .. } => {
+                version = version_before + 1;
+            }
+            Fact::PayloadUpdate { path, value, .. } => {
+                crate::time_machine::apply_payload_update(&mut payload, path, value.clone());
+                version = version_before + 1;
+            }
+            _ => {}
+        }
+        if Some(version) == target_version {
+            break;
+        }
+    }
+
+    match target_version {
+        None => Ok((payload, version)),
+        Some(t) if version >= t => Ok((payload, version)),
+        Some(t) => Err(SessionError::InvalidVersion { version: t }),
+    }
 }
 
 #[cfg(test)]
@@ -1625,5 +1748,166 @@ mod tests {
 
         let _ = mgr.close_session(child_id);
         let _ = mgr.close_session(parent_id);
+    }
+
+    /// fork-from-archive：payload_from_wal_records 往返 + 篡改检出 + 版本边界
+    #[tokio::test]
+    async fn test_payload_from_wal_records_roundtrip_and_tamper() {
+        use evorule_reactor::{read_wal_with_hash, tcb_to_serde};
+
+        let dir = std::env::temp_dir().join(format!("evorule_fork_archive_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wal_path = dir.join("session_99.wal");
+
+        // 1. 写一条带哈希链的 WAL（与生产 FactsLog::append 写入侧同源）
+        let log = FactsLog::with_wal(&wal_path).unwrap();
+        log.append(Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "risk".to_string(),
+            value: JsonValue::Integer(3),
+        })
+        .unwrap();
+        log.append(Fact::PayloadUpdate {
+            id: FactId(2),
+            path: "amount".to_string(),
+            value: JsonValue::Integer(50000),
+        })
+        .unwrap();
+        let mut payload_map = BTreeMap::new();
+        payload_map.insert("risk".to_string(), JsonValue::Integer(3));
+        payload_map.insert("amount".to_string(), JsonValue::Integer(50000));
+        let final_payload = JsonValue::Object(payload_map);
+        log.append(Fact::StateTransition {
+            id: FactId(3),
+            cause: FactId(2),
+            new_payload: final_payload.clone(),
+            new_queue: Vec::new(),
+        })
+        .unwrap();
+        drop(log);
+
+        // 2. 读回归档记录，重放 payload
+        let records = read_wal_with_hash(&wal_path).unwrap();
+        assert_eq!(records.len(), 3);
+
+        // 链尾：version 3，payload = StateTransition 的 new_payload
+        let (payload, version) = payload_from_wal_records(&records, None).unwrap();
+        assert_eq!(version, 3);
+        assert_eq!(tcb_to_serde(&payload), tcb_to_serde(&final_payload));
+
+        // Some(2)：重放到第二条 PayloadUpdate 之后
+        let (payload2, version2) = payload_from_wal_records(&records, Some(2)).unwrap();
+        assert_eq!(version2, 2);
+        assert_eq!(
+            tcb_to_serde(&payload2),
+            serde_json::json!({"risk": 3, "amount": 50000})
+        );
+
+        // Some(0)：空状态
+        let (empty, v0) = payload_from_wal_records(&records, Some(0)).unwrap();
+        assert_eq!(v0, 0);
+        assert!(tcb_to_serde(&empty).as_object().unwrap().is_empty());
+
+        // 超界：InvalidVersion
+        assert!(matches!(
+            payload_from_wal_records(&records, Some(99)),
+            Err(SessionError::InvalidVersion { version: 99 })
+        ));
+
+        // 3. 篡改检出：改第一条记录的 fact 内容 → content_hash 不匹配
+        let mut tampered = records.clone();
+        tampered[0].fact = Fact::PayloadUpdate {
+            id: FactId(1),
+            path: "risk".to_string(),
+            value: JsonValue::Integer(999),
+        };
+        assert!(matches!(
+            payload_from_wal_records(&tampered, None),
+            Err(SessionError::ArchiveCorrupted { .. })
+        ));
+
+        // 4. 旧格式（无哈希）记录拒收
+        let mut legacy = records.clone();
+        legacy[1].content_hash = None;
+        legacy[1].chain_hash = None;
+        assert!(matches!(
+            payload_from_wal_records(&legacy, None),
+            Err(SessionError::ArchiveCorrupted { .. })
+        ));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// fork-from-archive：create_session_from_initial_state 统一落点
+    /// （父链接、初始哈希口径、子会话从初始状态独立续跑）
+    #[tokio::test]
+    async fn test_create_session_from_initial_state() {
+        use evorule_reactor::tcb_to_serde;
+        let dir = std::env::temp_dir().join(format!("evorule_fork_state_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // core_eval 必须是合法 meta 指令树：set x += 5（increment 不是合法 meta 指令）
+        let mut set_params = BTreeMap::new();
+        set_params.insert("attr".to_string(), JsonValue::string("x"));
+        set_params.insert("operation".to_string(), JsonValue::string("add"));
+        set_params.insert("value".to_string(), JsonValue::Integer(5));
+        let mut set_instr = BTreeMap::new();
+        set_instr.insert("type".to_string(), JsonValue::string("set"));
+        set_instr.insert("params".to_string(), JsonValue::Object(set_params));
+        let core_eval = vec![JsonValue::Object(set_instr)];
+
+        let mgr = SessionManager::with_limits_and_wal_and_auto_verify(
+            core_eval,
+            100,
+            100,
+            Duration::from_secs(3600),
+            Some(dir.clone()),
+            4,
+            false,
+            0,
+            false,
+            1000,
+            1,
+        );
+
+        // 模拟从归档链重放出的初始状态（x=10，对应版本 5；父会话 42 已不在内存）
+        let mut payload = BTreeMap::new();
+        payload.insert("x".to_string(), JsonValue::Integer(10));
+        let child_id = mgr
+            .create_session_from_initial_state(Some(42), JsonValue::Object(payload), 5)
+            .unwrap();
+        let child = mgr.get_session(child_id).unwrap();
+
+        // 因果父链接与初始哈希口径（与内存 fork 同一落点）
+        assert_eq!(child.parent_session_id(), Some(42));
+        assert!(child.initial_content_hash().is_some());
+        assert_eq!(
+            child.content_hash_scheme(),
+            ContentHashScheme::AuditChainCompact
+        );
+
+        // 子会话从初始状态续跑：任意命令触发 core_eval（set x += 5）→ x = 15
+        let mut instr = BTreeMap::new();
+        instr.insert("type".to_string(), JsonValue::string("tick"));
+        child
+            .command_tx
+            .send(Fact::Command {
+                id: evorule_reactor::FactId(1),
+                instruction: JsonValue::Object(instr),
+            })
+            .unwrap();
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+
+        let (snap, _, snap_version) = child.facts_log.snapshot();
+        assert_eq!(
+            tcb_to_serde(&snap)["x"],
+            serde_json::json!(15),
+            "子会话必须从 fork 初始状态 x=10 续跑（core_eval: x += 5）"
+        );
+        assert!(snap_version >= 6, "子会话版本应从初始版本 5 续起");
+        assert!(child.facts_log.history().len() >= 2, "子会话审计链独立落盘");
+
+        let _ = mgr.close_session(child_id);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
