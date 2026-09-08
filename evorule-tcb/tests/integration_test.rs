@@ -809,6 +809,9 @@ fn test_io_result_null_cleared_exists_returns_false() {
         TransitionResult::Ignored { .. } => {
             panic!("null 清除后应发起第二轮 IoRequired，但得到 Ignored");
         }
+        TransitionResult::Halted { rule_index, reason } => {
+            panic!("null 清除后应发起第二轮 IoRequired，但得到 Halted(rule_index={rule_index}, reason={reason})");
+        }
     }
 }
 
@@ -1224,8 +1227,11 @@ fn run_queue_with_step_limit(
                     steps, instruction_type, reason
                 );
             }
-            // I/O 触发或错误：停止推进（与反应器行为一致）
-            Ok(TransitionResult::IoRequired { .. }) | Err(_) => return (steps, payload, queue),
+            // I/O 触发、enforce 拦截或错误：停止推进（与反应器行为一致：
+            // Halted 时指令被拒，payload/queue 保持进入该步前的原样）
+            Ok(TransitionResult::IoRequired { .. })
+            | Ok(TransitionResult::Halted { .. })
+            | Err(_) => return (steps, payload, queue),
         }
     }
     (steps, payload, queue)

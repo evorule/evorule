@@ -178,6 +178,11 @@ proptest! {
                         assert_eq!(t1, t2, "确定性被破坏: 不同 io_type");
                         assert_eq!(rp1, rp2, "确定性被破坏: 不同 io params");
                     }
+                    (evorule_tcb::TransitionResult::Halted { rule_index: i1, reason: s1 },
+                     evorule_tcb::TransitionResult::Halted { rule_index: i2, reason: s2 }) => {
+                        assert_eq!(i1, i2, "确定性被破坏: 不同 enforce 命中下标");
+                        assert_eq!(s1, s2, "确定性被破坏: 不同 violation reason");
+                    }
                     // 两个结果类型不同
                     _ => {
                         unreachable!("相同输入产生不同结果类型");

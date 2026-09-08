@@ -241,6 +241,28 @@ pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> 
                 .collect();
             obj.insert("rule_hits".into(), serde_json::Value::Array(hits));
         }
+        Fact::Violation {
+            id,
+            cause,
+            rule_index,
+            reason,
+            instruction,
+        } => {
+            // 违规拦截事实参与哈希链（审计链防篡改覆盖拦截记录；UV-147）
+            trace!(事实ID = ?id, 原因ID = ?cause, 规则下标 = rule_index, "处理违规拦截事实");
+            obj.insert(
+                "type".into(),
+                serde_json::Value::String("Violation".into()),
+            );
+            obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
+            obj.insert("cause".into(), serde_json::Value::Number(cause.0.into()));
+            obj.insert(
+                "rule_index".into(),
+                serde_json::Value::Number((*rule_index).into()),
+            );
+            obj.insert("reason".into(), serde_json::Value::String(reason.clone()));
+            obj.insert("instruction".into(), tcb_to_serde(instruction));
+        }
     }
 
     let value = serde_json::Value::Object(obj);

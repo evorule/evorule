@@ -705,6 +705,34 @@ impl Reactor {
                         state.phase = ReactorPhase::Idle;
                         continue 'main;
                     }
+                    Ok(TransitionResult::Halted { rule_index, reason }) => {
+                        // enforce 强制原语命中（UV-147）：违规指令被**拒绝执行**
+                        // —— 指令已出队即丢弃（不推回队列、不产生 StateTransition、
+                        // 不 bump version：payload/queue 保持该步前原样，动作被阻止
+                        // 而非仅留痕）。系统独占发射 Violation 事实（三权分立：
+                        // 阻止权/记录权在系统，LLM/规则零通道伪造拦截记录），
+                        // Halted 信号本身即收敛信号（TCB 已中断剩余 transform 并
+                        // 丢弃半成品），无需 TransitionTrace（无 rule_hits 可归因，
+                        // 归因以 rule_index+reason 承载）。
+                        state.phase = ReactorPhase::Error;
+                        let id = id_gen.next_id();
+                        tracing::warn!(
+                            phase = %state.phase.as_str(),
+                            rule_index,
+                            %reason,
+                            "enforce 强制拦截：违规指令被拒绝执行"
+                        );
+                        let fact = Fact::Violation {
+                            id,
+                            cause, // 指向触发违规的来源事实（Command/IoResponse）
+                            rule_index: rule_index as u64,
+                            reason,
+                            instruction: instruction.clone(),
+                        };
+                        Self::emit_fact(&self.facts_log, &event_tx, fact);
+                        state.phase = ReactorPhase::Idle;
+                        continue 'main;
+                    }
                     Ok(TransitionResult::IoRequired {
                         io_type: io_type_str,
                         params,
@@ -1001,7 +1029,8 @@ impl Reactor {
             | Fact::StateTransition { .. }
             | Fact::Stable { .. }
             | Fact::Error { .. }
-            | Fact::TransitionTrace { .. } => {
+            | Fact::TransitionTrace { .. }
+            | Fact::Violation { .. } => {
                 tracing::trace!("Ignoring self-produced fact");
             }
         }

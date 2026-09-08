@@ -278,6 +278,30 @@ pub enum Fact {
         /// 各规则命中归因（与合并规则列表等长，按执行顺序）
         rule_hits: Vec<TraceHit>,
     },
+
+    /// 违规被强制拦截（`enforce` 原语命中，UV-147）
+    ///
+    /// # 系统独占（三权分立：阻止权/记录权在系统）
+    ///
+    /// 本事实**仅由反应器**在收到 `TransitionResult::Halted` 时发射——
+    /// LLM、规则、任何指令类型均无通道产生本事实（杜绝伪造拦截记录）。
+    ///
+    /// # 记录性事实（不 bump version）
+    ///
+    /// 与 `TransitionTrace` 同形态：不改变业务状态。违规指令被**拒绝执行**
+    /// （不产生 StateTransition、不推回队列），payload/queue 保持该步前原样。
+    Violation {
+        /// 事实唯一标识符
+        id: FactId,
+        /// 触发违规的来源事实 ID（通常是 Command 或 IoResponse）
+        cause: FactId,
+        /// 命中的 enforce 规则在合并规则列表中的下标
+        rule_index: u64,
+        /// 违规说明（enforce params.reason）
+        reason: String,
+        /// 被拒指令完整回显（审计可追溯"谁想干什么"）
+        instruction: JsonValue,
+    },
 }
 
 impl Fact {
@@ -292,6 +316,7 @@ impl Fact {
             Fact::Stable { .. } => "Stable",
             Fact::Error { .. } => "Error",
             Fact::TransitionTrace { .. } => "TransitionTrace",
+            Fact::Violation { .. } => "Violation",
         }
     }
 
@@ -305,7 +330,8 @@ impl Fact {
             | Fact::IoResponse { id, .. }
             | Fact::Stable { id, .. }
             | Fact::Error { id, .. }
-            | Fact::TransitionTrace { id, .. } => *id,
+            | Fact::TransitionTrace { id, .. }
+            | Fact::Violation { id, .. } => *id,
         }
     }
 
@@ -409,6 +435,20 @@ impl Fact {
                     ("rule_hits", J::array(hits)),
                 ])
             }
+            Fact::Violation {
+                id,
+                cause,
+                rule_index,
+                reason,
+                instruction,
+            } => J::object_from_pairs(&[
+                ("type", J::string("Violation")),
+                ("id", J::integer(id.0 as i64)),
+                ("cause", J::integer(cause.0 as i64)),
+                ("rule_index", J::integer(*rule_index as i64)),
+                ("reason", J::string(reason.clone())),
+                ("instruction", instruction.clone()),
+            ]),
         }
     }
 }
@@ -553,6 +593,36 @@ mod tests {
         assert_eq!(format!("{}", FactId(0)), "F0");
         assert_eq!(format!("{}", FactId(1)), "F1");
         assert_eq!(format!("{}", FactId(42)), "F42");
+    }
+
+    #[test]
+    fn test_violation_fact_to_json_and_meta() {
+        // UV-147：Violation 事实序列化 + 元信息（type_name/id/is_terminal）
+        let fact = Fact::Violation {
+            id: FactId(9),
+            cause: FactId(3),
+            rule_index: 2,
+            reason: "违规：禁删数据集".to_string(),
+            instruction: JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("delete_all")),
+            ]),
+        };
+
+        assert_eq!(fact.type_name(), "Violation");
+        assert_eq!(fact.id(), FactId(9));
+        // 记录性事实：非终止（不结束会话，会话继续处理队列）
+        assert!(!fact.is_terminal());
+
+        let json = fact.to_json();
+        assert_eq!(json.get("type"), Some(&JsonValue::string("Violation")));
+        assert_eq!(json.get("id"), Some(&JsonValue::Integer(9)));
+        assert_eq!(json.get("cause"), Some(&JsonValue::Integer(3)));
+        assert_eq!(json.get("rule_index"), Some(&JsonValue::Integer(2)));
+        assert_eq!(json.get("reason"), Some(&JsonValue::string("违规：禁删数据集")));
+        assert_eq!(
+            json.get("instruction").and_then(|v| v.get("type")),
+            Some(&JsonValue::string("delete_all"))
+        );
     }
 
     #[test]

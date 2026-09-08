@@ -584,12 +584,13 @@ impl FactsLog {
                             .checked_add(1)
                             .ok_or(FactsLogError::VersionOverflow)?;
                     }
-                    // TransitionTrace：记录性事实，不更新快照、不推进版本
-                    // （与 Command/IoRequest/Error 同类）
+                    // TransitionTrace / Violation：记录性事实，不更新快照、不推进版本
+                    // （与 Command/IoRequest/Error 同类；Violation 为 UV-147 enforce 拦截事实）
                     Fact::Command { .. }
                     | Fact::IoRequest { .. }
                     | Fact::Error { .. }
-                    | Fact::TransitionTrace { .. } => {}
+                    | Fact::TransitionTrace { .. }
+                    | Fact::Violation { .. } => {}
                 }
             }
 
@@ -808,6 +809,10 @@ impl FactsLog {
             }
             Fact::TransitionTrace { .. } => {
                 // 记录性事实，不修改快照，版本号不变（与 Command 同类）
+            }
+            Fact::Violation { .. } => {
+                // 违规拦截事实（UV-147）：记录性事实，不修改快照，版本号不变
+                // —— 违规动作被拒，payload/queue 保持原样（与 TransitionTrace 同类）
             }
         }
 

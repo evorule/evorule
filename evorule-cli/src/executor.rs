@@ -175,6 +175,24 @@ pub fn execute(
                 );
                 break;
             }
+            Ok(TransitionResult::Halted { rule_index, reason }) => {
+                // UV-147：enforce 强制原语命中——违规指令被拒绝执行（不执行、不回队）。
+                // CLI 与 reactor 同语义：系统独占发射 Violation 事实，继续处理后续指令
+                let v_id = id_gen.next_id();
+                facts.push(Fact::Violation {
+                    id: v_id,
+                    cause: current_cause,
+                    rule_index: rule_index as u64,
+                    reason: reason.clone(),
+                    instruction: instruction.clone(),
+                });
+                tracing::warn!(
+                    rule_index,
+                    %reason,
+                    "enforce 强制拦截：违规指令被拒绝执行"
+                );
+                continue;
+            }
             Err(e) => {
                 let err_id = id_gen.next_id();
                 let msg = format!("TCB error at step {}: {}", steps, e);
