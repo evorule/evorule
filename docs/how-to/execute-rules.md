@@ -108,7 +108,7 @@ evorule replay fact-log.jsonl
 A: 说明初始 noop 指令没有匹配任何规则的 `instruction` domain。检查规则是否有 `domain: { "type": "instruction", "instruction_type": "noop" }` 的 branch。
 
 **Q: 出现 IoRequest + Error？**
-A: CLI 无 I/O handler。规则中的 `io_request` 元指令在 CLI 模式下无法执行。如需 I/O 能力，使用 evorule-server。
+A: CLI 无 I/O handler。规则中的 `io_request` 元指令在 CLI 模式下无法执行。如需 I/O 能力，请使用 evorule-server 仓。
 
 **Q: 退出码 3 但 fact log 已生成？**
 A: 退出码 3 表示执行中有 Error fact。fact log 已完整写出，可用 `evorule replay` 查看错误详情。
