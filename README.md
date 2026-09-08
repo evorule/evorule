@@ -57,8 +57,8 @@
 | No silent pass-through | ✅ | Ignored instruction → explicit Error fact; 3 consecutive WAL failures → session terminated; fail-closed | Code: `evorule-reactor/src/reactor.rs`; test: `test_wal_consecutive_failure_escalates_with_guidance` |
 | Time machine | ✅ | replay / rewind / fork / diff (implemented in the **governance** layer) | Code: `evorule-governance/src/time_machine.rs`; tests: `test_rewind_basic_state_transition` and 15 more |
 | Tamper detection | ✅ | All three tamper classes (content / chain_hash / prev_hash) are detected | Tests: `test_tier2_detects_content_tamper` and others |
-| Debug queries | ✅ | phase / queue / pending_io / snapshot queries (implemented by evorule-server) | Code: `evorule-reactor/src/reactor.rs` ReactorHandle API |
-| Pseudo single-step replay | ✅ | `step` is a rewind-based replay (not a real single step); `pause` suspends SSE polling (not reactor execution) | Code: evorule-server application layer |
+| Debug queries | ✅ | phase / queue / pending_io / snapshot queries (application layer) | Code: `evorule-reactor/src/reactor.rs` ReactorHandle API |
+| Pseudo single-step replay | ✅ | `step` is a rewind-based replay (not a real single step); `pause` suspends polling (not reactor execution) | Code: application layer |
 | Multi-session isolation | ✅ | session management + WAL sharding + cross-session causal-chain tracking | Code: `evorule-governance/src/session.rs`; test: `concurrent_sessions_state_isolation` |
 | Rule safety validation | ✅ | infinite-loop detection / payload-growth detection / unbounded-I/O detection | Code: `evorule-governance/src/rule_validation.rs`; test: `test_security_infinite_loop_detection` |
 | Permission gate | ✅ | `permission_gate` (fail-closed, resolver injectable) | Code: `evorule-governance/src/permission/`; test: `resolver_llm_is_fail_closed_on_default` |
@@ -230,7 +230,7 @@ evorule replay ./output/facts.jsonl
   - Code: `evorule-reactor/src/fact.rs:37,41-57`
 - **WAL failure escalation**: 3 consecutive write failures → terminate the session (fail-closed); the callback emits `Fact::Error` directly via `event_tx`
 - **ReactorHandle API**: `join` / `abort` / `is_finished` / `current_phase` / `causal_depth` / `pending_io_count` / `current_step` / `snapshot` / `interrupt`
-  - Note: **no `pause` / `resume` / `step`** — debug control is implemented by the evorule-server application layer.
+  - Note: **no `pause` / `resume` / `step`** — debug control is provided at the application layer.
 
 ### evorule-governance — governance layer
 
@@ -294,9 +294,9 @@ cargo test --workspace --features persistence
 
 | Boundary | Description |
 |---|---|
-| cli has no I/O handler | On `IoRequest` it errors and stops; for I/O needs use evorule-server or implement the `IoHandler` trait yourself |
+| cli has no I/O handler | On `IoRequest` it errors and stops; for I/O needs implement the `IoHandler` trait yourself or use an application-layer host |
 | Legacy WAL: structure-only check | Legacy WAL (no hash field): `verify-chain` does structure-only validation, not hash validation; new WAL gets full hash validation |
-| ffi debug semantics | The reactor is an event-driven state machine; traditional debugger controls `pause`/`resume`/`step`/`is_paused` do not apply; debug capability is provided by a purpose-built debug scheme (evorule-server application layer) |
+| ffi debug semantics | The reactor is an event-driven state machine; traditional debugger controls `pause`/`resume`/`step`/`is_paused` do not apply; debug capability is provided by a purpose-built debug scheme (application layer) |
 | Debug control is an application-layer capability | `pause` suspends polling (not execution); `step` is a rewind replay (not a real single step); debug control lives at the application layer, not the core repo |
 | Unknown IoResponse: currently warn-and-ignore | On an unpairable `IoResponse`, a warning is logged and no Error is produced (design to be confirmed) |
 | macOS not CI-verified | Prebuilt artifacts and CI cover Linux / Windows only; macOS can be built from source but is unverified — evaluate at your own risk |
@@ -554,8 +554,8 @@ evorule/
 | 不允许静默通过 | ✅ | Ignored 指令→显式 Error fact；WAL 连续 3 次失败→终止会话；fail-closed | 代码：`evorule-reactor/src/reactor.rs`；测试：`test_wal_consecutive_failure_escalates_with_guidance` |
 | 时间机器 | ✅ | replay / rewind / fork / diff（**governance 层实现**） | 代码：`evorule-governance/src/time_machine.rs`；测试：`test_rewind_basic_state_transition` 等 16 项 |
 | 篡改检测 | ✅ | 三类篡改（content / chain_hash / prev_hash）均被检测 | 测试：`test_tier2_detects_content_tamper` 等 |
-| 调试查询 | ✅ | phase / queue / pending_io / snapshot 查询（由 evorule-server 实现） | 代码：`evorule-reactor/src/reactor.rs` ReactorHandle API |
-| 伪单步回放 | ✅ | step 基于 rewind 回放（非真正执行一步），pause 暂停 SSE 轮询（非暂停 reactor 执行） | 代码：evorule-server 应用层实现 |
+| 调试查询 | ✅ | phase / queue / pending_io / snapshot 查询（应用层实现） | 代码：`evorule-reactor/src/reactor.rs` ReactorHandle API |
+| 伪单步回放 | ✅ | step 基于 rewind 回放（非真正执行一步），pause 暂停轮询（非暂停 reactor 执行） | 代码：应用层实现 |
 | 多会话隔离 | ✅ | session 管理 + WAL 分片 + 因果链跨会话追踪 | 代码：`evorule-governance/src/session.rs`；测试：`concurrent_sessions_state_isolation` |
 | 规则安全校验 | ✅ | 无限循环检测 / payload 增长检测 / 无界 I/O 检测 | 代码：`evorule-governance/src/rule_validation.rs`；测试：`test_security_infinite_loop_detection` |
 | 权限门 | ✅ | permission_gate（fail-closed，resolver 可注入） | 代码：`evorule-governance/src/permission/`；测试：`resolver_llm_is_fail_closed_on_default` |
@@ -717,7 +717,7 @@ evorule replay ./output/facts.jsonl
   - 代码：`evorule-reactor/src/fact.rs:37,41-57`
 - **WAL 失败升级**：连续 3 次写失败→终止会话（fail-closed），回调经 event_tx 直接发 Fact::Error
 - **ReactorHandle API**：join / abort / is_finished / current_phase / causal_depth / pending_io_count / current_step / snapshot / interrupt
-  - 注意：**无 pause / resume / step**——调试控制由 evorule-server 应用层实现
+  - 注意：**无 pause / resume / step**——调试控制由应用层实现
 
 ### evorule-governance — 治理层
 
@@ -781,13 +781,13 @@ cargo test --workspace --features persistence
 
 | 边界 | 说明 |
 |---|---|
-| cli 无 I/O handler | 遇到 IoRequest 即 Error 停止；需要 I/O 的场景使用 evorule-server 或自实现 IoHandler trait |
+| cli 无 I/O handler | 遇到 IoRequest 即 Error 停止；需要 I/O 的场景自实现 IoHandler trait 或使用应用层宿主 |
 | 旧格式 WAL 仅结构校验 | 旧版 WAL（无哈希字段）verify-chain 仅做结构校验，不做哈希验证；新版 WAL 全量哈希验证 |
-| ffi 调试语义 | reactor 为事件驱动状态机，pause/resume/step/is_paused 等传统调试器控制语义不适用；调试能力由专门设计的 debug 方案提供（evorule-server 应用层） |
-| 调试控制为应用层能力 | pause 暂停 SSE 轮询（非暂停执行）；step 为 rewind 回放（非真正单步）；由 evorule-server 实现，核心仓不提供 |
+| ffi 调试语义 | reactor 为事件驱动状态机，pause/resume/step/is_paused 等传统调试器控制语义不适用；调试能力由专门设计的 debug 方案提供（应用层） |
+| 调试控制为应用层能力 | pause 暂停 SSE 轮询（非暂停执行）；step 为 rewind 回放（非真正单步）；由应用层实现，核心仓不提供 |
 | 未知 IoResponse 当前 warn 忽略 | 收到无法配对的 IoResponse 时记录 warning，不产生 Error（设计待确认） |
 | macOS 未经 CI 验证 | 预编译产物与 CI 仅覆盖 Linux / Windows；macOS 可源码构建，但未经测试验证，请自行评估 |
-| 业务规则热重载为应用层能力 | 核心仓 core_eval 启动时加载、运行中不可变；evorule-server 通过 notify watch 实现业务规则热重载 |
+| 业务规则热重载为应用层能力 | 核心仓 core_eval 启动时加载、运行中不可变；业务规则热重载属应用层能力 |
 | 可重现构建未纳入 CI | 设计上已消除全部已知不确定性来源(固定 `SOURCE_DATE_EPOCH` / 禁用增量编译 / 去 build-id,见 `evorule-cli/build-musl.sh`);开发期曾实测 10,000 次重复构建 SHA256 全部一致;验证脚本 `--repro` 保留可随时独立复现,但尚未纳入 CI 自动执行;恢复后计划在每个 release 附双构建比对结果 |
 
 ---
@@ -924,7 +924,7 @@ evorule/
 
 ### 当前版本（v0.4.2）限制
 
-- **核心仓无热重载**：core_eval 启动时加载，运行中不可变（应用层 evorule-server 支持业务规则热重载）
+- **核心仓无热重载**：core_eval 启动时加载，运行中不可变（业务规则热重载为应用层能力）
 - **cli 无 I/O handler**：IoRequest 即 Error 停止（可审计的失败）
 - **ffi 无传统调试语义**：事件驱动状态机不提供 pause/resume/step/is_paused；调试由专门方案提供
 - **调试控制为应用层能力**：非真正单步执行，为 rewind 回放
