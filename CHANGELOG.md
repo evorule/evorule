@@ -41,6 +41,7 @@
 ### 📜 许可与法律文档（DEC-2026-001 阶段1）
 
 - 🔄 **三许可文本重写为 v2.0**：[DUAL_LICENSE.md](DUAL_LICENSE.md) / [FREE_COMMERCIAL_LICENSE.md](FREE_COMMERCIAL_LICENSE.md) / [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) 落实 C1 三选项架构、$10M 营收门槛（含关联合并）、FCL 免费闭源豁免（声明制）、组合作品边界（网络 API 排除条款）、change-of-control 条款
+- 🔄 **营收门槛改为人民币基准（三许可文本 v2.1）**：¥1 亿（含关联公司合并计算），新增外币实体按认定日央行中间价折算条款（DEC-2026-001 D-001-17）
 - 🆕 **新增 [CLA-corporate.md](CLA-corporate.md)**：企业贡献者 CLA，与 Individual 互为补充（DEC-2026-001 D-001-14）
 - 🆕 **新增 [LICENSES/core_eval-CC0-1.0.txt](LICENSES/core_eval-CC0-1.0.txt)**：CC0-1.0 全文落仓，补全"宪法 CC0 但仓内无文本"缺口
 - 🔄 **[NOTICE.md](NOTICE.md)**：增补三选项指引表与 CC0 官方链接
