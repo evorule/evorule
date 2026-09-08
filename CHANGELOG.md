@@ -42,9 +42,9 @@
 
 ### 🆕 新增
 
-- **转换收敛归因携带规则命中明细并写入审计链** (`evorule-reactor`)：规则转换收敛时，审计链自动追加"命中规则 ID + 版本 + 条件表达式"明细，使审计重放可逐条对账"哪条规则因何触发"（规则命中统计专项运行时支撑）
-- **archive WAL replay primitives for fork-from-archive** (`evorule-governance`)：新增归档 WAL 重放原语，使 fork 操作可从历史归档点恢复状态（UV-140 fork-from-archive 运行时支撑）
-- **enforce halt primitive** (`evorule-tcb`)：新增 `enforce_halt` 安全原语——当 payload 中存在违规写侧属性（如 `payload.result` 双重嵌套）时，显式阻断指令执行并发射 violation facts，不再静默通过（UV-146 三层同义防线引擎运行期）
+- **转换收敛归因携带规则命中明细并写入审计链** (`evorule-reactor`)：规则转换收敛时，审计链自动追加"命中规则 ID + 版本 + 条件表达式"明细，使审计重放可逐条对账"哪条规则因何触发"
+- **archive WAL replay primitives for fork-from-archive** (`evorule-governance`)：新增归档 WAL 重放原语，使 fork 操作可从历史归档点恢复状态
+- **enforce halt primitive** (`evorule-tcb`)：新增 `enforce_halt` 安全原语——当 payload 中存在违规写侧属性（如 `payload.result` 双重嵌套）时，显式阻断指令执行并发射 violation facts，不再静默通过
 - **CLA 双协议治理文件**：新增 [CLA-individual.md](CLA-individual.md) 与 [CLA-corporate.md](CLA-corporate.md)，配套 [GOVERNANCE.md](GOVERNANCE.md) 变更审查审批流程
 
 ### 🐛 修复
