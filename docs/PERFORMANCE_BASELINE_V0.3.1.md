@@ -413,4 +413,4 @@ cargo bench -p evorule-tcb --bench tcb_core -- --plot-format gnuplot
 ---
 
 > **文档维护**: 本报告作为 v0.3.1 性能基线，后续版本应基于此进行性能回归对比。
-> **联系方式**: EvoRule Project (evorulelab@gamil.com)
+> **联系方式**: EvoRule Project (evorulelab@gmail.com)

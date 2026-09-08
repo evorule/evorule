@@ -38,7 +38,7 @@ Security disclosure procedures are public knowledge; we release them under CC0 s
 ### 📧 联系方式
 
 - **邮箱**: <evorulelab@gmail.com>(主题加 `[SECURITY]`)
-- **Gitee 私信**: 维护者(@evorulelab)
+- **Gitee 私信**: 维护者(@evorule)
 - **加密**: 当前未提供 PGP 公钥(如有需要可联系)
 
 ### 📋 报告内容
