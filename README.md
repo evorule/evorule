@@ -32,7 +32,7 @@
 ## Experience & Navigation
 
 - **Online console (no install)**: [evorule-console-cloud live demo](https://evorule.github.io/evorule-console-cloud/)
-- **evorule-server** — HTTP API / SSE / debug control / I/O Handler (application layer): [Gitee](https://gitee.com/evorule/evorule-server) ｜ [GitHub](https://github.com/evorule/evorule-server)
+- **evorule-server** — exposes HTTP API / SSE / debug control / I/O Handler (application layer): [Gitee](https://gitee.com/evorule/evorule-server) ｜ [GitHub](https://github.com/evorule/evorule-server)
 - **evorule-console-cloud** — governance & audit console (web frontend): [Gitee](https://gitee.com/evorule/evorule-console-cloud) ｜ [GitHub](https://github.com/evorule/evorule-console-cloud)
 - **Organization home**: [Gitee @evorule](https://gitee.com/evorule) ｜ [GitHub @evorule](https://github.com/evorule)
 
@@ -74,7 +74,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Application layer (evorule-server)           │
+│                      Application layer                             │
 │   HTTP API / SSE / debug control / business-rule hot-reload /     │
 │   I/O Handler implementation                                       │
 └────────────────────────────┬────────────────────────────────────┘
