@@ -36,7 +36,21 @@
 
 ---
 
-## [Unreleased]
+## [0.4.3] - 2026-09-09
+
+> 补丁发布：v0.4.2 之后 6 个 feat/fix + 12 个 docs + 1 个 chore 合入，含审计链命中明细归因、fork-from-archive WAL 重放原语、enforce halt 安全原语、双重嵌套静默 bug 修复、WAL 重启续链修复、CLA 治理文件。
+
+### 🆕 新增
+
+- **转换收敛归因携带规则命中明细并写入审计链** (`evorule-reactor`)：规则转换收敛时，审计链自动追加"命中规则 ID + 版本 + 条件表达式"明细，使审计重放可逐条对账"哪条规则因何触发"（规则命中统计专项运行时支撑）
+- **archive WAL replay primitives for fork-from-archive** (`evorule-governance`)：新增归档 WAL 重放原语，使 fork 操作可从历史归档点恢复状态（UV-140 fork-from-archive 运行时支撑）
+- **enforce halt primitive** (`evorule-tcb`)：新增 `enforce_halt` 安全原语——当 payload 中存在违规写侧属性（如 `payload.result` 双重嵌套）时，显式阻断指令执行并发射 violation facts，不再静默通过（UV-146 三层同义防线引擎运行期）
+- **CLA 双协议治理文件**：新增 [CLA-individual.md](CLA-individual.md) 与 [CLA-corporate.md](CLA-corporate.md)，配套 [GOVERNANCE.md](GOVERNANCE.md) 变更审查审批流程
+
+### 🐛 修复
+
+- **拒绝 `payload.-` 前缀写侧 attrs，杜绝双重嵌套静默** (`evorule-tcb`)：原规则作者写 `attr: "payload.result"` 会被 silently 当作写侧目标，实际产生 `payload.result.result` 双重嵌套，加载期静态路径检查不覆盖 `__exec__` 动态域；现 TCB 引擎运行期显式 reject 任何以 `payload.` 开头的写侧 attr，产生 violation facts 而非静默通过
+- **WAL 重启续链时从 facts log snapshot 种子化 TCB 状态** (`evorule-reactor`)：resumed chain 原 TCB 状态为空，仅靠审计链哈希恢复，部分依赖 TCB 内部状态的规则（如 `seed TCB state`）会执行异常；现从最近一条 facts log snapshot 种子化 TCB 初始状态
 
 ### 📜 许可与法律文档（DEC-2026-001 阶段1）
 
