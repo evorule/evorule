@@ -70,6 +70,17 @@ pub(crate) enum StepOutcome {
         /// I/O 参数
         params: JsonValue,
     },
+    /// `enforce` 强制拦截（UV-147）：违规指令被拒绝执行
+    ///
+    /// 指令已出队即丢弃（不推回队列）；payload/queue 保持该步前原样、
+    /// version 不 bump（无任何状态转移发生）。调用方需系统独占发射
+    /// `Fact::Violation`（三权分立：阻止权/记录权在系统）。
+    Halted {
+        /// 命中的 enforce 规则下标（合并规则列表中）
+        rule_index: usize,
+        /// 违规说明（enforce params.reason）
+        reason: String,
+    },
     /// TCB 执行错误
     TcbError(String),
 }
@@ -159,6 +170,12 @@ pub(crate) fn next_step(
             // （原逻辑是在 IoRequired 分支中 register + save + break）
             state.push_front(instruction, cause);
             Some(StepOutcome::IoRequired { io_type, params })
+        }
+        Ok(TransitionResult::Halted { rule_index, reason }) => {
+            // enforce 强制拦截（UV-147）：指令已出队即丢弃（不推回队列），
+            // payload/queue 保持该步前原样，version 不 bump（无状态转移发生）。
+            // 调用方据此系统独占发射 Fact::Violation。
+            Some(StepOutcome::Halted { rule_index, reason })
         }
         Err(err) => Some(StepOutcome::TcbError(err.to_string())),
     }
@@ -432,6 +449,76 @@ mod tests {
         let _ = next_step(&core_eval, &mut state, 1000);
         assert!(state.version > prev_version);
         assert_eq!(state.prev_version, prev_version);
+    }
+
+    // ===== enforce 强制拦截（UV-147）=====
+
+    /// 辅助：构造 enforce 规则（单条 core_eval）
+    fn enforce_core_eval(domain: JsonValue, reason: &str) -> Vec<JsonValue> {
+        use std::collections::BTreeMap;
+        let mut params = BTreeMap::new();
+        params.insert("domain".to_string(), domain);
+        params.insert("reason".to_string(), JsonValue::string(reason));
+        let mut instr = BTreeMap::new();
+        instr.insert("type".to_string(), JsonValue::string("enforce"));
+        instr.insert("params".to_string(), JsonValue::Object(params));
+        vec![JsonValue::Object(instr)]
+    }
+
+    /// 辅助：构造 delete_all 指令
+    fn delete_all_instr() -> JsonValue {
+        use std::collections::BTreeMap;
+        let mut instr = BTreeMap::new();
+        instr.insert("type".to_string(), JsonValue::string("delete_all"));
+        instr.insert("params".to_string(), JsonValue::Object(BTreeMap::new()));
+        JsonValue::Object(instr)
+    }
+
+    #[test]
+    fn test_next_step_enforce_halt_drops_instruction_and_keeps_state() {
+        // UV-147 语义：违规指令被拒——出队即丢弃（不推回）、payload/queue
+        // 保持原样、version 不 bump（无状态转移发生）
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("instruction")),
+            ("instruction_type", JsonValue::string("delete_all")),
+        ]);
+        let core_eval = enforce_core_eval(domain, "违规：禁删数据集");
+        let mut state = state_with_queue(vec![delete_all_instr()]);
+        state.payload = JsonValue::object_from_pairs(&[("data", JsonValue::string("keep"))]);
+        let prev_version = state.version;
+
+        match next_step(&core_eval, &mut state, 1000) {
+            Some(StepOutcome::Halted { rule_index, reason }) => {
+                assert_eq!(rule_index, 0);
+                assert_eq!(reason, "违规：禁删数据集");
+            }
+            other => panic!("expected Halted, got {other:?}"),
+        }
+
+        // payload 原样、队列空（指令被丢弃未推回）、version 不变
+        assert_eq!(
+            state.payload.get("data"),
+            Some(&JsonValue::string("keep"))
+        );
+        assert!(state.queue.is_empty());
+        assert_eq!(state.version, prev_version);
+    }
+
+    #[test]
+    fn test_next_step_enforce_domain_false_continues() {
+        // domain 为假：noop 继续，不产生 Halted
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("instruction")),
+            ("instruction_type", JsonValue::string("harmless_op")),
+        ]);
+        let core_eval = enforce_core_eval(domain, "不适用");
+        let mut state = state_with_queue(vec![delete_all_instr()]);
+        let prev_version = state.version;
+
+        let outcome = next_step(&core_eval, &mut state, 1000);
+        // enforce 不命中且无其他规则匹配 → Ignored（noop 检测）
+        assert!(matches!(outcome, Some(StepOutcome::Ignored { .. })));
+        assert_eq!(state.version, prev_version + 1);
     }
 
     #[test]

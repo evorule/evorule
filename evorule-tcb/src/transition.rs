@@ -87,6 +87,25 @@ pub enum TransitionResult {
         /// I/O 请求参数（路径引用已解析为具体值）
         params: JsonValue,
     },
+    /// `enforce` 强制原语命中（UV-147）：违规指令被拒绝执行
+    ///
+    /// # 语义（与 `IoRequired` 同构的纯信号）
+    ///
+    /// - **传播即停** — 命中 enforce 规则后立即返回，剩余 transform 不执行；
+    /// - **半成品丢弃** — 此前规则的状态修改全部丢弃（不返回 payload/queue），
+    ///   违规动作不得"执行一半"；
+    /// - **指令被拒** — 反应器据此不执行该指令、不推回队列（动作被阻止而非
+    ///   仅留痕），并系统独占发射 `Fact::Violation` 全链留痕（三权分立：
+    ///   阻止权/记录权在系统，LLM/规则零通道伪造）；
+    /// - **归因** — 不携带 `rule_hits`（半成品纪律）；`rule_index` 为命中的
+    ///   enforce 规则下标（由转换层填入），`reason` 透传 params.reason；
+    /// - **重放确定性** — 相同输入必产生相同 `Halted`（纯函数性质）。
+    Halted {
+        /// 命中的 enforce 规则在输入 `core_eval` 列表中的下标
+        rule_index: usize,
+        /// 违规说明（enforce params.reason）
+        reason: String,
+    },
     /// 指令被忽略（没有匹配的 transform 规则，或规则产生 noop 效果）
     ///
     /// 显式暴露“静默失败”情况，方便上层（reactor/治理层）记录告警或产生 Error
@@ -214,6 +233,13 @@ pub fn execute_transition(
             // 归因以收敛后的重放结果为准，避免重复计数）。
             MetaInstructionResult::IoRequired { io_type, params } => {
                 return Ok(TransitionResult::IoRequired { io_type, params });
+            }
+            // enforce 强制原语命中（UV-147）：立即返回 Halted 纯信号，
+            // 不继续执行后续 transform；此前状态修改随半成品一并丢弃，
+            // 不携带 rule_hits（半成品纪律同 IoRequired）。
+            // rule_index 由转换层填入（此处即为命中规则下标，确定性成立）。
+            MetaInstructionResult::Halted { reason } => {
+                return Ok(TransitionResult::Halted { rule_index: index, reason });
             }
         }
     }
@@ -875,6 +901,232 @@ mod tests {
 
         let result = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
         assert!(matches!(result, TransitionResult::State { .. }));
+    }
+
+    // ===== enforce 强制原语测试（UV-147）=====
+
+    fn enforce_rule(domain: JsonValue, reason: Option<&str>) -> JsonValue {
+        let mut params = vec![("domain", domain)];
+        if let Some(r) = reason {
+            params.push(("reason", JsonValue::string(r)));
+        }
+        JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("enforce")),
+            ("params", JsonValue::object_from_pairs(&params)),
+        ])
+    }
+
+    #[test]
+    fn test_execute_transition_enforce_halts() {
+        // 规则序列：set(改 x) → enforce(命中) → set(永不执行)
+        // 预期：Halted{rule_index:1}；后续规则不执行（半成品不返回，
+        // payload 丢弃由构造保证——Halted 不携带状态）
+        let instruction = make_instruction("delete_all", &[]);
+        let payload = make_payload(1);
+        let core_eval = vec![
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("set")),
+                (
+                    "params",
+                    JsonValue::object_from_pairs(&[
+                        ("attr", JsonValue::string("x")),
+                        ("operation", JsonValue::string("set")),
+                        ("value", JsonValue::Integer(666)),
+                    ]),
+                ),
+            ]),
+            enforce_rule(
+                JsonValue::object_from_pairs(&[
+                    ("type", JsonValue::string("instruction")),
+                    ("instruction_type", JsonValue::string("delete_all")),
+                ]),
+                Some("违规：禁删数据集"),
+            ),
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("set")),
+                (
+                    "params",
+                    JsonValue::object_from_pairs(&[
+                        ("attr", JsonValue::string("x")),
+                        ("operation", JsonValue::string("set")),
+                        ("value", JsonValue::Integer(777)),
+                    ]),
+                ),
+            ]),
+        ];
+
+        match execute_transition(&core_eval, &instruction, &payload, &[]).unwrap() {
+            TransitionResult::Halted { rule_index, reason } => {
+                assert_eq!(rule_index, 1);
+                assert_eq!(reason, "违规：禁删数据集");
+            }
+            other => panic!("expected Halted, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_execute_transition_enforce_domain_false_continues() {
+        // enforce domain 求值为假 → noop 继续，后续规则正常生效
+        let instruction = make_instruction("increment", &[("delta", JsonValue::Integer(1))]);
+        let payload = make_payload(5);
+        let core_eval = vec![
+            enforce_rule(
+                JsonValue::object_from_pairs(&[
+                    ("type", JsonValue::string("eq")),
+                    ("path", JsonValue::string("payload.forbidden_mode")),
+                    ("value", JsonValue::Bool(true)),
+                ]),
+                Some("禁用模式"),
+            ),
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("branch")),
+                (
+                    "params",
+                    JsonValue::object_from_pairs(&[
+                        (
+                            "domain",
+                            JsonValue::object_from_pairs(&[
+                                ("type", JsonValue::string("instruction")),
+                                ("instruction_type", JsonValue::string("increment")),
+                            ]),
+                        ),
+                        (
+                            "on_true",
+                            JsonValue::array(vec![JsonValue::object_from_pairs(&[
+                                ("type", JsonValue::string("set")),
+                                (
+                                    "params",
+                                    JsonValue::object_from_pairs(&[
+                                        ("attr", JsonValue::string("x")),
+                                        ("operation", JsonValue::string("add")),
+                                        ("value", JsonValue::Integer(1)),
+                                    ]),
+                                ),
+                            ])]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ];
+
+        match execute_transition(&core_eval, &instruction, &payload, &[]).unwrap() {
+            TransitionResult::State { new_payload, .. } => {
+                assert_eq!(new_payload.get("x"), Some(&JsonValue::Integer(6)));
+            }
+            other => panic!("expected State, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_execute_transition_enforce_missing_reason_errors() {
+        // domain 命中但缺 reason：结构错误显式报错（不允许静默强制）
+        let instruction = make_instruction("delete_all", &[]);
+        let core_eval = vec![enforce_rule(
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("instruction")),
+                ("instruction_type", JsonValue::string("delete_all")),
+            ]),
+            None,
+        )];
+
+        let result = execute_transition(&core_eval, &instruction, &make_payload(0), &[]);
+        assert!(
+            matches!(&result, Err(TcbError::MissingField { field }) if field == "reason"),
+            "expected MissingField(reason), got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_execute_transition_enforce_structural_domain_error() {
+        // 未知域类型 = 规则结构错误：fail-fast 显式报错（同 branch 语义）
+        let instruction = make_instruction("delete_all", &[]);
+        let core_eval = vec![enforce_rule(
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("nonexistent_domain")),
+            ]),
+            Some("r"),
+        )];
+
+        let result = execute_transition(&core_eval, &instruction, &make_payload(0), &[]);
+        assert!(
+            matches!(&result, Err(TcbError::UnknownDomainType { .. })),
+            "expected UnknownDomainType, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_execute_transition_enforce_in_branch_propagates() {
+        // branch 子指令内的 enforce 命中：传播即停，中断整个转换
+        let instruction = make_instruction("risky_op", &[]);
+        let core_eval = vec![JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("branch")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    (
+                        "domain",
+                        JsonValue::object_from_pairs(&[
+                            ("type", JsonValue::string("instruction")),
+                            ("instruction_type", JsonValue::string("risky_op")),
+                        ]),
+                    ),
+                    (
+                        "on_true",
+                        JsonValue::array(vec![
+                            // 子指令 set 先改 payload，随后 enforce 命中——
+                            // 半成品丢弃，整体 Halted
+                            JsonValue::object_from_pairs(&[
+                                ("type", JsonValue::string("set")),
+                                (
+                                    "params",
+                                    JsonValue::object_from_pairs(&[
+                                        ("attr", JsonValue::string("x")),
+                                        ("operation", JsonValue::string("set")),
+                                        ("value", JsonValue::Integer(1)),
+                                    ]),
+                                ),
+                            ]),
+                            enforce_rule(
+                                JsonValue::object_from_pairs(&[
+                                    ("type", JsonValue::string("eq")),
+                                    ("path", JsonValue::string("payload.x")),
+                                    ("value", JsonValue::Integer(1)),
+                                ]),
+                                Some("子指令拦截"),
+                            ),
+                        ]),
+                    ),
+                ]),
+            ),
+        ])];
+
+        match execute_transition(&core_eval, &instruction, &make_payload(0), &[]).unwrap() {
+            TransitionResult::Halted { rule_index, reason } => {
+                assert_eq!(rule_index, 0);
+                assert_eq!(reason, "子指令拦截");
+            }
+            other => panic!("expected Halted, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_execute_transition_enforce_deterministic() {
+        // 重放确定性：相同输入 → 相同 Halted（纯函数性质）
+        let instruction = make_instruction("delete_all", &[]);
+        let payload = make_payload(1);
+        let core_eval = vec![enforce_rule(
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("instruction")),
+                ("instruction_type", JsonValue::string("delete_all")),
+            ]),
+            Some("r"),
+        )];
+
+        let a = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
+        let b = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
+        assert_eq!(a, b);
     }
 
     // ===== 端到端测试 =====
@@ -2765,6 +3017,11 @@ mod tests {
                 }
                 TransitionResult::Ignored { .. } => {
                     panic!("round 4: expected IoRequired, got Ignored");
+                }
+                TransitionResult::Halted { rule_index, reason } => {
+                    panic!(
+                        "round 4: expected IoRequired, got Halted(rule_index={rule_index}, reason={reason})"
+                    );
                 }
             }
         }

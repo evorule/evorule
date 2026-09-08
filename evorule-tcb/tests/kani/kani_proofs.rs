@@ -17,10 +17,11 @@
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use evorule_tcb::domain::evaluate_domain;
-use evorule_tcb::executor::{execute_meta_instruction, MAX_BRANCH_DEPTH};
+use evorule_tcb::executor::{execute_meta_instruction, MetaInstructionResult, MAX_BRANCH_DEPTH};
 use evorule_tcb::path::resolve_path;
 use evorule_tcb::{execute_transition, JsonValue, TcbError, TransitionResult, MAX_TRANSFORM_RULES};
 
@@ -383,7 +384,10 @@ fn verify_has_fields_empty_array() {
             JsonValue::array(vec![JsonValue::string("tool_calls")]),
         ),
     ]);
-    assert!(!evaluate_domain(&domain, &exec_state), "空数组应视为不存在");
+    // evaluate_domain 现返回 Result<bool, TcbError>（UV-147 fail-fast 语义）：
+    // 结构合法域求值 Ok(false)——空数组视为不存在
+    let r = evaluate_domain(&domain, &exec_state);
+    assert!(matches!(r, Ok(false)), "空数组应视为不存在");
 }
 
 // ==================== Layer 4: 元指令层 ====================
@@ -599,6 +603,189 @@ fn verify_io_request_safe() {
     let state = model::state_with_payload(BTreeMap::new());
     let r = execute_meta_instruction(&instr, state, 0);
     assert!(r.is_ok(), "io_request 不应 panic");
+}
+
+// ==================== Layer 4.5: enforce 强制原语（UV-147，P18a-P18c） ====================
+
+// ⚠️ 实测教训（沿用 P8 系列经验，见 model.rs 注释）：符号叶子 exec_state + 域求值
+// 会让 CBMC/SAT 展开状态爆炸（P18a 首版实测 2.5h 不收敛）。因此：
+// - P18a（永不 panic）：叶子**全部具体化**，仅结构选择符号化（7 域类型 7 选 1、
+//   形态/缺字段开关）——panic 自由只依赖代码路径覆盖，具体值不影响覆盖面；
+// - P18b/P18c（语义属性）：使用**单键最小状态**（仅 payload.x，1 键 payload，
+//   同 P13 已验证收敛的规模），语义属性需要符号值驱动真假两分支。
+
+/// P18a 专用：**全具体** exec_state（payload.x=1 / obj.flag / d=exists 域对象）。
+fn concrete_enforce_state() -> JsonValue {
+    let mut payload = BTreeMap::new();
+    payload.insert("x".to_string(), JsonValue::Integer(1));
+    payload.insert(
+        "obj".to_string(),
+        JsonValue::object_from_pairs(&[("flag", JsonValue::Bool(true))]),
+    );
+    payload.insert(
+        "d".to_string(),
+        JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("exists")),
+            ("path", JsonValue::string("payload.x")),
+        ]),
+    );
+    model::state_with_payload(payload)
+}
+
+/// P18a 专用：7 域类型 7 选 1 的**具体形状** domain（值取 2，对 x=1 eq/lt 恒假），
+/// 或 `__` 路径引用形态（指向 payload.d 的 exists 域，恒真）。
+/// 真假两分支均可达：exists/instruction/all/has_fields/路径引用 → 真（达 reason 检查与
+/// Halted 构造）；eq/lt/not → 假（达 State 返回）。
+fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
+    if use_path_ref {
+        return JsonValue::string("__exec__.payload.d");
+    }
+    match t % 7 {
+        0 => JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("eq")),
+            ("path", JsonValue::string("payload.x")),
+            ("value", JsonValue::Integer(2)),
+        ]),
+        1 => JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("lt")),
+            ("path", JsonValue::string("payload.x")),
+            ("value", JsonValue::Integer(2)),
+        ]),
+        2 => JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("exists")),
+            ("path", JsonValue::string("payload.x")),
+        ]),
+        3 => JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("instruction")),
+            ("instruction_type", JsonValue::string("noop")),
+        ]),
+        4 => JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("all")),
+            (
+                "inner",
+                JsonValue::Array(vec![JsonValue::object_from_pairs(&[
+                    ("type", JsonValue::string("exists")),
+                    ("path", JsonValue::string("payload.x")),
+                ])]),
+            ),
+        ]),
+        5 => JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("not")),
+            (
+                "inner",
+                JsonValue::object_from_pairs(&[
+                    ("type", JsonValue::string("exists")),
+                    ("path", JsonValue::string("payload.x")),
+                ]),
+            ),
+        ]),
+        _ => JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("has_fields")),
+            ("path", JsonValue::string("payload.obj")),
+            (
+                "fields",
+                JsonValue::Array(vec![JsonValue::string("flag")]),
+            ),
+        ]),
+    }
+}
+
+/// 构造 type=enforce 指令（domain/reason 按开关放置，覆盖缺失字段错误路径）。
+fn enforce_instruction(domain: JsonValue, with_domain: bool, with_reason: bool) -> JsonValue {
+    let mut params = BTreeMap::new();
+    if with_domain {
+        params.insert("domain".to_string(), domain);
+    }
+    if with_reason {
+        params.insert("reason".to_string(), JsonValue::string("guard"));
+    }
+    let mut instr = BTreeMap::new();
+    instr.insert("type".to_string(), JsonValue::string("enforce"));
+    instr.insert("params".to_string(), JsonValue::Object(params));
+    JsonValue::Object(instr)
+}
+
+/// P18a: exec_enforce 永不 panic（经公开 execute_meta_instruction 间接覆盖私有 exec_enforce）
+/// 覆盖：7 域类型 × 字面对象/`__` 路径引用两种 domain 形态 × domain/reason 缺失错误路径
+/// × 真假两求值分支（叶子具体化，结构选择符号化——见本节头部实测教训）。
+#[kani::proof]
+fn verify_exec_enforce_never_panics() {
+    let t = kani::any::<u8>();
+    let use_path_ref = kani::any::<bool>();
+    let with_domain = kani::any::<bool>();
+    let with_reason = kani::any::<bool>();
+    let instr = enforce_instruction(
+        concrete_domain(t, use_path_ref),
+        with_domain,
+        with_reason,
+    );
+    let state = concrete_enforce_state();
+    let _ = execute_meta_instruction(&instr, state, 0);
+}
+
+/// P18b/C 专用：**单键最小** enforce 指令（eq 域 + reason，符号值驱动真假两分支）。
+fn eq_enforce_instruction(v: i64) -> JsonValue {
+    let domain = JsonValue::object_from_pairs(&[
+        ("type", JsonValue::string("eq")),
+        ("path", JsonValue::string("payload.x")),
+        ("value", JsonValue::Integer(v)),
+    ]);
+    enforce_instruction(domain, true, true)
+}
+
+/// P18b/C 专用：**单键最小** exec_state（仅 payload.x，1 键 payload——同 P13 收敛规模）。
+fn minimal_state(x: i64) -> JsonValue {
+    let mut payload = BTreeMap::new();
+    payload.insert("x".to_string(), JsonValue::Integer(x));
+    model::state_with_payload(payload)
+}
+
+/// P18b: enforce 二值语义——domain 为真当且仅当 `Halted { reason 原文 }`；
+/// domain 为假走 noop 且状态原样保留（`payload.x` 值不变）。
+/// 这是"阻止而非仅留痕"语义的形式化锚点：Halted 不携带任何状态，
+/// 调用方（transition/reactor）丢弃半成品状态即不可能"边拦截边放行"。
+#[kani::proof]
+fn verify_exec_enforce_halt_semantics() {
+    let x = kani::any::<i64>();
+    let v = kani::any::<i64>();
+    let instr = eq_enforce_instruction(v);
+    let state = minimal_state(x);
+    let r = execute_meta_instruction(&instr, state, 0);
+    match r {
+        Ok(MetaInstructionResult::Halted { reason }) => {
+            kani::assert(x == v, "domain 求值为真（payload.x == value）才允许 Halted");
+            kani::assert(
+                reason == "guard",
+                "Halted.reason 必须是 enforce.params.reason 原文（审计回显）",
+            );
+        }
+        Ok(MetaInstructionResult::State(s)) => {
+            kani::assert(x != v, "domain 求值为假必须走 noop 继续");
+            match resolve_path(&s, "__exec__.payload.x") {
+                Some(resolved) => {
+                    kani::assert(*resolved == JsonValue::Integer(x), "noop 分支状态原样保留")
+                }
+                None => kani::assert(false, "noop 分支必须完整返回状态"),
+            }
+        }
+        _ => kani::assert(false, "形态完整的 enforce 输入不得产生 IoRequired/Err"),
+    }
+}
+
+/// P18c: enforce 确定性——同输入两次执行结果完全一致（真假两分支皆覆盖）。
+#[kani::proof]
+fn verify_exec_enforce_deterministic() {
+    let x = kani::any::<i64>();
+    let v = kani::any::<i64>();
+    let instr = eq_enforce_instruction(v);
+    // 构造两次相同状态（避免 JsonValue 深拷贝展开），分别独立执行
+    let r1 = execute_meta_instruction(&instr, minimal_state(x), 0);
+    let r2 = execute_meta_instruction(&instr, minimal_state(x), 0);
+    match (r1, r2) {
+        (Ok(a), Ok(b)) => kani::assert(a == b, "enforce 同输入两次执行结果必须一致"),
+        (Err(_), Err(_)) => {} // 本证明输入形态完整，Err 分支不可达；同为 Err 亦满足形态一致
+        _ => kani::assert(false, "同输入两次执行的结果形态必须一致"),
+    }
 }
 
 // ==================== Layer 5: 状态转换层 ====================

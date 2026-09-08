@@ -404,6 +404,29 @@ pub fn fact_to_json(fact: &Fact) -> serde_json::Value {
                 .collect();
             obj.insert("rule_hits".into(), serde_json::Value::Array(hits));
         }
+        Fact::Violation {
+            id,
+            cause,
+            rule_index,
+            reason,
+            instruction,
+        } => {
+            obj.insert(
+                "type".into(),
+                serde_json::Value::String("Violation".into()),
+            );
+            obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
+            obj.insert("cause".into(), serde_json::Value::Number(cause.0.into()));
+            obj.insert(
+                "rule_index".into(),
+                serde_json::Value::Number((*rule_index).into()),
+            );
+            obj.insert(
+                "reason".into(),
+                serde_json::Value::String(reason.clone()),
+            );
+            obj.insert("instruction".into(), tcb_to_serde(instruction));
+        }
     }
     serde_json::Value::Object(obj)
 }
@@ -573,6 +596,30 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
                 id,
                 cause: FactId(cause_raw as u64),
                 rule_hits,
+            })
+        }
+        "Violation" => {
+            let cause_raw = obj
+                .get("cause")
+                .and_then(|c| c.as_i64())
+                .ok_or_else(|| WalError::InvalidFact("Violation missing 'cause'".into()))?;
+            let rule_index = obj
+                .get("rule_index")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| WalError::InvalidFact("Violation missing 'rule_index'".into()))?;
+            let reason = obj
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| WalError::InvalidFact("Violation missing 'reason'".into()))?;
+            let instruction = obj.get("instruction").ok_or_else(|| {
+                WalError::InvalidFact("Violation missing 'instruction'".into())
+            })?;
+            Ok(Fact::Violation {
+                id,
+                cause: FactId(cause_raw as u64),
+                rule_index,
+                reason: reason.into(),
+                instruction: serde_to_tcb(instruction),
             })
         }
         other => Err(WalError::InvalidFact(format!("unknown fact type: {other}"))),
@@ -1254,6 +1301,25 @@ mod tests {
         let fact = Fact::Error {
             id: FactId(8),
             message: "max rounds exceeded".into(),
+        };
+        assert_fact_roundtrip(&fact);
+    }
+
+    #[test]
+    fn test_fact_violation_roundtrip() {
+        // UV-147：Violation 事实（enforce 拦截记录）WAL 往返
+        let fact = Fact::Violation {
+            id: FactId(10),
+            cause: FactId(3),
+            rule_index: 2,
+            reason: "违规：禁删数据集".into(),
+            instruction: JsonValue::object_from_pairs(&[
+                ("type", JsonValue::String("delete_all".into())),
+                (
+                    "params",
+                    JsonValue::object_from_pairs(&[("scope", JsonValue::String("all".into()))]),
+                ),
+            ]),
         };
         assert_fact_roundtrip(&fact);
     }

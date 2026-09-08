@@ -57,6 +57,10 @@ fn main() {
             eprintln!("❌ 不应触发 IoRequired(本例规则无 I/O)");
             std::process::exit(1);
         }
+        Ok(TransitionResult::Halted { .. }) => {
+            eprintln!("❌ 不应触发 Halted(本例规则无 enforce)");
+            std::process::exit(1);
+        }
         Err(e) => {
             eprintln!("❌ TCB 执行失败: {e:?}");
             std::process::exit(1);

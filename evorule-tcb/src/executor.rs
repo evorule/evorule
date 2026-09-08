@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 元指令执行器 - 4 个元指令 + `io_request` 信号
+//! 元指令执行器 - 5 个元指令 + `io_request` 信号 + `enforce` 强制原语
 //!
 //! # 元指令列表
 //! - `set`：修改 payload 字段
 //! - `push`：推指令到队列前端
 //! - `branch`：条件执行子指令列表
 //! - `io_request`：产生 I/O 请求信号（不修改状态）
+//! - `enforce`：元规则强制原语（UV-147）——params.domain 匹配即返回 Halted 信号
 //!
 //! # 设计原则
 //! `io_request` 是"半元指令"——在执行器中硬编码识别，但行为完全由 JSON 参数驱动。
@@ -56,6 +57,7 @@ pub const META_INSTRUCTION_TYPES: &[&str] = &[
     "io_request",
     "collect",
     "merge",
+    "enforce",
 ];
 
 /// 元指令执行结果
@@ -69,6 +71,15 @@ pub enum MetaInstructionResult {
         io_type: String,
         /// I/O 请求参数（路径引用已解析为具体值）
         params: JsonValue,
+    },
+    /// 强制中断信号（`enforce` 原语命中，UV-147）
+    ///
+    /// 纯信号：立即向上传播，不携带状态；状态转换层据此返回
+    /// `TransitionResult::Halted`（违规指令被拒，此前状态修改随
+    /// 半成品纪律一并丢弃）。与 `IoRequired` 同为传播即停语义。
+    Halted {
+        /// 违规说明（enforce params.reason，供 Violation 事实审计回显）
+        reason: String,
     },
 }
 
@@ -134,6 +145,13 @@ pub(crate) fn execute_meta_instruction_budgeted(
         "io_request" => exec_io_request(instr, state).inspect(|_| *hit_out = true),
         "collect" => exec_collect(instr, state).map(MetaInstructionResult::State).inspect(|_| *hit_out = true),
         "merge" => exec_merge(instr, state).map(MetaInstructionResult::State).inspect(|_| *hit_out = true),
+        "enforce" => exec_enforce(instr, state).inspect(|result| {
+            // 结构命中口径：domain 求值为真（Halted 信号产生）即命中；
+            // 求值为假（noop 继续）不命中。
+            if matches!(result, MetaInstructionResult::Halted { .. }) {
+                *hit_out = true;
+            }
+        }),
         _ => Err(TcbError::UnknownMetaInstruction {
             meta_type: instr_type.to_string(),
         }),
@@ -151,7 +169,7 @@ mod executor_ssot_tests {
     /// 导致消费方（evorule-cli validate）误报合法规则。
     #[test]
     fn test_meta_instruction_types_ssot() {
-        assert_eq!(META_INSTRUCTION_TYPES.len(), 6);
+        assert_eq!(META_INSTRUCTION_TYPES.len(), 7);
         for t in META_INSTRUCTION_TYPES {
             let instr = JsonValue::object_from_pairs(&[("type", JsonValue::string(*t))]);
             if let Err(TcbError::UnknownMetaInstruction { .. }) =
@@ -765,11 +783,56 @@ fn exec_branch(
             match result {
                 MetaInstructionResult::State(new_state) => state = new_state,
                 io_required @ MetaInstructionResult::IoRequired { .. } => return Ok(io_required),
+                // enforce 信号传播即停（UV-147）：branch 子指令内的 enforce
+                // 命中同样中断整个转换（半成品纪律与顶层一致）
+                halted @ MetaInstructionResult::Halted { .. } => return Ok(halted),
             }
         }
     }
 
     Ok(MetaInstructionResult::State(state))
+}
+
+/// `enforce` 元指令：元规则强制原语（UV-147，纯机制不存策略）
+///
+/// # 参数（schema 门禁同口径：domain/reason 必填）
+/// - `domain`：域结构（7 基础域类型，与 branch 的 domain 同构；支持
+///   `__` 路径引用动态域，与 branch 范式一致）
+/// - `reason`：违规说明字符串——命中时随 Halted 信号透传，供反应器
+///   系统独占发射的 Violation 事实审计回显（必填：无 reason 的拦截
+///   不可审计，不允许静默强制）
+///
+/// # 语义
+/// - domain 求值 `Ok(true)` → `Halted { reason }`：状态转换层立即中断
+///   剩余 transform，违规指令被拒（此前状态修改随半成品一并丢弃）；
+/// - domain 求值 `Ok(false)` → `State(state)` noop 继续（不命中）；
+/// - domain 结构错误（未知类型/缺字段/超深）→ 显式 `TcbError`
+///   （fail-fast，与 branch 同语义：规则结构错误不允许静默求值）。
+///
+/// # 层级边界（引擎无层级概念）
+/// 本原语不感知 tier——"enforce 仅允许出现在 L2 元规则文件"由 server
+/// 侧装载门禁强制（见 evorule-server tier gate / schema 门禁）。
+fn exec_enforce(instr: &JsonValue, state: JsonValue) -> Result<MetaInstructionResult, TcbError> {
+    let params = instr.get("params").ok_or(TcbError::MissingField {
+        field: "params".to_string(),
+    })?;
+
+    let domain = resolve_path_or_literal(&state, params.get("domain"))?;
+    // 域结构错误（未知类型/缺字段/超深）显式报错，不在 TCB 层静默求值
+    if !evaluate_domain(&domain, &state)? {
+        return Ok(MetaInstructionResult::State(state));
+    }
+
+    let reason = params
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .ok_or(TcbError::MissingField {
+            field: "reason".to_string(),
+        })?;
+
+    Ok(MetaInstructionResult::Halted {
+        reason: reason.to_string(),
+    })
 }
 
 /// `io_request` 元指令：产生 I/O 请求信号（不修改状态）

@@ -88,6 +88,13 @@ pub fn fact_to_human(fact: &Fact) -> String {
                 rule_hits.len()
             )
         }
+        Fact::Violation { id, cause, rule_index, reason, .. } => format!(
+            "[F{}] Violation cause=F{} rule={} {}",
+            id.0,
+            cause.0,
+            rule_index,
+            reason
+        ),
     }
 }
 

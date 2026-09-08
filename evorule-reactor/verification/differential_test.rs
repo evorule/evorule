@@ -436,8 +436,10 @@ fn simulate_execution(
                 payload = new_payload;
                 queue = new_queue;
             }
-            // I/O 触发/忽略/错误：与 Reactor 行为一致（停止推进，等待 IoResponse/产生 Error）
+            // I/O 触发/enforce 拦截/忽略/错误：与 Reactor 行为一致
+            // （Halted：指令被拒停止推进，payload/queue 保持原样，等待 Violation 事实）
             Ok(TransitionResult::IoRequired { .. })
+            | Ok(TransitionResult::Halted { .. })
             | Ok(TransitionResult::Ignored { .. })
             | Err(_) => {
                 return (payload, queue);
