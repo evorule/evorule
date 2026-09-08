@@ -364,6 +364,18 @@ impl Reactor {
         interrupt_flag: Arc<AtomicBool>,
     ) -> Result<(), ReactorError> {
         let mut state = ReactorState::new();
+        // 种子化（2026-09-08）：facts_log 已带初始状态时（live fork /
+        // fork-from-archive 经 set_initial_state，或 WAL recover 重放后挂载），
+        // TCB 必须从该状态续跑——否则 TCB 与审计链快照分叉：链上 payload = X，
+        // 实际执行却从空状态起步，fork 语义与"可回放"承诺同时被破坏。
+        // 条件 version > 0：全新会话的空链（version 0）无需种子，行为不变。
+        let (seed_payload, seed_queue, seed_version) = self.facts_log.snapshot();
+        if seed_version > 0 {
+            state.payload = seed_payload;
+            state.queue = seed_queue.into();
+            state.version = seed_version;
+            state.prev_version = seed_version.saturating_sub(1);
+        }
         let mut id_gen = self
             .fact_id_start
             .map_or_else(FactIdGenerator::new, FactIdGenerator::resume);
