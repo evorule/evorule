@@ -87,7 +87,7 @@ GitHub Issues for international contributors.
 
 - OS: [e.g. Windows 11 / Ubuntu 22.04]
 - Rust: [e.g. 1.74]
-- evorule version: [e.g. 0.3.1]
+- evorule version: [e.g. 0.4.2]
 
 **Steps to reproduce**:
 
@@ -176,8 +176,8 @@ test(e2e): add core constitution smoke test
 
 **All contributions must include a CLA**. The bot will check automatically on PR.
 
-- Individual contributors: [CLA-individual.md](CLA-individual.md) (to be published)
-- Corporate contributors: contact <evorulelab@gmail.com>
+- Individual contributors: [CLA-individual.md](CLA-individual.md)（已发布）
+- Corporate contributors: [CLA-corporate.md](CLA-corporate.md)（已发布）
 
 **Why CLA?**
 

@@ -1,3 +1,8 @@
+<!--
+  本文件镜像自仓库根目录 /CHANGE_REQUEST_TEMPLATE.md（build.rs 门禁错误信息指向根路径）。
+  请勿在此单独修改；如需变更，请改根目录正本并同步本副本。
+-->
+
 # 变更审查表 (Change Request)
 
 > **版本**: 2.0
@@ -162,10 +167,31 @@
 - [ ] ✅ 属性测试（proptest）通过
 - [ ] ✅ 回归测试通过
 
-### 文档审查
-- [ ] ✅ 相关文档已更新
-- [ ] ✅ 代码注释清晰
-- [ ] ✅ CHANGELOG.md 已更新（如适用）
+### 文档审查（必填，参考 docs/CODE_DOC_MAP.md）
+
+> **工具提示**: commit 前运行 `powershell -File scripts/pre-commit-doc-check.ps1` 可自动生成需检查的文档清单。
+
+**通用文档**:
+- [ ] ✅ 根 `CHANGELOG.md` 已更新（任何用户可见变更必填）
+- [ ] ✅ `DOCS_INDEX.md` 已同步（新增/删除公开文档时必填）
+- [ ] ✅ `GATE_REFERENCE.md` 已同步（任何 crate 的 build.rs 门禁变更时必填）
+
+**按受影响 crate 检查（在本次变更涉及的 crate 前打勾）**:
+- [ ] **evorule-tcb**: `TCB_SPEC.md` + `README.md` 已同步
+- [ ] **evorule-reactor**: `REACTOR_SPEC.md` + `README.md` 已同步
+- [ ] **evorule-governance**: `GOVERNANCE_SPEC.md` + `README.md` 已同步
+- [ ] **evorule-cli**: `CLI_SPEC.md` + `README.md` + `CHANGELOG.md` 已同步
+
+**特殊变更检查**:
+- [ ] ✅ `core_eval.json` 变更 → 教程（docs/tutorial/02、03）+ 根 README 已同步
+- [ ] ✅ 公开 API / 用户可见行为变更 → 对应教程（docs/tutorial/）已同步
+- [ ] ✅ 新增/删除公开文档 → `DOCS_INDEX.md` + `docs/SUMMARY.md` 已同步
+- [ ] ✅ Kani 验证变更 → 对应 verification/ 文档已同步
+- [ ] ✅ 代码注释清晰，无遗留 TODO/FIXME
+
+**文档同步确认**:
+- [ ] ✅ 已运行 `scripts/pre-commit-doc-check.ps1` 并确认所有建议文档已处理
+- [ ] ✅ 已查阅 `docs/CODE_DOC_MAP.md` 确认无遗漏
 
 ---
 

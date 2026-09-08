@@ -20,7 +20,7 @@
 # EvoRule 商标政策
 
 <div align="center">
-  <img src="assets/evorule-logo.png" alt="EvoRule Logo" width="120" height="120">
+  <img src="assets/evorule-banner.svg" alt="EvoRule Banner" width="320" height="80">
   <br><br>
 </div>
 
@@ -46,8 +46,8 @@ EvoRule Project 拥有以下商标(统称"EvoRule 商标"):
 | 商标 | 类型 |
 |---|---|
 | **EvoRule** | 文字商标 |
-| **EvoRule Logo**(logo.png / evorule-logo.png) | 图形商标 |
-| **EvoRule Banner**(banner.svg) | 图形商标 |
+| **EvoRule Logo**（独立 Logo，待制作） | 图形商标 |
+| **EvoRule Banner**（evorule-banner.svg，现有） | 图形商标 |
 | **"规则不言语。它们只运行。而我们是首批见证者。"** | Slogan(可能注册) |
 | **"Knowledge Execution"** | 英文 Slogan(可能注册) |
 | **"只接受和运行 JSON 数据集"** | 中文 Slogan(可能注册) |

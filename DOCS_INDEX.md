@@ -49,7 +49,9 @@
 | [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)                                | 商业许可        | 不希望开源派生的商业场景购买方式                   |
 | [FREE_COMMERCIAL_LICENSE.md](FREE_COMMERCIAL_LICENSE.md)                      | 免费商用许可    | 个人/小团队年收入门槛以下免费商用                  |
 | [CLA-individual.md](CLA-individual.md)                                        | 个人 CLA        | 贡献者许可协议（个人版）                           |
+| [CLA-corporate.md](CLA-corporate.md)                                        | 企业 CLA        | 贡献者许可协议（企业版，与 Individual 互补）       |
 | [NOTICE.md](NOTICE.md)                                                              | 通知文件        | 第三方版权通知                                     |
+| [LICENSES/core_eval-CC0-1.0.txt](LICENSES/core_eval-CC0-1.0.txt)                  | CC0 文本        | 宪法 core_eval.json 的 CC0-1.0 公共领域全文        |
 | [AUTHORS.md](AUTHORS.md)                                                      | 作者列表        | 核心贡献者名单                                     |
 | [TRADEMARK.md](TRADEMARK.md)                                                  | 商标政策        | "EvoRule"、"元则"、"则灵"商标使用规范              |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)                                      | 行为准则        | 贡献者行为守则（Contributor Covenant 2.1）         |
