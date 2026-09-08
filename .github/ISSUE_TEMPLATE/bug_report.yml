@@ -1,0 +1,58 @@
+name: Bug 报告 / Bug Report
+description: 报告一个可复现的缺陷
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告缺陷。请尽量提供可复现信息, 以便快速定位。
+        **安全相关缺陷请走 SECURITY.md 的私秘渠道, 勿在此公开。**
+  - type: dropdown
+    id: component
+    attributes:
+      label: 涉及组件
+      options:
+        - evorule-cli
+        - evorule-governance (审计链)
+        - evorule-reactor (ReAct 循环)
+        - evorule-tcb (确定性内核)
+        - 文档 / 治理流程
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 现象
+      description: 实际发生了什么?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望
+      description: 你预期发生什么?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 最小可复现步骤 / 输入 JSON / 命令
+      placeholder: |
+        1. evorule run --rule xxx.json
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / tag
+      placeholder: v0.4.2
+  - type: checkboxes
+    id: cla
+    attributes:
+      label: CLA
+      options:
+        - label: 我已阅读并同意 Individual CLA (CLA-individual.md)
+          required: true

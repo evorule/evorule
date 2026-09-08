@@ -1,0 +1,48 @@
+name: Mirror from Gitee
+
+# 与 evorule-server 同构: Gitee 是主仓, GitHub 是镜像。
+# 定时(UTC 00:00 = 北京时间 08:00)将 Gitee 的全部分支与 tag 强制同步到 GitHub,
+# 保证两仓一致, 推送一次即可。手动触发见 workflow_dispatch。
+#
+# 前置: 在 GitHub 仓库 Settings → Secrets and variables → Actions 配置
+#   GITEE_TOKEN (Gitee 个人令牌, 勾选 repos + projects 权限) 用于鉴权推送。
+#   注意: 下方 fetch 用匿名 https 只读拉取即可, 推送到 GitHub 用内置 GITHUB_TOKEN。
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    name: Mirror branches and tags from Gitee
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 配置 Gitee remote (带鉴权)
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          if [ -z "$GITEE_TOKEN" ]; then echo "ERROR: 缺 GITEE_TOKEN"; exit 1; fi
+          git remote add gitee "https://oauth2:${GITEE_TOKEN}@gitee.com/evorule/evorule.git" \
+            || git remote set-url gitee "https://oauth2:${GITEE_TOKEN}@gitee.com/evorule/evorule.git"
+
+      - name: Fetch from Gitee
+        run: |
+          git fetch gitee --tags --prune --force
+
+      - name: Mirror branches to GitHub
+        run: |
+          for branch in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/gitee/); do
+            [ -z "$branch" ] && continue
+            git push origin "refs/remotes/gitee/$branch:refs/heads/$branch" --force
+          done
+
+      - name: Mirror tags to GitHub
+        run: git push origin --tags --force
