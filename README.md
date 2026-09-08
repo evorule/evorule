@@ -297,10 +297,10 @@ cargo test --workspace --features persistence
 | cli has no I/O handler | On `IoRequest` it errors and stops; for I/O needs use evorule-server or implement the `IoHandler` trait yourself |
 | Legacy WAL: structure-only check | Legacy WAL (no hash field): `verify-chain` does structure-only validation, not hash validation; new WAL gets full hash validation |
 | ffi debug semantics | The reactor is an event-driven state machine; traditional debugger controls `pause`/`resume`/`step`/`is_paused` do not apply; debug capability is provided by a purpose-built debug scheme (evorule-server application layer) |
-| Debug control is an application-layer capability | `pause` suspends SSE polling (not execution); `step` is a rewind replay (not a real single step); implemented by evorule-server, not the core repo |
+| Debug control is an application-layer capability | `pause` suspends polling (not execution); `step` is a rewind replay (not a real single step); debug control lives at the application layer, not the core repo |
 | Unknown IoResponse: currently warn-and-ignore | On an unpairable `IoResponse`, a warning is logged and no Error is produced (design to be confirmed) |
 | macOS not CI-verified | Prebuilt artifacts and CI cover Linux / Windows only; macOS can be built from source but is unverified — evaluate at your own risk |
-| Business-rule hot-reload is application-layer | The core `core_eval` loads at startup and is immutable at runtime; evorule-server achieves hot-reload via `notify` watch |
+| Business-rule hot-reload is application-layer | The core `core_eval` loads at startup and is immutable at runtime; business-rule hot-reload is an application-layer capability |
 | Reproducible builds not yet in CI | All known nondeterminism sources are already eliminated by design (fixed `SOURCE_DATE_EPOCH` / incremental compilation disabled / build-id stripped, see `evorule-cli/build-musl.sh`); during development 10,000 repeated builds were measured with identical SHA256; the `--repro` verification script is retained for on-demand reproduction, but is not yet run automatically in CI; once restored, each release will include a dual-build comparison |
 
 ---
@@ -437,7 +437,7 @@ evorule/
 
 ### Limitations of the current release (v0.4.2)
 
-- **Core repo has no hot-reload**: `core_eval` loads at startup and is immutable at runtime (the application layer evorule-server supports business-rule hot-reload)
+- **Core repo has no hot-reload**: `core_eval` loads at startup and is immutable at runtime (business-rule hot-reload is an application-layer capability)
 - **cli has no I/O handler**: `IoRequest` errors and stops (auditable failure)
 - **ffi has no traditional debug semantics**: the event-driven state machine offers no `pause`/`resume`/`step`/`is_paused`; debug is provided by a purpose-built scheme
 - **Debug control is application-layer**: not a real single step, but a rewind replay
