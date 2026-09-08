@@ -309,12 +309,47 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
             })
     };
 
+    // 写侧 attr 禁止 payload. 前缀（UV-146 方案 a，引擎级运行时守卫）：
+    // attr 相对 __exec__.payload 解析，带 payload. 前缀会双重嵌套写入
+    // payload.payload.*（静默失败——不报错但写到错误位置，读者永远 miss，
+    // 实证：种子元规则哨兵自读不到自身状态标记恒违规）。
+    // schema 门禁（payload_attr_path）在加载/提交期已拒；此处兜底覆盖
+    // 状态引用间接产生的前缀与绕过门禁的执行入口。
+    // 豁免：__exec__.payload. 显式全形式剥离后的后缀不再守卫——作者显式锚定
+    // payload 根（如 __exec__.payload.payload.deep 写 payload 内同名子字段）
+    // 是意图明确的合法写法；schema 侧 not.pattern 只匹配裸串，与此一致。
     let attr: String = match attr_raw.as_str() {
         Some(raw) => match raw.strip_prefix("__exec__.payload.") {
             Some(suffix) => suffix.to_string(),
-            None => resolve_attr_from_state()?,
+            None => {
+                let resolved = resolve_attr_from_state()?;
+                if resolved.starts_with("payload.") {
+                    return Err(TcbError::PathResolutionFailed {
+                        path: resolved,
+                        reason: "写侧 attr 禁止以 payload. 开头：attr 相对 __exec__.payload \
+                                 解析，带前缀会双重嵌套写入 payload.payload.*。请直接写 \
+                                 payload 内相对路径（如 meta_guard.cleared_for_move），\
+                                 真需写 payload 内同名子字段时用 __exec__.payload. 显式全形式"
+                            .to_string(),
+                    });
+                }
+                resolved
+            }
         },
-        None => resolve_attr_from_state()?,
+        None => {
+            let resolved = resolve_attr_from_state()?;
+            if resolved.starts_with("payload.") {
+                return Err(TcbError::PathResolutionFailed {
+                    path: resolved,
+                    reason: "写侧 attr 禁止以 payload. 开头：attr 相对 __exec__.payload 解析，\
+                             带前缀会双重嵌套写入 payload.payload.*。请直接写 \
+                             payload 内相对路径（如 meta_guard.cleared_for_move），\
+                             真需写 payload 内同名子字段时用 __exec__.payload. 显式全形式"
+                        .to_string(),
+                });
+            }
+            resolved
+        }
     };
 
     let operation =
@@ -1124,6 +1159,129 @@ mod tests {
         let result = exec_set(&instr, state).unwrap();
         let value = resolve_path(&result, "__exec__.payload.name").unwrap();
         assert_eq!(value, &JsonValue::string("hello"));
+    }
+
+    // ===== 写侧 attr payload. 前缀守卫测试（UV-146 方案 a）=====
+
+    /// 错误形态：attr 带 payload. 前缀 → 显式报错（拒绝双重嵌套静默写歪）
+    #[test]
+    fn test_set_payload_prefix_attr_rejected() {
+        let state = make_exec_state("set", make_payload(0), vec![]);
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("set")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("attr", JsonValue::string("payload.meta_guard.cleared")),
+                    ("operation", JsonValue::string("set")),
+                    ("value", JsonValue::Bool(true)),
+                ]),
+            ),
+        ]);
+
+        let err = exec_set(&instr, state).unwrap_err();
+        match err {
+            TcbError::PathResolutionFailed { path, reason } => {
+                assert_eq!(path, "payload.meta_guard.cleared");
+                assert!(
+                    reason.contains("payload.") && reason.contains("双重嵌套"),
+                    "错误原因应含双重嵌套指引: {reason}"
+                );
+            }
+            other => panic!("expected PathResolutionFailed, got: {other:?}"),
+        }
+    }
+
+    /// 状态引用间接产生的 payload. 前缀同样被拒（守卫作用于解析后的最终 attr）
+    #[test]
+    fn test_set_state_ref_attr_resolving_to_payload_prefix_rejected() {
+        let mut params = BTreeMap::new();
+        params.insert("target".to_string(), JsonValue::string("payload.x"));
+        let instruction = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("set")),
+            ("params", JsonValue::Object(params)),
+        ]);
+        let state = make_exec_state_with_instruction(instruction, make_payload(0), vec![]);
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("set")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("attr", JsonValue::string("__exec__.instruction.params.target")),
+                    ("operation", JsonValue::string("set")),
+                    ("value", JsonValue::Integer(1)),
+                ]),
+            ),
+        ]);
+
+        let err = exec_set(&instr, state).unwrap_err();
+        assert!(
+            matches!(err, TcbError::PathResolutionFailed { ref path, .. } if path == "payload.x"),
+            "运行时解析出 payload. 前缀 attr 应被拒: {err:?}"
+        );
+    }
+
+    /// 显式全形式 __exec__.payload.x 放行（剥离前缀后写 payload.x）
+    #[test]
+    fn test_set_exec_payload_full_form_ok() {
+        let state = make_exec_state("set", make_payload(0), vec![]);
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("set")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("attr", JsonValue::string("__exec__.payload.x")),
+                    ("operation", JsonValue::string("set")),
+                    ("value", JsonValue::Integer(9)),
+                ]),
+            ),
+        ]);
+
+        let result = exec_set(&instr, state).unwrap();
+        let payload = resolve_path(&result, "__exec__.payload").unwrap();
+        assert_eq!(payload.get("x"), Some(&JsonValue::Integer(9)));
+    }
+
+    /// 显式全形式 __exec__.payload.payload.deep 是写 payload.payload.* 的唯一合法途径
+    #[test]
+    fn test_set_exec_payload_nested_full_form_ok() {
+        let state = make_exec_state("set", make_payload(0), vec![]);
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("set")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("attr", JsonValue::string("__exec__.payload.payload.deep")),
+                    ("operation", JsonValue::string("set")),
+                    ("value", JsonValue::Integer(1)),
+                ]),
+            ),
+        ]);
+
+        let result = exec_set(&instr, state).unwrap();
+        let nested = resolve_path(&result, "__exec__.payload.payload.deep").unwrap();
+        assert_eq!(nested, &JsonValue::Integer(1));
+    }
+
+    /// 裸简写嵌套路径（种子元规则正确形态）不受守卫影响
+    #[test]
+    fn test_set_bare_shorthand_nested_path_ok() {
+        let state = make_exec_state("set", make_payload(0), vec![]);
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("set")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("attr", JsonValue::string("meta_guard.cleared_for_move")),
+                    ("operation", JsonValue::string("set")),
+                    ("value", JsonValue::Bool(true)),
+                ]),
+            ),
+        ]);
+
+        let result = exec_set(&instr, state).unwrap();
+        let flag = resolve_path(&result, "__exec__.payload.meta_guard.cleared_for_move").unwrap();
+        assert_eq!(flag, &JsonValue::Bool(true));
     }
 
     #[test]
