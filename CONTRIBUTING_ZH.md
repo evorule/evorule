@@ -20,8 +20,8 @@
 # EvoRule 贡献指南（中文版）
 
 **项目**: EvoRule — 反应式执行引擎
-**版本**: v6.0
-**最后更新**: 2026-07-19
+**版本**: 0.4.2
+**最后更新**: 2026-09-08
 
 ---
 
@@ -91,7 +91,7 @@
 
 - OS: [e.g. Windows 11 / Ubuntu 22.04]
 - Rust: [e.g. 1.74]
-- evorule 版本: [e.g. v0.4.1]
+- evorule 版本: [e.g. 0.4.2]
 
 **复现步骤**:
 
@@ -180,8 +180,8 @@ test(e2e): 添加宪法核心冒烟测试
 
 **所有贡献必须签署 CLA**。提交 PR 时,机器人会自动检查。
 
-- 个人贡献者:[CLA-individual.md](CLA-individual.md)(待发布)
-- 企业贡献者:请联系 <evorulelab@gmail.com>
+- 个人贡献者:[CLA-individual.md](CLA-individual.md)(已发布)
+- 企业贡献者:[CLA-corporate.md](CLA-corporate.md)(已发布)
 
 **为什么需要 CLA?**
 

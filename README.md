@@ -485,6 +485,7 @@ evorule/
 
 - **Code**: AGPL-3.0-or-later (see [LICENSE](LICENSE))
 - **core_eval.json (the constitution)**: CC0-1.0 Universal (public domain — anyone may use, modify, and redistribute freely)
+- **Dual licensing & free closed-source waiver**: see [DUAL_LICENSE.md](DUAL_LICENSE.md), [FREE_COMMERCIAL_LICENSE.md](FREE_COMMERCIAL_LICENSE.md), [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md). AGPL is free for compliant use; closed-source embedding/distribution requires FCL (free for eligible entities) or a Commercial License.
 
 ---
 
