@@ -80,6 +80,10 @@ scripts/__*.sh
 **/scripts/_*.sh
 **/scripts/__*.sh
 
+# 阶段1 临时运行脚本显式兜底（scripts/_*.ps1 已覆盖，此处显式列出便于审查）
+scripts/_cargo_gate*
+scripts/_stage_*
+
 # Python 缓存
 __pycache__/
 **/__pycache__/
