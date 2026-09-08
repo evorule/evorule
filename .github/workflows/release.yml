@@ -9,12 +9,18 @@
 # - 发布矩阵覆盖当前支持的平台 (Linux / Windows)
 # - Linux 用 musl 静态链接, 产出单一可执行文件
 # - tag 格式: v0.1.0 / v0.2.4 等
+# - 二进制由 cosign keyless (OIDC) 签名, .sig 随 Release 发布, 见 SIGNING.md
+
 name: Release
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write   # cosign keyless 签名所需 OIDC token
 
 env:
   CARGO_TERM_COLOR: always
@@ -71,11 +77,54 @@ jobs:
           path: target/${{ matrix.target }}/release/evorule${{ matrix.ext }}
 
   # ==========================================================================
-  # 2. 汇总发布
+  # 2. 发布二进制 cosign keyless 签名 (OIDC, 无密钥管理)
+  #    签名落库为 .sig, 随 Release 资产发布。验证见 SIGNING.md。
+  # ==========================================================================
+  sign:
+    name: sign (cosign keyless)
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 下载 Linux 构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: evorule-linux-x86_64
+          path: sign/linux
+
+      - name: 下载 Windows 构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: evorule-windows-x86_64
+          path: sign/windows
+
+      - name: 安装 cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Keyless 签名 (OIDC)
+        run: |
+          mkdir -p sigout
+          cosign sign-blob --yes \
+            sign/linux/evorule \
+            --output-signature sigout/evorule-linux-x86_64.sig
+          cosign sign-blob --yes \
+            sign/windows/evorule.exe \
+            --output-signature sigout/evorule-windows-x86_64.exe.sig
+          ls -la sigout
+
+      - name: 上传签名产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: evorule-sigs
+          path: sigout/
+
+  # ==========================================================================
+  # 3. 汇总发布 (GitHub Release)
   # ==========================================================================
   release:
     name: release
-    needs: [build]
+    needs: [build, sign]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -99,18 +148,25 @@ jobs:
           mv artifacts/evorule.exe artifacts/evorule-windows-x86_64.exe
           ls -la artifacts/
 
+      - name: 下载签名
+        uses: actions/download-artifact@v4
+        with:
+          name: evorule-sigs
+          path: sigs
+
       - name: 创建 Release 并附加二进制
         uses: softprops/action-gh-release@v2
         with:
           files: |
             artifacts/evorule-linux-x86_64
             artifacts/evorule-windows-x86_64.exe
+            sigs/evorule-linux-x86_64.sig
+            sigs/evorule-windows-x86_64.exe.sig
           generate_release_notes: true
 
   # ==========================================================================
-  # 3. 双平台产物附加到 Gitee Release (gitee 是主仓/发布主入口)
-  #    Gitee Go 云端 agent 对当前账号不可用(agents not available,资源侧问题
-  #    登记台账 UV-098),故双平台二进制均由本侧构建并经 Gitee OpenAPI 附加到
+  # 4. 双平台产物附加到 Gitee Release (gitee 是主仓/发布主入口)
+  #    Gitee Go 云端 agent 对当前账号不可用(agents not available,登记台账 UV-098),故双平台二进制均由本侧构建并经 Gitee OpenAPI 附加到
   #    gitee Release;Gitee Go agent 就绪后可切回原生构建(脚本见 .workflow/release.yml)。
   #    幂等: gitee release 不存在则创建,存在则复用。
   #    需在 github 仓库 Settings → Secrets and variables → Actions 配置 GITEE_TOKEN
@@ -118,7 +174,7 @@ jobs:
   # ==========================================================================
   attach-gitee:
     name: attach-all-to-gitee
-    needs: [build]
+    needs: [build, sign]
     runs-on: ubuntu-latest
     steps:
       - name: 下载 Linux 构建产物
@@ -133,10 +189,18 @@ jobs:
           name: evorule-windows-x86_64
           path: gitee-assets/windows
 
+      - name: 下载签名
+        uses: actions/download-artifact@v4
+        with:
+          name: evorule-sigs
+          path: gitee-assets/sigs
+
       - name: 补平台后缀并计算 sha256
         run: |
           mv gitee-assets/linux/evorule gitee-assets/evorule-linux-x86_64
           mv gitee-assets/windows/evorule.exe gitee-assets/evorule-windows-x86_64.exe
+          cp gitee-assets/sigs/evorule-linux-x86_64.sig gitee-assets/
+          cp gitee-assets/sigs/evorule-windows-x86_64.exe.sig gitee-assets/
           cd gitee-assets
           sha256sum evorule-linux-x86_64 evorule-windows-x86_64.exe > sha256-checks.txt
           sha256sum evorule-linux-x86_64 > evorule-linux-x86_64.sha256
@@ -176,7 +240,7 @@ jobs:
           echo "gitee Release id: ${RELEASE_ID}"
 
           cd gitee-assets
-          for f in evorule-linux-x86_64 evorule-linux-x86_64.sha256 evorule-windows-x86_64.exe evorule-windows-x86_64.exe.sha256; do
+          for f in evorule-linux-x86_64 evorule-linux-x86_64.sha256 evorule-linux-x86_64.sig evorule-windows-x86_64.exe evorule-windows-x86_64.exe.sha256 evorule-windows-x86_64.exe.sig; do
             echo "上传 ${f} ..."
             curl --retry 3 --retry-delay 5 --retry-connrefused -fsS -X POST \
               "https://gitee.com/api/v5/repos/${REPO}/releases/${RELEASE_ID}/attach_files" \
