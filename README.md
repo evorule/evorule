@@ -486,6 +486,7 @@ evorule/
 - **Code**: AGPL-3.0-or-later (see [LICENSE](LICENSE))
 - **core_eval.json (the constitution)**: CC0-1.0 Universal (public domain — anyone may use, modify, and redistribute freely)
 - **Dual licensing & free closed-source waiver**: see [DUAL_LICENSE.md](DUAL_LICENSE.md), [FREE_COMMERCIAL_LICENSE.md](FREE_COMMERCIAL_LICENSE.md), [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md). AGPL is free for compliant use; closed-source embedding/distribution requires FCL (free for eligible entities) or a Commercial License.
+- **Contributor License Agreement (CLA)**: all contributions require a signed CLA — individuals via [CLA-individual.md](CLA-individual.md); companies via [CLA-corporate.md](CLA-corporate.md) (note: Gitee's official CLA supports individual signing only, no corporate entry — companies must use the manual email process).
 
 ---
 

@@ -179,6 +179,8 @@ test(e2e): add core constitution smoke test
 - Individual contributors: [CLA-individual.md](CLA-individual.md)（已发布）
 - Corporate contributors: [CLA-corporate.md](CLA-corporate.md)（已发布）
 
+> ⚠️ **Corporate contributors**: Gitee's official CLA module currently supports **individual signing only — there is no corporate entry**. Do **not** sign the individual CLA on behalf of your company. Follow the "企业如何签署" / corporate signing steps in [CLA-corporate.md](CLA-corporate.md) (download → fill → email <evorulelab@gmail.com> → manual review).
+
 **Why CLA?**
 
 - Enable commercial licensing (see [DUAL_LICENSE.md](DUAL_LICENSE.md))
