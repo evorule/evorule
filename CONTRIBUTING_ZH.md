@@ -183,6 +183,8 @@ test(e2e): 添加宪法核心冒烟测试
 - 个人贡献者:[CLA-individual.md](CLA-individual.md)(已发布)
 - 企业贡献者:[CLA-corporate.md](CLA-corporate.md)(已发布)
 
+> ⚠️ **企业贡献者注意**:Gitee 官方 CLA 模块当前**仅支持个人签署,无企业入口**。请勿以个人 CLA 代替公司 CLA。企业须按 [CLA-corporate.md](CLA-corporate.md) 的"企业如何签署"走邮件人工流程(下载 → 填写 → 发 <evorulelab@gmail.com> → 人工审阅)。
+
 **为什么需要 CLA?**
 
 - 保护项目可商业化(参考 [DUAL_LICENSE.md](DUAL_LICENSE.md))
