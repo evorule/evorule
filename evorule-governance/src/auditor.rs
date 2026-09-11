@@ -578,6 +578,9 @@ impl Auditor {
     /// # 注意
     /// 此方法不校验 FactsLog 中是否存在对应 Fact，仅恢复内存结构。
     /// 调用方应确保 WAL 文件来自可信来源。
+    //
+    // 注：deprecated 的旧版 WAL 加载函数，保持原实现便于行为对比。
+    #[allow(clippy::too_many_lines)]
     #[deprecated(
         since = "0.2.0",
         note = "两套 WAL 合并：请使用 load_from_tier1_wal 读取 tier1 WAL（带哈希验证）"
@@ -1614,16 +1617,15 @@ mod tests {
         let mut auditor = Auditor::new(log);
         //：损坏行不再静默跳过——显式拒绝加载
         // 并附 [EVO-AUDIT-WAL-CORRUPT] 标记与补救指引（审计完整性政策）。
-        let err = auditor.load_from_wal(&tmp).expect_err("损坏 WAL 必须拒绝加载");
+        let err = auditor
+            .load_from_wal(&tmp)
+            .expect_err("损坏 WAL 必须拒绝加载");
         let msg = err.to_string();
         assert!(
             msg.contains("EVO-AUDIT-WAL-CORRUPT"),
             "错误信息须含 [EVO-AUDIT-WAL-CORRUPT] 标记: {msg}"
         );
-        assert!(
-            msg.contains("Line: 1"),
-            "错误信息须含损坏行号: {msg}"
-        );
+        assert!(msg.contains("Line: 1"), "错误信息须含损坏行号: {msg}");
         assert!(
             auditor.entries().is_empty(),
             "拒绝加载后不得残留部分条目（要么完整要么为零）"

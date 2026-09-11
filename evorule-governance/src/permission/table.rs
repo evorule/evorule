@@ -247,11 +247,7 @@ impl PermissionTable {
     }
 
     /// 删除一条目（写入墓碑，历史保留）
-    pub fn remove(
-        log: &SharedFactsLog,
-        id: &str,
-        session_id: u64,
-    ) -> Result<(), PermissionError> {
+    pub fn remove(log: &SharedFactsLog, id: &str, session_id: u64) -> Result<(), PermissionError> {
         let mut tomb = serde_json::Map::new();
         tomb.insert(TOMBSTONE_KEY.to_string(), serde_json::Value::Bool(true));
         let value = super::serde_to_tcb(&serde_json::Value::Object(tomb));

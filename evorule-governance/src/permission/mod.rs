@@ -26,11 +26,11 @@ pub mod gate;
 pub mod table;
 
 pub use condition::ConditionEvaluator;
-pub use gate::PermissionGate;
 pub use entry::{
     Effect, PermissionEntry, PermissionError, PermissionState, Resource, ResourceType, Scope,
     Subject, SubjectType,
 };
+pub use gate::PermissionGate;
 pub use table::{DefaultPolicy, PermissionTable, Verdict};
 
 use evorule_tcb::JsonValue;
@@ -45,9 +45,7 @@ pub(crate) fn tcb_to_serde(v: &JsonValue) -> serde_json::Value {
         JsonValue::Bool(b) => serde_json::Value::Bool(*b),
         JsonValue::Integer(i) => serde_json::Value::Number((*i).into()),
         JsonValue::String(s) => serde_json::Value::String(s.to_string()),
-        JsonValue::Array(a) => {
-            serde_json::Value::Array(a.iter().map(tcb_to_serde).collect())
-        }
+        JsonValue::Array(a) => serde_json::Value::Array(a.iter().map(tcb_to_serde).collect()),
         JsonValue::Object(m) => {
             let obj = m
                 .iter()
@@ -65,13 +63,12 @@ pub(crate) fn serde_to_tcb(v: &serde_json::Value) -> JsonValue {
     match v {
         serde_json::Value::Null => JsonValue::Null,
         serde_json::Value::Bool(b) => JsonValue::Bool(*b),
-        serde_json::Value::Number(n) => {
-            n.as_i64().map(JsonValue::Integer).unwrap_or(JsonValue::Null)
-        }
+        serde_json::Value::Number(n) => n
+            .as_i64()
+            .map(JsonValue::Integer)
+            .unwrap_or(JsonValue::Null),
         serde_json::Value::String(s) => JsonValue::String(s.clone().into()),
-        serde_json::Value::Array(a) => {
-            JsonValue::Array(a.iter().map(serde_to_tcb).collect())
-        }
+        serde_json::Value::Array(a) => JsonValue::Array(a.iter().map(serde_to_tcb).collect()),
         serde_json::Value::Object(o) => {
             let mut map = JsonValue::empty_object();
             if let Some(obj) = map.as_object_mut() {

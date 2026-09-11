@@ -475,6 +475,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::panic)] // 测试断言失败提示使用 panic!（assert 风格，符合测试惯用法）
     fn test_next_step_enforce_halt_drops_instruction_and_keeps_state() {
         // UV-147 语义：违规指令被拒——出队即丢弃（不推回）、payload/queue
         // 保持原样、version 不 bump（无状态转移发生）
@@ -496,10 +497,7 @@ mod tests {
         }
 
         // payload 原样、队列空（指令被丢弃未推回）、version 不变
-        assert_eq!(
-            state.payload.get("data"),
-            Some(&JsonValue::string("keep"))
-        );
+        assert_eq!(state.payload.get("data"), Some(&JsonValue::string("keep")));
         assert!(state.queue.is_empty());
         assert_eq!(state.version, prev_version);
     }

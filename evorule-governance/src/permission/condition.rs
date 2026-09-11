@@ -34,8 +34,7 @@ impl ConditionEvaluator {
         payload: &JsonValue,
     ) -> Result<bool, PermissionError> {
         if conditions.is_null()
-            || (conditions.is_object()
-                && conditions.as_object().is_some_and(|o| o.is_empty()))
+            || (conditions.is_object() && conditions.as_object().is_some_and(|o| o.is_empty()))
         {
             return Ok(true);
         }

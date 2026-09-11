@@ -309,7 +309,7 @@ impl IoSubscriber {
     /// 200ms → 400ms → 800ms。客户端错误（参数缺失/4xx/工具未找到）不重试。
     /// 重试耗尽后回写最终错误 `IoResponse`，让反应器恢复而非永久阻塞。
     // IO dispatch + 重试 + 错误回写多分支, 拆函数需共享 self/cmd 状态。详见 GATE_REFERENCE.md §六(豁免索引)
-    #[allow(clippy::cognitive_complexity)]
+    #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
     async fn dispatch_and_respond(
         &mut self,
         request_id: FactId,
@@ -357,9 +357,9 @@ impl IoSubscriber {
                         io_type.as_str()
                     )),
                 };
-                return command_tx
-                    .send(response)
-                    .map_err(|_| IoSubscriberError::CommandClosed(format!("request_id={request_id}")));
+                return command_tx.send(response).map_err(|_| {
+                    IoSubscriberError::CommandClosed(format!("request_id={request_id}"))
+                });
             }
         }
 
@@ -554,14 +554,14 @@ mod tests {
     #[tokio::test]
     async fn test_skip_predicate_leaves_io_request_unanswered() {
         // 空 dispatcher：若未跳过而走 dispatch，必然回写错误 IoResponse
-        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build()).with_skip(Arc::new(
-            |io_type: &IoType, params: &JsonValue| {
+        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build()).with_skip(
+            Arc::new(|io_type: &IoType, params: &JsonValue| {
                 io_type.as_str() == "call_external"
                     && params.get("messages").is_some()
                     && params.get("service_name").is_none()
                     && params.get("name").is_none()
-            },
-        ));
+            }),
+        );
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let fact = Fact::IoRequest {
@@ -574,10 +574,7 @@ mod tests {
         let result = subscriber.handle_fact(fact, &tx).await;
         assert!(result.is_ok());
         // 关键断言：command 通道无任何 IoResponse（外部执行者的 io_response 不会被抢答）
-        assert!(
-            rx.try_recv().is_err(),
-            "skip 命中时不应回写任何 IoResponse"
-        );
+        assert!(rx.try_recv().is_err(), "skip 命中时不应回写任何 IoResponse");
     }
 
     /// 对照组：默认（无 skip）→ dispatch 失败 → 回写错误 IoResponse（历史行为不变）
@@ -597,7 +594,9 @@ mod tests {
         assert!(result.is_ok());
         // 空 dispatcher → dispatch Err → 错误 IoResponse 回写
         match rx.try_recv() {
-            Ok(Fact::IoResponse { request_id, error, .. }) => {
+            Ok(Fact::IoResponse {
+                request_id, error, ..
+            }) => {
                 assert_eq!(request_id, FactId(2));
                 assert!(error.is_some(), "未注册类型应回写错误 IoResponse");
             }
@@ -608,14 +607,14 @@ mod tests {
     /// 谓词只命中 LLM 审计形态：带 service_name 的 call_external 不跳过（照常分发）
     #[tokio::test]
     async fn test_skip_predicate_does_not_hit_service_calls() {
-        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build()).with_skip(Arc::new(
-            |io_type: &IoType, params: &JsonValue| {
+        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build()).with_skip(
+            Arc::new(|io_type: &IoType, params: &JsonValue| {
                 io_type.as_str() == "call_external"
                     && params.get("messages").is_some()
                     && params.get("service_name").is_none()
                     && params.get("name").is_none()
-            },
-        ));
+            }),
+        );
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         // service 调用形态：service_name 存在、无 messages
@@ -673,10 +672,8 @@ mod tests {
         );
 
         // 装配后 → true
-        let gate =
-            PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()));
-        let gated =
-            IoSubscriber::new(IoDispatcher::builder().build()).with_permission_gate(gate);
+        let gate = PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()));
+        let gated = IoSubscriber::new(IoDispatcher::builder().build()).with_permission_gate(gate);
         assert!(
             gated.permission_gate_enabled(),
             "注入 PermissionGate 后必须报告守卫已装配"
@@ -691,7 +688,8 @@ mod tests {
         use std::sync::Arc as StdArc;
 
         let gate = PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()));
-        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build()).with_permission_gate(gate);
+        let mut subscriber =
+            IoSubscriber::new(IoDispatcher::builder().build()).with_permission_gate(gate);
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         subscriber
@@ -700,7 +698,9 @@ mod tests {
             .unwrap();
 
         match rx.try_recv() {
-            Ok(Fact::IoResponse { request_id, error, .. }) => {
+            Ok(Fact::IoResponse {
+                request_id, error, ..
+            }) => {
                 assert_eq!(request_id, FactId(10));
                 let err = error.expect("Deny 必须回写错误 IoResponse");
                 assert!(
@@ -722,7 +722,8 @@ mod tests {
 
         let gate = PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()))
             .with_caller_role_resolver(StdArc::new(|_| CallerRole::Human));
-        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build()).with_permission_gate(gate);
+        let mut subscriber =
+            IoSubscriber::new(IoDispatcher::builder().build()).with_permission_gate(gate);
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         subscriber
@@ -751,13 +752,11 @@ mod tests {
         let gate = PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()));
         let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build())
             .with_permission_gate(gate)
-            .with_skip(StdArc::new(
-                |io_type: &IoType, params: &JsonValue| {
-                    io_type.as_str() == "call_external"
-                        && params.get("messages").is_some()
-                        && params.get("service_name").is_none()
-                },
-            ));
+            .with_skip(StdArc::new(|io_type: &IoType, params: &JsonValue| {
+                io_type.as_str() == "call_external"
+                    && params.get("messages").is_some()
+                    && params.get("service_name").is_none()
+            }));
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let fact = Fact::IoRequest {

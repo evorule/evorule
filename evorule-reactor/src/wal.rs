@@ -297,6 +297,8 @@ pub fn serde_to_tcb(v: &serde_json::Value) -> JsonValue {
 /// ```json
 /// {"type": "Command", "id": 1, "instruction": {...}}
 /// ```
+// 注：match 全部 Fact 变体的序列化分支，有意保持单一函数便于对账字段映射。
+#[allow(clippy::too_many_lines)]
 pub fn fact_to_json(fact: &Fact) -> serde_json::Value {
     let mut obj = serde_json::Map::new();
     match fact {
@@ -374,7 +376,10 @@ pub fn fact_to_json(fact: &Fact) -> serde_json::Value {
         Fact::Stable { id, version } => {
             obj.insert("type".into(), serde_json::Value::String("Stable".into()));
             obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
-            obj.insert("version".into(), serde_json::Value::Number((*version).into()));
+            obj.insert(
+                "version".into(),
+                serde_json::Value::Number((*version).into()),
+            );
         }
         Fact::Error { id, message } => {
             obj.insert("type".into(), serde_json::Value::String("Error".into()));
@@ -411,20 +416,14 @@ pub fn fact_to_json(fact: &Fact) -> serde_json::Value {
             reason,
             instruction,
         } => {
-            obj.insert(
-                "type".into(),
-                serde_json::Value::String("Violation".into()),
-            );
+            obj.insert("type".into(), serde_json::Value::String("Violation".into()));
             obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
             obj.insert("cause".into(), serde_json::Value::Number(cause.0.into()));
             obj.insert(
                 "rule_index".into(),
                 serde_json::Value::Number((*rule_index).into()),
             );
-            obj.insert(
-                "reason".into(),
-                serde_json::Value::String(reason.clone()),
-            );
+            obj.insert("reason".into(), serde_json::Value::String(reason.clone()));
             obj.insert("instruction".into(), tcb_to_serde(instruction));
         }
     }
@@ -569,23 +568,23 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
             let hits_raw = obj
                 .get("rule_hits")
                 .and_then(|h| h.as_array())
-                .ok_or_else(|| WalError::InvalidFact("TransitionTrace missing 'rule_hits'".into()))?;
+                .ok_or_else(|| {
+                    WalError::InvalidFact("TransitionTrace missing 'rule_hits'".into())
+                })?;
             let mut rule_hits = Vec::with_capacity(hits_raw.len());
             for h in hits_raw {
-                let index = h
-                    .get("index")
-                    .and_then(|v| v.as_u64())
-                    .ok_or_else(|| WalError::InvalidFact("TransitionTrace hit missing 'index'".into()))?;
+                let index = h.get("index").and_then(|v| v.as_u64()).ok_or_else(|| {
+                    WalError::InvalidFact("TransitionTrace hit missing 'index'".into())
+                })?;
                 let instr_type = h
                     .get("instr_type")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| {
                         WalError::InvalidFact("TransitionTrace hit missing 'instr_type'".into())
                     })?;
-                let hit = h
-                    .get("hit")
-                    .and_then(|v| v.as_bool())
-                    .ok_or_else(|| WalError::InvalidFact("TransitionTrace hit missing 'hit'".into()))?;
+                let hit = h.get("hit").and_then(|v| v.as_bool()).ok_or_else(|| {
+                    WalError::InvalidFact("TransitionTrace hit missing 'hit'".into())
+                })?;
                 rule_hits.push(TraceHit {
                     index,
                     instr_type: instr_type.into(),
@@ -611,9 +610,9 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
                 .get("reason")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| WalError::InvalidFact("Violation missing 'reason'".into()))?;
-            let instruction = obj.get("instruction").ok_or_else(|| {
-                WalError::InvalidFact("Violation missing 'instruction'".into())
-            })?;
+            let instruction = obj
+                .get("instruction")
+                .ok_or_else(|| WalError::InvalidFact("Violation missing 'instruction'".into()))?;
             Ok(Fact::Violation {
                 id,
                 cause: FactId(cause_raw as u64),
@@ -1375,9 +1374,7 @@ mod tests {
     #[test]
     fn test_read_new_wal_stable_version_preserved() {
         let path = temp_wal_path("new_stable");
-        let lines = [
-            r#"{"version_before":1,"fact":{"type":"Stable","id":3,"version":7}}"#,
-        ];
+        let lines = [r#"{"version_before":1,"fact":{"type":"Stable","id":3,"version":7}}"#];
         std::fs::write(&path, lines.join("\n") + "\n").unwrap();
 
         let records = read_wal(&path).expect("新格式 WAL 必须可读");

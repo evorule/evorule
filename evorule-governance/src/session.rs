@@ -26,8 +26,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use evorule_reactor::{
-    EventSender, Fact, FactId, FactSender, FactsLog, FactsLogError, Reactor, ReactorHandle,
-    WalRecord, fact_hash,
+    fact_hash, EventSender, Fact, FactId, FactSender, FactsLog, FactsLogError, Reactor,
+    ReactorHandle, WalRecord,
 };
 use evorule_tcb::JsonValue;
 
@@ -529,8 +529,11 @@ impl SessionManager {
         // AUDIT-A3 修复（2026-08-27）：配置 wal_dir 时扫描既有 session_*.wal
         // 恢复会话 ID 计数器。否则重启后 next_session_id 归 1，首个新会话会以
         // truncate 模式覆盖已存在的 session_1.wal，静默清除上一轮审计链。
-        let initial_session_id =
-            wal_dir.as_deref().map(Self::scan_max_session_id).unwrap_or(0) + 1;
+        let initial_session_id = wal_dir
+            .as_deref()
+            .map(Self::scan_max_session_id)
+            .unwrap_or(0)
+            + 1;
 
         Self {
             core_eval,
@@ -1197,6 +1200,7 @@ fn rewind_payload(facts_log: &FactsLog, target_version: u64) -> Option<JsonValue
 /// 2. `chain_hash = blake3(prev_hash + content_hash)` 逐条续链，prev 从 `"genesis"` 起
 ///    （与审计档案 `rebuild_chain` 同一口径）；
 /// 3. 存在旧格式（无哈希）记录 → `ArchiveCorrupted`（无法证明未被篡改）。
+///
 /// 任一条不过即拒绝派生，防篡改数据经 fork "洗白"进新链。
 ///
 /// # 参数

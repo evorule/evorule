@@ -168,7 +168,9 @@ impl SharedFactsLog {
         if tmp_path.exists() {
             match std::fs::remove_file(&tmp_path) {
                 Ok(()) => tracing::info!(tmp = %tmp_path.display(), "已清理孤儿 metadata.tmp"),
-                Err(e) => tracing::warn!(tmp = %tmp_path.display(), error = %e, "清理孤儿 metadata.tmp 失败"),
+                Err(e) => {
+                    tracing::warn!(tmp = %tmp_path.display(), error = %e, "清理孤儿 metadata.tmp 失败")
+                }
             }
         }
 

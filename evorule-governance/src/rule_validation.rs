@@ -37,14 +37,7 @@ use serde::Serialize;
 /// noop/increment/decrement 是**指令层（instruction）**类型，不是元指令层，不得混入本白名单
 /// （双层语言框架，records/75；P0-01 修前曾误混，导致假阳性/假阴性）。
 /// 不含 G8 禁止词（conditional/while_loop/sequence），故无需 build.rs 豁免。
-const VALID_TRANSFORM_TYPES: &[&str] = &[
-    "branch",
-    "set",
-    "push",
-    "io_request",
-    "collect",
-    "merge",
-];
+const VALID_TRANSFORM_TYPES: &[&str] = &["branch", "set", "push", "io_request", "collect", "merge"];
 
 /// `branch` 指令的必填参数
 const BRANCH_REQUIRED: &[&str] = &["domain"];
@@ -1009,7 +1002,10 @@ mod tests {
             .iter()
             .find(|c| c.name == "infinite_loop");
         assert!(infinite_loop.is_some(), "嵌套 while_loop 仍须产出检查项");
-        assert!(!infinite_loop.unwrap().passed, "嵌套 branch 内的 while_loop 无状态变更必须告警");
+        assert!(
+            !infinite_loop.unwrap().passed,
+            "嵌套 branch 内的 while_loop 无状态变更必须告警"
+        );
     }
 
     #[test]
@@ -1036,7 +1032,10 @@ mod tests {
             .iter()
             .find(|c| c.name == "infinite_loop");
         assert!(infinite_loop.is_some());
-        assert!(infinite_loop.unwrap().passed, "嵌套层级的状态变更应覆盖嵌套 while_loop");
+        assert!(
+            infinite_loop.unwrap().passed,
+            "嵌套层级的状态变更应覆盖嵌套 while_loop"
+        );
     }
 
     #[test]
@@ -1114,8 +1113,7 @@ mod tests {
 
     #[test]
     fn test_validate_rules_from_json_array() {
-        let json =
-            r#"[{"type":"set","params":{"attr":"x","operation":"set","value":1}},{"type":"set","params":{"attr":"x","operation":"set","value":0}}]"#;
+        let json = r#"[{"type":"set","params":{"attr":"x","operation":"set","value":1}},{"type":"set","params":{"attr":"x","operation":"set","value":0}}]"#;
         let result = validate_rules_from_json(json).unwrap();
         assert!(result.passed);
     }

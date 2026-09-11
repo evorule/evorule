@@ -178,7 +178,12 @@ fn default_updated_by() -> String {
 
 impl PermissionEntry {
     /// 构造一个新条目（版本恒为 1，状态恒为 `Draft`，动作通配）
-    pub fn new(id: impl Into<String>, subject: Subject, resource: Resource, effect: Effect) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        subject: Subject,
+        resource: Resource,
+        effect: Effect,
+    ) -> Self {
         Self {
             id: id.into(),
             version: 1,

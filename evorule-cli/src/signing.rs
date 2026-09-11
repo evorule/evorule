@@ -135,7 +135,11 @@ pub(crate) fn hex_decode(hex: &str) -> Result<Vec<u8>, SignError> {
         let lo = (bytes[i + 1] as char).to_digit(16);
         match (hi, lo) {
             (Some(h), Some(l)) => out.push(((h << 4) | l) as u8),
-            _ => return Err(SignError::Invalid("hex contains non-hexadecimal characters".into())),
+            _ => {
+                return Err(SignError::Invalid(
+                    "hex contains non-hexadecimal characters".into(),
+                ))
+            }
         }
     }
     Ok(out)
@@ -150,7 +154,10 @@ mod tests {
     fn test_signature_is_deterministic() {
         let signer = AuditSigner::from_bytes([7u8; 32]);
         let payload = b"audit-anchor-payload";
-        assert_eq!(signer.signature_bytes(payload), signer.signature_bytes(payload));
+        assert_eq!(
+            signer.signature_bytes(payload),
+            signer.signature_bytes(payload)
+        );
     }
 
     #[test]
@@ -186,6 +193,9 @@ mod tests {
         assert_eq!(pk.len(), 64);
         // 公钥由私钥正确派生
         let signer = AuditSigner::from_hex(&sk).unwrap();
-        assert_eq!(signer.verifying_bytes(), hex_decode(&pk).unwrap().as_slice());
+        assert_eq!(
+            signer.verifying_bytes(),
+            hex_decode(&pk).unwrap().as_slice()
+        );
     }
 }

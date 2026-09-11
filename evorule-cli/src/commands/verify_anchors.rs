@@ -23,7 +23,10 @@ use crate::signing;
 fn parse_pubkey(hex: &str) -> Result<[u8; 32], CliError> {
     let bytes = signing::hex_decode(hex).map_err(|e| CliError::other(e.to_string()))?;
     if bytes.len() != 32 {
-        return Err(CliError::other(format!("Public key length != 32: {}", bytes.len())));
+        return Err(CliError::other(format!(
+            "Public key length != 32: {}",
+            bytes.len()
+        )));
     }
     let mut arr = [0u8; 32];
     for (dst, src) in arr.iter_mut().zip(bytes.iter()) {
@@ -36,7 +39,10 @@ fn parse_pubkey(hex: &str) -> Result<[u8; 32], CliError> {
 fn parse_signature(hex: &str) -> Result<[u8; 64], CliError> {
     let bytes = signing::hex_decode(hex).map_err(|e| CliError::other(e.to_string()))?;
     if bytes.len() != 64 {
-        return Err(CliError::other(format!("Signature length != 64: {}", bytes.len())));
+        return Err(CliError::other(format!(
+            "Signature length != 64: {}",
+            bytes.len()
+        )));
     }
     let mut arr = [0u8; 64];
     for (dst, src) in arr.iter_mut().zip(bytes.iter()) {
@@ -86,7 +92,8 @@ fn parse_anchor(value: &Value) -> Result<(Vec<u8>, [u8; 64]), CliError> {
     let entry_count = value
         .get("entry_count")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| CliError::other("Anchor missing 'entry_count'"))? as usize;
+        .ok_or_else(|| CliError::other("Anchor missing 'entry_count'"))?
+        as usize;
     let last_hash = value
         .get("last_hash")
         .and_then(|v| v.as_str())
@@ -118,8 +125,8 @@ fn parse_anchor(value: &Value) -> Result<(Vec<u8>, [u8; 64]), CliError> {
 pub fn run(audit_path: &Path, pubkey_hex: Option<&str>) -> Result<(), CliError> {
     let json_str = std::fs::read_to_string(audit_path)
         .map_err(|e| CliError::Other(format!("Read {} failed: {e}", audit_path.display())))?;
-    let parsed: Value =
-        serde_json::from_str(&json_str).map_err(|e| CliError::other(format!("JSON parse failed: {e}")))?;
+    let parsed: Value = serde_json::from_str(&json_str)
+        .map_err(|e| CliError::other(format!("JSON parse failed: {e}")))?;
 
     // 1. 解析公钥（优先命令行，其次导出物内嵌 verifying_key）
     let pk_bytes = if let Some(hex) = pubkey_hex {
@@ -154,7 +161,10 @@ pub fn run(audit_path: &Path, pubkey_hex: Option<&str>) -> Result<(), CliError> 
     let verified = verify_value(&parsed, pk_bytes)?;
 
     println!();
-    println!("[OK] All {} anchors verified: signatures valid and chain links intact", verified);
+    println!(
+        "[OK] All {} anchors verified: signatures valid and chain links intact",
+        verified
+    );
     Ok(())
 }
 
@@ -197,7 +207,10 @@ fn verify_value(parsed: &Value, pk_bytes: [u8; 32]) -> Result<usize, CliError> {
         prev_anchor_hash = anchor_self_hash(&payload, &signature);
         println!(
             "[OK] anchor#{} seq={} entry_count={} last_hash={}",
-            i + 1, seq, anchor_val["entry_count"], anchor_val["last_hash"]
+            i + 1,
+            seq,
+            anchor_val["entry_count"],
+            anchor_val["last_hash"]
         );
     }
 

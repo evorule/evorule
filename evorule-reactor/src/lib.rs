@@ -88,9 +88,9 @@ mod ffi;
 mod hash;
 mod invariants;
 // H5: IoHandler trait 下沉到 evorule-reactor(与 IoType 同层,object-safe)
+mod io_context;
 mod io_dispatcher;
 mod io_handler;
-mod io_context;
 mod phase;
 #[allow(dead_code)]
 mod pure;
@@ -109,9 +109,9 @@ pub use hash::{
     chain_step, compute_chain_hash, content_hash, fact_hash, fact_to_stable_json, HashError,
 };
 pub use invariants::InvariantViolation;
+pub use io_context::{CallerRole, CallerRoleResolver, IoCallContext};
 pub use io_dispatcher::{IoDispatcher, IoDispatcherBuilder};
 pub use io_handler::{IoHandler, IoResult};
-pub use io_context::{CallerRole, IoCallContext, CallerRoleResolver};
 pub use phase::{PhaseContext, ReactorPhase};
 pub use reactor::{PendingIoEntry, Reactor, ReactorBuilder, ReactorHandle, ReactorStateSnapshot};
 pub use stable_detector::StableDetector;

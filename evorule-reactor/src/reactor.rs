@@ -433,7 +433,13 @@ impl Reactor {
                         );
                         // 断点 1 修复：cause 在 handle_fact 中通过 push_back(instruction, fact_id) 关联
                         Self::emit_fact(&self.facts_log, &event_tx, fact.clone());
-                        Self::handle_fact(&mut state, fact, &self.facts_log, &event_tx, &mut id_gen)?;
+                        Self::handle_fact(
+                            &mut state,
+                            fact,
+                            &self.facts_log,
+                            &event_tx,
+                            &mut id_gen,
+                        )?;
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => {
@@ -983,10 +989,7 @@ impl Reactor {
                         ),
                     };
                     Self::emit_fact(facts_log, event_tx, err_fact);
-                    tracing::warn!(
-                        "Unknown IoResponse: {}, recorded as Error fact",
-                        request_id
-                    );
+                    tracing::warn!("Unknown IoResponse: {}, recorded as Error fact", request_id);
                     return Ok(());
                 }
                 // v0.3.1 修复：null 结果与错误响应没有可消费的结果。

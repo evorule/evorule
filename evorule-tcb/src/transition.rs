@@ -213,13 +213,8 @@ pub fn execute_transition(
             .unwrap_or("unknown")
             .to_string();
         let mut hit = false;
-        let result = execute_meta_instruction_budgeted(
-            transform_rule,
-            state,
-            0,
-            &mut budget,
-            &mut hit,
-        )?;
+        let result =
+            execute_meta_instruction_budgeted(transform_rule, state, 0, &mut budget, &mut hit)?;
         rule_hits.push(RuleHit {
             index,
             instr_type,
@@ -239,7 +234,10 @@ pub fn execute_transition(
             // 不携带 rule_hits（半成品纪律同 IoRequired）。
             // rule_index 由转换层填入（此处即为命中规则下标，确定性成立）。
             MetaInstructionResult::Halted { reason } => {
-                return Ok(TransitionResult::Halted { rule_index: index, reason });
+                return Ok(TransitionResult::Halted {
+                    rule_index: index,
+                    reason,
+                });
             }
         }
     }
@@ -1042,9 +1040,7 @@ mod tests {
         // 未知域类型 = 规则结构错误：fail-fast 显式报错（同 branch 语义）
         let instruction = make_instruction("delete_all", &[]);
         let core_eval = vec![enforce_rule(
-            JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("nonexistent_domain")),
-            ]),
+            JsonValue::object_from_pairs(&[("type", JsonValue::string("nonexistent_domain"))]),
             Some("r"),
         )];
 
@@ -2272,7 +2268,11 @@ mod tests {
                 ..
             } => {
                 assert_eq!(instruction_type, "while_loop");
-                assert!(reason.contains("not matched"), "reason should indicate no match, got: {}", reason);
+                assert!(
+                    reason.contains("not matched"),
+                    "reason should indicate no match, got: {}",
+                    reason
+                );
             }
             other => panic!(
                 "期望返回 Ignored（instruction domain 不匹配），实际返回: {:?}",
@@ -2291,11 +2291,14 @@ mod tests {
         let rule_all = branch_rule(
             JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("all")),
-                ("inner", JsonValue::array(vec![JsonValue::object_from_pairs(&[
-                    ("type", JsonValue::string("eq")),
-                    ("path", JsonValue::string("__exec__.payload.counter")),
-                    ("value", JsonValue::Integer(100)),
-                ])])),
+                (
+                    "inner",
+                    JsonValue::array(vec![JsonValue::object_from_pairs(&[
+                        ("type", JsonValue::string("eq")),
+                        ("path", JsonValue::string("__exec__.payload.counter")),
+                        ("value", JsonValue::Integer(100)),
+                    ])]),
+                ),
             ]),
             vec![JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("set")),
@@ -2346,7 +2349,11 @@ mod tests {
                 ..
             } => {
                 assert_eq!(instruction_type, "while_loop");
-                assert!(reason.contains("not matched"), "reason should indicate no match, got: {}", reason);
+                assert!(
+                    reason.contains("not matched"),
+                    "reason should indicate no match, got: {}",
+                    reason
+                );
             }
             other => panic!(
                 "期望返回 Ignored（all 子域 false → on_false 空），实际返回: {:?}",
@@ -2359,11 +2366,7 @@ mod tests {
     /// 验证 instruction_type 回退到 "unknown" 的逻辑
     #[test]
     fn test_while_loop_instruction_missing_type_returns_ignored() {
-        let rule_while_loop = branch_rule(
-            instruction_domain("while_loop"),
-            vec![],
-            vec![],
-        );
+        let rule_while_loop = branch_rule(instruction_domain("while_loop"), vec![], vec![]);
 
         let core_eval = vec![rule_while_loop];
 
@@ -2398,7 +2401,11 @@ mod tests {
                 ..
             } => {
                 assert_eq!(instruction_type, "unknown");
-                assert!(reason.contains("not matched"), "reason should indicate no match, got: {}", reason);
+                assert!(
+                    reason.contains("not matched"),
+                    "reason should indicate no match, got: {}",
+                    reason
+                );
             }
             other => panic!(
                 "期望返回 Ignored（指令缺少 type 字段），实际返回: {:?}",
@@ -2414,18 +2421,10 @@ mod tests {
     #[test]
     fn test_while_loop_mixed_rules_second_matches_returns_state() {
         // 第一条规则：increment domain（不匹配 while_loop）
-        let rule_increment = branch_rule(
-            instruction_domain("increment"),
-            vec![],
-            vec![],
-        );
+        let rule_increment = branch_rule(instruction_domain("increment"), vec![], vec![]);
 
         // 第二条规则：while_loop domain（匹配）
-        let rule_while_loop = branch_rule(
-            instruction_domain("while_loop"),
-            vec![],
-            vec![],
-        );
+        let rule_while_loop = branch_rule(instruction_domain("while_loop"), vec![], vec![]);
 
         let core_eval = vec![rule_increment, rule_while_loop];
 
@@ -2468,11 +2467,7 @@ mod tests {
     /// 验证 type 为 null 时的处理
     #[test]
     fn test_while_loop_instruction_null_type_returns_ignored() {
-        let rule_while_loop = branch_rule(
-            instruction_domain("while_loop"),
-            vec![],
-            vec![],
-        );
+        let rule_while_loop = branch_rule(instruction_domain("while_loop"), vec![], vec![]);
 
         let core_eval = vec![rule_while_loop];
 
@@ -2510,12 +2505,13 @@ mod tests {
                 ..
             } => {
                 assert_eq!(instruction_type, "unknown");
-                assert!(reason.contains("not matched"), "reason should indicate no match, got: {}", reason);
+                assert!(
+                    reason.contains("not matched"),
+                    "reason should indicate no match, got: {}",
+                    reason
+                );
             }
-            other => panic!(
-                "期望返回 Ignored（type 为 null 时），实际返回: {:?}",
-                other
-            ),
+            other => panic!("期望返回 Ignored（type 为 null 时），实际返回: {:?}", other),
         }
     }
 
@@ -2871,8 +2867,7 @@ mod tests {
             let instruction = call_external_instr(user_messages(), tools_def());
             let payload = obj(&[]); // 空 payload：react_iteration 尚未初始化
 
-            let result =
-                execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
+            let result = execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
             match result {
                 TransitionResult::IoRequired { io_type, params } => {
                     assert_eq!(io_type, "call_external");
@@ -2898,8 +2893,7 @@ mod tests {
             ]);
             let instruction = call_external_instr(user_messages(), tools_def());
 
-            let result =
-                execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
+            let result = execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
             let TransitionResult::State {
                 new_payload,
                 new_queue,
@@ -2955,8 +2949,7 @@ mod tests {
             ]);
 
             let result =
-                execute_transition(&io_loop_rules(), &call_service_instr(), &payload, &[])
-                    .unwrap();
+                execute_transition(&io_loop_rules(), &call_service_instr(), &payload, &[]).unwrap();
             let TransitionResult::State {
                 new_payload,
                 new_queue,
@@ -3003,8 +2996,7 @@ mod tests {
             ]);
             let instruction = call_external_instr(user_messages(), tools_def());
 
-            let result =
-                execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
+            let result = execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
             match result {
                 TransitionResult::IoRequired { io_type, .. } => {
                     assert_eq!(io_type, "call_external");
@@ -3039,8 +3031,7 @@ mod tests {
             ]);
 
             let result =
-                execute_transition(&io_loop_rules(), &call_service_instr(), &payload, &[])
-                    .unwrap();
+                execute_transition(&io_loop_rules(), &call_service_instr(), &payload, &[]).unwrap();
             let TransitionResult::State {
                 new_payload,
                 new_queue,
@@ -3073,8 +3064,7 @@ mod tests {
             ]);
             let instruction = call_external_instr(user_messages(), tools_def());
 
-            let result =
-                execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
+            let result = execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
             let TransitionResult::State {
                 new_payload,
                 new_queue,

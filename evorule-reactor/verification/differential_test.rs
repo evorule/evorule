@@ -1220,7 +1220,7 @@ fn diff_reactor_vs_pure_call_external_consume() {
         );
         // __io_results__ 容器应已被清除（不残留陈旧结果）
         assert!(
-            !reactor_pl.get("__io_results__").is_some(),
+            reactor_pl.get("__io_results__").is_none(),
             "__io_results__ container should be cleared after consumption"
         );
     });

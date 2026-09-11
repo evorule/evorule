@@ -204,7 +204,10 @@ pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> 
             trace!(事实ID = ?id, 版本 = version, "处理稳定状态类型事实");
             obj.insert("type".into(), serde_json::Value::String("Stable".into()));
             obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
-            obj.insert("version".into(), serde_json::Value::Number((*version).into()));
+            obj.insert(
+                "version".into(),
+                serde_json::Value::Number((*version).into()),
+            );
         }
         Fact::Error { id, message } => {
             trace!(
@@ -250,10 +253,7 @@ pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> 
         } => {
             // 违规拦截事实参与哈希链（审计链防篡改覆盖拦截记录；UV-147）
             trace!(事实ID = ?id, 原因ID = ?cause, 规则下标 = rule_index, "处理违规拦截事实");
-            obj.insert(
-                "type".into(),
-                serde_json::Value::String("Violation".into()),
-            );
+            obj.insert("type".into(), serde_json::Value::String("Violation".into()));
             obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
             obj.insert("cause".into(), serde_json::Value::Number(cause.0.into()));
             obj.insert(

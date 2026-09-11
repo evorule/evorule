@@ -372,7 +372,9 @@ fn is_test_tolerant(label: &str) -> bool {
 fn main() -> ExitCode {
     // 变更治理门禁 (L2): CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"
     if std::env::var("EVORULE_SKIP_CR_GATE").is_ok() {
-        println!("cargo:warning=evorule-tcb change governance gate SKIPPED via EVORULE_SKIP_CR_GATE");
+        println!(
+            "cargo:warning=evorule-tcb change governance gate SKIPPED via EVORULE_SKIP_CR_GATE"
+        );
     } else {
         // 执行变更治理门禁验证
         if let Err(e) = validate_change_request_gate("evorule-tcb") {
@@ -517,12 +519,7 @@ const CR_REQUIRED_FIELDS: &[&str] = &[
 ];
 
 /// 有效审查状态 (用于错误提示)
-const CR_VALID_STATUSES: &[&str] = &[
-    "待审查",
-    "已批准",
-    "已拒绝",
-    "紧急通过",
-];
+const CR_VALID_STATUSES: &[&str] = &["待审查", "已批准", "已拒绝", "紧急通过"];
 
 /// 可放行构建的审查状态: 必须为"已批准"或"紧急通过"
 const CR_APPROVED_STATUSES: &[&str] = &["已批准", "紧急通过"];
@@ -579,8 +576,8 @@ fn validate_change_request_gate(crate_name: &str) -> Result<(), String> {
     }
 
     // 2. 读取 CHANGE_REQUEST.md
-    let content = fs::read_to_string(&cr_path)
-        .map_err(|e| format!("无法读取 {}: {}", CR_FILENAME, e))?;
+    let content =
+        fs::read_to_string(&cr_path).map_err(|e| format!("无法读取 {}: {}", CR_FILENAME, e))?;
 
     // 3. 检查必填字段
     let mut missing_fields = Vec::new();
@@ -598,7 +595,11 @@ fn validate_change_request_gate(crate_name: &str) -> Result<(), String> {
              \n\
              请补全所有必填字段后重新构建。",
             crate_name,
-            missing_fields.iter().map(|f| format!("  - {}", f)).collect::<Vec<_>>().join("\n")
+            missing_fields
+                .iter()
+                .map(|f| format!("  - {}", f))
+                .collect::<Vec<_>>()
+                .join("\n")
         ));
     }
 
@@ -634,11 +635,17 @@ fn validate_change_request_gate(crate_name: &str) -> Result<(), String> {
 
     // 5. 紧急通道提醒
     if status == "紧急通过" {
-        eprintln!("cargo:warning={} 变更使用了紧急通道，请确保在 48 小时内补交完整审查表", crate_name);
+        eprintln!(
+            "cargo:warning={} 变更使用了紧急通道，请确保在 48 小时内补交完整审查表",
+            crate_name
+        );
     }
 
     // 验证通过
-    println!("cargo:warning={} 变更治理门禁 PASSED - CHANGE_REQUEST.md 验证通过", crate_name);
+    println!(
+        "cargo:warning={} 变更治理门禁 PASSED - CHANGE_REQUEST.md 验证通过",
+        crate_name
+    );
     Ok(())
 }
 
@@ -661,17 +668,30 @@ const STRATEGY_PATTERNS: &[StrategyPattern<'static>] = &[
         label: "P1-business-domain",
         patterns: &[
             // 医疗领域
-            "\"hospital\"", "\"medical\"", "\"patient\"", "\"clinic\"",
+            "\"hospital\"",
+            "\"medical\"",
+            "\"patient\"",
+            "\"clinic\"",
             // 金融领域
-            "\"finance\"", "\"bank_\"", "\"investment\"", "\"loan_\"",
+            "\"finance\"",
+            "\"bank_\"",
+            "\"investment\"",
+            "\"loan_\"",
             // 法律领域
-            "\"lawyer\"", "\"court_case\"", "\"legal_document\"",
+            "\"lawyer\"",
+            "\"court_case\"",
+            "\"legal_document\"",
             // 保险领域
-            "\"insurance\"", "\"policy_number\"", "\"premium_amount\"",
+            "\"insurance\"",
+            "\"policy_number\"",
+            "\"premium_amount\"",
             // 制造业
-            "\"manufacturing\"", "\"production_line\"",
+            "\"manufacturing\"",
+            "\"production_line\"",
             // 电商领域
-            "\"ecommerce\"", "\"order_item\"", "\"payment_method\"",
+            "\"ecommerce\"",
+            "\"order_item\"",
+            "\"payment_method\"",
         ],
         description: "机制层包含特定业务领域关键字，策略层逻辑必须在应用层仓实现",
     },
@@ -681,9 +701,15 @@ const STRATEGY_PATTERNS: &[StrategyPattern<'static>] = &[
         label: "P2-control-flow-hardcode",
         patterns: &[
             // 控制流实现逻辑（而非引用）
-            "execute_conditional", "execute_while_loop", "execute_sequence",
-            "handle_conditional", "handle_while_loop", "handle_sequence",
-            "process_conditional", "process_while_loop", "process_sequence",
+            "execute_conditional",
+            "execute_while_loop",
+            "execute_sequence",
+            "handle_conditional",
+            "handle_while_loop",
+            "handle_sequence",
+            "process_conditional",
+            "process_while_loop",
+            "process_sequence",
         ],
         description: "控制流指令的执行逻辑应在 core_eval.json 中定义，不应在 Rust 代码中实现",
     },
@@ -691,12 +717,24 @@ const STRATEGY_PATTERNS: &[StrategyPattern<'static>] = &[
     StrategyPattern {
         label: "P3-business-operation",
         patterns: &[
-            "calculate_fee", "calculate_tax", "calculate_discount",
-            "validate_insurance", "process_claim", "approve_loan",
-            "check_credit", "verify_identity", "assess_risk",
-            "generate_invoice", "create_order", "process_payment",
-            "update_inventory", "ship_product", "receive_goods",
-            "hire_employee", "pay_salary", "calculate_bonus",
+            "calculate_fee",
+            "calculate_tax",
+            "calculate_discount",
+            "validate_insurance",
+            "process_claim",
+            "approve_loan",
+            "check_credit",
+            "verify_identity",
+            "assess_risk",
+            "generate_invoice",
+            "create_order",
+            "process_payment",
+            "update_inventory",
+            "ship_product",
+            "receive_goods",
+            "hire_employee",
+            "pay_salary",
+            "calculate_bonus",
         ],
         description: "机制层包含特定业务操作，操作逻辑应在应用层实现",
     },
@@ -704,9 +742,16 @@ const STRATEGY_PATTERNS: &[StrategyPattern<'static>] = &[
     StrategyPattern {
         label: "P4-business-rule-name",
         patterns: &[
-            "hipaa_rule", "gdpr_rule", "pci_rule", "sox_rule",
-            "compliance_check", "audit_rule", "regulatory_check",
-            "kpl_rule", "aml_rule", "kyc_rule",
+            "hipaa_rule",
+            "gdpr_rule",
+            "pci_rule",
+            "sox_rule",
+            "compliance_check",
+            "audit_rule",
+            "regulatory_check",
+            "kpl_rule",
+            "aml_rule",
+            "kyc_rule",
         ],
         description: "机制层包含特定业务规则名，规则定义应在应用层实现",
     },
@@ -767,9 +812,7 @@ fn detect_strategy_patterns(crate_name: &str) -> Result<(), String> {
     if !violations.is_empty() {
         let violation_details: Vec<String> = violations
             .iter()
-            .map(|(path, label, detail)| {
-                format!("  [{}] {}: {}", label, path.display(), detail)
-            })
+            .map(|(path, label, detail)| format!("  [{}] {}: {}", label, path.display(), detail))
             .collect();
 
         return Err(format!(
@@ -795,7 +838,10 @@ fn detect_strategy_patterns(crate_name: &str) -> Result<(), String> {
     }
 
     // 验证通过
-    println!("cargo:warning={} 策略层检测 PASSED - 未发现策略层反模式", crate_name);
+    println!(
+        "cargo:warning={} 策略层检测 PASSED - 未发现策略层反模式",
+        crate_name
+    );
     Ok(())
 }
 
