@@ -28,6 +28,8 @@ validate-pr:
     # 7 类检查：R-门控1 staged文档泄露 / R3 L1私有路径泄露 / L1不提L2L3 / R-兄弟仓零谈论 / R-agent身份零泄露 / 交叉引用完整性 / DOCS_INDEX索引存在性
     - python3 --version || python --version
     - python scripts/check_doc_safety.py --skip-git
+    # i18n 双语门禁（本仓自含部分：docs 中英漂移检测；跨仓 err.* 字典对照在 GitHub CI i18n-gates 执行）
+    - python scripts/check_docs_bilingual.py
   rules:
     - changes:
         - Cargo.toml

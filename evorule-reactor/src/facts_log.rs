@@ -676,11 +676,13 @@ impl FactsLog {
                     inner.last_stable_version = inner.version;
                 }
                 // 显式匹配剩余变体（门禁禁止 Fact match 通配符 _）
-                // TransitionTrace：记录性事实，版本不变
+                // TransitionTrace / Violation：记录性事实，不更新快照、不推进版本
+                // （与 Command/IoRequest/Error 同类；Violation 为 enforce 原语拦截事实）
                 Fact::Command { .. }
                 | Fact::IoRequest { .. }
                 | Fact::Error { .. }
-                | Fact::TransitionTrace { .. } => {}
+                | Fact::TransitionTrace { .. }
+                | Fact::Violation { .. } => {}
             }
             inner.history.push((version_before, fact));
             return Ok(inner.version);

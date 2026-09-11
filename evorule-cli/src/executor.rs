@@ -171,7 +171,7 @@ pub fn execute(
                 tracing::warn!(
                     instruction_type = %instruction_type,
                     reason = %reason,
-                    "TCB 静默忽略指令（无匹配规则或 noop 效果）"
+                    "TCB silently ignored instruction (no matching rule or noop effect)"
                 );
                 break;
             }
@@ -189,7 +189,7 @@ pub fn execute(
                 tracing::warn!(
                     rule_index,
                     %reason,
-                    "enforce 强制拦截：违规指令被拒绝执行"
+                    "enforce primitive blocked: violating instruction rejected"
                 );
                 continue;
             }

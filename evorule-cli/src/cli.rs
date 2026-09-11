@@ -22,9 +22,9 @@ use clap::{Parser, Subcommand};
     name = "evorule",
     version,
     about = "evorule: no intelligence, only best practices of execution",
-    long_about = "evorule CLI - 加载并执行用户编写的 JSON 规则。\n\
-                  零网络、零遥测、零系统依赖,适合合规敏感用户本地使用。\n\
-                  fact log 采用 evorule-reactor WAL 格式,与 evorule-governance 审计链互通。"
+    long_about = "evorule CLI - load and execute user-written JSON rules.\n\
+                  Zero network, zero telemetry, zero system dependencies, suited for compliance-sensitive local use.\n\
+                  The fact log uses the evorule-reactor WAL format, interoperable with the evorule-governance audit chain."
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -33,72 +33,74 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// 加载并执行 JSON 规则(输出 fact log)
+    /// Load and execute JSON rules (output a fact log)
     Run {
-        /// 规则目录(包含 *.json 文件)
+        /// Rules directory (contains *.json files)
         rules_dir: PathBuf,
 
-        /// 初始 payload(JSON 字符串,可选,默认 {})
+        /// Initial payload (JSON string, optional, default {})
         #[arg(long, conflicts_with = "payload_file")]
         payload: Option<String>,
 
-        /// 从文件读取初始 payload(JSON 格式)
+        /// Read initial payload from a file (JSON format)
         #[arg(long)]
         payload_file: Option<PathBuf>,
 
-        /// 输出文件(默认 stdout)
+        /// Output file (default stdout)
         #[arg(long, short = 'o')]
         output: Option<PathBuf>,
 
-        /// 最大执行步数上界(默认 10000,超限发 Fact::Error 退出)
+        /// Maximum execution step limit (default 10000; emit Fact::Error and exit when exceeded)
         #[arg(long, default_value_t = crate::executor::DEFAULT_MAX_STEPS)]
         max_steps: usize,
     },
 
-    /// 重放 fact log(pretty-print 每个 Fact)
+    /// Replay a fact log (pretty-print each Fact)
     Replay {
-        /// fact log 文件(JSON Lines 格式,与 tier1 reactor WAL 互通)
+        /// Fact log file (JSON Lines format, interoperable with the tier1 reactor WAL)
         fact_log: PathBuf,
     },
 
-    /// 对比两个 fact log(按 FactId 对齐,非 HashSet)
+    /// Compare two fact logs (aligned by FactId, not HashSet)
     Diff {
-        /// 第一个 fact log
+        /// First fact log
         a: PathBuf,
-        /// 第二个 fact log
+        /// Second fact log
         b: PathBuf,
     },
 
-    /// 校验 JSON 规则文件(用 tier1 RuleValidator,语法+语义验证)
+    /// Validate JSON rule files (tier1 RuleValidator, syntactic + semantic validation)
     Validate {
-        /// 规则目录
+        /// Rules directory
         rules_dir: PathBuf,
     },
 
-    /// 验证 fact log 哈希链完整性(blake3,与 evorule-governance 互通)
+    /// Verify fact log hash chain integrity (blake3, interoperable with evorule-governance)
     VerifyChain {
-        /// fact log 文件
+        /// Fact log file
         fact_log: PathBuf,
     },
 
-    /// 生成 G-A1 审计锚点签名密钥对(一次性运维操作)
+    /// Generate a G-A1 audit anchor signing keypair (one-time ops)
     ///
-    /// 产出私钥种子(32 字节, 64 位 hex)与公钥(32 字节, 64 位 hex)。
-    /// 私钥必须私密保存,用于配置审计器签名锚点;公钥可分发给第三方用 `verify-anchors` 离线验证。
+    /// Produces a private seed (32 bytes, 64 hex chars) and a public key (32 bytes, 64 hex chars).
+    /// Keep the private key secret; it is used to configure the auditor signing anchor. The public key
+    /// can be distributed to third parties for offline verification with `verify-anchors`.
     AnchorKeygen {
-        /// 私钥种子写入文件(缺省打印到 stdout)
+        /// File to write the private seed to (default: print to stdout)
         #[arg(long)]
         output: Option<PathBuf>,
     },
 
-    /// 离线校验 G-A1 审计锚点真实性(防抵赖)
+    /// Verify G-A1 audit anchors offline (anti-repudiation)
     ///
-    /// 输入为 `evorule-governance` `Auditor::export()` 产生的审计导出 JSON。
-    /// 校验每个锚点的链式链接 + 用公钥重算载荷验签,证明审计链确由私钥持有者生成。
+    /// Takes an audit export JSON produced by `evorule-governance` `Auditor::export()`.
+    /// Verifies each anchor's chain link and recomputes the payload signature with the public key,
+    /// proving the audit chain was actually produced by the private key holder.
     VerifyAnchors {
-        /// 审计导出 JSON 文件
+        /// Audit export JSON file
         audit: PathBuf,
-        /// 公钥 hex(缺省使用导出物内嵌 verifying_key)
+        /// Public key hex (default: use the export's embedded verifying_key)
         #[arg(long)]
         pubkey: Option<String>,
     },

@@ -26,18 +26,18 @@ pub fn run(output: Option<&Path>) -> Result<(), CliError> {
     if let Some(path) = output {
         // 仅写入私钥种子文件（配合 --pubkey 单独分发公钥，避免私钥散落）
         std::fs::write(path, format!("{}\n", sk_seed_hex))
-            .map_err(|e| CliError::other(format!("写入私钥文件失败: {e}")))?;
+            .map_err(|e| CliError::other(format!("Write private key file failed: {e}")))?;
         println!(
-            "[OK] 私钥种子已写入: {} （公钥: {}）",
+            "[OK] Private seed written to: {} (public key: {})",
             path.display(),
             pk_hex
         );
-        println!("[WARN] 本文件包含私钥种子，请以安全方式保管（建议 chmod 600 或同理权限）");
+        println!("[WARN] This file contains the private seed; keep it secure (chmod 600 or equivalent)");
     } else {
-        println!("=== G-A1 审计锚点签名密钥对 ===");
-        println!("[SECRET] 私钥种子 (sk_seed_hex): {}", sk_seed_hex);
-        println!("[PUBLIC] 公钥 (pk_hex): {}", pk_hex);
-        println!("[WARN] 私钥种子请绝对不要泄露/提交到版本库；公钥可分发给验证方");
+        println!("=== G-A1 Audit Anchor Signing Keypair ===");
+        println!("[SECRET] Private seed (sk_seed_hex): {}", sk_seed_hex);
+        println!("[PUBLIC] Public key (pk_hex): {}", pk_hex);
+        println!("[WARN] Never leak the private seed or commit it to version control; the public key may be distributed to verifiers");
     }
     Ok(())
 }

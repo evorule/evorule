@@ -138,3 +138,7 @@ reactive_researcher_memory/
 # mdBook build output(自动生成,不进版本)
 **/docs/book/
 **/book/
+
+# AI 助手工作目录(内部草稿/施工台账/环境基线, 禁止公开发布)
+.workbuddy/
+**/.workbuddy/
