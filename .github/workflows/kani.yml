@@ -8,14 +8,11 @@
 #     → 不可加 --tests（加了反而找不到 harness）
 #
 # 分档依据（实测，Kani 0.67.0 / WSL Ubuntu 22.04，2026-09-11）：
-#   evidence/p0-8-main-37proof-timing-20260911.log
-#   evidence/p0-8b-rerun-contaminated-20260911.log
-#   evidence/p0-9-unwind-lever-20260911.log
 #
 #   A 档 14 个：9~28s 全部 SUCCESSFUL，串行合计 ≈4.2min → 进 PR 闸门
-#   B 档 23 个：P0-10 实测 600s 全超时（其中 2 个实际跑 910s+）
-#               P0-11 实测 3600s 仍超时（verify_merge_safe 跑满 3603s）
-#               P0-9 证实 unwind 不是杠杆（unwind 4/8 无改善）
+#   B 档 23 个：实测 600s 全超时（其中 2 个实际跑 910s+）
+#               实测 3600s 仍超时（verify_merge_safe 跑满 3603s）
+#               证实 unwind 不是杠杆（unwind 4/8 无改善）
 #               → 判定「当前不可运行」，不进 nightly，仅手动触发且允许失败
 #
 # ⚠️ 不要为 B 档加大超时：至今无任何证据表明它们会终止。
@@ -173,9 +170,9 @@ jobs:
   # B 档：TCB 23 个重型 proof —— 仅手动触发，允许失败
   #
   # 实测（2026-09-11）：
-  #   P0-10  600s 上限 → 3/3 全超时（其中 2 个实际跑 910s+）
-  #   P0-11 3600s 上限 → verify_merge_safe 跑满 3603s 仍超时
-  #   P0-9  unwind 4/8 → 无改善（证伪「配置缺陷」假设）
+  #   600s 上限 → 3/3 全超时（其中 2 个实际跑 910s+）
+  #   3600s 上限 → verify_merge_safe 跑满 3603s 仍超时
+  #   unwind 4/8 → 无改善（证伪「配置缺陷」假设）
   #
   # 判定：当前不可运行。无证据表明会终止，故不进 nightly
   #       （23 × 5h ≈ 115 runner-小时/晚 换来的只是必然的超时）。
