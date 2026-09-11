@@ -87,7 +87,7 @@ EVORULE_SKIP_CR_GATE=1 cargo build    # 跳过 L1b 变更治理门禁 (仅限本
 
 - `session.rs` — SessionManager（多反应器实例生命周期管理）
 - `rule_validation.rs` — 基于 tier0 `core_eval.json` 的 JSON Schema 规则验证（RuleValidator）
-- `time_machine.rs` — replay / rewind / fork / diff 4 个 API（机制层能力；仅"可视化调试器 UI"在应用层）；**v0.4.1**（B8b，report-002）：`diff` 对 rewind 不可达版本显式返回 `Err(TimeMachineError)`，不再静默回退空 payload
+- `time_machine.rs` — replay / rewind / fork / diff 4 个 API（机制层能力；仅"可视化调试器 UI"在应用层）；**（v0.4.1：B8b，report-002）：`diff` 对 rewind 不可达版本显式返回 `Err(TimeMachineError)`，不再静默回退空 payload
 - `metrics.rs` — IoMetrics trait（机制层接口，Prometheus 实现由应用层提供）
 - `permission.rs` — **v0.3.2 新增** 权限门控模块（PermissionGate / PermissionTable / PermissionEntry / Verdict / ConditionEvaluator / DefaultPolicy / PermissionState / PermissionError），机制层权限原语，具体权限策略由应用层注入；**v0.4.1**（B6，report-002）：`IoSubscriber::with_permission_gate` 装配点落地——注入后 IoRequest 分派前经 `PermissionGate::check` 入口仲裁，拒绝回写错误 IoResponse 且不分派；未装配时行为与历史版本一致（默认不做权限判定）
 

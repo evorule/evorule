@@ -8,7 +8,7 @@
 
 # `evorule` CLI
 
-[![版本 v0.4.2](https://img.shields.io/badge/version-v0.4.2-blue)](../Cargo.toml)
+[![版本 v0.5.0](https://img.shields.io/badge/version-v0.5.0-blue)](../Cargo.toml)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-green)](../LICENSE)
 [![文档索引 DOCS_INDEX](https://img.shields.io/badge/docs-DOCS_INDEX-8A2BE2)](../DOCS_INDEX.md)
 
@@ -29,7 +29,7 @@
 - ✅ **零网络** —— 不调用任何外部服务
 - ✅ **零遥测** —— 无任何隐式上报
 - ✅ **零 AI 决策** —— 不调用 LLM
-- ✅ **零系统依赖** —— musl 静态链接,单文件分发(v0.4.2 Linux 产物约 2.3 MB,以实际构建为准)
+- ✅ **零系统依赖** —— musl 静态链接,单文件分发(v0.5.0 Linux 产物约 2.3 MB,以实际构建为准)
 - ✅ **完整审计** —— 每步 fact 落盘(tier1 WAL JSONL 格式,与 evorule-governance 互通)
 - ✅ **哈希链** —— blake3 哈希链 + 结构不变量校验(防篡改)
 - ✅ **FIFO 队列** —— 修复原 LIFO bug,正确执行 push 语义
@@ -45,9 +45,9 @@
 ## 快速开始(圈 2 用户)
 
 ```bash
-# 1) 下载(按平台选,直达 v0.4.2 release 产物)
-wget https://gitee.com/evorule/evorule/releases/download/v0.4.2/evorule-linux-x86_64   # Linux x86_64
-# Windows x86_64: https://gitee.com/evorule/evorule/releases/download/v0.4.2/evorule-windows-x86_64.exe
+# 1) 下载(按平台选,直达 v0.5.0 release 产物)
+wget https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-linux-x86_64   # Linux x86_64
+# Windows x86_64: https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-windows-x86_64.exe
 
 # 2) 验证(可选,记录哈希备查)
 sha256sum evorule-linux-x86_64
@@ -451,7 +451,7 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 ```bash
 # Linux x86_64 圈 2 用户
-wget https://gitee.com/evorule/evorule/releases/download/v0.4.2/evorule-linux-x86_64
+wget https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-linux-x86_64
 chmod +x evorule-linux-x86_64
 ./evorule-linux-x86_64 validate /etc/company-rules/
 ./evorule-linux-x86_64 run /etc/company-rules/ -o /var/log/evorule-fact.log
