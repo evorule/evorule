@@ -4,13 +4,13 @@
 # 验证三个差分测试属性(验证代码位于各 tier 的 verification/ 目录):
 #
 # evorule-reactor（verification/differential_test.rs）:
-#   - P0-12 diff_reactor_vs_pure: reactor::next_step 与 pure::next_step
+#   - diff_reactor_vs_pure: reactor::next_step 与 pure::next_step
 #     产生相同状态变更(运行时逻辑 vs 纯函数逻辑一致性)
 #
 # evorule-governance（verification/differential_test.rs）:
-#   - P0-9  diff_version_consistency: facts_log.version() == reactor.state.version
+#   - diff_version_consistency: facts_log.version() == reactor.state.version
 #     (审计链版本号与反应器内部状态版本号一致)
-#   - P0-10 diff_rewind_vs_factslog: TimeMachine::rewind(facts, N).snapshot
+#   - diff_rewind_vs_factslog: TimeMachine::rewind(facts, N).snapshot
 #     与 FactsLog 重放到版本 N 的快照一致(时间机器 vs 审计链重建)
 #
 # 触发条件: tier1/tier2 源码、verification/ 目录或差分测试本身变更
@@ -120,8 +120,8 @@ jobs:
             const result = '${{ needs.differential-test.result }}';
             const body = '## 🔬 Differential Testing Summary\n\n' +
               '| Crate | Status |\n|---|---|\n' +
-              '| evorule-reactor (P0-12) | ' + (result === 'success' ? '✅ passed' : '❌ failed') + ' |\n' +
-              '| evorule-governance (P0-9/P0-10) | ' + (result === 'success' ? '✅ passed' : '❌ failed') + ' |\n\n' +
+              '| evorule-reactor (diff_reactor_vs_pure) | ' + (result === 'success' ? '✅ passed' : '❌ failed') + ' |\n' +
+              '| evorule-governance (diff_version_consistency / diff_rewind_vs_factslog) | ' + (result === 'success' ? '✅ passed' : '❌ failed') + ' |\n\n' +
               'Matrix result: ' + result;
             github.rest.issues.createComment({
               owner: context.repo.owner,
