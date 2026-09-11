@@ -4,7 +4,7 @@
 # JSON 规则集格式参考
 
 > 字典式参考。evorule 规则集（rule_set）的完整字段、类型、约束。
-> 基于 `evorule-tcb` v0.4.2 源码实测：`core_eval.json`（语言规范样本）、`executor.rs`（元指令执行）、`domain.rs`（域评估）、`transition.rs`（状态转换）。
+> 基于 `evorule-tcb` v0.5.0 源码实测：`core_eval.json`（语言规范样本）、`executor.rs`（元指令执行）、`domain.rs`（域评估）、`transition.rs`（状态转换）。
 
 ## 总览
 
@@ -218,7 +218,7 @@ domain 用于 branch 指令的条件评估。共 7 种类型（SSOT：`domain.rs
 | `not` | 子域为假 | `inner`（单个域） | domain.rs L257 |
 | `has_fields` | 对象包含指定非空字段 | `path`, `fields`（非空数组） | domain.rs L279 |
 
-> 注意：evorule v0.4.2 **没有** `gt`、`gte`、`neq`、`contains` 等操作符。大于比较可用 `not(lt)` 组合实现。
+> 注意：evorule v0.5.0 **没有** `gt`、`gte`、`neq`、`contains` 等操作符。大于比较可用 `not(lt)` 组合实现。
 
 ### instruction（指令类型匹配）
 
@@ -406,7 +406,7 @@ __exec__.__io_results__.<io_type> — I/O 结果（按类型隔离）
 # JSON Rule Set Format Reference
 
 > Dictionary-style reference. Complete fields, types, and constraints of an evorule rule set.
-> Based on hands-on inspection of `evorule-tcb` v0.4.2 sources: `core_eval.json` (language spec sample), `executor.rs` (meta-instruction execution), `domain.rs` (domain evaluation), `transition.rs` (state transition).
+> Based on hands-on inspection of `evorule-tcb` v0.5.0 sources: `core_eval.json` (language spec sample), `executor.rs` (meta-instruction execution), `domain.rs` (domain evaluation), `transition.rs` (state transition).
 
 ## Overview
 
@@ -620,7 +620,7 @@ Domains are used for condition evaluation in branch instructions. There are 7 ty
 | `not` | The sub-domain is false | `inner` (single domain) | domain.rs L257 |
 | `has_fields` | The object contains the given non-empty fields | `path`, `fields` (non-empty array) | domain.rs L279 |
 
-> Note: evorule v0.4.2 does **not** have operators such as `gt`, `gte`, `neq`, or `contains`. Greater-than comparisons can be expressed via a `not(lt)` combination.
+> Note: evorule v0.5.0 does **not** have operators such as `gt`, `gte`, `neq`, or `contains`. Greater-than comparisons can be expressed via a `not(lt)` combination.
 
 ### instruction (instruction type match)
 

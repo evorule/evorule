@@ -36,6 +36,28 @@
 
 ---
 
+## [0.5.0] - 2026-09-12
+
+> 次版本发布：权限门可观测性、CLI 与文档双语化（i18n）、确定性修复，以及 TCB 形式化验证体系落地。
+
+### 🆕 新增
+
+- **权限门装配可观测性** (\evorule-governance\)：新增 \permission_gate_enabled()\ 查询方法；\IoSubscriber\ 启动时若未装配权限门将输出告警，fail-open 状态显式化，供集成测试与部署自检在编译期断言
+- **CLI 双语化** (\evorule-cli\)：帮助文本与错误信息本地化为英文，面向国际贡献者与用户
+- **文档双语体系** (\docs/\)：reference / tutorial / how-to / explanation 全套新增英文分节（english 锚点），并新增文档中英漂移门禁
+- **形式化验证体系** (\evorule-tcb\)：新增 Kani 模型检查、变异测试（cargo-mutants）、TLA+ 规范（ExecuteTransition）与差分测试 CI 门禁；coq Makefile 与验证文档就位
+
+### 🐛 修复
+
+- **Violation 事实版本语义** (\evorule-reactor\)：enforce 拦截产生的 Violation 事实按记录性事实处理，不再推进会话版本号
+- **消除潜在 panic 路径** (\evorule-governance\)：共享事实列表查询由两次匹配改为单次 filter_map 匹配，消除 unreachable 兜底 panic 点
+
+### 🔄 变更
+
+- **i18n 门禁**：CI 新增 i18n-gates job，执行 docs 中英漂移检查与错误码字典对照检查（check_docs_bilingual.py / check_error_code_i18n.py）
+
+---
+
 ## [0.4.3] - 2026-09-09
 
 > 补丁发布：v0.4.2 之后 6 个 feat/fix + 12 个 docs + 1 个 chore 合入，含审计链命中明细归因、fork-from-archive WAL 重放原语、enforce halt 安全原语、双重嵌套静默 bug 修复、WAL 重启续链修复、CLA 治理文件。

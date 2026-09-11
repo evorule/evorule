@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/evorule/evorule/actions/workflows/ci.yml/badge.svg)](https://github.com/evorule/evorule/actions/workflows/ci.yml)
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
-[![Version](https://img.shields.io/badge/version-0.4.2-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-758%20passed%20%C2%B7%202026--09--05-brightgreen.svg)](#testing--verification)
 [![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2812%20verified%29-blue.svg)](#formal-verification)
@@ -38,7 +38,7 @@
 
 ---
 
-## Highlights of the current release (v0.4.2)
+## Highlights of the current release (v0.5.0)
 
 - **Slimmer Stable fact**: carries only the `version` number, not a full payload snapshot; WAL volume for long-lived sessions is O(n). Code: `evorule-reactor/src/fact.rs:228-242`
 - **Meta-instruction SSOT**: the tcb exports the authoritative `META_INSTRUCTION_TYPES` constant (6 types); the cli `validate` references it. Code: `evorule-tcb/src/executor.rs:52-59`; test: `test_meta_instruction_types_ssot`
@@ -136,12 +136,12 @@
 
 ### 0. Prebuilt binaries (recommended)
 
-v0.4.2 ships single-file executables for Linux / Windows, zero-dependency, run directly:
+v0.5.0 ships single-file executables for Linux / Windows, zero-dependency, run directly:
 
 | Platform | Download |
 |---|---|
-| Linux x86_64 | [evorule-linux-x86_64](https://gitee.com/evorule/evorule/releases/download/v0.4.2/evorule-linux-x86_64) |
-| Windows x86_64 | [evorule-windows-x86_64.exe](https://gitee.com/evorule/evorule/releases/download/v0.4.2/evorule-windows-x86_64.exe) |
+| Linux x86_64 | [evorule-linux-x86_64](https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-linux-x86_64) |
+| Windows x86_64 | [evorule-windows-x86_64.exe](https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-windows-x86_64.exe) |
 
 > All versions & source packages: [Gitee Releases](https://gitee.com/evorule/evorule/releases) ｜ [GitHub Releases](https://github.com/evorule/evorule/releases)
 
@@ -435,7 +435,7 @@ evorule/
 
 ## Known limitations & roadmap
 
-### Limitations of the current release (v0.4.2)
+### Limitations of the current release (v0.5.0)
 
 - **Core repo has no hot-reload**: `core_eval` loads at startup and is immutable at runtime (business-rule hot-reload is an application-layer capability)
 - **cli has no I/O handler**: `IoRequest` errors and stops (auditable failure)
@@ -507,7 +507,7 @@ evorule/
 
 [![CI](https://github.com/evorule/evorule/actions/workflows/ci.yml/badge.svg)](https://github.com/evorule/evorule/actions/workflows/ci.yml)
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
-[![Version](https://img.shields.io/badge/version-0.4.2-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-758%20passed%20%C2%B7%202026--09--05-brightgreen.svg)](#测试与验证)
 [![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2812%20verified%29-blue.svg)](#形式化验证)
@@ -537,7 +537,7 @@ evorule/
 
 ---
 
-## 当前版本（v0.4.2）要点
+## 当前版本（v0.5.0）要点
 
 - **Stable fact 瘦身**：仅携带版本号，不携带全量 payload 快照；长驻会话 WAL 体积为 O(n)。代码：`evorule-reactor/src/fact.rs:228-242`
 - **元指令 SSOT**：tcb 导出 `META_INSTRUCTION_TYPES` 权威常量（6 种），cli validate 引用该常量。代码：`evorule-tcb/src/executor.rs:52-59`；测试：`test_meta_instruction_types_ssot`
@@ -626,12 +626,12 @@ evorule/
 
 ### 0. 预编译二进制（推荐）
 
-v0.4.2 提供 Linux / Windows 单文件可执行，零依赖直接运行：
+v0.5.0 提供 Linux / Windows 单文件可执行，零依赖直接运行：
 
 | 平台 | 下载 |
 |---|---|
-| Linux x86_64 | [evorule-linux-x86_64](https://gitee.com/evorule/evorule/releases/download/v0.4.2/evorule-linux-x86_64) |
-| Windows x86_64 | [evorule-windows-x86_64.exe](https://gitee.com/evorule/evorule/releases/download/v0.4.2/evorule-windows-x86_64.exe) |
+| Linux x86_64 | [evorule-linux-x86_64](https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-linux-x86_64) |
+| Windows x86_64 | [evorule-windows-x86_64.exe](https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-windows-x86_64.exe) |
 
 > 全部版本与源码包：[Gitee Releases](https://gitee.com/evorule/evorule/releases) ｜ [GitHub Releases](https://github.com/evorule/evorule/releases)
 
@@ -924,7 +924,7 @@ evorule/
 
 ## 已知限制与路线图
 
-### 当前版本（v0.4.2）限制
+### 当前版本（v0.5.0）限制
 
 - **核心仓无热重载**：core_eval 启动时加载，运行中不可变（业务规则热重载为应用层能力）
 - **cli 无 I/O handler**：IoRequest 即 Error 停止（可审计的失败）
