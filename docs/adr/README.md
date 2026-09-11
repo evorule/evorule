@@ -35,3 +35,42 @@ ADR(Architecture Decision Record)是一种轻量级文档,记录:
 - 拒绝了某个看似合理的方案(如"不做实时协作,理由是 …")
 
 **不要**为琐碎的实现细节写 ADR(变量命名、内部重构不算)。
+
+---
+
+<a id="english"></a>
+
+# Architecture Decision Records (ADR)
+
+> Record the **important architecture decisions** made in the evorule core repository, together with their history.
+
+## What is an ADR
+
+An ADR (Architecture Decision Record) is a lightweight document that records:
+
+- What problem we were facing
+- Which options were considered
+- Which one was chosen in the end, and why
+- What consequences the choice brought
+
+Every ADR is an **immutable historical snapshot**. If a decision changes, write a new ADR and supersede the old one — **never go back and edit the old file**.
+
+## Writing conventions
+
+- **File name**: `NNNN-kebab-case-title.md`, numbered with monotonically increasing sequence numbers that are never reused
+- **Template**: copy [template.md](./template.md) to start writing
+- **Status**: Proposed → Accepted → (Deprecated | Superseded by ADR-XXXX)
+- **When done**: add the new ADR to the index below
+
+## Index
+
+(None yet; will be filled in once the first ADR lands)
+
+## When to write an ADR
+
+- A framework / library / language version was chosen (e.g. "why Rust 1.74+ rather than nightly")
+- An **architecture-level** design was introduced or changed (e.g. "TCB boundary principles")
+- The product boundary or an external interface changed (e.g. "v0.3 changed the external service API")
+- A seemingly reasonable option was rejected (e.g. "no real-time collaboration, because …")
+
+**Do not** write an ADR for trivial implementation details (variable naming and internal refactoring do not count).
