@@ -682,10 +682,7 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
         _ => JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("has_fields")),
             ("path", JsonValue::string("payload.obj")),
-            (
-                "fields",
-                JsonValue::Array(vec![JsonValue::string("flag")]),
-            ),
+            ("fields", JsonValue::Array(vec![JsonValue::string("flag")])),
         ]),
     }
 }
@@ -714,11 +711,7 @@ fn verify_exec_enforce_never_panics() {
     let use_path_ref = kani::any::<bool>();
     let with_domain = kani::any::<bool>();
     let with_reason = kani::any::<bool>();
-    let instr = enforce_instruction(
-        concrete_domain(t, use_path_ref),
-        with_domain,
-        with_reason,
-    );
+    let instr = enforce_instruction(concrete_domain(t, use_path_ref), with_domain, with_reason);
     let state = concrete_enforce_state();
     let _ = execute_meta_instruction(&instr, state, 0);
 }

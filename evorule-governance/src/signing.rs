@@ -71,8 +71,7 @@ impl AuditSigner {
     /// `pk_hex` 为 32 字节压缩公钥（可公开分发供验证）。
     pub fn generate_keys() -> Result<(String, String), SignError> {
         let mut seed = [0u8; 32];
-        getrandom::getrandom(&mut seed)
-            .map_err(|_| SignError::Randomness("OS 熵源不可用"))?;
+        getrandom::getrandom(&mut seed).map_err(|_| SignError::Randomness("OS 熵源不可用"))?;
         let signer = Self::from_bytes(seed);
         Ok((hex_encode(&seed), hex_encode(&signer.verifying_bytes())))
     }
@@ -165,7 +164,10 @@ mod tests {
     fn test_signature_is_deterministic() {
         let signer = AuditSigner::from_bytes([7u8; 32]);
         let payload = b"audit-anchor-payload";
-        assert_eq!(signer.signature_bytes(payload), signer.signature_bytes(payload));
+        assert_eq!(
+            signer.signature_bytes(payload),
+            signer.signature_bytes(payload)
+        );
     }
 
     #[test]

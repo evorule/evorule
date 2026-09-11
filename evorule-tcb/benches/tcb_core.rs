@@ -82,9 +82,15 @@ fn make_core_eval() -> Vec<JsonValue> {
                             (
                                 "params",
                                 JsonValue::object_from_pairs(&[
-                                    ("attr", JsonValue::string("__exec__.instruction.params.attr")),
+                                    (
+                                        "attr",
+                                        JsonValue::string("__exec__.instruction.params.attr"),
+                                    ),
                                     ("operation", JsonValue::string("add")),
-                                    ("value", JsonValue::string("__exec__.instruction.params.delta")),
+                                    (
+                                        "value",
+                                        JsonValue::string("__exec__.instruction.params.delta"),
+                                    ),
                                 ]),
                             ),
                         ])]),
@@ -112,9 +118,15 @@ fn make_core_eval() -> Vec<JsonValue> {
                             (
                                 "params",
                                 JsonValue::object_from_pairs(&[
-                                    ("attr", JsonValue::string("__exec__.instruction.params.attr")),
+                                    (
+                                        "attr",
+                                        JsonValue::string("__exec__.instruction.params.attr"),
+                                    ),
                                     ("operation", JsonValue::string("set")),
-                                    ("value", JsonValue::string("__exec__.instruction.params.value")),
+                                    (
+                                        "value",
+                                        JsonValue::string("__exec__.instruction.params.value"),
+                                    ),
                                 ]),
                             ),
                         ])]),
@@ -215,12 +227,7 @@ fn bench_execute_transition_1000_increments(c: &mut Criterion) {
         b.iter(|| {
             let mut payload = initial_payload.clone();
             for _ in 0..1000 {
-                let result = execute_transition(
-                    &core_eval,
-                    &instruction,
-                    &payload,
-                    &[],
-                );
+                let result = execute_transition(&core_eval, &instruction, &payload, &[]);
                 match result {
                     Ok(TransitionResult::State { new_payload, .. }) => {
                         payload = new_payload;
@@ -275,7 +282,10 @@ fn bench_jsonvalue_field_access(c: &mut Criterion) {
         b.iter(|| {
             let x = value.get("x").and_then(|v| v.as_i64());
             let y = value.get("y").and_then(|v| v.as_i64());
-            let nested_a = value.get("nested").and_then(|v| v.get("a")).and_then(|v| v.as_i64());
+            let nested_a = value
+                .get("nested")
+                .and_then(|v| v.get("a"))
+                .and_then(|v| v.as_i64());
             black_box((x, y, nested_a));
         });
     });

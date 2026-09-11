@@ -3,7 +3,12 @@
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 // 测试代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 GATE_REFERENCE.md §六(豁免索引)
 // too_many_lines: 测试 fixture(长 JSON 规则字面量)豁免
-#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used, clippy::too_many_lines)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::expect_used,
+    clippy::too_many_lines
+)]
 //! 反应式执行器集成测试
 
 use evorule_reactor::{Fact, FactId, FactIdGenerator, IoType, Reactor};
@@ -534,10 +539,7 @@ async fn test_unknown_io_response_records_error_fact() {
     .unwrap();
 
     assert!(result.is_some());
-    assert!(
-        seen_error,
-        "未观察到 unknown IoResponse 对应的 Error fact"
-    );
+    assert!(seen_error, "未观察到 unknown IoResponse 对应的 Error fact");
     let (snapshot, _, _) = facts_log.snapshot();
     // 状态不受 spurious 响应影响
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(5)));
@@ -827,7 +829,9 @@ async fn test_decrement_instruction() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log)
+        .await
+        .expect("Stable not received");
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(7)));
 }
 
@@ -844,7 +848,9 @@ async fn test_set_instruction() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log)
+        .await
+        .expect("Stable not received");
     assert_eq!(snapshot.get("y"), Some(&JsonValue::Integer(99)));
 }
 
@@ -868,7 +874,9 @@ async fn test_sequence_instruction_expansion() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log)
+        .await
+        .expect("Stable not received");
     // x = 1 + 2 + 3 = 6
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(6)));
 }
@@ -945,7 +953,9 @@ async fn test_payload_update() {
 
     // drain 会同时处理两个 Fact：PayloadUpdate 设置 x=42，Command push increment
     // 执行 increment: x = 42 + 5 = 47
-    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log)
+        .await
+        .expect("Stable not received");
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(47)));
 }
 
@@ -981,7 +991,9 @@ async fn test_payload_update_existing_field() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log)
+        .await
+        .expect("Stable not received");
     // set x=10 执行，PayloadUpdate 创建 y="hello"
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(10)));
     assert_eq!(snapshot.get("y").and_then(|v| v.as_str()), Some("hello"));
@@ -1015,7 +1027,9 @@ async fn test_multiple_commands_batch() {
 
     // 所有 3 个 Command 应该在同一轮 drain 中被处理
     // x = 5 + 10 + 20 = 35
-    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log)
+        .await
+        .expect("Stable not received");
     assert_eq!(
         snapshot.get("x"),
         Some(&JsonValue::Integer(35)),
@@ -1059,7 +1073,9 @@ async fn test_state_transition_cause_chain() {
     })
     .unwrap();
 
-    let _ = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
+    let _ = wait_for_stable(&mut rx, &facts_log)
+        .await
+        .expect("Stable not received");
 
     // 验证 FactsLog 中的 StateTransition 的 cause 指向 Command 的 id
     let history = facts_log.history();
@@ -1104,7 +1120,9 @@ async fn test_noop_instruction() {
     })
     .unwrap();
 
-    let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
+    let snapshot = wait_for_stable(&mut rx, &facts_log)
+        .await
+        .expect("Stable not received");
     // noop 不修改 payload，仍为空对象
     assert_eq!(snapshot, JsonValue::empty_object());
 }
@@ -1168,7 +1186,9 @@ async fn test_facts_log_version_tracking() {
     })
     .unwrap();
 
-    let _ = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
+    let _ = wait_for_stable(&mut rx, &facts_log)
+        .await
+        .expect("Stable not received");
 
     // 验证版本号 > 0（至少一次 StateTransition）
     let version = facts_log.version();
@@ -1203,7 +1223,9 @@ async fn test_read_from_for_audit_replay() {
     })
     .unwrap();
 
-    let _ = wait_for_stable(&mut rx, &facts_log).await.expect("Stable not received");
+    let _ = wait_for_stable(&mut rx, &facts_log)
+        .await
+        .expect("Stable not received");
 
     // 审计重放：读取所有事实
     let all_facts = facts_log.read_from(0);
@@ -1885,15 +1907,16 @@ async fn test_inspect_returns_pending_io() {
 #[tokio::test]
 async fn test_d11_replay_consistency_first_vs_preresult() {
     let core_eval = load_core_eval();
-    let mock_obj = JsonValue::object_from_pairs(&[
-        ("llm_response", JsonValue::string("d11_diff_mock")),
-    ]);
+    let mock_obj =
+        JsonValue::object_from_pairs(&[("llm_response", JsonValue::string("d11_diff_mock"))]);
 
     // ============================================================
     // 路径 A: 首次执行 (标准 IoRequest -> IoResponse -> 重放)
     // ============================================================
-    let (tx_a, mut rx_a, _event_a, handle_a, facts_a) =
-        Reactor::builder(core_eval.clone()).max_rounds(100).build().spawn();
+    let (tx_a, mut rx_a, _event_a, handle_a, facts_a) = Reactor::builder(core_eval.clone())
+        .max_rounds(100)
+        .build()
+        .spawn();
     let mut gen_a = FactIdGenerator::new();
 
     // 1. 提交 call_external 指令

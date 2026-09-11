@@ -139,12 +139,20 @@ pub(crate) fn execute_meta_instruction_budgeted(
         })?;
 
     match instr_type {
-        "set" => exec_set(instr, state).map(MetaInstructionResult::State).inspect(|_| *hit_out = true),
-        "push" => exec_push(instr, state).map(MetaInstructionResult::State).inspect(|_| *hit_out = true),
+        "set" => exec_set(instr, state)
+            .map(MetaInstructionResult::State)
+            .inspect(|_| *hit_out = true),
+        "push" => exec_push(instr, state)
+            .map(MetaInstructionResult::State)
+            .inspect(|_| *hit_out = true),
         "branch" => exec_branch(instr, state, depth, budget, hit_out),
         "io_request" => exec_io_request(instr, state).inspect(|_| *hit_out = true),
-        "collect" => exec_collect(instr, state).map(MetaInstructionResult::State).inspect(|_| *hit_out = true),
-        "merge" => exec_merge(instr, state).map(MetaInstructionResult::State).inspect(|_| *hit_out = true),
+        "collect" => exec_collect(instr, state)
+            .map(MetaInstructionResult::State)
+            .inspect(|_| *hit_out = true),
+        "merge" => exec_merge(instr, state)
+            .map(MetaInstructionResult::State)
+            .inspect(|_| *hit_out = true),
         "enforce" => exec_enforce(instr, state).inspect(|result| {
             // 结构命中口径：domain 求值为真（Halted 信号产生）即命中；
             // 求值为假（noop 继续）不命中。
@@ -305,6 +313,11 @@ pub(crate) fn substitute_template(
 /// - 中间对象段缺失/null：自动创建空对象（auto-vivification，既有行为）
 /// - 索引段：目标数组**必须已存在**（不隐式创建，数组长度无法从索引推断）；
 ///   索引越界报错（不隐式追加，追加须由 collect/push 显式完成）
+//
+// 注：本函数有意保持单一函数承载完整路径解析语义分支（三种 attr 写法 +
+// payload 前缀守卫 + 索引写入语义），便于审计路径解析行为；行数超出 clippy
+// 默认阈值（105/100），按 clippy 官方建议用函数级 allow 豁免。
+#[allow(clippy::too_many_lines)]
 fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbError> {
     let params = instr.get("params").ok_or(TcbError::MissingField {
         field: "params".to_string(),
@@ -778,8 +791,13 @@ fn exec_branch(
         }
         for sub_instr in instrs {
             let mut sub_hit = false;
-            let result =
-                execute_meta_instruction_budgeted(sub_instr, state, depth + 1, budget, &mut sub_hit)?;
+            let result = execute_meta_instruction_budgeted(
+                sub_instr,
+                state,
+                depth + 1,
+                budget,
+                &mut sub_hit,
+            )?;
             match result {
                 MetaInstructionResult::State(new_state) => state = new_state,
                 io_required @ MetaInstructionResult::IoRequired { .. } => return Ok(io_required),
@@ -1270,7 +1288,10 @@ mod tests {
             (
                 "params",
                 JsonValue::object_from_pairs(&[
-                    ("attr", JsonValue::string("__exec__.instruction.params.target")),
+                    (
+                        "attr",
+                        JsonValue::string("__exec__.instruction.params.target"),
+                    ),
                     ("operation", JsonValue::string("set")),
                     ("value", JsonValue::Integer(1)),
                 ]),
@@ -2236,7 +2257,8 @@ mod tests {
 
         let mut budget = 1usize;
         let mut hit = false;
-        let result = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit).unwrap();
+        let result =
+            execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit).unwrap();
         assert!(matches!(result, MetaInstructionResult::State(_)));
         // 单条指令恰好耗尽预算
         assert_eq!(budget, 0);
@@ -2297,7 +2319,8 @@ mod tests {
         let state = make_exec_state("branch", make_payload(0), vec![]);
         let mut budget = 3usize;
         let mut hit2 = false;
-        let result = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit2).unwrap();
+        let result =
+            execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit2).unwrap();
         match result {
             MetaInstructionResult::State(new_state) => {
                 let x = resolve_path(&new_state, "__exec__.payload.x").unwrap();
@@ -2322,7 +2345,8 @@ mod tests {
 
         let mut budget = 0usize;
         let mut hit = false;
-        let err = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit).unwrap_err();
+        let err =
+            execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit).unwrap_err();
         match err {
             TcbError::TooManyExecutedInstructions { limit } => {
                 assert_eq!(limit, MAX_TOTAL_META_INSTRUCTIONS);

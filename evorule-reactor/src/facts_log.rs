@@ -217,8 +217,7 @@ pub struct FactsLog {
 
 /// WAL 连续失败升级回调类型
 #[cfg(feature = "persistence")]
-type WalFailureExhaustedCallback =
-    Arc<std::sync::Mutex<Option<Box<dyn Fn(&str) + Send + Sync>>>>;
+type WalFailureExhaustedCallback = Arc<std::sync::Mutex<Option<Box<dyn Fn(&str) + Send + Sync>>>>;
 
 #[cfg(feature = "persistence")]
 /// WAL 写入连续失败终止阈值（用户决策：方案 b，2026-08-27）
@@ -1811,7 +1810,10 @@ mod tests {
                 id: FactId(i + 10),
                 instruction: JsonValue::empty_object(),
             });
-            assert!(result.is_err(), "attempt {i} should fail on dir-as-rotate-target");
+            assert!(
+                result.is_err(),
+                "attempt {i} should fail on dir-as-rotate-target"
+            );
             let err_msg = format!("{}", result.unwrap_err());
             if i < WAL_FAIL_TERMINATE_THRESHOLD {
                 assert!(
@@ -2226,10 +2228,28 @@ mod tests {
         assert!(store.is_empty());
 
         store
-            .append_record_with_hash(0, &Fact::Command { id: FactId(1), instruction: JsonValue::empty_object() }, "c1", "genesis", "h1")
+            .append_record_with_hash(
+                0,
+                &Fact::Command {
+                    id: FactId(1),
+                    instruction: JsonValue::empty_object(),
+                },
+                "c1",
+                "genesis",
+                "h1",
+            )
             .unwrap();
         store
-            .append_record_with_hash(1, &Fact::Error { id: FactId(2), message: "e".into() }, "c2", "h1", "h2")
+            .append_record_with_hash(
+                1,
+                &Fact::Error {
+                    id: FactId(2),
+                    message: "e".into(),
+                },
+                "c2",
+                "h1",
+                "h2",
+            )
             .unwrap();
         assert_eq!(store.len(), 2);
 

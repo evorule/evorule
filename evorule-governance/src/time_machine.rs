@@ -494,7 +494,10 @@ mod tests {
         let facts = vec![make_state_transition(1, serde_json::json!({"a": 1}))];
 
         let err = diff(&facts, 1, 99).unwrap_err();
-        assert_eq!(err.version, 99, "越界版本必须返回 TimeMachineError 并携带版本号");
+        assert_eq!(
+            err.version, 99,
+            "越界版本必须返回 TimeMachineError 并携带版本号"
+        );
 
         let err = diff(&facts, 50, 1).unwrap_err();
         assert_eq!(err.version, 50);

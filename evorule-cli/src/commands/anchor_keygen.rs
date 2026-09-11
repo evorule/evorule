@@ -32,7 +32,9 @@ pub fn run(output: Option<&Path>) -> Result<(), CliError> {
             path.display(),
             pk_hex
         );
-        println!("[WARN] This file contains the private seed; keep it secure (chmod 600 or equivalent)");
+        println!(
+            "[WARN] This file contains the private seed; keep it secure (chmod 600 or equivalent)"
+        );
     } else {
         println!("=== G-A1 Audit Anchor Signing Keypair ===");
         println!("[SECRET] Private seed (sk_seed_hex): {}", sk_seed_hex);

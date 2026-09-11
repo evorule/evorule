@@ -344,6 +344,9 @@ impl Fact {
     ///
     /// 返回的 JSON 对象包含 `type` 字段和各变体的所有字段，
     /// 可通过 `tcb_to_serde` 转为 `serde_json::Value` 用于 HTTP 响应。
+    //
+    // 注：match 全部 Fact 变体的序列化分支，有意保持单一函数便于对账字段映射。
+    #[allow(clippy::too_many_lines)]
     pub fn to_json(&self) -> JsonValue {
         use evorule_tcb::JsonValue as J;
         match self {
@@ -603,9 +606,7 @@ mod tests {
             cause: FactId(3),
             rule_index: 2,
             reason: "违规：禁删数据集".to_string(),
-            instruction: JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("delete_all")),
-            ]),
+            instruction: JsonValue::object_from_pairs(&[("type", JsonValue::string("delete_all"))]),
         };
 
         assert_eq!(fact.type_name(), "Violation");
@@ -618,7 +619,10 @@ mod tests {
         assert_eq!(json.get("id"), Some(&JsonValue::Integer(9)));
         assert_eq!(json.get("cause"), Some(&JsonValue::Integer(3)));
         assert_eq!(json.get("rule_index"), Some(&JsonValue::Integer(2)));
-        assert_eq!(json.get("reason"), Some(&JsonValue::string("违规：禁删数据集")));
+        assert_eq!(
+            json.get("reason"),
+            Some(&JsonValue::string("违规：禁删数据集"))
+        );
         assert_eq!(
             json.get("instruction").and_then(|v| v.get("type")),
             Some(&JsonValue::string("delete_all"))
