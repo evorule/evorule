@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 EvoRule Project
+# This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
+# 固定 nightly Rust 工具链版本（Kani 0.67.0 兼容）
+# 验证状态：实测 2026-07-22，Kani 0.67.0 + nightly-2025-11-21 PASS
+[toolchain]
+channel = "nightly-2025-11-21"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

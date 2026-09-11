@@ -1,0 +1,237 @@
+# =============================================================================
+# GitHub Actions: Kani 形式化验证（适配 main 分支架构）
+#
+# 与 dev/wip 版的关键差异（必须遵守，否则静默全绿）：
+#   - main 的 TCB proof 位于 tests/kani/，经 tests/kani_entry.rs 顶层入口
+#     → cargo kani 必须加 --tests，否则 Checking harness 计数为 0
+#   - reactor 的 proof 经 src/pure.rs #[path] 引入 lib
+#     → 不可加 --tests（加了反而找不到 harness）
+#
+# 分档依据（实测，Kani 0.67.0 / WSL Ubuntu 22.04，2026-09-11）：
+#   evidence/p0-8-main-37proof-timing-20260911.log
+#   evidence/p0-8b-rerun-contaminated-20260911.log
+#   evidence/p0-9-unwind-lever-20260911.log
+#
+#   A 档 14 个：9~28s 全部 SUCCESSFUL，串行合计 ≈4.2min → 进 PR 闸门
+#   B 档 23 个：P0-10 实测 600s 全超时（其中 2 个实际跑 910s+）
+#               P0-11 实测 3600s 仍超时（verify_merge_safe 跑满 3603s）
+#               P0-9 证实 unwind 不是杠杆（unwind 4/8 无改善）
+#               → 判定「当前不可运行」，不进 nightly，仅手动触发且允许失败
+#
+# ⚠️ 不要为 B 档加大超时：至今无任何证据表明它们会终止。
+#    加大超时只会让失败来得更晚、烧掉更多 runner 时间。
+#
+# Kani 版本: 0.67.0
+# Rust 版本: nightly-2025-11-21
+# =============================================================================
+
+name: kani
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "evorule-tcb/src/**"
+      - "evorule-tcb/tests/**"
+      - "evorule-tcb/Cargo.toml"
+      - "evorule-reactor/src/**"
+      - "evorule-reactor/verification/**"
+      - "evorule-reactor/Cargo.toml"
+      - "Cargo.toml"
+      - ".github/workflows/kani.yml"
+  pull_request:
+    paths:
+      - "evorule-tcb/src/**"
+      - "evorule-tcb/tests/**"
+      - "evorule-tcb/Cargo.toml"
+      - "evorule-reactor/src/**"
+      - "evorule-reactor/verification/**"
+      - "evorule-reactor/Cargo.toml"
+      - "Cargo.toml"
+      - ".github/workflows/kani.yml"
+  # 手动触发（a / b / all）
+  #   a = A 档 + reactor（PR 闸门，分钟级）
+  #   b = B 档 23 个重型 proof（已知 >1h，仅供人工探索，不阻塞）
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Tier to run (a / b / all)"
+        required: false
+        default: "all"
+
+env:
+  CARGO_TERM_COLOR: always
+  KANI_VERSION: "0.67.0"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # A 档：TCB 14 个轻量 proof（PR 闸门）
+  # 实测 9~28s/个，串行 ≈4.2min；全部带文件内 #[kani::unwind](1~8)
+  # ---------------------------------------------------------------------------
+  kani-tcb-a-tier:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (nightly for Kani 0.67.0)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-11-21
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: kani-${{ runner.os }}-tcb-a-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            kani-${{ runner.os }}-tcb-a-
+            kani-${{ runner.os }}-
+
+      - name: Install Kani ${{ env.KANI_VERSION }}
+        run: |
+          cargo install --locked kani-verifier --version "$KANI_VERSION" --root "$HOME/.cargo"
+          cargo kani setup
+          cargo kani --version
+
+      - name: Verify A-tier proofs (evorule-tcb, 14 个)
+        run: |
+          set -e
+          # ⚠️ --tests 必需：main 的 TCB proof 在 tests/kani/ 下
+          for h in \
+            verify_partial_eq_never_panics \
+            verify_resolve_path_deterministic \
+            verify_resolve_path_array_index \
+            verify_ord_never_panics \
+            verify_as_methods_never_panic \
+            verify_resolve_path_missing_close_bracket \
+            verify_resolve_path_escaped_dot \
+            verify_resolve_path_invalid_index_char \
+            verify_resolve_path_trailing_dot \
+            verify_resolve_path_simple_field \
+            verify_resolve_path_empty_returns_none \
+            verify_resolve_path_double_dot \
+            verify_array_index_bounds \
+            verify_resolve_path_nested_dot \
+          ; do
+            echo "==> $h"
+            timeout -k 30 300 cargo kani -p evorule-tcb --tests \
+              --harness "$h" --output-format=terse
+          done
+
+  # ---------------------------------------------------------------------------
+  # reactor：3 个 CI proof（PR 闸门）
+  # proof 经 src/pure.rs #[path] 引入 lib → 不可加 --tests
+  # ---------------------------------------------------------------------------
+  kani-reactor:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (nightly for Kani 0.67.0)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-11-21
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: kani-${{ runner.os }}-reactor-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            kani-${{ runner.os }}-reactor-
+            kani-${{ runner.os }}-
+
+      - name: Install Kani ${{ env.KANI_VERSION }}
+        run: |
+          cargo install --locked kani-verifier --version "$KANI_VERSION" --root "$HOME/.cargo"
+          cargo kani setup
+          cargo kani --version
+
+      - name: Verify reactor CI proofs (3 个)
+        run: |
+          set -e
+          # 不可加 --tests：reactor proof 在 lib 中（src/pure.rs #[path] 引入）
+          for h in \
+            invariant_version_monotonic \
+            max_rounds_termination \
+            invariant_cause_queue_sync \
+          ; do
+            echo "==> $h"
+            timeout -k 30 300 cargo kani -p evorule-reactor \
+              --default-unwind 4 --harness "$h" --output-format=terse
+          done
+
+  # ---------------------------------------------------------------------------
+  # B 档：TCB 23 个重型 proof —— 仅手动触发，允许失败
+  #
+  # 实测（2026-09-11）：
+  #   P0-10  600s 上限 → 3/3 全超时（其中 2 个实际跑 910s+）
+  #   P0-11 3600s 上限 → verify_merge_safe 跑满 3603s 仍超时
+  #   P0-9  unwind 4/8 → 无改善（证伪「配置缺陷」假设）
+  #
+  # 判定：当前不可运行。无证据表明会终止，故不进 nightly
+  #       （23 × 5h ≈ 115 runner-小时/晚 换来的只是必然的超时）。
+  # 保留本 job 仅供人工按需探索；continue-on-error 保证不阻塞。
+  #
+  # 若将来要让 B 档真正可验证，正确做法是缩小符号输入规模，不是加大超时。
+  # ---------------------------------------------------------------------------
+  kani-tcb-b-tier:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        batch: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (nightly for Kani 0.67.0)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-11-21
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: kani-${{ runner.os }}-tcb-b-${{ matrix.batch }}-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            kani-${{ runner.os }}-tcb-b-
+            kani-${{ runner.os }}-
+
+      - name: Install Kani ${{ env.KANI_VERSION }}
+        run: |
+          cargo install --locked kani-verifier --version "$KANI_VERSION" --root "$HOME/.cargo"
+          cargo kani setup
+          cargo kani --version
+
+      - name: Verify B-tier proofs batch ${{ matrix.batch }}
+        run: |
+          set -e
+          case "${{ matrix.batch }}" in
+            1) LIST="verify_evaluate_domain_all_never_panics verify_evaluate_domain_deterministic verify_evaluate_domain_eq_never_panics verify_evaluate_domain_exists_never_panics" ;;
+            2) LIST="verify_evaluate_domain_has_fields_never_panics verify_evaluate_domain_instruction_never_panics verify_evaluate_domain_lt_never_panics verify_evaluate_domain_not_never_panics" ;;
+            3) LIST="verify_exec_enforce_deterministic verify_exec_enforce_halt_semantics verify_exec_enforce_never_panics verify_exec_set_arithmetic_safe" ;;
+            4) LIST="verify_execute_meta_instruction_never_panics verify_execute_transition_never_panics verify_has_fields_empty_array verify_io_request_safe" ;;
+            5) LIST="verify_merge_safe verify_react_io_required verify_substitute_template_never_panics verify_collect_safe_with_after" ;;
+            6) LIST="verify_branch_depth_limit verify_domain_depth_limit verify_transform_rules_limit" ;;
+          esac
+          for h in $LIST; do
+            echo "==> $h"
+            # 单个 proof 上限 900s；超时不算失败（collect 结果后统一判读）
+            timeout -k 30 900 cargo kani -p evorule-tcb --tests \
+              --harness "$h" --output-format=terse || echo "::warning::$h 未通过或超时"
+          done
