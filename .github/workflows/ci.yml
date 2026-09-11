@@ -4,6 +4,7 @@
 # - 双平台 (Linux / Windows) 全量 cargo test --workspace
 # - evorule-cli 端到端测试 (tests/e2e.sh, TAP 格式)
 # - TCB 构建门禁 (build.rs 在 cargo build 时自动执行)
+# - i18n 双语门禁 (docs 中英漂移 + server code→err.* 字典对照)
 #
 # 设计说明:
 # - 测试矩阵覆盖当前支持的平台 (Linux / Windows)
@@ -105,3 +106,35 @@ jobs:
           cargo build -p evorule-tcb --release
           # 检查编译产物无外部依赖 (仅 Rust std)
           cargo tree -p evorule-tcb --edges normal
+
+  # ==========================================================================
+  # 4. i18n 双语门禁 (纯文本扫描, 无需 Rust 工具链)
+  #    L1-2: docs 中英双语完整性 (本仓自含, scripts/check_docs_bilingual.py)
+  #    L1-1: server code→err.* 字典对照 (跨仓: 额外 checkout 兄弟仓快照,
+  #          scripts/check_error_code_i18n.py; 新增错误码漏配前端字典即红)
+  # ==========================================================================
+  i18n-gates:
+    name: i18n gates (docs bilingual + error code dict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docs 中英双语完整性 (锚点/英文分节/章节结构对齐)
+        run: python3 scripts/check_docs_bilingual.py
+
+      - name: checkout 兄弟仓快照 (L1-1 跨仓对照所需)
+        uses: actions/checkout@v4
+        with:
+          repository: evorule/evorule-server
+          path: sibling/evorule-server
+
+      - uses: actions/checkout@v4
+        with:
+          repository: evorule/evorule-console-cloud
+          path: sibling/evorule-console-cloud
+
+      - name: server code→err.* 双字典对照 (zh/en)
+        run: |
+          python3 scripts/check_error_code_i18n.py \
+            --server-rs sibling/evorule-server/evorule-server/src/api/server.rs \
+            --console-dir sibling/evorule-console-cloud/src/lib/locale

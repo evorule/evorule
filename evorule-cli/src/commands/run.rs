@@ -60,7 +60,11 @@ pub fn run(
         .filter(|f| matches!(f, evorule_reactor::Fact::Error { .. }))
         .count();
     if error_count > 0 {
-        tracing::warn!(facts = facts.len(), error_count, "execution completed with Error facts");
+        tracing::warn!(
+            facts = facts.len(),
+            error_count,
+            "execution completed with Error facts"
+        );
         return Err(CliError::ExecutionHadErrors { count: error_count });
     }
     tracing::info!(facts = facts.len(), "execution completed successfully");

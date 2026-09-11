@@ -78,7 +78,11 @@ pub fn fact_to_human(fact: &Fact) -> String {
         },
         Fact::Stable { id, version } => format!("[F{}] Stable version={}", id.0, version),
         Fact::Error { id, message } => format!("[F{}] Error: {}", id.0, message),
-        Fact::TransitionTrace { id, cause, rule_hits } => {
+        Fact::TransitionTrace {
+            id,
+            cause,
+            rule_hits,
+        } => {
             let hit_count = rule_hits.iter().filter(|h| h.hit).count();
             format!(
                 "[F{}] TransitionTrace cause=F{} hits={}/{}",
@@ -88,12 +92,15 @@ pub fn fact_to_human(fact: &Fact) -> String {
                 rule_hits.len()
             )
         }
-        Fact::Violation { id, cause, rule_index, reason, .. } => format!(
-            "[F{}] Violation cause=F{} rule={} {}",
-            id.0,
-            cause.0,
+        Fact::Violation {
+            id,
+            cause,
             rule_index,
-            reason
+            reason,
+            ..
+        } => format!(
+            "[F{}] Violation cause=F{} rule={} {}",
+            id.0, cause.0, rule_index, reason
         ),
     }
 }

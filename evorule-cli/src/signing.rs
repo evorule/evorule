@@ -33,8 +33,8 @@ pub enum SignError {
 impl core::fmt::Display for SignError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            SignError::Invalid(msg) => write!(f, "审计签名: 非法输入: {msg}"),
-            SignError::Randomness(src) => write!(f, "审计签名: 随机种子失败: {src}"),
+            SignError::Invalid(msg) => write!(f, "audit signature: invalid input: {msg}"),
+            SignError::Randomness(src) => write!(f, "audit signature: random seed failure: {src}"),
         }
     }
 }
@@ -63,7 +63,7 @@ impl AuditSigner {
         let bytes = hex_decode(seed_hex)?;
         if bytes.len() != 32 {
             return Err(SignError::Invalid(format!(
-                "私钥种子长度 != 32: {}",
+                "private seed length != 32: {}",
                 bytes.len()
             )));
         }
@@ -82,7 +82,7 @@ impl AuditSigner {
     pub fn generate_keys() -> Result<(String, String), SignError> {
         let mut seed = [0u8; 32];
         getrandom::getrandom(&mut seed)
-            .map_err(|_| SignError::Randomness("OS 熵源不可用"))?;
+            .map_err(|_| SignError::Randomness("OS entropy source unavailable"))?;
         let signer = Self::from_bytes(seed);
         Ok((hex_encode(&seed), hex_encode(&signer.verifying_bytes())))
     }
@@ -109,7 +109,7 @@ pub fn verify_signature(
     sig_bytes: &[u8; 64],
 ) -> Result<bool, SignError> {
     let verifying = ed25519_dalek::VerifyingKey::from_bytes(&verifying_bytes)
-        .map_err(|e| SignError::Invalid(format!("公钥非法: {e}")))?;
+        .map_err(|e| SignError::Invalid(format!("invalid public key: {e}")))?;
     let sig = Signature::from_bytes(sig_bytes);
     Ok(verifying.verify(payload, &sig).is_ok())
 }
@@ -126,7 +126,7 @@ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
 /// 十六进制解码
 pub(crate) fn hex_decode(hex: &str) -> Result<Vec<u8>, SignError> {
     if hex.len() % 2 != 0 {
-        return Err(SignError::Invalid(format!("hex 长度为奇数: {}", hex.len())));
+        return Err(SignError::Invalid(format!("odd hex length: {}", hex.len())));
     }
     let mut out = Vec::with_capacity(hex.len() / 2);
     let bytes = hex.as_bytes();
@@ -135,7 +135,7 @@ pub(crate) fn hex_decode(hex: &str) -> Result<Vec<u8>, SignError> {
         let lo = (bytes[i + 1] as char).to_digit(16);
         match (hi, lo) {
             (Some(h), Some(l)) => out.push(((h << 4) | l) as u8),
-            _ => return Err(SignError::Invalid("hex 含非十六进制字符".into())),
+            _ => return Err(SignError::Invalid("hex contains non-hexadecimal characters".into())),
         }
     }
     Ok(out)

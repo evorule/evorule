@@ -162,6 +162,21 @@ impl IoSubscriber {
         self
     }
 
+    /// 权限前置判定门是否已装配（可观测性）
+    ///
+    /// 守卫是**可选**装配的（`gate: Option<..>`）：未装配时 `run()` 会 warn，
+    /// 且本订阅者自动分发的每条 IoRequest 都跳过权限仲裁（fail-open）。
+    ///
+    /// 「已装配」这件事此前在核心仓内不可查询、不可断言，只能检查调用方
+    /// 的装配代码才能发现。本方法把它变成可在编译期断言的事实，供集成测试
+    /// 与部署自检使用。
+    ///
+    /// 注意：本方法只回答「装配与否」，**不**回答「策略是否正确」——
+    /// 装了一个策略为空的门同样是装配，是否达到预期仍需调用方自证。
+    pub fn permission_gate_enabled(&self) -> bool {
+        self.gate.is_some()
+    }
+
     /// 注入跳过谓词（builder 模式）
     ///
     /// 谓词命中的 IoRequest **不自动应答**（不回写任何 IoResponse），
@@ -211,6 +226,15 @@ impl IoSubscriber {
             id_offset = ID_OFFSET,
             "IoSubscriber 启动，开始订阅 event broadcast 通道"
         );
+
+        // 可观测性：守卫未装配 = 本订阅者的 I/O 全部跳过权限仲裁（fail-open）。
+        // 此前该状态在核心仓内完全静默，只能检查调用方的装配代码才能发现。
+        if !self.permission_gate_enabled() {
+            tracing::warn!(
+                "IoSubscriber 未装配 PermissionGate：本订阅者自动分发的 IoRequest \
+                 将跳过权限仲裁（fail-open）。生产环境须经 with_permission_gate(..) 注入。"
+            );
+        }
 
         loop {
             match event_rx.recv().await {
@@ -629,6 +653,34 @@ mod tests {
             io_type: IoType::call_external(),
             params,
         }
+    }
+
+    /// 可观测性：`permission_gate_enabled()` 必须如实反映装配状态。
+    ///
+    /// 这是「守卫未装配」能被自动发现的前提 —— 此前该事实需检查调用方装配代码。
+    /// 注：本测试断言的是**装配状态**；`run()` 中同状态输出的 warn 因缺少
+    /// tracing 捕获依赖，未纳入断言（可观测性仍不完整，待后续补强）。
+    #[test]
+    fn test_permission_gate_enabled_reflects_assembly() {
+        use crate::permission::PermissionGate;
+        use std::sync::Arc as StdArc;
+
+        // 未装配 → false
+        let bare = IoSubscriber::new(IoDispatcher::builder().build());
+        assert!(
+            !bare.permission_gate_enabled(),
+            "默认构造的 IoSubscriber 必须报告守卫未装配"
+        );
+
+        // 装配后 → true
+        let gate =
+            PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()));
+        let gated =
+            IoSubscriber::new(IoDispatcher::builder().build()).with_permission_gate(gate);
+        assert!(
+            gated.permission_gate_enabled(),
+            "注入 PermissionGate 后必须报告守卫已装配"
+        );
     }
 
     /// 门 Deny（默认 Unknown 角色 + 空表 → fail-closed Deny）→ 回写

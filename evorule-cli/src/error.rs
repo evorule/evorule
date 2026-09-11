@@ -59,7 +59,9 @@ pub enum CliError {
     ///（C1/C3）：执行含 Error fact 时不再返回退出码 0。
     /// CI/自动化管道以退出码判定成败，Error fact 静默成功会让"确定性执行"
     /// 的核心承诺在自动化场景下失效。fact log 仍正常写出供审计。
-    #[error("Execution completed with {count} Error fact(s); fact log written for audit (exit code 3)")]
+    #[error(
+        "Execution completed with {count} Error fact(s); fact log written for audit (exit code 3)"
+    )]
     ExecutionHadErrors {
         /// Error 事实数量
         count: usize,

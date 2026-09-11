@@ -293,27 +293,23 @@ impl SharedFactsLog {
             .facts_log
             .facts_by_path_prefix(prefix)
             .into_iter()
-            .filter(|(_, fact)| matches!(fact, Fact::PayloadUpdate { .. }))
-            .filter(|(_, fact)| {
-                // 过滤已 rollup 的 fact（列表查询不显示旧摘要）
-                if let Fact::PayloadUpdate { id, .. } = fact {
-                    !inner.rolled_up.contains(id)
-                } else {
-                    false
-                }
-            })
-            .map(|(version, fact)| {
-                if let Fact::PayloadUpdate { id, path, value } = fact {
-                    let source_session_id = *inner.fact_sources.get(&id).unwrap_or(&0);
-                    SharedFact {
-                        fact_id: id,
-                        path,
-                        value,
-                        source_session_id,
-                        version,
+            .filter_map(|(version, fact)| {
+                // 不变式「只有未 rollup 的 PayloadUpdate 才进入结果」在此**一次性**编码。
+                // 原实现拆成 filter + map 两次匹配 PayloadUpdate，第二次匹配只能靠
+                // `unreachable` 宏兜底——一旦 Fact 新增变体或上游过滤条件变更，
+                // 该兜底即成为真实 panic 点。改为单次匹配后无 panic 路径。
+                match fact {
+                    // 过滤已 rollup 的 fact（列表查询不显示旧摘要）
+                    Fact::PayloadUpdate { id, path, value } if !inner.rolled_up.contains(&id) => {
+                        Some(SharedFact {
+                            fact_id: id,
+                            path,
+                            value,
+                            source_session_id: *inner.fact_sources.get(&id).unwrap_or(&0),
+                            version,
+                        })
                     }
-                } else {
-                    unreachable!()
+                    _ => None,
                 }
             })
             .collect()

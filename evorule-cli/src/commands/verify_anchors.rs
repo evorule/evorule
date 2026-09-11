@@ -23,7 +23,7 @@ use crate::signing;
 fn parse_pubkey(hex: &str) -> Result<[u8; 32], CliError> {
     let bytes = signing::hex_decode(hex).map_err(|e| CliError::other(e.to_string()))?;
     if bytes.len() != 32 {
-        return Err(CliError::other(format!("公钥长度 != 32: {}", bytes.len())));
+        return Err(CliError::other(format!("Public key length != 32: {}", bytes.len())));
     }
     let mut arr = [0u8; 32];
     for (dst, src) in arr.iter_mut().zip(bytes.iter()) {
@@ -36,7 +36,7 @@ fn parse_pubkey(hex: &str) -> Result<[u8; 32], CliError> {
 fn parse_signature(hex: &str) -> Result<[u8; 64], CliError> {
     let bytes = signing::hex_decode(hex).map_err(|e| CliError::other(e.to_string()))?;
     if bytes.len() != 64 {
-        return Err(CliError::other(format!("签名长度 != 64: {}", bytes.len())));
+        return Err(CliError::other(format!("Signature length != 64: {}", bytes.len())));
     }
     let mut arr = [0u8; 64];
     for (dst, src) in arr.iter_mut().zip(bytes.iter()) {
@@ -78,29 +78,29 @@ fn parse_anchor(value: &Value) -> Result<(Vec<u8>, [u8; 64]), CliError> {
     let seq = value
         .get("seq")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| CliError::other("锚点缺 seq"))?;
+        .ok_or_else(|| CliError::other("Anchor missing 'seq'"))?;
     let version = value
         .get("version")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| CliError::other("锚点缺 version"))?;
+        .ok_or_else(|| CliError::other("Anchor missing 'version'"))?;
     let entry_count = value
         .get("entry_count")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| CliError::other("锚点缺 entry_count"))? as usize;
+        .ok_or_else(|| CliError::other("Anchor missing 'entry_count'"))? as usize;
     let last_hash = value
         .get("last_hash")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| CliError::other("锚点缺 last_hash"))?
+        .ok_or_else(|| CliError::other("Anchor missing 'last_hash'"))?
         .to_string();
     let prev_anchor_hash = value
         .get("prev_anchor_hash")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| CliError::other("锚点缺 prev_anchor_hash"))?
+        .ok_or_else(|| CliError::other("Anchor missing 'prev_anchor_hash'"))?
         .to_string();
     let sig_hex = value
         .get("signature")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| CliError::other("锚点缺 signature"))?;
+        .ok_or_else(|| CliError::other("Anchor missing 'signature'"))?;
     let signature = parse_signature(sig_hex)?;
     let payload = anchor_payload(seq, version, entry_count, &last_hash, &prev_anchor_hash);
     Ok((payload, signature))
@@ -117,9 +117,9 @@ fn parse_anchor(value: &Value) -> Result<(Vec<u8>, [u8; 64]), CliError> {
 /// - 1：任一锚点被篡改/删改/错签或输入非法
 pub fn run(audit_path: &Path, pubkey_hex: Option<&str>) -> Result<(), CliError> {
     let json_str = std::fs::read_to_string(audit_path)
-        .map_err(|e| CliError::Other(format!("读取 {} 失败: {e}", audit_path.display())))?;
+        .map_err(|e| CliError::Other(format!("Read {} failed: {e}", audit_path.display())))?;
     let parsed: Value =
-        serde_json::from_str(&json_str).map_err(|e| CliError::other(format!("JSON 解析失败: {e}")))?;
+        serde_json::from_str(&json_str).map_err(|e| CliError::other(format!("JSON parse failed: {e}")))?;
 
     // 1. 解析公钥（优先命令行，其次导出物内嵌 verifying_key）
     let pk_bytes = if let Some(hex) = pubkey_hex {
@@ -129,7 +129,7 @@ pub fn run(audit_path: &Path, pubkey_hex: Option<&str>) -> Result<(), CliError> 
             .get("verifying_key")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                CliError::other("导出物未含 verifying_key，且未提供 --pubkey，无法验证真实性")
+                CliError::other("Export has no embedded 'verifying_key' and no --pubkey provided; cannot verify authenticity")
             })?;
         parse_pubkey(embedded)?
     };
@@ -138,11 +138,11 @@ pub fn run(audit_path: &Path, pubkey_hex: Option<&str>) -> Result<(), CliError> 
     let anchors_val = parsed
         .get("anchors")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| CliError::other("导出物缺 anchors 数组"))?;
+        .ok_or_else(|| CliError::other("Export missing 'anchors' array"))?;
 
     if anchors_val.is_empty() {
         println!("=== Verify Anchors: {} ===", audit_path.display());
-        println!("[WARN] 无审计锚点（未配置签名器则无真实性证据，仅哈希链完整性）");
+        println!("[WARN] No audit anchors (without a configured signer there is no authenticity evidence, only hash chain integrity)");
         return Ok(());
     }
 
@@ -154,7 +154,7 @@ pub fn run(audit_path: &Path, pubkey_hex: Option<&str>) -> Result<(), CliError> 
     let verified = verify_value(&parsed, pk_bytes)?;
 
     println!();
-    println!("[OK] 全部 {} 个锚点签名有效且链式链接完整", verified);
+    println!("[OK] All {} anchors verified: signatures valid and chain links intact", verified);
     Ok(())
 }
 
@@ -165,7 +165,7 @@ fn verify_value(parsed: &Value, pk_bytes: [u8; 32]) -> Result<usize, CliError> {
     let anchors_val = parsed
         .get("anchors")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| CliError::other("导出物缺 anchors 数组"))?;
+        .ok_or_else(|| CliError::other("Export missing 'anchors' array"))?;
 
     let mut prev_anchor_hash = String::from("genesis");
     for (i, anchor_val) in anchors_val.iter().enumerate() {
@@ -179,7 +179,7 @@ fn verify_value(parsed: &Value, pk_bytes: [u8; 32]) -> Result<usize, CliError> {
             .unwrap_or("");
         if stored_prev != prev_anchor_hash {
             return Err(CliError::HashChain(format!(
-                "锚点链断裂 @seq={}: 期望 prev_anchor_hash={} 实得={}",
+                "Anchor chain broken @seq={}: expected prev_anchor_hash={} got {}",
                 seq, prev_anchor_hash, stored_prev
             )));
         }
@@ -189,7 +189,7 @@ fn verify_value(parsed: &Value, pk_bytes: [u8; 32]) -> Result<usize, CliError> {
             .map_err(|e| CliError::other(e.to_string()))?;
         if !ok {
             return Err(CliError::HashChain(format!(
-                "锚点 @seq={} 签名校验失败（数据被篡改或非本公钥签名）",
+                "Anchor @seq={} signature verification failed (data tampered or not signed by this public key)",
                 seq
             )));
         }
@@ -249,7 +249,7 @@ mod tests {
         let (mut json, pk) = build_export_json(7, 2);
         json["anchors"][0]["last_hash"] = serde_json::json!("tampered");
         let err = verify_value(&json, pk).unwrap_err();
-        assert!(err.to_string().contains("签名校验失败"));
+        assert!(err.to_string().contains("signature verification failed"));
     }
 
     #[test]
@@ -258,7 +258,7 @@ mod tests {
         // 删除中间锚点 → 第 3 个的 prev_anchor_hash 不再等于第 1 个的自哈希
         json["anchors"].as_array_mut().unwrap().remove(1);
         let err = verify_value(&json, pk).unwrap_err();
-        assert!(err.to_string().contains("锚点链断裂"));
+        assert!(err.to_string().contains("Anchor chain broken"));
     }
 
     #[test]
@@ -267,13 +267,13 @@ mod tests {
         // 用另一把私钥的公钥验证 → 全部失败
         let wrong = crate::signing::AuditSigner::from_bytes([99u8; 32]).verifying_bytes();
         let err = verify_value(&json, wrong).unwrap_err();
-        assert!(err.to_string().contains("签名校验失败"));
+        assert!(err.to_string().contains("signature verification failed"));
     }
 
     #[test]
     fn test_verify_value_missing_anchors() {
         let json = serde_json::json!({ "version": "1.0" });
         let err = verify_value(&json, [0u8; 32]).unwrap_err();
-        assert!(err.to_string().contains("缺 anchors"));
+        assert!(err.to_string().contains("missing 'anchors'"));
     }
 }
