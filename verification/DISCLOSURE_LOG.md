@@ -90,6 +90,7 @@
 - **依据**：诊断实验序列实测记录（上述耗时与卡死输出）；超时输出中 `NodeRef<Dying, String, JsonValue>::first_leaf_edge` 循环 unwind 迭代 1400–2600+ 次；修复前 3 份 FAIL 证据（`P0-11.invariant_cause_queue_sync_FAIL_bdfb8d4_20260912_*`，含完整输出与复现命令）。
 - **影响**：P0-11 主状态由 ❌+🟡 调整为 ✅（正式 PASS 证据按 M3.4 于修复提交后归档，届时补 STATUS.md 证据列）；kani-reactor job 由 2 个增至 3 个 proof；对外数字口径「当前实跑验证」16→17（根 README 双语 badge 与正文、STATUS.md、reactor KANI.md、Cargo.toml `[package.metadata.kani]`、ROADMAP、plan v3 §五 同步更新）。
 - **修正去向**：本条目即修正记录；状态见 STATUS.md（P0-11 行与附录 C）。
+- **归档记录（同日）**：正式 PASS 证据已落盘 `P0-11.invariant_cause_queue_sync_PASS_03643aa_20260912_225316`（evorule-reactor/verification/evidence/kani/，基于修复提交 `03643aa`，1.60s PASS，647 断言 0 失败，CI 同参数复跑）；STATUS.md 证据列已补全。
 
 ### 2026-09-12：P1-5 `command_does_not_decrease_queue` 超时根因修复，入 CI 闸门
 
@@ -97,3 +98,4 @@
 - **依据**：与 P0-11 同根因（CBMC 对 VecDeque 堆缓冲区中 JsonValue 按任意变体建模，state 整体 Drop 展开红黑树析构无界 unwind）；`apply_command` 即 `state.push_back`（evorule-reactor/src/pure.rs），proof 路径无其他爆炸点。
 - **影响**：P1-5 主状态由 🟡 调整为 ✅（正式 PASS 证据按 M3.4 于修复提交后归档，届时补 STATUS.md 证据列）；kani-reactor job 由 3 个增至 4 个 proof；对外数字口径「当前实跑验证」17→18（根 README 双语 badge 与正文、STATUS.md、reactor KANI.md、Cargo.toml `[package.metadata.kani]`、plan v3 §五 同步更新）。
 - **修正去向**：本条目即修正记录；状态见 STATUS.md（P1-5 行与附录 C）。
+- **归档记录（同日）**：正式 PASS 证据已落盘 `P1-5.command_does_not_decrease_queue_PASS_03643aa_20260912_225328`（evorule-reactor/verification/evidence/kani/，基于修复提交 `03643aa`，`--default-unwind 4` 下 0.86s PASS）；STATUS.md 证据列已补全。
