@@ -110,14 +110,17 @@ name = "differential_test"
 path = "verification/differential_test.rs"
 
 [package.metadata.kani]
-# CI 验证列表 (仅限能在 CI 预算内稳定通过的 proof)
+# CI 验证列表 (仅限能在 CI 预算内稳定通过的 proof; 与 .github/workflows/kani.yml
+# 的 kani-reactor job 保持同步)
 #
-# 实测结果 (Kani 0.67.0, WSL Ubuntu 22.04, 2026-08-05):
-#   10/11 PASS, 1/11 TIMEOUT
+# 历史实测 (Kani 0.67.0, WSL Ubuntu 22.04, 2026-08-05): 10/11 PASS, 1/11 TIMEOUT
+# v0.5.0 基线重跑 (2026-09-12): 下列 2 个全 PASS (~10s / ~3s)
+# P0-11 invariant_cause_queue_sync 已移出 (2026-09-12): 同基线实测 3 次超时
+#   (300s+unwind4 / 1200s+unwind4 / 300s 默认 unwind), 判定当前不可运行
+#   (见 verification/STATUS.md)
 #
-# 未列入 CI 的 8 个 proof 中, 7 个本地实测 PASS (16-115s), 但因涉及堆分配
-# 数据结构 (Vec/VecDeque/BTreeSet) 跨 Kani 版本可能不稳定, 为保证 CI 可靠性
-# 仅保留 3 个最简单的纯状态机 proof:
+# 其余 9 个 proof 未入 CI: 前 8 个涉及堆分配数据结构 (Vec/VecDeque/BTreeSet)
+# 跨 Kani 版本可能不稳定, 为保证 CI 可靠性未列入 (历史实测 2026-08-05):
 #   - invariant_io_count_register_complete   (PASS 36s,  涉及 BTreeSet)
 #   - invariant_io_count_force_remove        (TIMEOUT 609s, BTreeSet force_remove 状态爆炸)
 #   - invariant_io_recovery_iff_result       (PASS 45s,  涉及 Vec 操作)
@@ -126,10 +129,10 @@ path = "verification/differential_test.rs"
 #   - proof_hash_chain_back_link             (PASS 115s, 涉及哈希链)
 #   - proof_reactor_invariants_preserved_after_pure_ops (PASS 16s, 组合操作)
 #   - proof_phase_state_machine_cannot_jump  (PASS 7s,   Phase 状态机)
+#   第 9 个即上述移出的 P0-11 (历史 PASS 27s @2026-07-27)。
 #
-# 详见 verification/INDEX.md §4.2 "evorule-reactor 验证资产"
+# 详见 verification/README.md (验证资产登记) 与 docs/KANI.md
 proofs = [
     "invariant_version_monotonic", # version 单调递增 (简单计数器)
     "max_rounds_termination",      # max_rounds 终止条件 (简单有界循环)
-    "invariant_cause_queue_sync",  # P0-11 cause 队列与 queue 长度一致 (简单 Vec 长度检查)
 ]

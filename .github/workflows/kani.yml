@@ -120,8 +120,14 @@ jobs:
           done
 
   # ---------------------------------------------------------------------------
-  # reactor：3 个 CI proof（PR 闸门）
+  # reactor：2 个 CI proof（PR 闸门）
   # proof 经 src/pure.rs #[path] 引入 lib → 不可加 --tests
+  #
+  # P0-11（invariant_cause_queue_sync）已移出闸门（2026-09-12）：
+  #   本地实测 3 次超时（300s+unwind4 / 1200s+unwind4 / 300s 默认 unwind，
+  #   基线 bdfb8d4，证据 evorule-reactor/verification/evidence/kani/ 3 份 FAIL 记录），
+  #   判定当前不可运行——与 B 档同性质，不进 PR 闸门、不烧 runner 时间。
+  #   将来修复（缩小符号输入规模）后先本地 PASS 再重新入闸；状态见 verification/STATUS.md。
   # ---------------------------------------------------------------------------
   kani-reactor:
     runs-on: ubuntu-22.04
@@ -152,14 +158,14 @@ jobs:
           cargo kani setup
           cargo kani --version
 
-      - name: Verify reactor CI proofs (3 个)
+      - name: Verify reactor CI proofs (2 个)
         run: |
           set -e
           # 不可加 --tests：reactor proof 在 lib 中（src/pure.rs #[path] 引入）
+          # P0-11 invariant_cause_queue_sync 已移出闸门（实测超时，见 job 头注释与 verification/STATUS.md）
           for h in \
             invariant_version_monotonic \
             max_rounds_termination \
-            invariant_cause_queue_sync \
           ; do
             echo "==> $h"
             timeout -k 30 300 cargo kani -p evorule-reactor \

@@ -60,3 +60,26 @@
 - **依据**：文件实测内容（46B/49B，各一行 `===== <harness名> =====`）；M3.5 隔离约定。
 - **影响**：零价值判定与处置（直接删除）不变；仅描述精度修正。隔离后 `kani/` 目录为空（待阶段 2 重跑归档）。
 - **修正去向**：本条目即修正记录；隔离详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 1。
+
+### 2026-09-12：阶段 2 证据重跑归档执行（v0.5.0 基线）
+
+- **事实**：v0.5.0 证据重跑归档完成，共 23 份证据落盘（WSL，Kani 0.67.0 + nightly-2025-11-21）——18 份 PASS + 5 份如实保留的失败过程记录：TCB A 档 14 个 proof 全 PASS；reactor `invariant_version_monotonic` / `max_rounds_termination` PASS；差分 P0-12 与 P0-9-P0-10 PASS（PROPTEST_CASES=1000，后者前两次失败——①编译期 ENOMEM（超时被杀 proof 的 CBMC 孤儿进程占用内存），②`-j 2` 低并行下 1800s 编译未完——第三次环境净化后默认并行 PASS，两次失败证据如实并档保留）。证据基线 commit 为 `bdfb8d4` 而非快照 `5fac8bd`：其间仅有文档/证据整理提交（阶段 0/1），proof 源码未变，M3.4 满足。
+- **依据**：各证据 .log 元数据（commit SHA / 工具链 / 运行命令 / 超时上限）；P0-11 三份超时 FAIL 证据（含完整输出与复现命令，M3.2）。
+- **影响**：① P0-11 主状态由 ✅ 调整为 ❌+🟡——本地 3 次实测超时（300s+unwind4 / 1200s+unwind4 / 300s 默认 unwind，均未完成求解）；🟡 历史 PASS 2026-07-27（27s），其后 proof 源码（`7da4045`）与被验证代码（`42fe5a2` 等）均有变更；② kani.yml reactor job 含 P0-11（`--default-unwind 4` + 单 proof 300s），该 job 自落地起从未实跑，按本地实测其首跑预计超时，配置修正另行处理；③ STATUS.md 证据列全面更新，P0-3 计数笔误同批修正（"A 档 10 个"→11 个，漏列 `verify_array_index_bounds`，附录 A/B 佐证）。
+- **修正去向**：STATUS.md（快照/起草说明 + P0-3/P0-6/P0-9/P0-10/P0-11/P0-12/P1-3/P1-6 八行）；旧差分证据 4 份（8b2932e 版本）`git mv` 隔离至各自 `_invalidated/`（reactor/governance 两个隔离区 README 落盘）。
+
+### 2026-09-12：阶段 3 文档修正批次执行
+
+- **事实**：11 处既定修正全部落地（plan v3 状态列剥离、TCB KANI.md 重写、reactor KANI.md 3 处、TLA 三文件与 tla.yml 死引用改指 v3 并 pin TLC v1.7.4、根 README 数字与过时表述、GATE_REFERENCE/ROADMAP/DOCS_INDEX/Cargo.toml 对齐、根 CHANGE_REQUEST_TEMPLATE.md 删除）；待核对 10 项完成——失实 5 处按五档词汇修订（DESIGN_PHILOSOPHY.md L224「已根治」表述与 proof 计数、L231 补 TLC 有限模型限定、TCB_SPEC.md §六状态断言、CONTRIBUTING.md / CONTRIBUTING_ZH.md Kani 运行命令），属实 5 处核对结论记入 STATUS.md 维护区；另修正 2 处遗漏的 §8.6.2bis 旧章节引用（TLC 报告 L36、ExecuteTransition.tla L27）；M4 发布同步挂接 PR 模板检查项与 release.yml `release-gate` job（核对 STATUS.md 快照版本 = tag 版本、kani.yml `kani-tcb-a-tier` job 在待发布 commit 上绿）。
+- **依据**：全仓检索（旧章节引用残留）；`evorule-tcb/Cargo.toml` `[features]` 实况（仅 `std`，不存在 kani feature）；STATUS.md 附录 A/B。
+- **影响**：公开仓验证类表述与 STATUS.md 单一真相源对齐；CONTRIBUTING 中不可运行的 Kani 命令（`--features kani` 指向不存在的 feature，且缺 `--tests`）替换为可运行命令；发布流程具备 M4 可执行门禁。
+- **修正去向**：本条目即修正记录。同批收尾：`evorule-tcb/scripts/` 下 6 个仍向 `verification/evidence/kani/` 旧路径产出不合规命名证据的 v0.3.1 时代脚本（`fill_kani_p123_layer2` / `launch_kani_p4567` / `run_kani_p8_11` / `run_kani_p4cde` / `run_p5` / `run_single_log`）退役删除（`git rm`）——合规运行命令已由 evorule-tcb/docs/KANI.md 承载，脚本无独有价值；保留的 4 个辅助脚本（`run_kani_{tcb,p123,p4567}.sh` / `run_single.sh`）经核对不产出证据文件。
+
+
+### 2026-09-12：阶段 4 验收执行与遗留表述修正
+
+- **事实**：验收前修正 3 项遗留：① kani.yml `kani-reactor` job 将 P0-11（`invariant_cause_queue_sync`）移出 PR 闸门，闸门保留 2 个 v0.5.0 重跑 PASS 的 proof（`invariant_version_monotonic` / `max_rounds_termination`），P0-11 与 B 档同性质（实测不可运行）不进闸门；同步更新 evorule-reactor/docs/KANI.md（CI 子集 3→2、非 CI 清单 8→9、Proof 6 补当前状态注记）、STATUS.md（P0-11 行与附录 C）、verification/README.md、plan v3 §五、evorule-reactor/Cargo.toml `[package.metadata.kani]`。② evorule-tcb/README.md 两处过时声明（「✅ P1-P21 已完成 / 34 个 / 已根治 / 17 个 evidence log」）按五档词汇改写。③ 本日志阶段 3 条目依据行移除内部计划性引用（M9/M10）。验收执行中新发现并修正：根 README 中文区 Kani badge 仍为「45 proofs (12 verified)」（首条 #7 的中文镜像修正漏及 badge）、中英目录树注释仍为「34」，均改齐 48/16/37；INDEX.md 已删除后的 3 处死引用（.gitignore、evorule-reactor/Cargo.toml 注释、evorule-tcb/tests/kani_entry.rs 文档注释——阶段 3 引用更新未覆盖非 md 文件）改指 verification/README.md。
+- **依据**：P0-11 三份超时 FAIL 证据（`P0-11.invariant_cause_queue_sync_FAIL_bdfb8d4_20260912_*`，第三次为去掉 `--default-unwind` 的重试）；两个入闸 proof 的 v0.5.0 PASS 证据（`P1-3` / `P1-6`，运行命令与 kani.yml 逐字一致）；全仓检索（INDEX.md 残留、数字残留）。
+- **影响**：kani-reactor job 首跑不再因含已知不可运行 proof 而必然超时；reactor PR 闸门覆盖 2 个 proof；对外数字口径 48/16/37 全面对齐。
+- **验收结论**：check_doc_safety.py RC=0（R3 私有路径零残留）；check_docs_bilingual.py 通过（27 篇）；VERTICATION 拼写残留 2 处均为登记性（check_doc_safety.py 禁用清单、本日志首条 #9）；kani/tla/release/mutants 四个 workflow yml 解析通过；`cargo test --workspace --all-targets` 全绿（含 TCB build.rs 门禁，源文件注释修改零破坏）；INDEX.md 死引用清零（余 4 处为「原 INDEX.md」历史性记述，按 M7 保留）；48/37/14/23/16/11/2 七组数字在根 README 双语、两份 KANI.md、STATUS.md、kani.yml、Cargo.toml 元数据全部对齐。
+- **修正去向**：本条目即修正记录。

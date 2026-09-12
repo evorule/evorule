@@ -6,7 +6,7 @@
 #   - 配置: evorule-tcb/tla/ExecuteTransition.cfg
 #   - 5 个不变式: Termination / Determinism / DepthEnforcement / IoEarlyReturn / LoopProgress
 #
-# 设计文档: EVORULE_FORMAL_VERTIFICATION_PLAN.md §9.3
+# 设计文档: verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md §3.2.2
 # 通过条件: "Model checking completed. No error has been found."
 # =============================================================================
 
@@ -49,13 +49,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: evorule-tcb/tla/tla2tools.jar
-          key: tla2tools-latest
+          key: tla2tools-v1.7.4
 
       - name: Download tla2tools.jar
         if: steps.cache-tla.outputs.cache-hit != 'true'
         working-directory: evorule-tcb/tla
         run: |
-          wget -q https://github.com/tlaplus/tlaplus/releases/latest/download/tla2tools.jar
+          # Pin v1.7.4 (TLC 2.19, 2024-08-08 build) —— 与 TLC_VERIFICATION_REPORT.md 实测版本一致
+          wget -q https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
           java -jar tla2tools.jar TLC -help | head -3
 
       - name: Run TLC model checker

@@ -221,14 +221,14 @@ TCB = while 循环 + InstructionExecutor
 - 把 Rust 代码"展开"成等价的中间表示
 - 穷举所有可能的输入(在合理范围内)
 - 验证"对所有输入,程序都不违反性质"
-- **34 个 proof**(P1-P21, 5 层覆盖 — L1 基础类型 3 / L2 路径解析 11 / L3 域评估 10 / L4 元指令 7 / L5 状态转换 3),2026-08-05 历史实测 9 PASS + 3 TIMEOUT(`evaluate_domain` 系列旧版由 proptest 保底;新版结构化符号输入已根治):见 `evorule-tcb/verification/kani-formal-verification-design.md`
+- **37 个 proof**(A 档 14 + B 档 23;5 层覆盖 — L1 基础类型 3 / L2 路径解析 11 / L3 域评估 10 / L4 元指令 10 / L5 状态转换 3),v0.5.0 重跑(2026-09-12)A 档 14 个全 PASS;B 档 23 个(`evaluate_domain`/`execute_transition` 系列)实测 600s/3600s 超时,判定当前不可运行(由 proptest 间接覆盖):状态见 `verification/STATUS.md`(唯一权威)
 
 **TLA+**(TLC 模型检测):
 
 - 用形式化规格描述系统状态机
 - 穷举所有可达状态
 - 验证不变式
-- tier0 状态机已验证:13,629 个去重状态 + 5 个不变式全 PASS
+- tier0 状态机经 TLC 有限模型(N_MAX=2 参数降级)验证:13,629 个去重状态 + 5 个不变式全 PASS(2026-07-25,见 `evorule-tcb/tla/TLC_VERIFICATION_REPORT.md`)
 
 **为什么"不靠 review 靠证明"**:
 

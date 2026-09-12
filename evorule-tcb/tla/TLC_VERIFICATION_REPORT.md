@@ -10,7 +10,7 @@ for maximum transparency and reproducibility.
 > **验证工具**: TLC 2.19 (tla2tools.jar, 2024-08-08 build)
 > **运行环境**: Windows 11, OpenJDK 25, 4GB heap
 > **验证日期**: 2026-07-25
-> **设计文档**: [EVORULE_FORMAL_VERTIFICATION_PLAN.md](../../EVORULE_FORMAL_VERTIFICATION_PLAN.md) §8.4, §8.6.2bis
+> **设计文档**: [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](../../verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) §3.2.2
 
 ---
 
@@ -33,7 +33,7 @@ Model checking completed. No error has been found.
 
 ## 2. 模型参数
 
-按 §8.6.2bis 策略 3（参数降级），使用以下有限模型：
+按 [v3 计划 §3.4](../../verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)（L3 模型检测层）参数降级要求，使用以下有限模型：
 
 | 参数         | 值   | 对应 Rust 常量         | 说明                                |
 | ------------ | ---- | ---------------------- | ----------------------------------- |

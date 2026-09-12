@@ -354,40 +354,42 @@ EVORULE_SKIP_GATE=1 cargo build
 
 ## 六、形式化验证 (Kani proof)
 
-> **当前状态 (v0.3.1)**: ✅ **P1-P21 已完成**（34 个 `#[kani::proof]`，5 层覆盖）。
+> **当前状态**：37 个 `#[kani::proof]` 分 A/B 两档——A 档 14 个于 v0.5.0 重跑（2026-09-12，证据基线 `bdfb8d4`）全 PASS 并入 kani.yml PR 闸门；B 档 23 个实测 600s/3600s 超时，判定当前不可运行（proptest 间接覆盖）。五档状态详见 [`verification/STATUS.md`](../verification/STATUS.md)（唯一权威）。
 
 ### 6.1 已实装资产
 
 | 资产 | 位置 | 说明 |
 |---|---|---|
-| 34 个 `#[kani::proof]` | [`tests/kani/kani_proofs.rs`](tests/kani/kani_proofs.rs) | 5 层结构化符号输入 |
+| 37 个 `#[kani::proof]`（A 档 14 + B 档 23） | [`tests/kani/kani_proofs.rs`](tests/kani/kani_proofs.rs) | 5 层结构化符号输入 |
 | 符号输入 model | [`tests/kani/model.rs`](tests/kani/model.rs) | 350 行结构化符号构造 |
 | Kani 入口 | [`tests/kani/mod.rs`](tests/kani/mod.rs) + [`tests/kani_entry.rs`](tests/kani_entry.rs) | `#[cfg(kani)]` 接线 |
 | 设计文档 | [`verification/kani-formal-verification-design.md`](verification/kani-formal-verification-design.md) | 40 KB 七节专项设计 |
-| 运行脚本 | `scripts/run_kani_{tcb,p123,p4567,p4cde,p8_11}.sh` 等 5 个 | WSL + Kani 0.67.0 实测 |
-| 证据归档 | `verification/evidence/kani/` | 17 个 PASS/TIMEOUT 日志（p123_b_fill.log 等） |
+| 运行脚本 | `scripts/run_kani_{tcb,p123,p4567}.sh` / `run_single.sh`（本地辅助，不产出证据文件） | 6 个向旧路径产出不合规命名证据的脚本已于 2026-09-12 退役（git rm）；合规运行命令见 [docs/KANI.md](docs/KANI.md) |
+| 证据归档 | [`verification/evidence/kani/`](verification/evidence/kani/) | A 档 14 份 PASS 证据（`bdfb8d4`，2026-09-12，命名规范 `<属性号>.<harness>_PASS_<SHA>_<时间戳>`）；v0.3.1 时代旧日志已隔离至 `_invalidated/` |
 
 ### 6.2 5 层覆盖分布
 
-| Layer | 范围 | Proof 数 | 对应 P 编号 |
+| Layer | 范围 | Proof 数 | 档位 |
 |---|---|---|---|
-| L1 | 基础类型（`PartialEq` / `Ord` / `as_*` 不 panic） | 3 | P1-P3 |
-| L2 | 路径解析（点号 / 数组索引 / 转义 / 边界） | 11 | P4-P7 |
-| L3 | 域评估（`eq` / `lt` / `exists` / `instruction` / `all` / `not` / `has_fields` / 深度限制 / 空数组） | 10 | P8-P11 |
-| L4 | 元指令执行（`execute_meta_instruction` / `set` 算术 / `branch` 深度 / `collect` / `merge` / `substitute_template` / `io_request`） | 7 | P12-P18 |
-| L5 | 状态转换（`execute_transition` / 规则数限制 / `react_io_required`） | 3 | P19-P21 |
+| L1 | 基础类型（`PartialEq` / `Ord` / `as_*` 不 panic） | 3 | A 档 |
+| L2 | 路径解析（点号 / 数组索引 / 转义 / 边界） | 11 | A 档 |
+| L3 | 域评估（`eq` / `lt` / `exists` / `instruction` / `all` / `not` / `has_fields` / 深度限制 / 空数组） | 10 | B 档 |
+| L4 | 元指令执行（`execute_meta_instruction` / `set` 算术 / `branch` 深度 / `collect` / `merge` / `substitute_template` / `io_request` / enforce 系列） | 10 | B 档 |
+| L5 | 状态转换（`execute_transition` / 规则数限制 / `react_io_required`） | 3 | B 档 |
 
-### 6.3 旧版（v0.2.x）12 proof 与 v0.3.1 新设计的关系
+> 旧 P1–P21 编号已按 [MECHANISM.md](../verification/MECHANISM.md) M8 作废（与属性编号命名空间冲突），proof 以函数名为唯一身份，属性归属与分档清单见 [STATUS.md](../verification/STATUS.md) 附录 A/B。
+
+### 6.3 旧版（v0.2.x）12 proof 与新设计的关系
 
 旧版 12 proof 中 3 个 `evaluate_domain_{eq,lt,exists}_kani` 因 3 层嵌套 `FixedMap` CBMC 状态爆炸超时，由 proptest 保底（19 个属性测试全 PASS）。
-v0.3.1 新设计用「结构化符号输入 + 5 层验证 + `KIdSet`/`KIdMap` 替代嵌套 `BTreeMap`」彻底解决状态爆炸，实测 P0-3/4/5/7/8 全部 PASS（11-231s）。
+新设计（结构化符号输入 + 5 层验证）实测分层结果：路径解析与基础类型层（A 档 14 个）7~28s 全 PASS；域评估 / 元指令 / 状态转换层（B 档 23 个）符号执行状态爆炸未根治——600s/3600s 实测均超时，判定当前不可运行（详见 [STATUS.md](../verification/STATUS.md)）。
 
 ### 6.4 当前缺口（如实标注，非缺陷）
 
-- **未接入 CI**：`.gitee-ci/ci.yml` 中 kani job 已写（串行跑 21 个 proof），但未在 Gitee Go runner 实跑过；本机 WSL Ubuntu 22.04 + Kani 0.67.0 已实跑部分。
-- **3 个 evaluate_domain 旧 proof 替换方案实测待补**：新设计的 P8-P11 已实现，但 evaluation harness 完整重跑结果待归档到 `verification/evidence/kani/`。
+- **B 档不可运行**：23 个 B 档 proof 实测 600s/3600s 超时（2026-09-11，Kani 0.67.0 / WSL）；kani.yml `kani-tcb-b-tier` job 仅手动触发且允许失败。推进方向为缩小符号输入规模，非加大超时。
+- **旧运行脚本已退役（2026-09-12）**：`scripts/` 下 6 个仍向 `verification/evidence/kani/` 产出不合规命名证据的 v0.3.1 时代脚本（`fill_kani_p123_layer2` / `launch_kani_p4567` / `run_kani_p8_11` / `run_kani_p4cde` / `run_p5` / `run_single_log`）已 `git rm`，杜绝再污染证据目录；保留的 4 个辅助脚本不产出证据文件。
 
-> **相关文档**：[`kani-formal-verification-design.md`](verification/kani-formal-verification-design.md) §四 完整 P1-P21 证明清单； [`EVORULE_FORMAL_VERIFICATION_PLAN_v3.md`](../verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) 七层验证体系（含 P0/P1/P2 属性目录）。
+> **相关文档**：[`kani-formal-verification-design.md`](verification/kani-formal-verification-design.md) §四（历史设计稿，P1–P21 编号已按 M8 作废，映射见 [STATUS.md](../verification/STATUS.md) 附录 A）；[`EVORULE_FORMAL_VERIFICATION_PLAN_v3.md`](../verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) 七层验证体系（含 P0/P1/P2 属性目录）；[docs/KANI.md](docs/KANI.md) 运行指南。
 
 ---
 

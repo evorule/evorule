@@ -111,7 +111,7 @@ check.sh
 *.kani-stderr.txt
 # 注意: Kani 证明源码(*_proofs.rs)、Kani 运行/收集脚本(run_kani*.sh / collect_kani_artifacts.sh)
 #       以及验证证据(verification/evidence/)均为验证资产, 必须纳入 git 防止丢失
-#       （见 verification/INDEX.md §五/§七）
+#       （资产登记见 verification/README.md；证据规范见 verification/MECHANISM.md M3）
 
 # Hash 快照文件（dev 产物）
 hash_snapshot.txt

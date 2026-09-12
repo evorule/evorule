@@ -1,0 +1,27 @@
+Verification evidence: P0-6.verify_ord_never_panics
+Status: PASS (exit code 0)
+# Evidence metadata
+- commit SHA: bdfb8d4b6205d881d52cca5b8acd6badfcac0616
+- kani: cargo-kani 0.67.0
+- rustc: rustc 1.93.0-nightly (53732d5e0 2025-11-20)
+- timestamp: 2026-09-12 14:48:36 +0800
+- platform: WSL Linux 6.18.33.2-microsoft-standard-WSL2 (x86_64)
+- command: cargo +nightly-2025-11-21 kani -p evorule-tcb --tests --harness verify_ord_never_panics --output-format=terse
+- per-proof timeout: 300s (kill 30s)
+- log: P0-6.verify_ord_never_panics_PASS_bdfb8d4_20260912_144815.stdout.txt
+--- result summary (tail) ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.39s
+warning: evorule-tcb@0.5.0: evorule-tcb 变更治理门禁 PASSED - CHANGE_REQUEST.md 验证通过
+warning: evorule-tcb@0.5.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+   Compiling evorule-tcb v0.5.0 (/mnt/d/evorule/evorule-tcb)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.99s
+Checking harness kani::kani_proofs::verify_ord_never_panics...
+
+VERIFICATION RESULT:
+ ** 0 of 621 failed (10 unreachable)
+
+VERIFICATION:- SUCCESSFUL
+Verification Time: 1.4139749s
+
+Manual Harness Summary:
+Complete - 1 successfully verified harnesses, 0 failures, 1 total.

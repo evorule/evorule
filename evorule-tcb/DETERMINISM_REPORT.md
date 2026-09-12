@@ -139,6 +139,8 @@ pub type ObjectMap = BTreeMap<String, JsonValue>;
 
 ### 3.4 测试与验证现状
 
+> 本表为 v0.3.1 时点实测；当前测试规模已增长，以 `cargo test` 实跑为准。
+
 | 验证层级 | 数量 | 状态 |
 |---------|------|------|
 | 单元测试（src 内 `#[cfg(test)]`） | 175 | 通过 |
@@ -159,7 +161,7 @@ evorule-tcb
   ├─ 零依赖  →  Cargo.toml 空依赖 + Cargo.lock 确认无第三方
   ├─ no_std  →  #![no_std] + extern crate alloc，仅用 alloc/core
   ├─ 确定性  →  BTreeMap 模型 + build.rs 23 模式门禁 + 纯函数 + 禁止 panic/unsafe/浮点/时间/随机
-  └─ 验证    →  175 单元 + 20 集成 + 18 doctest 全通过
+  └─ 验证    →  175 单元 + 20 集成 + 18 doctest 全通过（v0.3.1 时点）
 ```
 
 确定性由**三层防线**共同保证：确定性数据模型（BTreeMap）→ 编译时门禁（build.rs）→ 运行时测试验证（单元 + 集成）。

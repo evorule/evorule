@@ -18,7 +18,7 @@
 - **build.rs 编译时门禁**:23 个禁用模式 (T4/T5/T6/T8/T9/T10/T11/T12/T14) + BOM 检测 编译期强制,PASSED
 - **协议**:AGPL-3.0-or-later(代码) + CC0-1.0(`core_eval.json` 公共领域)
 
-> **Kani 形式化验证**:✅ P1-P21 已完成(34 个 `#[kani::proof]`,5 层覆盖)。详见 [`TCB_SPEC.md` §六](TCB_SPEC.md#六形式化验证-kani-proof) 与 [`verification/kani-formal-verification-design.md`](verification/kani-formal-verification-design.md)(40 KB 专项设计 + 17 个 evidence log)。
+> **Kani 形式化验证**:37 个 `#[kani::proof]` 分 A/B 两档——A 档 14 个 v0.5.0 重跑(2026-09-12)全 PASS 并入 CI 闸门;B 档 23 个实测 600s/3600s 超时,判定当前不可运行(proptest 间接覆盖)。详见 [`TCB_SPEC.md` §六](TCB_SPEC.md#六形式化验证-kani-proof) 与 [`docs/KANI.md`](docs/KANI.md);状态唯一权威:[`verification/STATUS.md`](../verification/STATUS.md)。
 
 > 本 crate 属于 [EvoRule](https://gitee.com/evorule) 生态:[主仓](https://gitee.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://gitee.com/evorule/evorule-server)
 
@@ -648,7 +648,7 @@ EVORULE_SKIP_GATE=1 cargo build
 | 编号 | 事项                        | 状态      | 说明                                                                                                                |
 | ---- | --------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- |
 | N-01 | `MAX_TRANSFORM_RULES` 限制  | ✅ 已完成 | `execute_transition` 入口检查 `core_eval.len() ≤ 64`,超限返回 `TcbError::TooManyTransformRules`(SPEC T6 终止性保证) |
-| N-02 | Kani 形式化验证重建         | ✅ 已完成 | v0.3.1 落地 34 个 `#[kani::proof]`,5 层覆盖(P1-P21);旧版 12 proof 的 CBMC 状态爆炸问题通过「结构化符号输入 + `KIdSet`/`KIdMap`」根治;详情见 §6.3 与 `verification/kani-formal-verification-design.md` |
+| N-02 | Kani 形式化验证重建         | 🟡 历史 PASS | v0.3.1 以「结构化符号输入 + `KIdSet`/`KIdMap`」重建为 34 个 `#[kani::proof]`(P1-P21 旧编号),后增至 37 个并改行 A/B 两档——A 档 14 个 v0.5.0 重跑(2026-09-12)全 PASS 并入 CI 闸门,B 档 23 个实测超时判定当前不可运行(proptest 间接覆盖);详情见 §6.3 与 `docs/KANI.md`,状态唯一权威见 [`verification/STATUS.md`](../verification/STATUS.md) |
 
 ### 10.2 后续 Tier 路线
 

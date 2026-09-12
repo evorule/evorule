@@ -13,7 +13,7 @@
 //! - 普通 `cargo test`：因 `#![cfg(kani)]` 关闭而跳过（编译为空）；
 //! - `cargo kani --tests`：Kani 注入 `cfg(kani)`，编译并发现其中的 `#[kani::proof]`。
 //!
-//! 说明：本文件及 tests/kani/ 下的证明源码是验证资产（见顶层 verification/INDEX.md），
+//! 说明：本文件及 tests/kani/ 下的证明源码是验证资产（见顶层 verification/README.md），
 //! 必须纳入 git。Kani 瞬时中间产物（target/kani-logs/*.log 等）不纳入 git。
 
 #![cfg(kani)]

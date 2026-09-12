@@ -1,0 +1,14 @@
+Verification evidence: P0-11.invariant_cause_queue_sync
+Status: FAIL (exit code 124)
+# Evidence metadata
+- commit SHA: bdfb8d4b6205d881d52cca5b8acd6badfcac0616
+- kani: cargo-kani 0.67.0
+- rustc: rustc 1.93.0-nightly (53732d5e0 2025-11-20)
+- timestamp: 2026-09-12 17:34:35 +0800
+- platform: WSL Linux 6.18.33.2-microsoft-standard-WSL2 (x86_64)
+- command: cargo +nightly-2025-11-21 kani -p evorule-reactor --harness invariant_cause_queue_sync --output-format=terse
+- per-proof timeout: 300s (kill 60s)
+- note: retry WITHOUT --default-unwind 4 (historical PASS command per docs/KANI.md);
+  prior runs with --default-unwind 4 timed out at 300s and 1200s
+- log: P0-11.invariant_cause_queue_sync_FAIL_bdfb8d4_20260912_172934.stdout.txt
+--- result summary (tail) ---
