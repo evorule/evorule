@@ -137,7 +137,7 @@ verification/
 
 | workflow                                  | 覆盖                                                                    |
 | ----------------------------------------- | ----------------------------------------------------------------------- |
-| `.github/workflows/kani.yml`              | TCB A 档 14 + reactor 2 个（PR/push 闸门）；B 档 23 个（仅手动触发，允许失败） |
+| `.github/workflows/kani.yml`              | TCB A 档 14 + reactor 4 个（PR/push 闸门）；B 档 23 个（仅手动触发，允许失败） |
 | `.github/workflows/differential.yml`      | reactor / governance 差分测试（PR/push 常驻）                             |
 | `.github/workflows/tla.yml`               | TLC 模型检测                                                             |
 | `.github/workflows/mutants.yml`           | 变异测试                                                                 |

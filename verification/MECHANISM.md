@@ -27,6 +27,8 @@
 
 规则编号采用 **M 系**，与 `scripts/check_doc_safety.py` 的安全规则体系（R-门控1 / R3 / R-兄弟仓 / R-agent 身份零泄露等）相互独立、互为补充；M9 对后者为引用与扩展关系，不另起炉灶。
 
+M 系条款由 `scripts/check_status_sync.py`（S 系 11 项一致性规则）在 CI（`ci.yml` 的 `status-sync` job）中机器执法：验证状态、证据库、对外文档、CI 清单任一漂移，该 job 即红。
+
 ## M1 单一真相源（SSOT）
 
 1. **[STATUS.md](STATUS.md) 是验证状态的唯一权威**。任何文档（根 README badge、GATE_REFERENCE.md、ROADMAP.md、各 crate KANI.md、白皮书 plan v3）需要表述验证状态时，必须引用 STATUS.md，不得独立断言状态、数量或结论。
