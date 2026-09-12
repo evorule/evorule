@@ -36,7 +36,7 @@ jobs:
           - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -88,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -117,18 +117,18 @@ jobs:
     name: i18n gates (docs bilingual + error code dict)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: docs 中英双语完整性 (锚点/英文分节/章节结构对齐)
         run: python3 scripts/check_docs_bilingual.py
 
       - name: checkout 兄弟仓快照 (L1-1 跨仓对照所需)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: evorule/evorule-server
           path: sibling/evorule-server
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: evorule/evorule-console-cloud
           path: sibling/evorule-console-cloud
