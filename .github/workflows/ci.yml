@@ -5,6 +5,7 @@
 # - evorule-cli 端到端测试 (tests/e2e.sh, TAP 格式)
 # - TCB 构建门禁 (build.rs 在 cargo build 时自动执行)
 # - i18n 双语门禁 (docs 中英漂移 + server code→err.* 字典对照)
+# - 验证状态同步门禁 (STATUS.md ↔ 证据库 ↔ 文档/CI 清单, scripts/check_status_sync.py)
 #
 # 设计说明:
 # - 测试矩阵覆盖当前支持的平台 (Linux / Windows)
@@ -138,3 +139,21 @@ jobs:
           python3 scripts/check_error_code_i18n.py \
             --server-rs sibling/evorule-server/evorule-server/src/api/server.rs \
             --console-dir sibling/evorule-console-cloud/src/lib/locale
+
+  # ==========================================================================
+  # 5. 验证状态同步门禁 (M1/M5 常态化执法, 纯文本扫描, 无需 Rust 工具链)
+  #    防三层漂移: STATUS.md(唯一真相源) ↔ 证据库 ↔ 文档/CI 清单
+  #    S 系 11 项规则: 状态词汇/状态↔证据闭环/命名配对/FAIL字段/隔离区/
+  #    证据时效(git log -L)/CI闸门对齐/对外数字/版本对齐/披露留痕
+  #    注意: S7/S11 依赖完整 git 历史, 必须 fetch-depth: 0
+  # ==========================================================================
+  status-sync:
+    name: verification status sync (S1-S11)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: 验证状态一致性 (STATUS.md ↔ 证据 ↔ 文档/CI)
+        run: python3 scripts/check_status_sync.py
