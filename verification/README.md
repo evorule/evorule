@@ -128,16 +128,16 @@ verification/
 
 | crate              | 主要资产（位置）                                                                                                            |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| evorule-tcb        | Kani proof 源码（`tests/kani/kani_proofs.rs`）；Kani 验证设计（历史文档）；确定性属性测试；集成测试；确定性报告（`DETERMINISM_REPORT.md`）；TLA+ 模型 |
-| evorule-reactor    | Kani proof 源码（`verification/kani_proofs.rs`）；Kani 指南（`docs/KANI.md`）；差分测试；集成/复杂规则测试；Kani 脚本；差分证据（`verification/evidence/differential/`） |
-| evorule-governance | 差分测试；审计链端到端测试；会话隔离测试                                                                                    |
+| evorule-tcb        | Kani proof 源码（`tests/kani/kani_proofs.rs`）；Kani 证据（`verification/evidence/kani/`，含 `_invalidated/`）；Kani 验证设计（历史文档）；确定性属性测试；集成测试；确定性报告（`DETERMINISM_REPORT.md`）；TLA+ 模型 |
+| evorule-reactor    | Kani proof 源码（`verification/kani_proofs.rs`）；Kani 证据（`verification/evidence/kani/`）；Kani 指南（`docs/KANI.md`）；差分测试；集成/复杂规则测试；Kani 脚本；差分证据（`verification/evidence/differential/`，含 `_invalidated/`） |
+| evorule-governance | 差分测试；差分证据（`verification/evidence/differential/`，含 `_invalidated/`）；审计链端到端测试；会话隔离测试                                                                                    |
 | evorule-cli        | Rust 集成测试；端到端测试（`tests/e2e.sh`）；Kani 运行脚本                                                                  |
 
 ### 4.3 CI 验证工作流
 
 | workflow                                  | 覆盖                                                                    |
 | ----------------------------------------- | ----------------------------------------------------------------------- |
-| `.github/workflows/kani.yml`              | TCB A 档 14 + reactor 3 个（PR/push 闸门）；B 档 23 个（仅手动触发，允许失败） |
+| `.github/workflows/kani.yml`              | TCB A 档 14 + reactor 2 个（PR/push 闸门）；B 档 23 个（仅手动触发，允许失败） |
 | `.github/workflows/differential.yml`      | reactor / governance 差分测试（PR/push 常驻）                             |
 | `.github/workflows/tla.yml`               | TLC 模型检测                                                             |
 | `.github/workflows/mutants.yml`           | 变异测试                                                                 |

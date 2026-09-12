@@ -27,9 +27,64 @@ env:
 
 jobs:
   # ==========================================================================
+  # 0. M4 发布同步门禁 (verification/MECHANISM.md M4)
+  #    - STATUS.md 快照版本 = 待发布 tag 版本
+  #    - kani.yml kani-tcb-a-tier job 在待发布 commit 上绿 (A 档 Kani CI)
+  # ==========================================================================
+  release-gate:
+    name: M4 release gate (STATUS snapshot + A-tier Kani)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 核对 STATUS.md 快照版本 = tag 版本
+        run: |
+          set -e
+          TAG="${GITHUB_REF_NAME#v}"
+          SNAP=$(grep -m1 '快照' verification/STATUS.md | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+          echo "tag=v${TAG}  STATUS.md 快照=${SNAP}"
+          if [ -z "${SNAP}" ]; then
+            echo "ERROR: 未能从 verification/STATUS.md 解析快照版本"
+            exit 1
+          fi
+          if [ "${SNAP}" != "v${TAG}" ]; then
+            echo "ERROR: STATUS.md 快照(${SNAP}) != tag(v${TAG})；按 MECHANISM.md M4 先同步验证文档再发布"
+            exit 1
+          fi
+
+      - name: 核对 A 档 Kani CI（kani.yml kani-tcb-a-tier）在该 commit 上绿
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          SHA="${GITHUB_SHA}"
+          RUN_IDS=$(gh run list --workflow kani.yml --commit "${SHA}" --limit 10 --json databaseId,status,conclusion \
+            | python3 -c 'import json,sys; runs=json.load(sys.stdin); print(" ".join(str(r["databaseId"]) for r in runs if r["status"]=="completed"))')
+          if [ -z "${RUN_IDS}" ]; then
+            echo "ERROR: commit ${SHA} 上无已完成的 kani.yml 运行"
+            echo "（若该提交未触发 kani.yml 的 paths 过滤，请先手动 dispatch kani.yml 跑 A 档，再重新运行本 release 流水线）"
+            exit 1
+          fi
+          OK=""
+          for RID in ${RUN_IDS}; do
+            CONC=$(gh run view "${RID}" --json jobs \
+              | python3 -c 'import json,sys; jobs=json.load(sys.stdin)["jobs"]; a=[j for j in jobs if j["name"].startswith("kani-tcb-a-tier")]; print(a[0]["conclusion"] if a else "missing")')
+            echo "kani.yml run ${RID}: kani-tcb-a-tier = ${CONC}"
+            if [ "${CONC}" = "success" ]; then OK=1; break; fi
+          done
+          if [ -z "${OK}" ]; then
+            echo "ERROR: kani-tcb-a-tier job 在 commit ${SHA} 上未绿（MECHANISM.md M4）"
+            exit 1
+          fi
+
+  # ==========================================================================
   # 1. 双平台矩阵构建
   # ==========================================================================
   build:
+    needs: [release-gate]
     name: build (${{ matrix.name }})
     strategy:
       fail-fast: false

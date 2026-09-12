@@ -9,6 +9,7 @@
 ## 检查清单
 - [ ] 已通过 `cargo test --workspace --all-targets` 与 `cargo clippy --workspace --all-targets -- -D warnings`
 - [ ] 已更新相关文档（若改动源码/配置，参见 `docs/CODE_DOC_MAP.md` 的映射）
+- [ ] 若涉及验证资产/验证文档：已同步 `verification/STATUS.md`，且其快照版本与 `Cargo.toml` workspace version 一致（[MECHANISM.md](verification/MECHANISM.md) M4）
 - [ ] 已阅读并同意 [Individual CLA](CLA-individual.md) —— 签署方式：在 PR 评论
       `I have read the CLA Document and I hereby sign the CLA`
 

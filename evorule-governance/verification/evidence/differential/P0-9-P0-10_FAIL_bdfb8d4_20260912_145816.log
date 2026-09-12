@@ -1,0 +1,27 @@
+Verification evidence: P0-9-P0-10
+Status: FAIL (exit code 101)
+# Evidence metadata
+- commit SHA: bdfb8d4b6205d881d52cca5b8acd6badfcac0616
+- rustc: rustc 1.97.1 (8bab26f4f 2026-07-14)
+- cargo: cargo 1.97.1 (c980f4866 2026-06-30)
+- timestamp: 2026-09-12 14:58:30 +0800
+- platform: WSL Linux 6.18.33.2-microsoft-standard-WSL2 (x86_64)
+- command: PROPTEST_CASES=1000 cargo test --package evorule-governance --test differential_test
+- timeout: 1200s (kill 30s)
+- log: P0-9-P0-10_FAIL_bdfb8d4_20260912_145816.stdout.txt
+--- result summary (tail) ---
+   Compiling crc32fast v1.5.1
+   Compiling evorule-tcb v0.5.0 (/mnt/d/evorule/evorule-tcb)
+   Compiling blake3 v1.8.7
+   Compiling evorule-reactor v0.5.0 (/mnt/d/evorule/evorule-reactor)
+   Compiling miniz_oxide v0.9.1
+   Compiling tokio v1.53.1
+   Compiling thiserror-impl v2.0.20
+   Compiling evorule-governance v0.5.0 (/mnt/d/evorule/evorule-governance)
+   Compiling flate2 v1.1.10
+error: failed to build archive at `/mnt/d/evorule/target/debug/deps/libcrossbeam_epoch-1ca42cd25bcad44f.rlib`: failed to remove temporary directory: Cannot allocate memory (os error 12) at path "/mnt/d/evorule/target/debug/deps/.tmpUzchjv.temp-archive"
+
+error: could not compile `crossbeam-epoch` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+warning: evorule-tcb@0.5.0: evorule-tcb 变更治理门禁 PASSED - CHANGE_REQUEST.md 验证通过
+warning: evorule-tcb@0.5.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式

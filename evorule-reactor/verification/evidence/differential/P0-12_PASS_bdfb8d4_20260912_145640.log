@@ -1,0 +1,27 @@
+Verification evidence: P0-12
+Status: PASS (exit code 0)
+# Evidence metadata
+- commit SHA: bdfb8d4b6205d881d52cca5b8acd6badfcac0616
+- rustc: rustc 1.97.1 (8bab26f4f 2026-07-14)
+- cargo: cargo 1.97.1 (c980f4866 2026-06-30)
+- timestamp: 2026-09-12 14:58:15 +0800
+- platform: WSL Linux 6.18.33.2-microsoft-standard-WSL2 (x86_64)
+- command: PROPTEST_CASES=1000 cargo test --package evorule-reactor --test differential_test
+- timeout: 1200s (kill 30s)
+- log: P0-12_PASS_bdfb8d4_20260912_145640.stdout.txt
+--- result summary (tail) ---
+running 11 tests
+test diff_reactor_vs_pure_call_external_consume ... ok
+test diff_reactor_vs_pure_call_external_io_request ... ok
+test diff_reactor_vs_pure_noop ... ok
+test diff_reactor_vs_pure_conditional_has_fields ... ok
+test diff_reactor_vs_pure_set ... ok
+test diff_reactor_vs_pure_decrement ... ok
+test diff_reactor_vs_pure_increment ... ok
+test diff_reactor_vs_pure_set_then_increment ... ok
+test diff_reactor_vs_pure_sequence ... ok
+test diff_reactor_vs_pure_conditional ... ok
+test diff_reactor_vs_pure_while_loop ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.53s
+

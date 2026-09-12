@@ -1,0 +1,28 @@
+Verification evidence: P0-9-P0-10
+Status: PASS (exit code 0)
+# Evidence metadata
+- commit SHA: bdfb8d4b6205d881d52cca5b8acd6badfcac0616
+- rustc: rustc 1.97.1 (8bab26f4f 2026-07-14)
+- cargo: cargo 1.97.1 (c980f4866 2026-06-30)
+- timestamp: 2026-09-12 17:35:08 +0800
+- platform: WSL Linux 6.18.33.2-microsoft-standard-WSL2 (x86_64)
+- command: PROPTEST_CASES=1000 cargo test --package evorule-governance --test differential_test
+- timeout: 1800s (kill 60s) — retry 3; run 1 hit ENOMEM (memory exhausted by orphan CBMC),
+  run 2 with -j 2 could not finish compiling in 1800s
+- log: P0-9-P0-10_PASS_bdfb8d4_20260912_173435.stdout.txt
+--- result summary (tail) ---
+   Compiling ciborium v0.2.2
+   Compiling proptest v1.11.0
+   Compiling criterion v0.5.1
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 30.73s
+     Running verification/differential_test.rs (target/debug/deps/differential_test-ad24678e4760ddc0)
+
+running 5 tests
+test diff_rewind_vs_factslog_payload_update ... ok
+test diff_rewind_vs_factslog_state_transition ... ok
+test diff_rewind_vs_factslog_mixed ... ok
+test diff_version_consistency_single_command ... ok
+test diff_version_consistency_multi_command ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.22s
+

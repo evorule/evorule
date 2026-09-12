@@ -1,0 +1,17 @@
+Verification evidence: P0-9-P0-10
+Status: FAIL (exit code 124)
+# Evidence metadata
+- commit SHA: bdfb8d4b6205d881d52cca5b8acd6badfcac0616
+- rustc: rustc 1.97.1 (8bab26f4f 2026-07-14)
+- cargo: cargo 1.97.1 (c980f4866 2026-06-30)
+- timestamp: 2026-09-12 16:44:25 +0800
+- platform: WSL Linux 6.18.33.2-microsoft-standard-WSL2 (x86_64)
+- command: PROPTEST_CASES=1000 cargo test --package evorule-governance --test differential_test -j 2
+- timeout: 1800s (kill 60s) — retry of first run (parallel build hit ENOMEM os error 12)
+- log: P0-9-P0-10_FAIL_bdfb8d4_20260912_161421.stdout.txt
+--- result summary (tail) ---
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crc32fast v1.5.1
+warning: evorule-tcb@0.5.0: evorule-tcb 变更治理门禁 PASSED - CHANGE_REQUEST.md 验证通过
+warning: evorule-tcb@0.5.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+   Compiling half v2.7.1

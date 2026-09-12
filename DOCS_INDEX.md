@@ -36,9 +36,11 @@
 | [CHANGELOG.md](CHANGELOG.md)                                                     | 更新日志          | Keep a Changelog v1.0 格式；每版所有重大变更                                                    |
 | MIGRATION_v0.2.0.md（待发布） | 迁移指南          | v0.1.x → v0.2.0 破坏性变更迁移指南（IoType 重构 / IoHandler 下沉）；破坏性变更发布时必需        |
 | [GATE_REFERENCE.md](GATE_REFERENCE.md)                                           | build.rs 门控参考 | 所有 tier0/1/2 build.rs 编译时门禁（T4/T5/T6/T8/T9/T10/T11/T12/T14 + G8 架构原则）              |
-| [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) | 形式化验证白皮书  | 七层验证体系、P0/P1/P2 属性目录（三档状态：✅实跑 / 🔧已实现未跑 / ⏳未实现）— **当前有效版本** |
-| [verification/INDEX.md](verification/INDEX.md)                                                   | 验证资产总索引    | 验证方案/脚本/证据/证明源码的一站式查询入口（形式化验证文档系统，v0.3.1）                  |
-| [verification/README.md](verification/README.md)                                                 | 验证文档系统说明  | 验证资产目录约定、使用方式、维护规则                                                    |
+| [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) | 形式化验证白皮书  | 七层验证体系方法论（属性状态已剥离，一律见 verification/STATUS.md）— **当前有效版本** |
+| [verification/MECHANISM.md](verification/MECHANISM.md)                                         | 验证机制         | 状态/证据/披露规则（M1–M11，宪法性文档）                                                 |
+| [verification/STATUS.md](verification/STATUS.md)                                               | 验证状态         | 验证状态唯一权威（P0/P1 属性五档状态表 + proof 分档清单）                                |
+| [verification/DISCLOSURE_LOG.md](verification/DISCLOSURE_LOG.md)                               | 披露日志         | 计划偏离与历史状态修正记录                                                               |
+| [verification/README.md](verification/README.md)                                               | 验证文档系统说明  | 导航与资产登记（受 MECHANISM.md 约束）                                                   |
 
 ### 2.2 法律、协议、贡献
 
@@ -131,7 +133,7 @@
 | :----------------------------------------------------- | :--------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [README.md](evorule-reactor/README.md)                 | crate 介绍 | 反应器用途、组件、依赖关系                                                                                                                                                                                                    |
 | **[REACTOR_SPEC.md](evorule-reactor/REACTOR_SPEC.md)** | SPEC 规范  | **反应器规范**（生命周期 / 通道语义 / 不变量 / 稳定状态检测 / WAL 格式 / FFI 契约）— **必读** · [![crates.io](https://img.shields.io/crates/v/evorule-reactor.svg?label=crates.io)](https://crates.io/crates/evorule-reactor) |
-| [Kani 证明](evorule-reactor/verification/kani_proofs.rs)  | 验证源码   | tier1 11 个 Kani proof（实测 10 PASS + 1 TIMEOUT，详见 [verification/INDEX.md](verification/INDEX.md) §4.2） |
+| [Kani 证明](evorule-reactor/verification/kani_proofs.rs)  | 验证源码   | tier1 11 个 Kani proof（状态见 [verification/STATUS.md](verification/STATUS.md) 附录 C） |
 
 ### 4.4 evorule-governance（治理层机制）
 
@@ -156,7 +158,7 @@
 
 | 主题             | 当前有效版本                                                                                                                                 | 废弃版本（历史参考，禁止引用）                                                                                                                          |
 | :--------------- | :------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 形式化验证白皮书 | [verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)（v3，**当前有效**；配套验证资产总索引 [verification/INDEX.md](verification/INDEX.md)） | `EVORULE_FORMAL_VERTIFICATION_PLAN.md` — 2026-07-29 已删除（v1，含拼写错误）；历史 v2 草稿保留在私有集合（不公开） |
+| 形式化验证白皮书 | [verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)（v3，**当前有效**；验证状态唯一权威 [verification/STATUS.md](verification/STATUS.md)） | `EVORULE_FORMAL_VERTIFICATION_PLAN.md` — 2026-07-29 已删除（v1，含拼写错误）；历史 v2 草稿保留在私有集合（不公开） |
 | 首发检查清单     | 私有不公开（仅团队内部访问）                                                                                                                 | 私有 v1.0（已被 v2.0 取代，不公开）                                                                                                                     |
 | 安全审计报告     | 待发布（1.0 升门时提供，见 `VERSION_STRATEGY.md` §4.2）         | SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（0.1.0 生态全栈版，**[已废弃]** 2026-07-30 旧版）；SECURITY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位，未到承诺期） |
 | 依赖审计报告     | 待发布（1.0 升门时提供） | DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（0.1.0 生态全栈版，**[已废弃]** 2026-07-30 旧版）；DEPENDENCY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位）         |
@@ -179,8 +181,8 @@
 │    └─► 内部深层：仅仓内共享文档/ 或 私有集合（外部读者不提供）
 │
 ├─► "形式化验证到什么程度 / P0 属性哪些过了"
-│    └─► verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md §2.1 P0 属性目录（三档状态）
-│         + verification/INDEX.md（验证资产总索引）
+│    └─► verification/STATUS.md（验证状态唯一权威，五档词汇）
+│         + verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md（七层方法论）
 │         + 047 私有执行记录（内部，不公开）
 │
 ├─► "版本相关 / 下版本有什么 / 怎么升版本"

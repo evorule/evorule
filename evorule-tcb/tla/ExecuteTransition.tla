@@ -13,9 +13,7 @@
     I4 IoEarlyReturn     — io_requested ⇒ pc ∈ {IoReturn, Done}
     I5 LoopProgress      — Loop 步骤中 i 递增或 pc 改变
 
-  设计文档：EVORULE_FORMAL_VERTIFICATION_PLAN.md §8.4
-  代码映射：§8.5 精确映射表
-  抽象策略：§8.3（BTreeMap/resolve_path/evaluate_domain/ApplySet 均抽象）
+  设计文档：verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md §3.2.2（TLA+ 全 tier 覆盖）
 *)
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
@@ -26,7 +24,7 @@ CONSTANTS
     InstrTypeSet,   (* {"set", "push", "branch", "io_request"} *)
     IoTypeSet       (* {"call_llm", "call_external", "query_db"} *)
 
-(* 允许参数降级（1..3）以控制 TLC 状态空间，见 §8.6.2bis 策略 3 *)
+(* 允许参数降级（1..3）以控制 TLC 状态空间，见 v3 计划 §3.4 参数降级要求 *)
 ASSUME N_MAX \in 1..3 /\ D_MAX \in 1..3 /\ D_DOM_MAX \in 1..3 /\
        Cardinality(InstrTypeSet) = 4 /\
        Cardinality(IoTypeSet) = 3

@@ -22,7 +22,7 @@
 
 ## 二、变更审查（Change Request）
 
-- 所有核心模块变更**必须**附带 [CHANGE_REQUEST_TEMPLATE.md](CHANGE_REQUEST_TEMPLATE.md)（根目录正本，`.github/` 为镜像副本）。
+- 所有核心模块变更**必须**附带 [CHANGE_REQUEST_TEMPLATE.md](.github/CHANGE_REQUEST_TEMPLATE.md)（唯一正本；原根目录副本因双份维护漂移已删除）。
 - 审查状态流转：
 
   ```

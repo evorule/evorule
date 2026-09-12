@@ -247,7 +247,7 @@ workspace = true
 | 三、安全性约束 (G1, G2)              | G1 (= T9, T11), G2 (= T10) | L1 (T9, T10, T11) |
 | 四、数据流约束 (D1-D10)              | D1, D2, D6, D7, D8, D9, D10  | L3 引用        |
 | 五、编译时门禁 (build.rs)             | — (引用 L1)                | §5.1-5.4 配置  |
-| 六、形式化验证                       | ✅ P0-P21 已完成(34 proofs,5 层覆盖) | — (Kani 外部工具,详见 `evorule-tcb/verification/kani-formal-verification-design.md`) |
+| 六、形式化验证                       | 📊 状态见 [verification/STATUS.md](verification/STATUS.md)（唯一权威，五档词汇） | — (Kani 外部工具) |
 | 七、基础设施约束 (不可逾越)           | —                          | —              |
 | 八、代码量目标 vs 实际                | —                          | —              |
 | 总结口诀 / 编号映射                   | G/T 交叉引用              | —              |

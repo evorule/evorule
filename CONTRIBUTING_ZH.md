@@ -213,13 +213,13 @@ test(e2e): 添加宪法核心冒烟测试
 
 参考:`tests/e2e_smoke.py`
 
-### Kani 形式化验证(仅 evorule-tcb)
+### Kani 形式化验证
 
-新增 tier0 元指令 / 域类型时,必须配 Kani proof:
+新增 tier0 元指令 / 域类型时,必须配 Kani proof。指南:[evorule-tcb/docs/KANI.md](evorule-tcb/docs/KANI.md) 与 [evorule-reactor/docs/KANI.md](evorule-reactor/docs/KANI.md)。注:proof 由 `#[cfg(kani)]` 门控(`cargo kani` 自动注入 cfg,不存在 kani feature),且 TCB proof 位于 `tests/` 下,必须加 `--tests`:
 
 ```bash
-cargo kani -p evorule-tcb --features kani
-`````
+cargo kani -p evorule-tcb --tests --harness <proof函数名> --output-format=terse
+````
 
 ---
 

@@ -209,13 +209,13 @@ Verify 5 core scenarios over HTTP API (setup 详见 evorule-server 仓 README):
 
 See: `tests/e2e_smoke.py`
 
-### Kani formal verification (evorule-tcb only)
+### Kani formal verification
 
-When adding new tier0 meta-instructions or domain types, you must add a Kani proof:
+When adding new tier0 meta-instructions or domain types, you must add a Kani proof. Guides: [evorule-tcb/docs/KANI.md](evorule-tcb/docs/KANI.md) and [evorule-reactor/docs/KANI.md](evorule-reactor/docs/KANI.md). Note: proofs are `#[cfg(kani)]`-gated (`cargo kani` injects the cfg — no `--features` flag exists), and TCB proofs live under `tests/`, so `--tests` is required:
 
 ```bash
-cargo kani -p evorule-tcb --features kani
-`````
+cargo kani -p evorule-tcb --tests --harness <proof_function_name> --output-format=terse
+````
 
 ---
 
