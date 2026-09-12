@@ -25,7 +25,7 @@ ADR(Architecture Decision Record)是一种轻量级文档,记录:
 
 ## 目录
 
-(暂无,等第一个 ADR 落地后补)
+- [ADR-0001: 验证状态单一真相源与诚实披露机制](./ADR-0001-验证状态单一真相源与诚实披露机制.md)(2026-09-12,Accepted)
 
 ## 何时写 ADR
 
@@ -64,7 +64,7 @@ Every ADR is an **immutable historical snapshot**. If a decision changes, write 
 
 ## Index
 
-(None yet; will be filled in once the first ADR lands)
+- [ADR-0001: Single Source of Truth for Verification Status and Honest Disclosure](./ADR-0001-验证状态单一真相源与诚实披露机制.md) (2026-09-12, Accepted)
 
 ## When to write an ADR
 
