@@ -83,3 +83,17 @@
 - **影响**：kani-reactor job 首跑不再因含已知不可运行 proof 而必然超时；reactor PR 闸门覆盖 2 个 proof；对外数字口径 48/16/37 全面对齐。
 - **验收结论**：check_doc_safety.py RC=0（R3 私有路径零残留）；check_docs_bilingual.py 通过（27 篇）；VERTICATION 拼写残留 2 处均为登记性（check_doc_safety.py 禁用清单、本日志首条 #9）；kani/tla/release/mutants 四个 workflow yml 解析通过；`cargo test --workspace --all-targets` 全绿（含 TCB build.rs 门禁，源文件注释修改零破坏）；INDEX.md 死引用清零（余 4 处为「原 INDEX.md」历史性记述，按 M7 保留）；48/37/14/23/16/11/2 七组数字在根 README 双语、两份 KANI.md、STATUS.md、kani.yml、Cargo.toml 元数据全部对齐。
 - **修正去向**：本条目即修正记录。
+
+### 2026-09-12：P0-11 `invariant_cause_queue_sync` 超时根因修复，重入 CI 闸门
+
+- **事实**：定位并修复 P0-11 超时根因——CBMC 将 `VecDeque` 堆缓冲区中的 `JsonValue` 按任意变体建模，任何触发 `JsonValue` Drop 的路径（`pop_instruction` 返回值 Drop、`clear_queue` 的 `drop_in_place`、`ReactorState` 整体 Drop）都会展开 `Object(BTreeMap)` 红黑树析构的 `first_leaf_edge` 无界 unwind，导致状态爆炸（诊断实验：`new()`+forget 0.09s PASS、`push_back`+forget 0.49s PASS、加入单次 `pop_instruction` 即卡死于 first_leaf_edge unwind——最小复现成立）。修复三处：① proof 侧 `std::mem::forget(popped)` / `forget(state)` 跳过析构（证明 9 先例）；② `ReactorState::clear_queue`（evorule-reactor/src/state.rs）增加 `#[cfg(kani)]` 分支（`mem::take`+`forget`，长度清空语义与真实 clear 一致，与 kani_collections 轻量实现模式同理）；③ P0-11 重入 kani.yml reactor job（单独命令，不带 `--default-unwind 4`——该配置此前实测对 P0-11 无效）。修复后本地实测 1.53s PASS（WSL，Kani 0.67.0 + nightly-2025-11-21，647 断言 0 失败）；`cargo test -p evorule-reactor` 全绿（185 项，`clear_queue` 的 kani 分支不参与普通编译）。
+- **依据**：诊断实验序列实测记录（上述耗时与卡死输出）；超时输出中 `NodeRef<Dying, String, JsonValue>::first_leaf_edge` 循环 unwind 迭代 1400–2600+ 次；修复前 3 份 FAIL 证据（`P0-11.invariant_cause_queue_sync_FAIL_bdfb8d4_20260912_*`，含完整输出与复现命令）。
+- **影响**：P0-11 主状态由 ❌+🟡 调整为 ✅（正式 PASS 证据按 M3.4 于修复提交后归档，届时补 STATUS.md 证据列）；kani-reactor job 由 2 个增至 3 个 proof；对外数字口径「当前实跑验证」16→17（根 README 双语 badge 与正文、STATUS.md、reactor KANI.md、Cargo.toml `[package.metadata.kani]`、ROADMAP、plan v3 §五 同步更新）。
+- **修正去向**：本条目即修正记录；状态见 STATUS.md（P0-11 行与附录 C）。
+
+### 2026-09-12：P1-5 `command_does_not_decrease_queue` 超时根因修复，入 CI 闸门
+
+- **事实**：应用与 P0-11 相同的修复（proof 末尾 `std::mem::forget(state)` 跳过 `ReactorState` 的 Drop），P1-5 由超时恢复为可运行：本地实测 0.57s PASS（默认参数）/ 0.60s PASS（`--default-unwind 4`，与 CI 参数一致），入 kani.yml reactor job（for 循环内，带 `--default-unwind 4`）。
+- **依据**：与 P0-11 同根因（CBMC 对 VecDeque 堆缓冲区中 JsonValue 按任意变体建模，state 整体 Drop 展开红黑树析构无界 unwind）；`apply_command` 即 `state.push_back`（evorule-reactor/src/pure.rs），proof 路径无其他爆炸点。
+- **影响**：P1-5 主状态由 🟡 调整为 ✅（正式 PASS 证据按 M3.4 于修复提交后归档，届时补 STATUS.md 证据列）；kani-reactor job 由 3 个增至 4 个 proof；对外数字口径「当前实跑验证」17→18（根 README 双语 badge 与正文、STATUS.md、reactor KANI.md、Cargo.toml `[package.metadata.kani]`、plan v3 §五 同步更新）。
+- **修正去向**：本条目即修正记录；状态见 STATUS.md（P1-5 行与附录 C）。

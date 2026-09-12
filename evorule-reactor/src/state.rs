@@ -355,9 +355,28 @@ impl ReactorState {
     /// 清空队列和 cause 队列（同步清空，保持 len 相等）
     ///
     /// 用于 MaxRoundsExceeded 和队列长度超限的恢复路径。
+    ///
+    /// # Kani 模式
+    ///
+    /// CBMC 将 VecDeque 堆缓冲区中的 `JsonValue` 按任意变体建模，
+    /// `clear` 的 `drop_in_place` 会展开 `Object(BTreeMap)` 红黑树
+    /// 析构循环，无界 unwind 导致状态爆炸（P0-11 超时根因）。
+    /// 改用 `mem::take` + `forget`：长度清空语义与真实 clear 一致，
+    /// 仅跳过元素析构（与 kani_collections 替代方案同理）。
     pub fn clear_queue(&mut self) {
-        self.queue.clear();
-        self.instruction_causes.clear();
+        #[cfg(kani)]
+        {
+            let q = std::mem::take(&mut self.queue);
+            std::mem::forget(q);
+            let c = std::mem::take(&mut self.instruction_causes);
+            std::mem::forget(c);
+            return;
+        }
+        #[cfg(not(kani))]
+        {
+            self.queue.clear();
+            self.instruction_causes.clear();
+        }
     }
 
     /// 用 execute_transition 返回的新队列更新状态，同步重建 cause 队列
