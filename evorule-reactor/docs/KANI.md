@@ -13,24 +13,24 @@
 
 ## 📋 Proof 清单
 
-### CI 子集（2 个，kani.yml `kani-reactor` job，单 proof 300s + `--default-unwind 4`）
+### CI 子集（4 个，kani.yml `kani-reactor` job，单 proof 300s；version_monotonic / max_rounds_termination / command_does_not_decrease_queue 带 `--default-unwind 4`，P0-11 不带——该配置实测对 P0-11 无效）
 
 | #   | Proof                         | 验证目标                                         | 状态 |
 | --- | ----------------------------- | ------------------------------------------------ | ---- |
 | 2   | `invariant_version_monotonic` | version 单调递增，bump_version 后 > prev_version | 📊   |
+| 4   | `command_does_not_decrease_queue` | apply_command 后队列长度严格 +1                  | 📊   |
 | 5   | `max_rounds_termination`      | is_stable 终止条件正确性 + 有界循环终止          | 📊   |
+| 6   | `invariant_cause_queue_sync` | instruction_causes.len() == queue.len() 同步    | 📊   |
 
 > 状态一律见 [verification/STATUS.md](../../verification/STATUS.md)（唯一权威）。
 
-### 完整验证（9 个，未入 CI）
+### 完整验证（7 个，未入 CI）
 
 | #   | Proof                                               | 验证目标                              | 状态 |
 | --- | --------------------------------------------------- | ------------------------------------- | ---- |
 | 1a  | `invariant_io_count_register_complete`              | register/complete 保持 4 字段长度相等 | 📊   |
 | 1b  | `invariant_io_count_force_remove`                   | force_remove 保持 4 字段长度相等      | 📊   |
 | 3   | `invariant_io_recovery_iff_result`                  | io_recovery ⇔ payload 含 io_result    | 📊   |
-| 4   | `command_does_not_decrease_queue`                   | apply_command 后队列长度严格 +1       | 📊   |
-| 6   | `invariant_cause_queue_sync`  | instruction_causes.len() == queue.len() 同步     | 📊   |
 | 7   | `proof_fact_log_append_monotonic`                   | FactsLog append 版本单调 + 历史增长   | 📊   |
 | 8   | `proof_hash_chain_back_link`                        | 哈希链 back-link 正确性               | 📊   |
 | 9   | `proof_reactor_invariants_preserved_after_pure_ops` | 多次操作后所有不变量同时成立          | 📊   |
@@ -70,7 +70,7 @@ pending_io_count == pending_io_instructions.len()
 ### Proof 4: `command_does_not_decrease_queue`
 
 `apply_command` 后 `queue.len() == old_len + 1`（严格递增）。
-仅操作 VecDeque，但 CBMC 对 VecDeque 建模仍有状态爆炸。
+2026-09-12 修复超时（与 P0-11 同根因：proof 末尾 state 正常 Drop 触发 JsonValue 符号化变体的 BTreeMap 析构 unwind 爆炸；修复 = `forget(state)`），本地实测 0.57s PASS，入 CI 闸门（`--default-unwind 4` 实测通过）。
 
 ### Proof 5: `max_rounds_termination`
 
@@ -84,7 +84,7 @@ pending_io_count == pending_io_instructions.len()
 使用 `JsonValue::Null`（无堆分配）避免 CBMC 状态爆炸。
 `kani::any()` 用于 FactId,验证任意 cause 值下不变量保持。
 
-> **当前状态（2026-09-12）**：v0.5.0 基线（`bdfb8d4`）实测 3 次超时（300s+unwind4 / 1200s+unwind4 / 300s 默认 unwind，均未完成求解；🟡 历史 PASS 2026-07-27 27s，其后 proof 与被验证代码均有变更），判定当前不可运行，已移出 kani.yml CI 闸门——证据见 [`verification/evidence/kani/`](../verification/evidence/kani/)，状态见 [verification/STATUS.md](../../verification/STATUS.md)。
+> **当前状态（2026-09-12）**：超时根因已修复并重入 CI 闸门——CBMC 将 VecDeque 堆缓冲区中的 `JsonValue` 按任意变体建模，任何触发 `JsonValue` Drop 的路径（pop 返回值 / clear 的 `drop_in_place` / state 整体 Drop）都会展开 `Object(BTreeMap)` 红黑树析构的无界 unwind。修复 = proof 侧 `forget(popped)`/`forget(state)` + `clear_queue` 的 `#[cfg(kani)]` take+forget 分支（[`src/state.rs`](../src/state.rs)）。本地实测 1.53s PASS（CI 中不带 `--default-unwind`）。修复前 3 份超时 FAIL 证据保留于 [`verification/evidence/kani/`](../verification/evidence/kani/)，状态见 [verification/STATUS.md](../../verification/STATUS.md)。
 
 ### Proof 7: `proof_fact_log_append_monotonic`
 
@@ -200,9 +200,9 @@ Kani 验证由 [`.github/workflows/kani.yml`](../../.github/workflows/kani.yml) 
 - push 到 main 或 PR，且修改 `evorule-tcb/**`、`evorule-reactor/src/**`、`evorule-reactor/verification/**` 等 Kani 相关路径
 - 手动触发 (`workflow_dispatch`，可选 a / b / all 档位)
 
-`kani-reactor` job：30 min 超时，`--default-unwind 4`，单 proof 300s 上限，**仅 2 个 CI proof**（version_monotonic / max_rounds_termination；不可加 `--tests`，proof 经 `src/pure.rs` `#[path]` 引入 lib）。P0-11 `invariant_cause_queue_sync` 因实测超时（2026-09-12 三次实测）移出闸门，修复后先本地 PASS 再重入。
+`kani-reactor` job：30 min 超时，单 proof 300s 上限，**4 个 CI proof**（P0-11 `invariant_cause_queue_sync` 2026-09-12 修复超时根因后重入，单独跑且不带 `--default-unwind`——该配置实测对 P0-11 无效；P1-5 `command_does_not_decrease_queue` 同日同根因修复入闸，与 version_monotonic / max_rounds_termination 同组带 `--default-unwind 4`；不可加 `--tests`，proof 经 `src/pure.rs` `#[path]` 引入 lib）。
 
-> reactor 其余 9 个 proof 未入 CI（涉及堆分配数据结构或实测超时，跨 Kani 版本稳定性未知），状态一律见 [verification/STATUS.md](../../verification/STATUS.md)。同文件另含 TCB A/B 档两个 job（见 [tcb KANI 指南](../../evorule-tcb/docs/KANI.md)）。
+> reactor 其余 7 个 proof 未入 CI（涉及堆分配数据结构或实测超时，跨 Kani 版本稳定性未知），状态一律见 [verification/STATUS.md](../../verification/STATUS.md)。同文件另含 TCB A/B 档两个 job（见 [tcb KANI 指南](../../evorule-tcb/docs/KANI.md)）。
 
 ## 📖 延伸阅读
 

@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-0.5.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-758%20passed%20%C2%B7%202026--09--05-brightgreen.svg)](#testing--verification)
-[![Kani](https://img.shields.io/badge/Kani-48%20proofs%20%2816%20verified%29-blue.svg)](#formal-verification)
+[![Kani](https://img.shields.io/badge/Kani-48%20proofs%20%2818%20verified%29-blue.svg)](#formal-verification)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb--minimal-trusted-computing-base)
 
 > **EvoRule is a deterministic rule-governance engine.** A BLAKE3 cryptographically-signed, tamper-evident audit chain and time-machine replay make critical decisions *provable and replayable* — not just *logged*.
@@ -281,7 +281,7 @@ cargo test --workspace --features persistence
 - **Kani proofs**: **48 total** (tcb 37 + reactor 11)
   - tcb: `evorule-tcb/tests/kani/kani_proofs.rs` (37 = A-tier 14 + B-tier 23; A-tier all PASS in the v0.5.0 rerun, B-tier judged currently not runnable — measured 600s/3600s timeouts)
   - reactor: `evorule-reactor/verification/kani_proofs.rs` (11, covering pure functions)
-  - **Verified (current re-run)**: 16 — per [`verification/STATUS.md`](verification/STATUS.md), the single source of truth (five-tier vocabulary)
+  - **Verified (current re-run)**: 18 — per [`verification/STATUS.md`](verification/STATUS.md), the single source of truth (five-tier vocabulary)
 - **Differential testing**: reactor vs pure module, 11 items (`differential_test.rs`), ensuring the side-effecting executor agrees with the pure reference implementation
 - **Deterministic proptest**: tcb `determinism_proptest.rs`, 5 items, including `never_panics_on_valid_input`
 
@@ -440,7 +440,7 @@ evorule/
 - **cli has no I/O handler**: `IoRequest` errors and stops (auditable failure)
 - **ffi has no traditional debug semantics**: the event-driven state machine offers no `pause`/`resume`/`step`/`is_paused`; debug is provided by a purpose-built scheme
 - **Debug control is application-layer**: not a real single step, but a rewind replay
-- **Kani coverage is partial**: 16 of 48 proofs verified in the v0.5.0 rerun; 23 B-tier proofs judged currently not runnable (see [`verification/STATUS.md`](verification/STATUS.md))
+- **Kani coverage is partial**: 18 of 48 proofs verified in the v0.5.0 rerun; 23 B-tier proofs judged currently not runnable (see [`verification/STATUS.md`](verification/STATUS.md))
 - **Unknown IoResponse warn-ignored**: design to be confirmed
 
 ### Roadmap
@@ -509,7 +509,7 @@ evorule/
 [![Version](https://img.shields.io/badge/version-0.5.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-758%20passed%20%C2%B7%202026--09--05-brightgreen.svg)](#测试与验证)
-[![Kani](https://img.shields.io/badge/Kani-48%20proofs%20%2816%20verified%29-blue.svg)](#形式化验证)
+[![Kani](https://img.shields.io/badge/Kani-48%20proofs%20%2818%20verified%29-blue.svg)](#形式化验证)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb---最小信任基)
 
 > **EvoRule 是确定性规则治理引擎。** BLAKE3 密码学签名、不可篡改审计链 + 时光机回放，让关键决策**可被证明、可重放**，而不只是被记录下来。
@@ -769,7 +769,7 @@ cargo test --workspace --features persistence
 - **Kani proof**：共 **48 个**（tcb 37 + reactor 11）
   - tcb：`evorule-tcb/tests/kani/kani_proofs.rs`（37 个 = A 档 14 + B 档 23；A 档 v0.5.0 重跑全 PASS，B 档实测 600s/3600s 超时，判定当前不可运行）
   - reactor：`evorule-reactor/verification/kani_proofs.rs`（11 个，覆盖 pure 函数）
-  - **当前实跑验证**：16 个——见 [`verification/STATUS.md`](verification/STATUS.md)（唯一权威，五档词汇）
+  - **当前实跑验证**：18 个——见 [`verification/STATUS.md`](verification/STATUS.md)（唯一权威，五档词汇）
 - **差分测试**：reactor vs pure 模块 11 项（`differential_test.rs`），保证有副作用执行器与纯函数参考实现一致
 - **确定性 proptest**：tcb `determinism_proptest.rs` 5 项，含 `never_panics_on_valid_input`
 
@@ -928,7 +928,7 @@ evorule/
 - **cli 无 I/O handler**：IoRequest 即 Error 停止（可审计的失败）
 - **ffi 无传统调试语义**：事件驱动状态机不提供 pause/resume/step/is_paused；调试由专门方案提供
 - **调试控制为应用层能力**：非真正单步执行，为 rewind 回放
-- **Kani 覆盖为部分**：48 个 proof 中 16 个当前实跑验证；B 档 23 个判定当前不可运行（见 [`verification/STATUS.md`](verification/STATUS.md)）
+- **Kani 覆盖为部分**：48 个 proof 中 18 个当前实跑验证；B 档 23 个判定当前不可运行（见 [`verification/STATUS.md`](verification/STATUS.md)）
 - **未知 IoResponse warn 忽略**：设计待确认
 
 ### 路线图

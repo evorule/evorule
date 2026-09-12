@@ -351,6 +351,10 @@ pub fn invariant_io_recovery_iff_result() {
 /// 避免 CBMC 对 String 堆分配建模导致的状态爆炸。
 /// 最小化为单次 push_back 操作，避免 VecDeque 环缓冲区多次操作导致状态爆炸。
 /// 多次 push 的不减性由单元测试 `test_apply_command` 覆盖。
+/// 末尾用 `std::mem::forget` 跳过 `ReactorState` 的 Drop（与 P0-11 同
+/// 根因：CBMC 对 VecDeque 堆缓冲区中的 JsonValue 按任意变体建模，
+/// Drop 会展开 Object(BTreeMap) 红黑树析构的无界 unwind；全部断言
+/// 在 forget 前完成）。
 #[kani::proof]
 pub fn command_does_not_decrease_queue() {
     let mut state = ReactorState::new();
@@ -363,6 +367,11 @@ pub fn command_does_not_decrease_queue() {
     apply_command(&mut state, JsonValue::Null, FactId(0));
     kani::assert(state.queue_len() == prev + 1, "queue == prev + 1");
     kani::assert(state.queue_len() > prev, "queue strictly increases");
+
+    // 跳过 Drop：state.payload 含 Object(BTreeMap)，且 queue 堆缓冲区中
+    // 的 JsonValue 变体符号化，析构均会导致 CBMC 状态爆炸（P0-11 同根因，
+    // 见上方"设计权衡"）。全部断言已完成。
+    std::mem::forget(state);
 }
 
 /// 证明 5：max_rounds 内终止性
@@ -443,6 +452,15 @@ pub fn max_rounds_termination() {
 /// 仅操作 VecDeque，无 BTreeSet/BTreeMap，Kani 可高效建模。
 /// 使用 `JsonValue::Null`（无堆分配）避免 CBMC 状态爆炸。
 /// `kani::any()` 用于 FactId 生成,验证任意 cause 值下不变量保持。
+/// CBMC 将 VecDeque 堆缓冲区中的 `JsonValue` 按任意变体建模，
+/// 因此任何触发 `JsonValue` Drop 的路径（`pop_instruction` 返回值、
+/// `clear_queue` 的 `drop_in_place`、`ReactorState` 整体 Drop）都会
+/// 展开 `Object(BTreeMap)` 红黑树析构的无界 unwind，导致状态爆炸
+/// （P0-11 超时根因，实测最小复现：push 后单次 pop 即卡死）。
+/// 处理方式（与证明 9 的 forget 先例、kani_collections 轻量实现一致）：
+/// - proof 侧 `forget(popped)` / `forget(state)` 跳过析构，
+///   全部长度断言在此之前完成，不受影响；
+/// - `clear_queue` 的 Kani 分支在 `state.rs` 中用 take+forget 实现。
 #[kani::proof]
 pub fn invariant_cause_queue_sync() {
     let mut state = ReactorState::new();
@@ -484,6 +502,9 @@ pub fn invariant_cause_queue_sync() {
     // === pop_instruction 保持不变量 ===
     let popped = state.pop_instruction();
     kani::assert(popped.is_some(), "pop returns Some for non-empty queue");
+    // popped 含从堆读回的 JsonValue（CBMC 视角变体符号化），
+    // Drop 会展开 BTreeMap 析构循环导致状态爆炸，断言后立即 forget
+    std::mem::forget(popped);
     kani::assert(
         state.instruction_causes.len() == state.queue.len(),
         "pop: causes.len == queue.len",
@@ -499,6 +520,11 @@ pub fn invariant_cause_queue_sync() {
     );
     kani::assert(state.queue.is_empty(), "clear: queue empty");
     kani::assert(state.instruction_causes.is_empty(), "clear: causes empty");
+
+    // 跳过 state 的 Drop：payload 为 Object(BTreeMap)，且 queue 堆缓冲
+    // 区中的 JsonValue 变体符号化，析构均会导致 CBMC 状态爆炸
+    //（见上方"设计权衡"）。全部断言已完成。
+    std::mem::forget(state);
 }
 
 /// 断言 I/O 计数一致性不变量（4 字段长度相等）

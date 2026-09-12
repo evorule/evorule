@@ -120,14 +120,20 @@ jobs:
           done
 
   # ---------------------------------------------------------------------------
-  # reactor：2 个 CI proof（PR 闸门）
+  # reactor：4 个 CI proof（PR 闸门）
   # proof 经 src/pure.rs #[path] 引入 lib → 不可加 --tests
   #
-  # P0-11（invariant_cause_queue_sync）已移出闸门（2026-09-12）：
-  #   本地实测 3 次超时（300s+unwind4 / 1200s+unwind4 / 300s 默认 unwind，
-  #   基线 bdfb8d4，证据 evorule-reactor/verification/evidence/kani/ 3 份 FAIL 记录），
-  #   判定当前不可运行——与 B 档同性质，不进 PR 闸门、不烧 runner 时间。
-  #   将来修复（缩小符号输入规模）后先本地 PASS 再重新入闸；状态见 verification/STATUS.md。
+  # P1-5（command_does_not_decrease_queue）2026-09-12 同根因修复入闸：
+  #   proof 末尾 forget(state) 跳过 Drop（见下 P0-11 说明），本地实测
+  #   0.57s PASS / --default-unwind 4 下 0.60s PASS。
+  # P0-11（invariant_cause_queue_sync）2026-09-12 修复根因后重入闸门：
+  #   根因：CBMC 将 VecDeque 堆缓冲区中的 JsonValue 按任意变体建模，任何触发
+  #   JsonValue Drop 的路径（pop 返回值 / clear 的 drop_in_place / state 整体
+  #   Drop）都会展开 Object(BTreeMap) 红黑树析构的无界 unwind → 状态爆炸。
+  #   修复：proof 侧 forget(popped)/(state) + clear_queue 的 #[cfg(kani)]
+  #   take+forget 分支（evorule-reactor/src/state.rs）。本地实测 1.53s PASS。
+  #   ⚠️ P0-11 不带 --default-unwind 4（该配置实测对 P0-11 无效且致超时，
+  #   修复前 3 份 FAIL 记录见 evorule-reactor/verification/evidence/kani/）。
   # ---------------------------------------------------------------------------
   kani-reactor:
     runs-on: ubuntu-22.04
@@ -158,12 +164,16 @@ jobs:
           cargo kani setup
           cargo kani --version
 
-      - name: Verify reactor CI proofs (2 个)
+      - name: Verify reactor CI proofs (4 个)
         run: |
           set -e
           # 不可加 --tests：reactor proof 在 lib 中（src/pure.rs #[path] 引入）
-          # P0-11 invariant_cause_queue_sync 已移出闸门（实测超时，见 job 头注释与 verification/STATUS.md）
+          # P0-11 单独跑且不带 --default-unwind（该配置实测对 P0-11 无效，见 job 头注释）
+          echo "==> invariant_cause_queue_sync"
+          timeout -k 30 300 cargo kani -p evorule-reactor \
+            --harness invariant_cause_queue_sync --output-format=terse
           for h in \
+            command_does_not_decrease_queue \
             invariant_version_monotonic \
             max_rounds_termination \
           ; do
