@@ -1,0 +1,40 @@
+# EvoRule Fuzz 工作区（独立于主 workspace，由父 Cargo.toml exclude）
+#
+# 覆盖:
+# - fuzz_resolve_path:   path.rs 路径字符串解析（resolve_path / resolve_path_mut）— 攻击面主目标
+# - fuzz_json_display:   JsonValue 边界构造 → Display 序列化（panic / 深度递归猎场）
+#
+# 运行（本地 smoke）:
+#   Linux/macOS:  RUSTUP_TOOLCHAIN=nightly-2025-11-21 cargo fuzz run fuzz_resolve_path -- -max_total_time=30
+#   Windows 补充: 需将 MSVC 的 ASAN DLL 目录加入 PATH，否则报 STATUS_DLL_NOT_FOUND:
+#     $env:PATH = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\<ver>\bin\Hostx64\x64;' + $env:PATH
+# CI: .github/workflows/fuzz.yml（每目标 60s smoke）
+#
+# 注意: 本 crate 仅依赖 evorule-tcb 的只读/无副作用 API，不触碰哈希链与审计面（最高原则）。
+
+[package]
+name = "evorule-fuzz"
+version = "0.0.1"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+evorule-tcb = { path = "../evorule-tcb" }
+
+[[bin]]
+name = "fuzz_resolve_path"
+path = "fuzz_targets/fuzz_resolve_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_json_display"
+path = "fuzz_targets/fuzz_json_display.rs"
+test = false
+doc = false
+bench = false

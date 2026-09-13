@@ -1,0 +1,51 @@
+# cargo-deny 配置（依赖供应链门禁：许可合规 + CVE 咨询 + 重复依赖）
+#
+# 执行: cargo deny check（CI: ci.yml deny job，EmbarkStudios/cargo-deny-action@v2）
+# 原则: evorule-tcb 零依赖（本文件不约束其），其余 crate 的依赖许可必须
+#       与 AGPL-3.0-or-later 兼容；新依赖引入新许可时需在此显式登记并说明理由。
+
+[graph]
+all-features = true
+
+# ---------------------------------------------------------------------------
+# 许可合规: AGPL-3.0-or-later（本项目）+ 常见宽松许可（依赖项）
+# ---------------------------------------------------------------------------
+[licenses]
+version = 2
+allow = [
+    "AGPL-3.0-or-later",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+]
+confidence-threshold = 0.93
+
+# ---------------------------------------------------------------------------
+# 安全咨询: RUSTSEC 数据库；漏洞默认拒绝，yanked 仅警告（避免历史噪音）
+# ---------------------------------------------------------------------------
+[advisories]
+version = 2
+yanked = "warn"
+
+# ---------------------------------------------------------------------------
+# 依赖关系: 重复版本警告；通配符依赖拒绝
+# ---------------------------------------------------------------------------
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+# ---------------------------------------------------------------------------
+# 来源: 仅允许 crates.io
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

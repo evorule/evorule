@@ -175,11 +175,47 @@ jobs:
           path: sigout/
 
   # ==========================================================================
-  # 3. 汇总发布 (GitHub Release)
+  # 3.5 CycloneDX SBOM 生成 (A3 供应链三件套)
+  #     全 workspace 成员的 .cdx.json 随 GitHub Release / Gitee Release 发布,
+  #     供下游 ISV 满足其供应链合规（如欧盟 CRA、客户安全问卷）。
+  # ==========================================================================
+  sbom:
+    name: sbom (CycloneDX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: 安装 cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --locked
+
+      - name: 生成 SBOM (全 workspace, JSON)
+        run: cargo cyclonedx --all --format json
+
+      # cargo-cyclonedx 将产物写到各 member 目录,统一收集到 sbom/
+      - name: 收集 SBOM 产物
+        run: |
+          mkdir -p sbom
+          find . -maxdepth 2 -name '*.cdx.json' -not -path './target/*' -exec mv {} sbom/ \;
+          ls -la sbom/
+
+      - name: 上传 SBOM 产物
+        uses: actions/upload-artifact@v5
+        with:
+          name: evorule-sbom
+          path: sbom/*.cdx.json
+
+  # ==========================================================================
+  # 4. 汇总发布 (GitHub Release)
   # ==========================================================================
   release:
     name: release
-    needs: [build, sign]
+    needs: [build, sign, sbom]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -209,7 +245,13 @@ jobs:
           name: evorule-sigs
           path: sigs
 
-      - name: 创建 Release 并附加二进制
+      - name: 下载 SBOM
+        uses: actions/download-artifact@v5
+        with:
+          name: evorule-sbom
+          path: sbom
+
+      - name: 创建 Release 并附加二进制与 SBOM
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -217,6 +259,7 @@ jobs:
             artifacts/evorule-windows-x86_64.exe
             sigs/evorule-linux-x86_64.sig
             sigs/evorule-windows-x86_64.exe.sig
+            sbom/*.cdx.json
           generate_release_notes: true
 
   # ==========================================================================
@@ -229,7 +272,7 @@ jobs:
   # ==========================================================================
   attach-gitee:
     name: attach-all-to-gitee
-    needs: [build, sign]
+    needs: [build, sign, sbom]
     runs-on: ubuntu-latest
     steps:
       - name: 下载 Linux 构建产物
@@ -250,12 +293,19 @@ jobs:
           name: evorule-sigs
           path: gitee-assets/sigs
 
+      - name: 下载 SBOM
+        uses: actions/download-artifact@v5
+        with:
+          name: evorule-sbom
+          path: gitee-assets/sbom
+
       - name: 补平台后缀并计算 sha256
         run: |
           mv gitee-assets/linux/evorule gitee-assets/evorule-linux-x86_64
           mv gitee-assets/windows/evorule.exe gitee-assets/evorule-windows-x86_64.exe
           cp gitee-assets/sigs/evorule-linux-x86_64.sig gitee-assets/
           cp gitee-assets/sigs/evorule-windows-x86_64.exe.sig gitee-assets/
+          cp gitee-assets/sbom/*.cdx.json gitee-assets/
           cd gitee-assets
           sha256sum evorule-linux-x86_64 evorule-windows-x86_64.exe > sha256-checks.txt
           sha256sum evorule-linux-x86_64 > evorule-linux-x86_64.sha256
@@ -297,6 +347,15 @@ jobs:
           cd gitee-assets
           for f in evorule-linux-x86_64 evorule-linux-x86_64.sha256 evorule-linux-x86_64.sig evorule-windows-x86_64.exe evorule-windows-x86_64.exe.sha256 evorule-windows-x86_64.exe.sig; do
             echo "上传 ${f} ..."
+            curl --retry 3 --retry-delay 5 --retry-connrefused -fsS -X POST \
+              "https://gitee.com/api/v5/repos/${REPO}/releases/${RELEASE_ID}/attach_files" \
+              -H "Authorization: token ${GITEE_TOKEN}" \
+              -F "file=@${f}"
+            echo ""
+          done
+          # SBOM (CycloneDX, A3)
+          for f in *.cdx.json; do
+            echo "上传 SBOM ${f} ..."
             curl --retry 3 --retry-delay 5 --retry-connrefused -fsS -X POST \
               "https://gitee.com/api/v5/repos/${REPO}/releases/${RELEASE_ID}/attach_files" \
               -H "Authorization: token ${GITEE_TOKEN}" \
