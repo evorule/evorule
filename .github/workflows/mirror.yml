@@ -19,9 +19,12 @@ jobs:
   mirror:
     name: Mirror branches and tags from Gitee
     runs-on: ubuntu-latest
-    # 镜像推送需要写 contents
+    # 镜像推送需要写 contents; gitee 侧提交含 .github/workflows 改动时还需 workflows
+    # (否则 GITHUB_TOKEN 拒推: "refusing to allow a GitHub App to create or
+    #  update workflow ... without workflows permission", run 33b048e 实测)
     permissions:
       contents: write
+      workflows: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -43,6 +46,7 @@ jobs:
         run: |
           for branch in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/gitee/); do
             [ -z "$branch" ] && continue
+            [ "$branch" = "HEAD" ] && continue
             git push origin "refs/remotes/gitee/$branch:refs/heads/$branch" --force
           done
 
