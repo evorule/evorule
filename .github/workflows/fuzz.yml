@@ -58,5 +58,7 @@ jobs:
 
       - name: 冒烟运行 (每目标 60s, panic 即红)
         run: |
-          cargo fuzz run fuzz_resolve_path -- -max_total_time=60 -rss_limit_mb=4096
-          cargo fuzz run fuzz_json_display -- -max_total_time=60 -rss_limit_mb=4096
+          # --target 显式 host 三元组: cargo-fuzz 0.14+ 在 Linux 默认 musl 静态目标,
+          # 与 sanitizer 不兼容且 nightly 镜像缺 musl std (run 34732535959 二次失败根因)
+          cargo fuzz run fuzz-resolve-path --target x86_64-unknown-linux-gnu -- -max_total_time=60 -rss_limit_mb=4096
+          cargo fuzz run fuzz-json-display --target x86_64-unknown-linux-gnu -- -max_total_time=60 -rss_limit_mb=4096

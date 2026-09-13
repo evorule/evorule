@@ -5,7 +5,8 @@
 # - fuzz_json_display:   JsonValue 边界构造 → Display 序列化（panic / 深度递归猎场）
 #
 # 运行（本地 smoke）:
-#   Linux/macOS:  RUSTUP_TOOLCHAIN=nightly-2025-11-21 cargo fuzz run fuzz_resolve_path -- -max_total_time=30
+#   Linux/macOS:  RUSTUP_TOOLCHAIN=nightly-2025-11-21 cargo fuzz run fuzz-resolve-path --target x86_64-unknown-linux-gnu -- -max_total_time=30
+#     （--target 显式 host 三元组: cargo-fuzz 0.14+ 在 Linux 默认 musl 静态目标, 与 sanitizer 不兼容）
 #   Windows 补充: 需将 MSVC 的 ASAN DLL 目录加入 PATH，否则报 STATUS_DLL_NOT_FOUND:
 #     $env:PATH = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\<ver>\bin\Hostx64\x64;' + $env:PATH
 # CI: .github/workflows/fuzz.yml（每目标 60s smoke）
@@ -26,14 +27,14 @@ libfuzzer-sys = "0.4"
 evorule-tcb = { path = "../evorule-tcb" }
 
 [[bin]]
-name = "fuzz_resolve_path"
+name = "fuzz-resolve-path"
 path = "fuzz_targets/fuzz_resolve_path.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_json_display"
+name = "fuzz-json-display"
 path = "fuzz_targets/fuzz_json_display.rs"
 test = false
 doc = false
