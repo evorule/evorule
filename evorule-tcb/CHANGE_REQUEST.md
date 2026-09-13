@@ -82,7 +82,8 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 - [x] Batch 1：value.rs 回退 + cargo test 全绿 + A 档 14 个 WSL
       重跑全绿（新 SHA 证据）+ check_doc_safety/check_status_sync 过
       （2026-09-13 实测通过；新 SHA 证据随本批归档提交落盘）
-- [ ] Phase 0：T0-1~T0-7 可行性矩阵定稿（每项 go/no-go 有实测/审计依据）
+- [x] Phase 0：T0-1~T0-7 可行性矩阵定稿（每项 go/no-go 有实测/审计依据；
+      2026-09-13 完成，结论摘要见 §3.7 追记）
 - [ ] Phase 1：P8 系 9 个 proof × ≤3 配置（基线/精确 unwind/owned
       迁移），单 proof 中位数 ≤300s 为过关线
 - [ ] Phase 2：stub 试点 2 个（eq 族 + 元指令族）≤600s；批量 ≤20 次
@@ -98,6 +99,20 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 失败 revert 该批即可，前批成果（如 A 档新证据）不受影响。整体降级
 路径：预算触顶或 Phase kill → 按收尾选项执行（B 档如实标 ❌，
 根因档案与偏差登记簿定稿归档）。
+
+### 3.7 Phase 0（T0-1~T0-7）可行性验证结论追记（2026-09-13 实测定稿）
+
+| 项 | 结论 | 依据 |
+|---|---|---|
+| T0-1 求解器选项 | `--solver` 选项存在（bitwuzla/cadical/cvc5/kissat/minisat/z3/bin=，**默认 CaDiCaL**）；kissat 对 eq proof 单点试跑 600s 超时无改善 → **Tier 1.2 裁撤** | E1 实测（600s，机时记账） |
+| T0-2 stubbing | `-Z stubbing` 最小 stub proof 实跑 PASS → **Tier 2.1 stub 默认路径确认**（cfg 回退预案解除待命） | E2 实测 |
+| T0-3 contracts | `requires`/`ensures`/`proof_for_contract` 实跑 PASS；`stub_verified` 编译期报错（`Failed to find contract closure`）→ **组合验证改两步独立**（stub 自带 contract + `proof_for_contract`），P19-P21 主路径维持 | E3 实测 |
+| T0-4 算术审计 | set/add/sub 路径全 `checked_add`/`checked_sub` + `IntegerOverflow` 传播，无裸算术（仅 usize 良性位点）→ **P13 可走 checked-ops 门禁卸载** | 代码审计（executor.rs） |
+| T0-5 clone 内容依赖 | evaluate_eq 子树内 eq 结果与 clone 内容仅流入 never-panic 的 `PartialEq` 与分支控制流 → **clone stub 固定值分支成立（限该子树）** | 代码审计（domain.rs/executor.rs） |
+| T0-6 unwind 敏感度 | `"payload.x"`→`"p.x"` + `unwind(24)`→`unwind(6)` 单点对比仍 600s 超时 → **Tier 1.1 单独无效**；harness 完全具体输入仍爆炸，证实结构层建模成本（String/Cow/Vec/分配器）主导——三层根因模型外残余因素（入根因档案） | E4 实测（600s）+ 代码审计（model.rs 无符号输入） |
+| T0-7 构造层复审 | F1 中毒路径（impl 级 cfg Clone 覆写经 `object_from_pairs` 清空嵌套复合值）已随 CR-20260913-003 修订消除；现存 `#[cfg(kani)]` 属性 12 处（value.rs 11 + domain.rs 1）全部属 CR-001/CR-002 批准载体，非克隆/构造路径 → **B 档重跑前置门解除** | 代码审计（value.rs/model.rs/domain.rs） |
+
+**机时记账**：Phase 0 实耗 ≈4 次有效运行 + 2 次亚秒级失败探测（6/≈7 次预算），机器时间 ≈20 分钟。**方案收缩汇总**：Tier 1.2 裁撤；Tier 1.1 降级为 W3-3/W3-4 配套动作（eq 族按 kill criteria 以首个数据点提前路由 Phase 2 stub 试点）；Tier 2.3 组合验证两步化。Phase 1 计划不变（W3-1 结构自检断言先行）。
 
 ## 4. CR-20260913-003 修订记录（2026-09-13，随 CR-20260913-004 生效）
 
