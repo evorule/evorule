@@ -27,6 +27,9 @@ on:
       - ".github/workflows/fuzz.yml"
   workflow_dispatch:
 
+# 显式最小权限 (Scorecard Token-Permissions): 冒烟仅需只读
+permissions: read-all
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -40,16 +43,16 @@ jobs:
       # 只被 nightly 接受, 首跑因稳定版工具链拒绝 -Z 而失败 (run 34732535959)
       RUSTUP_TOOLCHAIN: nightly
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@be39649afda95dbf70f87cce95f68b8d5797b296 # nightly
 
       - name: 安装 cargo-fuzz
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2
         with:
           tool: cargo-fuzz
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: |
             . -> target
