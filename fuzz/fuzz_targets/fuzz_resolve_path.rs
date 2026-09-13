@@ -8,7 +8,9 @@
 #![no_main]
 
 use evorule_tcb::path::{resolve_path, resolve_path_mut};
-use evorule_tcb::{JsonValue, ObjectMap};
+// 经 value 模块路径导入: HEAD 与在途改动均保持 `pub mod value` 公开,
+// 顶层 re-export(ObjectMap)是在途改动才有的, 顶层路径会导致 CI E0432
+use evorule_tcb::value::{JsonValue, ObjectMap};
 use libfuzzer_sys::fuzz_target;
 use std::str::from_utf8;
 
