@@ -43,3 +43,13 @@
 **同批其他处置**：另有 4 个零证据价值文件不适用隔离、直接删除（git 历史可溯）——`ps_check.txt`、`ps_count.txt`（进程诊断残留）与 `p4567_tmp.log`、`p8_11.log`（仅含单行 harness 标题、无验证结果的残文件）。
 
 **披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 首条 #2、#3 及资产处置记录③。
+
+## 批次 2（2026-09-13）：A 档 14 对证据随 Batch 1 载体回退失效隔离
+
+**来源**：`../`（`evorule-tcb/verification/evidence/kani/`），28 个文件（14 对 `.log` + `.stdout.txt`，命名锚定 `bdfb8d4`，产出于 2026-09-12）。
+
+**失效判定**（[MECHANISM.md](../../../../../verification/MECHANISM.md) M3.4）：Batch 1 提交 `1c6ad84` 变更了被验证代码（`value.rs` 载体回退——CR-20260913-003 修订随 CR-20260913-004 生效；`executor.rs` mem::take 修复；`path.rs`/`domain.rs`/`determinism_proptest.rs` 测试面适配）与 proof 源码（`tests/kani/kani_proofs.rs`、`tests/kani/model.rs` 探针迁出与 harness 对齐），本批证据的 SHA 绑定早于 proof 源码最后一次变更，按 M3.4 自动失效。
+
+**替代证据**：于 `1c6ad84` 重跑 A 档 14 个全 PASS（2026-09-13，WSL Kani 0.67.0），按 M3.1 命名归档于 `../`（见 [STATUS.md](../../../../../verification/STATUS.md) P0-3/P0-6 证据列）。
+
+**披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-13 条目归档记录。

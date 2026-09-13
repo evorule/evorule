@@ -1,0 +1,115 @@
+Kani Rust Verifier 0.67.0 (cargo plugin)
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.189
+   Compiling cfg-if v1.0.4
+   Compiling zerocopy v0.8.57
+   Compiling getrandom v0.3.4
+   Compiling serde_core v1.0.229
+   Compiling crossbeam-utils v0.8.23
+   Compiling autocfg v1.5.1
+   Compiling crossbeam-epoch v0.9.21
+   Compiling rustix v1.1.4
+   Compiling crossbeam-deque v0.8.8
+   Compiling zmij v1.0.23
+   Compiling getrandom v0.4.3
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.151
+   Compiling bitflags v2.13.2
+   Compiling once_cell v1.21.4
+   Compiling rayon-core v1.13.0
+   Compiling regex-syntax v0.8.11
+   Compiling either v1.18.0
+   Compiling linux-raw-sys v0.12.1
+   Compiling fastrand v2.5.0
+   Compiling clap_lex v1.1.0
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling plotters-backend v0.3.7
+   Compiling ciborium-io v0.2.2
+   Compiling anstyle v1.0.14
+   Compiling itertools v0.10.5
+   Compiling quick-error v1.2.3
+   Compiling bit-vec v0.8.0
+   Compiling same-file v1.0.6
+   Compiling fnv v1.0.7
+   Compiling cast v0.3.0
+   Compiling unarray v0.1.4
+   Compiling anes v0.1.6
+   Compiling oorandom v11.1.5
+   Compiling walkdir v2.5.0
+   Compiling evorule-tcb v0.5.0 (/mnt/d/evorule/evorule-tcb)
+   Compiling plotters-svg v0.3.7
+   Compiling clap_builder v4.6.6
+   Compiling bit-set v0.8.0
+   Compiling num-traits v0.2.19
+   Compiling syn v2.0.119
+   Compiling syn v3.0.5
+warning: evorule-tcb@0.5.0: evorule-tcb 变更治理门禁 PASSED - CHANGE_REQUEST.md 验证通过
+warning: evorule-tcb@0.5.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+   Compiling rayon v1.12.0
+   Compiling plotters v0.3.7
+   Compiling wait-timeout v0.2.1
+   Compiling is-terminal v0.4.17
+   Compiling criterion-plot v0.5.0
+   Compiling rand_core v0.9.5
+   Compiling rand_xorshift v0.4.0
+   Compiling rand v0.9.5
+   Compiling regex-automata v0.4.18
+   Compiling tempfile v3.27.0
+   Compiling clap v4.6.6
+   Compiling rusty-fork v0.3.1
+   Compiling serde_derive v1.0.229
+   Compiling regex v1.13.1
+   Compiling zerocopy-derive v0.8.57
+   Compiling tinytemplate v1.2.1
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling ciborium-ll v0.2.2
+   Compiling rand_chacha v0.9.0
+   Compiling ciborium v0.2.2
+   Compiling proptest v1.11.0
+   Compiling criterion v0.5.1
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.31s
+warning: evorule-tcb@0.5.0: evorule-tcb 变更治理门禁 PASSED - CHANGE_REQUEST.md 验证通过
+warning: evorule-tcb@0.5.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+   Compiling evorule-tcb v0.5.0 (/mnt/d/evorule/evorule-tcb)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.66s
+warning: evorule-tcb@0.5.0: evorule-tcb 变更治理门禁 PASSED - CHANGE_REQUEST.md 验证通过
+warning: evorule-tcb@0.5.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+   Compiling evorule-tcb v0.5.0 (/mnt/d/evorule/evorule-tcb)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.76s
+warning: evorule-tcb@0.5.0: evorule-tcb 变更治理门禁 PASSED - CHANGE_REQUEST.md 验证通过
+warning: evorule-tcb@0.5.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+   Compiling evorule-tcb v0.5.0 (/mnt/d/evorule/evorule-tcb)
+warning: unused import: `String`
+  --> evorule-tcb/tests/kani/model.rs:16:21
+   |
+16 | use alloc::string::{String, ToString};
+   |                     ^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: Found the following unsupported constructs:
+             - caller_location (1)
+             - foreign function (2)
+         
+         Verification will fail if one or more of these constructs is reachable.
+         See https://model-checking.github.io/kani/rust-feature-support.html for more details.
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.77s
+warning: evorule-tcb@0.5.0: evorule-tcb 变更治理门禁 PASSED - CHANGE_REQUEST.md 验证通过
+warning: evorule-tcb@0.5.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+   Compiling evorule-tcb v0.5.0 (/mnt/d/evorule/evorule-tcb)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.45s
+Checking harness kani::kani_proofs::verify_partial_eq_never_panics...
+
+VERIFICATION RESULT:
+ ** 0 of 534 failed (7 unreachable)
+
+VERIFICATION:- SUCCESSFUL
+Verification Time: 0.9424083s
+
+Manual Harness Summary:
+Complete - 1 successfully verified harnesses, 0 failures, 1 total.

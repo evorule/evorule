@@ -46,8 +46,9 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 - **CR-20260913-003 载体修订**（本文件该 CR 修订记录节）：value.rs
   两处 impl 级 cfg(kani) 覆写（Clone/PartialEq）回退，模型化改由
   proof 层 `#[kani::stub(...)]` 承载
-- tests/kani/kani_proofs.rs：B 档 harness 加结构自检断言；探针代码
-  （rounds 2-12）迁出生产 proof 文件
+- tests/kani/kani_proofs.rs：B 档 harness 加结构自检断言（W3-1，
+  Phase 1 前落地）；探针代码（rounds 2-12）迁出生产 proof 文件
+  （Batch 1 完成迁出与 harness 对齐）
 - KaniMap/ObjectMap 配套适配（CR-001 存储后端的调用面跟随，编译
   必需）：executor.rs（含 mem::take 全值移出修复——cfg(kani) no-op
   Drop 下部分移出被拒）、lib.rs（ObjectMap 顶层 re-export）、
