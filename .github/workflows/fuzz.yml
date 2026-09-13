@@ -1,0 +1,57 @@
+# Fuzz workflow for EvoRule (A1 供应链三件套)
+#
+# 覆盖:
+# - fuzz_resolve_path:  TCB path.rs 路径解析（resolve_path / resolve_path_mut）
+# - fuzz_json_display:  JsonValue 边界构造 → Display 序列化
+#
+# 策略:
+# - push/PR 触碰 evorule-tcb/** 或 fuzz/** 时执行构建 + 每目标 60s smoke
+# - libFuzzer smoke 仅作冒烟（发现 panic 即红）；长期蓄水池运行可后续加 cron 长跑 job
+# - fuzz/ 为独立 workspace（父 Cargo.toml exclude），使用 nightly 工具链
+# - 不触碰哈希链与审计面（最高原则）：目标仅调用只读/无副作用 API
+
+name: Fuzz
+
+on:
+  push:
+    branches: [main, master, "release/**"]
+    paths:
+      - "evorule-tcb/**"
+      - "fuzz/**"
+      - ".github/workflows/fuzz.yml"
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "evorule-tcb/**"
+      - "fuzz/**"
+      - ".github/workflows/fuzz.yml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz-smoke:
+    name: fuzz smoke (build + 60s/target)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - name: 安装 cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            fuzz -> target
+          key: fuzz
+
+      - name: 冒烟运行 (每目标 60s, panic 即红)
+        run: |
+          cargo fuzz run fuzz_resolve_path -- -max_total_time=60 -rss_limit_mb=4096
+          cargo fuzz run fuzz_json_display -- -max_total_time=60 -rss_limit_mb=4096

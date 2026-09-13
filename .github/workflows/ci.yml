@@ -157,3 +157,16 @@ jobs:
 
       - name: 验证状态一致性 (STATUS.md ↔ 证据 ↔ 文档/CI)
         run: python3 scripts/check_status_sync.py
+
+  # ==========================================================================
+  # 6. 依赖门禁 (cargo-deny, A2 供应链三件套)
+  #    许可合规 (deny.toml [licenses]) + RUSTSEC 漏洞 ([advisories])
+  #    + 重复依赖/通配符 ([bans]) + 来源白名单 ([sources])
+  # ==========================================================================
+  deny:
+    name: deny (licenses + advisories + bans)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
