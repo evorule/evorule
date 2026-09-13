@@ -18,10 +18,9 @@
 
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use evorule_tcb::{execute_transition, JsonValue};
+use evorule_tcb::{execute_transition, JsonValue, ObjectMap};
 use proptest::prelude::*;
 
 // ============================================================================
@@ -46,7 +45,7 @@ fn json_value_strategy() -> impl Strategy<Value = JsonValue> {
             // 对象（键为简单字符串）
             1 => proptest::collection::vec((".*".prop_map(|s| s.to_string()), inner.clone()), 0..4)
                 .prop_map(|pairs| {
-                    let mut map = BTreeMap::new();
+                    let mut map = ObjectMap::new();
                     for (k, v) in pairs {
                         map.insert(k, v);
                     }
@@ -64,7 +63,7 @@ fn payload_strategy() -> impl Strategy<Value = JsonValue> {
         0..8,
     )
     .prop_map(|pairs| {
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         for (k, v) in pairs {
             map.insert(k, v);
         }

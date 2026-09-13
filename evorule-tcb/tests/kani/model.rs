@@ -13,33 +13,10 @@
 
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use evorule_tcb::JsonValue;
-
-/// 构造覆盖全部 6 种变体的"小形状"值，供 P1-P3（PartialEq/Ord/as_*）使用。
-///
-/// ⚠️ 设计要点（实测修正，见 verification/kani-formal-verification-design.md §9）：
-/// - **类型符号化**（`t = kani::any::<u8>() % 6`）：覆盖 6 种变体的任意两两组合，
-///   这是 `value.rs` match 逻辑 panic 风险的唯一来源；
-/// - **叶子具体化**（固定常量，不符号化叶子值）：实测符号化 `i64` 叶子会让
-///   BTreeMap/Vec 红黑树操作的 CBMC/SAT 展开状态爆炸（P1 曾 ≥5GB 内存仍不收敛）；
-///   P1/P2 只验证 `value.rs` 自身 match 逻辑，不验证标准库 memcmp/BTreeMap 内部，
-///   故叶子具体化不影响验证目标的覆盖；
-/// - 字符串**固定常量**：避免 memcmp 长循环展开。
-pub(crate) fn any_value() -> JsonValue {
-    let t = kani::any::<u8>() % 6;
-    match t {
-        0 => JsonValue::Null,
-        1 => JsonValue::Bool(true),
-        2 => JsonValue::Integer(1),
-        3 => JsonValue::string("s"),
-        4 => JsonValue::Array(vec![JsonValue::Integer(1)]),
-        _ => JsonValue::object_from_pairs(&[("k", JsonValue::Integer(1))]),
-    }
-}
+use evorule_tcb::{JsonValue, ObjectMap};
 
 /// 返回全部 6 种变体的具体实例（固定数组，每类 1 个代表，无堆分配）。
 ///
@@ -47,8 +24,8 @@ pub(crate) fn any_value() -> JsonValue {
 /// 相比 Vec<JsonValue>，`[JsonValue; 6]` 无堆分配，CBMC 按栈上数组展开，
 /// 无 Vec 迭代器/堆指针开销，展开成本显著降低。
 ///
-/// ⚠️ 与 `any_value()` 的区别：本函数不含符号值，CBMC 按具体常量计算，
-/// 求解路径仅覆盖 match 分支选择，不验证标准库内部（memcmp/BTreeMap 遍历）。
+/// ⚠️ 本函数不含符号值，CBMC 按具体常量计算，
+/// 求解路径仅覆盖 match 分支选择，不验证标准库内部（memcmp/映射容器遍历）。
 pub(crate) fn all_variants() -> [JsonValue; 6] {
     [
         JsonValue::Null,
@@ -60,25 +37,16 @@ pub(crate) fn all_variants() -> [JsonValue; 6] {
     ]
 }
 
-/// 构造单键对象对（供对象内部逐值比较分支的专项验证）。
-///
-/// 两个对象键相同、值不同 → 触发 `PartialEq` 的 `v != bv` 递归比较分支。
-/// 仅用于 `verify_object_inner_eq`，不进入 all_variants 以免拖慢两两穷举。
-pub(crate) fn single_key_object_pair() -> (JsonValue, JsonValue) {
-    let mk = |v: i64| JsonValue::object_from_pairs(&[("k", JsonValue::Integer(v))]);
-    (mk(1), mk(2))
-}
-
 /// 构造"已知形状、符号叶子"的 payload 对象。
-/// 键数固定（x/y/obj.flag）→ BTreeMap 大小确定；叶子值符号化 → 覆盖全部输入值。
+/// 键数固定（x/y/obj.flag）→ ObjectMap 大小确定；叶子值符号化 → 覆盖全部输入值。
 pub(crate) fn any_payload() -> JsonValue {
-    let mut map = BTreeMap::new();
+    let mut map = ObjectMap::new();
     map.insert("x".to_string(), JsonValue::Integer(kani::any::<i64>()));
     map.insert("y".to_string(), JsonValue::Integer(kani::any::<i64>()));
     map.insert(
         "obj".to_string(),
         JsonValue::Object({
-            let mut m = BTreeMap::new();
+            let mut m = ObjectMap::new();
             m.insert("flag".to_string(), JsonValue::Bool(kani::any::<bool>()));
             m
         }),
@@ -86,23 +54,12 @@ pub(crate) fn any_payload() -> JsonValue {
     JsonValue::Object(map)
 }
 
-/// 符号字符串（固定长度，避免无界展开）。
-/// 仅取 ASCII 可打印/单字节区间（0..=126），控制路径分支。
-pub(crate) fn any_str<const N: usize>() -> String {
-    let bytes: [u8; N] = kani::any();
-    let mut s = String::with_capacity(N);
-    for b in bytes {
-        s.push((b % 127) as char);
-    }
-    s
-}
-
 /// 符号指令（type 取合法集合之一，0..=5 → set/push/branch/io_request/collect/merge）。
 /// ⚠️ 本函数仅提供"type 符号化、无 params"的最简形状；
 /// 需要具体 params 的证明（P13-P18）各自构造固定形状的指令。
 pub(crate) fn any_instruction() -> JsonValue {
     let t = kani::any::<u8>() % 6;
-    let mut instr = BTreeMap::new();
+    let mut instr = ObjectMap::new();
     instr.insert(
         "type".to_string(),
         JsonValue::string(match t {
@@ -117,40 +74,25 @@ pub(crate) fn any_instruction() -> JsonValue {
     JsonValue::Object(instr)
 }
 
-/// 构造"已知形状、符号叶子"的 exec_state（供 `evaluate_domain` 使用）。
-///
-/// ⚠️ 重要：`evaluate_domain` 内部经 `resolve_domain_path` 解析路径，
-/// 要求 exec_state **顶层必须有 `__exec__` 键**（见 src/domain.rs `resolve_domain_path`），
-/// 否则所有 `resolve_domain_path` 均返回 `None`，域评估恒为 `false`。
-/// 因此 `any_payload()` 不能直接作为 exec_state 传入，必须用本函数包裹。
-pub(crate) fn any_exec_state() -> JsonValue {
-    let mut exec = BTreeMap::new();
-    exec.insert("payload".to_string(), any_payload());
-    let mut root = BTreeMap::new();
-    root.insert("__exec__".to_string(), JsonValue::Object(exec));
-    JsonValue::Object(root)
-}
-
 /// 构造完整 exec_state：`__exec__` 下含 `instruction` + `payload` + `queue`。
 /// 供 `execute_meta_instruction`（P12/P13/P14）使用——它需要 `__exec__.payload` 与 `__exec__.queue`。
 pub(crate) fn any_state() -> JsonValue {
-    let mut exec = BTreeMap::new();
+    let mut exec = ObjectMap::new();
     exec.insert("instruction".to_string(), JsonValue::string("noop"));
     exec.insert("payload".to_string(), any_payload());
     exec.insert("queue".to_string(), JsonValue::Array(Vec::new()));
-    let mut root = BTreeMap::new();
+    let mut root = ObjectMap::new();
     root.insert("__exec__".to_string(), JsonValue::Object(exec));
     JsonValue::Object(root)
 }
 
 /// 构造**完全具体**的 exec_state（无符号叶子，供 P8/P9/P10/P11 等层 3 证明使用）。
 ///
-/// ⚠️ 与 `any_exec_state()` 的区别：`any_exec_state()` 的 payload 叶子符号化
-/// （`kani::any::<i64>()`），会让 BTreeMap 红黑树比较 + 展开状态爆炸
-/// （P8 实测符号 exec_state + 具体域列表被 WSL 内存打断）。本函数全部用具体常量，
+/// ⚠️ 本函数全部用具体常量（无符号叶子）：符号叶子会让映射比较 + 展开状态爆炸
+/// （P8 实测符号 exec_state + 具体域列表被 WSL 内存打断）。
 /// 仅验证 `evaluate_domain` 自身的 match 分支与路径解析逻辑，覆盖目标不变。
 pub(crate) fn concrete_exec_state() -> JsonValue {
-    let mut payload = BTreeMap::new();
+    let mut payload = ObjectMap::new();
     payload.insert("x".to_string(), JsonValue::Integer(1));
     payload.insert("y".to_string(), JsonValue::Integer(2));
     payload.insert(
@@ -164,41 +106,41 @@ pub(crate) fn concrete_exec_state() -> JsonValue {
             JsonValue::object_from_pairs(&[("name", JsonValue::string("b"))]),
         ]),
     );
-    let mut exec = BTreeMap::new();
+    let mut exec = ObjectMap::new();
     exec.insert(
         "instruction".to_string(),
         JsonValue::object_from_pairs(&[("type", JsonValue::string("set"))]),
     );
     exec.insert("payload".to_string(), JsonValue::Object(payload));
     exec.insert("queue".to_string(), JsonValue::Array(Vec::new()));
-    let mut root = BTreeMap::new();
+    let mut root = ObjectMap::new();
     root.insert("__exec__".to_string(), JsonValue::Object(exec));
     JsonValue::Object(root)
 }
 
-/// 构造**单键最简** exec_state：`{ __exec__: { payload: { x: 1 } } }`（每层 BTreeMap 仅 1 键）。
+/// 构造**单键最简** exec_state：`{ __exec__: { payload: { x: 1 } } }`（每层 ObjectMap 仅 1 键）。
 ///
-/// ⚠️ Kani 对 BTreeMap（红黑树）展开成本极高：键越多、树越深，CBMC 查找路径越多。
-/// P8 系列实测多键 `concrete_exec_state()`（4+ 键 × 3 层）展开 ≥3GB 不收敛；
-/// 本函数每层仅 1 键（红黑树深度 0，get 只需 1 次比较），大幅降低展开量。
-/// 若仍不收敛，可进一步用 `resolve_path` 纯数组 state（见 P4 系列经验）。
+/// 历史教训：Kani 对 BTreeMap（红黑树）展开成本极高（键越多、树越深，CBMC 查找路径越多），
+/// P8 系列实测多键 `concrete_exec_state()`（4+ 键 × 3 层）展开 ≥3GB 不收敛。
+/// 2026-09-13 起 kani 构建下 ObjectMap 已切换为 KaniMap（有序 Vec，见 value.rs），
+/// 多键不再爆炸；本函数保留单键最小状态以进一步压低展开规模。
 pub(crate) fn single_key_exec_state() -> JsonValue {
-    let mut payload = BTreeMap::new();
+    let mut payload = ObjectMap::new();
     payload.insert("x".to_string(), JsonValue::Integer(1));
-    let mut exec = BTreeMap::new();
+    let mut exec = ObjectMap::new();
     exec.insert("payload".to_string(), JsonValue::Object(payload));
-    let mut root = BTreeMap::new();
+    let mut root = ObjectMap::new();
     root.insert("__exec__".to_string(), JsonValue::Object(exec));
     JsonValue::Object(root)
 }
 
 /// 以给定 payload 内容构造完整 exec_state（供 P15/P16/P17/P18 传入具体 payload）。
-pub(crate) fn state_with_payload(payload: BTreeMap<String, JsonValue>) -> JsonValue {
-    let mut exec = BTreeMap::new();
+pub(crate) fn state_with_payload(payload: ObjectMap) -> JsonValue {
+    let mut exec = ObjectMap::new();
     exec.insert("instruction".to_string(), JsonValue::string("noop"));
     exec.insert("payload".to_string(), JsonValue::Object(payload));
     exec.insert("queue".to_string(), JsonValue::Array(Vec::new()));
-    let mut root = BTreeMap::new();
+    let mut root = ObjectMap::new();
     root.insert("__exec__".to_string(), JsonValue::Object(exec));
     JsonValue::Object(root)
 }

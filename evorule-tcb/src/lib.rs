@@ -56,4 +56,4 @@ pub mod value;
 pub use error::TcbError;
 pub use executor::META_INSTRUCTION_TYPES;
 pub use transition::{execute_transition, RuleHit, TransitionResult, MAX_TRANSFORM_RULES};
-pub use value::JsonValue;
+pub use value::{JsonValue, ObjectMap};

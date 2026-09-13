@@ -277,8 +277,7 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use crate::value::JsonValue;
-    use alloc::collections::BTreeMap;
+    use crate::value::{JsonValue, ObjectMap};
     use alloc::string::ToString;
     use alloc::vec;
 
@@ -286,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_resolve_path_simple() {
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         map.insert("x".to_string(), JsonValue::Integer(42));
         let state = JsonValue::Object(map);
 
@@ -298,9 +297,9 @@ mod tests {
 
     #[test]
     fn test_resolve_path_nested() {
-        let mut inner = BTreeMap::new();
+        let mut inner = ObjectMap::new();
         inner.insert("value".to_string(), JsonValue::Integer(99));
-        let mut outer = BTreeMap::new();
+        let mut outer = ObjectMap::new();
         outer.insert("data".to_string(), JsonValue::Object(inner));
         let state = JsonValue::Object(outer);
 
@@ -328,12 +327,12 @@ mod tests {
 
     #[test]
     fn test_resolve_path_mixed() {
-        let mut item1 = BTreeMap::new();
+        let mut item1 = ObjectMap::new();
         item1.insert("name".to_string(), JsonValue::string("alpha"));
-        let mut item2 = BTreeMap::new();
+        let mut item2 = ObjectMap::new();
         item2.insert("name".to_string(), JsonValue::string("beta"));
         let items = JsonValue::array(vec![JsonValue::Object(item1), JsonValue::Object(item2)]);
-        let mut outer = BTreeMap::new();
+        let mut outer = ObjectMap::new();
         outer.insert("items".to_string(), items);
         let state = JsonValue::Object(outer);
 
@@ -350,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_resolve_path_escaped() {
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         map.insert("data.version".to_string(), JsonValue::Integer(42));
         let state = JsonValue::Object(map);
 
@@ -365,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_resolve_path_mut_basic() {
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         map.insert("x".to_string(), JsonValue::Integer(42));
         let mut state = JsonValue::Object(map);
 
@@ -377,9 +376,9 @@ mod tests {
 
     #[test]
     fn test_resolve_path_mut_nested() {
-        let mut inner = BTreeMap::new();
+        let mut inner = ObjectMap::new();
         inner.insert("value".to_string(), JsonValue::Integer(1));
-        let mut outer = BTreeMap::new();
+        let mut outer = ObjectMap::new();
         outer.insert("data".to_string(), JsonValue::Object(inner));
         let mut state = JsonValue::Object(outer);
 
@@ -408,7 +407,7 @@ mod tests {
 
     #[test]
     fn test_resolve_path_mut_nonexistent_returns_none() {
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         map.insert("x".to_string(), JsonValue::Integer(42));
         let mut state = JsonValue::Object(map);
 
@@ -421,7 +420,7 @@ mod tests {
 
     #[test]
     fn test_resolve_path_special_chars_in_field_name() {
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         map.insert("field_name".to_string(), JsonValue::Integer(1));
         map.insert("field-name".to_string(), JsonValue::Integer(2));
         map.insert("__exec__".to_string(), JsonValue::Integer(3));
@@ -455,9 +454,9 @@ mod tests {
 
     #[test]
     fn test_resolve_path_double_dot_returns_none() {
-        let mut inner = BTreeMap::new();
+        let mut inner = ObjectMap::new();
         inner.insert("y".to_string(), JsonValue::Integer(1));
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         map.insert("x".to_string(), JsonValue::Object(inner));
         let state = JsonValue::Object(map);
 
@@ -467,10 +466,10 @@ mod tests {
     #[test]
     fn test_resolve_path_consecutive_dots_after_index_returns_none() {
         // L1 回归：索引段后仅允许一个点号，连续点号非法
-        let mut inner = BTreeMap::new();
+        let mut inner = ObjectMap::new();
         inner.insert("name".to_string(), JsonValue::string("alpha"));
         let items = JsonValue::array(vec![JsonValue::Object(inner)]);
-        let mut outer = BTreeMap::new();
+        let mut outer = ObjectMap::new();
         outer.insert("items".to_string(), items);
         let state = JsonValue::Object(outer);
 
@@ -488,7 +487,7 @@ mod tests {
 
     #[test]
     fn test_resolve_path_leading_dot_returns_none() {
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         map.insert("x".to_string(), JsonValue::Integer(1));
         let state = JsonValue::Object(map);
 
@@ -504,7 +503,7 @@ mod tests {
 
     #[test]
     fn test_resolve_path_on_non_array_returns_none() {
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         map.insert("x".to_string(), JsonValue::Integer(1));
         let state = JsonValue::Object(map);
 
@@ -513,7 +512,7 @@ mod tests {
 
     #[test]
     fn test_resolve_path_escaped_bracket() {
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         map.insert("data[0]".to_string(), JsonValue::Integer(42));
         let state = JsonValue::Object(map);
 
@@ -531,10 +530,10 @@ mod tests {
 
     #[test]
     fn test_resolve_path_missing_closing_bracket_with_field_returns_none() {
-        let mut inner = BTreeMap::new();
+        let mut inner = ObjectMap::new();
         inner.insert("name".to_string(), JsonValue::string("alpha"));
         let items = JsonValue::array(vec![JsonValue::Object(inner)]);
-        let mut outer = BTreeMap::new();
+        let mut outer = ObjectMap::new();
         outer.insert("items".to_string(), items);
         let state = JsonValue::Object(outer);
 
@@ -549,10 +548,10 @@ mod tests {
 
     #[test]
     fn test_resolve_path_no_separator_after_bracket_with_field_returns_none() {
-        let mut inner = BTreeMap::new();
+        let mut inner = ObjectMap::new();
         inner.insert("name".to_string(), JsonValue::string("alpha"));
         let items = JsonValue::array(vec![JsonValue::Object(inner)]);
-        let mut outer = BTreeMap::new();
+        let mut outer = ObjectMap::new();
         outer.insert("items".to_string(), items);
         let state = JsonValue::Object(outer);
 
@@ -564,7 +563,7 @@ mod tests {
         let row0 = JsonValue::array(vec![JsonValue::Integer(10), JsonValue::Integer(20)]);
         let row1 = JsonValue::array(vec![JsonValue::Integer(30), JsonValue::Integer(40)]);
         let matrix = JsonValue::array(vec![row0, row1]);
-        let mut outer = BTreeMap::new();
+        let mut outer = ObjectMap::new();
         outer.insert("matrix".to_string(), matrix);
         let state = JsonValue::Object(outer);
 
@@ -581,7 +580,7 @@ mod tests {
     #[test]
     fn test_resolve_path_dot_then_bracket_works() {
         let arr = JsonValue::array(vec![JsonValue::Integer(10), JsonValue::Integer(20)]);
-        let mut outer = BTreeMap::new();
+        let mut outer = ObjectMap::new();
         outer.insert("data".to_string(), arr);
         let state = JsonValue::Object(outer);
 
@@ -609,19 +608,19 @@ mod tests {
 
     #[test]
     fn test_resolve_path_mut_index_with_missing_field_on_object_returns_none() {
-        let mut state = JsonValue::Object(BTreeMap::new());
+        let mut state = JsonValue::Object(ObjectMap::new());
         assert_eq!(resolve_path_mut(&mut state, "a[0]"), None);
     }
 
     #[test]
     fn test_resolve_path_trailing_backslash_returns_none() {
-        let state = JsonValue::Object(BTreeMap::new());
+        let state = JsonValue::Object(ObjectMap::new());
         assert_eq!(resolve_path(&state, "x\\"), None);
     }
 
     #[test]
     fn test_resolve_path_only_backslash_returns_none() {
-        let state = JsonValue::Object(BTreeMap::new());
+        let state = JsonValue::Object(ObjectMap::new());
         assert_eq!(resolve_path(&state, "\\"), None);
     }
 
@@ -635,7 +634,7 @@ mod tests {
     #[test]
     fn test_resolve_path_dot_before_bracket_works() {
         let arr = JsonValue::array(vec![JsonValue::Integer(10), JsonValue::Integer(20)]);
-        let mut outer = BTreeMap::new();
+        let mut outer = ObjectMap::new();
         outer.insert("data".to_string(), arr);
         let state = JsonValue::Object(outer);
 

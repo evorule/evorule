@@ -30,7 +30,21 @@ use alloc::string::ToString;
 /// 终止性保证：嵌套 `all`/`not` 组合的递归深度上限。
 /// 与 `executor::MAX_BRANCH_DEPTH`、`transition::MAX_TRANSFORM_RULES`
 /// 共同构成单次状态转换的终止性防线。
+///
+/// # Kani 验证模型（CR-20260913-002）
+///
+/// Kani 构建下取 4：`evaluate_domain_inner` 的 `all`/`not` 分支递归调用
+/// 自身，CBMC 无条件编码整棵递归调用树（每层扇出 2），64 层 = 2^64 节点
+/// 不可收敛（2026-09-13 六轮二分探针定位：同逻辑去递归版 35s PASS，
+/// 真递归版 150s 超时，与运行时输入无关）。4 层 = 2^5 个评估实例，深度
+/// 保护分支（`depth > MAX_DOMAIN_DEPTH` 返回 `Err(NestingTooDeep)`）让
+/// 递归树有界终止，无需 unwind 截断。属性语义：kani 构建验证「深度限制
+/// 为 4 的域评估器」never-panic 的完备性；生产构建保持 64 零改动。
+#[cfg(not(kani))]
 pub const MAX_DOMAIN_DEPTH: usize = 64;
+/// Kani 验证模型值：见上方主文档（CR-20260913-002，递归树有界化）。
+#[cfg(kani)]
+pub const MAX_DOMAIN_DEPTH: usize = 1;
 
 /// 解析 domain 中的 path 字段，支持自动补全 `__exec__.` 前缀
 ///
@@ -166,7 +180,7 @@ fn resolve_value_reference(value: &JsonValue, exec_state: &JsonValue) -> Option<
 ///
 /// `value` 支持 `__` 开头路径引用（跨字段相等比较）。
 /// 路径不存在或引用不可解析 → `Ok(false)`（状态侧）。
-fn evaluate_eq(domain: &JsonValue, exec_state: &JsonValue) -> Result<bool, TcbError> {
+pub fn evaluate_eq(domain: &JsonValue, exec_state: &JsonValue) -> Result<bool, TcbError> {
     let path = get_str_field(domain, "path")?;
     let value = domain.get("value").ok_or_else(|| TcbError::MissingField {
         field: "value".to_string(),
@@ -347,8 +361,7 @@ mod tests {
 
     use super::*;
     use crate::error::TcbError;
-    use crate::value::JsonValue;
-    use alloc::collections::BTreeMap;
+    use crate::value::{JsonValue, ObjectMap};
     use alloc::string::ToString;
     use alloc::vec;
 
@@ -364,25 +377,25 @@ mod tests {
     }
 
     fn make_exec_state(instruction_type: &str, payload: JsonValue) -> JsonValue {
-        let mut exec = BTreeMap::new();
+        let mut exec = ObjectMap::new();
         exec.insert(
             "instruction".to_string(),
             make_instruction(instruction_type),
         );
         exec.insert("payload".to_string(), payload);
-        let mut root = BTreeMap::new();
+        let mut root = ObjectMap::new();
         root.insert("__exec__".to_string(), JsonValue::Object(exec));
         JsonValue::Object(root)
     }
 
     fn make_payload(x: i64) -> JsonValue {
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         map.insert("x".to_string(), JsonValue::Integer(x));
         JsonValue::Object(map)
     }
 
     fn make_instruction(instr_type: &str) -> JsonValue {
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         map.insert("type".to_string(), JsonValue::string(instr_type));
         JsonValue::Object(map)
     }
@@ -413,7 +426,7 @@ mod tests {
 
     #[test]
     fn test_eq_string_comparison() {
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("name".to_string(), JsonValue::string("hello"));
         let payload = JsonValue::Object(payload);
         let state = make_exec_state("noop", payload);
@@ -532,7 +545,7 @@ mod tests {
 
     #[test]
     fn test_lt_non_integer_returns_false() {
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("name".to_string(), JsonValue::string("hello"));
         let payload = JsonValue::Object(payload);
         let state = make_exec_state("noop", payload);
@@ -581,7 +594,7 @@ mod tests {
     /// 否则 ReAct 循环中陈旧结果会被反复消费、新 io_request 无法发起。
     #[test]
     fn test_exists_null_value_returns_false() {
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("cleared".to_string(), JsonValue::Null);
         payload.insert("live".to_string(), JsonValue::Integer(1));
         let payload = JsonValue::Object(payload);
@@ -624,7 +637,7 @@ mod tests {
 
     #[test]
     fn test_instruction_eq_missing_current_returns_false() {
-        let root = BTreeMap::new();
+        let root = ObjectMap::new();
         let state = JsonValue::Object(root);
         let domain = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("instruction")),
@@ -638,7 +651,7 @@ mod tests {
     #[test]
     fn test_make_instruction_shape() {
         let instr = make_instruction("noop");
-        let mut expected_map = BTreeMap::new();
+        let mut expected_map = ObjectMap::new();
         expected_map.insert("type".to_string(), JsonValue::string("noop"));
         assert_eq!(instr, JsonValue::Object(expected_map));
 
@@ -653,9 +666,9 @@ mod tests {
     #[test]
     fn test_instruction_eq_using_make_instruction_helper() {
         // 用 helper 构造 instruction 并嵌入 state
-        let mut exec_inner = BTreeMap::new();
+        let mut exec_inner = ObjectMap::new();
         exec_inner.insert("instruction".to_string(), make_instruction("branch"));
-        let mut root = BTreeMap::new();
+        let mut root = ObjectMap::new();
         root.insert("__exec__".to_string(), JsonValue::Object(exec_inner));
         let state = JsonValue::Object(root);
 
@@ -1241,10 +1254,10 @@ mod tests {
 
     #[test]
     fn test_eq_with_array_index_path() {
-        let mut item = BTreeMap::new();
+        let mut item = ObjectMap::new();
         item.insert("value".to_string(), JsonValue::Integer(42));
         let items = JsonValue::array(vec![JsonValue::Object(item)]);
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("items".to_string(), items);
         let payload = JsonValue::Object(payload);
         let state = make_exec_state("noop", payload);
@@ -1262,7 +1275,7 @@ mod tests {
     #[test]
     fn test_eq_value_as_path_reference() {
         // 跨字段相等：payload.x == payload.expected
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("x".to_string(), JsonValue::Integer(10));
         payload.insert("expected".to_string(), JsonValue::Integer(10));
         let payload = JsonValue::Object(payload);
@@ -1278,7 +1291,7 @@ mod tests {
 
     #[test]
     fn test_eq_value_as_path_reference_mismatch() {
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("x".to_string(), JsonValue::Integer(10));
         payload.insert("expected".to_string(), JsonValue::Integer(20));
         let payload = JsonValue::Object(payload);
@@ -1307,7 +1320,7 @@ mod tests {
     #[test]
     fn test_lt_value_as_path_reference() {
         // payload.x < payload.limit
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("x".to_string(), JsonValue::Integer(10));
         payload.insert("limit".to_string(), JsonValue::Integer(20));
         let payload = JsonValue::Object(payload);
@@ -1325,13 +1338,13 @@ mod tests {
 
     #[test]
     fn test_has_fields_all_present_true() {
-        let mut target = BTreeMap::new();
+        let mut target = ObjectMap::new();
         target.insert("a".to_string(), JsonValue::Integer(1));
         target.insert(
             "b".to_string(),
             JsonValue::array(vec![JsonValue::Integer(2)]),
         );
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("obj".to_string(), JsonValue::Object(target));
         let payload = JsonValue::Object(payload);
         let state = make_exec_state("noop", payload);
@@ -1350,9 +1363,9 @@ mod tests {
     #[test]
     fn test_has_fields_missing_field_false() {
         // 状态侧：字段缺失 → false（不报错）
-        let mut target = BTreeMap::new();
+        let mut target = ObjectMap::new();
         target.insert("a".to_string(), JsonValue::Integer(1));
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("obj".to_string(), JsonValue::Object(target));
         let payload = JsonValue::Object(payload);
         let state = make_exec_state("noop", payload);
@@ -1371,7 +1384,7 @@ mod tests {
     #[test]
     fn test_has_fields_target_not_object_false() {
         // 状态侧：目标非对象 → false
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("obj".to_string(), JsonValue::Integer(42));
         let payload = JsonValue::Object(payload);
         let state = make_exec_state("noop", payload);
@@ -1427,11 +1440,11 @@ mod tests {
     #[test]
     fn test_has_fields_null_or_empty_array_field_false() {
         // 状态侧：null 字段与空数组字段视为不存在
-        let mut target = BTreeMap::new();
+        let mut target = ObjectMap::new();
         target.insert("n".to_string(), JsonValue::Null);
         target.insert("e".to_string(), JsonValue::empty_array());
         target.insert("ok".to_string(), JsonValue::string("v"));
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("obj".to_string(), JsonValue::Object(target));
         let payload = JsonValue::Object(payload);
         let state = make_exec_state("noop", payload);

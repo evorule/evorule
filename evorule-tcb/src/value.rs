@@ -15,10 +15,192 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::fmt;
 
+#[cfg(not(kani))]
 use alloc::collections::BTreeMap;
 
+/// Kani 验证专用 Object 后端：有序 `Vec` 模拟 `BTreeMap`（`cfg(kani)` 下启用）
+///
+/// # 根因（2026-09-13 探针实测，B 档 23 个 proof 超时定位）
+///
+/// Kani 0.67 的 CBMC 后端对 `BTreeMap` 红黑树建模：插入 ≥2 键即状态爆炸
+/// （90s+ 不收敛，加大 unwind 无改善）；有序 `Vec` 3 键 insert + get 仅 2-3s。
+/// `Vec` 无指针追踪、无递归树遍历，CBMC 线性展开即可覆盖。
+///
+/// # 语义等价保证
+///
+/// - 条目始终按键字典序排列（`insert` 线性定位 + 位置插入维护不变式），
+///   `iter()` 迭代顺序与 `BTreeMap` 一致；
+/// - API 与 `BTreeMap<String, JsonValue>` 的 TCB/reactor 在用方法签名兼容
+///   （`get`/`get_mut`/`insert`/`remove`/`contains_key`/`values`/`iter` 等）；
+/// - 生产构建（`cfg(not(kani))`）零影响，`ObjectMap` 仍为 `BTreeMap`。
+#[cfg(kani)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KaniMap {
+    /// 有序条目（键字典序，`insert` 维护）
+    entries: Vec<(String, JsonValue)>,
+}
+
+/// Kani 验证专用 no-op Drop（同 JsonValue 的 no-op Drop，根因见其文档注释）：
+/// 阻止编译器合成 entries 字段的递归析构（Vec → slice 逐元素 → String 的
+/// RawVec::deallocate），后者在 CBMC 中逐迭代展开（实测 verify_evaluate_domain_eq
+/// 11GB+ OOM，unwind 日志见 Vec<(String, JsonValue)>/KaniMap drop 链迭代 10-13 层）。
+#[cfg(kani)]
+impl Drop for KaniMap {
+    fn drop(&mut self) {
+        // Same true-no-op pattern as JsonValue Drop: take leaves an empty Vec,
+        // forget skips destructing the taken entries; synthesized field drop then
+        // destructs an empty Vec (nothing).
+        let leaked = core::mem::take(&mut self.entries);
+        core::mem::forget(leaked);
+    }
+}
+
+#[cfg(kani)]
+impl KaniMap {
+    /// 键定位：命中返回 `Ok(下标)`；未命中返回 `Err(插入点)`（首个大于 key 的位置）
+    fn locate(&self, key: &str) -> Result<usize, usize> {
+        for (i, (k, _)) in self.entries.iter().enumerate() {
+            if k.as_str() == key {
+                return Ok(i);
+            }
+            if k.as_str() > key {
+                return Err(i);
+            }
+        }
+        Err(self.entries.len())
+    }
+
+    /// 构造空映射
+    pub fn new() -> Self {
+        KaniMap {
+            entries: Vec::new(),
+        }
+    }
+
+    /// 插入或更新，返回旧值（语义与 `BTreeMap::insert` 一致）
+    pub fn insert(&mut self, key: String, value: JsonValue) -> Option<JsonValue> {
+        match self.locate(&key) {
+            Ok(i) => self
+                .entries
+                .get_mut(i)
+                .map(|slot| core::mem::replace(&mut slot.1, value)),
+            Err(pos) => {
+                self.entries.insert(pos, (key, value));
+                None
+            }
+        }
+    }
+
+    /// 查找（语义与 `BTreeMap::get` 一致）
+    pub fn get(&self, key: &str) -> Option<&JsonValue> {
+        match self.locate(key) {
+            Ok(i) => self.entries.get(i).map(|(_, v)| v),
+            Err(_) => None,
+        }
+    }
+
+    /// 可变查找（语义与 `BTreeMap::get_mut` 一致）
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut JsonValue> {
+        match self.locate(key) {
+            Ok(i) => match self.entries.get_mut(i) {
+                Some((_, v)) => Some(v),
+                None => None,
+            },
+            Err(_) => None,
+        }
+    }
+
+    /// 移除并返回旧值（语义与 `BTreeMap::remove` 一致）
+    pub fn remove(&mut self, key: &str) -> Option<JsonValue> {
+        match self.locate(key) {
+            Ok(i) => {
+                let (_, value) = self.entries.remove(i);
+                Some(value)
+            }
+            Err(_) => None,
+        }
+    }
+
+    /// 键存在性检查（语义与 `BTreeMap::contains_key` 一致）
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.locate(key).is_ok()
+    }
+
+    /// 值迭代器（语义与 `BTreeMap::values` 一致）
+    pub fn values(&self) -> impl Iterator<Item = &JsonValue> {
+        self.entries.iter().map(|(_, v)| v)
+    }
+
+    /// 有序条目迭代器（迭代顺序与 `BTreeMap::iter` 一致，键字典序）
+    pub fn iter(&self) -> core::slice::Iter<'_, (String, JsonValue)> {
+        self.entries.iter()
+    }
+
+    /// 条目数
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// 是否为空
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// 清空全部条目
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+
+#[cfg(kani)]
+impl Default for KaniMap {
+    fn default() -> Self {
+        KaniMap::new()
+    }
+}
+
+#[cfg(kani)]
+impl<'a> IntoIterator for &'a KaniMap {
+    type Item = &'a (String, JsonValue);
+    type IntoIter = core::slice::Iter<'a, (String, JsonValue)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.iter()
+    }
+}
+
+#[cfg(kani)]
+impl IntoIterator for KaniMap {
+    type Item = (String, JsonValue);
+    type IntoIter = alloc::vec::IntoIter<(String, JsonValue)>;
+
+    fn into_iter(mut self) -> Self::IntoIter {
+        // mem::take: whole-value move (partial move-out rejected for Drop types)
+        core::mem::take(&mut self.entries).into_iter()
+    }
+}
+
+#[cfg(kani)]
+impl<const N: usize> From<[(String, JsonValue); N]> for KaniMap {
+    fn from(arr: [(String, JsonValue); N]) -> Self {
+        let mut map = KaniMap::new();
+        for (k, v) in arr {
+            map.insert(k, v);
+        }
+        map
+    }
+}
+
 /// Object 后端类型（BTreeMap 保证确定性迭代）
+///
+/// Kani 构建（`cfg(kani)`）下切换为 [`KaniMap`]：CBMC 对 `BTreeMap` 红黑树
+/// 插入 ≥2 键即状态爆炸（B 档 23 个 proof 超时根因，见 `KaniMap` 文档），
+/// 有序 `Vec` 后端 API 兼容、迭代序一致、生产行为零影响。
+#[cfg(not(kani))]
 pub type ObjectMap = BTreeMap<String, JsonValue>;
+/// Kani 构建下的 `ObjectMap`（见上方文档）。
+#[cfg(kani)]
+pub type ObjectMap = KaniMap;
 
 /// JSON 值类型（确定性实现）
 ///
@@ -71,6 +253,42 @@ pub enum JsonValue {
     Array(Vec<JsonValue>),
     /// 对象（键值对，使用 `BTreeMap` 保证确定性顺序）
     Object(ObjectMap),
+}
+
+/// Kani 验证专用 no-op Drop：跳过 JsonValue 递归析构建模
+///
+/// 根因（2026-09-13 探针实测）：JsonValue 默认 Drop 递归释放 Vec/ObjectMap，
+/// CBMC 对每层析构做全路径展开，即使输入全为具体常量，中间临时对象
+/// （to_string 产物、object_from_pairs 层间值、evaluate_domain 内部临时值）
+/// 的析构仍会状态爆炸（verify_evaluate_domain_eq 11GB+ 不收敛）。
+/// Kani 构建无真实释放需求（验证进程退出即回收），
+/// no-op Drop 使 CBMC 跳过析构展开；生产构建（cfg(not(kani))）保持默认 Drop，零影响。
+#[cfg(kani)]
+impl Drop for JsonValue {
+    fn drop(&mut self) {
+        // Rust Drop semantics: drop_in_place = user Drop::drop THEN compiler-
+        // synthesized field drops. An empty body does NOT suppress recursive field
+        // destruction (measured: 11GB+ CBMC OOM, drop-chain iterations 10-13). True
+        // no-op: swap self to fieldless Null and forget the old value, so the
+        // subsequent synthesized field drops act on Null (no recursion).
+        let leaked = core::mem::replace(self, JsonValue::Null);
+        core::mem::forget(leaked);
+    }
+}
+
+/// Kani build: static Null reference (explicit `impl Drop` blocks rvalue
+/// promotion of `&JsonValue::Null`, see E0515); non-kani keeps promotion path.
+#[cfg(kani)]
+static NULL_VALUE: JsonValue = JsonValue::Null;
+
+#[cfg(not(kani))]
+fn null_ref() -> &'static JsonValue {
+    &JsonValue::Null
+}
+
+#[cfg(kani)]
+fn null_ref() -> &'static JsonValue {
+    &NULL_VALUE
 }
 
 // 手动实现 PartialEq 以保证跨语言一致性
@@ -353,17 +571,24 @@ impl JsonValue {
     /// assert!(obj.try_insert("k".to_string(), JsonValue::Integer(2)).is_err());
     /// ```
     pub fn try_insert(&mut self, key: String, value: JsonValue) -> Result<(), &JsonValue> {
-        use alloc::collections::btree_map::Entry;
-
+        // 后端无关实现（BTreeMap / KaniMap 通用）：命中返回既有值的引用，
+        // 未命中插入。不使用 BTreeMap 专有的 Entry API，保证 cfg(kani) 下
+        // ObjectMap 切换为 KaniMap 后同一份源码可直接编译。
+        // contains_key 先行判定（返回 bool 不持有借用），get 借用与
+        // insert 可变借用分离，满足 NLL。
         match self {
-            JsonValue::Object(map) => match map.entry(key) {
-                Entry::Occupied(e) => Err(&*e.into_mut()),
-                Entry::Vacant(v) => {
-                    v.insert(value);
+            JsonValue::Object(map) => {
+                if map.contains_key(&key) {
+                    match map.get(&key) {
+                        Some(existing) => Err(existing),
+                        None => Err(null_ref()),
+                    }
+                } else {
+                    map.insert(key, value);
                     Ok(())
                 }
-            },
-            _ => Err(&JsonValue::Null),
+            }
+            _ => Err(null_ref()),
         }
     }
 
@@ -886,25 +1111,25 @@ mod tests {
 
     #[test]
     fn test_partial_eq_object() {
-        let mut a = BTreeMap::new();
+        let mut a = ObjectMap::new();
         a.insert("x".to_string(), JsonValue::Integer(1));
         a.insert("y".to_string(), JsonValue::Integer(2));
-        let mut b = BTreeMap::new();
+        let mut b = ObjectMap::new();
         b.insert("x".to_string(), JsonValue::Integer(1));
         b.insert("y".to_string(), JsonValue::Integer(2));
         assert_eq!(JsonValue::object(a.clone()), JsonValue::object(b));
 
-        let mut c = BTreeMap::new();
+        let mut c = ObjectMap::new();
         c.insert("x".to_string(), JsonValue::Integer(1));
         c.insert("y".to_string(), JsonValue::Integer(99));
         assert_ne!(JsonValue::object(a.clone()), JsonValue::object(c));
 
-        let mut d = BTreeMap::new();
+        let mut d = ObjectMap::new();
         d.insert("x".to_string(), JsonValue::Integer(1));
         d.insert("z".to_string(), JsonValue::Integer(2));
         assert_ne!(JsonValue::object(a.clone()), JsonValue::object(d));
 
-        let mut e = BTreeMap::new();
+        let mut e = ObjectMap::new();
         e.insert("x".to_string(), JsonValue::Integer(1));
         assert_ne!(JsonValue::object(a), JsonValue::object(e));
     }
@@ -926,9 +1151,9 @@ mod tests {
         assert!(JsonValue::Integer(0) < JsonValue::Integer(1));
         assert!(JsonValue::string("a") < JsonValue::string("b"));
 
-        let mut short = BTreeMap::new();
+        let mut short = ObjectMap::new();
         short.insert("a".to_string(), JsonValue::Integer(1));
-        let mut long = BTreeMap::new();
+        let mut long = ObjectMap::new();
         long.insert("a".to_string(), JsonValue::Integer(1));
         long.insert("b".to_string(), JsonValue::Integer(2));
         assert!(JsonValue::object(short) < JsonValue::object(long));
