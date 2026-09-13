@@ -65,7 +65,7 @@ flate2 = { version = "1.0", features = ["rust_backend"] } # P05：审计链 gzip
 # G-A1：审计锚点签名（真实性/防抵赖）。ed25519（RFC 8032）确定性签名，无 RNG，兼容确定性执行纪律
 ed25519-dalek = "2"
 # G-A1：仅密钥生成（一次性运维）用 OS 熵源，不进入确定性执行路径
-getrandom = { version = "0.2", features = ["std"] }
+getrandom = { version = "0.4", features = ["std"] }
 
 # H6: HTTP API 依赖已迁移到 evorule-server（axum/tower/tower-http/tower_governor/governor/subtle）
 # 核心层不再包含 HTTP 路由处理（机制-策略分离）
