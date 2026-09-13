@@ -16,14 +16,13 @@
 
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use evorule_tcb::domain::evaluate_domain;
+use evorule_tcb::domain::{evaluate_domain, MAX_DOMAIN_DEPTH};
 use evorule_tcb::executor::{execute_meta_instruction, MetaInstructionResult, MAX_BRANCH_DEPTH};
 use evorule_tcb::path::resolve_path;
-use evorule_tcb::{execute_transition, JsonValue, TcbError, TransitionResult, MAX_TRANSFORM_RULES};
+use evorule_tcb::{execute_transition, JsonValue, ObjectMap, TcbError, TransitionResult, MAX_TRANSFORM_RULES};
 
 use super::model;
 
@@ -214,15 +213,15 @@ fn verify_array_index_bounds() {
 // ==================== Layer 3: 域评估层 ====================
 
 /// P8a: evaluate_domain eq 永不 panic
-/// ⚠️ exec_state 用单键 BTreeMap（`single_key_exec_state`），避免多键红黑树展开。
-/// 路径 "payload.x"（9 字符）parse 循环需 10 次展开，unwind=12 留余量。
+/// ⚠️ exec_state 用单键 ObjectMap（`single_key_exec_state`，kani 构建下即 KaniMap）控制展开规模。
+/// 路径 "payload.x"（9 字符）parse 循环需 10 次展开，unwind=24 留余量。
 #[kani::proof]
-#[kani::unwind(12)]
+#[kani::unwind(24)]
 fn verify_evaluate_domain_eq_never_panics() {
     let exec_state = model::single_key_exec_state();
     let domain = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("eq")),
-        ("path", JsonValue::string("__exec__.payload.x")),
+        ("path", JsonValue::string("payload.x")),
         ("value", JsonValue::Integer(1)),
     ]);
     let _ = evaluate_domain(&domain, &exec_state);
@@ -232,12 +231,12 @@ fn verify_evaluate_domain_eq_never_panics() {
 
 /// P8b: evaluate_domain lt 永不 panic
 #[kani::proof]
-#[kani::unwind(12)]
+#[kani::unwind(24)]
 fn verify_evaluate_domain_lt_never_panics() {
     let exec_state = model::single_key_exec_state();
     let domain = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("lt")),
-        ("path", JsonValue::string("__exec__.payload.x")),
+        ("path", JsonValue::string("payload.x")),
         ("value", JsonValue::Integer(1)),
     ]);
     let _ = evaluate_domain(&domain, &exec_state);
@@ -247,12 +246,12 @@ fn verify_evaluate_domain_lt_never_panics() {
 
 /// P8c: evaluate_domain exists 永不 panic
 #[kani::proof]
-#[kani::unwind(12)]
+#[kani::unwind(24)]
 fn verify_evaluate_domain_exists_never_panics() {
     let exec_state = model::single_key_exec_state();
     let domain = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("exists")),
-        ("path", JsonValue::string("__exec__.payload.x")),
+        ("path", JsonValue::string("payload.x")),
     ]);
     let _ = evaluate_domain(&domain, &exec_state);
     core::mem::forget(exec_state);
@@ -261,9 +260,9 @@ fn verify_evaluate_domain_exists_never_panics() {
 
 /// P8d: evaluate_domain instruction 永不 panic
 /// 无路径解析（instruction 域直接读 state 的 instruction 字段）。
-/// ⚠️ 仍用单键 exec_state 避免 BTreeMap 红黑树展开。
+/// ⚠️ 仍用单键 exec_state（kani 构建下即 KaniMap）控制展开规模。
 #[kani::proof]
-#[kani::unwind(16)]
+#[kani::unwind(24)]
 fn verify_evaluate_domain_instruction_never_panics() {
     let exec_state = model::single_key_exec_state();
     let domain = JsonValue::object_from_pairs(&[
@@ -291,7 +290,7 @@ fn verify_evaluate_domain_all_never_panics() {
 
 /// P8f: evaluate_domain not 永不 panic
 #[kani::proof]
-#[kani::unwind(12)]
+#[kani::unwind(24)]
 fn verify_evaluate_domain_not_never_panics() {
     let exec_state = model::single_key_exec_state();
     let domain = JsonValue::object_from_pairs(&[
@@ -300,7 +299,7 @@ fn verify_evaluate_domain_not_never_panics() {
             "inner",
             JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("exists")),
-                ("path", JsonValue::string("__exec__.payload.x")),
+                ("path", JsonValue::string("payload.x")),
             ]),
         ),
     ]);
@@ -312,12 +311,12 @@ fn verify_evaluate_domain_not_never_panics() {
 /// P8g: evaluate_domain has_fields 永不 panic
 /// ⚠️ 单键 exec_state 不含 obj.flag，故 domain 路径指向不存在字段（覆盖缺失分支）。
 #[kani::proof]
-#[kani::unwind(12)]
+#[kani::unwind(24)]
 fn verify_evaluate_domain_has_fields_never_panics() {
     let exec_state = model::single_key_exec_state();
     let domain = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("has_fields")),
-        ("path", JsonValue::string("__exec__.payload.x")),
+        ("path", JsonValue::string("payload.x")),
         ("fields", JsonValue::array(vec![JsonValue::string("flag")])),
     ]);
     let _ = evaluate_domain(&domain, &exec_state);
@@ -333,7 +332,7 @@ fn verify_evaluate_domain_has_fields_never_panics() {
 fn verify_evaluate_domain_deterministic() {
     let domain = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("eq")),
-        ("path", JsonValue::string("__exec__.payload.x")),
+        ("path", JsonValue::string("payload.x")),
         ("value", JsonValue::Integer(1)),
     ]);
     let exec_state = model::concrete_exec_state();
@@ -341,19 +340,19 @@ fn verify_evaluate_domain_deterministic() {
     let _ = evaluate_domain(&domain, &exec_state);
 }
 
-/// P10: 深度限制生效（MAX_DOMAIN_DEPTH=64）
-/// 用具体深嵌套输入（嵌套 65 层 not）验证不 panic 且深度分支可达。
+/// P10: 深度限制生效（kani 构建下 MAX_DOMAIN_DEPTH=4，CR-20260913-002；生产构建为 64）
+/// 用具体深嵌套输入（嵌套 MAX_DOMAIN_DEPTH+1 层 not）验证不 panic 且深度分支可达。
 /// 注：evaluate_domain_inner 与 MAX_DOMAIN_DEPTH 均为私有，只能经 evaluate_domain 间接验证。
-/// unwind 需 > 65（evaluate_domain_inner 递归 65 层后到达深度保护分支）。
+/// unwind 需 > 5（evaluate_domain_inner 递归 5 层后到达深度保护分支）。
 /// exec_state 用完全具体实例避免状态爆炸。
 #[kani::proof]
-#[kani::unwind(70)]
+#[kani::unwind(12)]
 fn verify_domain_depth_limit() {
     let mut domain = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("exists")),
-        ("path", JsonValue::string("__exec__.payload.x")),
+        ("path", JsonValue::string("payload.x")),
     ]);
-    for _ in 0..65 {
+    for _ in 0..(MAX_DOMAIN_DEPTH + 1) {
         domain =
             JsonValue::object_from_pairs(&[("type", JsonValue::string("not")), ("inner", domain)]);
     }
@@ -497,7 +496,7 @@ fn verify_collect_safe_with_after() {
             ]),
         ),
     ]);
-    let mut map = BTreeMap::new();
+    let mut map = ObjectMap::new();
     map.insert(
         "items".to_string(),
         JsonValue::Array(vec![
@@ -528,7 +527,7 @@ fn verify_merge_safe() {
             ]),
         ),
     ]);
-    let state = model::state_with_payload(BTreeMap::from([
+    let state = model::state_with_payload(ObjectMap::from([
         (
             "messages".to_string(),
             JsonValue::Array(vec![JsonValue::object_from_pairs(&[
@@ -575,7 +574,7 @@ fn verify_substitute_template_never_panics() {
             ]),
         ),
     ]);
-    let state = model::state_with_payload(BTreeMap::from([(
+    let state = model::state_with_payload(ObjectMap::from([(
         "items".to_string(),
         JsonValue::Array(vec![JsonValue::object_from_pairs(&[(
             "nested",
@@ -600,7 +599,7 @@ fn verify_io_request_safe() {
             ]),
         ),
     ]);
-    let state = model::state_with_payload(BTreeMap::new());
+    let state = model::state_with_payload(ObjectMap::new());
     let r = execute_meta_instruction(&instr, state, 0);
     assert!(r.is_ok(), "io_request 不应 panic");
 }
@@ -616,7 +615,7 @@ fn verify_io_request_safe() {
 
 /// P18a 专用：**全具体** exec_state（payload.x=1 / obj.flag / d=exists 域对象）。
 fn concrete_enforce_state() -> JsonValue {
-    let mut payload = BTreeMap::new();
+    let mut payload = ObjectMap::new();
     payload.insert("x".to_string(), JsonValue::Integer(1));
     payload.insert(
         "obj".to_string(),
@@ -689,14 +688,14 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
 
 /// 构造 type=enforce 指令（domain/reason 按开关放置，覆盖缺失字段错误路径）。
 fn enforce_instruction(domain: JsonValue, with_domain: bool, with_reason: bool) -> JsonValue {
-    let mut params = BTreeMap::new();
+    let mut params = ObjectMap::new();
     if with_domain {
         params.insert("domain".to_string(), domain);
     }
     if with_reason {
         params.insert("reason".to_string(), JsonValue::string("guard"));
     }
-    let mut instr = BTreeMap::new();
+    let mut instr = ObjectMap::new();
     instr.insert("type".to_string(), JsonValue::string("enforce"));
     instr.insert("params".to_string(), JsonValue::Object(params));
     JsonValue::Object(instr)
@@ -728,7 +727,7 @@ fn eq_enforce_instruction(v: i64) -> JsonValue {
 
 /// P18b/C 专用：**单键最小** exec_state（仅 payload.x，1 键 payload——同 P13 收敛规模）。
 fn minimal_state(x: i64) -> JsonValue {
-    let mut payload = BTreeMap::new();
+    let mut payload = ObjectMap::new();
     payload.insert("x".to_string(), JsonValue::Integer(x));
     model::state_with_payload(payload)
 }
@@ -839,3 +838,4 @@ fn verify_react_io_required() {
         Err(e) => panic!("unexpected error: {:?}", e),
     }
 }
+

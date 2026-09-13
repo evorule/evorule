@@ -105,3 +105,4 @@
 - 状态/证据列更新规则见 [MECHANISM.md](MECHANISM.md)（M1–M4）；任何状态变更须同步记入 [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md)（M5）；
 - 版本对齐（M4）：release 前核对本表快照版本与 `Cargo.toml` workspace version 一致（PR 模板检查项与 release.yml `release-gate` job 已挂接）。
 - 2026-09-12 阶段 3 文档核对结论：MUTANTS.md / mutants.yml / GOVERNANCE.md / .workflow/release.yml 无验证状态断言，VERSION_STRATEGY.md §4.2 为 1.0 发布条件性表述——均属实，无需状态修订；DETERMINISM_REPORT.md §3.4 测试计数为 v0.3.1 时点实况（已加版本锚定）。
+- 2026-09-13 B 档攻坚计划登记（CR-20260913-004 / [ADR-0002](../docs/adr/ADR-0002-B档proof模型载体与stub化验证策略.md)）：B 档 23 个 proof 状态本表不变（❌，M2/M6——攻坚产出经实测 + 证据归档后才逐属性转档）；A 档 14 个归档证据（`bdfb8d4`）因 value.rs 载体回退（CR-20260913-003 修订）SHA 绑定失效，Batch 1 重跑补新证据；属性表"模型偏差"列随 Phase 1 批次新增（届时按 M5 记 DISCLOSURE_LOG）。

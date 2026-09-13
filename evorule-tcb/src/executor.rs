@@ -699,14 +699,16 @@ fn resolve_instructions_list(
     for item in arr {
         match item {
             JsonValue::String(s) if s.starts_with("__") => {
-                let resolved = resolve_path(state, s).cloned().ok_or_else(|| {
+                let mut resolved = resolve_path(state, s).cloned().ok_or_else(|| {
                     TcbError::PathResolutionFailed {
                         path: s.to_string(),
                         reason: "path not found".to_string(),
                     }
                 })?;
-                if let JsonValue::Array(inner) = resolved {
-                    result.extend(inner);
+                // mem::take: whole-value move out via &mut borrow (partial move-out
+                // is rejected for types with Drop impl, e.g. cfg(kani) no-op Drop).
+                if let JsonValue::Array(inner) = &mut resolved {
+                    result.extend(core::mem::take(inner));
                 } else {
                     result.push(resolved);
                 }
@@ -1124,8 +1126,7 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use crate::value::JsonValue;
-    use alloc::collections::BTreeMap;
+    use crate::value::{JsonValue, ObjectMap};
     use alloc::string::ToString;
     use alloc::vec;
     use alloc::vec::Vec;
@@ -1137,14 +1138,14 @@ mod tests {
         payload: JsonValue,
         queue: Vec<JsonValue>,
     ) -> JsonValue {
-        let mut exec = BTreeMap::new();
+        let mut exec = ObjectMap::new();
         exec.insert(
             "instruction".to_string(),
             make_instruction(instruction_type, &[]),
         );
         exec.insert("payload".to_string(), payload);
         exec.insert("queue".to_string(), JsonValue::Array(queue));
-        let mut root = BTreeMap::new();
+        let mut root = ObjectMap::new();
         root.insert("__exec__".to_string(), JsonValue::Object(exec));
         JsonValue::Object(root)
     }
@@ -1154,17 +1155,17 @@ mod tests {
         payload: JsonValue,
         queue: Vec<JsonValue>,
     ) -> JsonValue {
-        let mut exec = BTreeMap::new();
+        let mut exec = ObjectMap::new();
         exec.insert("instruction".to_string(), instruction);
         exec.insert("payload".to_string(), payload);
         exec.insert("queue".to_string(), JsonValue::Array(queue));
-        let mut root = BTreeMap::new();
+        let mut root = ObjectMap::new();
         root.insert("__exec__".to_string(), JsonValue::Object(exec));
         JsonValue::Object(root)
     }
 
     fn make_payload(x: i64) -> JsonValue {
-        let mut map = BTreeMap::new();
+        let mut map = ObjectMap::new();
         map.insert("x".to_string(), JsonValue::Integer(x));
         JsonValue::Object(map)
     }
@@ -1276,7 +1277,7 @@ mod tests {
     /// 状态引用间接产生的 payload. 前缀同样被拒（守卫作用于解析后的最终 attr）
     #[test]
     fn test_set_state_ref_attr_resolving_to_payload_prefix_rejected() {
-        let mut params = BTreeMap::new();
+        let mut params = ObjectMap::new();
         params.insert("target".to_string(), JsonValue::string("payload.x"));
         let instruction = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("set")),
@@ -1427,9 +1428,9 @@ mod tests {
 
     #[test]
     fn test_set_nested_attr_path() {
-        let mut inner = BTreeMap::new();
+        let mut inner = ObjectMap::new();
         inner.insert("b".to_string(), JsonValue::Integer(1));
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("a".to_string(), JsonValue::Object(inner));
         let payload = JsonValue::Object(payload);
 
@@ -1453,9 +1454,9 @@ mod tests {
 
     #[test]
     fn test_set_nested_attr_create_field() {
-        let mut inner = BTreeMap::new();
+        let mut inner = ObjectMap::new();
         inner.insert("existing".to_string(), JsonValue::Integer(100));
-        let mut payload = BTreeMap::new();
+        let mut payload = ObjectMap::new();
         payload.insert("a".to_string(), JsonValue::Object(inner));
         let payload = JsonValue::Object(payload);
 
@@ -1689,8 +1690,8 @@ mod tests {
 
     #[test]
     fn test_set_nested_attr_through_null_intermediate() {
-        let mut payload = BTreeMap::new();
-        let mut audit = BTreeMap::new();
+        let mut payload = ObjectMap::new();
+        let mut audit = ObjectMap::new();
         audit.insert("evolve_request".to_string(), JsonValue::Null);
         payload.insert("audit".to_string(), JsonValue::Object(audit));
         let state = make_exec_state_with_instruction(
@@ -1718,8 +1719,8 @@ mod tests {
 
     #[test]
     fn test_set_nested_attr_through_scalar_intermediate_errors() {
-        let mut payload = BTreeMap::new();
-        let mut audit = BTreeMap::new();
+        let mut payload = ObjectMap::new();
+        let mut audit = ObjectMap::new();
         audit.insert("evolve_request".to_string(), JsonValue::Integer(42));
         payload.insert("audit".to_string(), JsonValue::Object(audit));
         let state = make_exec_state_with_instruction(
@@ -2880,8 +2881,7 @@ mod tests {
     // 这样 build.rs L1 门禁的 strip_test_mod 会把整个 mod tests 块一起剥掉）
     mod substitute_template_tests {
         use super::*;
-        use crate::value::JsonValue;
-        use alloc::collections::BTreeMap;
+        use crate::value::{JsonValue, ObjectMap};
 
         #[test]
         fn test_substitute_template_simple() {
@@ -2894,7 +2894,7 @@ mod tests {
 
         #[test]
         fn test_substitute_template_nested() {
-            let mut args = BTreeMap::new();
+            let mut args = ObjectMap::new();
             args.insert("city".to_string(), JsonValue::string("Beijing"));
             let item = JsonValue::object_from_pairs(&[
                 ("name", JsonValue::string("get_weather")),
@@ -2967,8 +2967,7 @@ mod tests {
 
     mod react_tests {
         use super::*;
-        use crate::value::JsonValue;
-        use alloc::collections::BTreeMap;
+        use crate::value::{JsonValue, ObjectMap};
         use alloc::vec;
 
         /// 构建包含 tool_calls 的 llm_response 状态
@@ -2986,7 +2985,7 @@ mod tests {
             ]);
 
             let tool_calls = JsonValue::array(vec![tool_call1, tool_call2]);
-            let mut llm_response = BTreeMap::new();
+            let mut llm_response = ObjectMap::new();
             llm_response.insert("tool_calls".to_string(), tool_calls);
             // 添加消息历史
             let messages = JsonValue::array(vec![JsonValue::object_from_pairs(&[
@@ -2995,14 +2994,14 @@ mod tests {
             ])]);
             llm_response.insert("messages".to_string(), messages);
 
-            let mut payload = BTreeMap::new();
+            let mut payload = ObjectMap::new();
             payload.insert("llm_response".to_string(), JsonValue::Object(llm_response));
 
-            let mut exec = BTreeMap::new();
+            let mut exec = ObjectMap::new();
             exec.insert("payload".to_string(), JsonValue::Object(payload));
             exec.insert("queue".to_string(), JsonValue::empty_array());
 
-            let mut root = BTreeMap::new();
+            let mut root = ObjectMap::new();
             root.insert("__exec__".to_string(), JsonValue::Object(exec));
             JsonValue::Object(root)
         }
@@ -3037,13 +3036,13 @@ mod tests {
 
         #[test]
         fn test_has_fields_empty_tool_calls_returns_false() {
-            let mut llm_response = BTreeMap::new();
+            let mut llm_response = ObjectMap::new();
             llm_response.insert("tool_calls".to_string(), JsonValue::empty_array());
-            let mut payload = BTreeMap::new();
+            let mut payload = ObjectMap::new();
             payload.insert("llm_response".to_string(), JsonValue::Object(llm_response));
-            let mut exec = BTreeMap::new();
+            let mut exec = ObjectMap::new();
             exec.insert("payload".to_string(), JsonValue::Object(payload));
-            let mut root = BTreeMap::new();
+            let mut root = ObjectMap::new();
             root.insert("__exec__".to_string(), JsonValue::Object(exec));
             let state = JsonValue::Object(root);
 
@@ -3447,7 +3446,7 @@ mod tests {
                     JsonValue::string("What's the weather in Beijing and Shanghai?"),
                 ),
             ])]);
-            let mut llm_response = BTreeMap::new();
+            let mut llm_response = ObjectMap::new();
             llm_response.insert("messages".to_string(), messages);
 
             let io_results = JsonValue::array(vec![
@@ -3461,7 +3460,7 @@ mod tests {
                 ]),
             ]);
 
-            let mut payload = BTreeMap::new();
+            let mut payload = ObjectMap::new();
             payload.insert("llm_response".to_string(), JsonValue::Object(llm_response));
             payload.insert("__io_results__".to_string(), io_results);
             let state = make_exec_state("merge_results", JsonValue::Object(payload), vec![]);
