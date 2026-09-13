@@ -23,6 +23,9 @@ on:
         required: false
         default: "360"
 
+# 显式最小权限 (Scorecard Token-Permissions): 变异测试仅需只读 (产物走 artifact 上传)
+permissions: read-all
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -33,15 +36,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           toolchain: stable
 
       - name: Cache cargo
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/.cargo/registry
@@ -68,7 +71,7 @@ jobs:
 
       - name: Upload mutation results
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: mutation-results
           path: |

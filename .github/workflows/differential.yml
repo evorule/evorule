@@ -51,6 +51,9 @@ on:
         required: false
         default: "256"
 
+# 显式最小权限 (Scorecard Token-Permissions): 默认只读, 写权限在需要的 job 单独声明
+permissions: read-all
+
 env:
   CARGO_TERM_COLOR: always
   # 默认 256 case(快速),CI 可通过 workflow_dispatch 提升至 1000
@@ -71,15 +74,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: rustfmt, clippy
 
       - name: Cache cargo
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/.cargo/registry
@@ -107,14 +110,18 @@ jobs:
     needs: differential-test
     if: always()
     timeout-minutes: 5
+    # PR 摘要评论需要写 issue/pull-request API
+    permissions:
+      issues: write
+      pull-requests: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Comment PR with summary
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const result = '${{ needs.differential-test.result }}';

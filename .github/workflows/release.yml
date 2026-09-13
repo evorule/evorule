@@ -18,9 +18,7 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-permissions:
-  contents: write
-  id-token: write   # cosign keyless 签名所需 OIDC token
+permissions: read-all
 
 env:
   CARGO_TERM_COLOR: always
@@ -38,7 +36,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: 核对 STATUS.md 快照版本 = tag 版本
         run: |
@@ -102,13 +100,13 @@ jobs:
             ext: ".exe"
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: . -> target
 
@@ -126,7 +124,7 @@ jobs:
         run: cargo build -p evorule-cli --release --target ${{ matrix.target }} --bin evorule
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: ${{ matrix.artifact }}
           path: target/${{ matrix.target }}/release/evorule${{ matrix.ext }}
@@ -139,23 +137,25 @@ jobs:
     name: sign (cosign keyless)
     needs: [build]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # cosign keyless 签名所需 OIDC token
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: 下载 Linux 构建产物
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-linux-x86_64
           path: sign/linux
 
       - name: 下载 Windows 构建产物
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-windows-x86_64
           path: sign/windows
 
       - name: 安装 cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
 
       - name: Keyless 签名 (OIDC)
         run: |
@@ -169,7 +169,7 @@ jobs:
           ls -la sigout
 
       - name: 上传签名产物
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: evorule-sigs
           path: sigout/
@@ -183,11 +183,11 @@ jobs:
     name: sbom (CycloneDX)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: . -> target
 
@@ -205,7 +205,7 @@ jobs:
           ls -la sbom/
 
       - name: 上传 SBOM 产物
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: evorule-sbom
           path: sbom/*.cdx.json
@@ -220,10 +220,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: 下载所有二进制
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           path: artifacts
           merge-multiple: true
@@ -240,19 +240,19 @@ jobs:
           ls -la artifacts/
 
       - name: 下载签名
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-sigs
           path: sigs
 
       - name: 下载 SBOM
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-sbom
           path: sbom
 
       - name: 创建 Release 并附加二进制与 SBOM
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
             artifacts/evorule-linux-x86_64
@@ -276,25 +276,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 下载 Linux 构建产物
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-linux-x86_64
           path: gitee-assets/linux
 
       - name: 下载 Windows 构建产物
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-windows-x86_64
           path: gitee-assets/windows
 
       - name: 下载签名
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-sigs
           path: gitee-assets/sigs
 
       - name: 下载 SBOM
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-sbom
           path: gitee-assets/sbom

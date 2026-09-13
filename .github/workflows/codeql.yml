@@ -1,0 +1,46 @@
+# CodeQL 静态分析 (A4 后续提分项: Scorecard SAST 0→高)
+#
+# 覆盖: Rust 全 workspace (tcb/reactor/governance/cli)
+# 触发: main push + 每周一 UTC 03:00 例行扫描
+# 结果: GitHub Security tab (Code Scanning alerts)
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+# 显式最小权限 (Scorecard Token-Permissions): 默认只读
+permissions: read-all
+
+jobs:
+  analyze:
+    name: analyze (rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      security-events: write   # 上传 SARIF 到 Code Scanning
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3
+        with:
+          languages: rust
+          # 零依赖 TCB 构建极快; autobuild 走 cargo build 默认路径
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3
+        with:
+          category: "/language:rust"
