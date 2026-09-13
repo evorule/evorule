@@ -363,6 +363,7 @@ pub mod kani_proofs;
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+    use evorule_tcb::ObjectMap;
     use crate::fact::FactId;
 
     // 辅助：创建带初始队列的 state
@@ -376,11 +377,10 @@ mod tests {
 
     // 辅助：构造 increment 指令
     fn increment_instr(attr: &str, delta: i64) -> JsonValue {
-        use std::collections::BTreeMap;
-        let mut params = BTreeMap::new();
+        let mut params = ObjectMap::new();
         params.insert("attr".to_string(), JsonValue::string(attr));
         params.insert("delta".to_string(), JsonValue::Integer(delta));
-        let mut instr = BTreeMap::new();
+        let mut instr = ObjectMap::new();
         instr.insert("type".to_string(), JsonValue::string("increment"));
         instr.insert("params".to_string(), JsonValue::Object(params));
         JsonValue::Object(instr)
@@ -411,7 +411,7 @@ mod tests {
                     JsonValue::Array(arr.into_iter().map(serde_to_tcb).collect())
                 }
                 serde_json::Value::Object(obj) => {
-                    let mut map = std::collections::BTreeMap::new();
+                    let mut map = ObjectMap::new();
                     for (k, v) in obj {
                         map.insert(k, serde_to_tcb(v));
                     }
@@ -455,11 +455,10 @@ mod tests {
 
     /// 辅助：构造 enforce 规则（单条 core_eval）
     fn enforce_core_eval(domain: JsonValue, reason: &str) -> Vec<JsonValue> {
-        use std::collections::BTreeMap;
-        let mut params = BTreeMap::new();
+        let mut params = ObjectMap::new();
         params.insert("domain".to_string(), domain);
         params.insert("reason".to_string(), JsonValue::string(reason));
-        let mut instr = BTreeMap::new();
+        let mut instr = ObjectMap::new();
         instr.insert("type".to_string(), JsonValue::string("enforce"));
         instr.insert("params".to_string(), JsonValue::Object(params));
         vec![JsonValue::Object(instr)]
@@ -467,10 +466,9 @@ mod tests {
 
     /// 辅助：构造 delete_all 指令
     fn delete_all_instr() -> JsonValue {
-        use std::collections::BTreeMap;
-        let mut instr = BTreeMap::new();
+        let mut instr = ObjectMap::new();
         instr.insert("type".to_string(), JsonValue::string("delete_all"));
-        instr.insert("params".to_string(), JsonValue::Object(BTreeMap::new()));
+        instr.insert("params".to_string(), JsonValue::Object(ObjectMap::new()));
         JsonValue::Object(instr)
     }
 

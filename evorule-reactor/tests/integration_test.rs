@@ -12,9 +12,8 @@
 //! 反应式执行器集成测试
 
 use evorule_reactor::{Fact, FactId, FactIdGenerator, IoType, Reactor};
-use evorule_tcb::JsonValue;
+use evorule_tcb::{JsonValue, ObjectMap};
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -40,7 +39,7 @@ fn serde_to_tcb(v: serde_json::Value) -> JsonValue {
             JsonValue::Array(arr.into_iter().map(serde_to_tcb).collect())
         }
         serde_json::Value::Object(obj) => {
-            let mut map = BTreeMap::new();
+            let mut map = ObjectMap::new();
             for (k, v) in obj {
                 map.insert(k, serde_to_tcb(v));
             }
@@ -346,17 +345,17 @@ fn io_loop_rules() -> Vec<JsonValue> {
 }
 
 fn make_instruction(typ: &str, attr: &str, delta: i64) -> JsonValue {
-    let mut params = BTreeMap::new();
+    let mut params = ObjectMap::new();
     params.insert("attr".to_string(), JsonValue::string(attr));
     params.insert("delta".to_string(), JsonValue::Integer(delta));
-    let mut instr = BTreeMap::new();
+    let mut instr = ObjectMap::new();
     instr.insert("type".to_string(), JsonValue::string(typ));
     instr.insert("params".to_string(), JsonValue::Object(params));
     JsonValue::Object(instr)
 }
 
 fn make_call_external_instruction(prompt: &str) -> JsonValue {
-    let mut params = BTreeMap::new();
+    let mut params = ObjectMap::new();
     // v0.3.1：call_external 使用 messages 参数（LLM 消息历史数组），
     // io_request 透传 instruction 的 messages/tools 参数。
     params.insert(
@@ -366,7 +365,7 @@ fn make_call_external_instruction(prompt: &str) -> JsonValue {
             ("content", JsonValue::string(prompt)),
         ])]),
     );
-    let mut instr = BTreeMap::new();
+    let mut instr = ObjectMap::new();
     instr.insert("type".to_string(), JsonValue::string("call_external"));
     instr.insert("params".to_string(), JsonValue::Object(params));
     JsonValue::Object(instr)
@@ -757,10 +756,10 @@ async fn test_io_response_with_error_field() {
 
 /// 构造 set 指令
 fn make_set_instruction(attr: &str, value: i64) -> JsonValue {
-    let mut params = BTreeMap::new();
+    let mut params = ObjectMap::new();
     params.insert("attr".to_string(), JsonValue::string(attr));
     params.insert("value".to_string(), JsonValue::Integer(value));
-    let mut instr = BTreeMap::new();
+    let mut instr = ObjectMap::new();
     instr.insert("type".to_string(), JsonValue::string("set"));
     instr.insert("params".to_string(), JsonValue::Object(params));
     JsonValue::Object(instr)
@@ -768,10 +767,10 @@ fn make_set_instruction(attr: &str, value: i64) -> JsonValue {
 
 /// 构造 decrement 指令
 fn make_decrement_instruction(attr: &str, delta: i64) -> JsonValue {
-    let mut params = BTreeMap::new();
+    let mut params = ObjectMap::new();
     params.insert("attr".to_string(), JsonValue::string(attr));
     params.insert("delta".to_string(), JsonValue::Integer(delta));
-    let mut instr = BTreeMap::new();
+    let mut instr = ObjectMap::new();
     instr.insert("type".to_string(), JsonValue::string("decrement"));
     instr.insert("params".to_string(), JsonValue::Object(params));
     JsonValue::Object(instr)
@@ -779,9 +778,9 @@ fn make_decrement_instruction(attr: &str, delta: i64) -> JsonValue {
 
 /// 构造 sequence 指令
 fn make_sequence_instruction(instructions: Vec<JsonValue>) -> JsonValue {
-    let mut params = BTreeMap::new();
+    let mut params = ObjectMap::new();
     params.insert("instructions".to_string(), JsonValue::Array(instructions));
-    let mut instr = BTreeMap::new();
+    let mut instr = ObjectMap::new();
     instr.insert("type".to_string(), JsonValue::string("sequence"));
     instr.insert("params".to_string(), JsonValue::Object(params));
     JsonValue::Object(instr)
@@ -1112,7 +1111,7 @@ async fn test_noop_instruction() {
     let mut gen = FactIdGenerator::new();
 
     // noop 指令不执行任何操作
-    let mut instr = BTreeMap::new();
+    let mut instr = ObjectMap::new();
     instr.insert("type".to_string(), JsonValue::string("noop"));
     tx.send(Fact::Command {
         id: gen.next_id(),
@@ -1140,7 +1139,7 @@ async fn test_unknown_instruction_falls_to_noop() {
     let mut gen = FactIdGenerator::new();
 
     // 未知指令类型：all([]) 兜底规则匹配但无业务效果
-    let mut instr = BTreeMap::new();
+    let mut instr = ObjectMap::new();
     instr.insert(
         "type".to_string(),
         JsonValue::string("unknown_instruction_type"),
@@ -1398,9 +1397,9 @@ async fn test_io_result_consumed_to_business_field() {
 
 /// 辅助：构造 call_service 指令
 fn make_call_service_instruction(service_name: &str) -> JsonValue {
-    let mut params = BTreeMap::new();
+    let mut params = ObjectMap::new();
     params.insert("service_name".to_string(), JsonValue::string(service_name));
-    let mut instr = BTreeMap::new();
+    let mut instr = ObjectMap::new();
     instr.insert("type".to_string(), JsonValue::string("call_service"));
     instr.insert("params".to_string(), JsonValue::Object(params));
     JsonValue::Object(instr)

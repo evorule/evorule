@@ -13,8 +13,7 @@
 //! 4. 验证执行结果
 
 use evorule_reactor::{Fact, FactIdGenerator, Reactor};
-use evorule_tcb::JsonValue;
-use std::collections::BTreeMap;
+use evorule_tcb::{JsonValue, ObjectMap};
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -35,7 +34,7 @@ fn serde_to_tcb(v: serde_json::Value) -> JsonValue {
             JsonValue::Array(arr.into_iter().map(serde_to_tcb).collect())
         }
         serde_json::Value::Object(obj) => {
-            let mut map = BTreeMap::new();
+            let mut map = ObjectMap::new();
             for (k, v) in obj {
                 map.insert(k, serde_to_tcb(v));
             }
@@ -315,11 +314,11 @@ async fn test_normal_order_processing() {
     let mut gen = FactIdGenerator::new();
 
     // 提交普通客户订单指令（无 is_vip 字段）
-    let mut params = BTreeMap::new();
+    let mut params = ObjectMap::new();
     params.insert("order_id".to_string(), JsonValue::string("ORD-002"));
     params.insert("amount".to_string(), JsonValue::Integer(500));
 
-    let mut instr = BTreeMap::new();
+    let mut instr = ObjectMap::new();
     instr.insert("type".to_string(), JsonValue::string("process_order"));
     instr.insert("params".to_string(), JsonValue::Object(params));
 
