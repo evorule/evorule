@@ -32,11 +32,10 @@
 //! }
 //! ```
 
-use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 
-use evorule_tcb::JsonValue;
+use evorule_tcb::{JsonValue, ObjectMap};
 
 use crate::Reactor;
 
@@ -209,11 +208,11 @@ fn parse_json_object(s: &str) -> Option<JsonValue> {
 
     let inner = &s[1..s.len() - 1].trim();
     if inner.is_empty() {
-        return Some(JsonValue::Object(BTreeMap::new()));
+        return Some(JsonValue::Object(ObjectMap::new()));
     }
 
     // 简单解析：只处理 "key": value 格式
-    let mut obj = BTreeMap::new();
+    let mut obj = ObjectMap::new();
     for part in inner.split(',') {
         let part = part.trim();
         if part.is_empty() {
