@@ -1,0 +1,50 @@
+# OpenSSF Scorecard (A4)
+#
+# 每周二 UTC 04:00 例行扫描 + main push 触发。
+# publish: true → 结果进入公共 API (api.securityscorecards.dev)，
+# README 的 Scorecard 徽章据此实时渲染。
+# SARIF 同步上传至 Code Scanning，安全告警在 GitHub Security tab 可见。
+
+name: Scorecard
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * 2"
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@v2.4.2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish: true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload to code-scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif

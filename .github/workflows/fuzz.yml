@@ -34,6 +34,11 @@ jobs:
   fuzz-smoke:
     name: fuzz smoke (build + 60s/target)
     runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+      # 覆盖仓根 rust-toolchain.toml 的固定工具链: cargo-fuzz 的 -Z sancov flags
+      # 只被 nightly 接受, 首跑因稳定版工具链拒绝 -Z 而失败 (run 34732535959)
+      RUSTUP_TOOLCHAIN: nightly
     steps:
       - uses: actions/checkout@v5
 

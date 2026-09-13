@@ -3,6 +3,7 @@
 ![EvoRule — deterministic-first reactive rule execution engine](assets/evorule-banner.svg)
 
 [![CI](https://github.com/evorule/evorule/actions/workflows/ci.yml/badge.svg)](https://github.com/evorule/evorule/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/badge/github.com/evorule/evorule)](https://securityscorecards.dev/viewer/?uri=github.com/evorule/evorule)
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
 [![Version](https://img.shields.io/badge/version-0.5.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
@@ -505,6 +506,7 @@ evorule/
 # EvoRule — 确定性为第一性的反应式规则执行引擎
 
 [![CI](https://github.com/evorule/evorule/actions/workflows/ci.yml/badge.svg)](https://github.com/evorule/evorule/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/badge/github.com/evorule/evorule)](https://securityscorecards.dev/viewer/?uri=github.com/evorule/evorule)
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
 [![Version](https://img.shields.io/badge/version-0.5.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
