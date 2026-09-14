@@ -399,7 +399,7 @@ fn verify_evaluate_domain_exists_never_panics() {
 /// 无路径解析（instruction 域直接读 state 的 instruction 字段）。
 /// ⚠️ 仍用单键 exec_state（kani 构建下即 KaniMap）控制展开规模。
 #[kani::proof]
-#[kani::unwind(24)]
+#[kani::unwind(32)]
 fn verify_evaluate_domain_instruction_never_panics() {
     let exec_state = model::single_key_exec_state();
     let domain = model::obj(vec![
@@ -420,7 +420,7 @@ fn verify_evaluate_domain_instruction_never_panics() {
 
 /// P8e: evaluate_domain all 永不 panic（空列表）
 #[kani::proof]
-#[kani::unwind(4)]
+#[kani::unwind(16)]
 fn verify_evaluate_domain_all_never_panics() {
     let exec_state = model::single_key_exec_state();
     let domain = model::obj(vec![
@@ -486,6 +486,7 @@ fn verify_evaluate_domain_has_fields_never_panics() {
 /// ⚠️ 同 P5：evaluate_domain 是纯函数（无全局状态/随机数），确定性为自由属性，
 /// 无需符号验证。用完全具体的 domain + exec_state 验证两次调用不 panic。
 #[kani::proof]
+#[kani::unwind(16)]
 fn verify_evaluate_domain_deterministic() {
     let domain = model::obj(vec![
         ("type", JsonValue::string("eq")),
@@ -507,7 +508,7 @@ fn verify_evaluate_domain_deterministic() {
 /// unwind 需 > 5（evaluate_domain_inner 递归 5 层后到达深度保护分支）。
 /// exec_state 用完全具体实例避免状态爆炸。
 #[kani::proof]
-#[kani::unwind(12)]
+#[kani::unwind(16)]
 fn verify_domain_depth_limit() {
     let mut domain = model::obj(vec![
         ("type", JsonValue::string("exists")),
@@ -1319,44 +1320,4 @@ fn verify_react_io_required() {
         Ok(_) => panic!("should be IoRequired"),
         Err(e) => panic!("unexpected error: {:?}", e),
     }
-}
-
-// ==================== W3-3 临时对照实验（迁移验证后删除，不入库） ====================
-/// c2-clone 复跑对照：object_from_pairs（clone 路径）——W3-1 历史数据 300s 不收敛
-#[kani::proof]
-#[kani::unwind(24)]
-fn canary_w33_c2_clone() {
-    let a = model::obj(vec![
-        ("alpha", JsonValue::Integer(1)),
-        (
-            "beta",
-            model::obj(vec![("inner", JsonValue::array(vec![JsonValue::string("flag")]))]),
-        ),
-    ]);
-    shape_field(&a, "a", "alpha");
-    let inner = shape_field(&a, "a", "beta");
-    let arr = shape_field(inner, "a.beta", "inner");
-    shape_str(&shape_array(arr, "a.beta.inner", 1)[0], "a.beta.inner[0]", "flag");
-    core::mem::forget(a);
-}
-
-/// c2-owned：同构 owned 构造（object_from_pairs_owned，零 clone）——对照决定性数据点
-#[kani::proof]
-#[kani::unwind(24)]
-fn canary_w33_c2_owned() {
-    let a = JsonValue::object_from_pairs_owned(vec![
-        ("alpha".to_string(), JsonValue::Integer(1)),
-        (
-            "beta".to_string(),
-            JsonValue::object_from_pairs_owned(vec![(
-                "inner".to_string(),
-                JsonValue::array(vec![JsonValue::string("flag")]),
-            )]),
-        ),
-    ]);
-    shape_field(&a, "a", "alpha");
-    let inner = shape_field(&a, "a", "beta");
-    let arr = shape_field(inner, "a.beta", "inner");
-    shape_str(&shape_array(arr, "a.beta.inner", 1)[0], "a.beta.inner[0]", "flag");
-    core::mem::forget(a);
 }
