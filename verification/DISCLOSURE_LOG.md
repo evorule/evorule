@@ -121,3 +121,17 @@
 - **依据**：canary 实测记录（≈17 次运行 ≈60 分钟，两层根因：unwind(8)<memcmp 深度致 unwinding 断言假失败毒化公式 919/920 undetermined；构造墙——全具体构造随复杂度非线性恶化，c2 300s 不收敛 vs c2b 0.55s 最锐对照）；提交前预演（暂存树 14/14 PASS）；新证据 `P0-3/P0-6.<harness>_PASS_1b340e5_20260914_*`（evorule-tcb/verification/evidence/kani/）。
 - **影响**：① 旧 `1c6ad84` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 3；② STATUS.md 快照注记与 P0-3/P0-6 证据列同批更新；③ W3-2 配套要求更新：B 档 harness unwind 必须 > 形状断言最长字符串 memcmp 深度（字节数+2）；④ 构造墙发现移交 W3-3/W3-4：P9/P10（构造 `concrete_exec_state`）Phase 1 直跑将撞同一构造墙，须 W3-3 owned 迁移或 W4-1 stub 路线先解除；⑤ B 档 23 个 proof 状态不变（❌，M2/M6）。
 - **修正去向**：本条目即修正记录；执行详情见 CR-20260913-004 §3.8（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 3；STATUS.md（快照/P0-3/P0-6/维护区）。
+
+### 2026-09-14：W3-2 unwind 静态盘点完成，16 项校准登记为 W3-4 前置配套（零代码变更）
+
+- **事实**：B 档攻坚 W3-2 完成（CR-20260913-004 §3.9）——23 个 B 档 harness memcmp 成功路径深度全量静态审计（3 次脚本迭代，0 次求解器运行）：合规 7 / 不合规 16；16 项 unwind 校准值列表登记为 W3-4 前置配套。A 档 14 个逐个判读为实证豁免（unwind 4 小于 memcmp 路径最长 6，但 4 字节短字符串内经无字面常量路径执行、无字面常量匹配）。STATUS.md 维护区同批登记。
+- **依据**：全量审计脚本产出与逐项判读记录；CR-20260913-004 §3.9 校准表（16 项建议 unwind 值）。
+- **影响**：① B 档 23 个 proof 状态不变（❌）；② W3-4 重跑以 16 项校准值起步、以 unwinding assertions 反馈逐项收敛；③ 无 proof 源码变更，A 档证据 SHA 绑定不受影响。
+- **修正去向**：本条目即修正记录；执行详情见 CR-20260913-004 §3.9。
+
+### 2026-09-14：W3-3 owned 构造迁移落地，A 档证据随 proof 源码变更再重置（`90b77aa`）
+
+- **事实**：B 档攻坚 W3-3 完成（CR-20260913-004 §3.10，Tier 5.3 先行项，G2 构造层与 Clone 解绑）——`tests/kani/model.rs` obj() 由引用对+内部深克隆改为 `object_from_pairs_owned`（move 语义零深克隆），`tests/kani/kani_proofs.rs` 23 个 B 档 harness 构造调用点适配，旧构造形态零残留（96 处 owned 落位）。提交 `90b77aa` 后于 WSL（Kani 0.67.0 + nightly-2025-11-21）同协议重跑 A 档 14 proof：14/14 PASS。
+- **依据**：grep 实证（`obj(&[` / `object_from_pairs(&[` 0 命中）；编译验收 `verify_partial_eq_never_panics` 迁移后实跑 1.0s PASS（534 断言 0 失败）；新证据 `P0-3/P0-6.<harness>_PASS_90b77aa_20260914_*`（evorule-tcb/verification/evidence/kani/）。
+- **影响**：① 旧 `1b340e5` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 4；② STATUS.md 快照注记与 P0-3/P0-6 证据列同批更新；③ B 档 23 个 proof 状态不变（❌）；④ W3-4 前置就绪：16 项 unwind 校准表（W3-2）+ owned 构造（W3-3）两要素齐备。
+- **修正去向**：本条目即修正记录；执行详情见 CR-20260913-004 §3.10（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 4；STATUS.md（快照/P0-3/P0-6/维护区）。
