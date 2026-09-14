@@ -114,3 +114,10 @@
 - **依据**：实测运行记录（WSL Kani 0.67.0 + nightly-2025-11-21，与 kani.yml CI 同配置；E1/E4 各 600s 上限超时，E2/E3 亚秒级）与代码审计（executor.rs 算术路径、domain.rs/executor.rs 数据流、value.rs/model.rs 构造面盘点）。实测要点：eq 族 harness 输入完全具体（无符号值）仍 600s 不收敛，证实成本在结构层建模（String/Cow/Vec/分配器），为三层根因模型外的残余因素。
 - **影响**：① 方案收缩：Tier 1.2 裁撤、Tier 1.1 降级为配套动作（eq 族按 kill criteria 以首个数据点提前路由 Phase 2 stub 试点）、Tier 2.3 组合验证两步化；② Tier 2.1/2.2/Tier 3 路线确认可行；③ Phase 1 计划不变（W3-1 结构自检断言先行）；④ B 档 23 个 proof 状态不变（❌，M2/M6——转档待实测证据）。
 - **修正去向**：CR-20260913-004 §3.5 测试计划勾选与 §3.7 结论追记（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；可行性矩阵详细实测记录按信息分级留档于项目内部工作区（M10）；STATUS.md 维护区同批注记。
+
+### 2026-09-14：W3-1 结构自检断言落地，A 档证据随 proof 源码变更重置（`1b340e5`）
+
+- **事实**：B 档攻坚 Phase 1 首项 W3-1 完成（CR-20260913-004 §3.8）——`tests/kani/kani_proofs.rs` 新增 7 个结构自检助手并为 23 个 B 档 harness 全部接线（13 处构造根接线修复）。canary 本地验证：正向 3 组原语 PASS（c1 76.9s / c3 32.5s / c2b 0.55s，覆盖 5/7 助手），反向退化构造 13.9s 于预期断言点响亮失败（假通过防线成立）；`shape_full_state`/`shape_concrete_exec_state` 两复合哨兵因构造墙无法独立实跑（c4a 纯构造零断言 120s 不收敛等实证），由已验证原语复合支撑、随 W3-3/W3-4 闭环。提交 `1b340e5` 后于 WSL（Kani 0.67.0 + nightly-2025-11-21）同协议重跑 A 档 14 proof：14/14 PASS。
+- **依据**：canary 实测记录（≈17 次运行 ≈60 分钟，两层根因：unwind(8)<memcmp 深度致 unwinding 断言假失败毒化公式 919/920 undetermined；构造墙——全具体构造随复杂度非线性恶化，c2 300s 不收敛 vs c2b 0.55s 最锐对照）；提交前预演（暂存树 14/14 PASS）；新证据 `P0-3/P0-6.<harness>_PASS_1b340e5_20260914_*`（evorule-tcb/verification/evidence/kani/）。
+- **影响**：① 旧 `1c6ad84` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 3；② STATUS.md 快照注记与 P0-3/P0-6 证据列同批更新；③ W3-2 配套要求更新：B 档 harness unwind 必须 > 形状断言最长字符串 memcmp 深度（字节数+2）；④ 构造墙发现移交 W3-3/W3-4：P9/P10（构造 `concrete_exec_state`）Phase 1 直跑将撞同一构造墙，须 W3-3 owned 迁移或 W4-1 stub 路线先解除；⑤ B 档 23 个 proof 状态不变（❌，M2/M6）。
+- **修正去向**：本条目即修正记录；执行详情见 CR-20260913-004 §3.8（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 3；STATUS.md（快照/P0-3/P0-6/维护区）。
