@@ -130,6 +130,37 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 
 **机时记账**：canary 全程 ≈17 次运行（含 2×600s 毒化研磨、300s+250s+2×120s 构造墙实证、4 次有效 PASS、探针 2 次），机器时间 ≈60 分钟；B 档攻坚累计 ≈24/≤60 次预算。**W3-1 结论：S3 硬前置达成**。
 
+### 3.9 W3-2 unwind 静态盘点（2026-09-14，零机时零代码变更）
+
+**口径与方法**：W3-1 调试插曲确立「`#[kani::unwind]` 属性隐含开启该 harness 的 unwinding assertions（canary 毒化实证），无属性 = 默认 unwind 10 且断言关闭 = 静默截断（验证不完备）」。据此对 23 个 B 档 harness 静态盘点 memcmp/memcpy 成功路径深度 = max(harness 块内值路径字面量, 经 inline 引入的 model.rs 构造字面量) + 2；排除中文 panic 消息（仅失败路径执行）与 shape 助手首参（what 标签，仅入 panic 消息）。A 档 14 个已实证豁免（unwinding assertions 开且 14/14 PASS，展开充分性由 PASS 自证）。
+
+**盘点结论**（合规 7 / 不合规 16；`cur` = 现有属性值，无属性记 10）：
+
+| harness | cur | need | 建议 unwind | 备注 |
+| --- | --- | --- | --- | --- |
+| evaluate_domain eq / lt / exists | 24 | 13 | 24 ✔ | |
+| evaluate_domain not | 24 | 19 | 24 ✔ | |
+| evaluate_domain has_fields | 24 | 15 | 24 ✔ | |
+| exec_enforce_never_panics / _deterministic | 10(无属性) | 2 | 补属性，W3-4 校准 | 字符串口径不适用（符号输入型），unwind 需按符号结构实跑校准 |
+| evaluate_domain instruction | 24 | 25 | 32 | 差 1（`domain.instruction_type` 23B） |
+| evaluate_domain all | 4 | 14 | 16 | 历史遗留错误值 |
+| evaluate_domain deterministic | 10(无属性) | 13 | 16 | |
+| domain_depth_limit | 12 | 13 | 16 | 差 1 |
+| has_fields_empty_array | 10(无属性) | 35 | 48 | |
+| execute_meta_instruction | 10(无属性) | 13 | 16 | |
+| exec_set_arithmetic_safe | 10(无属性) | 18 | 24 | |
+| branch_depth_limit | 10(无属性) | 25 | 32 | |
+| collect_safe_with_after | 10(无属性) | 30 | 32 | |
+| merge_safe | 10(无属性) | 32 | 48 | |
+| substitute_template | 10(无属性) | 25 | 32 | |
+| io_request_safe | 10(无属性) | 32 | 48 | |
+| exec_enforce_halt_semantics | 10(无属性) | 20 | 24 | |
+| execute_transition | 10(无属性) | 18 | 24 | |
+| transform_rules_limit | 10(无属性) | 18 | 24 | |
+| react_io_required | 10(无属性) | 47 | 64 | model::react_core_eval 路径 45B 主导 |
+
+**处置决策**：本次**零代码变更**。16 个不合规项的 unwind 校准登记为 **W3-4 前置配套**——W3-4 本来就以 unwind 为配置维度逐 harness 实跑（≤3 配置），届时按上表建议值起步、以 unwinding assertions 反馈逐个收敛，一次改完 proof 源码 + 一次 M3.4 A 档证据重跑，避免本次单独变更触发第二次证据重跑（机时纪律）。**机时记账**：纯静态（3 次脚本迭代），0 次求解器运行。
+
 ## 4. CR-20260913-003 修订记录（2026-09-13，随 CR-20260913-004 生效）
 
 **修订**：实施载体由 impl 级 `cfg(kani)` 双实现改为 proof 层
