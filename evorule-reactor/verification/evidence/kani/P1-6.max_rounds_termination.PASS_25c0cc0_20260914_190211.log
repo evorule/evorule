@@ -1,0 +1,21 @@
+Verification evidence: P1-6.max_rounds_termination
+Status: PASS (exit code 0)
+# Evidence metadata
+- commit SHA: 25c0cc0b9cb010edcf12826eb95dab6a1ab5cf93
+- kani: cargo-kani 0.67.0
+- rustc: rustc 1.97.1 (8bab26f4f 2026-07-14)（Kani 0.67 内置 pinned 工具链 nightly-2025-11-21）
+- timestamp: 2026-09-14 19:02:11 +0800
+- platform: WSL Linux 6.18.33.2-microsoft-standard-WSL2 (x86_64)
+- command: cargo kani -p evorule-reactor --default-unwind 4 --harness max_rounds_termination --output-format=terse
+- per-proof timeout: 300s (kill 30s)
+- log: P1-6.max_rounds_termination.PASS_25c0cc0_20260914_190211.stdout.txt
+--- result summary (tail) ---
+VERIFICATION RESULT:
+ ** 0 of 7 failed
+
+VERIFICATION:- SUCCESSFUL
+Verification Time: 0.030254718s
+
+Manual Harness Summary:
+Complete - 1 successfully verified harnesses, 0 failures, 1 total.
+ALL-18-DONE
