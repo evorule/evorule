@@ -31,7 +31,7 @@ exclude = [
 # 仅 dev 依赖，不进入发布产物（与零依赖核心隔离）
 proptest = "1.4"
 # 性能基准测试
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [features]
 default = ["std"]

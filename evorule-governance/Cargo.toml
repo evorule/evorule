@@ -93,7 +93,7 @@ tempfile = "3"
 proptest = "1.4"
 # 性能基准(criterion) — 041 v2.0 A8: 审计链 audit_new + verify 基线
 # 仅 dev 依赖,不进入 release 产物。
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 # 041 v2.0 A8: 审计链 audit_new / verify 性能基准
 [[bench]]
