@@ -135,3 +135,10 @@
 - **依据**：grep 实证（`obj(&[` / `object_from_pairs(&[` 0 命中）；编译验收 `verify_partial_eq_never_panics` 迁移后实跑 1.0s PASS（534 断言 0 失败）；新证据 `P0-3/P0-6.<harness>_PASS_90b77aa_20260914_*`（evorule-tcb/verification/evidence/kani/）。
 - **影响**：① 旧 `1b340e5` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 4；② STATUS.md 快照注记与 P0-3/P0-6 证据列同批更新；③ B 档 23 个 proof 状态不变（❌）；④ W3-4 前置就绪：16 项 unwind 校准表（W3-2）+ owned 构造（W3-3）两要素齐备。
 - **修正去向**：本条目即修正记录；执行详情见 CR-20260913-004 §3.10（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 4；STATUS.md（快照/P0-3/P0-6/维护区）。
+
+### 2026-09-14：W3-4 精确 unwind 校准落地，eq 族首数据点超时路由 Phase 2（`627330a`）
+
+- **事实**：W3-2 校准表按"一次改完 proof 源码"纪律落地（instruction 24→32 / all 4→16 / deterministic 补 16 / domain_depth 12→16），同批清理 W3-3 临时 canary c2-clone/c2-owned（"迁移验证后删除，不入库"承诺收口）。eq 族首数据点 `verify_evaluate_domain_eq_never_panics`（unwind 24 合规 + owned 构造）**600s 超时**——kill criteria 触发，eq 族路由 Phase 2 stub 试点。提交 `627330a` 后于 WSL 重跑 A 档 14 proof：14/14 PASS。
+- **依据**：eq 首数据点实测（timeout 600s，`Checking harness...` 后无验证结论输出）；W3-2 §3.9 校准表；新证据 `P0-3/P0-6.<harness>_PASS_627330a_20260914_*`（evorule-tcb/verification/evidence/kani/）。
+- **影响**：① 旧 `90b77aa` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 5；② B 档 23 个 proof 状态不变（❌）；③ eq 族路由结论强化构造墙主因判断（String/KaniMap 建模开销；owned 迁移仅解 clone 分量，未解构造墙）；④ W3-4 机时 +1 次（eq），其余 8 个 P8 系首轮实测合并至 69 号 Step 10 全量重跑（post-69 基线，机时纪律，§3.11）。
+- **修正去向**：本条目即修正记录；执行详情见 CR-20260913-004 §3.11；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 5；STATUS.md（快照/P0-3/P0-6/维护区）。

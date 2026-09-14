@@ -73,3 +73,13 @@
 **替代证据**：于 `90b77aa` 重跑 A 档 14 个全 PASS（2026-09-14，WSL Kani 0.67.0，单 proof 0.3~4.0s），按 M3.1 命名归档于 `../`（见 [STATUS.md](../../../../../verification/STATUS.md) P0-3/P0-6 证据列）。
 
 **披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-14 W3-3 条目。
+
+## 批次 5（2026-09-14）：A 档 14 对证据随 W3-4 unwind 校准失效隔离
+
+**来源**：`../`（`evorule-tcb/verification/evidence/kani/`），28 个文件（14 对 `.log` + `.stdout.txt`，命名锚定 `90b77aa`，产出于 2026-09-14）。
+
+**失效判定**（[MECHANISM.md](../../../../../verification/MECHANISM.md) M3.4）：W3-4 提交 `627330a` 变更了 proof 源码（`tests/kani/kani_proofs.rs` 4 处 unwind 属性按 W3-2 校准表精确化（instruction 32 / all 16 / deterministic 补 16 / domain_depth 16）+ 清理 W3-3 临时 canary，CR-20260913-004 §3.11），本批证据的 SHA 绑定早于 proof 源码最后一次变更，按 M3.4 自动失效。
+
+**替代证据**：于 `627330a` 重跑 A 档 14 个全 PASS（2026-09-14，WSL Kani 0.67.0，单 proof 0.3~4.0s），按 M3.1 命名归档于 `../`（见 [STATUS.md](../../../../../verification/STATUS.md) P0-3/P0-6 证据列）。
+
+**披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-14 W3-4 条目。
