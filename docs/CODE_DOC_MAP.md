@@ -35,7 +35,7 @@
 | `src/error.rs` | `evorule-tcb/TCB_SPEC.md` §四 | 错误类型新增/删除/语义变更 |
 | `src/lib.rs` | `evorule-tcb/README.md`, `evorule-tcb/TCB_SPEC.md` | 公开 API 变更、模块导出变更、lint 规则变更 |
 | `build.rs` | `GATE_REFERENCE.md`, 各 crate `*_SPEC.md` §五 | 门禁规则新增/修改/删除、禁用模式变更 |
-| `core_eval.json` | `evorule-tcb/TCB_SPEC.md`, `docs/tutorial/02-ReAct循环示例.md`, `docs/tutorial/03-写一条业务规则.md`, 根 `README.md` | 宪法规则变更、元指令映射变更、ReAct 循环规则变更 |
+| `core_eval.json` | `evorule-tcb/TCB_SPEC.md`, `docs/tutorial/02-反应器循环示例.md`, `docs/tutorial/03-写一条业务规则.md`, 根 `README.md` | 宪法规则变更、元指令映射变更、反应器循环规则变更 |
 | `tests/kani/` | `evorule-tcb/verification/kani-formal-verification-design.md`, 根 `CHANGELOG.md` | Kani proof 新增/删除/验证结果变更 |
 | `tests/determinism_proptest.rs` | `evorule-tcb/DETERMINISM_REPORT.md` | 确定性属性测试新增/删除/结果变更 |
 
@@ -43,7 +43,7 @@
 
 | 源码文件 / 区域 | 关联文档 | 触发条件 |
 |-----------------|---------|---------|
-| `src/reactor.rs` | `evorule-reactor/REACTOR_SPEC.md`, 根 `CHANGELOG.md`, `docs/tutorial/02-ReAct循环示例.md` | 反应器主循环逻辑变更、阶段切换变更、稳定检测变更、公开 API 变更 |
+| `src/reactor.rs` | `evorule-reactor/REACTOR_SPEC.md`, 根 `CHANGELOG.md`, `docs/tutorial/02-反应器循环示例.md` | 反应器主循环逻辑变更、阶段切换变更、稳定检测变更、公开 API 变更 |
 | `src/fact.rs` | `evorule-reactor/REACTOR_SPEC.md`, `evorule-reactor/README.md` | Fact 类型新增/删除、IoType 语义变更、FactId 生成逻辑变更 |
 | `src/facts_log.rs` | `evorule-reactor/REACTOR_SPEC.md`, `evorule-governance/GOVERNANCE_SPEC.md` | 审计链格式变更、哈希链算法变更、Append-Only 语义变更 |
 | `src/wal.rs` | `evorule-reactor/REACTOR_SPEC.md` | WAL 格式变更、持久化逻辑变更、fsync 策略变更 |
@@ -111,7 +111,7 @@
 | `docs/introduction.md` | 项目定位变更、目标项目方变更、文档导航变更 |
 | `docs/SUMMARY.md` | mdbook 目录结构变更、新增/删除章节 |
 | `docs/tutorial/01-五分钟跑通-core-eval.md` | TCB 核心 API 变更、core_eval 使用方式变更 |
-| `docs/tutorial/02-ReAct循环示例.md` | ReAct 循环逻辑变更、Reactor API 变更、I/O 处理变更 |
+| `docs/tutorial/02-反应器循环示例.md` | 反应器循环逻辑变更、Reactor API 变更、I/O 处理变更 |
 | `docs/tutorial/03-写一条业务规则.md` | 规则格式变更、域类型变更、元指令变更、CLI 使用方式变更 |
 | `docs/explanation/` | 设计原理解释变更、核心概念定义变更 |
 | `docs/adr/` | 架构决策变更、新增架构决策记录 |
@@ -213,7 +213,7 @@
 | `src/error.rs` | `evorule-tcb/TCB_SPEC.md` §四 | Error type additions/removals/semantic changes |
 | `src/lib.rs` | `evorule-tcb/README.md`, `evorule-tcb/TCB_SPEC.md` | Public API changes, module export changes, lint rule changes |
 | `build.rs` | `GATE_REFERENCE.md`, 各 crate `*_SPEC.md` §五 | Gate rule additions/modifications/removals, forbidden pattern changes |
-| `core_eval.json` | `evorule-tcb/TCB_SPEC.md`, `docs/tutorial/02-ReAct循环示例.md`, `docs/tutorial/03-写一条业务规则.md`, 根 `README.md` | Constitution rule set changes, meta-instruction mapping changes, ReAct loop rule changes |
+| `core_eval.json` | `evorule-tcb/TCB_SPEC.md`, `docs/tutorial/02-反应器循环示例.md`, `docs/tutorial/03-写一条业务规则.md`, 根 `README.md` | Constitution rule set changes, meta-instruction mapping changes, reactor loop rule changes |
 | `tests/kani/` | `evorule-tcb/verification/kani-formal-verification-design.md`, 根 `CHANGELOG.md` | Kani proofs added/removed, verification result changes |
 | `tests/determinism_proptest.rs` | `evorule-tcb/DETERMINISM_REPORT.md` | Deterministic property tests added/removed, result changes |
 
@@ -221,7 +221,7 @@
 
 | Source file / area | Related documents | Trigger |
 |-----------------|---------|---------|
-| `src/reactor.rs` | `evorule-reactor/REACTOR_SPEC.md`, 根 `CHANGELOG.md`, `docs/tutorial/02-ReAct循环示例.md` | Reactor main loop logic changes, phase switch changes, Stable detection changes, public API changes |
+| `src/reactor.rs` | `evorule-reactor/REACTOR_SPEC.md`, 根 `CHANGELOG.md`, `docs/tutorial/02-反应器循环示例.md` | Reactor main loop logic changes, phase switch changes, Stable detection changes, public API changes |
 | `src/fact.rs` | `evorule-reactor/REACTOR_SPEC.md`, `evorule-reactor/README.md` | Fact type additions/removals, IoType semantic changes, FactId generation logic changes |
 | `src/facts_log.rs` | `evorule-reactor/REACTOR_SPEC.md`, `evorule-governance/GOVERNANCE_SPEC.md` | Audit chain format changes, hash chain algorithm changes, Append-Only semantics changes |
 | `src/wal.rs` | `evorule-reactor/REACTOR_SPEC.md` | WAL format changes, persistence logic changes, fsync policy changes |
@@ -287,7 +287,7 @@
 | `docs/introduction.md` | Project positioning changes, target audience changes, documentation navigation changes |
 | `docs/SUMMARY.md` | mdbook TOC structure changes, chapters added/removed |
 | `docs/tutorial/01-五分钟跑通-core-eval.md` | TCB core API changes, `core_eval` usage changes |
-| `docs/tutorial/02-ReAct循环示例.md` | ReAct loop logic changes, Reactor API changes, I/O handling changes |
+| `docs/tutorial/02-反应器循环示例.md` | Reactor loop logic changes, Reactor API changes, I/O handling changes |
 | `docs/tutorial/03-写一条业务规则.md` | Rule format changes, domain type changes, meta-instruction changes, CLI usage changes |
 | `docs/explanation/` | Design-principle explanation changes, core concept definition changes |
 | `docs/adr/` | Architecture decision changes, new decision records |

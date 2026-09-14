@@ -28,7 +28,7 @@ env:
 
 jobs:
   # ==========================================================================
-  # 1. 双平台全量测试
+  # 1. 三平台全量测试
   # ==========================================================================
   test:
     name: test (${{ matrix.os }})
@@ -38,6 +38,7 @@ jobs:
         os:
           - ubuntu-latest
           - windows-latest
+          - macos-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5

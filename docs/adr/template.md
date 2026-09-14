@@ -80,7 +80,7 @@
 
 ## Decision Drivers
 
-- <Driver 1, e.g.: performance, complexity, compliance, user experience, dependency locking>
+- <Driver 1, e.g.: performance, complexity, compliance, developer experience, dependency locking>
 - <Driver 2>
 - ...
 

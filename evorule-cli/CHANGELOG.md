@@ -32,6 +32,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## v0.5.0 - 2026-09-12
+
+**次版本发布：CLI 双语化（i18n）** — 详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.5.0]` 段。
+
+### 🆕 新增
+
+- **CLI 双语化**：帮助文本与错误信息本地化为英文，面向国际贡献者与项目方
+
+### 🔄 变更
+
+- `Cargo.toml` 依赖版本对齐：`evorule-tcb` / `evorule-reactor` / `evorule-governance` → `0.5.0`
+
+### 向后兼容
+
+- ✅ 命令行为与退出码不变（仅文案本地化）
+
+---
+
+## v0.4.3 - 2026-09-09
+
+**补丁发布：enforce halt 安全原语 + 审计链命中明细归因** — 详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.4.3]` 段。
+
+### 🔄 变更
+
+- `Cargo.toml` 依赖版本对齐：`evorule-tcb` / `evorule-reactor` → `0.4.3`
+
+### 行为影响（随依赖继承）
+
+- ⚠️ `evorule run` / `validate`：TCB 新增 `enforce_halt` 安全原语——写侧 `attr` 以 `payload.` 开头（如 `payload.result` 双重嵌套）将被运行期显式 reject 并发射 violation facts，不再静默通过
+- ✅ 审计链自动追加规则命中明细（规则 ID + 版本 + 条件表达式），`replay` / `verify-chain` 可逐条对账
+
+---
+
+## v0.4.2 - 2026-09-05
+
+**四核心 crate 重发（0.4.1 → 0.4.2）** — crates.io 以 0.4.2 重新发布，内容与 0.4.1 源码一致并含未知 IoResponse 修复。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.4.2]` 段。
+
+### 🔄 变更
+
+- 版本同步 bump 至 0.4.2（CLI 无源码改动）
+
+### 向后兼容
+
+- ✅ CLI 行为不变
+
+---
+
+## v0.4.1 - 2026-09-02
+
+**退出码语义 + 元指令白名单 SSOT（MINOR，含破坏性）** — 详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.4.1]` 段。
+
+### ⚠️ Breaking Change
+
+- **`evorule run` 退出码语义**：执行含 Error fact 时退出码 0 → **3**（CI/自动化管道可正确感知规则执行失败；fact log 照常写出）。退出码表：0 成功 / 1 通用错误 / 2 规则加载错误 / 3 执行含 Error fact
+
+### 🆕 新增
+
+- `evorule validate` 改引 `evorule_tcb::META_INSTRUCTION_TYPES` 权威常量（随 0.4.1 白名单 SSOT 落地）
+
+### 🔄 变更
+
+- 版本同步 bump 至 0.4.1；`Cargo.toml` 依赖版本对齐
+
+### 向后兼容
+
+- ⚠️ 自动化管道若依赖"含 Error fact 时退出 0"的旧行为需调整判定
+- ✅ 其余命令行为与 fact log 格式不变
+
+---
+
 ## v0.4.0 - 2026-09-01
 
 **单会话长跑 O(n²) 缺陷修复配套（MINOR，含破坏性）** — 适配 `evorule-reactor` v0.4.0 `Fact::Stable` 瘦身（CR-20260901-001）。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.4.0]` 段。

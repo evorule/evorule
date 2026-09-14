@@ -152,7 +152,7 @@ Code basis: `evorule-cli/src/commands/run.rs` L37-69, `evorule-cli/src/executor.
 4. **Synchronous reactor loop**: a FIFO queue with a `max_steps` cap executes instructions one by one
 5. **Emit the fact log**: WAL format (JSON Lines), interoperable with evorule-reactor/evorule-governance
 
-> Note: in CLI mode the user does not submit instructions directly; the initial `noop` instruction triggers the rule chain instead. A rule matches via `branch` + `domain: { "type": "instruction", "instruction_type": "noop" }` and then executes the meta-instructions in `on_true`.
+> Note: in CLI mode the project owner does not submit instructions directly; the initial `noop` instruction triggers the rule chain instead. A rule matches via `branch` + `domain: { "type": "instruction", "instruction_type": "noop" }` and then executes the meta-instructions in `on_true`.
 
 ## Reading the payload from a file
 

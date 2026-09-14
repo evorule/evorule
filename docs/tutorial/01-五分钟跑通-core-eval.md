@@ -30,8 +30,8 @@ evorule-tcb = "0.3"
 
 > **为什么只依赖 `evorule-tcb`?** 它是核心引擎(TCB,Trusted Computing Base),
 > 零外部依赖、`#![forbid(unsafe_code)]`、`#![no_std]` 兼容,足以执行一条 `core_eval` 规则。
-> 完整 ReAct 循环需要 `evorule-reactor`;审计链需要 `evorule-governance`——
-> 见 [教程 02:ReAct 循环示例](./02-ReAct循环示例.md)。
+> 完整反应器循环需要 `evorule-reactor`;审计链需要 `evorule-governance`——
+> 见 [教程 02:反应器循环示例](./02-反应器循环示例.md)。
 > 跑 JSON 规则文件用 `evorule-cli`——见 [教程 03:写一条业务规则](./03-写一条业务规则.md)。
 
 ## 3. 写主程序
@@ -164,12 +164,12 @@ let core_eval = vec![
 | `instruction` | 当前指令,JSON 对象,含 `type` 字段 |
 | `TransitionResult::State` | 正常执行,返回新 payload |
 | `TransitionResult::Ignored` | 指令被忽略(无规则匹配) |
-| `TransitionResult::IoRequired` | 规则触发了 I/O,需要外部响应才能继续(见 [教程 02:ReAct 循环](./02-ReAct循环示例.md)) |
+| `TransitionResult::IoRequired` | 规则触发了 I/O,需要外部响应才能继续(见 [教程 02:反应器循环](./02-反应器循环示例.md)) |
 | `TcbError` | 引擎错误(类型不匹配、未知 operation 等) |
 
 ## 接下来
 
-- [教程 02:ReAct 循环示例](./02-ReAct循环示例.md) — 单轮 LLM/工具 I/O 触发与消费（v0.6.0 起多轮编排由应用层 runner 负责）
+- [教程 02:反应器循环示例](./02-反应器循环示例.md) — 单轮 LLM/工具 I/O 触发与消费（v0.6.0 起多轮编排由应用层 runner 负责）
 - [教程 03:写一条业务规则](./03-写一条业务规则.md) — 用 JSON 写业务规则,跑 `evorule` CLI
 - 元指令集参考 — 5 种元指令(`branch` / `set` / `push` / `io_request` / `enforce`)的完整说明（待发布）
 - 域类型参考 — 7 基础域 + 派生域的完整说明（待发布）
@@ -208,8 +208,8 @@ evorule-tcb = "0.3"
 > **Why only `evorule-tcb`?** It is the core engine (TCB, Trusted Computing Base) —
 > zero external dependencies, `#![forbid(unsafe_code)]`, `#![no_std]`-compatible,
 > enough to execute a single `core_eval` rule.
-> A full ReAct loop needs `evorule-reactor`; the audit chain needs `evorule-governance` —
-> see [Tutorial 02: ReAct loop example](./02-ReAct循环示例.md).
+> A full reactor loop needs `evorule-reactor`; the audit chain needs `evorule-governance` —
+> see [Tutorial 02: Reactor loop example](./02-反应器循环示例.md).
 > To run JSON rule files use `evorule-cli` — see [Tutorial 03: Writing a business rule](./03-写一条业务规则.md).
 
 ## 3. Write the main program
@@ -342,12 +342,12 @@ payload after execution: {"x": 42, "y": "hello, evorule"}
 | `instruction` | The current instruction, a JSON object with a `type` field |
 | `TransitionResult::State` | Normal execution, returns the new payload |
 | `TransitionResult::Ignored` | Instruction ignored (no rule matched) |
-| `TransitionResult::IoRequired` | A rule triggered I/O; an external response is needed to continue (see [Tutorial 02: ReAct loop](./02-ReAct循环示例.md)) |
+| `TransitionResult::IoRequired` | A rule triggered I/O; an external response is needed to continue (see [Tutorial 02: Reactor loop](./02-反应器循环示例.md)) |
 | `TcbError` | Engine error (type mismatch, unknown operation, etc.) |
 
 ## Next steps
 
-- [Tutorial 02: ReAct loop example](./02-ReAct循环示例.md) — single-round LLM/tool I/O trigger & consume (since v0.6.0, multi-turn orchestration is the application-layer runner's job)
+- [Tutorial 02: Reactor loop example](./02-反应器循环示例.md) — single-round LLM/tool I/O trigger & consume (since v0.6.0, multi-turn orchestration is the application-layer runner's job)
 - [Tutorial 03: Writing a business rule](./03-写一条业务规则.md) — write business rules in JSON and run them with the `evorule` CLI
 - Meta-instruction reference — full docs for the 5 meta-instructions (`branch` / `set` / `push` / `io_request` / `enforce`) (coming soon)
 - Domain reference — full docs for 7 base domains + derived domains (coming soon)

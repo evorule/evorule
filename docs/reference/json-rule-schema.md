@@ -652,7 +652,7 @@ During execution the TCB builds the `__exec__` context (transition.rs L309-322):
 
 ```
 __exec__.instruction  — current instruction
-__exec__.payload      — business state (user data)
+__exec__.payload      — business state (project-owner data)
 __exec__.queue        — pending instruction queue
 __exec__.__io_results__.<io_type> — I/O results (isolated by type)
 ```
