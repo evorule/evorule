@@ -7,6 +7,7 @@ members = [
     "evorule-reactor",
     "evorule-governance",
     "evorule-cli",
+    "evorule-wasm-demo",
 ]
 # fuzz/ 为独立 libFuzzer 工作区（cargo-fuzz 专用，A1 供应链三件套），
 # 不参与主 workspace 版本/发布/门禁。

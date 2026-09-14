@@ -34,20 +34,6 @@ workspace = true
 [dependencies]
 # 本地依赖
 evorule-tcb = { path = "../evorule-tcb", version = "0.5.0" }
-evorule-reactor = { path = "../evorule-reactor", version = "0.5.0", features = [
-    "persistence",
-] }
-
-# 异步运行时
-# H5: 移除 signal/bin 相关 feature(原 bin 用,已迁移到 evorule-server)
-# 移除 fs feature(I/O fs 操作已迁移到 evorule-io-handlers)
-tokio = { version = "1", features = [
-    "rt-multi-thread",
-    "macros",
-    "sync",
-    "time",
-] }
-# H6: async-stream/futures-core 已迁移到 evorule-server（SSE stream! 宏需要，属应用层）
 
 # 日志
 tracing = "0.1"
@@ -64,8 +50,8 @@ blake3 = "1"                                              # 哈希
 flate2 = { version = "1.0", features = ["rust_backend"] } # P05：审计链 gzip 压缩
 # G-A1：审计锚点签名（真实性/防抵赖）。ed25519（RFC 8032）确定性签名，无 RNG，兼容确定性执行纪律
 ed25519-dalek = "2"
-# G-A1：仅密钥生成（一次性运维）用 OS 熵源，不进入确定性执行路径
-getrandom = { version = "0.2", features = ["std"] }
+# G-A1：getrandom 按编译目标分块——wasm32 下需 js feature（浏览器 crypto.getRandomValues）
+# 仅密钥生成（一次性运维）用 OS 熵源，不进入确定性执行路径
 
 # H6: HTTP API 依赖已迁移到 evorule-server（axum/tower/tower-http/tower_governor/governor/subtle）
 # 核心层不再包含 HTTP 路由处理（机制-策略分离）
@@ -78,6 +64,20 @@ serde_json = "1"                                 # P2-9：JSON 配置文件(v6.1
 
 # 错误处理
 thiserror = "2"
+
+# WASM 适配：reactor 与 tokio 按编译目标分块
+# - wasm32 下禁用 persistence（无文件系统）、禁用 rt-multi-thread
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+evorule-reactor = { path = "../evorule-reactor", version = "0.5.0", features = ["persistence"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+getrandom = { version = "0.2", features = ["std"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# WASM Spike：persistence 保持启用（governance 生产代码未门控，禁用会导致13处编译错误）。
+# std::fs 在 wasm32 下可编译但运行时返回 Unsupported，最小原型使用内存模式不调用持久化 API。
+evorule-reactor = { path = "../evorule-reactor", version = "0.5.0", features = ["persistence"] }
+tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+getrandom = { version = "0.2", features = ["std", "js"] }
 
 [dev-dependencies]
 tempfile = "3"
