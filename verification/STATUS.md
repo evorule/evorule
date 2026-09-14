@@ -8,7 +8,7 @@
 
 # EvoRule 验证状态（STATUS）
 
-> **快照**：v0.5.0（代码基线 `5fac8bd`；证据基线 `bdfb8d4`，2026-09-12；A 档 TCB Kani 证据基线随 Batch 1 重置为 `1c6ad84`（2026-09-13）、随 W3-1 再重置为 `1b340e5`（2026-09-14）、随 W3-3 再重置为 `90b77aa`（2026-09-14）、随 W3-4 校准再重置为 `627330a`（2026-09-14），见维护区）
+> **快照**：v0.6.0（代码基线 `25c0cc0`——69 号清理 CR-20260914-001：collect/merge 元指令退役，v0.6.0 破坏性变更；与 `10c743d` proof 源码一致仅差 test.js；A 档 TCB Kani 证据基线随 69 号 Step 10 重置为 `25c0cc0`（2026-09-14）；此前链：`bdfb8d4`（2026-09-12）→ `1c6ad84`（Batch 1）→ `1b340e5`（W3-1）→ `90b77aa`（W3-3）→ `627330a`（W3-4）→ `25c0cc0`（69 号），见维护区）
 > **性质**：验证状态的唯一权威（[MECHANISM.md](MECHANISM.md) M1）。其他文档引用状态时以本表为准，不得独立断言。
 > **状态词汇**：五档（M2）：✅当前实跑 / 🟡历史PASS / 🔵间接覆盖 / ⏳计划中 / ❌不可运行，允许复合（如 ❌+🔵）。
 > **起草说明**：本表随 2026-09-12 验证机制整改建立（历史补记见 [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md) 首条）。✅ 项归档证据已于同日阶段 2 于 WSL（Kani 0.67.0 + nightly-2025-11-21）重跑落盘，证据基线 commit `bdfb8d4`（其间仅文档/证据整理提交，proof 源码与 `5fac8bd` 一致，满足 M3.4）。P0-11 与 P1-5 的 PASS 证据为同日超时根因修复（commit `03643aa`）后落盘。
@@ -19,10 +19,10 @@
 | ------ | ------ | ---- | ------ | -------- | --------------------- | ---- | -------- | ---- |
 | P0-1 | i64 加法不溢出 | tier0 | ❌+🔵 | proptest | `verify_exec_set_arithmetic_safe`（B 档） | — | B 档实测 600s/3600s 超时（2026-09-11） | 旧证据已隔离（M3） |
 | P0-2 | i64 减法不下溢 | tier0 | ❌+🔵 | proptest | `verify_exec_set_arithmetic_safe`（B 档） | — | 同 P0-1 | |
-| P0-3 | resolve_path 不 panic | tier0 | ✅ | proptest | A 档 11 个：`verify_resolve_path_simple_field` / `_nested_dot` / `_array_index` / `_double_dot` / `_escaped_dot` / `_empty_returns_none` / `_trailing_dot` / `_invalid_index_char` / `_missing_close_bracket` / `_deterministic` / `verify_array_index_bounds` | 11 份 `P0-3.<harness>_PASS_627330a_20260914_*`（evorule-tcb/verification/evidence/kani/；旧 `bdfb8d4`/`1c6ad84`/`1b340e5`/`90b77aa` 版已隔离 `_invalidated/` 批次 2/3/4/5） | W3-1 / W3-3 / W3-4 校准（unwind 属性变更，CR-20260913-004 §3.8/§3.10/§3.11）proof 源码变更后于 `627330a` 重跑 11/11 PASS（2026-09-14，WSL Kani 0.67.0，单 proof 0.3~4.0s）；kani.yml PR 闸门 | `627330a` 之前证据随 proof 源码变更依次失效隔离（M3.4：`bdfb8d4` 批次 2、`1c6ad84` 批次 3、`1b340e5` 批次 4、`90b77aa` 批次 5） |
+| P0-3 | resolve_path 不 panic | tier0 | ✅ | proptest | A 档 11 个：`verify_resolve_path_simple_field` / `_nested_dot` / `_array_index` / `_double_dot` / `_escaped_dot` / `_empty_returns_none` / `_trailing_dot` / `_invalid_index_char` / `_missing_close_bracket` / `_deterministic` / `verify_array_index_bounds` | 11 份 `P0-3.<harness>_PASS_25c0cc0_20260914_*`（evorule-tcb/verification/evidence/kani/；旧 `bdfb8d4`/`1c6ad84`/`1b340e5`/`90b77aa`/`627330a` 版已隔离 `_invalidated/` 批次 2/3/4/5/6） | 69 号清理（CR-20260914-001：collect/merge 退役，P15/P16/P17 删除、model.rs `any_instruction` 收窄）proof 源码变更后于 `25c0cc0` 重跑 11/11 PASS（2026-09-14，WSL Kani 0.67.0，单 proof 秒级）；kani.yml PR 闸门 | 证据随 proof 源码变更依次失效隔离（M3.4：`bdfb8d4` 批次 2、`1c6ad84` 批次 3、`1b340e5` 批次 4、`90b77aa` 批次 5、`627330a` 批次 6） |
 | P0-4 | evaluate_domain 不 panic | tier0 | ❌+🔵 | proptest | B 档 8 个：`verify_evaluate_domain_{eq,lt,exists,instruction,all,not,has_fields}_never_panics`、`verify_evaluate_domain_deterministic` | — | B 档实测超时（同 P0-1） | plan v3 旧表「✅实跑†」与实测记录不符（DISCLOSURE_LOG 首条 #4） |
 | P0-5 | execute_transition 确定性 | tier0 | ❌+🔵 | proptest / 差分 | B 档：`verify_evaluate_domain_deterministic`、`verify_exec_enforce_deterministic`、`verify_execute_transition_never_panics` 等（附录 A） | — | B 档实测超时（同 P0-1） | |
-| P0-6 | JsonValue 构造/访问一致 | tier0 | ✅ | — | A 档 3 个：`verify_partial_eq_never_panics`、`verify_ord_never_panics`、`verify_as_methods_never_panic` | 3 份 `P0-6.<harness>_PASS_627330a_20260914_*`（evorule-tcb/verification/evidence/kani/；旧 `bdfb8d4`/`1c6ad84`/`1b340e5`/`90b77aa` 版已隔离 `_invalidated/` 批次 2/3/4/5） | W3-1 / W3-3 / W3-4 校准（unwind 属性变更，CR-20260913-004 §3.8/§3.10/§3.11）proof 源码变更后于 `627330a` 重跑 3/3 PASS（2026-09-14，WSL Kani 0.67.0，单 proof 0.4~1.1s）；kani.yml PR 闸门 | |
+| P0-6 | JsonValue 构造/访问一致 | tier0 | ✅ | — | A 档 3 个：`verify_partial_eq_never_panics`、`verify_ord_never_panics`、`verify_as_methods_never_panic` | 3 份 `P0-6.<harness>_PASS_25c0cc0_20260914_*`（evorule-tcb/verification/evidence/kani/；旧 `bdfb8d4`/`1c6ad84`/`1b340e5`/`90b77aa`/`627330a` 版已隔离 `_invalidated/` 批次 2/3/4/5/6） | 69 号清理（CR-20260914-001）proof 源码变更后于 `25c0cc0` 重跑 3/3 PASS（2026-09-14，WSL Kani 0.67.0）；kani.yml PR 闸门 | |
 | P0-7 | execute_transition 终止性 | tier0 | ❌+🟡 | TLA+（N_MAX=2 降级模型） | B 档：`verify_branch_depth_limit`、`verify_domain_depth_limit`、`verify_transform_rules_limit` | TLC 报告（2026-07-25，旧版本） | B 档实测超时（同 P0-1）；TLA+ 仅 1/6 模型且 N_MAX=2 降级 | |
 | P0-8 | 递归深度硬上界 | tier0 | ❌+🟡 | TLA+（同上） | B 档：`verify_domain_depth_limit`、`verify_branch_depth_limit` | TLC 报告（2026-07-25，旧版本） | 同 P0-7 | |
 | P0-9 | version 语义一致性 | t1+2 | 🔵 | — | 差分测试 `diff_version_consistency`（evorule-governance） | CI（differential.yml）+ 本地归档 `P0-9-P0-10_PASS_bdfb8d4_20260912_173435`（PROPTEST_CASES=1000） | CI 常驻（PROPTEST_CASES=256）；本地重跑 PASS（2026-09-12） | |
@@ -39,10 +39,10 @@
 | ------ | ------ | ---- | ------ | -------- | ----------------- | ---- | -------- | ---- |
 | P1-1 | I/O 计数一致性 | tier1 | 🟡 | — | `invariant_io_count_register_complete`、`invariant_io_count_force_remove`（reactor，未入 CI） | — | 历史 PASS（2026-07-27，旧版本） | 重跑入 CI 待计划 |
 | P1-2 | io_recovery ⟺ io_result | tier1 | 🟡 | — | `invariant_io_recovery_iff_result`（reactor，未入 CI） | — | 历史 PASS（2026-07-27，旧版本） | 同上 |
-| P1-3 | version 单调递增 | tier1 | ✅ | — | `invariant_version_monotonic`（reactor CI proof） | `P1-3.invariant_version_monotonic_PASS_bdfb8d4_20260912_145126`（evorule-reactor/verification/evidence/kani/） | v0.5.0 重跑 PASS（2026-09-12，WSL Kani 0.67.0，~10s）；kani.yml reactor job PR 闸门 | |
+| P1-3 | version 单调递增 | tier1 | ✅ | — | `invariant_version_monotonic`（reactor CI proof） | `P1-3.invariant_version_monotonic_PASS_25c0cc0_20260914_190211`（evorule-reactor/verification/evidence/kani/；旧 `bdfb8d4` 版已隔离 _invalidated/） | v0.5.0 重跑 PASS（2026-09-12，~10s）→ 随 69 号 TCB 生产代码变更于 `25c0cc0` 复跑 PASS（2026-09-14，WSL Kani 0.67.0）；kani.yml reactor job PR 闸门 | |
 | P1-4 | FactsLog append-only | tier1 | 🟡 | 类型系统 | `proof_fact_log_append_monotonic`（reactor，未入 CI） | — | 历史 PASS（2026-07-27，旧版本） | |
-| P1-5 | apply_command 队列不减 | tier1 | ✅ | — | `command_does_not_decrease_queue`（reactor CI proof） | P1-5.command_does_not_decrease_queue_PASS_03643aa_20260912_225328（evorule-reactor/verification/evidence/kani/） | 2026-09-12 修复超时根因（与 P0-11 同因：proof 末尾 state 正常 Drop 触发 JsonValue 符号化变体的 BTreeMap 析构 unwind 爆炸；修复 = proof 侧 forget(state)；`apply_command` 即 push_back，路径无其他爆炸点），入 kani.yml reactor job（`--default-unwind 4` 实测通过） | 🟡 历史 PASS（2026-07-27，旧版本）由本修复取代 |
-| P1-6 | max_rounds 终止 | tier1 | ✅ | — | `max_rounds_termination`（reactor CI proof） | `P1-6.max_rounds_termination_PASS_bdfb8d4_20260912_145136`（evorule-reactor/verification/evidence/kani/） | v0.5.0 重跑 PASS（2026-09-12，WSL Kani 0.67.0，~3s）；kani.yml reactor job PR 闸门 | |
+| P1-5 | apply_command 队列不减 | tier1 | ✅ | — | `command_does_not_decrease_queue`（reactor CI proof） | P1-5.command_does_not_decrease_queue_PASS_25c0cc0_20260914_190211（evorule-reactor/verification/evidence/kani/；旧 `03643aa` 版已隔离 _invalidated/） | 2026-09-12 修复超时根因（与 P0-11 同因：proof 末尾 state 正常 Drop 触发 JsonValue 符号化变体的 BTreeMap 析构 unwind 爆炸；修复 = proof 侧 forget(state)；`apply_command` 即 push_back，路径无其他爆炸点），入 kani.yml reactor job（`--default-unwind 4` 实测通过）。随 69 号 TCB 生产代码变更于 `25c0cc0` 复跑 PASS（2026-09-14） | 🟡 历史 PASS（2026-07-27，旧版本）由本修复取代 |
+| P1-6 | max_rounds 终止 | tier1 | ✅ | — | `max_rounds_termination`（reactor CI proof） | `P1-6.max_rounds_termination_PASS_25c0cc0_20260914_190211`（evorule-reactor/verification/evidence/kani/；旧 `bdfb8d4` 版已隔离 _invalidated/） | v0.5.0 重跑 PASS（2026-09-12，~3s）→ 随 69 号 TCB 生产代码变更于 `25c0cc0` 复跑 PASS（2026-09-14，WSL Kani 0.67.0）；kani.yml reactor job PR 闸门 | |
 | P1-7 | PayloadUpdate version 递增 | t1+2 | 🔵 | 差分测试 | — | CI（differential.yml） | CI 常驻 | 具体差分用例映射待核对 |
 | P1-8 | 嵌套路径创建一致 | t0+1 | 🔵 | 集成测试 | TCB `tests/integration_test.rs` | CI（ci.yml） | CI 常驻 | |
 | P1-9 | domain path 自动补全 | tier0 | 🔵 | proptest / 集成测试 | TCB `tests/integration_test.rs` | CI（ci.yml） | CI 常驻 | |
@@ -52,7 +52,7 @@
 
 ## 附录 A：旧 P1–P21 proof 编号 → 当前 proof 映射（M8）
 
-`evorule-tcb/verification/kani-formal-verification-design.md` 的 P1–P21 编号已作废（与属性编号命名空间冲突）。TCB 全部 37 个 proof 与旧编号的对应关系如下（「属性归属」列为暂定归属，enforce 系列 3 个归 P0 域待补定）：
+`evorule-tcb/verification/kani-formal-verification-design.md` 的 P1–P21 编号已作废（与属性编号命名空间冲突）。TCB 全部 34 个 proof 与旧编号的对应关系如下（「属性归属」列为暂定归属，enforce 系列 3 个归 P0 域待补定；旧 P15/P16/P17 三行随 69 号清理（CR-20260914-001）退役删除，总数 37→34）：
 
 | 旧编号 | 旧 proof 名 | 当前 proof（函数名） | 档 | 新属性归属 |
 | ------ | ----------- | -------------------- | -- | ---------- |
@@ -70,9 +70,9 @@
 | P12 | verify_execute_meta_instruction_never_panics（6 种） | `verify_execute_meta_instruction_never_panics` | B | P0-5 |
 | P13 | verify_exec_set_arithmetic_safe | `verify_exec_set_arithmetic_safe` | B | P0-1 / P0-2 |
 | P14 | verify_branch_depth_limit | `verify_branch_depth_limit` | B | P0-8 |
-| P15 | verify_collect_safe_with_after | `verify_collect_safe_with_after` | B | P0-5 |
-| P16 | verify_merge_safe | `verify_merge_safe` | B | P0-5 |
-| P17 | verify_substitute_template_never_panics | `verify_substitute_template_never_panics` | B | P0-5 |
+| ~~P15~~ | verify_collect_safe_with_after | —（69 号清理退役删除） | — | — |
+| ~~P16~~ | verify_merge_safe | —（69 号清理退役删除） | — | — |
+| ~~P17~~ | verify_substitute_template_never_panics | —（69 号清理退役删除） | — | — |
 | P18 | verify_io_request_safe | `verify_io_request_safe` | B | P0-5 |
 | P19 | verify_execute_transition_never_panics | `verify_execute_transition_never_panics` | B | P0-5 |
 | P20 | verify_transform_rules_limit | `verify_transform_rules_limit` | B | P0-7 |
@@ -81,17 +81,17 @@
 | —（无编号） | — | `verify_exec_enforce_halt_semantics` | B | P0 域（待补定） |
 | —（无编号） | — | `verify_exec_enforce_deterministic` | B | P0 域（待补定） |
 
-> 注：旧 P4/P6 的 proof 拆分按 proof 语义重构（无效输入返回 None 的归 P6，其余不 panic 归 P4），旧设计稿未逐一对应。A 档 14 个 = 旧 P1/P2/P3/P5 各 1 + 旧 P4/P6 拆 9 个 resolve_path 变体 + 旧 P7；B 档 23 个 = 旧 P8/P9 的 8 个 evaluate_domain + 旧 P10–P21 各 1 + 无编号 enforce 3 个。
+> 注：旧 P4/P6 的 proof 拆分按 proof 语义重构（无效输入返回 None 的归 P6，其余不 panic 归 P4），旧设计稿未逐一对应。A 档 14 个 = 旧 P1/P2/P3/P5 各 1 + 旧 P4/P6 拆 9 个 resolve_path 变体 + 旧 P7；B 档 20 个 = 旧 P8/P9 的 8 个 evaluate_domain + 旧 P10–P14/P18–P21 各 1 + 无编号 enforce 3 个（旧 P15/P16/P17 随 69 号清理退役，2026-09-14）。
 
-## 附录 B：TCB 37 个 proof 分档清单（源码：`evorule-tcb/tests/kani/kani_proofs.rs`）
+## 附录 B：TCB 34 个 proof 分档清单（源码：`evorule-tcb/tests/kani/kani_proofs.rs`；69 号清理退役 P15/P16/P17 后 37→34）
 
-**A 档 14 个**（kani.yml `kani-tcb-a-tier` job，PR/push 闸门，实测 9~28s/个）：
+**A 档 14 个**（kani.yml `kani-tcb-a-tier` job，PR/push 闸门，实测 0.3~4.0s/个，2026-09-14 `25c0cc0` 批次）：
 
 `verify_partial_eq_never_panics`、`verify_resolve_path_deterministic`、`verify_resolve_path_array_index`、`verify_ord_never_panics`、`verify_as_methods_never_panic`、`verify_resolve_path_missing_close_bracket`、`verify_resolve_path_escaped_dot`、`verify_resolve_path_invalid_index_char`、`verify_resolve_path_trailing_dot`、`verify_resolve_path_simple_field`、`verify_resolve_path_empty_returns_none`、`verify_resolve_path_double_dot`、`verify_array_index_bounds`、`verify_resolve_path_nested_dot`
 
-**B 档 23 个**（kani.yml `kani-tcb-b-tier` job，仅手动触发且允许失败；实测 600s 全超时、3600s 仍超时，判定当前不可运行）：
+**B 档 20 个**（kani.yml `kani-tcb-b-tier` job，仅手动触发且允许失败；实测 600s 全超时、3600s 仍超时，判定当前不可运行）：
 
-`verify_evaluate_domain_all_never_panics`、`verify_evaluate_domain_deterministic`、`verify_evaluate_domain_eq_never_panics`、`verify_evaluate_domain_exists_never_panics`、`verify_evaluate_domain_has_fields_never_panics`、`verify_evaluate_domain_instruction_never_panics`、`verify_evaluate_domain_lt_never_panics`、`verify_evaluate_domain_not_never_panics`、`verify_exec_enforce_deterministic`、`verify_exec_enforce_halt_semantics`、`verify_exec_enforce_never_panics`、`verify_exec_set_arithmetic_safe`、`verify_execute_meta_instruction_never_panics`、`verify_execute_transition_never_panics`、`verify_has_fields_empty_array`、`verify_io_request_safe`、`verify_merge_safe`、`verify_react_io_required`、`verify_substitute_template_never_panics`、`verify_collect_safe_with_after`、`verify_branch_depth_limit`、`verify_domain_depth_limit`、`verify_transform_rules_limit`
+`verify_evaluate_domain_all_never_panics`、`verify_evaluate_domain_deterministic`、`verify_evaluate_domain_eq_never_panics`、`verify_evaluate_domain_exists_never_panics`、`verify_evaluate_domain_has_fields_never_panics`、`verify_evaluate_domain_instruction_never_panics`、`verify_evaluate_domain_lt_never_panics`、`verify_evaluate_domain_not_never_panics`、`verify_exec_enforce_deterministic`、`verify_exec_enforce_halt_semantics`、`verify_exec_enforce_never_panics`、`verify_exec_set_arithmetic_safe`、`verify_execute_meta_instruction_never_panics`、`verify_execute_transition_never_panics`、`verify_has_fields_empty_array`、`verify_io_request_safe`、`verify_react_io_required`、`verify_branch_depth_limit`、`verify_domain_depth_limit`、`verify_transform_rules_limit`
 
 ## 附录 C：reactor 11 个 proof 清单（源码：`evorule-reactor/verification/kani_proofs.rs`）
 
@@ -111,3 +111,4 @@
 - 2026-09-14 W3-2 unwind 静态盘点**已完成**（零代码变更，执行记录见 CR-20260913-004 §3.9，DISCLOSURE_LOG 同日条目）：23 个 B 档 harness memcmp 成功路径深度全量审计（合规 7 / 不合规 16，16 项校准登记为 W3-4 前置配套），A 档实证豁免。B 档 23 个 proof 状态不变（❌）。
 - 2026-09-14 W3-3 owned 构造迁移**已完成**（Tier 5.3 先行项，G2 构造层与 Clone 解绑，执行记录见 CR-20260913-004 §3.10，DISCLOSURE_LOG 同日条目）：`model.rs` obj() 改 `object_from_pairs_owned`（move 语义零深克隆）+ 23 个 B 档 harness 调用点适配（`90b77aa`），旧构造形态零残留。A 档 14 proof 随 proof 源码变更于 `90b77aa` 重跑 14/14 PASS，新证据 `*_PASS_90b77aa_20260914_*` 落盘，旧 `1b340e5` 14 对隔离 `_invalidated/` 批次 4，P0-3/P0-6 证据列同批更新。B 档 23 个 proof 状态不变（❌）。W3-4 前置就绪（16 项 unwind 校准表 + owned 构造两要素齐备）。
 - 2026-09-14 W3-4 精确 unwind 校准落地 + eq 族首数据点超时路由（CR-20260913-004 §3.11，DISCLOSURE_LOG 同日条目）：W3-2 校准表一次落地（instruction 32 / all 16 / deterministic 补 16 / domain_depth 16）+ 清理 W3-3 临时 canary（`627330a`）。eq 族首数据点（unwind 24 + owned）600s 超时，kill criteria 触发路由 Phase 2 stub 试点——支持构造墙主因判断（String/KaniMap 建模开销，owned 仅解 clone 分量）。A 档 14 proof 于 `627330a` 重跑 14/14 PASS，旧 `90b77aa` 14 对隔离批次 5。其余 8 个 P8 系首轮实测合并至 69 号 Step 10 全量 proof 重跑（post-69 基线，CR §3.11：预跑数据随 proof 源码变更失效，机时纪律）。B 档 23 个 proof 状态不变（❌）。
+- 2026-09-14 69 号清理（collect/merge 元指令退役）**已完成**（CR-20260914-001，提交 `10c743d` + `25c0cc0`，破坏性变更 v0.6.0）：proof P15/P16/P17 删除（总数 37→34，B 档 23→20）、`model.rs` any_instruction %6→%4、P12/P19 allowed 集合收窄；附录 A/B 删号与计数同批更新。A 档 14 proof 于 `25c0cc0`（与 `10c743d` proof 源码一致，仅差 test.js）重跑 14/14 PASS（单 proof 0.3~4.0s），reactor 4 个 CI proof 谨慎复跑 4/4 PASS（proof 源码未变更但被验证依赖 TCB 生产代码变更），合计 18/18；旧 `627330a` 14 对隔离 `_invalidated/` 批次 6，reactor 旧 4 对（`03643aa`/`bdfb8d4` 锚定）隔离该仓同级 `_invalidated/`。B 档 20 个 proof 状态不变（❌；eq 族已路由 Phase 2 stub 试点，CR §3.11）。
