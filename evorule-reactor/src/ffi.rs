@@ -89,7 +89,7 @@ struct ReactorFfiHandle {
 
 #[no_mangle]
 pub extern "C" fn evorule_reactor_new() -> *mut evorule_reactor {
-    // 创建 tokio runtime（需要 rt-multi-thread feature）
+    #[cfg(not(target_arch = "wasm32"))]
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -97,6 +97,12 @@ pub extern "C" fn evorule_reactor_new() -> *mut evorule_reactor {
         Ok(r) => r,
         Err(_) => return std::ptr::null_mut(),
     };
+    // wasm32-unknown-unknown 不支持 tokio runtime（std::time::Instant 未实现，
+    // runtime 构造即 panic）。FFI 异步入口在 WASM 下不可用，调用方将收到 null。
+    // WASM 场景请使用纯同步 TCB 路径（execute_transition + 内存 FactsLog + BLAKE3 Auditor），
+    // 详见 evorule-wasm-demo。（66 §10.4-2 处置）
+    #[cfg(target_arch = "wasm32")]
+    return std::ptr::null_mut();
 
     // 在 runtime 内创建 reactor
     let reactor = Reactor::builder(Vec::new()).build();

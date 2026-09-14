@@ -36,6 +36,25 @@
 
 ---
 
+## [Unreleased]
+
+### 🆕 新增
+
+- **WASM 编译目标支持（Spike）** (`evorule-reactor`, `evorule-governance`)：通过 `cfg(target_arch = "wasm32")` 条件编译，三 crate 可编译为 `wasm32-unknown-unknown` release。核心仓改动 3 文件约 17 行，未加自定义 feature，未改业务逻辑
+- **WASM 最小原型** (`evorule-wasm-demo/`)：纯同步 TCB 路径（`execute_transition` + 内存 FactsLog + BLAKE3 Auditor）的 wasm-bindgen 封装，Node.js 验证确定性一致（WASM 与 native 输出逐字节相同）
+
+### ⚠️ 已知限制
+
+- **完整异步 reactor 在 wasm32-unknown-unknown 不可运行**：`std::time::Instant` 未实现，tokio runtime 构造即 panic。WASM 下仅纯同步子集可用；`evorule_reactor_new` FFI 入口在 wasm32 下返回 null
+- **governance persistence 在 wasm32 下保持启用**：std::fs 可编译但运行时返回 Unsupported，最小原型用内存模式规避
+- **审计链性能 2× 开销**：WASM 无 SIMD，BLAKE3 无法用 AVX2（200 条事实 825μs vs native 406μs），绝对值 <1ms 可接受
+
+### 🔄 变更
+
+- `evorule-reactor/src/ffi.rs`：wasm32 分支由 `new_current_thread().enable_time()`（运行时必 panic）改为直接返回 null_mut，防止误用
+
+---
+
 ## [0.5.0] - 2026-09-12
 
 > 次版本发布：权限门可观测性、CLI 与文档双语化（i18n）、确定性修复，以及 TCB 形式化验证体系落地。
