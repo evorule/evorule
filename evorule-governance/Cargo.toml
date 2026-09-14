@@ -33,7 +33,7 @@ exclude = [
 workspace = true
 [dependencies]
 # 本地依赖
-evorule-tcb = { path = "../evorule-tcb", version = "0.5.0" }
+evorule-tcb = { path = "../evorule-tcb", version = "0.6.0" }
 
 # 日志
 tracing = "0.1"
@@ -66,16 +66,23 @@ serde_json = "1"                                 # P2-9：JSON 配置文件(v6.1
 thiserror = "2"
 
 # WASM 适配：reactor 与 tokio 按编译目标分块
-# - wasm32 下禁用 persistence（无文件系统）、禁用 rt-multi-thread
+# - wasm32 下禁用 rt-multi-thread（WASM 无多线程 runtime）
+# - persistence 两个目标均保持启用（见下方 wasm32 块注释，2026-09-14 更正）
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-evorule-reactor = { path = "../evorule-reactor", version = "0.5.0", features = ["persistence"] }
+evorule-reactor = { path = "../evorule-reactor", version = "0.6.0", features = ["persistence"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 getrandom = { version = "0.2", features = ["std"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-# WASM Spike：persistence 保持启用（governance 生产代码未门控，禁用会导致13处编译错误）。
-# std::fs 在 wasm32 下可编译但运行时返回 Unsupported，最小原型使用内存模式不调用持久化 API。
-evorule-reactor = { path = "../evorule-reactor", version = "0.5.0", features = ["persistence"] }
+# persistence 在 wasm32 下**保持启用**：governance 的 fs 相关生产代码未做 cfg 门控，
+# 禁用 feature 会导致 13 处编译错误。std::fs 在 wasm32 下可编译但运行时返回
+# Unsupported，最小原型使用内存模式、不调用持久化 API。
+# 注意：此处与 reactor 侧同款，属"仅求可编译"，非"wasm32 可用"。
+evorule-reactor = { path = "../evorule-reactor", version = "0.6.0", features = ["persistence"] }
+# `time` 不可裁剪（TB-WASM-004）：生产代码 src/io_subscriber.rs:409 在瞬时错误指数退避
+# 重试路径中使用 `tokio::time::sleep(backoff).await`，无 wasm32 门控。
+# 与 reactor 侧同理——保留只为编过，wasm32 下 `std::time::Instant` 未实现，
+# 凡真正可达的计时调用都会运行时 panic。
 tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 getrandom = { version = "0.2", features = ["std", "js"] }
 

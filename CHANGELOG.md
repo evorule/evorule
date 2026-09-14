@@ -38,6 +38,15 @@
 
 ## [Unreleased]
 
+### ⚠️ Breaking Change（破坏性变更）
+
+- **移除 `collect` / `merge` 元指令（69 号清理）**：LLM ReAct 多轮编排属于应用层职责，机制层不再内置循环原语。两者系早期架构事故中由应用层（evo-agent runner）误下沉至 TCB 的能力，本次随专项彻底退役：
+  - `evorule-tcb`：删除 `exec_collect` / `exec_merge` 及指令分发分支；`META_INSTRUCTION_TYPES` 收窄为 5 种（`branch` / `set` / `push` / `io_request` / `enforce`）；Kani proof P15/P16/P17 随删
+  - `evorule-governance`：`VALID_TRANSFORM_TYPES` 收窄为 4 种（= TCB − enforce）
+  - `evorule-cli` / `evorule-reactor` / schema（`_shared/v1.0.json` 双副本）/ console / console-cloud / evo-agent 宪法 / server 宪法（`server_eval.json` v0.5.0）全链同步收窄
+  - 规则文件中使用 `"type": "collect"` / `"type": "merge"` 将被 schema 枚举**加载即拒绝**（不静默忽略）；迁移方式：多轮工具编排改由应用层 runner / tool_registry 实现，机制层保留 `io_request` 单轮触发/消费语义
+  - 文档：reference / tutorial / how-to 共 6 个文件同步更新，`docs/reference/json-rule-schema.md` 新增退役说明章节
+
 ### 🆕 新增
 
 - **WASM 编译目标支持（Spike）** (`evorule-reactor`, `evorule-governance`)：通过 `cfg(target_arch = "wasm32")` 条件编译，三 crate 可编译为 `wasm32-unknown-unknown` release。核心仓改动 3 文件约 17 行，未加自定义 feature，未改业务逻辑

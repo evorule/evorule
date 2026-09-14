@@ -107,15 +107,14 @@ pub fn resolve_path_mut<'a>(state: &'a mut JsonValue, path: &str) -> Option<&'a 
 
 /// 解析相对 `__exec__` 上下文的路径（统一路径约定，v0.3.2 起）
 ///
-/// domain 的 `path`、collect 的 `from`、merge 的 `messages`/`tool_result(s)`
-/// 共用本函数，消除此前三套并存的路径约定：
+/// domain 的 `path` 使用本函数（`__exec__` 相对路径为全引擎统一约定）：
 ///
 /// - `__exec__.` 开头：strip 前缀后从 `__exec__` 节点解析（绝对路径兼容写法）
 /// - 其他写法：自动补全 `__exec__.` 前缀解析（相对路径，如 `payload.x`、
 ///   `instruction.type`、`queue[0].type`）
 ///
 /// 解析失败返回 `None`（调用方决定求值语义：domain 视为 false，
-/// collect/merge 转为显式 `PathResolutionFailed`）。
+/// 状态修改类指令转为显式 `PathResolutionFailed`）。
 pub(crate) fn resolve_exec_path<'a>(state: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
     let stripped = path.strip_prefix("__exec__.").unwrap_or(path);
     let exec = state.get("__exec__")?;

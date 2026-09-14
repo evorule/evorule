@@ -54,11 +54,11 @@ pub(crate) fn any_payload() -> JsonValue {
     JsonValue::Object(map)
 }
 
-/// 符号指令（type 取合法集合之一，0..=5 → set/push/branch/io_request/collect/merge）。
+/// 符号指令（type 取合法集合之一，0..=3 → set/push/branch/io_request）。
 /// ⚠️ 本函数仅提供"type 符号化、无 params"的最简形状；
 /// 需要具体 params 的证明（P13-P18）各自构造固定形状的指令。
 pub(crate) fn any_instruction() -> JsonValue {
-    let t = kani::any::<u8>() % 6;
+    let t = kani::any::<u8>() % 4;
     let mut instr = ObjectMap::new();
     instr.insert(
         "type".to_string(),
@@ -66,9 +66,7 @@ pub(crate) fn any_instruction() -> JsonValue {
             0 => "set",
             1 => "push",
             2 => "branch",
-            3 => "io_request",
-            4 => "collect",
-            _ => "merge",
+            _ => "io_request",
         }),
     );
     JsonValue::Object(instr)
@@ -145,7 +143,7 @@ pub(crate) fn state_with_payload(payload: ObjectMap) -> JsonValue {
     JsonValue::Object(root)
 }
 
-// ===== P21 专用：ReAct 三条规则（与 src/transition.rs react_e2e_tests 一致） =====
+// ===== P21 专用：ReAct 三条规则（口径与 src/transition.rs 单元测试一致） =====
 // TCB 零依赖、不内嵌 JSON 解析器，core_eval.json 由上层加载后传入 execute_transition，
 // 因此这里手工构造与 core_eval.json v0.3.1 ReAct 三条规则一一对应的规则列表。
 // 全部为具体常量（无符号值），Kani 按具体常量折叠，展开成本可控。
@@ -206,7 +204,8 @@ fn push_noop() -> JsonValue {
 }
 
 /// 与 core_eval.json v0.3.1 的 ReAct 三条规则一一对应
-/// （self_init / call_external / call_service，见 src/transition.rs react_core_eval()）。
+/// （self_init / call_external / call_service；工具扇出/结果合并的循环编排
+/// 职责在应用层 runner，collect/merge 原语已退役（69 号），终止统一 push noop）。
 pub(crate) fn react_core_eval() -> Vec<JsonValue> {
     // 1) react_iteration 自初始化（缺失时置 0，否则跳过）
     let self_init = branch(
@@ -227,27 +226,8 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
         vec![],
     );
 
-    // 2) call_external：消费 LLM 结果 → collect 生成 call_service
-    let collect_instr = obj(vec![
-        ("type", s("collect")),
-        (
-            "params",
-            obj(vec![
-                ("from", s("__exec__.payload.llm_response.tool_calls")),
-                (
-                    "each",
-                    obj(vec![
-                        ("type", s("call_service")),
-                        (
-                            "params",
-                            obj(vec![("service_name", s("{{name}}")), ("args", s("{{args}}"))]),
-                        ),
-                    ]),
-                ),
-            ]),
-        ),
-    ]);
-
+    // 2) call_external：消费 LLM 结果（工具扇出编排在应用层 runner，
+    //    collect 已退役 69 号，消费轮统一 push noop 终止）
     let call_external = branch(
         instr_domain("call_external"),
         vec![branch(
@@ -272,15 +252,8 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
                     "set",
                     JsonValue::Null,
                 ),
-                branch(
-                    obj(vec![
-                        ("type", s("has_fields")),
-                        ("path", s("__exec__.payload.llm_response")),
-                        ("fields", arr(vec![s("tool_calls")])),
-                    ]),
-                    vec![collect_instr],
-                    vec![push_noop()],
-                ),
+                // 循环终止（工具扇出编排在应用层 runner，collect 已退役）
+                push_noop(),
             ],
             vec![obj(vec![
                 ("type", s("io_request")),
@@ -297,28 +270,8 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
         vec![],
     );
 
-    // 3) call_service：消费工具结果 → lt 检查 → merge 生成下一条 call_external
-    let merge_instr = obj(vec![
-        ("type", s("merge")),
-        (
-            "params",
-            obj(vec![
-                ("messages", s("__exec__.payload.llm_response.messages")),
-                ("tool_result", s("__exec__.payload.service_result")),
-                (
-                    "next_instruction",
-                    obj(vec![
-                        ("type", s("call_external")),
-                        (
-                            "params",
-                            obj(vec![("messages", s("{{messages}}")), ("tools", s("{{tools}}"))]),
-                        ),
-                    ]),
-                ),
-            ]),
-        ),
-    ]);
-
+    // 3) call_service：消费工具结果 → lt 检查（结果合并与下一条 LLM 调用的生成
+    //    由应用层 runner 编排，merge 已退役 69 号，消费轮统一 push noop 终止）
     let call_service = branch(
         instr_domain("call_service"),
         vec![branch(
@@ -336,7 +289,8 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
                 ),
                 branch(
                     lt_domain("__exec__.payload.react_iteration", 10),
-                    vec![set_instr("react_iteration", "add", iv(1)), merge_instr],
+                    // 循环终止（结果合并与下一条 LLM 调用编排在应用层 runner，merge 已退役）
+                    vec![set_instr("react_iteration", "add", iv(1)), push_noop()],
                     vec![push_noop()],
                 ),
             ],

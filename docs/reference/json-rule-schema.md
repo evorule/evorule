@@ -4,7 +4,7 @@
 # JSON 规则集格式参考
 
 > 字典式参考。evorule 规则集（rule_set）的完整字段、类型、约束。
-> 基于 `evorule-tcb` v0.5.0 源码实测：`core_eval.json`（语言规范样本）、`executor.rs`（元指令执行）、`domain.rs`（域评估）、`transition.rs`（状态转换）。
+> 基于 `evorule-tcb` v0.6.0 源码实测：`core_eval.json`（语言规范样本）、`executor.rs`（元指令执行）、`domain.rs`（域评估）、`transition.rs`（状态转换）。
 
 ## 总览
 
@@ -50,16 +50,17 @@ evorule 规则集是一个 JSON 文件，描述**指令到状态转换的映射*
 
 `transform` 是一个**元指令数组**。每条元指令按顺序执行，前一条的输出状态作为后一条的输入。
 
-元指令类型共 6 种（SSOT：`executor.rs` L52-59 `META_INSTRUCTION_TYPES`）：
+元指令类型共 5 种（SSOT：`executor.rs` `META_INSTRUCTION_TYPES`）：
 
 | 类型 | 说明 | 执行函数 |
 |------|------|---------|
-| `branch` | 条件分支：评估 domain，执行 on_true 或 on_false | `exec_branch` (executor.rs L696) |
-| `set` | 修改状态：对指定路径执行 set/add/sub 操作 | `exec_set` (executor.rs L290) |
-| `push` | 推入指令：将指令列表推入队列前端 | `exec_push` (executor.rs L657) |
-| `io_request` | I/O 请求：产生 IoRequired 信号，不修改状态 | `exec_io_request` (executor.rs L753) |
-| `collect` | 批量生成指令：从数组生成多条指令并推入队列 | `exec_collect` (executor.rs L808) |
-| `merge` | 合并工具结果到消息历史，生成下一条指令 | `exec_merge` (executor.rs L895) |
+| `branch` | 条件分支：评估 domain，执行 on_true 或 on_false | `exec_branch` |
+| `set` | 修改状态：对指定路径执行 set/add/sub 操作 | `exec_set` |
+| `push` | 推入指令：将指令列表推入队列前端 | `exec_push` |
+| `io_request` | I/O 请求：产生 IoRequired 信号，不修改状态 | `exec_io_request` |
+| `enforce` | 强制执行：自进化预留原语，由 governance tier 门禁控制 | `exec_enforce` |
+
+> **v0.6.0 破坏性变更（69 号清理）**：`collect` 与 `merge` 元指令已退役——LLM 多轮编排属于应用层职责，机制层不再内置 ReAct 循环原语。规则文件中使用这两个类型将被 schema 拒绝。多轮编排请由应用层 runner 实现。
 
 > 终止性保证：整棵规则树共享单一执行预算 `MAX_TOTAL_META_INSTRUCTIONS`（executor.rs L87），branch 递归深度上限 `MAX_BRANCH_DEPTH`（executor.rs L703）。
 
@@ -159,48 +160,12 @@ evorule 规则集是一个 JSON 文件，描述**指令到状态转换的映射*
 
 ---
 
-### collect（批量生成指令）
+### 已退役元指令：collect / merge（v0.6.0）
 
-```json
-{
-  "type": "collect",
-  "params": {
-    "from": "__exec__.payload.llm_response.tool_calls",
-    "each": { "type": "call_tool", "params": { "tool": "{{name}}" } }
-  }
-}
-```
+`collect`（批量生成指令）与 `merge`（合并工具结果到消息历史）原语已在 v0.6.0 随 69 号清理退役。这两个原语用于在机制层内嵌 LLM ReAct 多轮循环（collect 遍历 LLM tool_calls 扇出 call_service、merge 合并工具结果回环生成下一条 LLM 调用），该编排属于应用层职责。
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `params.from` | String | 是 | 源数组路径 |
-| `params.each` | Object | 是 | 指令模板，支持 `{{path}}` 替换为当前数组元素的字段值 |
-
-**行为**（executor.rs L796-807）：从 `from` 读取数组，对每个元素用 `each` 模板生成一条指令，全部推入队列前端。空源数组 = no-op。
-
----
-
-### merge（合并工具结果）
-
-```json
-{
-  "type": "merge",
-  "params": {
-    "messages": "payload.messages",
-    "next_instruction": { "type": "call_external", "params": {} },
-    "tool_results": "payload.tool_results"
-  }
-}
-```
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `params.messages` | String | 是 | 消息历史路径（相对 `__exec__` 自动补全前缀） |
-| `params.next_instruction` | Object | 是 | 下一条指令模板 |
-| `params.tool_results` | String | 否 | 多工具结果数组路径（与 tool_result 二选一） |
-| `params.tool_result` | String | 否 | 单工具结果路径（向后兼容） |
-
-**行为**（executor.rs L951-954）：将工具结果合并到消息历史，生成更新后的 next_instruction 并推入队列。
+- 规则文件中使用 `"type": "collect"` / `"type": "merge"` 将被 schema 枚举直接拒绝（加载即报错，不静默忽略）
+- 多轮工具编排请由应用层 runner / tool_registry 实现；机制层保留 `io_request` 单轮触发/消费语义
 
 ---
 
@@ -218,7 +183,7 @@ domain 用于 branch 指令的条件评估。共 7 种类型（SSOT：`domain.rs
 | `not` | 子域为假 | `inner`（单个域） | domain.rs L257 |
 | `has_fields` | 对象包含指定非空字段 | `path`, `fields`（非空数组） | domain.rs L279 |
 
-> 注意：evorule v0.5.0 **没有** `gt`、`gte`、`neq`、`contains` 等操作符。大于比较可用 `not(lt)` 组合实现。
+> 注意：evorule v0.6.0 **没有** `gt`、`gte`、`neq`、`contains` 等操作符。大于比较可用 `not(lt)` 组合实现。
 
 ### instruction（指令类型匹配）
 
@@ -406,7 +371,7 @@ __exec__.__io_results__.<io_type> — I/O 结果（按类型隔离）
 # JSON Rule Set Format Reference
 
 > Dictionary-style reference. Complete fields, types, and constraints of an evorule rule set.
-> Based on hands-on inspection of `evorule-tcb` v0.5.0 sources: `core_eval.json` (language spec sample), `executor.rs` (meta-instruction execution), `domain.rs` (domain evaluation), `transition.rs` (state transition).
+> Based on hands-on inspection of `evorule-tcb` v0.6.0 sources: `core_eval.json` (language spec sample), `executor.rs` (meta-instruction execution), `domain.rs` (domain evaluation), `transition.rs` (state transition).
 
 ## Overview
 
@@ -452,16 +417,17 @@ A rule set can live in a single file, or multiple files can share one directory 
 
 `transform` is an **array of meta-instructions**. Each meta-instruction runs in order; the output state of one serves as the input of the next.
 
-There are 6 meta-instruction types in total (SSOT: `executor.rs` L52-59 `META_INSTRUCTION_TYPES`):
+There are 5 meta-instruction types in total (SSOT: `executor.rs` `META_INSTRUCTION_TYPES`):
 
 | Type | Description | Executor |
 |------|------|---------|
-| `branch` | Conditional branch: evaluates a domain, executes on_true or on_false | `exec_branch` (executor.rs L696) |
-| `set` | Modify state: performs a set/add/sub operation on the given path | `exec_set` (executor.rs L290) |
-| `push` | Push instructions: pushes a list of instructions onto the front of the queue | `exec_push` (executor.rs L657) |
-| `io_request` | I/O request: produces an IoRequired signal, does not modify state | `exec_io_request` (executor.rs L753) |
-| `collect` | Batch instruction generation: produces one instruction per array element and pushes them onto the queue | `exec_collect` (executor.rs L808) |
-| `merge` | Merge tool results into the message history, generating the next instruction | `exec_merge` (executor.rs L895) |
+| `branch` | Conditional branch: evaluates a domain, executes on_true or on_false | `exec_branch` |
+| `set` | Modify state: performs a set/add/sub operation on the given path | `exec_set` |
+| `push` | Push instructions: pushes a list of instructions onto the front of the queue | `exec_push` |
+| `io_request` | I/O request: produces an IoRequired signal, does not modify state | `exec_io_request` |
+| `enforce` | Enforce: reserved primitive for self-evolution, gated by the governance tier | `exec_enforce` |
+
+> **Breaking change in v0.6.0 (iteration #69 cleanup)**: the `collect` and `merge` meta-instructions have been retired — LLM multi-turn orchestration is an application-layer responsibility, and the mechanism layer no longer embeds ReAct loop primitives. Rule sets using these two types are rejected by the schema. Implement multi-turn orchestration in your application-layer runner.
 
 > Termination guarantee: the entire rule tree shares a single execution budget `MAX_TOTAL_META_INSTRUCTIONS` (executor.rs L87); branch recursion is capped by `MAX_BRANCH_DEPTH` (executor.rs L703).
 
@@ -561,48 +527,12 @@ There are 6 meta-instruction types in total (SSOT: `executor.rs` L52-59 `META_IN
 
 ---
 
-### collect (batch instruction generation)
+### Retired meta-instructions: collect / merge (v0.6.0)
 
-```json
-{
-  "type": "collect",
-  "params": {
-    "from": "__exec__.payload.llm_response.tool_calls",
-    "each": { "type": "call_tool", "params": { "tool": "{{name}}" } }
-  }
-}
-```
+The `collect` (batch instruction generation) and `merge` (merge tool results into the message history) primitives were retired in v0.6.0 (iteration #69 cleanup). They existed to embed an LLM ReAct multi-turn loop in the mechanism layer (`collect` fans out `call_service` over LLM tool_calls; `merge` merges tool results back into the loop to generate the next LLM call) — such orchestration is an application-layer responsibility.
 
-| Parameter | Type | Required | Description |
-|------|------|------|------|
-| `params.from` | String | Yes | Path to the source array |
-| `params.each` | Object | Yes | Instruction template; supports `{{path}}` substitution with the current array element's field values |
-
-**Behavior** (executor.rs L796-807): reads the array from `from`, generates one instruction per element with the `each` template, and pushes them all to the front of the queue. An empty source array = no-op.
-
----
-
-### merge (merge tool results)
-
-```json
-{
-  "type": "merge",
-  "params": {
-    "messages": "payload.messages",
-    "next_instruction": { "type": "call_external", "params": {} },
-    "tool_results": "payload.tool_results"
-  }
-}
-```
-
-| Parameter | Type | Required | Description |
-|------|------|------|------|
-| `params.messages` | String | Yes | Path to the message history (relative to `__exec__`, prefix auto-completed) |
-| `params.next_instruction` | Object | Yes | Template for the next instruction |
-| `params.tool_results` | String | No | Path to the multi-tool results array (mutually exclusive with tool_result) |
-| `params.tool_result` | String | No | Path to a single tool result (backward compatibility) |
-
-**Behavior** (executor.rs L951-954): merges the tool results into the message history, generates the updated next_instruction, and pushes it onto the queue.
+- Rule sets using `"type": "collect"` / `"type": "merge"` are rejected outright by the schema enum (a load-time error, never silently ignored)
+- Implement multi-turn tool orchestration in your application-layer runner / tool_registry; the mechanism layer keeps the single-round `io_request` trigger/consume semantics
 
 ---
 
@@ -620,7 +550,7 @@ Domains are used for condition evaluation in branch instructions. There are 7 ty
 | `not` | The sub-domain is false | `inner` (single domain) | domain.rs L257 |
 | `has_fields` | The object contains the given non-empty fields | `path`, `fields` (non-empty array) | domain.rs L279 |
 
-> Note: evorule v0.5.0 does **not** have operators such as `gt`, `gte`, `neq`, or `contains`. Greater-than comparisons can be expressed via a `not(lt)` combination.
+> Note: evorule v0.6.0 does **not** have operators such as `gt`, `gte`, `neq`, or `contains`. Greater-than comparisons can be expressed via a `not(lt)` combination.
 
 ### instruction (instruction type match)
 

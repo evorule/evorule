@@ -5,7 +5,7 @@
 [![CI](https://github.com/evorule/evorule/actions/workflows/ci.yml/badge.svg)](https://github.com/evorule/evorule/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/badge/github.com/evorule/evorule)](https://securityscorecards.dev/viewer/?uri=github.com/evorule/evorule)
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
-[![Version](https://img.shields.io/badge/version-0.5.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-758%20passed%20%C2%B7%202026--09--05-brightgreen.svg)](#testing--verification)
 [![Kani](https://img.shields.io/badge/Kani-48%20proofs%20%2818%20verified%29-blue.svg)](#formal-verification)
@@ -39,10 +39,10 @@
 
 ---
 
-## Highlights of the current release (v0.5.0)
+## Highlights of the current release (v0.6.0)
 
 - **Slimmer Stable fact**: carries only the `version` number, not a full payload snapshot; WAL volume for long-lived sessions is O(n). Code: `evorule-reactor/src/fact.rs:228-242`
-- **Meta-instruction SSOT**: the tcb exports the authoritative `META_INSTRUCTION_TYPES` constant (6 types); the cli `validate` references it. Code: `evorule-tcb/src/executor.rs:52-59`; test: `test_meta_instruction_types_ssot`
+- **Meta-instruction SSOT**: the tcb exports the authoritative `META_INSTRUCTION_TYPES` constant (5 types, `collect`/`merge` retired in v0.6.0); the cli `validate` references it. Code: `evorule-tcb/src/executor.rs`; test: `test_meta_instruction_types_ssot`
 - **WAL failure escalation**: 3 consecutive WAL write failures auto-terminate the session (fail-closed). Code: `evorule-reactor/src/facts_log.rs` (`WAL_FAIL_TERMINATE_THRESHOLD=3`)
 - **Hash-chain SSOT**: the BLAKE3 algorithm lives in the reactor and is re-exported by governance/cli; the three-way `cross_validate` agrees. Code: `evorule-reactor/src/hash.rs`; test: `test_three_way_hash_consistency`
 - **Full suite 758 passed / 0 failed** (`cargo test --workspace --features persistence`, EXIT=0, measured 2026-09-05)
@@ -508,7 +508,7 @@ evorule/
 [![CI](https://github.com/evorule/evorule/actions/workflows/ci.yml/badge.svg)](https://github.com/evorule/evorule/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/badge/github.com/evorule/evorule)](https://securityscorecards.dev/viewer/?uri=github.com/evorule/evorule)
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
-[![Version](https://img.shields.io/badge/version-0.5.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-758%20passed%20%C2%B7%202026--09--05-brightgreen.svg)](#测试与验证)
 [![Kani](https://img.shields.io/badge/Kani-48%20proofs%20%2818%20verified%29-blue.svg)](#形式化验证)

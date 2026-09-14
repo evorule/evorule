@@ -4,7 +4,7 @@
 # Fact 类型参考
 
 > 字典式参考。evorule fact log 中所有 Fact 类型的字段说明。
-> 基于 `evorule-reactor/src/fact.rs` v0.5.0 实测（Fact 枚举 L187-281）。
+> 基于 `evorule-reactor/src/fact.rs` v0.6.0 实测（Fact 枚举 L187-281）。
 
 ## 总览
 
@@ -142,8 +142,8 @@ Stable 后反应器进入 Idle 长驻，等待新 Command 或 IoResponse。
 - `instr_type`：规则顶层指令类型（如 "branch"、"set"；缺失记 "unknown"）
 - `hit`：是否结构命中
 
-**命中口径**（transition.rs L96-106）：
-- 直接指令（set/push/collect/merge）：执行成功即命中
+**命中口径**（transition.rs）：
+- 直接指令（set/push）：执行成功即命中
 - `io_request`：产生信号即命中
 - `branch`：所选分支（on_true/on_false）存在且非空即命中；空数组或缺失分支不命中（无效果路径）
 - 口径为**结构命中**而非副作用命中（幂等重放如 set 同值仍算命中）
@@ -182,7 +182,7 @@ chain_hash   = blake3(prev_chain_hash + content_hash)
 # Fact Type Reference
 
 > Dictionary-style reference. Field documentation for every Fact type in the evorule fact log.
-> Based on hands-on inspection of `evorule-reactor/src/fact.rs` v0.5.0 (Fact enum, L187-281).
+> Based on hands-on inspection of `evorule-reactor/src/fact.rs` v0.6.0 (Fact enum, L187-281).
 
 ## Overview
 
@@ -320,8 +320,8 @@ A rule-hit attribution trace, appended by the reactor after each convergent tran
 - `instr_type`: the rule's top-level instruction type (e.g. "branch", "set"; recorded as "unknown" if missing)
 - `hit`: whether it was a structural hit
 
-**Hit criteria** (transition.rs L96-106):
-- Direct instructions (set/push/collect/merge): a hit if execution succeeds
+**Hit criteria** (transition.rs):
+- Direct instructions (set/push): a hit if execution succeeds
 - `io_request`: a hit if it produces a signal
 - `branch`: a hit if the selected branch (on_true/on_false) exists and is non-empty; an empty array or a missing branch is not a hit (no-effect path)
 - The criterion is a **structural hit**, not a side-effect hit (an idempotent replay such as setting the same value still counts as a hit)

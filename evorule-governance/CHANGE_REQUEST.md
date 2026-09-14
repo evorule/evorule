@@ -4,6 +4,44 @@
 
 | 字段 | 值 |
 |------|------|
+| **变更 ID** | CR-20260914-001 |
+| **变更标题** | 69 号清理（跨仓 CR，TCB 为主仓）：collect/merge 元指令退役——本仓 VALID_TRANSFORM_TYPES 收窄 4 种（= TCB − enforce） |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-09-14 |
+| **审查状态** | 已批准 |
+
+## 2. 变更层级判定（必填）
+
+### 2.1 变更层级声明
+
+**本次变更属于**: ✅ **机制层 (Mechanism)**
+
+### 2.2 判定理由
+
+```
+治理层规则校验白名单是 TCB 指令白名单的下游镜像（SSOT 在
+evorule-tcb executor）。主仓 CR-20260914-001 退役 collect/merge
+后，本仓 src/rule_validation.rs VALID_TRANSFORM_TYPES 同步收窄为
+branch/set/push/io_request 4 种（enforce 由 tier 门禁控制不入此
+列表），拒载口径与 TCB / schema 枚举三方一致。
+```
+
+### 3.1 变更理由 / 3.2 变更范围
+
+随主仓 CR-20260914-001（69 号清理）。本仓范围：src/rule_validation.rs
+（VALID_TRANSFORM_TYPES 收窄 + collect/merge 校验逻辑删除）及对应用
+例；check_whitelist_sync 门禁脚本同步为 governance = TCB − enforce
+语义比对 + CLI SSOT 引用检查。
+
+### 3.3 破坏性分析 / 3.4 影响评估 / 3.5 测试计划 / 3.6 回滚方案
+
+见主仓 CR-20260914-001（破坏性变更：collect/merge 规则加载即拒；
+Step 8 全量回归绿；回滚 = git revert 同批）。
+
+## 1. 基本信息
+
+| 字段 | 值 |
+|------|------|
 | **变更 ID** | CR-20260902-001 |
 | **变更标题** | 审计/IO/会话强化 + report-002 全项核销：权限门 + WAL 显式拒绝 + 会话 CAS + diff 显式错误 + 哈希 SSOT + 时钟 O(1) + 循环检测递归（UV-046 A1/B1/B2/B3/B4/B6/B8a/B8b/B9/B10） |
 | **提交人** | EvoRule Team |

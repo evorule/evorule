@@ -30,14 +30,15 @@ use serde::Serialize;
 // 元指令白名单
 // ============================================================================
 
-/// 合法元指令类型白名单（P0-01：对齐 executor.rs 6 元指令）
+/// 合法元指令类型白名单（P0-01：对齐 executor.rs 元指令白名单）
 ///
-/// 来源：evorule-tcb/src/executor.rs::execute_meta_instruction 的 dispatch（L95-105），
-/// 仅 6 种：set / push / branch / io_request / collect / merge。
+/// 来源：evorule-tcb/src/executor.rs::META_INSTRUCTION_TYPES，
+/// 4 种：set / push / branch / io_request（enforce 由 tier 门禁控制不入选；
+/// collect/merge 已退役，69 号清理计划 2026-09-14）。
 /// noop/increment/decrement 是**指令层（instruction）**类型，不是元指令层，不得混入本白名单
 /// （双层语言框架，records/75；P0-01 修前曾误混，导致假阳性/假阴性）。
 /// 不含 G8 禁止词（conditional/while_loop/sequence），故无需 build.rs 豁免。
-const VALID_TRANSFORM_TYPES: &[&str] = &["branch", "set", "push", "io_request", "collect", "merge"];
+const VALID_TRANSFORM_TYPES: &[&str] = &["branch", "set", "push", "io_request"];
 
 /// `branch` 指令的必填参数
 const BRANCH_REQUIRED: &[&str] = &["domain"];
@@ -47,10 +48,6 @@ const SET_REQUIRED: &[&str] = &["attr", "operation", "value"];
 const PUSH_REQUIRED: &[&str] = &["instructions"];
 /// `io_request` 指令的必填参数
 const IO_REQUEST_REQUIRED: &[&str] = &["io_type"];
-/// `collect` 指令的必填参数
-const COLLECT_REQUIRED: &[&str] = &["from", "each"];
-/// `merge` 指令的必填参数
-const MERGE_REQUIRED: &[&str] = &["messages", "next_instruction"];
 
 /// `set` 指令的合法 operation 值
 const VALID_OPERATIONS: &[&str] = &["set", "add", "sub"];
@@ -332,8 +329,6 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
         "set" => SET_REQUIRED,
         "push" => PUSH_REQUIRED,
         "io_request" => IO_REQUEST_REQUIRED,
-        "collect" => COLLECT_REQUIRED,
-        "merge" => MERGE_REQUIRED,
         _ => {
             return ValidationCheck {
                 name: "params_complete",
@@ -374,22 +369,6 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
         }
     }
 
-    // 额外检查：merge 必须声明 tool_result 或 tool_results（二选一，
-    // 否则引擎 exec_merge 缺任一报 MissingField）
-    let mut merge_missing_tool = false;
-    if type_str == "merge" && missing.is_empty() {
-        let params = t.get("params");
-        let has_tool = params.and_then(|p| p.get("tool_result")).is_some()
-            || params.and_then(|p| p.get("tool_results")).is_some();
-        if !has_tool {
-            merge_missing_tool = true;
-            extra_checks.push(
-                "merge 需要 tool_result 或 tool_results 之一（引擎 exec_merge 缺任一报 MissingField）"
-                    .to_string(),
-            );
-        }
-    }
-
     // 额外检查：io_request 的 params 大小
     // 安全风险: params 过大可能导致 OOM/DoS,设为 error 级别(阻断验证)
     let mut params_too_large = false;
@@ -410,8 +389,8 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
     let passed = missing.is_empty() && extra_checks.is_empty();
     let level = if passed {
         "info"
-    } else if !missing.is_empty() || params_too_large || operation_invalid || merge_missing_tool {
-        // 缺失必填 / params 过大 / operation 非法 / merge 缺工具结果 → error 级别（阻断）
+    } else if !missing.is_empty() || params_too_large || operation_invalid {
+        // 缺失必填 / params 过大 / operation 非法 → error 级别（阻断）
         "error"
     } else {
         // 其他额外检查 → warn 级别
@@ -511,7 +490,7 @@ fn perform_security_analysis(transforms: &[JsonValue]) -> Vec<ValidationCheck> {
 /// 以及 body 是否包含状态变更指令。
 /// B9（report-002）：递归遍历 branch 的 on_true/on_false 子节点，
 /// 嵌套在 branch 内的 while_loop / 状态变更不再漏检。
-/// 会话状态全局共享——任意层级的 set/collect/merge 均可为任意层级的
+/// 会话状态全局共享——任意层级的 set 均可为任意层级的
 /// while_loop 提供终止条件，故信号跨层级累加。
 fn check_infinite_loop_risk(transforms: &[JsonValue]) -> ValidationCheck {
     let mut has_while_loop = false;
@@ -524,7 +503,7 @@ fn check_infinite_loop_risk(transforms: &[JsonValue]) -> ValidationCheck {
         passed: !risk,
         level: if risk { "warn" } else { "info" },
         message: if risk {
-            "检测到 while_loop 但未找到状态变更指令 (set/collect/merge)，可能导致无限循环"
+            "检测到 while_loop 但未找到状态变更指令 (set)，可能导致无限循环"
                 .to_string()
         } else if has_while_loop {
             "while_loop 存在配套的状态变更指令，循环可终止".to_string()
@@ -572,8 +551,8 @@ fn collect_loop_risk_signals(
             }
 
             // 检查是否有状态变更指令（P0-01：元指令层无 increment/decrement，
-            // 状态变更由 set/collect/merge 承担；指令层 increment/decrement 不在 transform 层）
-            if matches!(type_str, "set" | "collect" | "merge") {
+            // 状态变更由 set 承担；指令层 increment/decrement 不在 transform 层）
+            if type_str == "set" {
                 *has_state_change = true;
             }
         }
