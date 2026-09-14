@@ -53,3 +53,13 @@
 **替代证据**：于 `1c6ad84` 重跑 A 档 14 个全 PASS（2026-09-13，WSL Kani 0.67.0），按 M3.1 命名归档于 `../`（见 [STATUS.md](../../../../../verification/STATUS.md) P0-3/P0-6 证据列）。
 
 **披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-13 条目归档记录。
+
+## 批次 3（2026-09-14）：A 档 14 对证据随 W3-1 proof 源码变更失效隔离
+
+**来源**：`../`（`evorule-tcb/verification/evidence/kani/`），28 个文件（14 对 `.log` + `.stdout.txt`，命名锚定 `1c6ad84`，产出于 2026-09-13）。
+
+**失效判定**（[MECHANISM.md](../../../../../verification/MECHANISM.md) M3.4）：W3-1 提交 `1b340e5` 变更了 proof 源码（`tests/kani/kani_proofs.rs` 新增 7 个结构自检助手并为 23 个 B 档 harness 接线，CR-20260913-004 §3.8），本批证据的 SHA 绑定早于 proof 源码最后一次变更，按 M3.4 自动失效。
+
+**替代证据**：于 `1b340e5` 重跑 A 档 14 个全 PASS（2026-09-14，WSL Kani 0.67.0，单 proof 0.3~4.0s），按 M3.1 命名归档于 `../`（见 [STATUS.md](../../../../../verification/STATUS.md) P0-3/P0-6 证据列）。
+
+**披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-14 条目。
