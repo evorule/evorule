@@ -192,7 +192,7 @@ There are 8 Fact variants in total (fact.rs L187-281):
 
 | Fact type | Description | Produced by | Consumed by | Code line |
 |-----------|------|--------|--------|--------|
-| `Command` | The user submits a new instruction | External (CLI/API) | Reactor | fact.rs L189 |
+| `Command` | The project owner submits a new instruction | External (CLI/API) | Reactor | fact.rs L189 |
 | `PayloadUpdate` | An external actor updates payload fields | Governance layer | Reactor | fact.rs L197 |
 | `StateTransition` | State transition (new payload + new queue) | Reactor | Governance layer / consumers | fact.rs L207 |
 | `IoRequest` | I/O request | TCB (via the reactor) | Governance layer / I/O handler | fact.rs L219 |
@@ -205,7 +205,7 @@ There are 8 Fact variants in total (fact.rs L187-281):
 
 ## Command
 
-The user submits a new instruction, triggering execution.
+The project owner submits a new instruction, triggering execution.
 
 | Field | Type | Description | Code line |
 |------|------|------|--------|

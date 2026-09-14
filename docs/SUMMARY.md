@@ -6,7 +6,7 @@
 
 - [教程](tutorial/README.md)
   - [五分钟跑通 core_eval](tutorial/01-五分钟跑通-core-eval.md)
-  - [ReAct 循环示例](tutorial/02-ReAct循环示例.md)
+  - [反应器循环示例](tutorial/02-反应器循环示例.md)
   - [写一条业务规则](tutorial/03-写一条业务规则.md)
 - [任务式指南](how-to/README.md)
 - [参考手册](reference/README.md)

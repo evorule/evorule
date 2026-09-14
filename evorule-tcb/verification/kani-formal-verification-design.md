@@ -1,14 +1,16 @@
-# Kani 形式化验证设计方案（evorule-tcb v0.3.1）
+# Kani 形式化验证设计方案（evorule-tcb）
 
-> 本文档为 `evorule-tcb` v0.3.1 的 Kani 形式化验证设计，涵盖验证目标、验证策略、
-> 输入建模、证明清单（P1-P21）、目录结构、运行方式、实施计划与风险评估。
+> 本文档为 `evorule-tcb` 的 Kani 形式化验证设计，涵盖验证目标、验证策略、
+> 输入建模、证明清单、目录结构、运行方式、实施记录与风险评估。
+> 初版于 v0.3.1 设计，现口径对齐 **v0.6.0**。
 
-> **⚠️ 退役批注（2026-09-14，69 号清理）**：`collect`/`merge` 元指令与
-> `substitute_template` 模板替换已随 v0.6.0 退役，P15/P16/P17 三个 proof
-> 同步删除（本文 1.1/1.2/二/五节中涉及 collect/merge/substitute_template 的
-> 表述为 v0.3.1 历史设计记录，不再反映现状）。当前权威 proof 清单以
-> [verification/STATUS.md](../../verification/STATUS.md) 附录 A/B 为准
-> （34 个 proof = A 档 14 + B 档 20）。
+> **当前状态（2026-09-14，v0.6.0）**：共 **34 个 `#[kani::proof]`**——
+> A 档 14 个全 PASS（已入 kani.yml PR 闸门）+ B 档 20 个实测超时判不可运行。
+> 初版 P1-P21 经后续演进：resolve_path 域拆分细化、`enforce` 原语三 proof 新增（UV-147）、
+> W3-1 形状助手接线；`collect`/`merge`/`substitute_template` 与 P15/P16/P17 已随
+> v0.6.0（69 号清理）退役。
+> **权威 proof 清单以 [verification/STATUS.md](../../verification/STATUS.md) 附录 A/B 为准**，
+> 本文承担设计原理与演进记录职责，不重复维护逐条清单。
 
 ---
 
@@ -22,11 +24,12 @@
 | **确定性** | 相同输入 → 相同输出（无时间/随机/哈希依赖） | P0 |
 | **类型安全** | 所有类型转换安全（无非法 unwrap） | P1 |
 | **边界安全** | 数组索引/算术运算不越界 | P1 |
-| **状态转换正确性** | 6 种元指令（set/push/branch/io_request/collect/merge）语义符合规格 | P2 |
+| **状态转换正确性** | 5 种元指令（branch/set/push/io_request/enforce）语义符合规格 | P2 |
 | **域评估正确性** | 7 种域类型（eq/lt/exists/instruction/all/not/has_fields）语义正确 | P2 |
 | **路径解析正确性** | `resolve_path` 符合 ABNF 规格，无效路径返回 `None`（不 panic） | P2 |
 
-> **v0.3.1 覆盖重点**：ReAct 相关元指令（`io_request` 触发、`collect` 的 `after` 参数、`merge` 的结果合并、`substitute_template` 模板替换）与 `has_fields`/`lt` 域类型。
+> **v0.6.0 覆盖重点**：`io_request` 单轮触发/消费语义（多轮编排已于 v0.6.0 移交应用层）、
+> `enforce` 强制原语（UV-147，v0.4.3 新增）与 `has_fields`/`lt` 域类型。
 
 ### 1.2 非目标（本次不验证）
 
@@ -62,18 +65,16 @@
 │  - 递归深度限制生效（MAX_DOMAIN_DEPTH=64）                         │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Layer 4: 元指令层（经 execute_meta_instruction 间接覆盖）          │
-│  - 6 种元指令永不 panic（set/push/branch/io_request/collect/merge）│
+│  - 5 种元指令永不 panic（branch/set/push/io_request/enforce）      │
 │  - set/add/sub 算术安全（溢出返回 IntegerOverflow）                │
 │  - branch 嵌套深度限制生效（MAX_BRANCH_DEPTH=64）                  │
-│  - collect 数组遍历安全 + after 参数排序（v0.3.1）                 │
-│  - merge 结果合并正确（v0.3.1）                                    │
-│  - substitute_template 模板替换安全（v0.3.1）                      │
-│  - io_request 可选参数容错（v0.3.1 ReAct）                         │
+│  - enforce 强制原语语义（Halted 信号 + 传播即停，UV-147，v0.4.3）   │
+│  - io_request 可选参数容错（单轮触发/消费语义）                     │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Layer 5: 状态转换层                                               │
 │  - execute_transition 永不 panic                                   │
 │  - 规则数限制生效（MAX_TRANSFORM_RULES=64）                        │
-│  - ReAct 循环：call_external 无结果时返回 IoRequired（不 panic）    │
+│  - 单轮 I/O：call_external 无结果时返回 IoRequired（不 panic）      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -139,17 +140,16 @@ fn any_str<const N: usize>() -> String {
     s
 }
 
-/// 符号指令（type 取合法集合之一）
+/// 符号指令（type 取合法集合之一；v0.6.0 白名单 5 种，其中 enforce 有专用 proof，
+/// 此处符号覆盖 set/push/branch/io_request 4 种）
 fn any_instruction() -> JsonValue {
-    let t = kani::any::<u8>() % 6; // 0..=5 → set/push/branch/io_request/collect/merge
+    let t = kani::any::<u8>() % 4; // 0..=3 → set/push/branch/io_request
     let mut instr = BTreeMap::new();
     instr.insert("type".to_string(), JsonValue::string(match t {
         0 => "set",
         1 => "push",
         2 => "branch",
-        3 => "io_request",
-        4 => "collect",
-        _ => "merge",
+        _ => "io_request",
     }));
     // params 按类型给出已知形状
     JsonValue::Object(instr)
@@ -181,7 +181,7 @@ fn any_state() -> JsonValue {
     JsonValue::Object(root)
 }
 
-/// 以给定 payload 内容构造完整 exec_state（供 P15/P16/P17/P18 传入具体 payload）。
+/// 以给定 payload 内容构造完整 exec_state（供 P18 等传入具体 payload）。
 fn state_with_payload(payload: ObjectMap) -> JsonValue {
     let mut exec = BTreeMap::new();
     exec.insert("instruction".to_string(), JsonValue::string("noop"));
@@ -211,7 +211,12 @@ fn state_with_payload(payload: ObjectMap) -> JsonValue {
 
 ---
 
-## 四、Kani 证明清单（v0.3.1）
+## 四、Kani 证明清单（初版设计 → v0.6.0 演进）
+
+> 本节保留初版（v0.3.1）P1-P21 的设计记录。经后续演进（resolve_path 域拆分为 11 个
+> 细粒度 proof、`enforce` 原语新增 3 个 proof、W3-1 形状助手接线），当前权威清单为
+> **34 个 proof**，见 [STATUS.md 附录 A/B](../../verification/STATUS.md)。
+> P15/P16/P17 已随 v0.6.0 退役（代码块保留为历史设计记录）。
 
 ### 4.1 Layer 1: 基础类型层
 
@@ -382,7 +387,7 @@ fn verify_has_fields_empty_array() {
 
 ### 4.4 Layer 4: 元指令层（经 execute_meta_instruction 间接）
 
-> 私有元指令（`exec_set`/`exec_push`/`exec_branch`/`exec_io_request`/`exec_collect`/`exec_merge`/`substitute_template`）
+> 私有元指令（`exec_set`/`exec_push`/`exec_branch`/`exec_io_request`/`exec_enforce`）
 > 无法从外部直接调用，统一经 `execute_meta_instruction`（公开）按指令类型间接验证。
 >
 > 导入说明：`MAX_BRANCH_DEPTH` 是 [executor.rs](../src/executor.rs#L27) 的 `pub const`，
@@ -390,7 +395,7 @@ fn verify_has_fields_empty_array() {
 > 或直接写字面量 64。
 
 ```rust
-/// P12: execute_meta_instruction 永不 panic（6 种元指令全覆盖）
+/// P12: execute_meta_instruction 永不 panic（set/push/branch/io_request 符号覆盖 + enforce 专用 proof）
 #[cfg(kani)]
 #[kani::proof]
 fn verify_execute_meta_instruction_never_panics() {
@@ -442,7 +447,7 @@ fn verify_branch_depth_limit() {
     assert!(matches!(r, Err(TcbError::NestingTooDeep { .. })));
 }
 
-/// P15: collect 遍历安全 + after 参数排序（v0.3.1）
+/// P15:【已退役 v0.6.0，69 号清理】collect 遍历安全 + after 参数排序（v0.3.1 设计记录）
 #[cfg(kani)]
 #[kani::proof]
 fn verify_collect_safe_with_after() {
@@ -466,7 +471,7 @@ fn verify_collect_safe_with_after() {
     assert!(r.is_ok());
 }
 
-/// P16: merge 结果合并正确（v0.3.1：追加 tool 消息 + 无条件推 next_instruction）
+/// P16:【已退役 v0.6.0，69 号清理】merge 结果合并正确（v0.3.1：追加 tool 消息 + 无条件推 next_instruction）
 #[cfg(kani)]
 #[kani::proof]
 fn verify_merge_safe() {
@@ -486,7 +491,7 @@ fn verify_merge_safe() {
     assert!(r.is_ok(), "merge 不应失败/panic");
 }
 
-/// P17: substitute_template 永不 panic（经 collect/merge 间接）
+/// P17:【已退役 v0.6.0，69 号清理】substitute_template 永不 panic（经 collect/merge 间接）
 /// 覆盖：模板字段存在/缺失、嵌套路径、非字符串字段
 #[cfg(kani)]
 #[kani::proof]
@@ -598,7 +603,10 @@ fn verify_react_io_required() {
 
 ---
 
-## 五、验证清单汇总（v0.3.1）
+## 五、验证清单汇总（初版 P1-P21 → v0.6.0 现状 34 个）
+
+> 初版 21 条中 P15/P16/P17 已退役；resolve_path 拆分细化与 enforce 三 proof 使总数达 34。
+> 逐条清单（含五档状态与证据基线）以 [STATUS.md 附录 A/B](../../verification/STATUS.md) 为准。
 
 | ID | 证明 | 入口 | 验证内容 | 优先级 |
 |----|------|------|---------|--------|
@@ -613,20 +621,20 @@ fn verify_react_io_required() {
 | P9 | `verify_evaluate_domain_deterministic` | 公开 | 域评估确定性 | P0 |
 | P10 | `verify_domain_depth_limit` | 公开 | 深度限制生效 | P1 |
 | P11 | `verify_has_fields_empty_array` | 公开 | has_fields 空数组语义 | P2 |
-| P12 | `verify_execute_meta_instruction_never_panics` | 公开 | 元指令不 panic（6 种） | P0 |
+| P12 | `verify_execute_meta_instruction_never_panics` | 公开 | 元指令不 panic（set/push/branch/io_request） | P0 |
 | P13 | `verify_exec_set_arithmetic_safe` | execute_meta_instruction | set 算术安全 | P0 |
 | P14 | `verify_branch_depth_limit` | execute_meta_instruction | branch 深度限制 | P1 |
 | P15 | ~~`verify_collect_safe_with_after`~~ | — | **退役**（collect 已于 v0.6.0 移除，69 号清理） | — |
 | P16 | ~~`verify_merge_safe`~~ | — | **退役**（merge 已于 v0.6.0 移除，69 号清理） | — |
 | P17 | ~~`verify_substitute_template_never_panics`~~ | — | **退役**（substitute_template 已于 v0.6.0 移除，69 号清理） | — |
-| P18 | `verify_io_request_safe` | execute_meta_instruction | io_request 容错（v0.3.1） | P1 |
+| P18 | `verify_io_request_safe` | execute_meta_instruction | io_request 容错（单轮触发/消费） | P1 |
 | P19 | `verify_execute_transition_never_panics` | 公开 | 状态转换不 panic | P0 |
 | P20 | `verify_transform_rules_limit` | 公开 | 规则数限制 | P2 |
-| P21 | `verify_react_io_required` | 公开 | ReAct I/O 触发（v0.3.1） | P1 |
+| P21 | `verify_react_io_required` | 公开 | 单轮 I/O 触发（call_external → IoRequired） | P1 |
 
 ---
 
-## 六、目录结构（v0.3.1）
+## 六、目录结构
 
 ```
 evorule-tcb/
@@ -636,7 +644,7 @@ evorule-tcb/
 │   ├── value.rs                ← JSON 数据模型（JsonValue / ObjectMap=BTreeMap）
 │   ├── path.rs                 ← 路径解析（resolve_path / resolve_path_mut）
 │   ├── domain.rs               ← 域评估（evaluate_domain，7 种域类型）
-│   ├── executor.rs             ← 元指令执行（execute_meta_instruction，6 种）
+│   ├── executor.rs             ← 元指令执行（execute_meta_instruction，5 种）
 │   └── transition.rs           ← 状态转换（execute_transition / TransitionResult）
 ├── tests/                      ← 外部集成测试（black-box）
 │   ├── determinism_proptest.rs ← proptest 属性测试
@@ -645,7 +653,7 @@ evorule-tcb/
 │   └── kani/                   ← Kani proof 模块（cfg(kani) 门控）
 │       ├── mod.rs              ← 模块导出
 │       ├── model.rs            ← 结构化符号输入辅助（any_payload / any_instruction / ...）
-│       └── kani_proofs.rs      ← Kani 证明（P1-P21）
+│       └── kani_proofs.rs      ← Kani 证明（34 个，权威清单见 STATUS.md 附录 A/B）
 ├── verification/               ← TCB 验证设计文档
 │   └── kani-formal-verification-design.md  ← 本文档
 ├── Cargo.toml
@@ -698,7 +706,7 @@ cargo kani --package evorule-tcb --tests --solver minisat
 
 ---
 
-## 八、实施计划（v0.3.1）
+## 八、实施记录（v0.3.1 初版计划，已全部完成）
 
 | 阶段 | 任务 | 文件 | 优先级 |
 |------|------|------|--------|

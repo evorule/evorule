@@ -1,12 +1,13 @@
 # Release workflow for EvoRule
 #
 # 触发: 推送 v* tag
-# 产物: 双平台二进制 (GitHub Release 附件)
+# 产物: 四 target 二进制 (GitHub Release 附件)
 #   - Linux   x86_64 (ubuntu-latest, 静态 musl)
 #   - Windows x86_64 (windows-latest)
+#   - macOS   x86_64 + aarch64 (macos-latest)
 #
 # 设计说明:
-# - 发布矩阵覆盖当前支持的平台 (Linux / Windows)
+# - 发布矩阵覆盖当前支持的平台 (Linux / Windows / macOS)
 # - Linux 用 musl 静态链接, 产出单一可执行文件
 # - tag 格式: v0.1.0 / v0.2.4 等
 # - 二进制由 cosign keyless (OIDC) 签名, .sig 随 Release 发布, 见 SIGNING.md
@@ -98,6 +99,16 @@ jobs:
             target: x86_64-pc-windows-msvc
             artifact: evorule-windows-x86_64
             ext: ".exe"
+          - name: macos-x86_64
+            os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: evorule-macos-x86_64
+            ext: ""
+          - name: macos-aarch64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: evorule-macos-aarch64
+            ext: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -123,11 +134,19 @@ jobs:
       - name: 构建 CLI 二进制
         run: cargo build -p evorule-cli --release --target ${{ matrix.target }} --bin evorule
 
+      # 以平台后缀重命名后再上传,使 merge-multiple 汇聚时文件名唯一(四 target 中
+      # 三个 Unix 产物本体同名 evorule,直接上传会互相覆盖)
+      - name: 补平台后缀
+        shell: bash
+        run: |
+          mkdir -p stage
+          cp "target/${{ matrix.target }}/release/evorule${{ matrix.ext }}" "stage/${{ matrix.artifact }}${{ matrix.ext }}"
+
       - name: 上传构建产物
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: ${{ matrix.artifact }}
-          path: target/${{ matrix.target }}/release/evorule${{ matrix.ext }}
+          path: stage/${{ matrix.artifact }}${{ matrix.ext }}
 
   # ==========================================================================
   # 2. 发布二进制 cosign keyless 签名 (OIDC, 无密钥管理)
@@ -154,6 +173,18 @@ jobs:
           name: evorule-windows-x86_64
           path: sign/windows
 
+      - name: 下载 macOS 构建产物
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: evorule-macos-x86_64
+          path: sign/macos-x86_64
+
+      - name: 下载 macOS ARM 构建产物
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: evorule-macos-aarch64
+          path: sign/macos-aarch64
+
       - name: 安装 cosign
         uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
 
@@ -161,11 +192,17 @@ jobs:
         run: |
           mkdir -p sigout
           cosign sign-blob --yes \
-            sign/linux/evorule \
+            sign/linux/evorule-linux-x86_64 \
             --output-signature sigout/evorule-linux-x86_64.sig
           cosign sign-blob --yes \
-            sign/windows/evorule.exe \
+            sign/windows/evorule-windows-x86_64.exe \
             --output-signature sigout/evorule-windows-x86_64.exe.sig
+          cosign sign-blob --yes \
+            sign/macos-x86_64/evorule-macos-x86_64 \
+            --output-signature sigout/evorule-macos-x86_64.sig
+          cosign sign-blob --yes \
+            sign/macos-aarch64/evorule-macos-aarch64 \
+            --output-signature sigout/evorule-macos-aarch64.sig
           ls -la sigout
 
       - name: 上传签名产物
@@ -228,16 +265,15 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      # merge-multiple=true 时 artifacts/ 内是构建产物本体(evorule / evorule.exe),
-      # 不是 artifact 名 —— 校验后重命名补平台后缀,发布资产名即平台名
-      - name: 校验产物并补平台后缀
+      # merge-multiple=true 时 artifacts/ 内是带平台后缀的产物本体(见 build 补后缀步骤),
+      # 四 target 文件名唯一 —— 仅校验存在性
+      - name: 校验产物
         run: |
           ls -la artifacts/
-          test -f artifacts/evorule
-          test -f artifacts/evorule.exe
-          mv artifacts/evorule artifacts/evorule-linux-x86_64
-          mv artifacts/evorule.exe artifacts/evorule-windows-x86_64.exe
-          ls -la artifacts/
+          test -f artifacts/evorule-linux-x86_64
+          test -f artifacts/evorule-windows-x86_64.exe
+          test -f artifacts/evorule-macos-x86_64
+          test -f artifacts/evorule-macos-aarch64
 
       - name: 下载签名
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
@@ -257,15 +293,20 @@ jobs:
           files: |
             artifacts/evorule-linux-x86_64
             artifacts/evorule-windows-x86_64.exe
+            artifacts/evorule-macos-x86_64
+            artifacts/evorule-macos-aarch64
             sigs/evorule-linux-x86_64.sig
             sigs/evorule-windows-x86_64.exe.sig
+            sigs/evorule-macos-x86_64.sig
+            sigs/evorule-macos-aarch64.sig
             sbom/*.cdx.json
           generate_release_notes: true
 
   # ==========================================================================
-  # 4. 双平台产物附加到 Gitee Release (gitee 是主仓/发布主入口)
-  #    Gitee Go 云端 agent 对当前账号不可用(agents not available,登记台账 UV-098),故双平台二进制均由本侧构建并经 Gitee OpenAPI 附加到
+  # 4. 四 target 产物附加到 Gitee Release (gitee 是主仓/发布主入口)
+  #    Gitee Go 云端 agent 对当前账号不可用(agents not available,登记台账 UV-098),故四 target 二进制均由本侧构建并经 Gitee OpenAPI 附加到
   #    gitee Release;Gitee Go agent 就绪后可切回原生构建(脚本见 .workflow/release.yml)。
+  #    防挂: 所有 curl 带 --max-time（历史事故登记: 无超时的 gitee 同步曾无限挂起）。
   #    幂等: gitee release 不存在则创建,存在则复用。
   #    需在 github 仓库 Settings → Secrets and variables → Actions 配置 GITEE_TOKEN
   #    (Gitee 个人令牌,勾选 releases + projects 权限)
@@ -287,6 +328,18 @@ jobs:
           name: evorule-windows-x86_64
           path: gitee-assets/windows
 
+      - name: 下载 macOS 构建产物
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: evorule-macos-x86_64
+          path: gitee-assets/macos-x86_64
+
+      - name: 下载 macOS ARM 构建产物
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: evorule-macos-aarch64
+          path: gitee-assets/macos-aarch64
+
       - name: 下载签名
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
@@ -299,17 +352,20 @@ jobs:
           name: evorule-sbom
           path: gitee-assets/sbom
 
-      - name: 补平台后缀并计算 sha256
+      - name: 汇集产物并计算 sha256
         run: |
-          mv gitee-assets/linux/evorule gitee-assets/evorule-linux-x86_64
-          mv gitee-assets/windows/evorule.exe gitee-assets/evorule-windows-x86_64.exe
-          cp gitee-assets/sigs/evorule-linux-x86_64.sig gitee-assets/
-          cp gitee-assets/sigs/evorule-windows-x86_64.exe.sig gitee-assets/
+          mv gitee-assets/linux/evorule-linux-x86_64 gitee-assets/evorule-linux-x86_64
+          mv gitee-assets/windows/evorule-windows-x86_64.exe gitee-assets/evorule-windows-x86_64.exe
+          mv gitee-assets/macos-x86_64/evorule-macos-x86_64 gitee-assets/evorule-macos-x86_64
+          mv gitee-assets/macos-aarch64/evorule-macos-aarch64 gitee-assets/evorule-macos-aarch64
+          cp gitee-assets/sigs/*.sig gitee-assets/
           cp gitee-assets/sbom/*.cdx.json gitee-assets/
           cd gitee-assets
-          sha256sum evorule-linux-x86_64 evorule-windows-x86_64.exe > sha256-checks.txt
+          sha256sum evorule-linux-x86_64 evorule-windows-x86_64.exe evorule-macos-x86_64 evorule-macos-aarch64 > sha256-checks.txt
           sha256sum evorule-linux-x86_64 > evorule-linux-x86_64.sha256
           sha256sum evorule-windows-x86_64.exe > evorule-windows-x86_64.exe.sha256
+          sha256sum evorule-macos-x86_64 > evorule-macos-x86_64.sha256
+          sha256sum evorule-macos-aarch64 > evorule-macos-aarch64.sha256
           cat sha256-checks.txt
           ls -la
 
@@ -323,14 +379,14 @@ jobs:
           if [ -z "$GITEE_TOKEN" ]; then echo "ERROR: github secrets 缺 GITEE_TOKEN"; exit 1; fi
           echo "TAG=$TAG → gitee release"
 
-          # 幂等: 已存在则按 tag 查询,否则创建
-          RELEASE_ID=$(curl --retry 3 --retry-delay 5 --retry-connrefused -fsS \
+          # 幂等: 已存在则按 tag 查询,否则创建（--max-time 防挂）
+          RELEASE_ID=$(curl --max-time 60 --retry 3 --retry-delay 5 --retry-connrefused -fsS \
             "https://gitee.com/api/v5/repos/${REPO}/releases/tags/${TAG}" \
             -H "Authorization: token ${GITEE_TOKEN}" \
             | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
           if [ -z "$RELEASE_ID" ]; then
             echo "gitee release 不存在,创建..."
-            RELEASE_RESP=$(curl --retry 3 --retry-delay 5 --retry-connrefused -fsS -X POST \
+            RELEASE_RESP=$(curl --max-time 60 --retry 3 --retry-delay 5 --retry-connrefused -fsS -X POST \
               "https://gitee.com/api/v5/repos/${REPO}/releases" \
               -H "Content-Type: application/json" \
               -H "Authorization: token ${GITEE_TOKEN}" \
@@ -345,9 +401,9 @@ jobs:
           echo "gitee Release id: ${RELEASE_ID}"
 
           cd gitee-assets
-          for f in evorule-linux-x86_64 evorule-linux-x86_64.sha256 evorule-linux-x86_64.sig evorule-windows-x86_64.exe evorule-windows-x86_64.exe.sha256 evorule-windows-x86_64.exe.sig; do
+          for f in evorule-linux-x86_64 evorule-linux-x86_64.sha256 evorule-linux-x86_64.sig evorule-windows-x86_64.exe evorule-windows-x86_64.exe.sha256 evorule-windows-x86_64.exe.sig evorule-macos-x86_64 evorule-macos-x86_64.sha256 evorule-macos-x86_64.sig evorule-macos-aarch64 evorule-macos-aarch64.sha256 evorule-macos-aarch64.sig; do
             echo "上传 ${f} ..."
-            curl --retry 3 --retry-delay 5 --retry-connrefused -fsS -X POST \
+            curl --max-time 300 --retry 3 --retry-delay 5 --retry-connrefused -fsS -X POST \
               "https://gitee.com/api/v5/repos/${REPO}/releases/${RELEASE_ID}/attach_files" \
               -H "Authorization: token ${GITEE_TOKEN}" \
               -F "file=@${f}"
@@ -356,7 +412,7 @@ jobs:
           # SBOM (CycloneDX, A3)
           for f in *.cdx.json; do
             echo "上传 SBOM ${f} ..."
-            curl --retry 3 --retry-delay 5 --retry-connrefused -fsS -X POST \
+            curl --max-time 300 --retry 3 --retry-delay 5 --retry-connrefused -fsS -X POST \
               "https://gitee.com/api/v5/repos/${REPO}/releases/${RELEASE_ID}/attach_files" \
               -H "Authorization: token ${GITEE_TOKEN}" \
               -F "file=@${f}"

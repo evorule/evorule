@@ -129,7 +129,7 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Data flow**: user instruction → FactSender → command mpsc → reactor → calls TCB → produces a new Fact → event broadcast → every Fact appended to FactsLog (WAL persistence + BLAKE3 hash chain)
+**Data flow**: project-owner instruction → FactSender → command mpsc → reactor → calls TCB → produces a new Fact → event broadcast → every Fact appended to FactsLog (WAL persistence + BLAKE3 hash chain)
 
 ---
 
@@ -166,7 +166,7 @@ let reactor = Reactor::builder(core_eval)
 // spawn returns a 5-tuple: (FactSender, EventReceiver, EventSender, ReactorHandle, FactsLog)
 let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
 
-// Submit an `increment` instruction (a user instruction type defined in core_eval.json)
+// Submit an `increment` instruction (a project-owner instruction type defined in core_eval.json)
 tx.send(Fact::Command {
     id: FactId(1),
     instruction: JsonValue::object_from_pairs(&[

@@ -41,7 +41,7 @@
 
 ## What does not belong here
 
-- ❌ User/developer usage docs → see [tutorial/](../tutorial/) or [how-to/](../how-to/)
+- ❌ Project-owner/developer usage docs → see [tutorial/](../tutorial/) or [how-to/](../how-to/)
 - ❌ Architecture decisions and rationale → see [adr/](../adr/) or [explanation/](../explanation/)
 
 ## Naming conventions

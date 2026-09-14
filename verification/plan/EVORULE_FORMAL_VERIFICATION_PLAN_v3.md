@@ -10,8 +10,8 @@
 
 > **适用范围**：EvoRule 机制层（evorule-tcb / evorule-reactor / evorule-governance）
 > **协议**：AGPL-3.0-or-later（代码）+ CC0-1.0（core_eval.json）
-> **最后更新**：2026-09-12（状态剥离修订）
-> **版本对齐**：按 [MECHANISM.md](../MECHANISM.md) M4 对齐 `Cargo.toml` workspace 版本（当前 v0.5.0）
+> **最后更新**：2026-09-14（v0.6.0 口径对齐：collect/merge 退役、Kani proof 总数 34）
+> **版本对齐**：按 [MECHANISM.md](../MECHANISM.md) M4 对齐 `Cargo.toml` workspace 版本（当前 v0.6.0）
 > **配套文档**：本文档是七层验证体系的指导性"宪法"；各 crate 的专项实施见 [验证文档系统](../README.md)，TCB 的 Kani 专项设计见 `evorule-tcb/verification/kani-formal-verification-design.md`
 > **修订说明（2026-09-12）**：本文档各属性表的「状态」列已全部剥离（统一标记 📊）——验证状态唯一权威为 [STATUS.md](../STATUS.md)（M1），历史偏离与修正见 [DISCLOSURE_LOG.md](../DISCLOSURE_LOG.md)；文中残留的层覆盖 ✅/⏳ 标记为 2026-08-17 冻结的历史口径，不构成当前状态断言。
 
@@ -73,13 +73,14 @@
 - 递归函数（深度上限 64）用 `--default-unwind` 限制展开深度（需 ≥ 64，建议 70）。
 
 > 结构化符号输入的完整辅助函数（`any_payload` / `any_instruction` / `any_exec_state` 等）、
-> P1-P21 证明清单与运行命令，见 `evorule-tcb/verification/kani-formal-verification-design.md`。
+> 证明清单与运行命令，见 `evorule-tcb/verification/kani-formal-verification-design.md`。
+> （v0.6.0 现状：TCB 共 34 个 proof，权威清单见 [STATUS.md](../STATUS.md) 附录 A/B）
 
 **本策略保证的东西**：
 
 - execute_transition 的规则匹配逻辑（切片迭代）✅
 - evaluate_domain 的递归评估逻辑（路径访问）✅
-- execute_meta_instruction 的 set/push/branch/io_request/collect/merge 逻辑 ✅
+- execute_meta_instruction 的 set/push/branch/io_request/enforce 逻辑 ✅（`collect`/`merge` 已于 v0.6.0 退役，多轮编排移交应用层）
 - 深度限制 MAX\_\*\_DEPTH=64 的强制 ✅
 - 错误处理路径（Result 返回，不 panic）✅
 
@@ -398,11 +399,11 @@ fn verify_cause_queue_sync() {
 }
 ```
 
-> **TCB 的 Kani 专项设计（P1-P21 完整清单）**：验证目标、结构化符号输入辅助
+> **TCB 的 Kani 专项设计（完整清单，v0.6.0 现状 34 个 proof）**：验证目标、结构化符号输入辅助
 > （`any_payload`/`any_instruction`/`any_exec_state`/`any_state`/`state_with_payload`/`react_core_eval`）、
 > 分层验证（L1 基础类型 → L5 状态转换）、运行命令与 unwind 实测警告，见
 > `evorule-tcb/verification/kani-formal-verification-design.md`。
-> **Reactor 的 Kani 证明**（11 个 proof，10 PASS + 1 TIMEOUT）见 `evorule-reactor/verification/kani_proofs.rs`。
+> **Reactor 的 Kani 证明**（11 个 proof）见 `evorule-reactor/verification/kani_proofs.rs`（历史实测口径，当前分档状态以 [STATUS.md](../STATUS.md) 为准）。
 
 #### 3.3.2 Verus 规约验证
 
@@ -760,13 +761,13 @@ verification/                         ← 顶层验证文档系统
 └── scripts/                          ← 跨 crate 验证工具引用
 
 evorule-tcb/
-├── verification/                     ← (规划) TCB 验证设计
-│   └── kani-formal-verification-design.md  ← Kani 专项设计（P1-P21）
+├── verification/                     ← TCB 验证设计（已落地）
+│   └── kani-formal-verification-design.md  ← Kani 专项设计
 ├── tests/
-│   ├── kani/                         ← (规划) Kani proof 模块
+│   ├── kani/                         ← Kani proof 模块（已落地）
 │   │   ├── mod.rs
 │   │   ├── model.rs                  ← 结构化符号输入辅助
-│   │   └── kani_proofs.rs            ← P1-P21 证明
+│   │   └── kani_proofs.rs            ← 34 个证明（v0.6.0）
 │   ├── kani.rs                       ← 顶层入口（cfg(kani) mod kani;）
 │   ├── determinism_proptest.rs       ← proptest 属性测试（已有）
 │   └── integration_test.rs           ← 集成测试（已有）
@@ -802,6 +803,5 @@ scripts/
 └── check_doc_safety.py               ← 文档安全与引用完整性检查
 ```
 
-> 上表标注"规划"的位置是 v0.3.1 设计稿中定义但尚未实施的项目
-> （如 `tests/kani/` 目录、`evorule-tcb/verification/` 目录）。
-> 标注"已有"的位置是已存在且经过实跑验证的资产。
+> 上表 v0.3.1 设计稿中标注"规划"的位置（`tests/kani/` 目录、`evorule-tcb/verification/` 目录）
+> 均已实施落地（2026-09-14 核对）。
