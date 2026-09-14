@@ -175,6 +175,20 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 
 **W3-4 前置就绪**：16 项 unwind 校准表（§3.9）+ owned 构造两要素齐备；W3-4 按配置维度（精确 unwind + owned）首跑 P8 系 9 个，eq 族首数据点按 kill criteria 提前路由 Phase 2 stub 试点。
 
+### 3.11 Phase 1 W3-4 执行记录（精确 unwind 校准落地 + eq 族首数据点路由，2026-09-14）
+
+**落地内容**（提交 `627330a`，一次改完 proof 源码纪律）：
+
+1. `kani_proofs.rs` 4 处 unwind 按 §3.9 建议值校准：instruction 24→32 / all 4→16 / deterministic 补 16 / domain_depth_limit 12→16。
+2. W3-3 临时 canary（c2-clone/c2-owned）删除清理（"迁移验证后删除，不入库"承诺收口）。
+3. eq 族首数据点：`verify_evaluate_domain_eq_never_panics`（unwind 24 + owned 构造）**600s 超时**（kill criteria 触发）→ eq 族路由 **Phase 2 stub 试点**（ADR-0002 载体）。构造墙主因判断强化：String/KaniMap 建模开销，owned 迁移仅解 clone 分量。
+
+**M3.4 证据处理**：unwind 属性变更使 A 档 14 proof 的 `90b77aa` 证据失效 → 于 `627330a` 重跑 14/14 PASS（0.3~4.0s，WSL Kani 0.67.0），新证据 `*_PASS_627330a_20260914_*` 落盘，旧 14 对隔离 `_invalidated/` 批次 5；STATUS.md（快照/P0-3/P0-6 证据列/维护区）与 DISCLOSURE_LOG 同批更新。
+
+**机时记账**：eq 首数据点 1 次（600s 超时）+ A 档批次 5 重跑 14 次；B 档攻坚累计 ≈26/≤60 次预算。
+
+**其余 8 个 P8 系首轮处置（暂缓独立实跑，合并至 post-69 基线）**：69 号 collect/merge 清理即将变更同批 proof 源码（`any_instruction` %6→%4、P15/P16/P17 删除、shape 构造同步），预跑数据点将随源码变更立即失去对象意义；且 eq 数据点已对同构造墙 regime 定性（全族同核构造路径）。其测量合并至 69 号计划 Step 10 全量 proof 重跑（post-69 基线）与 Phase 2 stub 试点一并执行，不再消耗 ≈80 分钟已知超时机时。
+
 ## 4. CR-20260913-003 修订记录（2026-09-13，随 CR-20260913-004 生效）
 
 **修订**：实施载体由 impl 级 `cfg(kani)` 双实现改为 proof 层

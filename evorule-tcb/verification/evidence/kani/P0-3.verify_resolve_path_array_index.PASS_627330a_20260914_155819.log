@@ -1,0 +1,27 @@
+Verification evidence: P0-3.verify_resolve_path_array_index
+Status: PASS (exit code 0)
+# Evidence metadata
+- commit SHA: 627330a9d84bed107e2e3e1e6db74d415808a42b
+- kani: cargo-kani 0.67.0
+- rustc: rustc 1.97.1 (8bab26f4f 2026-07-14)
+- timestamp: 2026-09-14 15:58:30 +0800
+- platform: WSL Linux 6.18.33.2-microsoft-standard-WSL2 (x86_64)
+- command: cargo +nightly-2025-11-21 kani -p evorule-tcb --tests --harness verify_resolve_path_array_index --output-format=terse
+- per-proof timeout: 300s (kill 30s)
+- log: P0-3.verify_resolve_path_array_index.PASS_627330a_20260914_155819.stdout.txt
+--- result summary (tail) ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.68s
+warning: evorule-tcb@0.5.0: evorule-tcb 变更治理门禁 PASSED - CHANGE_REQUEST.md 验证通过
+warning: evorule-tcb@0.5.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+   Compiling evorule-tcb v0.5.0 (/mnt/d/evorule/evorule-tcb)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.32s
+Checking harness kani::kani_proofs::verify_resolve_path_array_index...
+
+VERIFICATION RESULT:
+ ** 0 of 970 failed (20 unreachable)
+
+VERIFICATION:- SUCCESSFUL
+Verification Time: 1.3501794s
+
+Manual Harness Summary:
+Complete - 1 successfully verified harnesses, 0 failures, 1 total.
