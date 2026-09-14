@@ -97,7 +97,7 @@
 | 文档 | 触发条件 |
 |------|---------|
 | `README.md` | 公开 API 变更、核心特性变更、快速开始示例变更、架构图变更 |
-| `CHANGELOG.md` | **任何用户可见的变更**（新功能、Bug 修复、破坏性变更、性能改进） |
+| `CHANGELOG.md` | **任何项目方可见的变更**（新功能、Bug 修复、破坏性变更、性能改进） |
 | `DOCS_INDEX.md` | 新增/删除公开文档、文档结构变更 |
 | `VERSION_STRATEGY.md` | 版本策略变更、升门条件变更 |
 | `ROADMAP.md` | 路线图变更、功能规划变更 |
@@ -108,7 +108,7 @@
 
 | 文档 | 触发条件 |
 |------|---------|
-| `docs/introduction.md` | 项目定位变更、目标用户变更、文档导航变更 |
+| `docs/introduction.md` | 项目定位变更、目标项目方变更、文档导航变更 |
 | `docs/SUMMARY.md` | mdbook 目录结构变更、新增/删除章节 |
 | `docs/tutorial/01-五分钟跑通-core-eval.md` | TCB 核心 API 变更、core_eval 使用方式变更 |
 | `docs/tutorial/02-ReAct循环示例.md` | ReAct 循环逻辑变更、Reactor API 变更、I/O 处理变更 |
@@ -123,7 +123,7 @@
 |------|---------|
 | `*/README.md` | crate 公开 API 变更、使用示例变更、依赖关系变更 |
 | `*/*_SPEC.md` | **任何机制层变更**（规范是代码的权威标准，代码变了规范必须同步） |
-| `*/CHANGELOG.md` | 该 crate 用户可见的变更（evorule-cli 有独立 CHANGELOG） |
+| `*/CHANGELOG.md` | 该 crate 项目方可见的变更（evorule-cli 有独立 CHANGELOG） |
 | `evorule-tcb/DETERMINISM_REPORT.md` | 确定性保障变更、测试结果变更 |
 | `evorule-tcb/docs/rule_taxonomy.md` | 规则分类体系变更 |
 | `evorule-reactor/docs/KANI.md` | Reactor Kani 验证变更 |
@@ -139,7 +139,7 @@
 ├─ 改了 build.rs 门禁规则？
 │    └─→ 必须更新: GATE_REFERENCE.md + 对应 crate SPEC §五
 │
-├─ 改了公开 API / 用户可见行为？
+├─ 改了公开 API / 项目方可见行为？
 │    ├─→ 必须更新: 根 CHANGELOG.md
 │    ├─→ 检查: 对应 crate README.md + SPEC.md
 │    └─→ 检查: docs/tutorial/ 相关教程

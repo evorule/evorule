@@ -10,10 +10,10 @@
 
 > EvoRule 三层架构的 Tier 2 治理层 —— I/O 订阅者、审计链、HTTP API。
 
-- **版本**:v0.5.0
-- **依赖**:evorule-tcb = "0.5.0" + evorule-reactor = { version = "0.5.0", features = ["persistence"] }
+- **版本**:v0.6.0
+- **依赖**:evorule-tcb = "0.6.0" + evorule-reactor = { version = "0.6.0", features = ["persistence"] }
 - **协议**:AGPL-3.0-or-later
-- **测试**:`cargo test` 175 PASS / 0 failed(152 单元 + 5 `differential_test` + 9 e2e + 3 `session` + 3 `sse` + 3 doc；2026-09-05 实测，workspace 全量 758 PASS / 0 failed)
+- **测试**:`cargo test` 全量 PASS / 0 failed（2026-09-14 v0.6.0 全量回归，CI 常驻）
 - **build.rs 编译时门禁**:F11 禁止 `unwrap`/`expect`/`panic!`/`debug_assert!`(非测试代码),**G8 控制流白盒化**,PASSED
 - **G8 门控遵守**:治理层的业务语义(审计/会话/调试端点)全部通过 **结构不变式 + Fact 数据驱动**,不在 `src/**/*.rs`(非测试代码)中展开 if/else 业务控制流。
 - **`unsafe`**:`#![forbid(unsafe_code)]`
@@ -89,7 +89,7 @@ evorule-governance 现为**纯机制层库**（无 bin target），应作为 lib
 ```toml
 # 在你自己的应用仓的 Cargo.toml 中
 [dependencies]
-evorule-governance = { version = "0.5.0" }
+evorule-governance = { version = "0.6.0" }
 ```
 
 快速开始示例：
@@ -114,7 +114,7 @@ let auditor = Auditor::load_from_tier1_wal(wal_path)?;
 let verified = auditor.verify_chain()?;
 ```
 
-> **HTTP API 用户**：本 crate 不提供 HTTP API。如需 HTTP/SSE 服务，由应用层基于本 crate 的机制自行构建。
+> **HTTP API 项目方**：本 crate 不提供 HTTP API。如需 HTTP/SSE 服务，由应用层基于本 crate 的机制自行构建。
 
 ## 审计链与哈希链
 
@@ -187,6 +187,10 @@ let verified = auditor.verify_chain()?;
 - **规则校验行为变更**: 元指令白名单修正为 6 种（branch/set/push/io_request/collect/merge），移除误混的 noop/increment/decrement；MAX_NESTING_DEPTH 8→64；set 非法 operation 提升为 error；merge 新增 tool_result/tool_results 校验
 - **Fact 类型映射修正**: 移除 ControlSignal（Fact 枚举无此变体），新增 Stable（终止事实）
 - **build.rs 新增 L1b 变更治理门禁**: CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"；新增策略层反模式检测
+
+## v0.6.0 更新
+
+- **元指令白名单收窄（69 号清理，破坏性变更）**: `VALID_TRANSFORM_TYPES` 收窄为 4 种（branch/set/push/io_request，= TCB − enforce）；`collect`/`merge` 校验逻辑删除，规则文件使用将**加载即拒**；LLM 多轮编排归应用层
 
 ## 设计文档参考
 

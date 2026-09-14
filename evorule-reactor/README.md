@@ -13,13 +13,15 @@
 - **版本**:v0.6.0
 - **依赖**:evorule-tcb = "0.6.0"(io_request 单轮触发/消费;多轮编排由应用层负责)
 - **协议**:AGPL-3.0-or-later
-- **测试**:`cargo test` 227 PASS / 0 failed + 3 ignored(182 单元 + 2 `complex_rule_test` + 11 `differential_test` + 29 `integration_test` + 3 doc `ok`/3 `ignored`；2026-09-05 实测，workspace 全量 758 PASS / 0 failed)
+- **测试**:`cargo test` 全量 PASS / 0 failed（2026-09-14 v0.6.0 全量回归，CI 常驻）
 - **build.rs 编译时门禁**:14 模式(G8 控制流 `conditional`/`while_loop`/`sequence` + F11 `unwrap`/`expect`/`panic!`/`debug_assert!` + S5.2 业务术语 7 条),非测试代码强制,PASSED
 - **G8 门控遵守**:反应器主循环(`reactor.rs`)的控制流分支是**策略数据**(Fact 变体的 match)而非**硬编码业务逻辑**;任何业务分支均由 `core_eval.json` 数据驱动,编译期通过 `build.rs` 递归扫描确认。
 - **`unsafe`**:`#![deny(unsafe_code)]`(`ffi.rs` 在 `ffi` feature 下局部 `#[allow(unsafe_code)]`,FFI 边界,已文档化)
 - **P0 修复(2026-07-25)**:`Box::leak` 内存泄漏已修复(`IoType::parse` 返回 `Option`);锁中毒改为 `e.into_inner()` 恢复(非 panic)
 - **v0.2.0 重构(2026-08-04)**:`IoType` 内部从 `&'static str` 改为 `Arc<str>`,支持 `IoType::new()` 注册任意 io_type(失去 `Copy`,5 个 `const` 改工厂函数);`IoHandler`/`IoDispatcher` 从 governance 下沉至本 crate(trait 改 `#[async_trait]` object-safe);`IoType::parse` 标记 `#[deprecated]`
 - **v0.3.1 TCB 升级**:依赖 evorule-tcb 升至 0.3.1,ReAct 循环由 `call_external`/`call_service`/`collect`/`merge` 驱动(迭代上限 10);I/O 结果按 `__io_results__.{io_type}` 类型隔离,消费后以 null 清除
+- **v0.6.0 收窄(2026-09-14,69 号清理)**:依赖 evorule-tcb 升至 0.6.0;`collect`/`merge` 元指令退役,`io_loop_rules` 改单轮——ReAct 多轮编排归应用层,`io_request` 保留单轮触发/消费语义
+- **Kani 形式化验证**:11 个 `#[kani::proof]`(`verification/kani_proofs.rs`),其中 4 个入 CI PR 闸门(根仓 `.github/workflows/kani.yml`,v0.6.0 重跑 4/4 PASS);状态唯一权威见根 [`verification/STATUS.md`](../verification/STATUS.md)
 
 > 本 crate 属于 [EvoRule](https://gitee.com/evorule) 生态:[主仓](https://gitee.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://gitee.com/evorule/evorule-server)
 
@@ -35,11 +37,11 @@
 ## 架构
 
 ```text
-用户/治理层 → FactSender → [command mpsc] → 反应器
+项目方/治理层 → FactSender → [command mpsc] → 反应器
                                               ↓
                                         调用 TCB 核心
                                               ↓
-                              产生新 Fact → event broadcast → 用户/I/O 订阅者/审计器
+                              产生新 Fact → event broadcast → 项目方/I/O 订阅者/审计器
                                               ↓
                               所有 Fact → FactsLog（审计链 + 哈希链）
 ```
@@ -134,7 +136,7 @@ while let Ok(fact) = rx.recv().await {
 
 | 类型                    | 说明                                          |
 | ----------------------- | --------------------------------------------- |
-| `Fact::Command`         | 用户命令（触发执行）                          |
+| `Fact::Command`         | 项目方命令（触发执行）                        |
 | `Fact::StateTransition` | 状态转换（反应器自动产生，携带 cause 因果链） |
 | `Fact::Stable`          | 稳定状态（队列空 + 无 pending I/O）           |
 | `Fact::Error`           | 错误（超时 / TCB 错误 / 队列溢出）            |

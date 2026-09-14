@@ -40,7 +40,7 @@
 
 **必须**: 实现层只能支持固定数目的元指令，不允许动态注册新元指令。
 
-**当前实现**: 6 种真元指令：
+**当前实现**: 5 种真元指令（v0.6.0；collect/merge 已随 69 号清理退役）：
 
 | 序号 | 元指令   | 作用 |
 | ---- | -------- | ---- |
@@ -48,8 +48,9 @@
 | 2    | `push`   | 将指令列表推入 queue 前端 |
 | 3    | `branch` | 按域条件执行 `on_true` / `on_false` |
 | 4    | `io_request` | 产生 I/O 请求信号（不修改状态） |
-| 5    | `collect` | 遍历数组生成多条指令（多工具扇出） |
-| 6    | `merge`  | 将工具结果合并进消息历史，生成下一条指令 |
+| 5    | `enforce` | L2 元规则强制阻断（halt 语义，TCB 自进化预留） |
+
+> **v0.6.0（69 号清理）**：原第 5/6 号 `collect` / `merge` 已退役——LLM 多轮编排属应用层职责，机制层回归单轮 `io_request` 语义；规则文件使用将加载即拒。
 
 注：`noop` 是**业务指令**层的概念（队列中的空操作指令，用于终止 ReAct 循环等），不是元指令——`core_eval` transform 编译器从不产出 `noop` 类型规则，TCB dispatch 遇到未知类型一律返回 `UnknownMetaInstruction`。
 
@@ -206,8 +207,6 @@
 | 使用点                                  | 相对/绝对                       | 数组索引     | 解析失败行为                      |
 | --------------------------------------- | ------------------------------- | ------------ | --------------------------------- |
 | `domain` 的 `path`                      | 相对 `__exec__`（自动补全）     | ✅ 支持      | `Ok(false)`（业务状态缺失）       |
-| `collect` 的 `from`                     | 相对 `__exec__`（自动补全）     | ✅ 支持      | `Err(PathResolutionFailed)`       |
-| `merge` 的 `messages`/`tool_result(s)`  | 相对 `__exec__`（自动补全）     | ✅ 支持      | `Err(PathResolutionFailed)`       |
 | `set` 的 `attr`                         | 相对 `__exec__.payload`         | ✅ 支持      | 结构错误显式报错                  |
 | `set`/`io_request` 的 `value` 与参数    | 必须 `__` 开头（路径引用）      | ✅ 支持（读）| `Err(PathResolutionFailed)`       |
 
@@ -354,7 +353,7 @@ EVORULE_SKIP_GATE=1 cargo build
 
 ## 六、形式化验证 (Kani proof)
 
-> **当前状态**：37 个 `#[kani::proof]` 分 A/B 两档——A 档 14 个于 v0.5.0 重跑（2026-09-12，证据基线 `bdfb8d4`）全 PASS 并入 kani.yml PR 闸门；B 档 23 个实测 600s/3600s 超时，判定当前不可运行（proptest 间接覆盖）。五档状态详见 [`verification/STATUS.md`](../verification/STATUS.md)（唯一权威）。
+> **当前状态**：34 个 `#[kani::proof]` 分 A/B 两档（v0.6.0 随 69 号清理退役 P15/P16/P17，原 37 个）——A 档 14 个于 v0.6.0 重跑（2026-09-14，证据基线 `25c0cc0`）全 PASS 并入 kani.yml PR 闸门；B 档 20 个实测 600s/3600s 超时，判定当前不可运行（proptest 间接覆盖）。五档状态详见 [`verification/STATUS.md`](../verification/STATUS.md)（唯一权威）。
 
 ### 6.1 已实装资产
 
@@ -374,7 +373,7 @@ EVORULE_SKIP_GATE=1 cargo build
 | L1 | 基础类型（`PartialEq` / `Ord` / `as_*` 不 panic） | 3 | A 档 |
 | L2 | 路径解析（点号 / 数组索引 / 转义 / 边界） | 11 | A 档 |
 | L3 | 域评估（`eq` / `lt` / `exists` / `instruction` / `all` / `not` / `has_fields` / 深度限制 / 空数组） | 10 | B 档 |
-| L4 | 元指令执行（`execute_meta_instruction` / `set` 算术 / `branch` 深度 / `collect` / `merge` / `substitute_template` / `io_request` / enforce 系列） | 10 | B 档 |
+| L4 | 元指令执行（`execute_meta_instruction` / `set` 算术 / `branch` 深度 / `io_request` / enforce 系列） | 10 | B 档 |
 | L5 | 状态转换（`execute_transition` / 规则数限制 / `react_io_required`） | 3 | B 档 |
 
 > 旧 P1–P21 编号已按 [MECHANISM.md](../verification/MECHANISM.md) M8 作废（与属性编号命名空间冲突），proof 以函数名为唯一身份，属性归属与分档清单见 [STATUS.md](../verification/STATUS.md) 附录 A/B。
@@ -412,19 +411,19 @@ EVORULE_SKIP_GATE=1 cargo build
 
 | 模块           | 目标 LOC | 实际 LOC | 备注 |
 | -------------- | -------- | -------- | ---- |
-| `value.rs`     | ≤ 400    | 608      | JsonValue 数据模型（含确定性 Ord 实现） |
-| `path.rs`      | ≤ 400    | 435      | 路径解析（含转义与数组索引） |
-| `domain.rs`    | ≤ 300    | 807      | 域评估（7 基本域 + has_fields + 递归限制） |
-| `executor.rs`  | ≤ 700    | 2047     | 元指令执行器（7 种 + merge/collect） |
-| `transition.rs`| ≤ 200    | 1097     | 状态转换入口（含大测试集） |
-| `error.rs`     | ≤ 200    | 208      | 错误类型（10 变体 + Display/Error 实现） |
-| **总计**       | ≤ 2200   | **5202** | 超标（代码密度高，含大量测试） |
+| `value.rs`     | ≤ 400    | 1219     | JsonValue 数据模型（含确定性 Ord 实现） |
+| `path.rs`      | ≤ 400    | 649      | 路径解析（含转义与数组索引） |
+| `domain.rs`    | ≤ 300    | 1473     | 域评估（7 基本域 + has_fields + 递归限制） |
+| `executor.rs`  | ≤ 700    | 2680     | 元指令执行器（5 种，v0.6.0 实测） |
+| `transition.rs`| ≤ 200    | 2905     | 状态转换入口（含大测试集） |
+| `error.rs`     | ≤ 200    | 312      | 错误类型（10 变体 + Display/Error 实现） |
+| **总计**       | ≤ 2200   | **9238** | 超标（代码密度高，含大量测试） |
 
 > **如实说明**：实际代码行数显著超过目标。主要原因：
 > 1. 各模块内置大规模单元测试（edge case 全覆盖，属正确性保障）；
 > 2. 确定性是最高优先级，为可读性牺牲了"行数最短"的追求；
-> 3. `executor.rs` 的 `merge`/`collect` 实现 ReAct 核心逻辑，本身较大。
-> 目标值属于 v0.2.x 早期规划，v0.3.1 以正确性优先。若后续追求精简，可把测试拆到 `tests/` 目录减负。
+> 3. `executor.rs` 含元指令分发与 enforce halt 语义实现，本身较大。
+> 目标值属于 v0.2.x 早期规划，以正确性优先。若后续追求精简，可把测试拆到 `tests/` 目录减负。
 
 ---
 

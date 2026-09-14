@@ -15,7 +15,7 @@
 
 ## 不要写在这里
 
-- ❌ 用户/开发者使用文档 → 去 [tutorial/](../tutorial/) 或 [how-to/](../how-to/)
+- ❌ 项目方/开发者使用文档 → 去 [tutorial/](../tutorial/) 或 [how-to/](../how-to/)
 - ❌ 架构决策与原理 → 去 [adr/](../adr/) 或 [explanation/](../explanation/)
 
 ## 命名规范

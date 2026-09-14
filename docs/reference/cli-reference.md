@@ -12,7 +12,7 @@
 evorule <SUBCOMMAND>
 ```
 
-零网络、零遥测、零系统依赖，适合合规敏感用户本地使用。fact log 采用 evorule-reactor WAL 格式（JSON Lines），与 evorule-governance 审计链互通。
+零网络、零遥测、零系统依赖，适合合规敏感项目方本地使用。fact log 采用 evorule-reactor WAL 格式（JSON Lines），与 evorule-governance 审计链互通。
 
 ## 子命令
 

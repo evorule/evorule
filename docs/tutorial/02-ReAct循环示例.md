@@ -214,7 +214,7 @@ cargo run
 ## 7. 发生了什么
 
 ```
-用户提交 increment 业务指令
+项目方提交 increment 业务指令
   ↓
 TCB 匹配宪法第一条 transform 规则
   (domain: instruction_type == "increment")

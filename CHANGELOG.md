@@ -71,7 +71,7 @@
 ### 🆕 新增
 
 - **权限门装配可观测性** (\evorule-governance\)：新增 \permission_gate_enabled()\ 查询方法；\IoSubscriber\ 启动时若未装配权限门将输出告警，fail-open 状态显式化，供集成测试与部署自检在编译期断言
-- **CLI 双语化** (\evorule-cli\)：帮助文本与错误信息本地化为英文，面向国际贡献者与用户
+- **CLI 双语化** (\evorule-cli\)：帮助文本与错误信息本地化为英文，面向国际贡献者与项目方
 - **文档双语体系** (\docs/\)：reference / tutorial / how-to / explanation 全套新增英文分节（english 锚点），并新增文档中英漂移门禁
 - **形式化验证体系** (\evorule-tcb\)：新增 Kani 模型检查、变异测试（cargo-mutants）、TLA+ 规范（ExecuteTransition）与差分测试 CI 门禁；coq Makefile 与验证文档就位
 
@@ -241,7 +241,7 @@
 - **`verify_hash_chain` 函数彻底删除**(`evorule-governance/src/hash.rs` / `evorule-cli/src/hash.rs`):
   - 原函数始终返回 `true`,是"假验证"陷阱(仅自洽重算链式哈希,不验证已存储的哈希)
   - v0.2.0 起标记为 `#[deprecated]`,v0.3.2 彻底删除
-  - 替代方案:用 `compute_chain_hash` 重算后与存储的链哈希比对;CLI 用户用 `verify-chain` 命令读取带哈希字段的 WAL 并逐一校验
+  - 替代方案:用 `compute_chain_hash` 重算后与存储的链哈希比对;CLI 项目方用 `verify-chain` 命令读取带哈希字段的 WAL 并逐一校验
 - **`auditor.report()` / `auditor.export()` 返回值变更**(`evorule-governance/src/auditor.rs`):
   - 从 `String` 改为 `Result<String, serde_json::Error>`
   - 不再静默退化为 `"{}"`(防止审计数据被误判为"空")
@@ -390,7 +390,7 @@
 
 ### 🐛 修复
 
-- **`evorule-cli` `load_rules` 排除保留数据文件 `payload.json`**: 若用户在规则目录内放置初始输入 `payload.json`,此前会被当作规则加载并触发 `missing field: type` 错误;现按约定排除文件名恰好为 `payload.json`(大小写不敏感)的文件,规则目录内可安全放置初始数据文件
+- **`evorule-cli` `load_rules` 排除保留数据文件 `payload.json`**: 若项目方在规则目录内放置初始输入 `payload.json`,此前会被当作规则加载并触发 `missing field: type` 错误;现按约定排除文件名恰好为 `payload.json`(大小写不敏感)的文件,规则目录内可安全放置初始数据文件
 
 ### ✅ 向后兼容
 

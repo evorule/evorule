@@ -29,7 +29,7 @@ evorule run ./my-rules --payload '{"counter": 0}'
 4. **同步反应器循环**：FIFO 队列 + max_steps 上界，逐条执行指令
 5. **输出 fact log**：WAL 格式（JSON Lines），与 evorule-reactor/evorule-governance 互通
 
-> 注意：CLI 模式下用户不直接提交指令，而是通过初始 `noop` 指令触发规则链。规则通过 `branch` + `domain: { "type": "instruction", "instruction_type": "noop" }` 匹配后执行 `on_true` 中的元指令。
+> 注意：CLI 模式下项目方不直接提交指令，而是通过初始 `noop` 指令触发规则链。规则通过 `branch` + `domain: { "type": "instruction", "instruction_type": "noop" }` 匹配后执行 `on_true` 中的元指令。
 
 ## 从文件读取 payload
 

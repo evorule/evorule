@@ -8,16 +8,16 @@
 
 # `evorule` CLI
 
-[![版本 v0.5.0](https://img.shields.io/badge/version-v0.5.0-blue)](../Cargo.toml)
+[![版本 v0.6.0](https://img.shields.io/badge/version-v0.6.0-blue)](../Cargo.toml)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-green)](../LICENSE)
 [![文档索引 DOCS_INDEX](https://img.shields.io/badge/docs-DOCS_INDEX-8A2BE2)](../DOCS_INDEX.md)
 
-> **架构层次**:EvoRule 三层架构之上的 **L1 命令行封装工具**(面向圈 2 合规用户,不引入新机制,只封装 evorule-tcb + evorule-reactor 已有的能力)。
+> **架构层次**:EvoRule 三层架构之上的 **L1 命令行封装工具**(面向圈 2 合规项目方,不引入新机制,只封装 evorule-tcb + evorule-reactor 已有的能力)。
 
 > **业务规则模板位置说明（边界合规）**:
 > 面向行业的开箱即用规则集（**医院 HIPAA / 律所利益冲突 / 金融 AML / 政务数据分级** 等）不在本仓——本仓仅保留机制层最小化演示用例（见本仓 `evorule-cli/examples/README.md` 或 `evorule-cli/tests/fixtures/`）。行业规则模板请参见对应独立仓。
 
-**本地 JSON 规则执行工具,面向"圈 2 合规刚需"用户**(医疗/律所/金融/政务等隐私敏感行业)。
+**本地 JSON 规则执行工具,面向"圈 2 合规刚需"项目方**(医疗/律所/金融/政务等隐私敏感行业)。
 
 > **"evorule 没有智能,只有执行的最佳实践"**
 > **"把你公司的合规规则写成一个 JSON 文件,放到本地,evorule 帮你跑 + 审计 + 重放 + 验真"**
@@ -29,7 +29,7 @@
 - ✅ **零网络** —— 不调用任何外部服务
 - ✅ **零遥测** —— 无任何隐式上报
 - ✅ **零 AI 决策** —— 不调用 LLM
-- ✅ **零系统依赖** —— musl 静态链接,单文件分发(v0.5.0 Linux 产物约 2.3 MB,以实际构建为准)
+- ✅ **零系统依赖** —— musl 静态链接,单文件分发(v0.6.0 Linux 产物约 2.3 MB,以实际构建为准)
 - ✅ **完整审计** —— 每步 fact 落盘(tier1 WAL JSONL 格式,与 evorule-governance 互通)
 - ✅ **哈希链** —— blake3 哈希链 + 结构不变量校验(防篡改)
 - ✅ **FIFO 队列** —— 修复原 LIFO bug,正确执行 push 语义
@@ -42,12 +42,12 @@
 - ✅ **G8 门控** —— 编译期拦截"硬编码控制流"违规(与 tier1/tier2 同套规则)
 - ✅ **静态链接分发** —— Linux x86_64 musl + Windows x86_64 为 CI 产物;aarch64 支持源码交叉编译(未提供预编译产物)
 
-## 快速开始(圈 2 用户)
+## 快速开始(圈 2 项目方)
 
 ```bash
-# 1) 下载(按平台选,直达 v0.5.0 release 产物)
-wget https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-linux-x86_64   # Linux x86_64
-# Windows x86_64: https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-windows-x86_64.exe
+# 1) 下载(按平台选,直达 v0.6.0 release 产物)
+wget https://gitee.com/evorule/evorule/releases/download/v0.6.0/evorule-linux-x86_64   # Linux x86_64
+# Windows x86_64: https://gitee.com/evorule/evorule/releases/download/v0.6.0/evorule-windows-x86_64.exe
 
 # 2) 验证(可选,记录哈希备查)
 sha256sum evorule-linux-x86_64
@@ -91,10 +91,10 @@ evorule verify-anchors audit-export.json
 ### 编译(默认 x86_64)
 
 ```bash
-cd evorule-cli  # 在 evorule 仓根目录下执行；Linux 用户进入对应目录即可
+cd evorule-cli  # 在 evorule 仓根目录下执行；Linux 环境进入对应目录即可
 bash build-musl.sh
 # 产物: $TARGET_DIR/x86_64-unknown-linux-musl/release/evorule
-#   1.8 MB,静态链接,stripped
+#   静态链接,stripped(体积以实际构建为准)
 ```
 
 ### 编译 aarch64(AWS Graviton / RPi)
@@ -102,7 +102,7 @@ bash build-musl.sh
 ```bash
 bash build-musl.sh --target aarch64-unknown-linux-musl
 # 产物: $TARGET_DIR/aarch64-unknown-linux-musl/release/evorule
-#   1.4 MB,静态链接,stripped
+#   静态链接,stripped(体积以实际构建为准)
 ```
 
 ### 可重现构建(reproducible build)
@@ -158,7 +158,7 @@ evorule validate ./rules/
 - `[ERROR] transform[N]: unknown type 'X'` —— 未知 type(阻断)
 - `[ERROR] transform[N]: missing 'type' field` —— 缺少 type 字段(阻断)
 
-合法 type 白名单(core_eval 元指令):
+合法 type 白名单(core_eval 元指令,v0.6.0 SSOT 常量 `META_INSTRUCTION_TYPES`,5 种):
 
 | type         | 用途                                     |
 | ------------ | ---------------------------------------- |
@@ -166,9 +166,9 @@ evorule validate ./rules/
 | `set`        | 修改 payload 字段(set/add/sub)           |
 | `push`       | 推指令到队列前端(插队语义)               |
 | `io_request` | 产生 I/O 请求信号(不修改状态)            |
-| `noop`       | 空操作                                   |
-| `increment`  | 自增(业务指令,由 core_eval 映射)         |
-| `decrement`  | 自减(业务指令,由 core_eval 映射)         |
+| `enforce`    | L2 元规则强制阻断(halt 语义)             |
+
+注:`noop` / `increment` / `decrement` 是**业务指令层**类型(由 `core_eval.json` 映射),不是元指令,不在 transform 白名单内。
 
 退出码:
 
@@ -211,7 +211,7 @@ evorule run ./rules/ --max-steps 100
 
 | type              | 字段                              | 说明                                                 |
 | ----------------- | --------------------------------- | ---------------------------------------------------- |
-| `Command`         | id, instruction                   | 用户提交新指令(触发执行)                             |
+| `Command`         | id, instruction                   | 项目方提交新指令(触发执行)                           |
 | `StateTransition` | id, cause, new_payload, new_queue | 状态转换(每步执行)                                   |
 | `IoRequest`       | id, cause, io_type, params        | I/O 请求信号(0.2.0 无 handler → Error)               |
 | `IoResponse`      | id, request_id, result, error     | I/O 响应(0.2.0 不产生)                               |
@@ -322,6 +322,26 @@ Error: Hash chain verification failed: structural violations: 1
 - 1 = 任一检查失败(fact 被篡改或结构异常)
 
 **与 evorule-governance 的关系**:`hash.rs` 复制自 `evorule-governance/src/hash.rs`,由 `include_str!` 交叉验证测试强制双边同步。CLI 与 tier2 Auditor 对同一份 fact.log 必产生相同的链哈希。
+
+---
+
+### 6. `evorule anchor-keygen --output <path>`
+
+生成 ed25519 审计锚点签名密钥对(G-A1 可证来源)。私钥种子写入 `--output` 指定路径(私密保存),公钥随 fact log 导出物内嵌分发。
+
+```bash
+evorule anchor-keygen --output /root/.evorule/audit-sk-seed.txt
+```
+
+---
+
+### 7. `evorule verify-anchors <audit-export.json>`
+
+离线校验审计锚点真实性(防抵赖,哈希链之上的密钥签名)。公钥缺省用导出物内嵌 verifying_key,也可显式指定。
+
+```bash
+evorule verify-anchors audit-export.json
+```
 
 ---
 
@@ -437,27 +457,27 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 ---
 
-## 圈 2 分发清单(给合规用户)
+## 圈 2 分发清单(给合规项目方)
 
 | 物料                                 | 来源                  | 大小   |
 | ------------------------------------ | --------------------- | ------ |
-| `evorule-x86_64-unknown-linux-musl`  | CI artifact / release | 1.8 MB |
-| `evorule-aarch64-unknown-linux-musl` | CI artifact / release | 1.4 MB |
+| `evorule-x86_64-unknown-linux-musl`  | CI artifact / release | 以实际构建为准 |
+| `evorule-aarch64-unknown-linux-musl` | CI artifact / release | 以实际构建为准 |
 | `*.sha256`                           | 校验文件              | < 1 KB |
 | AGPL-3.0 许可证文本                  | 随源码提供            | -      |
-| 用户规则文件                         | 用户自备              | -      |
+| 项目方规则文件                       | 项目方自备            | -      |
 
 **目标交付命令**:
 
 ```bash
-# Linux x86_64 圈 2 用户
-wget https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-linux-x86_64
+# Linux x86_64 圈 2 项目方
+wget https://gitee.com/evorule/evorule/releases/download/v0.6.0/evorule-linux-x86_64
 chmod +x evorule-linux-x86_64
 ./evorule-linux-x86_64 validate /etc/company-rules/
 ./evorule-linux-x86_64 run /etc/company-rules/ -o /var/log/evorule-fact.log
 ./evorule-linux-x86_64 verify-chain /var/log/evorule-fact.log
 
-# Linux aarch64 圈 2 用户 (AWS Graviton / RPi)：当前未提供预编译二进制，需源码交叉编译
+# Linux aarch64 圈 2 项目方 (AWS Graviton / RPi)：当前未提供预编译二进制，需源码交叉编译
 # 见本仓库 build-musl.sh 与 aarch64 交叉编译说明；或基于 evorule-linux-x86_64 容器内运行
 ```
 
@@ -538,7 +558,7 @@ bash tests/e2e.sh .build/rust/aarch64-unknown-linux-musl/release/evorule
 
 ---
 
-## 已知限制(0.3.1)
+## 已知限制(v0.6.0 时点)
 
 - ❌ 无 I/O handler(`io_request` 会产生 IoRequest fact + Error fact,不实际执行 I/O)
 - ❌ 无 HTTP API(本 crate 是本地 CLI，不提供 HTTP 服务；如需 HTTP/SSE 由应用层基于核心仓机制自行构建)
@@ -547,7 +567,7 @@ bash tests/e2e.sh .build/rust/aarch64-unknown-linux-musl/release/evorule
 - ✅ 0 网络 ✓
 - ✅ 0 遥测 ✓
 - ✅ 0 系统依赖(musl 静态链接)x2 架构 ✓
-- ✅ 1.8 MB 单文件 ✓
+- ✅ 单文件分发(musl 静态链接) ✓
 - ✅ G8 门控(递归扫描 src/\*_/_.rs + strip_test_mod)✓
 - ✅ blake3 哈希链(与 evorule-governance 交叉验证)✓
 - ✅ 结构不变量校验(FactId 单调 + cause 引用)✓
@@ -564,20 +584,23 @@ bash tests/e2e.sh .build/rust/aarch64-unknown-linux-musl/release/evorule
 evorule-cli
 ├── src/
 │   ├── main.rs          # 入口:tracing 初始化 + 子命令分发
-│   ├── cli.rs           # clap derive 参数定义(5 个子命令)
+│   ├── cli.rs           # clap derive 参数定义(7 个子命令)
 │   ├── error.rs         # CliError 枚举 + 退出码映射(0/1/2)
 │   ├── executor.rs      # 同步反应器循环(FIFO + max_steps + I/O 两阶段)
 │   ├── fact_log.rs      # JSONL 读写(tier1 WAL 格式,fact_to_json/fact_from_json)
 │   ├── hash.rs          # blake3 哈希链(复制自 evorule-governance,交叉验证)
 │   ├── io_util.rs       # 规则加载(确定性排序)+ payload 解析 + 文件读写
 │   ├── output.rs        # human-readable 格式化 + diff 前缀
+│   ├── signing.rs       # G-A1 审计锚点签名(ed25519)
 │   └── commands/
-│       ├── mod.rs       # 子命令模块声明
-│       ├── validate.rs  # validate:core_eval 元指令白名单校验
-│       ├── run.rs       # run:加载→执行→输出 fact log
-│       ├── replay.rs    # replay:读 fact log → pretty-print
-│       ├── diff.rs      # diff:按 FactId 数组下标对齐比对
-│       └── verify_chain.rs # verify-chain:哈希链 + 结构不变量
+│       ├── mod.rs           # 子命令模块声明
+│       ├── validate.rs      # validate:core_eval 元指令白名单校验
+│       ├── run.rs           # run:加载→执行→输出 fact log
+│       ├── replay.rs        # replay:读 fact log → pretty-print
+│       ├── diff.rs          # diff:按 FactId 数组下标对齐比对
+│       ├── verify_chain.rs  # verify-chain:哈希链 + 结构不变量
+│       ├── anchor_keygen.rs # anchor-keygen:生成 ed25519 审计锚点密钥对
+│       └── verify_anchors.rs # verify-anchors:离线校验锚点真实性
 ├── build.rs             # G8/F11 编译期门控(递归扫描 + strip_test_mod)
 ├── tests/
 │   ├── e2e.sh           # 28 个 TAP 端到端测试
@@ -597,17 +620,18 @@ evorule-cli
 
 ## CI 集成
 
-中文版 Gitee Go CI (`.gitee-ci/`) 自动构建并上传产物到 Gitee release：
+CI 双轨并行:Gitee Go(`.gitee-ci/`)+ GitHub Actions(`.github/workflows/`),Gitee 为主仓、GitHub 为同步镜像:
 
-| Workflow                        | 触发                            | 输出                                              |
-| ------------------------------- | ------------------------------- | ------------------------------------------------- |
-| `.gitee-ci/ci.yml`              | push / PR (main, master, release/\*\*) | Linux + Windows 全量测试 + e2e + TCB 确定性 |
-| `.gitee-ci/release.yml`         | tag `v*`                        | Linux x86_64 (musl) + Linux aarch64 (musl) + Windows x86_64 二进制 + SHA256 → Gitee release |
+| Workflow                        | 平台           | 触发                            | 输出                                              |
+| ------------------------------- | -------------- | ------------------------------- | ------------------------------------------------- |
+| `.gitee-ci/validate.yml`        | Gitee Go       | push / PR                       | 文档安全/版本一致性门禁 + lint + 全量测试 + 构建(G8 门禁内置) |
+| `.github/workflows/ci.yml`      | GitHub Actions | push / PR                       | Linux + Windows 测试矩阵 + cli e2e + TCB 确定性 + i18n 门禁 |
+| `.github/workflows/kani.yml`    | GitHub Actions | push / PR (paths)               | A 档 Kani proof 闸门(tcb 14 + reactor 4)          |
+| `.github/workflows/release.yml` | GitHub Actions | tag `v*`                        | Linux x86_64 (musl) + Windows x86_64 二进制 + SHA256 + 签名 → Release(Gitee 同步) |
 
 每个 build stage 内置 G8 门禁校验（通过 evorule-tcb / evorule-cli build.rs 自动执行）。
 
-**macOS 二进制**：Gitee Go 无 macOS runner，由未来英文版仓库（GitHub Actions）发布。
-**GitHub 关系**：本仓库不向 GitHub 镜像（`不做镜像`），英文版将独立仓库发布。
+**macOS**：CI 测试矩阵与预编译产物目前仅覆盖 Linux / Windows；macOS 可源码构建但未经 CI 验证（见根 README 能力边界表）。
 
 ---
 
@@ -624,6 +648,10 @@ evorule-cli
 - **`validate` 元指令白名单修正**: 仅 6 种真元指令（branch/set/push/io_request/collect/merge）。noop/increment/decrement 是指令层类型，不是元指令，不得混入白名单
 - **build.rs 新增 L1b 变更治理门禁**: CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"；新增策略层反模式检测
 - **`EVORULE_SKIP_CR_GATE=1`** 环境变量可跳过 L1b 变更治理门禁（仅限本地开发）
+
+## v0.6.0 更新
+
+- **`validate` 元指令白名单收窄（69 号清理，破坏性变更）**: SSOT 常量 `META_INSTRUCTION_TYPES` 收窄为 5 种（branch/set/push/io_request/enforce）；`collect`/`merge` 规则加载即拒，LLM 多轮编排归应用层
 
 ## 参见(项目级治理文档)
 

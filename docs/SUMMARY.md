@@ -2,7 +2,7 @@
 
 [介绍](introduction.md)
 
-# 用户指南
+# 项目方指南
 
 - [教程](tutorial/README.md)
   - [五分钟跑通 core_eval](tutorial/01-五分钟跑通-core-eval.md)

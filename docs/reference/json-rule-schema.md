@@ -285,7 +285,7 @@ JSON `null` 视为"已清除/不存在"（domain.rs L200-204）。用于检测 I
 
 ```
 __exec__.instruction  — 当前指令
-__exec__.payload      — 业务状态（用户数据）
+__exec__.payload      — 业务状态（项目方数据）
 __exec__.queue        — 待执行指令队列
 __exec__.__io_results__.<io_type> — I/O 结果（按类型隔离）
 ```

@@ -8,7 +8,7 @@
 
 # Kani 形式化验证指南
 
-[evorule-tcb](../) 的 37 个 Kani proof 位于 [`tests/kani/kani_proofs.rs`](../tests/kani/kani_proofs.rs)，
+[evorule-tcb](../) 的 34 个 Kani proof（v0.6.0 随 69 号清理退役 P15/P16/P17，原 37 个）位于 [`tests/kani/kani_proofs.rs`](../tests/kani/kani_proofs.rs)，
 经 [`tests/kani_entry.rs`](../tests/kani_entry.rs) 顶层入口引入，由 `#[cfg(kani)]` 门控
 （`cargo kani` 自动注入 `--cfg kani`，普通 `cargo build`/`cargo test` 不编译）。
 
@@ -16,22 +16,23 @@
 > [verification/MECHANISM.md](../../verification/MECHANISM.md) M1/M2）。本指南只记录
 > proof 清单与运行方式，不承载状态断言。
 
-## 📋 Proof 分档清单（37 个）
+## 📋 Proof 分档清单（34 个）
 
 ### A 档 14 个 —— CI PR 闸门（kani.yml `kani-tcb-a-tier` job）
 
-v0.5.0 重跑实测（2026-09-12，Kani 0.67.0 + nightly-2025-11-21，WSL）：14/14 PASS，单 proof 7~22s。
+v0.6.0 重跑实测（2026-09-14，commit `25c0cc0`，Kani 0.67.0 + nightly-2025-11-21，WSL）：14/14 PASS，单 proof 0.3~4.0s。
 
 | 属性 | Proof（函数名） |
 | ---- | --------------- |
 | P0-3（11 个） | `verify_resolve_path_simple_field` / `_nested_dot` / `_array_index` / `_double_dot` / `_escaped_dot` / `_empty_returns_none` / `_trailing_dot` / `_invalid_index_char` / `_missing_close_bracket` / `_deterministic` / `verify_array_index_bounds` |
 | P0-6（3 个） | `verify_partial_eq_never_panics` / `verify_ord_never_panics` / `verify_as_methods_never_panic` |
 
-### B 档 23 个 —— 仅手动触发且允许失败（kani.yml `kani-tcb-b-tier` job）
+### B 档 20 个 —— 仅手动触发且允许失败（kani.yml `kani-tcb-b-tier` job）
 
-实测判定「当前不可运行」（2026-09-11，Kani 0.67.0 / WSL Ubuntu 22.04）：600s 全超时
+实测判定「当前不可运行」（2026-09-11，Kani 0.67.0 / WSL Ubuntu 22.04；下列为退役前 23 个时点的历史记录）：600s 全超时
 （其中 2 个实际跑 910s+）；3600s 仍超时（`verify_merge_safe` 跑满 3603s）；unwind 4/8 无改善。
-覆盖 evaluate_domain 系列（8 个）、execute_transition / enforce 系列、collect/merge/has_fields 等，
+覆盖 evaluate_domain 系列（8 个）、execute_transition / enforce 系列、has_fields 等
+（原 collect/merge/substitute_template 相关 3 个 proof 已随 v0.6.0 退役删除），
 完整名单见 [STATUS.md](../../verification/STATUS.md) 附录 B。
 
 ⚠️ 不要为 B 档加大超时——至今无证据表明它们会终止。若将来要让 B 档可验证，
