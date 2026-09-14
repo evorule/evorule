@@ -80,7 +80,33 @@ jobs:
           fi
 
   # ==========================================================================
-  # 1. 双平台矩阵构建
+  # 1. crates.io 发布 (硬约束: 发版必须同步 crates.io)
+  #    依赖序: tcb → reactor → governance → cli
+  #    前置: repo Settings → Secrets and variables → Actions 配置 CARGO_REGISTRY_TOKEN
+  # ==========================================================================
+  publish-crates:
+    needs: [release-gate]
+    name: publish crates.io
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - name: 按依赖序发布四核心 crate
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -e
+          for p in evorule-tcb evorule-reactor evorule-governance evorule-cli; do
+            cargo publish -p "$p"
+            sleep 15  # 等待 crates.io 索引更新, 避免下游依赖解析未就绪
+          done
+
+  # ==========================================================================
+  # 2. 双平台矩阵构建
   # ==========================================================================
   build:
     needs: [release-gate]

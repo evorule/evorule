@@ -61,6 +61,7 @@
 ### 🔄 变更
 
 - `evorule-reactor/src/ffi.rs`：wasm32 分支由 `new_current_thread().enable_time()`（运行时必 panic）改为直接返回 null_mut，防止误用
+- **发版线补齐（2026-09-14）**：① 四核心 crate（`evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli`）**补发 crates.io 0.6.0**（此前 0.6.0 仅 git tag + GitHub Release，crates.io 停在 0.5.0）；② `release.yml` 新增 `publish-crates` job（release-gate 门禁后按依赖序 `tcb → reactor → governance → cli` 自动发布，需 repo secret `CARGO_REGISTRY_TOKEN`），固化"发版必须同步 crates.io"硬约束；③ 下游同步：`evorule-server` 核心依赖 0.4.3 → 0.6.0（6 处 Cargo.toml，引擎白名单与 schema 校验层口径归一）
 
 ---
 
