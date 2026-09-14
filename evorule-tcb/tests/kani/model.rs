@@ -97,19 +97,19 @@ pub(crate) fn concrete_exec_state() -> JsonValue {
     payload.insert("y".to_string(), JsonValue::Integer(2));
     payload.insert(
         "obj".to_string(),
-        JsonValue::object_from_pairs(&[("flag", JsonValue::Bool(true))]),
+        obj(vec![("flag", JsonValue::Bool(true))]),
     );
     payload.insert(
         "items".to_string(),
         JsonValue::array(vec![
-            JsonValue::object_from_pairs(&[("name", JsonValue::string("a"))]),
-            JsonValue::object_from_pairs(&[("name", JsonValue::string("b"))]),
+            obj(vec![("name", JsonValue::string("a"))]),
+            obj(vec![("name", JsonValue::string("b"))]),
         ]),
     );
     let mut exec = ObjectMap::new();
     exec.insert(
         "instruction".to_string(),
-        JsonValue::object_from_pairs(&[("type", JsonValue::string("set"))]),
+        obj(vec![("type", JsonValue::string("set"))]),
     );
     exec.insert("payload".to_string(), JsonValue::Object(payload));
     exec.insert("queue".to_string(), JsonValue::Array(Vec::new()));
@@ -156,28 +156,29 @@ fn s(v: &str) -> JsonValue {
 fn iv(v: i64) -> JsonValue {
     JsonValue::Integer(v)
 }
-fn obj(pairs: &[(&str, JsonValue)]) -> JsonValue {
-    JsonValue::object_from_pairs(pairs)
+/// owned 构造（W3-3，G2：构造层与 Clone 实现解绑）——值 move 进 ObjectMap，零深克隆。
+pub(crate) fn obj(pairs: Vec<(&str, JsonValue)>) -> JsonValue {
+    JsonValue::object_from_pairs_owned(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
 }
 fn arr(v: Vec<JsonValue>) -> JsonValue {
     JsonValue::array(v)
 }
 
 fn instr_domain(t: &str) -> JsonValue {
-    obj(&[("type", s("instruction")), ("instruction_type", s(t))])
+    obj(vec![("type", s("instruction")), ("instruction_type", s(t))])
 }
 fn exists_domain(path: &str) -> JsonValue {
-    obj(&[("type", s("exists")), ("path", s(path))])
+    obj(vec![("type", s("exists")), ("path", s(path))])
 }
 fn lt_domain(path: &str, value: i64) -> JsonValue {
-    obj(&[("type", s("lt")), ("path", s(path)), ("value", iv(value))])
+    obj(vec![("type", s("lt")), ("path", s(path)), ("value", iv(value))])
 }
 fn branch(domain: JsonValue, on_true: Vec<JsonValue>, on_false: Vec<JsonValue>) -> JsonValue {
-    obj(&[
+    obj(vec![
         ("type", s("branch")),
         (
             "params",
-            obj(&[
+            obj(vec![
                 ("domain", domain),
                 ("on_true", arr(on_true)),
                 ("on_false", arr(on_false)),
@@ -186,20 +187,20 @@ fn branch(domain: JsonValue, on_true: Vec<JsonValue>, on_false: Vec<JsonValue>) 
     ])
 }
 fn set_instr(attr: &str, op: &str, value: JsonValue) -> JsonValue {
-    obj(&[
+    obj(vec![
         ("type", s("set")),
         (
             "params",
-            obj(&[("attr", s(attr)), ("operation", s(op)), ("value", value)]),
+            obj(vec![("attr", s(attr)), ("operation", s(op)), ("value", value)]),
         ),
     ])
 }
 fn push_noop() -> JsonValue {
-    obj(&[
+    obj(vec![
         ("type", s("push")),
         (
             "params",
-            obj(&[("instructions", arr(vec![obj(&[("type", s("noop"))])]))]),
+            obj(vec![("instructions", arr(vec![obj(vec![("type", s("noop"))])]))]),
         ),
     ])
 }
@@ -209,13 +210,13 @@ fn push_noop() -> JsonValue {
 pub(crate) fn react_core_eval() -> Vec<JsonValue> {
     // 1) react_iteration 自初始化（缺失时置 0，否则跳过）
     let self_init = branch(
-        obj(&[
+        obj(vec![
             ("type", s("all")),
             (
                 "inner",
                 arr(vec![
                     instr_domain("call_external"),
-                    obj(&[
+                    obj(vec![
                         ("type", s("not")),
                         ("inner", exists_domain("__exec__.payload.react_iteration")),
                     ]),
@@ -227,19 +228,19 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
     );
 
     // 2) call_external：消费 LLM 结果 → collect 生成 call_service
-    let collect_instr = obj(&[
+    let collect_instr = obj(vec![
         ("type", s("collect")),
         (
             "params",
-            obj(&[
+            obj(vec![
                 ("from", s("__exec__.payload.llm_response.tool_calls")),
                 (
                     "each",
-                    obj(&[
+                    obj(vec![
                         ("type", s("call_service")),
                         (
                             "params",
-                            obj(&[("service_name", s("{{name}}")), ("args", s("{{args}}"))]),
+                            obj(vec![("service_name", s("{{name}}")), ("args", s("{{args}}"))]),
                         ),
                     ]),
                 ),
@@ -272,7 +273,7 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
                     JsonValue::Null,
                 ),
                 branch(
-                    obj(&[
+                    obj(vec![
                         ("type", s("has_fields")),
                         ("path", s("__exec__.payload.llm_response")),
                         ("fields", arr(vec![s("tool_calls")])),
@@ -281,11 +282,11 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
                     vec![push_noop()],
                 ),
             ],
-            vec![obj(&[
+            vec![obj(vec![
                 ("type", s("io_request")),
                 (
                     "params",
-                    obj(&[
+                    obj(vec![
                         ("io_type", s("call_external")),
                         ("messages", s("__exec__.instruction.params.messages")),
                         ("tools", s("__exec__.instruction.params.tools")),
@@ -297,20 +298,20 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
     );
 
     // 3) call_service：消费工具结果 → lt 检查 → merge 生成下一条 call_external
-    let merge_instr = obj(&[
+    let merge_instr = obj(vec![
         ("type", s("merge")),
         (
             "params",
-            obj(&[
+            obj(vec![
                 ("messages", s("__exec__.payload.llm_response.messages")),
                 ("tool_result", s("__exec__.payload.service_result")),
                 (
                     "next_instruction",
-                    obj(&[
+                    obj(vec![
                         ("type", s("call_external")),
                         (
                             "params",
-                            obj(&[("messages", s("{{messages}}")), ("tools", s("{{tools}}"))]),
+                            obj(vec![("messages", s("{{messages}}")), ("tools", s("{{tools}}"))]),
                         ),
                     ]),
                 ),
@@ -339,11 +340,11 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
                     vec![push_noop()],
                 ),
             ],
-            vec![obj(&[
+            vec![obj(vec![
                 ("type", s("io_request")),
                 (
                     "params",
-                    obj(&[
+                    obj(vec![
                         ("io_type", s("call_service")),
                         (
                             "service_name",

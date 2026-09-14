@@ -161,6 +161,20 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 
 **处置决策**：本次**零代码变更**。16 个不合规项的 unwind 校准登记为 **W3-4 前置配套**——W3-4 本来就以 unwind 为配置维度逐 harness 实跑（≤3 配置），届时按上表建议值起步、以 unwinding assertions 反馈逐个收敛，一次改完 proof 源码 + 一次 M3.4 A 档证据重跑，避免本次单独变更触发第二次证据重跑（机时纪律）。**机时记账**：纯静态（3 次脚本迭代），0 次求解器运行。
 
+### 3.10 Phase 1 W3-3 执行记录（owned 构造迁移，2026-09-14）
+
+**落地内容**（Tier 5.3 先行项，G2：构造层与 Clone 实现解绑）：
+
+1. `model.rs`：`obj()` 由 `object_from_pairs(&[(&str, JsonValue)])`（引用对 + 内部深克隆）改为 `object_from_pairs_owned(Vec<(&str, JsonValue)>)`（值 move 进 ObjectMap，零深克隆），可见性 pub(crate)。
+2. `kani_proofs.rs`：23 个 B 档 harness 构造调用点适配（`obj(&[...])` → `obj(vec![...])`），迁移后旧构造形态零残留（grep 实证：`obj(&[` / `object_from_pairs(&[` 0 命中；owned 形态 96 处落位）。
+3. 编译验收：A 档最快 proof `verify_partial_eq_never_panics` 迁移后实跑 **1.0s PASS**（同编译单元完整性确认，534 断言 0 失败）。
+
+**M3.4 证据处理**：model.rs/kani_proofs.rs 变更使 A 档 14 proof 的 `1b340e5` 证据 SHA 绑定失效 → 提交后 WSL 同协议重跑 14 个，新证据 `P0-3/P0-6.<harness>_PASS_<新SHA>_20260914_*` 落盘，旧 14 对 `git mv` 隔离 `_invalidated/` 批次 4；STATUS.md 证据列/快照同批更新（另见 DISCLOSURE_LOG 同日条目）。
+
+**机时记账**：1 次有效运行（编译验收），机器时间 ≈2 分钟；B 档攻坚累计 ≈25/≤60 次预算。
+
+**W3-4 前置就绪**：16 项 unwind 校准表（§3.9）+ owned 构造两要素齐备；W3-4 按配置维度（精确 unwind + owned）首跑 P8 系 9 个，eq 族首数据点按 kill criteria 提前路由 Phase 2 stub 试点。
+
 ## 4. CR-20260913-003 修订记录（2026-09-13，随 CR-20260913-004 生效）
 
 **修订**：实施载体由 impl 级 `cfg(kani)` 双实现改为 proof 层
