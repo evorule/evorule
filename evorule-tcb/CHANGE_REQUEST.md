@@ -114,6 +114,22 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 
 **机时记账**：Phase 0 实耗 ≈4 次有效运行 + 2 次亚秒级失败探测（6/≈7 次预算），机器时间 ≈20 分钟。**方案收缩汇总**：Tier 1.2 裁撤；Tier 1.1 降级为 W3-3/W3-4 配套动作（eq 族按 kill criteria 以首个数据点提前路由 Phase 2 stub 试点）；Tier 2.3 组合验证两步化。Phase 1 计划不变（W3-1 结构自检断言先行）。
 
+### 3.8 Phase 1 W3-1 执行记录（结构自检断言，2026-09-14 定稿）
+
+**落地内容**（`tests/kani/kani_proofs.rs` 单文件，proof 源码变更）：
+
+1. **7 个结构自检助手**：`shape_field`（键存在+返回引用）/ `shape_str`（字符串相等）/ `shape_str_in`（集合哨兵）/ `shape_array`（定长数组）/ `shape_bool` / `shape_payload_leaf`（payload 叶子定位）/ `shape_full_state` 与 `shape_concrete_exec_state`（两族 state 哨兵）。全部为具体值相等断言——不引入符号分支、不改变被证属性解空间，只拦截构造退化导致的假验证。
+2. **23 个 B 档 harness 全部接线**（含 13 处构造根接线修复：原草稿将 `payload` 键误作构造根传入 `shape_payload_leaf`，按各 harness 实际构造根改接）。
+3. **canary 本地验证（验证后删除，不入库）**：
+   - 正向 ✅：`c1`（shape_field/shape_str/shape_str_in，76.9s）、`c3`（shape_payload_leaf × single_key_exec_state，32.5s）、`c2b`（shape_array 裸数组最小载体，**0.55s**）；
+   - 反向 ✅：`degraded_fails_loudly`（F1 类退化构造）13.9s 于预期断言点精确响亮失败（unwind 8 下验证，其失败为键缺失 panic，与 unwind 取值无关）——假通过防线成立；
+   - **构造墙发现（移交 W3-3/W3-4）**：全具体构造在 CBMC 0.67 下随构造复杂度非线性恶化——`c2`（2 键 map+1 元数组，断言逻辑与 c2b 完全相同）300s 不收敛 vs `c2b`（裸数组）0.55s；`c4a`（`concrete_exec_state` 纯构造、零断言）120s 不收敛；`c5`（3 层嵌套镜像 state）约 250s 被终止。**构造成本本身（String/Cow/Vec/分配器建模）是膨胀源，与断言无关**（T0-6 结论在微型尺度复现）。`shape_full_state`/`shape_concrete_exec_state` 两复合哨兵的载体构造受同一构造墙限制而无法独立实跑，由「原语已验证 + 具体相等断言 + 反向防线」支撑，完整实跑验证随 W3-3/W3-4 闭环。**连带影响**：P9/P10（构造 `concrete_exec_state`）Phase 1 直跑将撞同一构造墙，须 W3-3 owned 迁移或 W4-1 stub 路线先解除。
+   - **调试插曲（两层根因，W3-2 要求更新）**：整体 canary 于 unwind(8) 两次 600s 不收敛曾疑似求解器问题；`--debug` 探针 + 拆分定位还原真因：① `unwind(8) < memcmp 字节循环深度`（键/值串如 `"payload.x"` 9 字符需约 10 次展开）→ unwinding 断言失败毒化公式（920 项检查 919 项 undetermined）→ 求解器无限研磨（非求解器问题）；② 修至 unwind(24) 后露出上述构造墙。**W3-2 配套要求据此更新**：B 档 harness 的 unwind 必须 > 其形状断言最长字符串的 memcmp 深度（字节数+2），否则 unwinding 断言假失败。
+
+**M3.4 证据处理**：kani_proofs.rs 变更使 A 档 14 proof 的 `1c6ad84` 证据 SHA 绑定失效 → 提交后 WSL 同协议重跑 14 个，新证据 `P0-3/P0-6.<harness>_PASS_<新SHA>_20260914_*` 落盘，旧 14 对 `git mv` 隔离 `_invalidated/` 批次 3；STATUS.md 证据列/快照同批更新（另见 DISCLOSURE_LOG 同日条目）。
+
+**机时记账**：canary 全程 ≈17 次运行（含 2×600s 毒化研磨、300s+250s+2×120s 构造墙实证、4 次有效 PASS、探针 2 次），机器时间 ≈60 分钟；B 档攻坚累计 ≈24/≤60 次预算。**W3-1 结论：S3 硬前置达成**。
+
 ## 4. CR-20260913-003 修订记录（2026-09-13，随 CR-20260913-004 生效）
 
 **修订**：实施载体由 impl 级 `cfg(kani)` 双实现改为 proof 层
