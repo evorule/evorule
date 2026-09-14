@@ -22,7 +22,7 @@ evorule validate ./my-rules
 
 `validate` 检查规则集中每条 `transform` 规则的 `type` 字段是否在元指令白名单中。
 
-白名单 SSOT 为 `evorule_tcb::META_INSTRUCTION_TYPES`（`evorule-tcb/src/executor.rs` L52-59），共 6 种：
+白名单 SSOT 为 `evorule_tcb::META_INSTRUCTION_TYPES`（`evorule-tcb/src/executor.rs`），共 5 种：
 
 | 元指令类型 | 说明 |
 |-----------|------|
@@ -30,9 +30,10 @@ evorule validate ./my-rules
 | `set` | 修改状态 |
 | `push` | 推入指令 |
 | `io_request` | I/O 请求 |
-| `collect` | 批量生成指令 |
-| `merge` | 合并工具结果 |
+| `enforce` | 强制执行（自进化预留，governance tier 门禁） |
 
+> v0.6.0 变更：`collect`/`merge` 已随 69 号清理退役，规则文件使用将被拒。
+>
 > 注意：`increment`、`decrement`、`noop`、`conditional`、`while_loop`、`sequence` 是**指令层类型**，不是元指令类型，不在 validate 白名单中。它们出现在指令的 `type` 字段中，被规则的 `instruction` domain 匹配。
 
 ## 输出解读
@@ -110,7 +111,7 @@ Replace `./my-rules` with the path to your rule directory.
 
 `validate` checks that the `type` field of every `transform` rule in the rule set is in the meta-instruction whitelist.
 
-The whitelist SSOT is `evorule_tcb::META_INSTRUCTION_TYPES` (`evorule-tcb/src/executor.rs` L52-59), six types in total:
+The whitelist SSOT is `evorule_tcb::META_INSTRUCTION_TYPES` (`evorule-tcb/src/executor.rs`), five types in total:
 
 | Meta-instruction type | Description |
 |-----------|------|
@@ -118,9 +119,10 @@ The whitelist SSOT is `evorule_tcb::META_INSTRUCTION_TYPES` (`evorule-tcb/src/ex
 | `set` | Modify state |
 | `push` | Push an instruction |
 | `io_request` | I/O request |
-| `collect` | Batch-generate instructions |
-| `merge` | Merge tool results |
+| `enforce` | Enforce (reserved for self-evolution, gated by the governance tier) |
 
+> v0.6.0 change: `collect`/`merge` were retired in the iteration #69 cleanup; rule sets using them are rejected.
+>
 > Note: `increment`, `decrement`, `noop`, `conditional`, `while_loop`, `sequence` are **instruction-layer types**, not meta-instruction types, and are not in the validate whitelist. They appear in the `type` field of an instruction and are matched by a rule's `instruction` domain.
 
 ## Reading the output

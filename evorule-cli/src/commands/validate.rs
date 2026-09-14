@@ -14,8 +14,9 @@
 //!（conditional/while_loop/sequence），故 build.rs 无需任何豁免（零豁免原则保持）。
 //!
 //! # 白名单来源
-//! evorule-tcb/src/executor.rs 的 `execute_meta_instruction` dispatch 处理的
-//! 元指令类型：branch / set / push / io_request / collect / merge。
+//! evorule-tcb/src/executor.rs 的 `META_INSTRUCTION_TYPES`（SSOT）
+//! 元指令类型：branch / set / push / io_request / enforce
+//!（collect/merge 已退役，69 号清理计划 2026-09-14）。
 //! noop / increment / decrement 是指令层类型，不属于元指令层（P2-01/P0-01）。
 //!
 //!（C2）：白名单改为引用 tcb 权威常量
@@ -102,8 +103,10 @@ mod tests {
         assert!(META_INSTRUCTION_TYPES.contains(&"set"));
         assert!(META_INSTRUCTION_TYPES.contains(&"push"));
         assert!(META_INSTRUCTION_TYPES.contains(&"io_request"));
-        assert!(META_INSTRUCTION_TYPES.contains(&"collect"));
-        assert!(META_INSTRUCTION_TYPES.contains(&"merge"));
+        assert!(META_INSTRUCTION_TYPES.contains(&"enforce"));
+        // 69 号：collect/merge 已退役，不得回流白名单
+        assert!(!META_INSTRUCTION_TYPES.contains(&"collect"));
+        assert!(!META_INSTRUCTION_TYPES.contains(&"merge"));
         // P0-01：指令层类型不得混入元指令白名单
         assert!(!META_INSTRUCTION_TYPES.contains(&"noop"));
         assert!(!META_INSTRUCTION_TYPES.contains(&"increment"));

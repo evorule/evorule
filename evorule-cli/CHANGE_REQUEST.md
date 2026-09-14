@@ -4,6 +4,41 @@
 
 | 字段 | 值 |
 |------|------|
+| **变更 ID** | CR-20260914-001 |
+| **变更标题** | 69 号清理（跨仓 CR，TCB 为主仓）：collect/merge 元指令退役——本仓 SSOT 断言同步（META_INSTRUCTION_TYPES 5 种） |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-09-14 |
+| **审查状态** | 已批准 |
+
+## 2. 变更层级判定（必填）
+
+### 2.1 变更层级声明
+
+**本次变更属于**: ✅ **机制层 (Mechanism)**
+
+### 2.2 判定理由
+
+```
+CLI validate 命令的指令白名单消费 TCB SSOT 常量（UV-046 C2 消费侧）。
+主仓 CR-20260914-001 退役 collect/merge 后，本仓 src/commands/validate.rs
+的 META_INSTRUCTION_TYPES 引用断言与注释口径同步收窄为 5 种
+（branch/set/push/io_request/enforce），不引入本地白名单副本。
+```
+
+### 3.1 变更理由 / 3.2 变更范围
+
+随主仓 CR-20260914-001（69 号清理）。本仓范围：src/commands/validate.rs
+（SSOT 断言与注释口径）及对应用例；Cargo.toml 依赖版本 0.5.0→0.6.0。
+
+### 3.3 破坏性分析 / 3.4 影响评估 / 3.5 测试计划 / 3.6 回滚方案
+
+见主仓 CR-20260914-001（破坏性变更：collect/merge 规则加载即拒；
+Step 8 全量回归绿；回滚 = git revert 同批）。
+
+## 1. 基本信息
+
+| 字段 | 值 |
+|------|------|
 | **变更 ID** | CR-20260902-001 |
 | **变更标题** | run 命令 Error fact 退出码 3 + validate 白名单 SSOT 化（UV-046 C1/C3 + C2 消费侧） |
 | **提交人** | EvoRule Team |

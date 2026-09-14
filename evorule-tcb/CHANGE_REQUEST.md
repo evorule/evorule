@@ -4,6 +4,87 @@
 
 | 字段 | 值 |
 |------|------|
+| **变更 ID** | CR-20260914-001 |
+| **变更标题** | 69 号清理：collect/merge 元指令退役（v0.6.0 破坏性变更）——LLM ReAct 多轮编排职责归应用层，机制层回归单轮 io_request 语义 |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-09-14 |
+| **审查状态** | 已批准 |
+
+## 2. 变更层级判定（必填）
+
+### 2.1 变更层级声明
+
+**本次变更属于**: ✅ **机制层 (Mechanism)**
+
+### 2.2 判定理由
+
+```
+审查批准依据：2026-09-14 用户确认按 iterations/69 号计划实施，
+三决策点裁定（reactive_researcher 示例删除 / evo-agent 宪法应用层化 /
+W3-1 canary 收敛后执行）均为方案 A。
+collect/merge 系 2026 年拆分 evo-agent run.rs 时被意外下沉至 TCB 的
+应用层能力（LLM 多轮工具扇出与结果回环编排），非设计功能，与「evorule
+是纯净计算基、不引入 LLM 能力」的核心原则冲突。enforce 为计划内原语
+（TCB 自进化预留）保留。本变更删除 exec_collect / exec_merge /
+substitute_template 及指令分发分支，META_INSTRUCTION_TYPES 收窄为
+5 种（branch/set/push/io_request/enforce）；多轮编排语义由应用层
+runner / tool_registry 承担，机制层仅保留 io_request 单轮触发/消费。
+```
+
+### 3.1 变更理由
+
+事故残留原语跨仓扩散（schema/前端/宪法按「功能完整性」附带实现），
+久拖不清理将持续误导消费方按 7 种原语设计规则；69 号计划（v1.1）为
+用户批准的彻底清理方案。
+
+### 3.2 变更范围
+
+- src/executor.rs（exec_collect/exec_merge 删除、分发分支收窄、
+  META_INSTRUCTION_TYPES 5 种）/ src/transition.rs（规则匹配白名单
+  收窄）/ src/domain.rs / src/path.rs（substitute_template 移除与
+  注释口径）
+- tests/integration_test.rs（ReAct 循环测试改单轮口径）；
+  tests/kani/kani_proofs.rs（P15/P16/P17 删除，37→34 = A14+B20）；
+  tests/kani/model.rs（any_instruction %6→%4）
+- 本仓 CHANGE_REQUEST.md 本条目；版本 0.5.0→0.6.0（workspace 统一）
+
+### 3.3 破坏性分析
+
+**破坏性变更（Breaking）**：规则 JSON 使用 `"type": "collect"` /
+`"type": "merge"` 将被 schema 枚举与引擎白名单双重拒绝（fail-fast
+加载即拒，不静默忽略）。迁移方式：多轮工具编排改由应用层 runner /
+tool_registry 实现。
+
+### 3.4 影响评估
+
+- 跨仓同步（随同批实施）：governance（VALID_TRANSFORM_TYPES 4 种）/
+  cli（SSOT 断言）/ schema `_shared/v1.0.json` 双副本 / console·
+  console-cloud 前端白名单与 LLM 提示词 / evo-agent 宪法单轮化 /
+  server INTEGRATION_GUIDE 口径 / registry E 族 5 种收尾
+- Kani：proof 34 个（删 P15/P16/P17）；kani.yml 同步 14A+20B；
+  A 档 14 + reactor 4 于 post-69 基线重跑（M3.4 批次 6），B 档 20 个
+  状态不变（❌）
+- 规则资产：30 个规则文件零 collect/merge 引用（Step 9 验证），演示
+  规则执行结果与清理前一致（确定性）
+
+### 3.5 测试计划
+
+- [x] `cargo build/test/clippy --workspace` 全绿（69 号 Step 8，
+      2026-09-14）
+- [x] 30 个规则文件全部加载 + 16 条演示规则确定性验证（Step 9）
+- [ ] A 档 14 + reactor 4 WSL Kani 重跑 14/14 + 4/4 PASS（Step 10，
+      随本提交执行）
+- [ ] 全生态 grep 残留复检（Step 10 收尾，历史文档/CHANGELOG 豁免）
+
+### 3.6 回滚方案
+
+git revert 本提交即恢复 collect/merge 原语与 0.5.0 版本；schema /
+前端 / 宪法 / registry 同批回滚。证据批次 6 隔离记录不受影响。
+
+## 1. 基本信息
+
+| 字段 | 值 |
+|------|------|
 | **变更 ID** | CR-20260913-004 |
 | **变更标题** | B 档 23 个超时 proof 四梯队攻坚：CR-003 载体修订（回退 impl 级 cfg 覆写，改 proof 层 stub）+ harness 结构自检 + 模型偏差登记簿治理 |
 | **提交人** | EvoRule Team |

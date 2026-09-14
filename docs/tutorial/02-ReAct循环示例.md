@@ -253,9 +253,9 @@ for i in 0..3 {
 }
 ```
 
-但更典型的 ReAct 循环场景是**单条指令触发多轮内部循环**——比如
-`call_external` 触发 LLM → `collect` 消费 tool_calls → `call_service` 路由
-→ `merge` 推进循环。完整 ReAct 演示需要 IO Handler,见 evorule-server 独立仓。
+> **v0.6.0 变更**：机制层不再内置 LLM 多轮循环原语（`collect`/`merge` 已随 69 号清理退役）。
+> `call_external` 触发 LLM、`call_service` 路由工具调用的**单轮**触发/消费语义保持不变；
+> 多轮 ReAct 编排（工具扇出、循环推进）由应用层 runner 实现，完整演示见 evorule-server 独立仓。
 
 ## 关键概念
 
@@ -523,9 +523,9 @@ for i in 0..3 {
 }
 ```
 
-But the more typical ReAct loop scenario is **one instruction triggering multiple internal loop rounds** — e.g.
-`call_external` triggers an LLM call → `collect` consumes tool_calls → `call_service` routes
-→ `merge` advances the loop. A full ReAct demo requires IO Handlers; see the standalone evorule-server repo.
+> **v0.6.0 change**: the mechanism layer no longer embeds LLM multi-turn loop primitives (`collect`/`merge` were retired in the iteration #69 cleanup).
+> The **single-round** trigger/consume semantics of `call_external` (LLM trigger) and `call_service` (tool routing) are unchanged;
+> multi-turn ReAct orchestration (tool fan-out, loop advancement) is implemented by the application-layer runner. For a full demo see the standalone evorule-server repo.
 ## Key concepts
 
 | Concept | Meaning |

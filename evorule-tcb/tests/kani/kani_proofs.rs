@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! Kani 证明清单（P1-P21）
+//! Kani 证明清单（P1-P14、P18-P21）
 //!
 //! 对应 verification/kani-formal-verification-design.md §四 的分层验证：
 //! - Layer 1 基础类型层：P1-P3
 //! - Layer 2 路径解析层：P4-P7
 //! - Layer 3 域评估层：P8-P11
-//! - Layer 4 元指令层：P12-P18（经公开 `execute_meta_instruction` 间接覆盖私有元指令）
+//! - Layer 4 元指令层：P12-P14、P18（经公开 `execute_meta_instruction` 间接覆盖私有元指令；
+//!   P15/P16/P17 随 collect/merge 原语退役删除，见 69 号清理计划）
 //! - Layer 5 状态转换层：P19-P21
 //!
 //! 原则：只调用公开 API；结构化符号输入（见 model.rs）；验证"属性"而非具体行为。
@@ -31,7 +32,7 @@ use super::model;
 // 全部 B 档 harness 在验证目标属性前，先断言构造产物形状符合预期（键存在 / 类型正确 /
 // 嵌套复合完整）。构造层若再次静默退化，proof 以断言失败报错，而非可疑超时/假 PASS。
 // 成本：断言全部作用于具体构造（键名/期望值为编译期常量），CBMC 常量折叠后
-// 预期路径零符号开销；符号选择点（如 6 元指令 type）仅增加 O(6) 字符串比较。
+// 预期路径零符号开销；符号选择点（如 4 元指令 type）仅增加 O(4) 字符串比较。
 
 /// 断言 `v` 含键 `key` 并返回该字段引用（`v` 非对象或缺键即 panic = 响亮失败）。
 fn shape_field<'a>(v: &'a JsonValue, what: &str, key: &str) -> &'a JsonValue {
@@ -570,8 +571,8 @@ fn verify_has_fields_empty_array() {
 
 // ==================== Layer 4: 元指令层 ====================
 
-/// P12: execute_meta_instruction 永不 panic（6 种元指令全覆盖）
-/// 私有元指令（exec_set/exec_push/exec_branch/exec_io_request/exec_collect/exec_merge）
+/// P12: execute_meta_instruction 永不 panic（4 种元指令全覆盖）
+/// 私有元指令（exec_set/exec_push/exec_branch/exec_io_request）
 /// 统一经 execute_meta_instruction 按 type 间接覆盖。
 #[kani::proof]
 fn verify_execute_meta_instruction_never_panics() {
@@ -582,7 +583,7 @@ fn verify_execute_meta_instruction_never_panics() {
     shape_str_in(
         shape_field(&instr, "instr", "type"),
         "instr.type",
-        &["set", "push", "branch", "io_request", "collect", "merge"],
+        &["set", "push", "branch", "io_request"],
     );
     let payload = shape_full_state(&state, "state");
     shape_field(payload, "state.payload", "x");
@@ -683,212 +684,6 @@ fn verify_branch_depth_limit() {
     let r = execute_meta_instruction(&instr, state, MAX_BRANCH_DEPTH);
     // depth >= MAX_BRANCH_DEPTH 时返回 NestingTooDeep（不 panic）
     assert!(matches!(r, Err(TcbError::NestingTooDeep { .. })));
-}
-
-/// P15: collect 遍历安全 + after 参数排序（v0.3.1）
-#[kani::proof]
-fn verify_collect_safe_with_after() {
-    let instr = model::obj(vec![
-        ("type", JsonValue::string("collect")),
-        (
-            "params",
-            model::obj(vec![
-                ("from", JsonValue::string("__exec__.payload.items")),
-                (
-                    "each",
-                    model::obj(vec![
-                        ("type", JsonValue::string("set")),
-                        (
-                            "params",
-                            model::obj(vec![
-                                ("attr", JsonValue::string("{{name}}")),
-                                ("operation", JsonValue::string("set")),
-                                ("value", JsonValue::Integer(1)),
-                            ]),
-                        ),
-                    ]),
-                ),
-                (
-                    "after",
-                    model::obj(vec![("type", JsonValue::string("noop"))]),
-                ),
-            ]),
-        ),
-    ]);
-    let mut map = ObjectMap::new();
-    map.insert(
-        "items".to_string(),
-        JsonValue::Array(vec![
-            model::obj(vec![("name", JsonValue::string("a"))]),
-            model::obj(vec![("name", JsonValue::string("b"))]),
-        ]),
-    );
-    let state = model::state_with_payload(map);
-    shape_str(shape_field(&instr, "instr", "type"), "instr.type", "collect");
-    let params = shape_field(&instr, "instr", "params");
-    shape_str(shape_field(params, "params", "from"), "params.from", "__exec__.payload.items");
-    let each = shape_field(params, "params", "each");
-    shape_str(shape_field(each, "params.each", "type"), "params.each.type", "set");
-    let each_params = shape_field(each, "params.each", "params");
-    shape_str(
-        shape_field(each_params, "params.each.params", "attr"),
-        "params.each.params.attr",
-        "{{name}}",
-    );
-    shape_str(
-        shape_field(each_params, "params.each.params", "operation"),
-        "params.each.params.operation",
-        "set",
-    );
-    let after = shape_field(params, "params", "after");
-    shape_str(shape_field(after, "params.after", "type"), "params.after.type", "noop");
-    let payload = shape_full_state(&state, "state");
-    let items = shape_array(
-        shape_field(payload, "state.payload", "items"),
-        "state.payload.items",
-        2,
-    );
-    shape_str(
-        shape_field(&items[0], "state.payload.items[0]", "name"),
-        "state.payload.items[0].name",
-        "a",
-    );
-    shape_str(
-        shape_field(&items[1], "state.payload.items[1]", "name"),
-        "state.payload.items[1].name",
-        "b",
-    );
-    let r = execute_meta_instruction(&instr, state, 0);
-    // 不 panic；generated 指令在前，after 指令在队尾（顺序语义由规则测试覆盖）
-    assert!(r.is_ok());
-}
-
-/// P16: merge 结果合并正确（v0.3.1：追加 tool 消息 + 无条件推 next_instruction）
-#[kani::proof]
-fn verify_merge_safe() {
-    let instr = model::obj(vec![
-        ("type", JsonValue::string("merge")),
-        (
-            "params",
-            model::obj(vec![
-                ("messages", JsonValue::string("__exec__.payload.messages")),
-                ("tool_result", JsonValue::string("__exec__.payload.result")),
-                (
-                    "next_instruction",
-                    model::obj(vec![("type", JsonValue::string("noop"))]),
-                ),
-            ]),
-        ),
-    ]);
-    let state = model::state_with_payload(ObjectMap::from([
-        (
-            "messages".to_string(),
-            JsonValue::Array(vec![model::obj(vec![
-                ("role", JsonValue::string("user")),
-                ("content", JsonValue::string("hi")),
-            ])]),
-        ),
-        (
-            "result".to_string(),
-            model::obj(vec![
-                ("role", JsonValue::string("tool")),
-                ("content", JsonValue::string("ok")),
-            ]),
-        ),
-    ]));
-    shape_str(shape_field(&instr, "instr", "type"), "instr.type", "merge");
-    let params = shape_field(&instr, "instr", "params");
-    shape_str(
-        shape_field(params, "params", "messages"),
-        "params.messages",
-        "__exec__.payload.messages",
-    );
-    shape_str(
-        shape_field(params, "params", "tool_result"),
-        "params.tool_result",
-        "__exec__.payload.result",
-    );
-    let next = shape_field(params, "params", "next_instruction");
-    shape_str(
-        shape_field(next, "params.next_instruction", "type"),
-        "params.next_instruction.type",
-        "noop",
-    );
-    let payload = shape_full_state(&state, "state");
-    let messages = shape_array(
-        shape_field(payload, "state.payload", "messages"),
-        "state.payload.messages",
-        1,
-    );
-    shape_str(
-        shape_field(&messages[0], "state.payload.messages[0]", "role"),
-        "state.payload.messages[0].role",
-        "user",
-    );
-    let result = shape_field(payload, "state.payload", "result");
-    shape_str(
-        shape_field(result, "state.payload.result", "role"),
-        "state.payload.result.role",
-        "tool",
-    );
-    let r = execute_meta_instruction(&instr, state, 0);
-    assert!(r.is_ok(), "merge 不应失败/panic");
-}
-
-/// P17: substitute_template 永不 panic（经 collect 间接覆盖）
-/// 覆盖：模板字段存在/缺失、嵌套路径、非字符串字段
-#[kani::proof]
-fn verify_substitute_template_never_panics() {
-    let instr = model::obj(vec![
-        ("type", JsonValue::string("collect")),
-        (
-            "params",
-            model::obj(vec![
-                ("from", JsonValue::string("__exec__.payload.items")),
-                (
-                    "each",
-                    model::obj(vec![
-                        ("type", JsonValue::string("set")),
-                        (
-                            "params",
-                            model::obj(vec![
-                                ("attr", JsonValue::string("{{nested.field}}")),
-                                ("operation", JsonValue::string("set")),
-                                ("value", JsonValue::Integer(1)),
-                            ]),
-                        ),
-                    ]),
-                ),
-            ]),
-        ),
-    ]);
-    let state = model::state_with_payload(ObjectMap::from([(
-        "items".to_string(),
-        JsonValue::Array(vec![model::obj(vec![(
-            "nested",
-            model::obj(vec![("field", JsonValue::Integer(1))]),
-        )])]),
-    )]));
-    shape_str(shape_field(&instr, "instr", "type"), "instr.type", "collect");
-    let params = shape_field(&instr, "instr", "params");
-    shape_str(shape_field(params, "params", "from"), "params.from", "__exec__.payload.items");
-    let each = shape_field(params, "params", "each");
-    shape_str(shape_field(each, "params.each", "type"), "params.each.type", "set");
-    let each_params = shape_field(each, "params.each", "params");
-    shape_str(
-        shape_field(each_params, "params.each.params", "attr"),
-        "params.each.params.attr",
-        "{{nested.field}}",
-    );
-    let payload = shape_full_state(&state, "state");
-    let items = shape_array(
-        shape_field(payload, "state.payload", "items"),
-        "state.payload.items",
-        1,
-    );
-    let nested = shape_field(&items[0], "state.payload.items[0]", "nested");
-    shape_field(nested, "state.payload.items[0].nested", "field");
-    let _ = execute_meta_instruction(&instr, state, 0);
 }
 
 /// P18: io_request 触发正确（v0.3.1 ReAct：可选参数路径不存在时跳过，不 panic）
@@ -1206,7 +1001,7 @@ fn verify_execute_transition_never_panics() {
     shape_str_in(
         shape_field(&instruction, "instruction", "type"),
         "instruction.type",
-        &["set", "push", "branch", "io_request", "collect", "merge"],
+        &["set", "push", "branch", "io_request"],
     );
     shape_field(&payload, "payload", "x");
     shape_field(&payload, "payload", "y");

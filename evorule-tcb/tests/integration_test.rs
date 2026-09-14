@@ -97,14 +97,6 @@ fn domain_all(inner: Vec<JsonValue>) -> JsonValue {
     obj(&[("type", s("all")), ("inner", arr(inner))])
 }
 
-fn domain_has_fields(object_path: &str, fields: Vec<&str>) -> JsonValue {
-    obj(&[
-        ("type", s("has_fields")),
-        ("path", s(object_path)),
-        ("fields", arr(fields.into_iter().map(s).collect())),
-    ])
-}
-
 // ============================================================================
 // ReAct 宪法规则构造（对应 core_eval.json v0.3.1 transform[6..12]）
 // ============================================================================
@@ -149,40 +141,13 @@ fn rule_call_external() -> JsonValue {
                     "set",
                     JsonValue::Null,
                 ),
-                // 检查是否有 tool_calls
-                branch(
-                    domain_has_fields("__exec__.payload.llm_response", vec!["tool_calls"]),
-                    vec![collect_instr()],
-                    vec![push_noop()],
-                ),
+                // 循环终止（工具扇出编排在应用层 runner，collect 已退役）
+                push_noop(),
             ],
             vec![io_request_call_external()],
         )],
         vec![],
     )
-}
-
-/// collect 指令：从 llm_response.tool_calls 生成 call_service
-fn collect_instr() -> JsonValue {
-    obj(&[
-        ("type", s("collect")),
-        (
-            "params",
-            obj(&[
-                ("from", s("__exec__.payload.llm_response.tool_calls")),
-                (
-                    "each",
-                    obj(&[
-                        ("type", s("call_service")),
-                        (
-                            "params",
-                            obj(&[("service_name", s("{{name}}")), ("args", s("{{args}}"))]),
-                        ),
-                    ]),
-                ),
-            ]),
-        ),
-    ])
 }
 
 /// call_external 的 io_request
@@ -217,40 +182,13 @@ fn rule_call_service() -> JsonValue {
                     "set",
                     JsonValue::Null,
                 ),
-                branch(
-                    domain_lt("__exec__.payload.react_iteration", 10),
-                    vec![set_instr("react_iteration", "add", iv(1)), merge_instr()],
-                    vec![push_noop()],
-                ),
+                // 循环终止（结果合并与下一条 LLM 调用编排在应用层 runner，merge 已退役）
+                push_noop(),
             ],
             vec![io_request_call_service()],
         )],
         vec![],
     )
-}
-
-/// merge 指令：将工具结果合并到消息历史，生成下一条 call_external
-fn merge_instr() -> JsonValue {
-    obj(&[
-        ("type", s("merge")),
-        (
-            "params",
-            obj(&[
-                ("messages", s("__exec__.payload.llm_response.messages")),
-                ("tool_result", s("__exec__.payload.service_result")),
-                (
-                    "next_instruction",
-                    obj(&[
-                        ("type", s("call_external")),
-                        (
-                            "params",
-                            obj(&[("messages", s("{{messages}}")), ("tools", s("{{tools}}"))]),
-                        ),
-                    ]),
-                ),
-            ]),
-        ),
-    ])
 }
 
 /// call_service 的 io_request
@@ -317,21 +255,6 @@ fn user_messages() -> JsonValue {
         ("role", s("user")),
         ("content", s("What's the weather?")),
     ])])
-}
-
-fn tool_calls(n: usize) -> JsonValue {
-    let mut v = Vec::new();
-    for k in 0..n {
-        v.push(obj(&[
-            ("name", s(if k == 0 { "get_weather" } else { "get_time" })),
-            ("args", obj(&[("city", s("Beijing"))])),
-        ]));
-    }
-    arr(v)
-}
-
-fn tools_def() -> JsonValue {
-    arr(vec![obj(&[("name", s("get_weather"))])])
 }
 
 // ============================================================================
@@ -601,55 +524,6 @@ fn test_react_round1_io_request_fires() {
     }
 }
 
-// ── ReAct 循环：第二步（消费 LLM 结果 → collect → call_service） ─────────
-
-/// ReAct 第 2 步：注入 LLM 结果 → collect 生成 call_service 队列
-#[test]
-fn test_react_round2_consume_and_collect() {
-    let core_eval = react_constitution();
-    let llm_response = obj(&[("tool_calls", tool_calls(2)), ("messages", user_messages())]);
-    let payload = make_payload(&[
-        ("react_iteration", iv(0)),
-        (
-            "__io_results__",
-            obj(&[("call_external", llm_response.clone())]),
-        ),
-    ]);
-    let instruction = call_external_instr(user_messages());
-
-    let result = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
-    let TransitionResult::State {
-        new_payload,
-        new_queue,
-        rule_hits: _,
-    } = result
-    else {
-        panic!("round 2: 应返回 State")
-    };
-
-    // 队列恰好 2 条 call_service（对应 2 个 tool_calls）
-    assert_eq!(new_queue.len(), 2);
-    for q in &new_queue {
-        assert_eq!(q.get("type").and_then(|v| v.as_str()), Some("call_service"));
-    }
-    // 不应有 call_external（旧 bug：同轮重复 push）
-    assert!(!new_queue
-        .iter()
-        .any(|q| { q.get("type").and_then(|v| v.as_str()) == Some("call_external") }));
-
-    // llm_response 已消费
-    assert_eq!(new_payload.get("llm_response"), Some(&llm_response));
-    // I/O 结果已用 null 清除
-    assert_eq!(
-        new_payload
-            .get("__io_results__")
-            .and_then(|r| r.get("call_external")),
-        Some(&JsonValue::Null)
-    );
-    // react_iteration 未增（call_service 后才 +1）
-    assert_eq!(new_payload.get("react_iteration"), Some(&iv(0)));
-}
-
 // ── ReAct 循环：第三步（call_service → IoRequired） ─────────────────────
 
 /// ReAct 第 3 步：call_service 无 I/O 结果 → 发起 io_request
@@ -682,71 +556,11 @@ fn test_react_round3_call_service_io_request() {
     }
 }
 
-// ── ReAct 循环：第四步（消费工具结果 → merge → 下一条 call_external） ──
-
-/// ReAct 第 4 步：注入工具结果 → lt(react_iteration, 10) 为真 → merge 生成下一条 call_external
-#[test]
-fn test_react_round4_merge_generates_next_call_external() {
-    let core_eval = react_constitution();
-    let service_result = obj(&[("temperature", iv(25))]);
-    let payload = make_payload(&[
-        ("react_iteration", iv(0)),
-        (
-            "llm_response",
-            obj(&[("tool_calls", tool_calls(1)), ("messages", user_messages())]),
-        ),
-        ("tools", tools_def()),
-        (
-            "__io_results__",
-            obj(&[("call_service", service_result.clone())]),
-        ),
-    ]);
-    let instruction = call_service_instr("get_weather", JsonValue::empty_object());
-
-    let result = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
-    let TransitionResult::State {
-        new_payload,
-        new_queue,
-        rule_hits: _,
-    } = result
-    else {
-        panic!("round 4: 应返回 State")
-    };
-
-    // 迭代计数 +1
-    assert_eq!(new_payload.get("react_iteration"), Some(&iv(1)));
-
-    // service_result 已消费
-    assert_eq!(new_payload.get("service_result"), Some(&service_result));
-    // I/O 结果已用 null 清除
-    assert_eq!(
-        new_payload
-            .get("__io_results__")
-            .and_then(|r| r.get("call_service")),
-        Some(&JsonValue::Null)
-    );
-
-    // 队列恰好 1 条 call_external
-    assert_eq!(new_queue.len(), 1);
-    let next = &new_queue[0];
-    assert_eq!(
-        next.get("type").and_then(|v| v.as_str()),
-        Some("call_external")
-    );
-    // 消息历史包含 tool 消息
-    let params = next.get("params").unwrap();
-    let msgs = params.get("messages").and_then(|v| v.as_array()).unwrap();
-    assert_eq!(msgs.len(), 2);
-    assert_eq!(msgs[1].get("role").and_then(|v| v.as_str()), Some("tool"));
-    // tools 通过 {{tools}} 模板从 payload 解析
-    assert_eq!(params.get("tools"), Some(&tools_def()));
-}
-
 // ── ReAct 循环：迭代上限 ──────────────────────────────────────────────────
 
-/// react_iteration >= 10 时不再 merge，改为 push noop 终止循环
+/// call_service 消费轮结果落 payload 后 push noop 终止循环（react_iteration 保持不变）
 #[test]
-fn test_react_iteration_cap_blocks_merge() {
+fn test_react_iteration_cap_terminates_with_noop() {
     let core_eval = react_constitution();
     let payload = make_payload(&[
         ("react_iteration", iv(10)),
@@ -768,7 +582,7 @@ fn test_react_iteration_cap_blocks_merge() {
         panic!("cap: 应返回 State")
     };
 
-    // 队列只有 1 条 noop（无 merge 生成的 call_external）
+    // 队列只有 1 条 noop（循环终止）
     assert_eq!(new_queue.len(), 1);
     assert_eq!(
         new_queue[0].get("type").and_then(|v| v.as_str()),
@@ -776,7 +590,7 @@ fn test_react_iteration_cap_blocks_merge() {
     );
     // 计数不再增长
     assert_eq!(new_payload.get("react_iteration"), Some(&iv(10)));
-    // 无 updated_messages（merge 未执行）
+    // 无 updated_messages
     assert!(new_payload.get("updated_messages").is_none());
 }
 
@@ -870,7 +684,7 @@ fn test_unknown_instruction_falls_to_catch_all() {
 
 // ── 空 tool_calls → push noop ────────────────────────────────────────────
 
-/// LLM 返回不含 tool_calls 的响应 → has_fields 为 false → push noop
+/// LLM 返回不含 tool_calls 的响应 → 消费后 push noop 终止
 #[test]
 fn test_no_tool_calls_terminates_via_noop() {
     let core_eval = react_constitution();
@@ -904,65 +718,9 @@ fn test_no_tool_calls_terminates_via_noop() {
     assert_eq!(new_payload.get("llm_response"), Some(&llm_response));
 }
 
-// ── 多工具 fanout + collect 路径验证 ──────────────────────────────────────
+// ── 空 tool_calls 数组 → push noop ───────────────────────────────────────
 
-/// collect 生成的 call_service 包含正确的 service_name 和 args
-#[test]
-fn test_collect_generates_correct_service_params() {
-    let core_eval = react_constitution();
-    let llm_response = obj(&[
-        (
-            "tool_calls",
-            arr(vec![
-                obj(&[("name", s("search")), ("args", obj(&[("q", s("rust"))]))]),
-                obj(&[("name", s("calc")), ("args", obj(&[("expr", s("1+1"))]))]),
-            ]),
-        ),
-        ("messages", user_messages()),
-    ]);
-    let payload = make_payload(&[
-        ("react_iteration", iv(0)),
-        ("__io_results__", obj(&[("call_external", llm_response)])),
-    ]);
-    let instruction = call_external_instr(user_messages());
-
-    let result = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
-    let TransitionResult::State { new_queue, .. } = result else {
-        panic!("应返回 State")
-    };
-
-    assert_eq!(new_queue.len(), 2);
-
-    // 第 1 个工具：search
-    let p1 = new_queue[0].get("params").unwrap();
-    assert_eq!(
-        p1.get("service_name").and_then(|v| v.as_str()),
-        Some("search")
-    );
-    assert_eq!(
-        p1.get("args")
-            .and_then(|a| a.get("q"))
-            .and_then(|v| v.as_str()),
-        Some("rust")
-    );
-
-    // 第 2 个工具：calc
-    let p2 = new_queue[1].get("params").unwrap();
-    assert_eq!(
-        p2.get("service_name").and_then(|v| v.as_str()),
-        Some("calc")
-    );
-    assert_eq!(
-        p2.get("args")
-            .and_then(|a| a.get("expr"))
-            .and_then(|v| v.as_str()),
-        Some("1+1")
-    );
-}
-
-// ── 空 tool_calls 数组 → has_fields 检查 → push noop ─────────────────────
-
-/// tool_calls 为空数组时 has_fields 返回 false（空数组视为无效）
+/// tool_calls 为空数组时消费轮同样 push noop 终止
 #[test]
 fn test_empty_tool_calls_array_triggers_noop() {
     let core_eval = react_constitution();
@@ -984,7 +742,7 @@ fn test_empty_tool_calls_array_triggers_noop() {
         panic!("应返回 State")
     };
 
-    // 空 tool_calls 不生成 call_service，只 push noop
+    // 空 tool_calls 不生成 call_service，只 push noop（collect 已退役，消费轮统一终止）
     assert_eq!(new_queue.len(), 1);
     assert_eq!(
         new_queue[0].get("type").and_then(|v| v.as_str()),

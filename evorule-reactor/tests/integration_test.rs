@@ -77,41 +77,12 @@ fn load_core_eval() -> Vec<JsonValue> {
     rules
 }
 
-/// 内联最小 I/O 循环（应用剧本）规则链：react_iteration 初始化 +
-/// call_external 触发/消费 + call_service 触发/消费 + 兜底。
-/// 与宪法对应规则的唯一差异：无批处理聚合与 while 循环回边以外的裁剪——逐条对齐宪法。
+/// 内联最小 I/O 单轮（应用剧本）规则链：call_external 触发/消费 +
+/// call_service 触发/消费 + 兜底。69 号清理（2026-09-14）后逐条对齐宪法
+/// evo-agent agent_constitution.json v0.5.0 单轮口径：react_iteration 初始化 /
+/// collect 工具扇出 / merge 结果回环已随 ReAct 循环退役，多轮编排由应用层负责。
 fn io_loop_rules() -> Vec<JsonValue> {
     let rules = serde_json::json!([
-        // ReAct 迭代计数器初始化（首次执行 call_external 时置 0）
-        {
-            "type": "branch",
-            "params": {
-                "domain": {
-                    "type": "all",
-                    "inner": [
-                        { "type": "instruction", "instruction_type": "call_external" },
-                        {
-                            "type": "not",
-                            "inner": {
-                                "type": "exists",
-                                "path": "__exec__.payload.react_iteration"
-                            }
-                        }
-                    ]
-                },
-                "on_true": [
-                    {
-                        "type": "set",
-                        "params": {
-                            "attr": "react_iteration",
-                            "operation": "set",
-                            "value": 0
-                        }
-                    }
-                ],
-                "on_false": []
-            }
-        },
         // call_external: 无结果 → io_request；有结果 → 消费到 llm_response
         {
             "type": "branch",
@@ -169,38 +140,10 @@ fn io_loop_rules() -> Vec<JsonValue> {
                                     }
                                 },
                                 {
-                                    "type": "branch",
+                                    "type": "push",
                                     "params": {
-                                        "domain": {
-                                            "type": "has_fields",
-                                            "path": "__exec__.payload.llm_response",
-                                            "fields": ["tool_calls"]
-                                        },
-                                        "on_true": [
-                                            {
-                                                "type": "collect",
-                                                "params": {
-                                                    "from":
-                                                        "__exec__.payload.llm_response.tool_calls",
-                                                    "each": {
-                                                        "type": "call_service",
-                                                        "params": {
-                                                            "service_name": "{{name}}",
-                                                            "args": "{{args}}"
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        ],
-                                        "on_false": [
-                                            {
-                                                "type": "push",
-                                                "params": {
-                                                    "instructions":
-                                                        [{ "type": "noop" }]
-                                                }
-                                            }
-                                        ]
+                                        "instructions":
+                                            [{ "type": "noop" }]
                                     }
                                 }
                             ],
@@ -221,7 +164,7 @@ fn io_loop_rules() -> Vec<JsonValue> {
                 "on_false": []
             }
         },
-        // call_service: 无结果 → io_request；有结果 → 消费到 service_result 并驱动循环
+        // call_service: 无结果 → io_request；有结果 → 消费到 service_result（单轮止步）
         {
             "type": "branch",
             "params": {
@@ -257,48 +200,10 @@ fn io_loop_rules() -> Vec<JsonValue> {
                                     }
                                 },
                                 {
-                                    "type": "branch",
+                                    "type": "push",
                                     "params": {
-                                        "domain": {
-                                            "type": "lt",
-                                            "path": "__exec__.payload.react_iteration",
-                                            "value": 10
-                                        },
-                                        "on_true": [
-                                            {
-                                                "type": "set",
-                                                "params": {
-                                                    "attr": "react_iteration",
-                                                    "operation": "add",
-                                                    "value": 1
-                                                }
-                                            },
-                                            {
-                                                "type": "merge",
-                                                "params": {
-                                                    "messages":
-                                                        "__exec__.payload.llm_response.messages",
-                                                    "tool_result":
-                                                        "__exec__.payload.service_result",
-                                                    "next_instruction": {
-                                                        "type": "call_external",
-                                                        "params": {
-                                                            "messages": "{{messages}}",
-                                                            "tools": "{{tools}}"
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        ],
-                                        "on_false": [
-                                            {
-                                                "type": "push",
-                                                "params": {
-                                                    "instructions":
-                                                        [{ "type": "noop" }]
-                                                }
-                                            }
-                                        ]
+                                        "instructions":
+                                            [{ "type": "noop" }]
                                     }
                                 }
                             ],
@@ -1309,18 +1214,14 @@ async fn test_consecutive_different_io_requests_no_interference() {
     })
     .unwrap();
 
-    // 3. merge 生成的新 call_external（ReAct 循环下一轮）→ 回复后循环结束
-    let (request_id_3, io_type_3) = wait_for_io_request(&mut rx).await.expect("IoRequest 3");
-    assert_eq!(io_type_3, IoType::call_external());
-    let final_llm = make_llm_response("final llm");
-    send_io_response_value(&tx, &mut gen, request_id_3, final_llm.clone());
-
-    // 4. 等待 Stable
+    // 3. 等待 Stable（69 号清理后单轮口径：call_service 消费后止步，
+    //    不再由 merge 生成下一轮 call_external）
     let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
+    let final_llm = make_llm_response("llm answer");
     assert_eq!(
         snapshot.get("llm_response"),
         Some(&final_llm),
-        "llm_response should be from the final call_external"
+        "llm_response should be from the first call_external"
     );
     assert_eq!(
         snapshot.get("service_result").and_then(|v| v.as_str()),
@@ -1405,11 +1306,11 @@ fn make_call_service_instruction(service_name: &str) -> JsonValue {
     JsonValue::Object(instr)
 }
 
-/// 构造 v0.3.1 ReAct 流程的 LLM 响应对象。
+/// 构造 call_external 恢复消费的 LLM 响应对象。
 ///
-/// core_eval 的 call_service 恢复分支会执行 `merge`，它引用
-/// `llm_response.messages` 作为消息历史。因此 call_external 的 IoResponse
-/// 必须返回含 `messages` 数组的对象（不含 tool_calls → 不再生成子任务）。
+/// core_eval 夹具的 call_external 消费分支执行 `set llm_response`，
+/// IoResponse 返回含 `messages` 数组的对象（形态对齐真实 LLM 响应；
+/// 69 号清理后宪法单轮止步，不再由 merge 引用 messages 生成下一轮）。
 fn make_llm_response(content: &str) -> JsonValue {
     JsonValue::object_from_pairs(&[(
         "messages",
@@ -1459,9 +1360,9 @@ async fn test_two_different_io_types_sequence() {
     // v0.3.1：core_eval 仅内置 call_external（LLM 推理）与 call_service（工具/服务）两类 I/O；
     // query_db/http_get/save_memory 已移出宪法，由应用层以 call_service 实现。
     //
-    // 注意 v0.3.1 ReAct 语义：call_service 恢复分支执行 `merge`，生成一个新的
-    // call_external 循环回 LLM（引用 llm_response.messages）。因此共 3 次 IoRequest：
-    // call_external(#1) → call_service(#2) → call_external(#3, 由 merge 生成)。
+    // 69 号清理后单轮口径：call_service 消费结果后止步（push noop），
+    // 不再由 merge 生成下一轮 call_external。因此共 2 次 IoRequest：
+    // call_external(#1) → call_service(#2)。
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(200).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
@@ -1482,25 +1383,20 @@ async fn test_two_different_io_types_sequence() {
     // 1. call_external → IoRequest → IoResponse（LLM 返回含 messages 的对象）
     let (rid_1, ty_1) = wait_for_io_request(&mut rx).await.expect("IoRequest 1");
     assert_eq!(ty_1, IoType::call_external());
-    send_io_response_value(&tx, &mut gen, rid_1, make_llm_response("llm-result"));
+    let first_llm = make_llm_response("llm-result");
+    send_io_response_value(&tx, &mut gen, rid_1, first_llm.clone());
 
     // 2. call_service → IoRequest（若 __io_results__ 未清除，会错误消费旧值）
     let (rid_2, ty_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
     assert_eq!(ty_2, IoType::call_service());
     send_io_response(&tx, &mut gen, rid_2, "service-output");
 
-    // 3. merge 生成的新 call_external → IoRequest（ReAct 循环下一轮）
-    let (rid_3, ty_3) = wait_for_io_request(&mut rx).await.expect("IoRequest 3");
-    assert_eq!(ty_3, IoType::call_external());
-    let final_llm = make_llm_response("llm-final");
-    send_io_response_value(&tx, &mut gen, rid_3, final_llm.clone());
-
-    // 4. 验证最终快照
+    // 3. 验证最终快照（单轮止步，llm_response 来自第一次 call_external）
     let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
     assert_eq!(
         snapshot.get("llm_response"),
-        Some(&final_llm),
-        "llm_response should be from the final call_external (merge loop)"
+        Some(&first_llm),
+        "llm_response should be from the first call_external"
     );
     assert_eq!(
         snapshot.get("service_result").and_then(|v| v.as_str()),
@@ -1617,7 +1513,7 @@ async fn test_io_interleaved_with_normal_instructions() {
 #[tokio::test]
 async fn test_all_supported_io_types_sequence() {
     // 终极验证：v0.3.1 支持的 2 种 I/O 类型全部连续调用
-    // call_external + call_service（ReAct 循环：call_service 恢复时 merge 生成新 call_external）
+    // （69 号清理后单轮口径：call_service 消费后止步，无 merge 回环）
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(500).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
@@ -1634,14 +1530,10 @@ async fn test_all_supported_io_types_sequence() {
     })
     .unwrap();
 
-    // 依次等待 3 个 IoRequest 并回复
-    // #1 call_external → LLM 对象；#2 call_service → 工具结果；#3 call_external（merge 生成）
-    let expected_types = [
-        IoType::call_external(),
-        IoType::call_service(),
-        IoType::call_external(),
-    ];
-    let expected_results = ["llm-output", "tool-output", "llm-final"];
+    // 依次等待 2 个 IoRequest 并回复
+    // #1 call_external → LLM 对象；#2 call_service → 工具结果
+    let expected_types = [IoType::call_external(), IoType::call_service()];
+    let expected_results = ["llm-output", "tool-output"];
 
     for (i, expected_ty) in expected_types.iter().enumerate() {
         let (rid, ty) = wait_for_io_request(&mut rx)
@@ -1658,18 +1550,18 @@ async fn test_all_supported_io_types_sequence() {
             // call_service → 字符串工具结果
             send_io_response(&tx, &mut gen, rid, expected_results[i]);
         } else {
-            // call_external → LLM 对象（含 messages，供 merge 引用）
+            // call_external → LLM 对象（含 messages）
             send_io_response_value(&tx, &mut gen, rid, make_llm_response(expected_results[i]));
         }
     }
 
-    // 验证最终快照
+    // 验证最终快照（单轮止步，llm_response 来自第一次 call_external）
     let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
-    let final_llm = make_llm_response("llm-final");
+    let first_llm = make_llm_response("llm-output");
     assert_eq!(
         snapshot.get("llm_response"),
-        Some(&final_llm),
-        "llm_response should be from the final call_external"
+        Some(&first_llm),
+        "llm_response should be from the first call_external"
     );
     assert_eq!(
         snapshot.get("service_result").and_then(|v| v.as_str()),

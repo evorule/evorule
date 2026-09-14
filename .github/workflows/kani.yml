@@ -48,7 +48,7 @@ on:
       - ".github/workflows/kani.yml"
   # 手动触发（a / b / all）
   #   a = A 档 + reactor（PR 闸门，分钟级）
-  #   b = B 档 23 个重型 proof（已知 >1h，仅供人工探索，不阻塞）
+  #   b = B 档 20 个重型 proof（已知 >1h，仅供人工探索，不阻塞）
   workflow_dispatch:
     inputs:
       tier:
@@ -186,7 +186,8 @@ jobs:
           done
 
   # ---------------------------------------------------------------------------
-  # B 档：TCB 23 个重型 proof —— 仅手动触发，允许失败
+  # B 档：TCB 20 个重型 proof —— 仅手动触发，允许失败
+  # （2026-09-14：原 23 个，P15/P16/P17 随 collect/merge 原语退役删除，见 69 号清理计划）
   #
   # 实测（2026-09-11）：
   #   600s 上限 → 3/3 全超时（其中 2 个实际跑 910s+）
@@ -242,7 +243,7 @@ jobs:
             2) LIST="verify_evaluate_domain_has_fields_never_panics verify_evaluate_domain_instruction_never_panics verify_evaluate_domain_lt_never_panics verify_evaluate_domain_not_never_panics" ;;
             3) LIST="verify_exec_enforce_deterministic verify_exec_enforce_halt_semantics verify_exec_enforce_never_panics verify_exec_set_arithmetic_safe" ;;
             4) LIST="verify_execute_meta_instruction_never_panics verify_execute_transition_never_panics verify_has_fields_empty_array verify_io_request_safe" ;;
-            5) LIST="verify_merge_safe verify_react_io_required verify_substitute_template_never_panics verify_collect_safe_with_after" ;;
+            5) LIST="verify_react_io_required" ;;
             6) LIST="verify_branch_depth_limit verify_domain_depth_limit verify_transform_rules_limit" ;;
           esac
           for h in $LIST; do

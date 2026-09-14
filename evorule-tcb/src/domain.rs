@@ -48,7 +48,7 @@ pub const MAX_DOMAIN_DEPTH: usize = 1;
 
 /// 解析 domain 中的 path 字段，支持自动补全 `__exec__.` 前缀
 ///
-/// 路径解析规则（与 collect/merge 统一，见 `path::resolve_exec_path`）：
+/// 路径解析规则（统一走 `path::resolve_exec_path`）：
 /// 1. `__exec__.` 开头: strip 后直接解析
 /// 2. 其他: 自动补全 `__exec__.` 前缀后解析
 ///

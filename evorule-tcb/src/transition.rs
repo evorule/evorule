@@ -283,10 +283,7 @@ pub fn execute_transition(
             }
         } else if let Some(rule_type) = rule.get("type").and_then(|t| t.as_str()) {
             // 直接规则（如 set, increment），检查 rule_type 是否匹配 instruction_type
-            if matches!(
-                rule_type,
-                "set" | "increment" | "decrement" | "branch" | "collect" | "merge"
-            ) {
+            if matches!(rule_type, "set" | "increment" | "decrement" | "branch") {
                 return rule_type == instruction_type;
             }
         }
@@ -2590,10 +2587,10 @@ mod tests {
         }
     }
 
-    // ===== I/O 循环组合语义端到端测试（io_request + collect + merge 的语言层组合回归） =====
-    // 规则集为内联构造的应用剧本形态：1) 计数器自初始化；2) call_external；3) call_service（lt + merge）。
+    // ===== I/O 循环组合语义端到端测试（io_request 的语言层组合回归） =====
+    // 规则集为内联构造的应用剧本形态：1) 计数器自初始化；2) call_external；3) call_service。
     // 核心仓最小评估集不再携带此类剧本（T8 迁出）；此模块守护的是元指令组合的执行语义，
-    // 资产级范例如 app.evoagent.agent v0.4.0。
+    // 工具扇出/结果合并等循环编排职责在应用层 runner（collect/merge 原语已退役，69 号）。
     // 嵌套子 mod（不写 `#[cfg(test)]`，继承父 mod 的 cfg(test)，
     // build.rs L1 门禁的 strip_test_mod 会把整个 mod tests 块一起剥掉）
     mod io_loop_e2e_tests {
@@ -2618,9 +2615,6 @@ mod tests {
         }
         fn exists_domain(path: &str) -> JsonValue {
             obj(&[("type", s("exists")), ("path", s(path))])
-        }
-        fn lt_domain(path: &str, value: i64) -> JsonValue {
-            obj(&[("type", s("lt")), ("path", s(path)), ("value", iv(value))])
         }
         fn branch(
             domain: JsonValue,
@@ -2658,11 +2652,8 @@ mod tests {
             ])
         }
 
-        /// 应用剧本式 I/O 循环规则集（与 io_loop 组合语义测试配套，此前曾镜像旧版
-        /// core_eval.json 的 ReAct 部分——该资产自 T8 迁出后不再是核心仓职责）
-        // 三条循环规则构造 (call_external + collect + merge) 必须在同一函数
-        // 内构造完整 context (queue / payload), 拆函数会让 3 条规则的协作上下文散落
-        #[allow(clippy::too_many_lines)]
+        /// 应用剧本式 I/O 循环规则集（与 io_loop 组合语义测试配套；工具扇出与
+        // 结果合并的循环编排在应用层 runner，此处只守护 io_request 请求/消费组合）
         fn io_loop_rules() -> Vec<JsonValue> {
             // 1) 计数器自初始化（缺失时置 0，否则跳过）
             let self_init = branch(
@@ -2683,30 +2674,8 @@ mod tests {
                 vec![],
             );
 
-            // 2) call_external：消费 LLM 结果 → collect 生成 call_service
-            let collect_instr = obj(&[
-                ("type", s("collect")),
-                (
-                    "params",
-                    obj(&[
-                        ("from", s("__exec__.payload.llm_response.tool_calls")),
-                        (
-                            "each",
-                            obj(&[
-                                ("type", s("call_service")),
-                                (
-                                    "params",
-                                    obj(&[
-                                        ("service_name", s("{{name}}")),
-                                        ("args", s("{{args}}")),
-                                    ]),
-                                ),
-                            ]),
-                        ),
-                    ]),
-                ),
-            ]);
-
+            // 2) call_external：消费 LLM 结果（无 tool_calls 时 push noop 终止；
+            //    工具扇出循环的编排职责在应用层 runner，不再使用 collect）
             let call_external = branch(
                 instr_domain("call_external"),
                 vec![branch(
@@ -2731,15 +2700,7 @@ mod tests {
                             "set",
                             JsonValue::null(),
                         ),
-                        branch(
-                            obj(&[
-                                ("type", s("has_fields")),
-                                ("path", s("__exec__.payload.llm_response")),
-                                ("fields", arr(vec![s("tool_calls")])),
-                            ]),
-                            vec![collect_instr],
-                            vec![push_noop()],
-                        ),
+                        push_noop(),
                     ],
                     vec![obj(&[
                         ("type", s("io_request")),
@@ -2756,31 +2717,8 @@ mod tests {
                 vec![],
             );
 
-            // 3) call_service：消费工具结果 → lt 检查 → merge 生成下一条 call_external
-            let merge_instr = obj(&[
-                ("type", s("merge")),
-                (
-                    "params",
-                    obj(&[
-                        ("messages", s("__exec__.payload.llm_response.messages")),
-                        ("tool_result", s("__exec__.payload.service_result")),
-                        (
-                            "next_instruction",
-                            obj(&[
-                                ("type", s("call_external")),
-                                (
-                                    "params",
-                                    obj(&[
-                                        ("messages", s("{{messages}}")),
-                                        ("tools", s("{{tools}}")),
-                                    ]),
-                                ),
-                            ]),
-                        ),
-                    ]),
-                ),
-            ]);
-
+            // 3) call_service：消费工具结果（结果落 payload 后 push noop 终止；
+            //    结果合并与下一条 LLM 调用的生成由应用层 runner 编排，不再使用 merge）
             let call_service = branch(
                 instr_domain("call_service"),
                 vec![branch(
@@ -2796,11 +2734,7 @@ mod tests {
                             "set",
                             JsonValue::null(),
                         ),
-                        branch(
-                            lt_domain("__exec__.payload.react_iteration", 10),
-                            vec![set_instr("react_iteration", "add", iv(1)), merge_instr],
-                            vec![push_noop()],
-                        ),
+                        push_noop(),
                     ],
                     vec![obj(&[
                         ("type", s("io_request")),
@@ -2831,16 +2765,6 @@ mod tests {
         }
         fn tools_def() -> JsonValue {
             arr(vec![obj(&[("name", s("get_weather"))])])
-        }
-        fn tool_calls(n: usize) -> JsonValue {
-            let mut v = Vec::new();
-            for k in 0..n {
-                v.push(obj(&[
-                    ("name", s(if k == 0 { "get_weather" } else { "get_time" })),
-                    ("args", obj(&[("city", s("Beijing"))])),
-                ]));
-            }
-            arr(v)
         }
         fn call_external_instr(messages: JsonValue, tools: JsonValue) -> JsonValue {
             obj(&[
@@ -2878,112 +2802,6 @@ mod tests {
             }
         }
 
-        /// 轮次 2：消费 LLM 结果 → collect 生成 call_service，且不再重复 push call_external。
-        /// docs/06 修复的核心回归：若把计数器自初始化写成独立的前置规则，
-        /// 会与消费轮在同轮多 push 一条 call_external。
-        #[test]
-        fn test_io_loop_round2_collect_without_duplicate_push() {
-            let llm_response = obj(&[("tool_calls", tool_calls(2)), ("messages", user_messages())]);
-            let payload = obj(&[
-                ("react_iteration", iv(0)),
-                (
-                    "__io_results__",
-                    obj(&[("call_external", llm_response.clone())]),
-                ),
-            ]);
-            let instruction = call_external_instr(user_messages(), tools_def());
-
-            let result = execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
-            let TransitionResult::State {
-                new_payload,
-                new_queue,
-                ..
-            } = result
-            else {
-                panic!("round 2: expected State")
-            };
-
-            // 队列恰好 2 条 call_service，没有任何 call_external（旧 bug 会多出 1 条）
-            assert_eq!(new_queue.len(), 2);
-            for q in &new_queue {
-                assert_eq!(q.get("type").and_then(|v| v.as_str()), Some("call_service"));
-            }
-            assert!(!new_queue
-                .iter()
-                .any(|q| { q.get("type").and_then(|v| v.as_str()) == Some("call_external") }));
-            assert_eq!(
-                new_queue[0]
-                    .get("params")
-                    .and_then(|p| p.get("service_name"))
-                    .and_then(|v| v.as_str()),
-                Some("get_weather")
-            );
-
-            // payload：llm_response 已消费、tools 已持久化、I/O 结果已用 null 清除
-            assert_eq!(new_payload.get("llm_response"), Some(&llm_response));
-            assert_eq!(new_payload.get("tools"), Some(&tools_def()));
-            assert_eq!(
-                new_payload
-                    .get("__io_results__")
-                    .and_then(|r| r.get("call_external")),
-                Some(&JsonValue::Null)
-            );
-            assert_eq!(new_payload.get("react_iteration"), Some(&iv(0)));
-        }
-
-        /// 轮次 3：消费工具结果 → merge 生成下一条 call_external（携带合并消息 + tools）
-        #[test]
-        fn test_io_loop_round3_merge_generates_next_call_external() {
-            let service_result = obj(&[("temperature", iv(25))]);
-            let payload = obj(&[
-                ("react_iteration", iv(0)),
-                (
-                    "llm_response",
-                    obj(&[("tool_calls", tool_calls(1)), ("messages", user_messages())]),
-                ),
-                ("tools", tools_def()),
-                (
-                    "__io_results__",
-                    obj(&[("call_service", service_result.clone())]),
-                ),
-            ]);
-
-            let result =
-                execute_transition(&io_loop_rules(), &call_service_instr(), &payload, &[]).unwrap();
-            let TransitionResult::State {
-                new_payload,
-                new_queue,
-                ..
-            } = result
-            else {
-                panic!("round 3: expected State")
-            };
-
-            // 迭代计数 +1；service_result 已消费；I/O 结果已清除
-            assert_eq!(new_payload.get("react_iteration"), Some(&iv(1)));
-            assert_eq!(new_payload.get("service_result"), Some(&service_result));
-            assert_eq!(
-                new_payload
-                    .get("__io_results__")
-                    .and_then(|r| r.get("call_service")),
-                Some(&JsonValue::Null)
-            );
-
-            // 队列恰好 1 条 call_external；messages 为合并后的历史（user + tool）
-            assert_eq!(new_queue.len(), 1);
-            let next = &new_queue[0];
-            assert_eq!(
-                next.get("type").and_then(|v| v.as_str()),
-                Some("call_external")
-            );
-            let params = next.get("params").unwrap();
-            let msgs = params.get("messages").and_then(|v| v.as_array()).unwrap();
-            assert_eq!(msgs.len(), 2);
-            assert_eq!(msgs[1].get("role").and_then(|v| v.as_str()), Some("tool"));
-            // tools 通过 {{tools}} 从 payload 解析（修复前此处是死路径字符串）
-            assert_eq!(params.get("tools"), Some(&tools_def()));
-        }
-
         /// 轮次 4：上一轮 I/O 结果已用 null 清除 → exists 判定不存在 → 发起第二次 LLM 请求。
         /// 回归：修复前 null 被视为"存在"，陈旧结果被消费，第二次 LLM 调用永远无法发起。
         #[test]
@@ -3018,9 +2836,9 @@ mod tests {
             }
         }
 
-        /// 迭代上限：react_iteration >= 10 时不再 merge，改为 push noop 终止循环
+        /// 迭代上限：call_service 消费轮结果落 payload 后 push noop 终止循环（react_iteration 保持不变）
         #[test]
-        fn test_io_loop_iteration_cap_blocks_merge() {
+        fn test_io_loop_iteration_cap_terminates_with_noop() {
             let payload = obj(&[
                 ("react_iteration", iv(10)),
                 ("llm_response", obj(&[("messages", user_messages())])),
@@ -3046,7 +2864,7 @@ mod tests {
                 new_queue[0].get("type").and_then(|v| v.as_str()),
                 Some("noop")
             );
-            // 未 merge：计数不再增长，也无 updated_messages
+            // 循环终止：计数不再增长，也无 updated_messages
             assert_eq!(new_payload.get("react_iteration"), Some(&iv(10)));
             assert!(new_payload.get("updated_messages").is_none());
         }

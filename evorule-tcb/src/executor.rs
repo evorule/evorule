@@ -16,13 +16,10 @@
 
 use crate::domain::evaluate_domain;
 use crate::error::TcbError;
-use crate::path::{
-    parse_path_segments, resolve_exec_path, resolve_path, resolve_path_mut, PathSegment,
-};
+use crate::path::{parse_path_segments, resolve_path, resolve_path_mut, PathSegment};
 use crate::value::{JsonValue, ObjectMap};
 use alloc::format;
 use alloc::string::{String, ToString};
-use alloc::vec;
 use alloc::vec::Vec;
 
 /// 元指令执行器的最大嵌套深度
@@ -55,8 +52,6 @@ pub const META_INSTRUCTION_TYPES: &[&str] = &[
     "set",
     "push",
     "io_request",
-    "collect",
-    "merge",
     "enforce",
 ];
 
@@ -106,7 +101,7 @@ pub fn execute_meta_instruction(
 /// # 命中归因（结构命中口径）
 ///
 /// `hit_out` 在执行成功时写入该条指令是否**结构命中**：
-/// - 直接指令（set/push/collect/merge）：执行成功即命中；
+/// - 直接指令（set/push）：执行成功即命中；
 /// - `io_request`：产生信号即命中；
 /// - `branch`：所选分支（on_true/on_false）**存在且非空**即命中——
 ///   空数组或缺失分支不命中（无效果路径）。
@@ -147,12 +142,6 @@ pub(crate) fn execute_meta_instruction_budgeted(
             .inspect(|_| *hit_out = true),
         "branch" => exec_branch(instr, state, depth, budget, hit_out),
         "io_request" => exec_io_request(instr, state).inspect(|_| *hit_out = true),
-        "collect" => exec_collect(instr, state)
-            .map(MetaInstructionResult::State)
-            .inspect(|_| *hit_out = true),
-        "merge" => exec_merge(instr, state)
-            .map(MetaInstructionResult::State)
-            .inspect(|_| *hit_out = true),
         "enforce" => exec_enforce(instr, state).inspect(|result| {
             // 结构命中口径：domain 求值为真（Halted 信号产生）即命中；
             // 求值为假（noop 继续）不命中。
@@ -177,7 +166,7 @@ mod executor_ssot_tests {
     /// 导致消费方（evorule-cli validate）误报合法规则。
     #[test]
     fn test_meta_instruction_types_ssot() {
-        assert_eq!(META_INSTRUCTION_TYPES.len(), 7);
+        assert_eq!(META_INSTRUCTION_TYPES.len(), 5);
         for t in META_INSTRUCTION_TYPES {
             let instr = JsonValue::object_from_pairs(&[("type", JsonValue::string(*t))]);
             if let Err(TcbError::UnknownMetaInstruction { .. }) =
@@ -224,80 +213,6 @@ pub(crate) fn json_type_name(v: &JsonValue) -> &'static str {
     }
 }
 
-/// 解析 collect/merge 的路径参数（统一路径约定）
-///
-/// 与 domain 的 `path` 字段共用同一约定（`path::resolve_exec_path`）：
-/// - `__exec__.` 开头：绝对路径兼容写法
-/// - 其他：自动补全 `__exec__.` 前缀（相对路径，如 `payload.items`）
-///
-/// 解析失败显式报 `PathResolutionFailed`——这些字段语义是纯路径，
-/// 不回退字面值（回退会把拼写错误伪装成数据值，错误在远离根因处爆发）。
-fn resolve_state_reference(
-    state: &JsonValue,
-    path: &str,
-    field: &str,
-) -> Result<JsonValue, TcbError> {
-    resolve_exec_path(state, path)
-        .cloned()
-        .ok_or_else(|| TcbError::PathResolutionFailed {
-            path: path.to_string(),
-            reason: format!("{}: path not found under __exec__", field),
-        })
-}
-
-/// 模板替换：将 `{{path}}` 替换为 item 中对应路径的值
-///
-/// # 语法
-/// - `{{field}}`：从 item 中读取 field 字段的值
-/// - `{{path.to.field}}`：从 item 中读取嵌套路径的值（支持点号分隔）
-///
-/// # 保证
-/// - 永不 panic（所有错误返回 `TcbError`）
-/// - 如果路径不存在，返回 `TcbError::PathResolutionFailed`
-pub(crate) fn substitute_template(
-    template: &JsonValue,
-    item: &JsonValue,
-) -> Result<JsonValue, TcbError> {
-    match template {
-        JsonValue::String(s) => {
-            // 检查是否是模板字符串：{{...}}
-            if s.starts_with("{{") && s.ends_with("}}") {
-                // 切片安全性论证：starts_with("{{") 保证 [2..] 位于 ASCII 边界，
-                // ends_with("}}") 保证 [..len-2] 同样位于 ASCII 边界，
-                // 且 len >= 4（两前缀两后缀互不重叠），切片永不越界/落在 UTF-8 序列中间。
-                let path = &s[2..s.len() - 2];
-                // 从 item 中解析路径
-                resolve_path(item, path)
-                    .cloned()
-                    .ok_or_else(|| TcbError::PathResolutionFailed {
-                        path: path.to_string(),
-                        reason: "field not found in template item".to_string(),
-                    })
-            } else {
-                // 普通字符串，原样返回
-                Ok(template.clone())
-            }
-        }
-        JsonValue::Object(map) => {
-            let mut new_map = ObjectMap::new();
-            for (k, v) in map.iter() {
-                let substituted = substitute_template(v, item)?;
-                new_map.insert(k.clone(), substituted);
-            }
-            Ok(JsonValue::Object(new_map))
-        }
-        JsonValue::Array(arr) => {
-            let mut new_arr = Vec::with_capacity(arr.len());
-            for v in arr.iter() {
-                new_arr.push(substitute_template(v, item)?);
-            }
-            Ok(JsonValue::Array(new_arr))
-        }
-        // 其他类型（Null, Bool, Integer）原样返回
-        _ => Ok(template.clone()),
-    }
-}
-
 /// set 元指令：修改 payload 字段（attr 支持数组索引，v0.3.2 起）
 ///
 /// attr 的三种写法：
@@ -312,7 +227,7 @@ pub(crate) fn substitute_template(
 /// # 索引写入语义（显式优先）
 /// - 中间对象段缺失/null：自动创建空对象（auto-vivification，既有行为）
 /// - 索引段：目标数组**必须已存在**（不隐式创建，数组长度无法从索引推断）；
-///   索引越界报错（不隐式追加，追加须由 collect/push 显式完成）
+///   索引越界报错（不隐式追加，追加须由 push 显式完成）
 //
 // 注：本函数有意保持单一函数承载完整路径解析语义分支（三种 attr 写法 +
 // payload 前缀守卫 + 索引写入语义），便于审计路径解析行为；行数超出 clippy
@@ -506,7 +421,7 @@ enum WriteSlot<'a> {
 ///   （数组长度无法从索引推断，隐式创建会制造语义陷阱）。
 /// - **索引段**：目标数组**必须已存在**（缺失/null → 报错，禁止隐式创建）；
 ///   索引越界（`>= len`）→ 报错（禁止稀疏数组与隐式追加，追加须由
-///   collect/push 等显式机制完成）；存在但非数组 → 报错。
+///   push 等显式机制完成）；存在但非数组 → 报错。
 /// - **末段**：返回可写槽位（字段或元素）。
 fn descend_to_write_slot<'a>(
     payload: &'a mut JsonValue,
@@ -586,7 +501,7 @@ fn descend_field_segment<'a>(
                     path: attr.to_string(),
                     reason: format!(
                         "array '{}' not found; set cannot auto-create arrays \
-                         (create via push/collect first)",
+                         (create via push first)",
                         name
                     ),
                 });
@@ -642,7 +557,7 @@ fn descend_index_segment<'a>(
                     path: attr.to_string(),
                     reason: format!(
                         "array '{}' not found; set cannot auto-create arrays \
-                         (create via push/collect first)",
+                         (create via push first)",
                         f
                     ),
                 });
@@ -909,213 +824,6 @@ fn exec_io_request(instr: &JsonValue, state: JsonValue) -> Result<MetaInstructio
         io_type,
         params: JsonValue::Object(request_params),
     })
-}
-
-/// collect 元指令：从数组生成多条指令并推入队列
-///
-/// # 参数
-/// - `params.from`：源数组路径（如 `__exec__.payload.llm_response.tool_calls`）
-/// - `params.each`：模板对象，用于生成每条指令
-///
-/// # 行为
-/// 1. 从 `from` 路径读取数组
-/// 2. 对每个数组元素，用 `each` 模板生成一条指令（支持 `{{path}}` 替换）
-/// 3. 将所有生成的指令推入队列前端
-///
-/// 空源数组视为 no-op，不返回错误。
-pub(crate) fn exec_collect(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbError> {
-    let params = instr.get("params").ok_or(TcbError::MissingField {
-        field: "params".to_string(),
-    })?;
-
-    // 1. 获取 from 路径
-    let from_path = params
-        .get("from")
-        .and_then(|v| v.as_str())
-        .ok_or(TcbError::MissingField {
-            field: "from".to_string(),
-        })?;
-
-    // 2. 获取 each 模板
-    let each_template = params.get("each").ok_or(TcbError::MissingField {
-        field: "each".to_string(),
-    })?;
-
-    // 3. 解析 from 路径，获取源数组（统一路径约定：相对 __exec__ 自动补全）
-    let source = resolve_state_reference(&state, from_path, "collect.from")?;
-    let source_arr = source.as_array().ok_or_else(|| TcbError::InvalidType {
-        expected: "array",
-        actual: json_type_name(&source),
-        context: format!("collect.from: {}", from_path),
-    })?;
-
-    // 空源数组 = no-op
-    if source_arr.is_empty() {
-        return Ok(state);
-    }
-
-    // 4. 为每个元素生成指令
-    let mut generated_instructions = Vec::with_capacity(source_arr.len() + 1);
-    for item in source_arr {
-        let instr = substitute_template(each_template, item)?;
-        generated_instructions.push(instr);
-    }
-
-    // 4.1 after 参数：将指定指令追加到生成列表末尾
-    // 解决队列顺序依赖问题：无需在规则中先 push(merge) 再 collect，
-    // collect 自动把 after 指令排在所有生成指令之后
-    if let Some(after_instr) = params.get("after") {
-        generated_instructions.push(after_instr.clone());
-    }
-
-    // 5. 推入队列前端
-    let queue = resolve_path_mut(&mut state, "__exec__.queue")
-        .and_then(|v| v.as_array_mut())
-        .ok_or_else(|| TcbError::InvalidState {
-            reason: "__exec__.queue is missing or not an array".to_string(),
-        })?;
-
-    // 构建新队列：生成的指令在前，原有队列在后
-    let mut new_queue = Vec::with_capacity(generated_instructions.len() + queue.len());
-    new_queue.extend(generated_instructions);
-    new_queue.extend_from_slice(queue);
-
-    // 替换回 state
-    let queue_ref =
-        resolve_path_mut(&mut state, "__exec__.queue").ok_or_else(|| TcbError::InvalidState {
-            reason: "__exec__.queue disappeared".to_string(),
-        })?;
-    *queue_ref = JsonValue::Array(new_queue);
-
-    Ok(state)
-}
-
-/// merge 元指令：将工具执行结果合并到消息历史，并生成新的 LLM 调用指令
-///
-/// 顺序语义（v0.3.1）：每次 merge 追加一条 tool 消息并**无条件**推送
-/// `next_instruction`。多工具的 token 聚合优化不在 TCB 层做（会引入批处理策略，
-/// 违反 TCB 最小顺序语义），由 governance 层负责。
-///
-/// # 参数
-/// - `params.messages`：当前消息历史路径
-/// - `params.tool_result`：工具执行结果路径
-/// - `params.next_instruction`：模板对象，用于生成下一条指令
-///
-/// # 行为
-/// 1. 读取当前消息历史
-/// 2. 读取工具执行结果
-/// 3. 将工具结果作为 tool 消息追加到消息历史
-/// 4. 构建临时模板上下文（payload 快照 + 注入的 messages/tools），
-///    用更新后的消息历史替换模板中的 {{messages}} 占位符；
-///    更新后的消息历史**不写回 payload**（避免持久化污染业务状态），
-///    仅通过生成指令的参数传递给下游
-/// 5. 生成新的指令并推入队列前端
-pub(crate) fn exec_merge(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbError> {
-    let params = instr.get("params").ok_or(TcbError::MissingField {
-        field: "params".to_string(),
-    })?;
-
-    // 1. 获取消息历史路径
-    let messages_path =
-        params
-            .get("messages")
-            .and_then(|v| v.as_str())
-            .ok_or(TcbError::MissingField {
-                field: "messages".to_string(),
-            })?;
-
-    // 2. 获取下一个指令模板
-    let next_template = params
-        .get("next_instruction")
-        .ok_or(TcbError::MissingField {
-            field: "next_instruction".to_string(),
-        })?;
-
-    // 3. 读取当前消息历史（统一路径约定：相对 __exec__ 自动补全）
-    let messages = resolve_state_reference(&state, messages_path, "merge.messages")?;
-    let messages_arr = messages.as_array().ok_or_else(|| TcbError::InvalidType {
-        expected: "array",
-        actual: json_type_name(&messages),
-        context: format!("merge.messages: {}", messages_path),
-    })?;
-
-    // 4. 读取工具执行结果（支持两种来源）
-    //    - tool_results: 指向数组的路径，用于多工具结果合并（ReAct 多工具扇出场景）
-    //      reactor 层负责将每次 IoResponse 的结果累积到此数组
-    //    - tool_result: 指向单一值的路径，向后兼容单工具场景
-    let tool_results: Vec<JsonValue> =
-        if let Some(results_path) = params.get("tool_results").and_then(|v| v.as_str()) {
-            let results_val = resolve_state_reference(&state, results_path, "merge.tool_results")?;
-            let results_arr = results_val
-                .as_array()
-                .ok_or_else(|| TcbError::InvalidType {
-                    expected: "array",
-                    actual: json_type_name(&results_val),
-                    context: format!("merge.tool_results: {}", results_path),
-                })?;
-            results_arr.to_vec()
-        } else if let Some(result_path) = params.get("tool_result").and_then(|v| v.as_str()) {
-            vec![resolve_state_reference(
-                &state,
-                result_path,
-                "merge.tool_result",
-            )?]
-        } else {
-            return Err(TcbError::MissingField {
-                field: "tool_result or tool_results".to_string(),
-            });
-        };
-
-    // 5. 构建更新的消息历史
-    //    - 现有消息保持不变
-    //    - 为每个工具结果添加 tool 消息
-    let mut updated_messages = messages_arr.to_vec();
-    for result in tool_results {
-        let tool_message = JsonValue::object_from_pairs(&[
-            ("role", JsonValue::string("tool")),
-            ("content", result),
-        ]);
-        updated_messages.push(tool_message);
-    }
-
-    // 6. 构建模板替换上下文：以 payload 快照为基底，注入 messages（更新后的消息历史）
-    //    这样模板中 {{messages}} → 更新后的消息历史，{{tools}} 等 → payload 同名字段
-    //    （tools 由 call_external 规则在消费结果时持久化到 payload）。
-    //    payload 中不存在 tools 时注入 null，保证模板可解析（结果为 null）。
-    //
-    //    更新后的消息历史仅存在于本临时上下文，**不写回 payload**
-    //    （M8 审计决策：写入 payload.updated_messages 会持久化污染业务状态，
-    //    且多轮 merge 会无限累积重复消息；消息历史通过生成的
-    //    next_instruction 参数传递给下游，无需持久化中转）。
-    let updated_messages_value = JsonValue::Array(updated_messages);
-    let mut context_item = resolve_path(&state, "__exec__.payload")
-        .cloned()
-        .unwrap_or_else(JsonValue::empty_object);
-    let _ = context_item.insert("messages".to_string(), updated_messages_value);
-    if context_item.get("tools").is_none() {
-        let _ = context_item.insert("tools".to_string(), JsonValue::null());
-    }
-
-    let next_instr = substitute_template(next_template, &context_item)?;
-
-    // 7. 推入队列前端
-    let queue = resolve_path_mut(&mut state, "__exec__.queue")
-        .and_then(|v| v.as_array_mut())
-        .ok_or_else(|| TcbError::InvalidState {
-            reason: "__exec__.queue is missing or not an array".to_string(),
-        })?;
-
-    let mut new_queue = Vec::with_capacity(1 + queue.len());
-    new_queue.push(next_instr);
-    new_queue.extend_from_slice(queue);
-
-    let queue_ref =
-        resolve_path_mut(&mut state, "__exec__.queue").ok_or_else(|| TcbError::InvalidState {
-            reason: "__exec__.queue disappeared".to_string(),
-        })?;
-    *queue_ref = JsonValue::Array(new_queue);
-
-    Ok(state)
 }
 
 #[cfg(test)]
@@ -2877,94 +2585,6 @@ mod tests {
         }
     }
 
-    // 嵌套子 mod（不写 `#[cfg(test)]`，继承父 mod 的 cfg(test) 属性，
-    // 这样 build.rs L1 门禁的 strip_test_mod 会把整个 mod tests 块一起剥掉）
-    mod substitute_template_tests {
-        use super::*;
-        use crate::value::{JsonValue, ObjectMap};
-
-        #[test]
-        fn test_substitute_template_simple() {
-            let item = JsonValue::object_from_pairs(&[("name", JsonValue::string("get_weather"))]);
-
-            let template = JsonValue::string("{{name}}");
-            let result = substitute_template(&template, &item).unwrap();
-            assert_eq!(result, JsonValue::string("get_weather"));
-        }
-
-        #[test]
-        fn test_substitute_template_nested() {
-            let mut args = ObjectMap::new();
-            args.insert("city".to_string(), JsonValue::string("Beijing"));
-            let item = JsonValue::object_from_pairs(&[
-                ("name", JsonValue::string("get_weather")),
-                ("args", JsonValue::Object(args)),
-            ]);
-
-            let template = JsonValue::string("{{args}}");
-            let result = substitute_template(&template, &item).unwrap();
-            assert!(result.is_object());
-            assert_eq!(result.get("city").and_then(|v| v.as_str()), Some("Beijing"));
-        }
-
-        #[test]
-        fn test_substitute_template_object() {
-            let item = JsonValue::object_from_pairs(&[("name", JsonValue::string("get_weather"))]);
-
-            let template = JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("call_service")),
-                (
-                    "params",
-                    JsonValue::object_from_pairs(&[(
-                        "service_name",
-                        JsonValue::string("{{name}}"),
-                    )]),
-                ),
-            ]);
-
-            let result = substitute_template(&template, &item).unwrap();
-            assert_eq!(
-                result.get("type").and_then(|v| v.as_str()),
-                Some("call_service")
-            );
-            let params = result.get("params").unwrap();
-            assert_eq!(
-                params.get("service_name").and_then(|v| v.as_str()),
-                Some("get_weather")
-            );
-        }
-
-        #[test]
-        fn test_substitute_template_not_found_returns_error() {
-            let item = JsonValue::object_from_pairs(&[]);
-            let template = JsonValue::string("{{missing}}");
-            let result = substitute_template(&template, &item);
-            assert!(matches!(result, Err(TcbError::PathResolutionFailed { .. })));
-        }
-
-        #[test]
-        fn test_substitute_template_plain_string_unchanged() {
-            let item = JsonValue::object_from_pairs(&[]);
-            let template = JsonValue::string("plain text");
-            let result = substitute_template(&template, &item).unwrap();
-            assert_eq!(result, JsonValue::string("plain text"));
-        }
-
-        #[test]
-        fn test_substitute_template_array() {
-            // 模板数组遍历每个元素，每个元素是 {{id}} 字符串。
-            // item 是单个对象（不是数组），所以 {{id}} 能正确解析。
-            let item = JsonValue::object_from_pairs(&[("id", JsonValue::Integer(1))]);
-            let template = JsonValue::array(vec![JsonValue::string("{{id}}")]);
-
-            let result = substitute_template(&template, &item).unwrap();
-            let arr = result.as_array().unwrap();
-            // 模板数组有 1 个元素，每个被 {{id}} 替换为 Integer(1)
-            assert_eq!(arr.len(), 1);
-            assert_eq!(arr[0], JsonValue::Integer(1));
-        }
-    }
-
     mod react_tests {
         use super::*;
         use crate::value::{JsonValue, ObjectMap};
@@ -3055,486 +2675,6 @@ mod tests {
                 ),
             ]);
             assert!(!evaluate_domain(&domain, &state).unwrap());
-        }
-
-        #[test]
-        fn test_collect_generates_service_calls() {
-            let state = make_state_with_tool_calls();
-
-            let instr = JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("collect")),
-                (
-                    "params",
-                    JsonValue::object_from_pairs(&[
-                        (
-                            "from",
-                            JsonValue::string("__exec__.payload.llm_response.tool_calls"),
-                        ),
-                        (
-                            "each",
-                            JsonValue::object_from_pairs(&[
-                                ("type", JsonValue::string("call_service")),
-                                (
-                                    "params",
-                                    JsonValue::object_from_pairs(&[
-                                        ("service_name", JsonValue::string("{{name}}")),
-                                        ("args", JsonValue::string("{{args}}")),
-                                    ]),
-                                ),
-                            ]),
-                        ),
-                    ]),
-                ),
-            ]);
-
-            let result = exec_collect(&instr, state).unwrap();
-            let queue = resolve_path(&result, "__exec__.queue").unwrap();
-            let arr = queue.as_array().unwrap();
-
-            assert_eq!(arr.len(), 2);
-            assert_eq!(
-                arr[0].get("type").and_then(|v| v.as_str()),
-                Some("call_service")
-            );
-            assert_eq!(
-                arr[0]
-                    .get("params")
-                    .and_then(|p| p.get("service_name").and_then(|v| v.as_str())),
-                Some("get_weather")
-            );
-            assert_eq!(
-                arr[1].get("type").and_then(|v| v.as_str()),
-                Some("call_service")
-            );
-            assert_eq!(
-                arr[1]
-                    .get("params")
-                    .and_then(|p| p.get("service_name").and_then(|v| v.as_str())),
-                Some("get_time")
-            );
-        }
-
-        #[test]
-        fn test_collect_from_relative_path_auto_prefix() {
-            // M3：collect.from 相对路径（自动补全 __exec__. 前缀，与 domain 约定一致）
-            let state = make_state_with_tool_calls();
-
-            let instr = JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("collect")),
-                (
-                    "params",
-                    JsonValue::object_from_pairs(&[
-                        ("from", JsonValue::string("payload.llm_response.tool_calls")),
-                        (
-                            "each",
-                            JsonValue::object_from_pairs(&[(
-                                "type",
-                                JsonValue::string("call_service"),
-                            )]),
-                        ),
-                    ]),
-                ),
-            ]);
-
-            let result = exec_collect(&instr, state).unwrap();
-            let queue = resolve_path(&result, "__exec__.queue").unwrap();
-            assert_eq!(queue.as_array().unwrap().len(), 2);
-        }
-
-        #[test]
-        fn test_collect_from_path_not_found_errors() {
-            // M3：路径解析失败显式报错（不再回退字面值 → InvalidType 的费解错误）
-            let state = make_state_with_tool_calls();
-
-            let instr = JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("collect")),
-                (
-                    "params",
-                    JsonValue::object_from_pairs(&[
-                        ("from", JsonValue::string("payload.llm_response.tool_callz")),
-                        (
-                            "each",
-                            JsonValue::object_from_pairs(&[(
-                                "type",
-                                JsonValue::string("call_service"),
-                            )]),
-                        ),
-                    ]),
-                ),
-            ]);
-
-            let result = exec_collect(&instr, state);
-            match result {
-                Err(TcbError::PathResolutionFailed { path, reason }) => {
-                    assert!(path.contains("tool_callz"));
-                    assert!(reason.contains("collect.from"), "reason: {reason}");
-                }
-                other => panic!("expected PathResolutionFailed, got {:?}", other),
-            }
-        }
-
-        #[test]
-        fn test_merge_relative_paths_auto_prefix() {
-            // M3：merge.messages / merge.tool_result 相对路径自动补全
-            let messages = JsonValue::array(vec![JsonValue::object_from_pairs(&[
-                ("role", JsonValue::string("user")),
-                ("content", JsonValue::string("hi")),
-            ])]);
-            let payload = JsonValue::object_from_pairs(&[
-                ("history", messages),
-                ("service_result", JsonValue::string("sunny")),
-            ]);
-            let state = make_exec_state_with_instruction(
-                JsonValue::object_from_pairs(&[("type", JsonValue::string("call_service"))]),
-                payload,
-                vec![],
-            );
-
-            let instr = JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("merge")),
-                (
-                    "params",
-                    JsonValue::object_from_pairs(&[
-                        ("messages", JsonValue::string("payload.history")),
-                        ("tool_result", JsonValue::string("payload.service_result")),
-                        (
-                            "next_instruction",
-                            JsonValue::object_from_pairs(&[(
-                                "type",
-                                JsonValue::string("call_external"),
-                            )]),
-                        ),
-                    ]),
-                ),
-            ]);
-
-            let result = exec_merge(&instr, state).unwrap();
-            // 队列前端是 merge 生成的下一条指令
-            let queue = resolve_path(&result, "__exec__.queue").unwrap();
-            assert_eq!(
-                queue
-                    .as_array()
-                    .unwrap()
-                    .first()
-                    .and_then(|i| i.get("type"))
-                    .and_then(|v| v.as_str()),
-                Some("call_external")
-            );
-        }
-
-        #[test]
-        fn test_merge_messages_path_not_found_errors() {
-            // M3：merge.messages 路径失败显式报错（不再字面值回退）
-            let payload = JsonValue::empty_object();
-            let state = make_exec_state_with_instruction(
-                JsonValue::object_from_pairs(&[("type", JsonValue::string("call_service"))]),
-                payload,
-                vec![],
-            );
-
-            let instr = JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("merge")),
-                (
-                    "params",
-                    JsonValue::object_from_pairs(&[
-                        ("messages", JsonValue::string("payload.historz")),
-                        ("tool_result", JsonValue::string("payload.service_result")),
-                        (
-                            "next_instruction",
-                            JsonValue::object_from_pairs(&[(
-                                "type",
-                                JsonValue::string("call_external"),
-                            )]),
-                        ),
-                    ]),
-                ),
-            ]);
-
-            let result = exec_merge(&instr, state);
-            match result {
-                Err(TcbError::PathResolutionFailed { path, reason }) => {
-                    assert!(path.contains("historz"));
-                    assert!(reason.contains("merge.messages"), "reason: {reason}");
-                }
-                other => panic!("expected PathResolutionFailed, got {:?}", other),
-            }
-        }
-
-        #[test]
-        fn test_collect_empty_array_returns_no_change() {
-            let state = make_state_with_tool_calls();
-            // 修改：将 tool_calls 设为空数组
-            let mut modified = state.clone();
-            if let Some(payload) = resolve_path_mut(&mut modified, "__exec__.payload") {
-                if let Some(obj) = payload.as_object_mut() {
-                    if let Some(llm_response) = obj.get_mut("llm_response") {
-                        if let Some(inner) = llm_response.as_object_mut() {
-                            inner.insert("tool_calls".to_string(), JsonValue::empty_array());
-                        }
-                    }
-                }
-            }
-
-            let instr = JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("collect")),
-                (
-                    "params",
-                    JsonValue::object_from_pairs(&[
-                        (
-                            "from",
-                            JsonValue::string("__exec__.payload.llm_response.tool_calls"),
-                        ),
-                        ("each", JsonValue::object_from_pairs(&[])),
-                    ]),
-                ),
-            ]);
-
-            let result = exec_collect(&instr, modified).unwrap();
-            let queue = resolve_path(&result, "__exec__.queue").unwrap();
-            assert!(queue.as_array().unwrap().is_empty());
-        }
-
-        #[test]
-        fn test_merge_appends_tool_result_and_generates_next_call() {
-            let mut state = make_state_with_tool_calls();
-
-            // 添加 service_result
-            let service_result = JsonValue::object_from_pairs(&[
-                ("status", JsonValue::string("success")),
-                (
-                    "data",
-                    JsonValue::object_from_pairs(&[("temperature", JsonValue::Integer(25))]),
-                ),
-            ]);
-            if let Some(payload) = resolve_path_mut(&mut state, "__exec__.payload") {
-                if let Some(obj) = payload.as_object_mut() {
-                    obj.insert("service_result".to_string(), service_result);
-                }
-            }
-
-            let instr = JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("merge")),
-                (
-                    "params",
-                    JsonValue::object_from_pairs(&[
-                        (
-                            "messages",
-                            JsonValue::string("__exec__.payload.llm_response.messages"),
-                        ),
-                        (
-                            "tool_result",
-                            JsonValue::string("__exec__.payload.service_result"),
-                        ),
-                        (
-                            "next_instruction",
-                            JsonValue::object_from_pairs(&[
-                                ("type", JsonValue::string("call_external")),
-                                (
-                                    "params",
-                                    JsonValue::object_from_pairs(&[
-                                        ("messages", JsonValue::string("{{messages}}")),
-                                        ("tools", JsonValue::string("{{tools}}")),
-                                    ]),
-                                ),
-                            ]),
-                        ),
-                    ]),
-                ),
-            ]);
-
-            let result = exec_merge(&instr, state).unwrap();
-
-            // M8 回归：更新后的消息历史不持久化到 payload（避免业务状态污染）
-            let payload = resolve_path(&result, "__exec__.payload").unwrap();
-            assert!(payload.get("updated_messages").is_none());
-
-            // 验证：合并历史通过生成指令的参数传递（{{messages}} 已替换为数组）
-            let queue = resolve_path(&result, "__exec__.queue").unwrap();
-            let queue_arr = queue.as_array().unwrap();
-            assert_eq!(queue_arr.len(), 1);
-            assert_eq!(
-                queue_arr[0].get("type").and_then(|v| v.as_str()),
-                Some("call_external")
-            );
-            let msgs = queue_arr[0]
-                .get("params")
-                .and_then(|p| p.get("messages"))
-                .unwrap();
-            let msgs_arr = msgs.as_array().unwrap();
-            assert_eq!(msgs_arr.len(), 2); // 原消息 + tool 消息
-            assert_eq!(
-                msgs_arr[1].get("role").and_then(|v| v.as_str()),
-                Some("tool")
-            );
-        }
-
-        #[test]
-        fn test_collect_with_after() {
-            // 验证 after 参数：merge 指令自动排在所有生成指令之后
-            let state = make_state_with_tool_calls();
-
-            let merge_instr = JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("merge")),
-                (
-                    "params",
-                    JsonValue::object_from_pairs(&[
-                        (
-                            "messages",
-                            JsonValue::string("__exec__.payload.llm_response.messages"),
-                        ),
-                        (
-                            "tool_results",
-                            JsonValue::string("__exec__.payload.__io_results__"),
-                        ),
-                    ]),
-                ),
-            ]);
-
-            let instr = JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("collect")),
-                (
-                    "params",
-                    JsonValue::object_from_pairs(&[
-                        (
-                            "from",
-                            JsonValue::string("__exec__.payload.llm_response.tool_calls"),
-                        ),
-                        (
-                            "each",
-                            JsonValue::object_from_pairs(&[
-                                ("type", JsonValue::string("call_service")),
-                                (
-                                    "params",
-                                    JsonValue::object_from_pairs(&[
-                                        ("service_name", JsonValue::string("{{name}}")),
-                                        ("args", JsonValue::string("{{args}}")),
-                                    ]),
-                                ),
-                            ]),
-                        ),
-                        ("after", merge_instr),
-                    ]),
-                ),
-            ]);
-            let result = exec_collect(&instr, state).unwrap();
-            let queue = resolve_path(&result, "__exec__.queue").unwrap();
-            let arr = queue.as_array().unwrap();
-
-            // 2 个 call_service + 1 个 merge = 3 条
-            assert_eq!(arr.len(), 3);
-            assert_eq!(
-                arr[0].get("type").and_then(|v| v.as_str()),
-                Some("call_service")
-            );
-            assert_eq!(
-                arr[1].get("type").and_then(|v| v.as_str()),
-                Some("call_service")
-            );
-            assert_eq!(arr[2].get("type").and_then(|v| v.as_str()), Some("merge"));
-        }
-
-        #[test]
-        fn test_merge_multi_tool() {
-            // 模拟 ReAct 多工具场景：
-            // LLM 返回 2 个 tool_calls → collect 生成 2 个 io_request
-            // → reactor 逐个调用工具 → 结果累积到 __io_results__ 数组
-            // → merge 读取数组，将所有结果追加到消息历史
-            let messages = JsonValue::array(vec![JsonValue::object_from_pairs(&[
-                ("role", JsonValue::string("user")),
-                (
-                    "content",
-                    JsonValue::string("What's the weather in Beijing and Shanghai?"),
-                ),
-            ])]);
-            let mut llm_response = ObjectMap::new();
-            llm_response.insert("messages".to_string(), messages);
-
-            let io_results = JsonValue::array(vec![
-                JsonValue::object_from_pairs(&[
-                    ("city", JsonValue::string("Beijing")),
-                    ("temp", JsonValue::Integer(28)),
-                ]),
-                JsonValue::object_from_pairs(&[
-                    ("city", JsonValue::string("Shanghai")),
-                    ("temp", JsonValue::Integer(31)),
-                ]),
-            ]);
-
-            let mut payload = ObjectMap::new();
-            payload.insert("llm_response".to_string(), JsonValue::Object(llm_response));
-            payload.insert("__io_results__".to_string(), io_results);
-            let state = make_exec_state("merge_results", JsonValue::Object(payload), vec![]);
-
-            let instr = JsonValue::object_from_pairs(&[
-                ("type", JsonValue::string("merge")),
-                (
-                    "params",
-                    JsonValue::object_from_pairs(&[
-                        (
-                            "messages",
-                            JsonValue::string("__exec__.payload.llm_response.messages"),
-                        ),
-                        (
-                            "tool_results",
-                            JsonValue::string("__exec__.payload.__io_results__"),
-                        ),
-                        (
-                            "next_instruction",
-                            JsonValue::object_from_pairs(&[
-                                ("type", JsonValue::string("call_external")),
-                                (
-                                    "params",
-                                    JsonValue::object_from_pairs(&[
-                                        ("messages", JsonValue::string("{{messages}}")),
-                                        ("tools", JsonValue::string("[]")),
-                                    ]),
-                                ),
-                            ]),
-                        ),
-                    ]),
-                ),
-            ]);
-            let result = exec_merge(&instr, state).unwrap();
-
-            // M8 回归：更新后的消息历史不持久化到 payload（避免业务状态污染）
-            let payload = resolve_path(&result, "__exec__.payload").unwrap();
-            assert!(payload.get("updated_messages").is_none());
-
-            // 验证：2 个工具结果都合并进生成指令的 messages 参数
-            let queue = resolve_path(&result, "__exec__.queue").unwrap();
-            let queue_arr = queue.as_array().unwrap();
-            assert_eq!(queue_arr.len(), 1);
-            assert_eq!(
-                queue_arr[0].get("type").and_then(|v| v.as_str()),
-                Some("call_external")
-            );
-
-            let msgs = queue_arr[0]
-                .get("params")
-                .and_then(|p| p.get("messages"))
-                .unwrap();
-            let msgs_arr = msgs.as_array().unwrap();
-            assert_eq!(msgs_arr.len(), 3); // 1 user + 2 tool
-
-            assert_eq!(
-                msgs_arr[1].get("role").and_then(|v| v.as_str()),
-                Some("tool")
-            );
-            let content1 = msgs_arr[1].get("content").unwrap();
-            assert_eq!(
-                content1.get("city").and_then(|v| v.as_str()),
-                Some("Beijing")
-            );
-
-            assert_eq!(
-                msgs_arr[2].get("role").and_then(|v| v.as_str()),
-                Some("tool")
-            );
-            let content2 = msgs_arr[2].get("content").unwrap();
-            assert_eq!(
-                content2.get("city").and_then(|v| v.as_str()),
-                Some("Shanghai")
-            );
         }
     }
 }

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 # EvoRule workspace：tcb / reactor / governance / cli 四 crate 统一版本。
-# 2026-09-12：v0.5.0 发布（版本策略见 VERSION_STRATEGY.md）。
+# 2026-09-14：v0.6.0（69 号清理，破坏性变更：collect/merge 原语退役；版本策略见 VERSION_STRATEGY.md）。
 members = [
     "evorule-tcb",
     "evorule-reactor",
@@ -14,7 +14,7 @@ members = [
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 authors = ["EvoRule Project"]
@@ -22,9 +22,9 @@ rust-version = "1.74"
 homepage = "https://gitee.com/evorule/evorule"
 repository = "https://gitee.com/evorule/evorule"
 documentation = "https://docs.rs/evorule-tcb"
-description = "evorule:确定性规则引擎 + BLAKE3 不可篡改审计链 + ReAct 循环 (Deterministic rule engine with BLAKE3 audit chain and ReAct loop)"
+description = "evorule:确定性规则引擎 + BLAKE3 不可篡改审计链 (Deterministic rule engine with BLAKE3 audit chain)"
 readme = "README.md"
-keywords = ["rule-engine", "audit-chain", "blake3", "react", "deterministic"]
+keywords = ["rule-engine", "audit-chain", "blake3", "deterministic"]
 categories = ["data-structures", "parser-implementations"]
 
 [workspace.lints.rust]

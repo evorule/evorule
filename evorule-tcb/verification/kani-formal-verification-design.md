@@ -3,6 +3,13 @@
 > 本文档为 `evorule-tcb` v0.3.1 的 Kani 形式化验证设计，涵盖验证目标、验证策略、
 > 输入建模、证明清单（P1-P21）、目录结构、运行方式、实施计划与风险评估。
 
+> **⚠️ 退役批注（2026-09-14，69 号清理）**：`collect`/`merge` 元指令与
+> `substitute_template` 模板替换已随 v0.6.0 退役，P15/P16/P17 三个 proof
+> 同步删除（本文 1.1/1.2/二/五节中涉及 collect/merge/substitute_template 的
+> 表述为 v0.3.1 历史设计记录，不再反映现状）。当前权威 proof 清单以
+> [verification/STATUS.md](../../verification/STATUS.md) 附录 A/B 为准
+> （34 个 proof = A 档 14 + B 档 20）。
+
 ---
 
 ## 一、验证目标
@@ -609,9 +616,9 @@ fn verify_react_io_required() {
 | P12 | `verify_execute_meta_instruction_never_panics` | 公开 | 元指令不 panic（6 种） | P0 |
 | P13 | `verify_exec_set_arithmetic_safe` | execute_meta_instruction | set 算术安全 | P0 |
 | P14 | `verify_branch_depth_limit` | execute_meta_instruction | branch 深度限制 | P1 |
-| P15 | `verify_collect_safe_with_after` | execute_meta_instruction | collect + after（v0.3.1） | P1 |
-| P16 | `verify_merge_safe` | execute_meta_instruction | merge 合并（v0.3.1） | P1 |
-| P17 | `verify_substitute_template_never_panics` | collect 间接 | 模板替换安全 | P1 |
+| P15 | ~~`verify_collect_safe_with_after`~~ | — | **退役**（collect 已于 v0.6.0 移除，69 号清理） | — |
+| P16 | ~~`verify_merge_safe`~~ | — | **退役**（merge 已于 v0.6.0 移除，69 号清理） | — |
+| P17 | ~~`verify_substitute_template_never_panics`~~ | — | **退役**（substitute_template 已于 v0.6.0 移除，69 号清理） | — |
 | P18 | `verify_io_request_safe` | execute_meta_instruction | io_request 容错（v0.3.1） | P1 |
 | P19 | `verify_execute_transition_never_panics` | 公开 | 状态转换不 panic | P0 |
 | P20 | `verify_transform_rules_limit` | 公开 | 规则数限制 | P2 |
