@@ -13,6 +13,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.6.0 - 2026-09-14
+
+**69 号清理：`validate` 元指令白名单收窄（MINOR，含破坏性）** — 适配 `evorule-tcb` v0.6.0 `META_INSTRUCTION_TYPES` SSOT 常量收窄（CR-20260914-001）。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.6.0]` 段。
+
+### 🔄 变更
+
+- **`validate` 元指令白名单收窄**：SSOT 常量 `META_INSTRUCTION_TYPES` 收窄为 5 种（`branch` / `set` / `push` / `io_request` / `enforce`）
+- `Cargo.toml` 依赖版本对齐：`evorule-tcb` / `evorule-reactor` → `0.6.0`
+
+### 破坏性变更
+
+- ⚠️ 规则文件使用 `"type": "collect"` / `"type": "merge"` 将**加载即拒**（schema 枚举 + 引擎白名单双重拒绝，不静默忽略）；LLM 多轮工具编排迁移至应用层（runner / tool_registry）
+
+### 向后兼容
+
+- ✅ `run` / `replay` / `diff` / `verify-chain` / `verify-anchors` 命令行为与退出码不变
+
+---
+
 ## v0.4.0 - 2026-09-01
 
 **单会话长跑 O(n²) 缺陷修复配套（MINOR，含破坏性）** — 适配 `evorule-reactor` v0.4.0 `Fact::Stable` 瘦身（CR-20260901-001）。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.4.0]` 段。

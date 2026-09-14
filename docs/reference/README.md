@@ -29,7 +29,7 @@
 |------|------|---------|
 | [cli-reference.md](./cli-reference.md) | evorule CLI 全部 7 个子命令参考（参数/默认值/示例/退出码） | evorule-cli/src/cli.rs |
 | [fact-types.md](./fact-types.md) | Fact 类型参考（8 种变体的字段说明，含 Stable 瘦身设计） | evorule-reactor/src/fact.rs |
-| [json-rule-schema.md](./json-rule-schema.md) | JSON 规则集格式参考（transform 规则/6 种元指令/7 种 domain/指令格式） | evorule-tcb/{executor,domain,transition}.rs + core_eval.json |
+| [json-rule-schema.md](./json-rule-schema.md) | JSON 规则集格式参考（transform 规则/5 种元指令/7 种 domain/指令格式） | evorule-tcb/{executor,domain,transition}.rs + core_eval.json |
 
 > 所有参考文档的技术结论均有源码行号依据，无"待核实"内容。
 
@@ -70,7 +70,7 @@ Name files after the **object** (API name / CLI subcommand / config file name), 
 |------|------|---------|
 | [cli-reference.md](./cli-reference.md) | All 7 evorule CLI subcommands (arguments / defaults / examples / exit codes) | evorule-cli/src/cli.rs |
 | [fact-types.md](./fact-types.md) | Fact type reference (fields of the 8 variants, including the slimmed-down Stable design) | evorule-reactor/src/fact.rs |
-| [json-rule-schema.md](./json-rule-schema.md) | JSON rule set format reference (transform rules / 6 meta-instructions / 7 domain types / instruction format) | evorule-tcb/{executor,domain,transition}.rs + core_eval.json |
+| [json-rule-schema.md](./json-rule-schema.md) | JSON rule set format reference (transform rules / 5 meta-instructions / 7 domain types / instruction format) | evorule-tcb/{executor,domain,transition}.rs + core_eval.json |
 
 > Every technical claim in the reference docs is backed by source-code line numbers; nothing is left "to be verified".
 

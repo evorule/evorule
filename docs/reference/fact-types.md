@@ -14,7 +14,7 @@ Fact 是 evorule 执行过程中的不可变事件记录。所有 Fact 按执行
 
 | Fact 类型 | 说明 | 产生方 | 消费方 | 代码行 |
 |-----------|------|--------|--------|--------|
-| `Command` | 用户提交新指令 | 外部（CLI/API） | 反应器 | fact.rs L189 |
+| `Command` | 项目方提交新指令 | 外部（CLI/API） | 反应器 | fact.rs L189 |
 | `PayloadUpdate` | 外部更新 payload 字段 | 治理层 | 反应器 | fact.rs L197 |
 | `StateTransition` | 状态转换（新 payload + 新队列） | 反应器 | 治理层/消费方 | fact.rs L207 |
 | `IoRequest` | I/O 请求 | TCB（经反应器） | 治理层/I/O 处理器 | fact.rs L219 |
@@ -27,7 +27,7 @@ Fact 是 evorule 执行过程中的不可变事件记录。所有 Fact 按执行
 
 ## Command
 
-用户提交新指令，触发执行。
+项目方提交新指令，触发执行。
 
 | 字段 | 类型 | 说明 | 代码行 |
 |------|------|------|--------|

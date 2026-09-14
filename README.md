@@ -7,8 +7,8 @@
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
 [![Version](https://img.shields.io/badge/version-0.6.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-758%20passed%20%C2%B7%202026--09--05-brightgreen.svg)](#testing--verification)
-[![Kani](https://img.shields.io/badge/Kani-48%20proofs%20%2818%20verified%29-blue.svg)](#formal-verification)
+[![Tests](https://img.shields.io/badge/tests-782%20passed%20%C2%B7%202026--09--14-brightgreen.svg)](#testing--verification)
+[![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2818%20verified%29-blue.svg)](#formal-verification)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb--minimal-trusted-computing-base)
 
 > **EvoRule is a deterministic rule-governance engine.** A BLAKE3 cryptographically-signed, tamper-evident audit chain and time-machine replay make critical decisions *provable and replayable* — not just *logged*.
@@ -45,7 +45,7 @@
 - **Meta-instruction SSOT**: the tcb exports the authoritative `META_INSTRUCTION_TYPES` constant (5 types, `collect`/`merge` retired in v0.6.0); the cli `validate` references it. Code: `evorule-tcb/src/executor.rs`; test: `test_meta_instruction_types_ssot`
 - **WAL failure escalation**: 3 consecutive WAL write failures auto-terminate the session (fail-closed). Code: `evorule-reactor/src/facts_log.rs` (`WAL_FAIL_TERMINATE_THRESHOLD=3`)
 - **Hash-chain SSOT**: the BLAKE3 algorithm lives in the reactor and is re-exported by governance/cli; the three-way `cross_validate` agrees. Code: `evorule-reactor/src/hash.rs`; test: `test_three_way_hash_consistency`
-- **Full suite 758 passed / 0 failed** (`cargo test --workspace --features persistence`, EXIT=0, measured 2026-09-05)
+- **Full suite 782 passed / 0 failed** (`cargo test --workspace --features persistence`, EXIT=0, measured 2026-09-14)
 
 ---
 
@@ -137,12 +137,12 @@
 
 ### 0. Prebuilt binaries (recommended)
 
-v0.5.0 ships single-file executables for Linux / Windows, zero-dependency, run directly:
+v0.6.0 ships single-file executables for Linux / Windows, zero-dependency, run directly:
 
 | Platform | Download |
 |---|---|
-| Linux x86_64 | [evorule-linux-x86_64](https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-linux-x86_64) |
-| Windows x86_64 | [evorule-windows-x86_64.exe](https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-windows-x86_64.exe) |
+| Linux x86_64 | [evorule-linux-x86_64](https://gitee.com/evorule/evorule/releases/download/v0.6.0/evorule-linux-x86_64) |
+| Windows x86_64 | [evorule-windows-x86_64.exe](https://gitee.com/evorule/evorule/releases/download/v0.6.0/evorule-windows-x86_64.exe) |
 
 > All versions & source packages: [Gitee Releases](https://gitee.com/evorule/evorule/releases) ｜ [GitHub Releases](https://github.com/evorule/evorule/releases)
 
@@ -153,10 +153,10 @@ use evorule_reactor::{Reactor, Fact, FactId};
 use evorule_tcb::JsonValue;
 
 // Load the transform rule set (the "constitution") from core_eval.json
-// Note: core_eval.json defines the *user instruction types* (increment/decrement/set/
+// Note: core_eval.json defines the *project-owner instruction types* (increment/decrement/set/
 // sequence/conditional/while_loop/noop). After matching via the `branch` meta-instruction,
 // they are executed by the `set`/`push` meta-instructions. This is a different layer from
-// the tcb's 6 meta-instructions.
+// the tcb's 5 meta-instructions.
 let core_eval = vec![]; // load from core_eval.json in practice
 
 let reactor = Reactor::builder(core_eval)
@@ -207,11 +207,11 @@ evorule replay ./output/facts.jsonl
 ### evorule-tcb — minimal trusted computing base
 
 - **Positioning**: pure computation layer — no side effects, no I/O, no async. The deterministic foundation of the whole ecosystem.
-- **Size**: 7 files / 8,244 LoC (src/); largest file `executor.rs` at 2,872 LoC.
+- **Size**: 7 files / 9,297 LoC (src/); largest file `transition.rs` at 2,905 LoC.
 - **Constraints**: `#![no_std]` · `#![forbid(unsafe_code)]` · `#![deny(clippy::unwrap_used, clippy::panic, clippy::expect_used, clippy::indexing_slicing)]` · zero external dependencies.
-- **6 meta-instructions** (non-extensible, SSOT constant): `branch` / `set` / `push` / `io_request` / `collect` / `merge`
-  - Code: `evorule-tcb/src/executor.rs:52-59`
-  - Test: `test_meta_instruction_types_ssot` (asserts `len() == 6` and that every type is actually dispatched)
+- **5 meta-instructions** (non-extensible, SSOT constant): `branch` / `set` / `push` / `io_request` / `enforce` (`collect`/`merge` retired in v0.6.0)
+  - Code: `evorule-tcb/src/executor.rs:50`
+  - Test: `test_meta_instruction_types_ssot` (asserts `len() == 5` and that every type is actually dispatched)
 - **JsonValue**: no Float (Integer + String instead), BTreeMap ordered, explicit serialization — eliminates float nondeterminism and HashMap random ordering.
 - **Domain condition language**: `eq` / `ne` / `lt` / `gt` / `le` / `ge` / `exists` / `has_fields` / `all` / `not` / `instruction_eq`, with path references and nesting.
 - **Determinism verification**: proptest `never_panics_on_valid_input` / `deterministic_same_input_same_output`.
@@ -219,7 +219,7 @@ evorule replay ./output/facts.jsonl
 ### evorule-reactor — execution engine layer
 
 - **Positioning**: async reactive executor; manages the instruction queue, I/O scheduling, stability detection, and the audit chain.
-- **Size**: 17 files / 9,143 LoC (src/); largest file `facts_log.rs` at 2,241 LoC.
+- **Size**: 17 files / 10,654 LoC (src/); largest file `facts_log.rs` at 2,538 LoC.
 - **Constraints**: `#![deny(unsafe_code)]` (zero unsafe in the default build); under the `ffi` feature a local `allow` (9 necessary `unsafe`, the C ABI boundary).
 - **Fact enum (7 variants, fixed)**: Command / PayloadUpdate / StateTransition / IoRequest / IoResponse / Stable / Error
   - Code: `evorule-reactor/src/fact.rs:173-251`
@@ -236,7 +236,7 @@ evorule replay ./output/facts.jsonl
 ### evorule-governance — governance layer
 
 - **Positioning**: audit, multi-session, time machine, rule validation, permission, signing.
-- **Size**: 13 files / 7,239 LoC (src/); largest file `auditor.rs` at 2,041 LoC.
+- **Size**: 18 files / 9,500 LoC (src/); largest file `auditor.rs` at 2,279 LoC.
 - **Constraints**: `#![forbid(unsafe_code)]`
 - **Time machine** (replay / rewind / fork / diff): implemented in **this** layer, not the reactor layer
   - Code: `evorule-governance/src/time_machine.rs`; all 16 tests pass
@@ -250,7 +250,7 @@ evorule replay ./output/facts.jsonl
 ### evorule-cli — command-line tool
 
 - **Positioning**: local CLI with zero network, zero telemetry; for compliance-sensitive scenarios.
-- **Size**: 10 files / 1,797 LoC (src/)
+- **Size**: 18 files / 3,118 LoC (src/)
 - **Constraints**: `#![forbid(unsafe_code)]`
 - **Subcommands**: `validate` / `run` / `replay` / `verify-chain` / `verify-anchors` / `diff` / `version` / `help`
 - **Capability boundary**: the cli has no I/O handler — on `IoRequest` it emits an Error fact and stops (this is a **feature**: auditable failure, not silent skip)
@@ -260,27 +260,27 @@ evorule replay ./output/facts.jsonl
 
 ## Testing & verification
 
-### Full test suite (measured 2026-09-05)
+### Full test suite (measured 2026-09-14)
 
 ```bash
 cargo test --workspace --features persistence
-# Result: 758 passed / 0 failed / EXIT=0
+# Result: 782 passed / 0 failed / EXIT=0
 ```
 
 | crate | unit tests | integration/verification | doc-test | total |
 |---|---|---|---|---|
-| evorule-tcb | 228 | determinism 5 + integration 21 | 18 | 272 |
-| evorule-reactor | 182 | complex_rule 2 + differential 11 + integration 29 | 3 | 227 |
-| evorule-governance | 152 | differential 5 + e2e 9 + session 3 + sse 3 | 3 | 175 |
+| evorule-tcb | 222 | determinism 5 + integration 18 + proptest_props 26 | 18 | 289 |
+| evorule-reactor | 186 | complex_rule 2 + differential 11 + integration 29 | 3 | 231 |
+| evorule-governance | 155 | differential 5 + e2e 9 + session 3 + sse 3 | 3 | 178 |
 | evorule-cli | 61 | integration 20 | 3 | 84 |
-| **total** | **623** | **84** | **27** | **758** |
+| **total** | **624** | **131** | **27** | **782** |
 
 > `persistence` is a non-default feature (`default=[]`); enabling it adds the WAL file-backend tests. Without it the test count is lower.
 
 ### Formal verification
 
-- **Kani proofs**: **48 total** (tcb 37 + reactor 11)
-  - tcb: `evorule-tcb/tests/kani/kani_proofs.rs` (37 = A-tier 14 + B-tier 23; A-tier all PASS in the v0.5.0 rerun, B-tier judged currently not runnable — measured 600s/3600s timeouts)
+- **Kani proofs**: **45 total** (tcb 34 + reactor 11)
+  - tcb: `evorule-tcb/tests/kani/kani_proofs.rs` (34 = A-tier 14 + B-tier 20; A-tier all PASS in the v0.6.0 rerun @ `25c0cc0`, B-tier judged currently not runnable — measured 600s/3600s timeouts)
   - reactor: `evorule-reactor/verification/kani_proofs.rs` (11, covering pure functions)
   - **Verified (current re-run)**: 18 — per [`verification/STATUS.md`](verification/STATUS.md), the single source of truth (five-tier vocabulary)
 - **Differential testing**: reactor vs pure module, 11 items (`differential_test.rs`), ensuring the side-effecting executor agrees with the pure reference implementation
@@ -349,7 +349,7 @@ This repo enables a `build.rs` change-governance gate: every build automatically
 
 ```
 evorule/
-├── evorule-tcb/                  # tier0 — minimal trusted computing base (8,244 LoC)
+├── evorule-tcb/                  # tier0 — minimal trusted computing base (9,297 LoC)
 │   ├── src/
 │   │   ├── lib.rs                # no_std + forbid(unsafe_code)
 │   │   ├── value.rs              # JsonValue (no Float, BTreeMap ordered)
@@ -361,10 +361,10 @@ evorule/
 │   ├── tests/
 │   │   ├── determinism_proptest.rs
 │   │   ├── integration_test.rs
-│   │   └── kani/                 # 37 Kani proofs
+│   │   └── kani/                 # 34 Kani proofs
 │   └── core_eval.json            # the constitution (transform rule set, CC0 public domain)
 │
-├── evorule-reactor/              # tier1 — execution engine (9,143 LoC)
+├── evorule-reactor/              # tier1 — execution engine (10,654 LoC)
 │   ├── src/
 │   │   ├── lib.rs                # deny(unsafe_code) + module map
 │   │   ├── reactor.rs            # reactor main loop + ReactorBuilder + ReactorHandle
@@ -391,7 +391,7 @@ evorule/
 │   │   └── complex_rule_test.rs  # complex rule scenarios
 │   └── include/evorule.h         # C API header
 │
-├── evorule-governance/           # tier2 — governance layer (7,239 LoC)
+├── evorule-governance/           # tier2 — governance layer (9,500 LoC)
 │   ├── src/
 │   │   ├── lib.rs                # forbid(unsafe_code)
 │   │   ├── auditor.rs            # audit chain verification + tamper detection
@@ -411,7 +411,7 @@ evorule/
 │   │   └── differential_test.rs  # differential test
 │   └── tests/                    # e2e / session / sse integration tests
 │
-├── evorule-cli/                  # command-line tool (1,797 LoC)
+├── evorule-cli/                  # command-line tool (3,118 LoC)
 │   └── src/
 │       ├── main.rs               # CLI entry
 │       ├── lib.rs                # forbid(unsafe_code)
@@ -435,19 +435,19 @@ evorule/
 
 ## Known limitations & roadmap
 
-### Limitations of the current release (v0.5.0)
+### Limitations of the current release (v0.6.0)
 
 - **Core repo has no hot-reload**: `core_eval` loads at startup and is immutable at runtime (business-rule hot-reload is an application-layer capability)
 - **cli has no I/O handler**: `IoRequest` errors and stops (auditable failure)
 - **ffi has no traditional debug semantics**: the event-driven state machine offers no `pause`/`resume`/`step`/`is_paused`; debug is provided by a purpose-built scheme
 - **Debug control is application-layer**: not a real single step, but a rewind replay
-- **Kani coverage is partial**: 18 of 48 proofs verified in the v0.5.0 rerun; 23 B-tier proofs judged currently not runnable (see [`verification/STATUS.md`](verification/STATUS.md))
+- **Kani coverage is partial**: 18 of 45 proofs verified in the v0.6.0 rerun; 20 B-tier proofs judged currently not runnable (see [`verification/STATUS.md`](verification/STATUS.md))
 - **Unknown IoResponse warn-ignored**: design to be confirmed
 
 ### Roadmap
 
-- **v0.5.x**: purpose-built debug scheme design, reproducible-build CI verification, B-tier Kani proof runnability
-- **v0.6.x**: multi-reactor collaboration, performance benchmarking & optimization
+- **v0.6.x**: purpose-built debug scheme design, reproducible-build CI verification, B-tier Kani proof runnability (Phase 1/2 push)
+- **v0.7.x**: multi-reactor collaboration, performance benchmarking & optimization
 - **v1.0**: stable API, complete docs, production-grade deployment guide
 
 ---
@@ -510,8 +510,8 @@ evorule/
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
 [![Version](https://img.shields.io/badge/version-0.6.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-758%20passed%20%C2%B7%202026--09--05-brightgreen.svg)](#测试与验证)
-[![Kani](https://img.shields.io/badge/Kani-48%20proofs%20%2818%20verified%29-blue.svg)](#形式化验证)
+[![Tests](https://img.shields.io/badge/tests-782%20passed%20%C2%B7%202026--09--14-brightgreen.svg)](#测试与验证)
+[![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2818%20verified%29-blue.svg)](#形式化验证)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb---最小信任基)
 
 > **EvoRule 是确定性规则治理引擎。** BLAKE3 密码学签名、不可篡改审计链 + 时光机回放，让关键决策**可被证明、可重放**，而不只是被记录下来。
@@ -538,13 +538,13 @@ evorule/
 
 ---
 
-## 当前版本（v0.5.0）要点
+## 当前版本（v0.6.0）要点
 
 - **Stable fact 瘦身**：仅携带版本号，不携带全量 payload 快照；长驻会话 WAL 体积为 O(n)。代码：`evorule-reactor/src/fact.rs:228-242`
-- **元指令 SSOT**：tcb 导出 `META_INSTRUCTION_TYPES` 权威常量（6 种），cli validate 引用该常量。代码：`evorule-tcb/src/executor.rs:52-59`；测试：`test_meta_instruction_types_ssot`
+- **元指令 SSOT**：tcb 导出 `META_INSTRUCTION_TYPES` 权威常量（5 种，v0.6.0 起 collect/merge 退役），cli validate 引用该常量。代码：`evorule-tcb/src/executor.rs:50`；测试：`test_meta_instruction_types_ssot`
 - **WAL 失败升级**：连续 3 次 WAL 写失败自动终止会话（fail-closed）。代码：`evorule-reactor/src/facts_log.rs`（`WAL_FAIL_TERMINATE_THRESHOLD=3`）
 - **哈希链 SSOT**：BLAKE3 哈希算法在 reactor，governance/cli re-export，三方 cross_validate 一致。代码：`evorule-reactor/src/hash.rs`；测试：`test_three_way_hash_consistency`
-- **全量测试 758 passed / 0 failed**（`cargo test --workspace --features persistence`，EXIT=0，2026-09-05 实测）
+- **全量测试 782 passed / 0 failed**（`cargo test --workspace --features persistence`，EXIT=0，2026-09-14 实测）
 
 ---
 
@@ -566,7 +566,7 @@ evorule/
 | C FFI | ✅ | feature="ffi" 下提供 8 个 C API（创建/销毁/发送指令/读取结果/队列长度等）；事件驱动状态机不提供 pause/resume/step/is_paused 传统调试器语义，调试能力由专门设计的 debug 方案提供 | 代码：`evorule-reactor/src/ffi.rs`、`include/evorule.h` |
 | 多反应器协作 | 🔧 规划中 | — | — |
 
-> **证据锚说明**：每条特性均可回溯到代码行号或测试名。测试总数与通过率为 2026-09-05 实测结果。
+> **证据锚说明**：每条特性均可回溯到代码行号或测试名。测试总数与通过率为 2026-09-14 实测结果。
 
 ---
 
@@ -614,12 +614,12 @@ evorule/
 │  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘   │
 │  ┌──────────┐ ┌──────────┐                                        │
 │  │   path   │ │  error   │   no_std · forbid(unsafe_code)        │
-│  │ 路径解析  │ │ 错误类型  │   零外部依赖 · 6 元指令               │
+│  │ 路径解析  │ │ 错误类型  │   零外部依赖 · 5 元指令               │
 │  └──────────┘ └──────────┘                                        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**数据流**：用户指令 → FactSender → command mpsc → reactor → 调用 TCB → 产生新 Fact → event broadcast → 所有 Fact 追加到 FactsLog（WAL 落盘 + BLAKE3 哈希链）
+**数据流**：项目方指令 → FactSender → command mpsc → reactor → 调用 TCB → 产生新 Fact → event broadcast → 所有 Fact 追加到 FactsLog（WAL 落盘 + BLAKE3 哈希链）
 
 ---
 
@@ -627,12 +627,12 @@ evorule/
 
 ### 0. 预编译二进制（推荐）
 
-v0.5.0 提供 Linux / Windows 单文件可执行，零依赖直接运行：
+v0.6.0 提供 Linux / Windows 单文件可执行，零依赖直接运行：
 
 | 平台 | 下载 |
 |---|---|
-| Linux x86_64 | [evorule-linux-x86_64](https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-linux-x86_64) |
-| Windows x86_64 | [evorule-windows-x86_64.exe](https://gitee.com/evorule/evorule/releases/download/v0.5.0/evorule-windows-x86_64.exe) |
+| Linux x86_64 | [evorule-linux-x86_64](https://gitee.com/evorule/evorule/releases/download/v0.6.0/evorule-linux-x86_64) |
+| Windows x86_64 | [evorule-windows-x86_64.exe](https://gitee.com/evorule/evorule/releases/download/v0.6.0/evorule-windows-x86_64.exe) |
 
 > 全部版本与源码包：[Gitee Releases](https://gitee.com/evorule/evorule/releases) ｜ [GitHub Releases](https://github.com/evorule/evorule/releases)
 
@@ -643,9 +643,9 @@ use evorule_reactor::{Reactor, Fact, FactId};
 use evorule_tcb::JsonValue;
 
 // 从 core_eval.json 加载变换规则集（宪法）
-// 注意：core_eval.json 定义的是"用户指令类型"（increment/decrement/set/
+// 注意：core_eval.json 定义的是"项目方指令类型"（increment/decrement/set/
 // sequence/conditional/while_loop/noop），通过 branch 元指令匹配后
-// 由 set/push 元指令执行。这与 tcb 的 6 个元指令是不同层次的概念。
+// 由 set/push 元指令执行。这与 tcb 的 5 个元指令是不同层次的概念。
 let core_eval = vec![]; // 实际从 core_eval.json 加载
 
 let reactor = Reactor::builder(core_eval)
@@ -655,7 +655,7 @@ let reactor = Reactor::builder(core_eval)
 // spawn 返回 5 元组：(FactSender, EventReceiver, EventSender, ReactorHandle, FactsLog)
 let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
 
-// 提交 increment 指令（这是 core_eval.json 中定义的用户指令类型）
+// 提交 increment 指令（这是 core_eval.json 中定义的项目方指令类型）
 tx.send(Fact::Command {
     id: FactId(1),
     instruction: JsonValue::object_from_pairs(&[
@@ -696,11 +696,11 @@ evorule replay ./output/facts.jsonl
 ### evorule-tcb — 最小信任基
 
 - **定位**：纯计算层，无副作用、无 I/O、无异步——整个生态的确定性根基
-- **规模**：7 文件 / 8,244 行（src/）；最大文件 executor.rs 2,872 行
+- **规模**：7 文件 / 9,297 行（src/）；最大文件 transition.rs 2,905 行
 - **约束**：`#![no_std]` · `#![forbid(unsafe_code)]` · `#![deny(clippy::unwrap_used, clippy::panic, clippy::expect_used, clippy::indexing_slicing)]` · 零外部依赖
-- **6 个元指令**（不可扩展，SSOT 常量）：`branch` / `set` / `push` / `io_request` / `collect` / `merge`
-  - 代码：`evorule-tcb/src/executor.rs:52-59`
-  - 测试：`test_meta_instruction_types_ssot`（断言 `len() == 6`，且每个类型都被 dispatch 实际处理）
+- **5 个元指令**（不可扩展，SSOT 常量）：`branch` / `set` / `push` / `io_request` / `enforce`（v0.6.0 起 `collect`/`merge` 退役）
+  - 代码：`evorule-tcb/src/executor.rs:50`
+  - 测试：`test_meta_instruction_types_ssot`（断言 `len() == 5`，且每个类型都被 dispatch 实际处理）
 - **JsonValue**：无 Float（用 Integer + String 替代）、BTreeMap 字典序、显式序列化——消除浮点不确定性和 HashMap 随机序
 - **Domain 条件语言**：eq / ne / lt / gt / le / ge / exists / has_fields / all / not / instruction_eq，支持路径引用和嵌套
 - **确定性验证**：proptest `never_panics_on_valid_input` / `deterministic_same_input_same_output`
@@ -708,7 +708,7 @@ evorule replay ./output/facts.jsonl
 ### evorule-reactor — 执行引擎层
 
 - **定位**：异步反应式执行器，管理指令队列、I/O 调度、稳定检测、审计链
-- **规模**：17 文件 / 9,143 行（src/）；最大文件 facts_log.rs 2,241 行
+- **规模**：17 文件 / 10,654 行（src/）；最大文件 facts_log.rs 2,538 行
 - **约束**：`#![deny(unsafe_code)]`（默认构建零 unsafe）；ffi feature 下局部 allow（9 处必要 unsafe，C ABI 接口）
 - **Fact 枚举（7 变体，固定）**：Command / PayloadUpdate / StateTransition / IoRequest / IoResponse / Stable / Error
   - 代码：`evorule-reactor/src/fact.rs:173-251`
@@ -725,7 +725,7 @@ evorule replay ./output/facts.jsonl
 ### evorule-governance — 治理层
 
 - **定位**：审计、多会话、时间机器、规则校验、权限、签名
-- **规模**：13 文件 / 7,239 行（src/）；最大文件 auditor.rs 2,041 行
+- **规模**：18 文件 / 9,500 行（src/）；最大文件 auditor.rs 2,279 行
 - **约束**：`#![forbid(unsafe_code)]`
 - **时间机器**（replay / rewind / fork / diff）：**本层实现**，非 reactor 层
   - 代码：`evorule-governance/src/time_machine.rs`；测试 16 项全过
@@ -739,7 +739,7 @@ evorule replay ./output/facts.jsonl
 ### evorule-cli — 命令行工具
 
 - **定位**：零网络、零遥测的本地 CLI，面向合规敏感场景
-- **规模**：10 文件 / 1,797 行（src/）
+- **规模**：18 文件 / 3,118 行（src/）
 - **约束**：`#![forbid(unsafe_code)]`
 - **子命令**：`validate` / `run` / `replay` / `verify-chain` / `verify-anchors` / `diff` / `version` / `help`
 - **能力边界**：cli 无 I/O handler——遇到 IoRequest 即产生 Error fact 并停止（这是**特性**：可审计的失败，而非静默跳过）
@@ -749,27 +749,27 @@ evorule replay ./output/facts.jsonl
 
 ## 测试与验证
 
-### 全量测试（2026-09-05 实测）
+### 全量测试（2026-09-14 实测）
 
 ```bash
 cargo test --workspace --features persistence
-# 结果：758 passed / 0 failed / EXIT=0
+# 结果：782 passed / 0 failed / EXIT=0
 ```
 
 | crate | 单元测试 | 集成/验证测试 | doc-test | 合计 |
 |---|---|---|---|---|
-| evorule-tcb | 228 | determinism 5 + integration 21 | 18 | 272 |
-| evorule-reactor | 182 | complex_rule 2 + differential 11 + integration 29 | 3 | 227 |
-| evorule-governance | 152 | differential 5 + e2e 9 + session 3 + sse 3 | 3 | 175 |
+| evorule-tcb | 222 | determinism 5 + integration 18 + proptest_props 26 | 18 | 289 |
+| evorule-reactor | 186 | complex_rule 2 + differential 11 + integration 29 | 3 | 231 |
+| evorule-governance | 155 | differential 5 + e2e 9 + session 3 + sse 3 | 3 | 178 |
 | evorule-cli | 61 | integration 20 | 3 | 84 |
-| **合计** | **623** | **84** | **27** | **758** |
+| **合计** | **624** | **131** | **27** | **782** |
 
 > `persistence` 是非默认 feature（`default=[]`），启用后包含 WAL 文件后端测试。不加此 feature 会导致测试数偏低。
 
 ### 形式化验证
 
-- **Kani proof**：共 **48 个**（tcb 37 + reactor 11）
-  - tcb：`evorule-tcb/tests/kani/kani_proofs.rs`（37 个 = A 档 14 + B 档 23；A 档 v0.5.0 重跑全 PASS，B 档实测 600s/3600s 超时，判定当前不可运行）
+- **Kani proof**：共 **45 个**（tcb 34 + reactor 11）
+  - tcb：`evorule-tcb/tests/kani/kani_proofs.rs`（34 个 = A 档 14 + B 档 20；A 档 v0.6.0 重跑 @ `25c0cc0` 全 PASS，B 档实测 600s/3600s 超时，判定当前不可运行）
   - reactor：`evorule-reactor/verification/kani_proofs.rs`（11 个，覆盖 pure 函数）
   - **当前实跑验证**：18 个——见 [`verification/STATUS.md`](verification/STATUS.md)（唯一权威，五档词汇）
 - **差分测试**：reactor vs pure 模块 11 项（`differential_test.rs`），保证有副作用执行器与纯函数参考实现一致
@@ -838,22 +838,22 @@ cargo test -p evorule-cli
 
 ```
 evorule/
-├── evorule-tcb/                  # tier0 — 最小信任基（8,244 行）
+├── evorule-tcb/                  # tier0 — 最小信任基（9,297 行）
 │   ├── src/
 │   │   ├── lib.rs                # no_std + forbid(unsafe_code)
 │   │   ├── value.rs              # JsonValue（无 Float，BTreeMap 字典序）
 │   │   ├── domain.rs             # 条件求值语言
 │   │   ├── path.rs               # 路径解析（含数组索引、转义）
-│   │   ├── executor.rs           # 6 元指令执行（SSOT 常量）
+│   │   ├── executor.rs           # 5 元指令执行（SSOT 常量）
 │   │   ├── transition.rs         # 变换规则引擎
 │   │   └── error.rs              # TcbError 类型
 │   ├── tests/
 │   │   ├── determinism_proptest.rs
 │   │   ├── integration_test.rs
-│   │   └── kani/                 # 37 个 Kani proof
+│   │   └── kani/                 # 34 个 Kani proof
 │   └── core_eval.json            # 宪法（变换规则集，CC0 公有领域）
 │
-├── evorule-reactor/              # tier1 — 执行引擎（9,143 行）
+├── evorule-reactor/              # tier1 — 执行引擎（10,654 行）
 │   ├── src/
 │   │   ├── lib.rs                # deny(unsafe_code) + 模块地图
 │   │   ├── reactor.rs            # 反应器主循环 + ReactorBuilder + ReactorHandle
@@ -880,7 +880,7 @@ evorule/
 │   │   └── complex_rule_test.rs  # 复杂规则场景
 │   └── include/evorule.h         # C API 头文件
 │
-├── evorule-governance/           # tier2 — 治理层（7,239 行）
+├── evorule-governance/           # tier2 — 治理层（9,500 行）
 │   ├── src/
 │   │   ├── lib.rs                # forbid(unsafe_code)
 │   │   ├── auditor.rs            # 审计链验证 + 篡改检测
@@ -900,7 +900,7 @@ evorule/
 │   │   └── differential_test.rs  # 差分测试
 │   └── tests/                    # e2e / session / sse 集成测试
 │
-├── evorule-cli/                  # 命令行工具（1,797 行）
+├── evorule-cli/                  # 命令行工具（3,118 行）
 │   └── src/
 │       ├── main.rs               # CLI 入口
 │       ├── lib.rs                # forbid(unsafe_code)
@@ -924,19 +924,19 @@ evorule/
 
 ## 已知限制与路线图
 
-### 当前版本（v0.5.0）限制
+### 当前版本（v0.6.0）限制
 
 - **核心仓无热重载**：core_eval 启动时加载，运行中不可变（业务规则热重载为应用层能力）
 - **cli 无 I/O handler**：IoRequest 即 Error 停止（可审计的失败）
 - **ffi 无传统调试语义**：事件驱动状态机不提供 pause/resume/step/is_paused；调试由专门方案提供
 - **调试控制为应用层能力**：非真正单步执行，为 rewind 回放
-- **Kani 覆盖为部分**：48 个 proof 中 18 个当前实跑验证；B 档 23 个判定当前不可运行（见 [`verification/STATUS.md`](verification/STATUS.md)）
+- **Kani 覆盖为部分**：45 个 proof 中 18 个当前实跑验证；B 档 20 个判定当前不可运行（见 [`verification/STATUS.md`](verification/STATUS.md)）
 - **未知 IoResponse warn 忽略**：设计待确认
 
 ### 路线图
 
-- **v0.5.x**：专门 debug 方案设计、可重现构建 CI 验证、B 档 Kani proof 可运行性
-- **v0.6.x**：多反应器协作、性能基准与优化
+- **v0.6.x**：专门 debug 方案设计、可重现构建 CI 验证、B 档 Kani proof 可运行性（Phase 1/2 攻坚）
+- **v0.7.x**：多反应器协作、性能基准与优化
 - **v1.0**：API 稳定、完整文档、生产级部署指南
 
 ---
@@ -984,4 +984,4 @@ evorule/
 
 ---
 
-*本 README 所有技术主张均有代码行号或测试名证据锚。测试数据为 2026-09-05 实测结果。如发现表述与代码不符，请提交 Issue。*
+*本 README 所有技术主张均有代码行号或测试名证据锚。测试数据为 2026-09-14 实测结果。如发现表述与代码不符，请提交 Issue。*

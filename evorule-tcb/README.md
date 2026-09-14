@@ -10,15 +10,15 @@
 
 > EvoRule 三层架构的 Tier 0 可信计算基 (Trusted Computing Base) ——零依赖、`no_std` 兼容的纯计算内核。
 
-- **版本**:v0.5.0
+- **版本**:v0.6.0
 - **定位**:纯函数 + 确定性 + 永不 panic
 - **外部依赖**:0（`Cargo.toml` `[dependencies]` 为空；`Cargo.lock` 确认无第三方 crate）
-- **测试**:`cargo test` 272 PASS / 0 failed(228 单元 + 5 `determinism_proptest` + 21 集成 + 18 doc；2026-09-05 实测，workspace 全量 758 PASS / 0 failed)
+- **测试**:`cargo test` 全量 PASS / 0 failed（2026-09-14 v0.6.0 全量回归，CI 常驻）
 - **Clippy**:零警告(`deny(unwrap_used/expect_used/indexing_slicing/panic)`)
 - **build.rs 编译时门禁**:23 个禁用模式 (T4/T5/T6/T8/T9/T10/T11/T12/T14) + BOM 检测 编译期强制,PASSED
 - **协议**:AGPL-3.0-or-later(代码) + CC0-1.0(`core_eval.json` 公共领域)
 
-> **Kani 形式化验证**:37 个 `#[kani::proof]` 分 A/B 两档——A 档 14 个 v0.5.0 重跑(2026-09-12)全 PASS 并入 CI 闸门;B 档 23 个实测 600s/3600s 超时,判定当前不可运行(proptest 间接覆盖)。详见 [`TCB_SPEC.md` §六](TCB_SPEC.md#六形式化验证-kani-proof) 与 [`docs/KANI.md`](docs/KANI.md);状态唯一权威:[`verification/STATUS.md`](../verification/STATUS.md)。
+> **Kani 形式化验证**:34 个 `#[kani::proof]` 分 A/B 两档(v0.6.0 随 69 号清理退役 P15/P16/P17,原 37 个)——A 档 14 个 v0.6.0 重跑(2026-09-14,`25c0cc0`)全 PASS 并入 CI 闸门;B 档 20 个实测 600s/3600s 超时,判定当前不可运行(proptest 间接覆盖)。详见 [`TCB_SPEC.md` §六](TCB_SPEC.md#六形式化验证-kani-proof) 与 [`docs/KANI.md`](docs/KANI.md);状态唯一权威:[`verification/STATUS.md`](../verification/STATUS.md)。
 
 > 本 crate 属于 [EvoRule](https://gitee.com/evorule) 生态:[主仓](https://gitee.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://gitee.com/evorule/evorule-server)
 
@@ -71,7 +71,7 @@ let result = execute_transition(&core_eval, &instr, &payload, &queue).unwrap();
 
 ### 2.1 元指令（Meta Instructions）
 
-执行器识别 **6 种元指令** —— 一切业务语义均由 `core_eval.json` 通过组合这些元指令实现：
+执行器识别 **5 种元指令** —— 一切业务语义均由 `core_eval.json` 通过组合这些元指令实现：
 
 | 元指令       | 作用                                                 | 修改状态 | 说明 |
 | ------------ | ---------------------------------------------------- | -------- | ---- |
@@ -79,17 +79,15 @@ let result = execute_transition(&core_eval, &instr, &payload, &queue).unwrap();
 | `push`       | 将指令列表推入 queue 前端                            | 是       | FIFO 队列语义 |
 | `branch`     | 按域条件执行 `on_true` 或 `on_false` 子指令列表      | 视子指令 | 控制流 |
 | `io_request` | 产生 I/O 请求信号（不修改任何状态）                  | 否       | TCB → 反应器跨界协议（计 0.5 个原语） |
-| `collect`    | 遍历数组生成多条指令（多工具扇出）                   | 是       | 推入队列（v0.3.1 新增） |
-| `merge`      | 将工具结果合并进消息历史，生成下一条指令             | 是       | ReAct 循环驱动（v0.3.1 新增） |
+| `enforce`    | L2 元规则强制阻断（halt 语义）                       | 否       | TCB 自进化预留 |
 
-注：dispatch **没有** `noop` 分支——未知元指令类型返回 `TcbError::UnknownMetaInstruction`。「未识别指令变 noop」是 `core_eval.json` 层的兜底：最后一条 `all([])` 规则匹配一切未识别指令，其 transform 为空操作。`noop` 作为**业务指令**（队列中的空操作指令，终止 ReAct 循环）由该兜底规则经 `push` 产生。
+注：dispatch **没有** `noop` 分支——未知元指令类型返回 `TcbError::UnknownMetaInstruction`。「未识别指令变 noop」是 `core_eval.json` 层的兜底：最后一条 `all([])` 规则匹配一切未识别指令，其 transform 为空操作。`noop` 作为**业务指令**（队列中的空操作指令）由该兜底规则经 `push` 产生。
 
-**注**：6 + 0.5 = **6.5 物理原语**（`io_request` 计 0.5，因为它不修改任何状态，只产生对外信号）。v0.3.1 在 v0.3.0 的 3.5（set/push/branch + io_request 0.5）基础上新增 `collect` / `merge`（元指令层）+ `has_fields`（域类型层，§2.2），共同支撑完整 ReAct 循环。
+**注**：5 种元指令中 `io_request` 计 0.5 个物理原语（不修改任何状态，只产生对外信号），合计 **4.5 物理原语**。v0.6.0 随 69 号清理退役 `collect` / `merge`（架构事故中由应用层误下沉至机制层的 LLM ReAct 编排能力），机制层回归最小指令集；`enforce` 为 L2 元规则强制阻断（自进化预留）。
 
 **设计要点**：
 
 - **`io_request` 是"半个"元指令**：它**不修改任何状态**，只产生一个 `MetaInstructionResult::IoRequired { io_type, params }` signal，让上层反应器(evorule-reactor)去执行 I/O，然后把结果注入 `payload.__io_results__.{io_type}`，重新执行 `core_eval.json` 走"消费结果"分支（见 [§2.6 I/O 双路径机制](#26-io-双路径机制)）。
-- **`collect` 与 `merge` 支撑完整 ReAct 循环**：v0.3.1 新增。`collect` 将 LLM 返回的多个 `tool_calls` 扇出为多条 `call_service`；`merge` 将工具结果追加进消息历史并生成下一条 `call_external`，循环由 `react_iteration < 10` 约束终止。
 - **不能任意新增真元指令**：TCB_SPEC 约束"指令集有限性 = 确定性来源"。`io_request` 作为"半个"被允许，因为它**不影响 TCB 内部状态**(payload / queue 不变)，只产生对外信号——TCB 的纯函数语义被完整保留。
 
 ### 2.2 域类型（Domain Types）
@@ -155,7 +153,7 @@ let result = execute_transition(&core_eval, &instr, &payload, &queue).unwrap();
 
 > **注意（v0.3.1）**：`set` 的 `attr` 引用 payload 内以 `__` 开头的字段时必须写显式前缀（如 `__exec__.payload.__io_results__.call_external`），否则会被误判为状态根路径。
 
-**`set` 的 `attr` 支持数组索引写入**（如 `items[0].done`），路径语法与 domain 读取路径一致。索引写入语义显式优先：目标数组**必须已存在**（缺失报错，不隐式创建——数组长度无法从索引推断）；索引越界报错（禁止稀疏数组与隐式追加，追加须由 `collect`/`push` 显式完成）；中间对象段缺失时仍自动创建空对象（auto-vivification，与既有行为一致）。
+**`set` 的 `attr` 支持数组索引写入**（如 `items[0].done`），路径语法与 domain 读取路径一致。索引写入语义显式优先：目标数组**必须已存在**（缺失报错，不隐式创建——数组长度无法从索引推断）；索引越界报错（禁止稀疏数组与隐式追加，追加须由 `push` 显式完成）；中间对象段缺失时仍自动创建空对象（auto-vivification，与既有行为一致）。
 
 ### 2.5 I/O 信号传播
 
@@ -166,7 +164,7 @@ core_eval.json (transform 列表)
 ↓
 execute_transition (迭代 transform)
 ↓
-execute_meta_instruction (处理 7 种元指令)
+execute_meta_instruction (处理 5 种元指令)
 ↓
 exec_io_request → 返回 MetaInstructionResult::IoRequired
 ↓
@@ -218,22 +216,18 @@ instruction(call_external) → branch(exists=true) → set(llm_response, 结果)
 
 上例中 `messages` 必须存在（否则报错），`tools` 在业务指令未提供时静默省略（如纯聊天场景）。这样 `call_external` 的 `temperature?`/`max_tokens?` 等可选参数在业务指令未提供时不会导致 I/O 请求失败，而必选参数的拼写错误会被立即捕获。
 
-### 2.8 ReAct 循环（v0.3.1 核心）
+### 2.8 I/O 单轮触发/消费（v0.6.0 现行；原「ReAct 循环」节）
 
-完整 ReAct 循环由 `call_external` / `call_service` 两条规则驱动：
+LLM/工具**多轮编排属应用层职责**（v0.6.0 随 69 号清理退役 `collect`/`merge`），机制层保留 `io_request` 单轮触发/消费语义：
 
 ```text
-call_external  → io_request(LLM) → 恢复：set llm_response
-   → has_fields(tool_calls) → collect → 多条 call_service 入队
-   →（无 tool_calls）→ push noop → 终止
-call_service   → io_request(工具) → 恢复：set service_result
-   → react_iteration < 10 ? → set(+1) → merge → 下一条 call_external
-   → react_iteration >= 10 → push noop → 终止（无死循环）
+call_external  → io_request(LLM) → 恢复：set llm_response（单轮终态）
+call_service   → io_request(工具) → 恢复：set service_result（单轮终态）
 ```
 
-- **迭代上限**：`react_iteration` 达 10 后不再 merge，改 push noop 终止。
-- **`react_iteration` 初始化**：由首条 ReAct 规则在首次 `call_external` 时自动置 0，无需反应器预置。
-- **`{{tools}}` 模板**：`call_external` 消费结果时将 tools 持久化到 `payload.tools`，merge 通过 `{{tools}}` 引用。
+- **多轮编排**：循环终止、工具扇出等编排逻辑由应用层 runner / tool_registry 实现，不在机制层。
+- **`{{tools}}` 模板**：`call_external` 消费结果时将 tools 持久化到 `payload.tools`，应用层可经 `{{tools}}` 引用。
+- **历史**：v0.3.1 曾以 `collect`/`merge` 在机制层内嵌完整 ReAct 循环（`react_iteration < 10` 约束终止），v0.6.0 退役。
 
 ---
 
@@ -243,17 +237,17 @@ call_service   → io_request(工具) → 恢复：set service_result
 evorule-tcb/
 ├── Cargo.toml      # 零依赖配置 + std feature
 ├── build.rs        # 编译时门禁（23 禁用模式 + BOM 检测）
-├── core_eval.json  # TCB 宪法（业务指令 → 元指令映射，含 I/O 双路径 + ReAct 循环）
+├── core_eval.json  # TCB 宪法（业务指令 → 元指令映射，含 I/O 双路径）
 ├── src/
 │   ├── lib.rs      # 模块声明 + lint 配置 + 公开 API 重导出
 │   ├── value.rs    # JsonValue：确定性 JSON 数据模型
 │   ├── path.rs     # 路径解析（点号 + 数组索引 + 转义）
 │   ├── domain.rs   # 域类型评估器（7 基本类型 + has_fields + 递归深度限制）
-│   ├── executor.rs # 元指令执行器（set/push/branch/io_request/collect/merge）
+│   ├── executor.rs # 元指令执行器（set/push/branch/io_request/enforce）
 │   ├── transition.rs # execute_transition：状态转换入口
 │   └── error.rs    # TcbError（11 个变体，std feature 下实现 std::error::Error）
 └── tests/
-    └── integration_test.rs  # 外部 crate 视角集成测试（20 用例）
+    └── integration_test.rs  # 外部 crate 视角集成测试
 ```
 
 ### 模块依赖关系
@@ -297,9 +291,9 @@ transition.rs （状态转换，依赖 executor/path/value）
 
 #### [executor.rs](src/executor.rs) — 元指令执行器
 
-- `execute_meta_instruction`：元指令分发入口（6 种）
+- `execute_meta_instruction`：元指令分发入口（5 种）
 - `MetaInstructionResult` 枚举：`State(JsonValue)` | `IoRequired { io_type, params }`
-- 6 个 `exec_*` 私有函数分别处理 6 种元指令
+- 5 个 `exec_*` 私有函数分别处理 5 种元指令
 - `resolve_path_or_literal`：统一的路径引用解析辅助函数
 - `resolve_instructions_list`：递归解析 `instructions` 数组中的路径引用元素
 - `MAX_BRANCH_DEPTH = 64` 防止 branch 嵌套过深
@@ -315,7 +309,7 @@ transition.rs （状态转换，依赖 executor/path/value）
 
 #### [error.rs](src/error.rs) — 错误类型
 
-- `TcbError`：10 个结构化变体，全部携带诊断上下文（见 [§五 公开 API](#五公开-api)）
+- `TcbError`：11 个结构化变体，全部携带诊断上下文（见 [§五 公开 API](#五公开-api)）
 - `std` feature 下实现 `std::error::Error`
 
 ---
@@ -328,7 +322,7 @@ transition.rs （状态转换，依赖 executor/path/value）
 # 编译
 cargo build
 
-# 运行全部测试（212 单元 + 5 determinism_proptest + 21 集成 + 18 doc）
+# 运行全部测试（222 单元 + 5 determinism_proptest + 26 proptest_props + 18 集成 + 18 doc）
 cargo test
 
 # Clippy 检查（零警告）
@@ -458,7 +452,7 @@ match result {
 
 ## 五、公开 API
 
-仅公开 3 个核心类型 + 1 个入口函数 + 1 个常量：
+仅公开 3 个核心类型 + 1 个入口函数 + 2 个常量：
 
 | API                                                    | 说明                                  |
 | ------------------------------------------------------ | ------------------------------------- |
@@ -513,7 +507,7 @@ pub enum TcbError {
 | -------- | -------------------------------------------------------------------------- |
 | 原子计算 | `increment` / `decrement` / `set`                                          |
 | 控制流   | `sequence` / `conditional` / `while_loop`                                  |
-| ReAct 循环 | `call_external` / `call_service`（+ `collect`/`merge` 元指令）           |
+| I/O 单轮 | `call_external` / `call_service`（io_request 触发/消费；v0.6.0 起 collect/merge 退役，多轮编排归应用层） |
 | 兜底     | 任何未匹配指令（`all([])` 规则）→ noop                                     |
 
 > **v0.3.1 撤销**：`query_db` / `http_get` / `save_memory` 不再是内置指令类型（宪法未定义对应 transform 规则，提交会落入 `all([])` 兜底变为 noop）。应用层应用 `call_service` + `service_name` 实现这些能力。
@@ -648,7 +642,7 @@ EVORULE_SKIP_GATE=1 cargo build
 | 编号 | 事项                        | 状态      | 说明                                                                                                                |
 | ---- | --------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- |
 | N-01 | `MAX_TRANSFORM_RULES` 限制  | ✅ 已完成 | `execute_transition` 入口检查 `core_eval.len() ≤ 64`,超限返回 `TcbError::TooManyTransformRules`(SPEC T6 终止性保证) |
-| N-02 | Kani 形式化验证重建         | 🟡 历史 PASS | v0.3.1 以「结构化符号输入 + `KIdSet`/`KIdMap`」重建为 34 个 `#[kani::proof]`(P1-P21 旧编号),后增至 37 个并改行 A/B 两档——A 档 14 个 v0.5.0 重跑(2026-09-12)全 PASS 并入 CI 闸门,B 档 23 个实测超时判定当前不可运行(proptest 间接覆盖);详情见 §6.3 与 `docs/KANI.md`,状态唯一权威见 [`verification/STATUS.md`](../verification/STATUS.md) |
+| N-02 | Kani 形式化验证重建         | 🟡 历史 PASS | v0.3.1 以「结构化符号输入 + `KIdSet`/`KIdMap`」重建为 34 个 `#[kani::proof]`(P1-P21 旧编号),后增至 37 个并改行 A/B 两档;v0.6.0 随 69 号清理退役 P15/P16/P17(37→34)——A 档 14 个 v0.6.0 重跑(2026-09-14,`25c0cc0`)全 PASS 并入 CI 闸门,B 档 20 个实测超时判定当前不可运行(proptest 间接覆盖);详情见 §6.3 与 `docs/KANI.md`,状态唯一权威见 [`verification/STATUS.md`](../verification/STATUS.md) |
 
 ### 10.2 后续 Tier 路线
 
