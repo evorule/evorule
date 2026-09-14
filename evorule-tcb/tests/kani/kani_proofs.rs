@@ -345,7 +345,7 @@ fn verify_array_index_bounds() {
 #[kani::unwind(24)]
 fn verify_evaluate_domain_eq_never_panics() {
     let exec_state = model::single_key_exec_state();
-    let domain = JsonValue::object_from_pairs(&[
+    let domain = model::obj(vec![
         ("type", JsonValue::string("eq")),
         ("path", JsonValue::string("payload.x")),
         ("value", JsonValue::Integer(1)),
@@ -364,7 +364,7 @@ fn verify_evaluate_domain_eq_never_panics() {
 #[kani::unwind(24)]
 fn verify_evaluate_domain_lt_never_panics() {
     let exec_state = model::single_key_exec_state();
-    let domain = JsonValue::object_from_pairs(&[
+    let domain = model::obj(vec![
         ("type", JsonValue::string("lt")),
         ("path", JsonValue::string("payload.x")),
         ("value", JsonValue::Integer(1)),
@@ -383,7 +383,7 @@ fn verify_evaluate_domain_lt_never_panics() {
 #[kani::unwind(24)]
 fn verify_evaluate_domain_exists_never_panics() {
     let exec_state = model::single_key_exec_state();
-    let domain = JsonValue::object_from_pairs(&[
+    let domain = model::obj(vec![
         ("type", JsonValue::string("exists")),
         ("path", JsonValue::string("payload.x")),
     ]);
@@ -402,7 +402,7 @@ fn verify_evaluate_domain_exists_never_panics() {
 #[kani::unwind(24)]
 fn verify_evaluate_domain_instruction_never_panics() {
     let exec_state = model::single_key_exec_state();
-    let domain = JsonValue::object_from_pairs(&[
+    let domain = model::obj(vec![
         ("type", JsonValue::string("instruction")),
         ("instruction_type", JsonValue::string("set")),
     ]);
@@ -423,7 +423,7 @@ fn verify_evaluate_domain_instruction_never_panics() {
 #[kani::unwind(4)]
 fn verify_evaluate_domain_all_never_panics() {
     let exec_state = model::single_key_exec_state();
-    let domain = JsonValue::object_from_pairs(&[
+    let domain = model::obj(vec![
         ("type", JsonValue::string("all")),
         ("inner", JsonValue::Array(vec![])),
     ]);
@@ -440,11 +440,11 @@ fn verify_evaluate_domain_all_never_panics() {
 #[kani::unwind(24)]
 fn verify_evaluate_domain_not_never_panics() {
     let exec_state = model::single_key_exec_state();
-    let domain = JsonValue::object_from_pairs(&[
+    let domain = model::obj(vec![
         ("type", JsonValue::string("not")),
         (
             "inner",
-            JsonValue::object_from_pairs(&[
+            model::obj(vec![
                 ("type", JsonValue::string("exists")),
                 ("path", JsonValue::string("payload.x")),
             ]),
@@ -466,7 +466,7 @@ fn verify_evaluate_domain_not_never_panics() {
 #[kani::unwind(24)]
 fn verify_evaluate_domain_has_fields_never_panics() {
     let exec_state = model::single_key_exec_state();
-    let domain = JsonValue::object_from_pairs(&[
+    let domain = model::obj(vec![
         ("type", JsonValue::string("has_fields")),
         ("path", JsonValue::string("payload.x")),
         ("fields", JsonValue::array(vec![JsonValue::string("flag")])),
@@ -487,7 +487,7 @@ fn verify_evaluate_domain_has_fields_never_panics() {
 /// 无需符号验证。用完全具体的 domain + exec_state 验证两次调用不 panic。
 #[kani::proof]
 fn verify_evaluate_domain_deterministic() {
-    let domain = JsonValue::object_from_pairs(&[
+    let domain = model::obj(vec![
         ("type", JsonValue::string("eq")),
         ("path", JsonValue::string("payload.x")),
         ("value", JsonValue::Integer(1)),
@@ -509,13 +509,13 @@ fn verify_evaluate_domain_deterministic() {
 #[kani::proof]
 #[kani::unwind(12)]
 fn verify_domain_depth_limit() {
-    let mut domain = JsonValue::object_from_pairs(&[
+    let mut domain = model::obj(vec![
         ("type", JsonValue::string("exists")),
         ("path", JsonValue::string("payload.x")),
     ]);
     for _ in 0..(MAX_DOMAIN_DEPTH + 1) {
         domain =
-            JsonValue::object_from_pairs(&[("type", JsonValue::string("not")), ("inner", domain)]);
+            model::obj(vec![("type", JsonValue::string("not")), ("inner", domain)]);
     }
     let exec_state = model::concrete_exec_state();
     let mut cur = &domain;
@@ -533,17 +533,17 @@ fn verify_domain_depth_limit() {
 #[kani::proof]
 fn verify_has_fields_empty_array() {
     // exec_state 顶层必须有 __exec__，路径写全 __exec__.payload.obj
-    let exec_state = JsonValue::object_from_pairs(&[(
+    let exec_state = model::obj(vec![(
         "__exec__",
-        JsonValue::object_from_pairs(&[(
+        model::obj(vec![(
             "payload",
-            JsonValue::object_from_pairs(&[(
+            model::obj(vec![(
                 "obj",
-                JsonValue::object_from_pairs(&[("tool_calls", JsonValue::Array(vec![]))]),
+                model::obj(vec![("tool_calls", JsonValue::Array(vec![]))]),
             )]),
         )]),
     )]);
-    let domain = JsonValue::object_from_pairs(&[
+    let domain = model::obj(vec![
         ("type", JsonValue::string("has_fields")),
         ("path", JsonValue::string("__exec__.payload.obj")),
         (
@@ -594,11 +594,11 @@ fn verify_execute_meta_instruction_never_panics() {
 /// P13: set 算术安全（add/sub 溢出返回 IntegerOverflow，不 panic）
 #[kani::proof]
 fn verify_exec_set_arithmetic_safe() {
-    let instr = JsonValue::object_from_pairs(&[
+    let instr = model::obj(vec![
         ("type", JsonValue::string("set")),
         (
             "params",
-            JsonValue::object_from_pairs(&[
+            model::obj(vec![
                 ("attr", JsonValue::string("x")),
                 (
                     "operation",
@@ -630,28 +630,28 @@ fn verify_exec_set_arithmetic_safe() {
 /// P14: branch 深度限制生效（depth >= MAX_BRANCH_DEPTH → NestingTooDeep）
 #[kani::proof]
 fn verify_branch_depth_limit() {
-    let instr = JsonValue::object_from_pairs(&[
+    let instr = model::obj(vec![
         ("type", JsonValue::string("branch")),
         (
             "params",
-            JsonValue::object_from_pairs(&[
+            model::obj(vec![
                 (
                     "domain",
-                    JsonValue::object_from_pairs(&[
+                    model::obj(vec![
                         ("type", JsonValue::string("exists")),
                         ("path", JsonValue::string("x")),
                     ]),
                 ),
                 (
                     "on_true",
-                    JsonValue::Array(vec![JsonValue::object_from_pairs(&[(
+                    JsonValue::Array(vec![model::obj(vec![(
                         "type",
                         JsonValue::string("noop"),
                     )])]),
                 ),
                 (
                     "on_false",
-                    JsonValue::Array(vec![JsonValue::object_from_pairs(&[(
+                    JsonValue::Array(vec![model::obj(vec![(
                         "type",
                         JsonValue::string("noop"),
                     )])]),
@@ -687,19 +687,19 @@ fn verify_branch_depth_limit() {
 /// P15: collect 遍历安全 + after 参数排序（v0.3.1）
 #[kani::proof]
 fn verify_collect_safe_with_after() {
-    let instr = JsonValue::object_from_pairs(&[
+    let instr = model::obj(vec![
         ("type", JsonValue::string("collect")),
         (
             "params",
-            JsonValue::object_from_pairs(&[
+            model::obj(vec![
                 ("from", JsonValue::string("__exec__.payload.items")),
                 (
                     "each",
-                    JsonValue::object_from_pairs(&[
+                    model::obj(vec![
                         ("type", JsonValue::string("set")),
                         (
                             "params",
-                            JsonValue::object_from_pairs(&[
+                            model::obj(vec![
                                 ("attr", JsonValue::string("{{name}}")),
                                 ("operation", JsonValue::string("set")),
                                 ("value", JsonValue::Integer(1)),
@@ -709,7 +709,7 @@ fn verify_collect_safe_with_after() {
                 ),
                 (
                     "after",
-                    JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))]),
+                    model::obj(vec![("type", JsonValue::string("noop"))]),
                 ),
             ]),
         ),
@@ -718,8 +718,8 @@ fn verify_collect_safe_with_after() {
     map.insert(
         "items".to_string(),
         JsonValue::Array(vec![
-            JsonValue::object_from_pairs(&[("name", JsonValue::string("a"))]),
-            JsonValue::object_from_pairs(&[("name", JsonValue::string("b"))]),
+            model::obj(vec![("name", JsonValue::string("a"))]),
+            model::obj(vec![("name", JsonValue::string("b"))]),
         ]),
     );
     let state = model::state_with_payload(map);
@@ -765,16 +765,16 @@ fn verify_collect_safe_with_after() {
 /// P16: merge 结果合并正确（v0.3.1：追加 tool 消息 + 无条件推 next_instruction）
 #[kani::proof]
 fn verify_merge_safe() {
-    let instr = JsonValue::object_from_pairs(&[
+    let instr = model::obj(vec![
         ("type", JsonValue::string("merge")),
         (
             "params",
-            JsonValue::object_from_pairs(&[
+            model::obj(vec![
                 ("messages", JsonValue::string("__exec__.payload.messages")),
                 ("tool_result", JsonValue::string("__exec__.payload.result")),
                 (
                     "next_instruction",
-                    JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))]),
+                    model::obj(vec![("type", JsonValue::string("noop"))]),
                 ),
             ]),
         ),
@@ -782,14 +782,14 @@ fn verify_merge_safe() {
     let state = model::state_with_payload(ObjectMap::from([
         (
             "messages".to_string(),
-            JsonValue::Array(vec![JsonValue::object_from_pairs(&[
+            JsonValue::Array(vec![model::obj(vec![
                 ("role", JsonValue::string("user")),
                 ("content", JsonValue::string("hi")),
             ])]),
         ),
         (
             "result".to_string(),
-            JsonValue::object_from_pairs(&[
+            model::obj(vec![
                 ("role", JsonValue::string("tool")),
                 ("content", JsonValue::string("ok")),
             ]),
@@ -838,19 +838,19 @@ fn verify_merge_safe() {
 /// 覆盖：模板字段存在/缺失、嵌套路径、非字符串字段
 #[kani::proof]
 fn verify_substitute_template_never_panics() {
-    let instr = JsonValue::object_from_pairs(&[
+    let instr = model::obj(vec![
         ("type", JsonValue::string("collect")),
         (
             "params",
-            JsonValue::object_from_pairs(&[
+            model::obj(vec![
                 ("from", JsonValue::string("__exec__.payload.items")),
                 (
                     "each",
-                    JsonValue::object_from_pairs(&[
+                    model::obj(vec![
                         ("type", JsonValue::string("set")),
                         (
                             "params",
-                            JsonValue::object_from_pairs(&[
+                            model::obj(vec![
                                 ("attr", JsonValue::string("{{nested.field}}")),
                                 ("operation", JsonValue::string("set")),
                                 ("value", JsonValue::Integer(1)),
@@ -863,9 +863,9 @@ fn verify_substitute_template_never_panics() {
     ]);
     let state = model::state_with_payload(ObjectMap::from([(
         "items".to_string(),
-        JsonValue::Array(vec![JsonValue::object_from_pairs(&[(
+        JsonValue::Array(vec![model::obj(vec![(
             "nested",
-            JsonValue::object_from_pairs(&[("field", JsonValue::Integer(1))]),
+            model::obj(vec![("field", JsonValue::Integer(1))]),
         )])]),
     )]));
     shape_str(shape_field(&instr, "instr", "type"), "instr.type", "collect");
@@ -893,11 +893,11 @@ fn verify_substitute_template_never_panics() {
 /// P18: io_request 触发正确（v0.3.1 ReAct：可选参数路径不存在时跳过，不 panic）
 #[kani::proof]
 fn verify_io_request_safe() {
-    let instr = JsonValue::object_from_pairs(&[
+    let instr = model::obj(vec![
         ("type", JsonValue::string("io_request")),
         (
             "params",
-            JsonValue::object_from_pairs(&[
+            model::obj(vec![
                 ("io_type", JsonValue::string("call_external")),
                 ("messages", JsonValue::string("__exec__.payload.messages")),
                 // tools 路径不存在 → 可选参数，跳过（不 panic）
@@ -939,11 +939,11 @@ fn concrete_enforce_state() -> JsonValue {
     payload.insert("x".to_string(), JsonValue::Integer(1));
     payload.insert(
         "obj".to_string(),
-        JsonValue::object_from_pairs(&[("flag", JsonValue::Bool(true))]),
+        model::obj(vec![("flag", JsonValue::Bool(true))]),
     );
     payload.insert(
         "d".to_string(),
-        JsonValue::object_from_pairs(&[
+        model::obj(vec![
             ("type", JsonValue::string("exists")),
             ("path", JsonValue::string("payload.x")),
         ]),
@@ -977,7 +977,7 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
     }
     match t % 7 {
         0 => {
-            let d = JsonValue::object_from_pairs(&[
+            let d = model::obj(vec![
                 ("type", JsonValue::string("eq")),
                 ("path", JsonValue::string("payload.x")),
                 ("value", JsonValue::Integer(2)),
@@ -988,7 +988,7 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
             d
         }
         1 => {
-            let d = JsonValue::object_from_pairs(&[
+            let d = model::obj(vec![
                 ("type", JsonValue::string("lt")),
                 ("path", JsonValue::string("payload.x")),
                 ("value", JsonValue::Integer(2)),
@@ -999,7 +999,7 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
             d
         }
         2 => {
-            let d = JsonValue::object_from_pairs(&[
+            let d = model::obj(vec![
                 ("type", JsonValue::string("exists")),
                 ("path", JsonValue::string("payload.x")),
             ]);
@@ -1008,7 +1008,7 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
             d
         }
         3 => {
-            let d = JsonValue::object_from_pairs(&[
+            let d = model::obj(vec![
                 ("type", JsonValue::string("instruction")),
                 ("instruction_type", JsonValue::string("noop")),
             ]);
@@ -1021,11 +1021,11 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
             d
         }
         4 => {
-            let d = JsonValue::object_from_pairs(&[
+            let d = model::obj(vec![
                 ("type", JsonValue::string("all")),
                 (
                     "inner",
-                    JsonValue::Array(vec![JsonValue::object_from_pairs(&[
+                    JsonValue::Array(vec![model::obj(vec![
                         ("type", JsonValue::string("exists")),
                         ("path", JsonValue::string("payload.x")),
                     ])]),
@@ -1041,11 +1041,11 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
             d
         }
         5 => {
-            let d = JsonValue::object_from_pairs(&[
+            let d = model::obj(vec![
                 ("type", JsonValue::string("not")),
                 (
                     "inner",
-                    JsonValue::object_from_pairs(&[
+                    model::obj(vec![
                         ("type", JsonValue::string("exists")),
                         ("path", JsonValue::string("payload.x")),
                     ]),
@@ -1061,7 +1061,7 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
             d
         }
         _ => {
-            let d = JsonValue::object_from_pairs(&[
+            let d = model::obj(vec![
                 ("type", JsonValue::string("has_fields")),
                 ("path", JsonValue::string("payload.obj")),
                 ("fields", JsonValue::Array(vec![JsonValue::string("flag")])),
@@ -1120,7 +1120,7 @@ fn verify_exec_enforce_never_panics() {
 
 /// P18b/C 专用：**单键最小** enforce 指令（eq 域 + reason，符号值驱动真假两分支）。
 fn eq_enforce_instruction(v: i64) -> JsonValue {
-    let domain = JsonValue::object_from_pairs(&[
+    let domain = model::obj(vec![
         ("type", JsonValue::string("eq")),
         ("path", JsonValue::string("payload.x")),
         ("value", JsonValue::Integer(v)),
@@ -1193,7 +1193,7 @@ fn verify_exec_enforce_deterministic() {
 /// P19: execute_transition 永不 panic（结构化符号）
 #[kani::proof]
 fn verify_execute_transition_never_panics() {
-    let core_eval = vec![JsonValue::object_from_pairs(&[(
+    let core_eval = vec![model::obj(vec![(
         "type",
         JsonValue::string("noop"),
     )])]; // 固定规则数（1），避免全符号 Vec 展开
@@ -1218,9 +1218,9 @@ fn verify_execute_transition_never_panics() {
 #[kani::proof]
 fn verify_transform_rules_limit() {
     let core_eval: Vec<JsonValue> = (0..=MAX_TRANSFORM_RULES)
-        .map(|_| JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))]))
+        .map(|_| model::obj(vec![("type", JsonValue::string("noop"))]))
         .collect(); // MAX_TRANSFORM_RULES + 1 条规则
-    let instruction = JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))]);
+    let instruction = model::obj(vec![("type", JsonValue::string("noop"))]);
     let payload = JsonValue::empty_object();
     let queue: Vec<JsonValue> = vec![];
     assert!(
@@ -1240,14 +1240,14 @@ fn verify_transform_rules_limit() {
 #[kani::proof]
 fn verify_react_io_required() {
     let core_eval = model::react_core_eval();
-    let instruction = JsonValue::object_from_pairs(&[
+    let instruction = model::obj(vec![
         ("type", JsonValue::string("call_external")),
         (
             "params",
-            JsonValue::object_from_pairs(&[
+            model::obj(vec![
                 (
                     "messages",
-                    JsonValue::Array(vec![JsonValue::object_from_pairs(&[
+                    JsonValue::Array(vec![model::obj(vec![
                         ("role", JsonValue::string("user")),
                         ("content", JsonValue::string("hi")),
                     ])]),
@@ -1319,4 +1319,44 @@ fn verify_react_io_required() {
         Ok(_) => panic!("should be IoRequired"),
         Err(e) => panic!("unexpected error: {:?}", e),
     }
+}
+
+// ==================== W3-3 临时对照实验（迁移验证后删除，不入库） ====================
+/// c2-clone 复跑对照：object_from_pairs（clone 路径）——W3-1 历史数据 300s 不收敛
+#[kani::proof]
+#[kani::unwind(24)]
+fn canary_w33_c2_clone() {
+    let a = model::obj(vec![
+        ("alpha", JsonValue::Integer(1)),
+        (
+            "beta",
+            model::obj(vec![("inner", JsonValue::array(vec![JsonValue::string("flag")]))]),
+        ),
+    ]);
+    shape_field(&a, "a", "alpha");
+    let inner = shape_field(&a, "a", "beta");
+    let arr = shape_field(inner, "a.beta", "inner");
+    shape_str(&shape_array(arr, "a.beta.inner", 1)[0], "a.beta.inner[0]", "flag");
+    core::mem::forget(a);
+}
+
+/// c2-owned：同构 owned 构造（object_from_pairs_owned，零 clone）——对照决定性数据点
+#[kani::proof]
+#[kani::unwind(24)]
+fn canary_w33_c2_owned() {
+    let a = JsonValue::object_from_pairs_owned(vec![
+        ("alpha".to_string(), JsonValue::Integer(1)),
+        (
+            "beta".to_string(),
+            JsonValue::object_from_pairs_owned(vec![(
+                "inner".to_string(),
+                JsonValue::array(vec![JsonValue::string("flag")]),
+            )]),
+        ),
+    ]);
+    shape_field(&a, "a", "alpha");
+    let inner = shape_field(&a, "a", "beta");
+    let arr = shape_field(inner, "a.beta", "inner");
+    shape_str(&shape_array(arr, "a.beta.inner", 1)[0], "a.beta.inner[0]", "flag");
+    core::mem::forget(a);
 }
