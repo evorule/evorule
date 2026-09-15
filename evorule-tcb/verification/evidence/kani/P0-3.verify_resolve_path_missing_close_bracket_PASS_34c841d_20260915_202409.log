@@ -1,0 +1,24 @@
+Verification evidence: P0-3.verify_resolve_path_missing_close_bracket
+Status: PASS (exit code 0)
+# Evidence metadata
+- commit SHA: 34c841da495e6e07224a17baf2b08505c95b30d2
+- kani: cargo-kani 0.67.0
+- rustc: rustc 1.97.1 (8bab26f4f 2026-07-14)（Kani 0.67 内置 pinned 工具链 nightly-2025-11-21）
+- timestamp: 2026-09-15 20:24:09 +0800
+- platform: WSL Linux 6.18.33.2-microsoft-standard-WSL2 (x86_64)
+- command: cargo kani -p evorule-tcb --tests --harness verify_resolve_path_missing_close_bracket --output-format=terse
+- per-proof timeout: 300s (kill 30s)
+- log: P0-3.verify_resolve_path_missing_close_bracket.PASS_34c841d_20260915_202409.stdout.txt
+--- result summary (tail) ---
+   Compiling evorule-tcb v0.6.0 (/mnt/d/evorule/evorule-tcb)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.36s
+Checking harness kani::kani_proofs::verify_resolve_path_missing_close_bracket...
+
+VERIFICATION RESULT:
+ ** 0 of 977 failed (25 unreachable)
+
+VERIFICATION:- SUCCESSFUL
+Verification Time: 0.72315204s
+
+Manual Harness Summary:
+Complete - 1 successfully verified harnesses, 0 failures, 1 total.

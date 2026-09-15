@@ -95,3 +95,15 @@
 **同批跨仓处置**：`evorule-reactor/verification/evidence/kani/` 4 对旧 PASS 证据（P0-11/P1-5 锚定 `03643aa`、P1-3/P1-6 锚定 `bdfb8d4`，proof 源码未变更但被验证依赖 TCB 生产代码变更，谨慎起见复跑替代）隔离至该仓同级 `_invalidated/`；P0-11 修复前 3 份 FAIL 过程证据按 STATUS 原注记原地保留。
 
 **披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-14 69 号清理条目。
+
+## 批次 7（2026-09-15）：A 档 14 对证据随 lint 清零生产源码变更失效隔离
+
+**来源**：`../`（`evorule-tcb/verification/evidence/kani/`），28 个文件（14 对 `.log` + `.stdout.txt`，命名锚定 `25c0cc0`，产出于 2026-09-14）。
+
+**失效判定**（[MECHANISM.md](../../../../../verification/MECHANISM.md) M3.4）：提交 `35b6182` 变更了 TCB 生产源码（`src/value.rs` `try_insert` 增 `#[allow(clippy::map_entry)]` 与论证注释、`src/executor.rs` `META_INSTRUCTION_TYPES` 数组 rustfmt 折行与 EOF 换行——均零语义，监督核查 R02/R03 diff 级核验），本批证据的 SHA 绑定早于被验证代码最后一次变更，按 M3.4 自动失效。
+
+**替代证据**：于 `34c841d` 重跑 A 档 14 个全 PASS（2026-09-15，WSL Kani 0.67.0，单 proof 0.3~4.0s；合计 18/18 = TCB 14 + reactor 4），按 M3.1 命名归档于 `../`（见 [STATUS.md](../../../../../verification/STATUS.md) P0-3/P0-6 证据列）。
+
+**同批跨仓处置**：`evorule-reactor/verification/evidence/kani/` 4 对旧 PASS 证据（锚定 `25c0cc0`）隔离至该仓同级 `_invalidated/` 批次 2（reactor `src/pure.rs` 同批 rustfmt import 排序，零语义）。
+
+**披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-15 lint 清零条目。
