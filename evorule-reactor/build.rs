@@ -121,6 +121,45 @@ fn squeeze_ws(line: &str) -> String {
     out
 }
 
+/// 剥离行首属性语法 `#![...]` / `#[...]`（TCB-2026-25 整改）。
+///
+/// 括号深度感知：自行首 `#`（可选 `!`）后的 `[` 起计数嵌套 `[`/`]`，配平为 0
+/// 处截断，返回其后余文——`#![deny(unsafe_code)]` 剥离后为空（不误报），
+/// `#[inline] unsafe fn` 剥离后余文参与匹配（拦截）。属性未在本行闭合则返回
+/// None，调用方保守回退为按原文整行匹配（fail-closed：宁可误报不可漏报）。
+/// 仅剥离首个属性，同一行后续内容继续参与子串匹配。字节级扫描安全：UTF-8
+/// 连续字节不会与 `[]` 混淆。
+fn strip_leading_attr(line: &str) -> Option<&str> {
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    if bytes.first() != Some(&b'#') {
+        return Some(line);
+    }
+    i += 1;
+    if bytes.get(i) == Some(&b'!') {
+        i += 1;
+    }
+    if bytes.get(i) != Some(&b'[') {
+        return Some(line);
+    }
+    i += 1;
+    let mut depth = 1usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'[' => depth += 1,
+            b']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&line[i + 1..]);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
 /// T10 文件级豁免: 文件级显式允许 unsafe, 或整模块受 feature/cfg gate 保护。
 ///
 /// - `ffi.rs`: 文件级 `#![allow(unsafe_code)]` + 仅 `feature="ffi"` 编译
@@ -617,11 +656,20 @@ fn main() -> ExitCode {
             for (lineno, line) in content.lines().enumerate() {
                 // 豁免注释行 (含 ///、//!、//)
                 let trimmed = line.trim_start();
-                // T10: unsafe 额外跳过 lint/attr 行 (#[allow(unsafe_code)] / #![deny(unsafe_code)] / #[cfg(...)])
+                // T10: 属性行剥离匹配 (TCB-2026-25 整改)——不再对 `#[`/`#!` 开头
+                // 行整体豁免——旧实现放任 `#[inline] unsafe fn` 借道逃逸。剥离行首
+                // 属性语法后扫描余下内容：纯属性行 (`#![deny(unsafe_code)]` /
+                // `#[allow(unsafe_code)]` 等) 剥离后为空不误报；`#[inline] unsafe fn`
+                // 剥离后命中拦截；属性未闭合保守按原文匹配 (fail-closed)。
+                let mut scan_src: &str = line;
                 if label.starts_with("T10")
                     && (trimmed.starts_with("#[") || trimmed.starts_with("#!"))
                 {
-                    continue;
+                    scan_src = match strip_leading_attr(trimmed) {
+                        Some(rest) if rest.trim().is_empty() => continue,
+                        Some(rest) => rest,
+                        None => trimmed,
+                    };
                 }
                 if trimmed.starts_with("//") {
                     continue;
@@ -632,8 +680,8 @@ fn main() -> ExitCode {
                 if (label.starts_with("S5.2") || label.starts_with("G8")) && is_fact_rs {
                     continue;
                 }
-                let squeezed = squeeze_ws(line);
-                if line.contains(needle) || squeezed.contains(needle) {
+                let squeezed = squeeze_ws(scan_src);
+                if scan_src.contains(needle) || squeezed.contains(needle) {
                     violations.push((
                         path.clone(),
                         label.to_string(),
@@ -1093,5 +1141,26 @@ mod tests {
         // 原文直命中路径不受影响; 合法代码不误伤
         assert!("let x = v.unwrap();".contains(".unwrap("));
         assert!(!squeeze_ws("let x = v.unwrap_or(1);").contains(".unwrap("));
+    }
+
+    #[test]
+    fn test_strip_leading_attr() {
+        // 纯属性行剥离后为空 → 不误报 (TCB-2026-25)
+        assert_eq!(strip_leading_attr("#[forbid(unsafe_code)]"), Some(""));
+        assert_eq!(strip_leading_attr("#![deny(unsafe_code)]"), Some(""));
+        assert_eq!(
+            strip_leading_attr("#[cfg_attr(feature = \"ffi\", allow(unsafe_code))]"),
+            Some("")
+        );
+        // 同行属性后藏代码 → 剥离后余文命中
+        let rest = strip_leading_attr("#[inline] unsafe fn f() {}").unwrap();
+        assert!(rest.contains("unsafe"));
+        // 方括号深度感知: 字符串内出现的 ']' 需配平后截断
+        assert_eq!(
+            strip_leading_attr("#[doc = \"[x]\"] fn g() {}"),
+            Some(" fn g() {}")
+        );
+        // 未闭合属性 → None → 调用方按原文匹配 (fail-closed)
+        assert_eq!(strip_leading_attr("#[doc = \"unterminated"), None);
     }
 }
