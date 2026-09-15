@@ -43,7 +43,7 @@ jobs:
       # 只被 nightly 接受, 首跑因稳定版工具链拒绝 -Z 而失败 (run 34732535959)
       RUSTUP_TOOLCHAIN: nightly
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dtolnay/rust-toolchain@be39649afda95dbf70f87cce95f68b8d5797b296 # nightly
 
