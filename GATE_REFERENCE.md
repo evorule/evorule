@@ -53,7 +53,7 @@
 
 > **匹配口径（TCB-2026-24/-25/-32）**：四仓 L1 字面量门禁对每行同时按**原文**与**去空白文本**匹配（`x.unwrap ()`、`Hash Map` 等插空写法同样拦截）；注释行豁免判定仍用原文。属性行对 `unsafe` 模式（tcb/reactor）不再整体豁免——剥离行首 `#![...]`/`#[...]` 语法（方括号深度感知，未闭合保守按原文匹配）后对余下内容匹配（TCB-2026-25）。行内**自闭合块注释**区段先剥离再匹配（含嵌套；字符串感知——常规/字节/原始字符串内的 `/*` 不作注释起点，防伪起点吃真代码构成漏报面；跨行未闭合保守整行，fail-closed）（TCB-2026-32）。`async`/`await` 裸词按**词界**匹配（命中前后须非 ASCII 字母——"asynchronous"/"awaiting" 等英文单词不再误命中；去空白口径的 `asyncfn` 合并词被词界检查自然拒绝，原文口径保证真关键字照常命中）（TCB-2026-32）。字符串字面量内凑巧命中的极小概率误报是设计接受（宁可误报不可漏报）。
 
-### 2.1 evorule-tcb — 23 模式 (T 编号)
+### 2.1 evorule-tcb — 24 模式 (T 编号)
 
 实施文件: `D:\evorule\evorule-tcb\build.rs` (401 行, 扫描 `src/*.rs`)
 
@@ -64,6 +64,7 @@
 | T9-unwrap-call | `.unwrap(`              | G1 panic-prone (T9 别名) |
 | T9-expect-call | `.expect(`              | G1 panic-prone (T9 别名) |
 | T11-debug_assert | `debug_assert!`      | G1 panic-prone (T11 别名) |
+| F11-panic | `panic!(`                    | G1 panic-prone (TCB-2026-35 补齐) |
 | T10-unsafe-keyword | `unsafe`           | G2 unsafe 关键字 (T10 别名) |
 | T12-f32    | `f32`                       | T12 浮点禁止            |
 | T12-f64    | `f64`                       | T12 浮点禁止            |
@@ -84,7 +85,7 @@
 | T14-spawn  | `spawn(`                    | T14 异步生成禁止        |
 
 **豁免机制**:
-- `strip_test_mod()`: 剥离 `#[cfg(test)] mod tests { ... }` 块, 不扫描测试代码
+- `strip_test_mod()`: 剥离 `#[cfg(test)] mod <ident> { ... }` 测试模块块体 (任意命名——cfg(test) 限定的模块本就不进生产构建; TCB-2026-35 修复: 旧实现按 `"mod tests"` 字面子串定位, `mod executor_ssot_tests` 等非 tests 命名模块漏剥致测试内模式误报, `mod tests_foo` 借前缀误吞; 同批修复一文件多测试模块时第一个模块尾部被整段重复压入输出的存量缺陷), 不扫描测试代码
 - 属性行剥离匹配 (TCB-2026-25): unsafe 模式对 `#[`/`#!` 开头行剥离行首属性语法 (方括号深度感知) 后匹配余下内容——`#[forbid(unsafe_code)]` 剥离后为空不误报; `#[inline] unsafe fn` 借道逃逸被拦截; 属性未闭合保守按原文匹配 (fail-closed)
   - **状态机生命周期判别（2026-08-30 修复）**: `char_lit_starts()` 在撇号处判别字符字面量与生命周期——`'` 后跟 `\` 或"单字符+`'`"是字面量（进入字符态），`'ident` 是生命周期（跳过标识符，不进入字符态）。旧实现把 `'static` 误判为字符态开头，吞掉直到下一个 `'` 之间的所有 `{}`，导致 match_brace 永不闭合、tests 模块整体不被剥离、门禁对测试代码全量误报。修复已同步五仓（tcb/reactor/governance/cli/server），每仓 build.rs 内含 3 个单元测试（cargo test 不运行 build script 测试，用探针 crate 以 lib.rs 方式加载真实 build.rs 运行）
 - `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁, 编译警告 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
@@ -218,7 +219,7 @@ workspace = true
    (T1-T14 + G1/G2 + D1-D10)   (F1-F11 + G1/G7/G8)    (G1 + G7 + G8 + D1-D10)
         |                     |                     |
    build.rs (L1)          build.rs (L1)          build.rs (L1)
-   23 模式 (T 标签)       14 模式 (G8/F11/S5.2)  14 模式 (跟 tier1 相同)
+   24 模式 (T 标签)       14 模式 (G8/F11/S5.2)  14 模式 (跟 tier1 相同)
         |                     |                     |
    [lints] workspace     [lints] workspace     [lints] workspace
    (L2 clippy 继承根)    (L2 clippy 继承根)    (L2 clippy 继承根)
@@ -243,7 +244,7 @@ workspace = true
 | ----------------------------------- | ------------------------- | -------------- |
 | 核心原则                             | —                          | —              |
 | 一、指令集约束 (T1, T2, T7)         | T1, T2, T7                 | L1 + L3 引用   |
-| 二、确定性约束 (T4-T6, T8, T12-T14) | T4, T5, T6, T8, T12, T13, T14 | L1 (23 模式)   |
+| 二、确定性约束 (T4-T6, T8, T12-T14) | T4, T5, T6, T8, T12, T13, T14 | L1 (24 模式)   |
 | 三、安全性约束 (G1, G2)              | G1 (= T9, T11), G2 (= T10) | L1 (T9, T10, T11) |
 | 四、数据流约束 (D1-D10)              | D1, D2, D6, D7, D8, D9, D10  | L3 引用        |
 | 五、编译时门禁 (build.rs)             | — (引用 L1)                | §5.1-5.4 配置  |
@@ -350,7 +351,7 @@ src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allo
 - `evorule-tcb/TCB_SPEC.md` (权威)
 - `evorule-reactor/REACTOR_SPEC.md` (权威)
 - `evorule-governance/GOVERNANCE_SPEC.md` (权威)
-- `evorule-tcb/build.rs` (L1 字面量门禁, 23 模式)
+- `evorule-tcb/build.rs` (L1 字面量门禁, 24 模式)
 - `evorule-reactor/build.rs` (L1 字面量门禁, 14 模式)
 - `evorule-governance/build.rs` (L1 字面量门禁, 14 模式, 跟 tier1 相同)
 - `evorule-cli/build.rs` (L1 字面量门禁, 7 模式)

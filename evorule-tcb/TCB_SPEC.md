@@ -172,11 +172,11 @@
 
 **必须**: TCB 生产代码中不得使用 `.unwrap(` / `.expect(` / `debug_assert!` / `panic!(`。路径解析必须返回 `Option` / `Result`。
 
-**别名**: G1 = T9 (`unwrap`/`expect`) + T11 (`debug_assert!`)。
+**别名**: G1 = T9 (`unwrap`/`expect`) + T11 (`debug_assert!`) + F11 (`panic!(`，TCB-2026-35 补入 L1——旧清单缺 `panic!(`，GitHub 侧又无 clippy job，直写 `panic!(` 此前零门禁覆盖)。
 
-**L1 字面量门禁**: 禁止模式 `.unwrap(` / `.expect(` / `debug_assert!`（3 条）。panic! 由 clippy L2 兜底。
+**L1 字面量门禁**: 禁止模式 `.unwrap(` / `.expect(` / `debug_assert!` / `panic!(`（4 条）。
 
-**豁免**: `#[cfg(test)] mod tests` 内允许（L1 `strip_test_mod` 自动剥离测试块）。
+**豁免**: `#[cfg(test)] mod <ident>` 测试模块内允许（L1 `strip_test_mod` 自动剥离测试块，任意命名；测试断言机制本体——`panic!`/`assert!` 家族是测试惯用断言手段，生产代码禁用）。
 
 ### G2: 禁止 `unsafe` 关键字
 
@@ -310,14 +310,14 @@ branch:
 
 ## 五、编译时门禁 (build.rs)
 
-### 5.1 23 个禁用模式汇总
+### 5.1 24 个禁用模式汇总
 
 见 GATE_REFERENCE.md §2.1。当前 L1 实施表：
 
 | 规则          | 模式                                              | 数量 | 含义                   |
 | ------------- | ------------------------------------------------- | ---- | ---------------------- |
 | T8 (哈希容器) | `HashMap`, `HashSet`                              | 2    | 非确定性迭代           |
-| G1/T9/T11     | `.unwrap(`, `.expect(`, `debug_assert!`           | 3    | panic-prone 构造       |
+| G1/T9/T11/F11 | `.unwrap(`, `.expect(`, `debug_assert!`, `panic!(` | 4   | panic-prone 构造       |
 | G2/T10        | `unsafe`                                          | 1    | unsafe 关键字          |
 | T12 (浮点)    | `f32`, `f64`, `Float`                             | 3    | 浮点非确定             |
 | T5 (系统时间) | `SystemTime`, `Instant`                           | 2    | 依赖环境时间           |
@@ -325,7 +325,7 @@ branch:
 | T4 (I/O)      | `std::fs::`, `std::net::`, `std::io::`, `File::open`, `std::process::` | 5 | I/O 依赖外部           |
 | T14 (异步)    | `std::thread`, `tokio::`, `async`, `await`, `spawn(` | 5 | 并发非确定             |
 
-合计: 2+3+1+3+2+2+5+5 = **23 模式**。
+合计: 2+4+1+3+2+2+5+5 = **24 模式**。
 
 ### 5.2 文件级额外检查：UTF-8 BOM
 

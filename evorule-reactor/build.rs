@@ -449,8 +449,14 @@ fn strip_test_mod(src: &str) -> String {
                 if let Some(rel_brace) = find_inline_lbrace(&src[mod_abs..]) {
                     let open_idx = mod_abs + rel_brace;
                     if let Some(close_idx) = match_brace(src, open_idx) {
-                        out.push_str(&src[i..open_idx + 1]);
-                        out.push_str(&src[close_idx..]);
+                        // 只补回闭合花括号 (TCB-2026-35 整改暴露的存量缺陷修复):
+                        // 旧实现把 src[close_idx..] 整段尾部原样压入输出后又从
+                        // close_idx+1 重扫一遍——单测试模块时尾部无违规内容故从未
+                        // 暴露; 一文件含多个 cfg(test) 模块时 (如 executor.rs 的
+                        // executor_ssot_tests + tests), 第一个模块的尾部拷贝把未
+                        // 剥离的后续测试模块体带进扫描输出 (92 条误报)。
+                        out.push_str(&src[i..=open_idx]);
+                        out.push('}');
                         i = close_idx + 1;
                         continue;
                     }
@@ -505,7 +511,38 @@ fn skip_to_mod_tests(src: &str) -> Option<usize> {
             }
             continue;
         }
-        return src[i..].find("mod tests").map(|rel| i + rel);
+        // #[cfg(test)] 属性/注释跳过后必须紧跟 `mod <ident>` (TCB-2026-35 整改
+        // 附带加固): 旧实现用 "mod tests" 字面子串定位——`mod executor_ssot_tests`
+        // 等非 tests 命名测试模块不被剥 (测试内模式暴露 → 误报), `mod tests_foo`
+        // 反而借前缀命中被误吞 (漏报面)。cfg(test) 限定的模块本就不进生产构建,
+        // 剥离任意命名测试模块是安全豁免。
+        if src[i..].starts_with("mod") {
+            let after = i + 3;
+            if after < bytes.len() && (bytes[after] as char).is_whitespace() {
+                let mut j = after + 1;
+                loop {
+                    while j < bytes.len() && (bytes[j] as char).is_whitespace() {
+                        j += 1;
+                    }
+                    if j + 1 < bytes.len() && bytes[j] == b'/' && bytes[j + 1] == b'/' {
+                        while j < bytes.len() && bytes[j] != b'\n' {
+                            j += 1;
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                let s = j;
+                while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+                    j += 1;
+                }
+                if j > s {
+                    return Some(i); // `mod <ident>` 命中; 无体形式由 find_inline_lbrace 兜住
+                }
+            }
+            return None; // `mod` 后非空白/非标识符 (如 `modular`) → 保守不剥
+        }
+        return None; // 属性后非 mod item → 保守不剥
     }
     None
 }
@@ -1101,6 +1138,49 @@ mod tests {
     }
 
     #[test]
+    fn test_strip_multiple_test_mods() {
+        // 一文件多个 cfg(test) 模块 (tcb 仓 executor.rs 实况): 旧实现把第一个
+        // 模块的尾部整段原样压入输出又重扫一遍, 后续测试模块体未被剥离; 且
+        // 模块间生产代码被重复计入输出。
+        let src = concat!(
+            "fn prod() { let _x = 1; }\n",
+            "#[cfg(test)]\n",
+            "mod ssot_tests {\n",
+            "    fn a() { something.unwrap(); }\n",
+            "}\n",
+            "fn prod2() { let _y = 2; }\n",
+            "#[cfg(test)]\n",
+            "mod tests {\n",
+            "    fn b() { other.unwrap(); panic!(\"x\"); }\n",
+            "}\n",
+        );
+        let stripped = strip_test_mod(src);
+        assert_eq!(
+            stripped.matches(".unwrap(").count(),
+            0,
+            "两个测试模块体都须被剥离, got: {:?}",
+            stripped
+        );
+        assert_eq!(
+            stripped.matches("panic!(").count(),
+            0,
+            "非 tests 命名的测试模块体同样剥离, got: {:?}",
+            stripped
+        );
+        assert!(
+            stripped.contains("fn prod()") && stripped.contains("fn prod2()"),
+            "生产代码不得被误吞, got: {:?}",
+            stripped
+        );
+        assert_eq!(
+            stripped.matches("fn prod2()").count(),
+            1,
+            "模块间生产代码不得因尾部重复压入被计入两次, got: {:?}",
+            stripped
+        );
+    }
+
+    #[test]
     fn test_char_lit_starts_discrimination() {
         // 转义字符字面量
         assert!(char_lit_starts(b"let c = '\\n';", 8));
@@ -1174,7 +1254,11 @@ mod tests {
         );
         // 字符串内容原样保留 (字符串内命中是设计接受的误报)
         let s = strip_inline_block_comments("let a = \"keep\"; /* drop */ let b = \"kept\";");
-        assert!(s.contains("\"keep\"") && s.contains("\"kept\""), "got: {}", s);
+        assert!(
+            s.contains("\"keep\"") && s.contains("\"kept\""),
+            "got: {}",
+            s
+        );
     }
 
     #[test]
