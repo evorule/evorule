@@ -12,7 +12,7 @@
 
 - **版本**:v0.6.0
 - **定位**:纯函数 + 确定性 + 永不 panic
-- **外部依赖**:0（`Cargo.toml` `[dependencies]` 为空；`Cargo.lock` 确认无第三方 crate）
+- **外部依赖**:0（`Cargo.toml` `[dependencies]` 为空；`Cargo.lock` 中仅 dev-dependencies（proptest/criterion，测试与基准用，不进发布产物），运行时零第三方 crate）
 - **测试**:`cargo test` 全量 PASS / 0 failed（2026-09-14 v0.6.0 全量回归，CI 常驻）
 - **Clippy**:零警告(`deny(unwrap_used/expect_used/indexing_slicing/panic)`)
 - **build.rs 编译时门禁**:24 个禁用模式 (T 编号 + F11 panic-prone 组) + BOM 检测 编译期强制,PASSED
