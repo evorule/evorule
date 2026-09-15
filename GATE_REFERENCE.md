@@ -45,7 +45,17 @@
 **L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**:
 - **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块——TCB-2026-28 撤豁免: 测试代码同为机制层, 须守同一纪律; 旧「剥离 mod tests 再扫」既留注释伪装/`mod tests_foo` 误吞绕过面, 又给策略层留测试区藏身处),禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。**无阀常开**——机制-策略分离是设计不变量, 不设旁路环境变量
 - **CR 变更自查已移出公开仓 (裁定⑤, TCB-2026-29)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制; 为避免公开形态引发「伪门禁」质疑, 已从四仓 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除。自查职责由本地 git pre-commit hook 承接 (hook 不随仓库/发布公开); CHANGE_REQUEST.md 登记文件与登记纪律本身不变
-- **三仓同步**: `evorule-tcb` / `evorule-reactor` / `evorule-governance` 的 build.rs 保持同一份内联副本实现,任何修改必须三仓同步
+- **四仓同步 (TCB-2026-30 整改)**: 四仓 build.rs 是**同一骨架的内联副本**——build.rs 必须零依赖, 共享逻辑只能逐份内联, 无法运行期复用。同步纪律已机器化: `evorule-cli/tests/gate_sync_test.rs` 按函数名提取共享函数体, 规范化 (字符串/字符字面量感知剥离注释+去空白) 后以 evorule-tcb 为基准逐函数比对四仓, 任何漂移即 `cargo test` 红。锁定函数: `skip_requested` / `squeeze_ws` / `strip_inline_block_comments` / `bare_word_hit` / `skip_to_mod_tests` / `strip_test_mod` / `char_lit_starts` / `skip_lifetime` / `find_inline_lbrace` / `match_brace` / `detect_strategy_patterns` / `collect_rs_files_for_strategy` (四仓) + `strip_leading_attr` (tcb/reactor)。**新增共享函数必须同批加入测试锁定清单**; 修改任何共享函数必须四仓同批提交
+
+  **有意差异表** (以下为设计差异, 不参与同步比对, 变更须各自留痕):
+
+  | 维度               | tcb                      | reactor                          | governance     | cli            |
+  | ------------------ | ------------------------ | -------------------------------- | -------------- | -------------- |
+  | FORBIDDEN 模式清单 | 24 (T 编号, §2.1)        | 15 (G8/F11/S5.2, §2.2)           | 14 (§2.3)      | 7 (§2.4)       |
+  | 豁免模型           | **标签级**: T8/T9/F11 经 L1 剥离测试模块后扫 (测试断言机制本体豁免); T10/T11 等其余标签扫原文——测试内同样强制 | 全模式剥离测试模块 (测试可构造指令 fixture) + `T10_FILE_EXEMPT` 文件级 (ffi.rs/facts_log.rs) | 全模式剥离测试模块 (测试可构造 fixture) | 全模式剥离测试模块 (测试内 unwrap/expect 不误报) |
+  | BOM 文件级检查     | 有 (L1a)                 | 无                               | 无             | 无             |
+  | T15 wildcard 检查  | 无                       | 有 (`T15_WHITELIST`)             | 无             | 无             |
+  | `strip_leading_attr` (unsafe 属性行剥离) | 有 | 有 | 无 (不扫 unsafe) | 无 (不扫 unsafe) |
 
 ---
 
@@ -57,7 +67,7 @@
 
 ### 2.1 evorule-tcb — 24 模式 (T 编号)
 
-实施文件: `D:\evorule\evorule-tcb\build.rs` (401 行, 扫描 `src/*.rs`)
+实施文件: `D:\evorule\evorule-tcb\build.rs` (扫描 `src/` 全部 `.rs`)
 
 | 编号       | 模式 (字节子串)            | 门控含义                |
 | ---------- | --------------------------- | ----------------------- |
@@ -94,7 +104,7 @@
 
 ### 2.2 evorule-reactor — 14 模式 (G8 + F11 + S5.2)
 
-实施文件: `D:\evorule\evorule-reactor\build.rs` (379 行, 扫描 `src/*.rs`)
+实施文件: `D:\evorule\evorule-reactor\build.rs` (扫描 `src/` 全部 `.rs`)
 
 | 编号              | 模式 (字节子串)       | 门控含义                |
 | ----------------- | ---------------------- | ----------------------- |
@@ -121,7 +131,7 @@
 
 ### 2.3 evorule-governance — 14 模式 (跟 tier1 相同)
 
-实施文件: `D:\evorule\evorule-governance\build.rs` (382 行, 跟 tier1 结构相同)
+实施文件: `D:\evorule\evorule-governance\build.rs` (跟 tier1 结构相同)
 
 **有意重复**: tier1/tier2 用同一组 14 模式, 保证两个反应器/治理层不会走偏。
 
