@@ -335,11 +335,16 @@ branch:
 1. 检测到 BOM → 剥离首字符保证后续扫描正常（不丢失其他行）
 2. 将 `BOM-detected` 记入违规列表 → 门禁 FAILURE，强制要求移除 BOM
 
-### 5.3 测试模块剥离
+### 5.3 扫描范围与测试模块剥离
 
-`#[cfg(test)] mod tests { ... }` 块体：
-- T8/T9 模式测试允许 → 剥离后不扫描（L1 放行）
-- T10/T11 模式全域强制 → 不剥离，所有位置都扫描
+**扫描范围** (TCB-2026-33 如实化): 递归扫描 `src/` 全部 `.rs`
+(`collect_rs_files_for_strategy`)。`tests/` / `benches/` / `examples/`
+**不在** L1 字面量门禁扫描范围内——集成测试的纪律由 `cargo test` 与
+`cargo clippy --all-targets` 承接, 不经 build.rs 字面量门禁。
+
+**测试模块剥离** (`#[cfg(test)] mod <ident>` 任意命名, TCB-2026-35):
+- T8/T9/F11-panic (test-tolerant 标签) → 剥离后不扫描 (L1 放行——测试断言机制本体)
+- T10/T11 等其余标签全域强制 → 不剥离, `src/` 文件内**所有位置** (含测试模块体) 都扫描
 
 ### 5.4 紧急跳过
 

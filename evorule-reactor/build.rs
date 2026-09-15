@@ -6,19 +6,21 @@
 //! 强制执行 REACTOR_SPEC.md 的 G7/G8 + G1(F11) + §5.2 规则。
 //! 跨模块设计见 ../../GATE_REFERENCE.md §四(跨模块门控图)+ §五(SPEC 章节编号映射)。
 //!
-//! # 扫描的 14 个模式
+//! # 扫描的 15 个模式
 //!
 //! | 规则          | 模式                                                           | 数量 |
 //! |---------------|----------------------------------------------------------------|------|
 //! | G7/G8 (控制流)| `"conditional"`, `"while_loop"`, `"sequence"`                  | 3    |
-//! | G1/F11 (panic)| `debug_assert!`, `.unwrap(`, `.expect(`                        | 3    |
+//! | G1/F11 (panic)| `debug_assert!`, `.unwrap(`, `.expect(`, `panic!(`             | 4    |
 //! | §5.2 (业务术语)| `"math_rule"`, `"physics_rule"`, `"summarize"`, 等             | 7    |
+//! | G2/T10 (unsafe)| `unsafe`                                                      | 1    |
 //!
 //! # 豁免
 //!
-//! - `#[cfg(test)] mod tests { ... }` 测试模块
+//! - `#[cfg(test)] mod <ident>` 任意命名测试模块 (TCB-2026-35)
 //! - 注释 (`//`, `///`, `//!`, `/* */`)
 //! - `src/fact.rs` (G8/§5.2 模式) — IoType/ControlFlowType 枚举映射的唯一真值来源
+//! - T10 文件级: `ffi.rs` / `facts_log.rs` (T10_FILE_EXEMPT, 有 gate 保护的 unsafe)
 //!
 //! 匹配口径: 每行同时按原文与去空白文本匹配 (`x.unwrap ()` 等插空写法同样
 //! 拦截, TCB-2026-24); 注释/属性行判定仍用原文。

@@ -6,20 +6,21 @@
 //! 强制执行 GOVERNANCE_SPEC.md 的 G7/G8 + G1(F11) + §5.2 规则。
 //! 跨模块设计见 ../../GATE_REFERENCE.md §四(跨模块门控图)+ §五(SPEC 章节编号映射)。
 //!
-//! **与 evorule-reactor/build.rs 结构完全相同** (13 模式 + fact.rs 豁免),
-//! 这是有意的双层一致 (避免 tier1/tier2 走偏)。
+//! **与 evorule-reactor/build.rs 保持同一组 14 模式** (3 G8 + 4 F11 + 7 S5.2,
+//! 无 T10) + fact.rs 豁免, 这是有意的双层一致 (避免 tier1/tier2 走偏);
+//! 与 evorule-tcb (24 模式) 为有意差异, 见根 GATE_REFERENCE §一。
 //!
-//! # 扫描的 13 个模式
+//! # 扫描的 14 个模式
 //!
 //! | 规则          | 模式                                                           | 数量 |
 //! |---------------|----------------------------------------------------------------|------|
 //! | G7/G8 (控制流)| `"conditional"`, `"while_loop"`, `"sequence"`                  | 3    |
-//! | G1/F11 (panic)| `debug_assert!`, `.unwrap(`, `.expect(`                        | 3    |
+//! | G1/F11 (panic)| `debug_assert!`, `.unwrap(`, `.expect(`, `panic!(`             | 4    |
 //! | §5.2 (业务术语)| `"math_rule"`, `"physics_rule"`, `"summarize"`, 等             | 7    |
 //!
 //! # 豁免
 //!
-//! - `#[cfg(test)] mod tests { ... }` 测试模块
+//! - `#[cfg(test)] mod <ident>` 任意命名测试模块 (TCB-2026-35)
 //! - 注释 (`//`, `///`, `//!`, `/* */`)
 //! - `src/fact.rs` (G8/§5.2 模式) — IoType/ControlFlowType 枚举映射的唯一真值来源
 //!
