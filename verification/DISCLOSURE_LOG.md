@@ -149,3 +149,10 @@
 - **依据**：新证据 `P0-3/P0-6.<harness>_PASS_25c0cc0_20260914_190211_*`（evorule-tcb/verification/evidence/kani/）与 `P0-11/P1-3/P1-5/P1-6.*.PASS_25c0cc0_20260914_190211_*`（evorule-reactor/verification/evidence/kani/）；CHANGELOG 0.6.0 破坏性变更条目；STATUS.md 附录 A/B 删号与计数更新。
 - **影响**：① 旧 `627330a` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 6；② reactor 旧 4 对（`03643aa`/`bdfb8d4` 锚定，proof 源码未变更但被验证依赖 TCB 生产代码变更，谨慎起见复跑替代）隔离至该仓同级 `_invalidated/`；③ B 档 20 个 proof 状态不变（❌；eq 族已路由 Phase 2 stub 试点，CR-20260913-004 §3.11）；④ 69 号 Step 10 Kani 重跑项收口。
 - **修正去向**：本条目即修正记录；执行详情见 CR-20260914-001（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 6；STATUS.md（快照/P0-3/P0-6/附录 A/B/维护区）。
+
+### 2026-09-15：REM-1 CI 门禁整改——证据命名修正 + reactor 隔离区 README 补建 + 文档对齐
+
+- **事实**：check_status_sync.py 门禁 7 项 FAIL（S2/S3/S4/S6/S8/S9/S10）整改完成：① 36 份证据文件名 `.PASS_` 笔误批量 `git mv` 修正为 `_PASS_`（TCB A 档 28 + reactor 8，均属 2026-09-14 `25c0cc0` 批次，内容零变更，STATUS.md 证据列本就按正确命名声明）；② `evorule-reactor/verification/evidence/kani/_invalidated/README.md` 补建（批次 1 = 69 号 Step 10 隔离的 4 对 `03643aa`/`bdfb8d4` 证据，原提交 `f013989` 漏建 README）；③ STATUS.md 附录 B A 档标题行批次锚 `25c0cc0` 去反引号（此前被 S8 解析为第 15 个 proof 名，致「声明 14 / 清单 15」）；④ STATUS.md P0-11 证据列更新为 `25c0cc0` 复跑证据（原 `03643aa` 引用已隔离于 _invalidated/，S2/S3 随之闭环）；⑤ MECHANISM.md 版本对齐声明 v0.5.0→v0.6.0（M4，69 号发布漏更）；⑥ ROADMAP.md 与 verification/README.md B 档计数 23→20（69 号 P15/P16/P17 退役漏更）。
+- **依据**：check_status_sync.py 实测输出（修复前 4 PASS / 7 FAIL，修复后 11 规则全 PASS）；文件系统实测（36 份笔误命名、reactor 隔离区缺 README）；Cargo.toml workspace version = 0.6.0。
+- **影响**：S1–S11 全绿；对外数字（45 total / 18 verified / TCB 34 / A 档 14 / B 档 20）与 STATUS.md 附录推导值全对齐；P0-11 最新证据（2026-09-14 PASS）与主状态 ✅ 闭环；reactor 隔离区满足 M3.5。
+- **修正去向**：本条目即修正记录；证据盘面与 STATUS.md / MECHANISM.md / ROADMAP.md / verification/README.md / `evorule-reactor/verification/evidence/kani/_invalidated/README.md`。

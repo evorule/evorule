@@ -27,7 +27,7 @@
 | P0-8 | 递归深度硬上界 | tier0 | ❌+🟡 | TLA+（同上） | B 档：`verify_domain_depth_limit`、`verify_branch_depth_limit` | TLC 报告（2026-07-25，旧版本） | 同 P0-7 | |
 | P0-9 | version 语义一致性 | t1+2 | 🔵 | — | 差分测试 `diff_version_consistency`（evorule-governance） | CI（differential.yml）+ 本地归档 `P0-9-P0-10_PASS_bdfb8d4_20260912_173435`（PROPTEST_CASES=1000） | CI 常驻（PROPTEST_CASES=256）；本地重跑 PASS（2026-09-12） | |
 | P0-10 | rewind 状态重建一致 | t1+2 | 🔵 | — | 差分测试 `diff_rewind_vs_factslog`（evorule-governance） | CI（differential.yml）+ 本地归档 `P0-9-P0-10_PASS_bdfb8d4_20260912_173435` | 同 P0-9 | |
-| P0-11 | cause 队列同步 | tier1 | ✅ | — | `invariant_cause_queue_sync`（reactor CI proof） | P0-11.invariant_cause_queue_sync_PASS_03643aa_20260912_225316（evorule-reactor/verification/evidence/kani/） | 2026-09-12 修复超时根因：CBMC 对 VecDeque 堆缓冲区中 JsonValue 按任意变体建模，任何触发 JsonValue Drop 的路径（pop 返回值 / clear 的 drop_in_place / state 整体 Drop）均展开 Object(BTreeMap) 红黑树析构的无界 unwind；修复 = proof 侧 forget(popped)/(state) + clear_queue 的 #[cfg(kani)] take+forget 分支（state.rs）。重入 kani.yml reactor job（不带 --default-unwind，该配置实测对本 proof 无效） | 修复前 3 份超时 FAIL 记录保留于 evorule-reactor/verification/evidence/kani/（过程证据）；🟡 历史 PASS（2026-07-27）由本修复取代 |
+| P0-11 | cause 队列同步 | tier1 | ✅ | — | `invariant_cause_queue_sync`（reactor CI proof） | P0-11.invariant_cause_queue_sync_PASS_25c0cc0_20260914_190211（evorule-reactor/verification/evidence/kani/；旧 `03643aa` 版已隔离 _invalidated/） | 2026-09-12 修复超时根因：CBMC 对 VecDeque 堆缓冲区中 JsonValue 按任意变体建模，任何触发 JsonValue Drop 的路径（pop 返回值 / clear 的 drop_in_place / state 整体 Drop）均展开 Object(BTreeMap) 红黑树析构的无界 unwind；修复 = proof 侧 forget(popped)/(state) + clear_queue 的 #[cfg(kani)] take+forget 分支（state.rs）。重入 kani.yml reactor job（不带 --default-unwind，该配置实测对本 proof 无效）；随 69 号 TCB 生产代码变更于 `25c0cc0` 复跑 PASS（2026-09-14，WSL Kani 0.67.0） | 修复前 3 份超时 FAIL 记录保留于 evorule-reactor/verification/evidence/kani/（过程证据）；🟡 历史 PASS（2026-07-27）由本修复取代 |
 | P0-12 | pure vs reactor 等价 | tier1 | 🔵 | — | 差分测试 `diff_reactor_vs_pure`（evorule-reactor） | `evorule-reactor/verification/evidence/differential/P0-12_PASS_bdfb8d4_20260912_145640`（PROPTEST_CASES=1000，4 用例全 PASS） | CI（differential.yml）常驻 | 2026-09-12 重跑更新；旧证据（8b2932e）已隔离至 differential/_invalidated/ |
 | P0-13 | Fact match 完备性 | 全层 | ⏳ | — | —（编译时 T15 门控，未实现） | — | 计划中 | |
 | P0-14 | 审计链哈希完整 | tier2 | ⏳ | — | `proof_hash_chain_back_link`（reactor，未入 CI） | — | 计划中 | reactor proof 已存在，重跑入 CI 待计划 |
@@ -85,7 +85,7 @@
 
 ## 附录 B：TCB 34 个 proof 分档清单（源码：`evorule-tcb/tests/kani/kani_proofs.rs`；69 号清理退役 P15/P16/P17 后 37→34）
 
-**A 档 14 个**（kani.yml `kani-tcb-a-tier` job，PR/push 闸门，实测 0.3~4.0s/个，2026-09-14 `25c0cc0` 批次）：
+**A 档 14 个**（kani.yml `kani-tcb-a-tier` job，PR/push 闸门，实测 0.3~4.0s/个，2026-09-14 25c0cc0 批次）：
 
 `verify_partial_eq_never_panics`、`verify_resolve_path_deterministic`、`verify_resolve_path_array_index`、`verify_ord_never_panics`、`verify_as_methods_never_panic`、`verify_resolve_path_missing_close_bracket`、`verify_resolve_path_escaped_dot`、`verify_resolve_path_invalid_index_char`、`verify_resolve_path_trailing_dot`、`verify_resolve_path_simple_field`、`verify_resolve_path_empty_returns_none`、`verify_resolve_path_double_dot`、`verify_array_index_bounds`、`verify_resolve_path_nested_dot`
 
