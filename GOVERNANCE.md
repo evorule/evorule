@@ -22,7 +22,7 @@
 
 ## 二、变更审查（Change Request）
 
-- 所有核心模块变更**必须**附带 [CHANGE_REQUEST_TEMPLATE.md](.github/CHANGE_REQUEST_TEMPLATE.md)（唯一正本；原根目录副本因双份维护漂移已删除）。
+- 所有核心模块变更**必须**按 CHANGE_REQUEST 流程登记审查（`CHANGE_REQUEST.md` 登记文件存于各 crate 目录；模板不再随仓发布，自查由维护者本地 git pre-commit hook 执行，见下文第五节）。
 - 审查状态流转：
 
   ```
@@ -32,7 +32,7 @@
   ```
 
 - **审批人**：项目创始人。审查结论填入模板第 6 节"审查批准"表。
-- **机制层门禁**：策略层变更在机制层禁止（build.rs 编译期门禁强制拦截，详见 [GATE_REFERENCE.md](GATE_REFERENCE.md)）。
+- **机制层门禁**：策略层变更在机制层禁止（build.rs 编译期门禁强制拦截，无阀常开，详见 [GATE_REFERENCE.md](GATE_REFERENCE.md)）。
 
 ## 三、维护者晋升（预留）
 
@@ -50,11 +50,11 @@
 - 双轨 CLA 是商业再许可（DUAL_LICENSE）的必要条件，确保项目对全部代码拥有再许可权。
 - CLA 签署通过 CLA Assistant 机器人（GitHub）/ Gitee 在线签署自动核验；未签 CLA 的 PR 门禁拦截。
 
-## 五、与 CHANGE_REQUEST 门禁的关系
+## 五、与 CHANGE_REQUEST 流程的关系
 
-- `CHANGE_REQUEST_TEMPLATE.md` 是机制层变更的**强制治理模板**；缺失或层级声明为"策略层"将被 build.rs 门禁拒绝构建。
+- CR 登记（`CHANGE_REQUEST.md`）是机制层变更的**强制治理流程**：变更实施前必须登记并获批准。自查校验由维护者本地 git pre-commit hook 执行——这是工程质量自查纪律，不是防伪造审查机制（TCB-2026-29 定性），不再作为 build.rs 公开门禁（裁定⑤⑥，2026-09-15）。
 - CLA 是**贡献者授权**门槛，独立于变更审查，但两者均在 PR 合并前必须达成。
-- 许可证/商标/治理类文档变更属于文档类（D 类），仍须 CR 模板，但**不触发机制层门禁**（根目录许可文档变更不读入 build.rs）。
+- 许可证/商标/治理类文档变更属于文档类（D 类），仍须 CR 登记，但**不触发机制层门禁**（根目录许可文档变更不读入 build.rs）。
 
 ---
 

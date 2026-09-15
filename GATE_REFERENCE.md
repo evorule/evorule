@@ -31,21 +31,20 @@
 | 层                       | 机制                    | 强度 | 实施位置                                                  |
 | ------------------------ | ----------------------- | ---- | --------------------------------------------------------- |
 | **L1a 编译时字面量门禁** | `build.rs` 字节子串扫描 | 高   | 各 crate 自己的 `build.rs` (扫描 `src/`)                  |
-| **L1b 编译时变更治理门禁** | `build.rs` CHANGE_REQUEST.md 校验 + 策略层反模式检测 | 高 | 各 crate 自己的 `build.rs` (v0.3.2 新增) |
+| **L1b 编译时策略层检测** | `build.rs` 策略层反模式检测 (无阀常开) | 高 | 各 crate 自己的 `build.rs` (v0.3.2 新增; CR 校验面已移出公开仓) |
 | **L2 编译时 lint**       | clippy workspace lints  | 中   | 根 `Cargo.toml` `[workspace.lints]` + 4 crate `[lints]`   |
 | **L3 评审**              | code review (PR review) | 高   | 人工                                                      |
 
 **协作关系**:
 - L1a 挡**字面量违规** (e.g. `.unwrap(` 在生产代码 = panic-prone 构造)
-- L1b 挡**变更治理违规** (e.g. 无 CHANGE_REQUEST.md / 审查状态未批准 / 策略层代码混入机制层)
+- L1b 挡**策略层违规** (e.g. 控制流指令混入机制层; 无阀常开)
 - L2 挡**结构违规** (e.g. 认知复杂度 > 25 / 函数 > 100 行)
 - L3 挡**语义违规** (e.g. 业务规则 / API 设计 / 跨文件调用图)
 - 四层**独立兜底**: L1a 漏了 L1b 拦, L1b 漏了 L2 拦, L2 漏了 L3 拦
 
-**L1b 变更治理门禁 (v0.3.2 新增)**:
-- **CHANGE_REQUEST.md 校验**: 构建时检查仓根 `CHANGE_REQUEST.md` 是否存在、是否包含所有必填字段、审查状态是否为"已批准"或"紧急通过"
-- **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块——TCB-2026-28 撤豁免: 测试代码同为机制层, 须守同一纪律; 旧「剥离 mod tests 再扫」既留注释伪装/`mod tests_foo` 误吞绕过面, 又给策略层留测试区藏身处),禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层
-- **跳过方式**: `EVORULE_SKIP_CR_GATE=1` 环境变量可跳过(仅限本地开发,跳过必须临时且有书面理由)
+**L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**:
+- **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块——TCB-2026-28 撤豁免: 测试代码同为机制层, 须守同一纪律; 旧「剥离 mod tests 再扫」既留注释伪装/`mod tests_foo` 误吞绕过面, 又给策略层留测试区藏身处),禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。**无阀常开**——机制-策略分离是设计不变量, 不设旁路环境变量
+- **CR 变更自查已移出公开仓 (裁定⑤, TCB-2026-29)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制; 为避免公开形态引发「伪门禁」质疑, 已从四仓 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除。自查职责由本地 git pre-commit hook 承接 (hook 不随仓库/发布公开); CHANGE_REQUEST.md 登记文件与登记纪律本身不变
 - **三仓同步**: `evorule-tcb` / `evorule-reactor` / `evorule-governance` 的 build.rs 保持同一份内联副本实现,任何修改必须三仓同步
 
 ---
@@ -89,7 +88,6 @@
 - 属性行剥离匹配 (TCB-2026-25): unsafe 模式对 `#[`/`#!` 开头行剥离行首属性语法 (方括号深度感知) 后匹配余下内容——`#[forbid(unsafe_code)]` 剥离后为空不误报; `#[inline] unsafe fn` 借道逃逸被拦截; 属性未闭合保守按原文匹配 (fail-closed)
   - **状态机生命周期判别（2026-08-30 修复）**: `char_lit_starts()` 在撇号处判别字符字面量与生命周期——`'` 后跟 `\` 或"单字符+`'`"是字面量（进入字符态），`'ident` 是生命周期（跳过标识符，不进入字符态）。旧实现把 `'static` 误判为字符态开头，吞掉直到下一个 `'` 之间的所有 `{}`，导致 match_brace 永不闭合、tests 模块整体不被剥离、门禁对测试代码全量误报。修复已同步五仓（tcb/reactor/governance/cli/server），每仓 build.rs 内含 3 个单元测试（cargo test 不运行 build script 测试，用探针 crate 以 lib.rs 方式加载真实 build.rs 运行）
 - `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁, 编译警告 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
-- `EVORULE_SKIP_CR_GATE=1`: 跳过 L1b 变更治理门禁 (仅限本地开发, v0.3.2 新增)
 
 ### 2.2 evorule-reactor — 14 模式 (G8 + F11 + S5.2)
 
@@ -117,7 +115,6 @@
 - 属性行剥离匹配 (TCB-2026-25): unsafe 模式对 `#[`/`#!` 开头行剥离行首属性语法 (方括号深度感知) 后匹配余下内容——`#![deny(unsafe_code)]` 等纯属性行剥离后为空不误报; `#[inline] unsafe fn` 借道逃逸被拦截; 属性未闭合保守按原文匹配 (fail-closed)
 - `fact.rs` 豁免: G8/S5.2 模式在 `fact.rs` 豁免 (IoType/ControlFlowType 字符串映射唯一真值来源)
 - `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
-- `EVORULE_SKIP_CR_GATE=1`: 跳过 L1b 变更治理门禁 (v0.3.2 新增)
 
 ### 2.3 evorule-governance — 14 模式 (跟 tier1 相同)
 
@@ -140,7 +137,6 @@
 
 **豁免**: `VALID_TRANSFORM_TYPES` 白名单 (允许 G8 控制流指令名出现在类型白名单定义中)
 - `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
-- `EVORULE_SKIP_CR_GATE=1`: 跳过 L1b 变更治理门禁 (v0.3.2 新增)
 
 **注意**: evorule-cli 是 binary crate, 不需要 `F11-panic` 模式 (tier1/tier2 的 lib crate 才需要检测 `panic!(`, 因为 lib 可能被多处调用, panic 影响范围更大; binary 直接 panic 等于进程退出, 由 `Result<>` 链强制保证)。
 

@@ -46,19 +46,18 @@
 
 ```bash
 EVORULE_SKIP_GATE=1 cargo build       # 跳过 L1a 字面量门禁
-EVORULE_SKIP_CR_GATE=1 cargo build    # 跳过 L1b 变更治理门禁 (仅限本地开发, v0.3.2 新增)
 EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 warning)
 ```
 
 阀值仅 `1`/`true` 生效 (`0`/空/其他值 = 门禁照常执行, fail-closed)。跳过必须临时且有书面理由。**永不永久禁用。** 当门控触发时, 正确做法几乎总是:
 将违规字面量移入 `core_eval.json` 并通过元指令层引用, 或重命名它。
 
-### L1b 变更治理门禁 (v0.3.2 新增)
+### L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)
 
-除上述 L1a 字面量门禁外, `build.rs` 还执行以下变更治理门禁:
+除上述 L1a 字面量门禁外, `build.rs` 还执行:
 
-- **CHANGE_REQUEST.md 校验**: 构建时检查仓根 `CHANGE_REQUEST.md` 是否存在、是否包含所有必填字段、审查状态是否为"已批准"或"紧急通过"。未批准的变更禁止构建。
-- **策略层反模式检测**: 扫描 `src/` 目录(自动剥离 `mod tests` 块), 禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。检测到违规时构建失败。
+- **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块, TCB-2026-28 撤豁免), 禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。检测到违规时构建失败。**无阀常开**——机制-策略分离是设计不变量, 不设旁路环境变量。
+- **CR 自查已移出公开仓 (裁定⑤⑥)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已从 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。CHANGE_REQUEST.md 登记纪律本身不变。
 - **三仓同步**: `evorule-tcb` / `evorule-reactor` / `evorule-governance` 的 build.rs 保持同一份内联副本实现, 任何修改必须三仓同步。
 
 ---

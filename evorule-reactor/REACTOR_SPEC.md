@@ -133,9 +133,8 @@
 - `src/fact.rs` (G8/§5.2 模式) — IoType 内置字符串值 / ControlFlowType 枚举映射的唯一真值来源
 
 **紧急跳过**: `EVORULE_SKIP_GATE=1 cargo build` (阀值仅 `1`/`true` 生效 fail-closed, 须有书面理由 + `EVORULE_SKIP_REASON` 登记, 永不永久禁用)
-`EVORULE_SKIP_CR_GATE=1 cargo build` (跳过 L1b 变更治理门禁, 仅限本地开发, v0.3.2 新增)
 
-**L1b 变更治理门禁 (v0.3.2 新增)**: 除上述 L1a 字面量门禁外, `build.rs` 还执行 CHANGE_REQUEST.md 校验(必须存在且审查状态为"已批准"/"紧急通过")和策略层反模式检测(扫描 src/ 禁止策略层代码)。三仓(evorule-tcb / evorule-reactor / evorule-governance)build.rs 保持同一份内联副本实现。
+**L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**: 除上述 L1a 字面量门禁外, `build.rs` 还执行策略层反模式检测(扫描 src/ **全文件**禁止策略层代码, TCB-2026-28 撤测试豁免; **无阀常开**, 不设旁路环境变量)。旧 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已移出公开仓, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。三仓(evorule-tcb / evorule-reactor / evorule-governance)build.rs 保持同一份内联副本实现。
 
 ---
 

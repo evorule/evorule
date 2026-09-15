@@ -35,11 +35,17 @@
 //!
 //! ```bash
 //! EVORULE_SKIP_GATE=1 cargo build       # 跳过 L1 字面量门禁
-//! EVORULE_SKIP_CR_GATE=1 cargo build    # 跳过 L2 变更治理门禁 (仅限本地开发)
 //! EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 warning)
 //! ```
 //! 阀值仅 `1`/`true` 生效 (`0`/空/其他值 = 门禁照常执行, fail-closed)。
 //! 跳过必须临时且有书面理由, 永不永久禁用。
+//!
+//! # 门禁定位（诚实边界）
+//!
+//! 本文件全部门禁是工程质量自查纪律（机制-策略分离、确定性红线），不是
+//! 对抗主动攻击者的安全边界；策略层检测无阀常开。CR 变更自查
+//! （CHANGE_REQUEST.md 字段清单）已移出公开仓，由本地 git pre-commit hook
+//! 承接——它从来不是防伪造审查机制（裁定⑤，TCB-2026-29 定性）。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -461,23 +467,13 @@ fn is_test_tolerant(label: &str) -> bool {
 }
 
 fn main() -> ExitCode {
-    // 变更治理门禁 (L2): CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"
-    if skip_requested("EVORULE_SKIP_CR_GATE") {
-        println!(
-            "cargo:warning=evorule-tcb change governance gate SKIPPED via EVORULE_SKIP_CR_GATE"
-        );
-    } else {
-        // 执行变更治理门禁验证
-        if let Err(e) = validate_change_request_gate("evorule-tcb") {
-            eprintln!("{}", e);
-            return ExitCode::FAILURE;
-        }
-
-        // 执行策略层反模式检测
-        if let Err(e) = detect_strategy_patterns("evorule-tcb") {
-            eprintln!("{}", e);
-            return ExitCode::FAILURE;
-        }
+    // 策略层反模式检测 (无阀常开, TCB-2026-27 整改 + 裁定⑤): 机制-策略分离是
+    // 设计不变量, 不设旁路阀。CR 自查 (CHANGE_REQUEST.md 校验) 已移出公开仓
+    // build.rs——EVORULE_SKIP_CR_GATE 随之移除, 自查由本地 git pre-commit hook
+    // 承接 (hook 源落本地工具区, 不随仓库/发布公开)。
+    if let Err(e) = detect_strategy_patterns("evorule-tcb") {
+        eprintln!("{}", e);
+        return ExitCode::FAILURE;
     }
 
     if skip_requested("EVORULE_SKIP_GATE") {
@@ -590,163 +586,6 @@ fn main() -> ExitCode {
     eprintln!("These patterns are forbidden by TCB_SPEC.md (compile-time gate).");
     eprintln!("To bypass in an emergency, set EVORULE_SKIP_GATE=1 (with justification comment).");
     ExitCode::FAILURE
-}
-
-// ===== 变更治理门禁 (Change Governance Gate) =====
-//
-// 与 evorule-reactor/build.rs、evorule-governance/build.rs 保持同一份实现 (内联副本)。
-// 任何对门禁逻辑的修改必须三仓同步, 防止三个核心模块的审查标准走偏。
-
-/// CHANGE_REQUEST.md 文件名
-const CR_FILENAME: &str = "CHANGE_REQUEST.md";
-
-/// CHANGE_REQUEST.md 必填字段标记
-const CR_REQUIRED_FIELDS: &[&str] = &[
-    "**变更 ID**",
-    "**变更标题**",
-    "**提交人**",
-    "**提交日期**",
-    "**审查状态**",
-    "## 2. 变更层级判定",
-    "机制层",
-    "### 2.2 判定理由",
-    "### 3.1 变更理由",
-    "### 3.2 变更范围",
-    "### 3.3 破坏性分析",
-    "### 3.4 影响评估",
-    "### 3.5 测试计划",
-    "### 3.6 回滚方案",
-];
-
-/// 有效审查状态 (用于错误提示)
-const CR_VALID_STATUSES: &[&str] = &["待审查", "已批准", "已拒绝", "紧急通过"];
-
-/// 可放行构建的审查状态: 必须为"已批准"或"紧急通过"
-const CR_APPROVED_STATUSES: &[&str] = &["已批准", "紧急通过"];
-
-/// 从 CHANGE_REQUEST.md 提取"审查状态"行的值
-///
-/// 表格格式: `| **审查状态** | 已批准 |`
-/// 返回第二列去除空白后的值; 字段行缺失或格式异常返回 None。
-fn find_review_status(content: &str) -> Option<String> {
-    for line in content.lines() {
-        if line.contains("**审查状态**") {
-            let mut cells = line.split('|').map(|c| c.trim()).filter(|c| !c.is_empty());
-            let _name = cells.next();
-            return cells.next().map(|s| s.to_string());
-        }
-    }
-    None
-}
-
-/// 验证 CHANGE_REQUEST.md 的完整性
-///
-/// 此函数在每次构建时调用，确保：
-/// 1. CHANGE_REQUEST.md 文件存在
-/// 2. 文件包含所有必填字段
-/// 3. 审查状态必须为"已批准"或"紧急通过" (未批准的变更禁止构建)
-///
-/// # 返回
-///
-/// - Ok(()) 验证通过
-/// - Err(String) 验证失败，包含详细错误信息
-fn validate_change_request_gate(crate_name: &str) -> Result<(), String> {
-    let manifest_dir = match std::env::var("CARGO_MANIFEST_DIR") {
-        Ok(s) => PathBuf::from(s),
-        Err(_) => return Err("build.rs: CARGO_MANIFEST_DIR not set".to_string()),
-    };
-
-    let cr_path = manifest_dir.join(CR_FILENAME);
-
-    // 1. 检查 CHANGE_REQUEST.md 是否存在
-    if !cr_path.exists() {
-        return Err(format!(
-            "==== {} 变更治理门禁 FAILED ====\n\
-             \n\
-             缺少 {} 文件。\n\
-             \n\
-             所有核心模块的变更必须附有 CHANGE_REQUEST.md 审查表。\n\
-             请在模块根目录创建该文件，并按照模板填写。\n\
-             \n\
-             模板位置: /CHANGE_REQUEST_TEMPLATE.md\n\
-             \n\
-             跳过验证: 设置环境变量 EVORULE_SKIP_CR_GATE=1 (仅限本地开发)",
-            crate_name, CR_FILENAME
-        ));
-    }
-
-    // 2. 读取 CHANGE_REQUEST.md
-    let content =
-        fs::read_to_string(&cr_path).map_err(|e| format!("无法读取 {}: {}", CR_FILENAME, e))?;
-
-    // 3. 检查必填字段
-    let mut missing_fields = Vec::new();
-    for field in CR_REQUIRED_FIELDS {
-        if !content.contains(field) {
-            missing_fields.push(*field);
-        }
-    }
-    if !missing_fields.is_empty() {
-        return Err(format!(
-            "==== {} 变更治理门禁 FAILED ====\n\
-             \n\
-             CHANGE_REQUEST.md 缺少以下必填字段:\n\
-             {}\n\
-             \n\
-             请补全所有必填字段后重新构建。",
-            crate_name,
-            missing_fields
-                .iter()
-                .map(|f| format!("  - {}", f))
-                .collect::<Vec<_>>()
-                .join("\n")
-        ));
-    }
-
-    // 4. 强制审查状态: 必须为"已批准"或"紧急通过"
-    let status = match find_review_status(&content) {
-        Some(s) => s,
-        None => {
-            return Err(format!(
-                "==== {} 变更治理门禁 FAILED ====\n\
-                 \n\
-                 CHANGE_REQUEST.md 中未找到\"审查状态\"字段的有效值。\n\
-                 请按模板填写: `| **审查状态** | 已批准 |`",
-                crate_name
-            ));
-        }
-    };
-
-    if !CR_APPROVED_STATUSES.iter().any(|s| *s == status) {
-        return Err(format!(
-            "==== {} 变更治理门禁 FAILED ====\n\
-             \n\
-             CHANGE_REQUEST.md 的审查状态为 \"{}\"，未获批准。\n\
-             仅 \"{}\" 可放行构建。\n\
-             \n\
-             请获得审查批准后更新该字段再重新构建。\n\
-             有效状态参考: {}",
-            crate_name,
-            status,
-            CR_APPROVED_STATUSES.join("\" / \""),
-            CR_VALID_STATUSES.join(", ")
-        ));
-    }
-
-    // 5. 紧急通道提醒
-    if status == "紧急通过" {
-        eprintln!(
-            "cargo:warning={} 变更使用了紧急通道，请确保在 48 小时内补交完整审查表",
-            crate_name
-        );
-    }
-
-    // 验证通过
-    println!(
-        "cargo:warning={} 变更治理门禁 PASSED - CHANGE_REQUEST.md 验证通过",
-        crate_name
-    );
-    Ok(())
 }
 
 // ===== 策略模式检测器 (Strategy Pattern Detector) =====
