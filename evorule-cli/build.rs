@@ -24,6 +24,8 @@
 //!
 //! **零豁免原则**：阶段5 已删除 `VALID_TRANSFORM_TYPES`（用 tier1 RuleValidator 替代），
 //! 本门控不再有任何业务字面量豁免。G8/F11 对 `src/**/*.rs`（非测试）零容忍。
+//! 匹配口径：每行同时按原文与去空白文本匹配（`x.unwrap ()` 等插空写法同样拦截，
+//! TCB-2026-24）；注释行判定仍用原文。
 //!
 //! # 变更治理门禁 (L2)
 //!
@@ -102,6 +104,20 @@ fn skip_requested(var: &str) -> bool {
         }
         Err(_) => false,
     }
+}
+
+/// 去空白对照文本（TCB-2026-24 整改）：`x.unwrap ()` 等插空写法在纯原文
+/// 子串匹配下漏检，故每行额外生成去全部空白文本参与匹配。注释行判定
+/// 仍用原文。代价：字符串字面量内凑巧去空白命中的极小概率误报——
+/// 符合门禁「宁可误报不可漏报」哲学。
+fn squeeze_ws(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    for c in line.chars() {
+        if !c.is_whitespace() {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn main() -> ExitCode {
@@ -184,7 +200,8 @@ fn main() -> ExitCode {
                 if trimmed.starts_with("//") {
                     continue;
                 }
-                if line.contains(needle) {
+                let squeezed = squeeze_ws(line);
+                if line.contains(needle) || squeezed.contains(needle) {
                     violations.push((
                         path.clone(),
                         label.to_string(),
@@ -1018,5 +1035,17 @@ mod tests {
         // 生命周期
         assert!(!char_lit_starts(b"fn f() -> &'static str {", 12));
         assert!(!char_lit_starts(b"fn f<'a>(x: &'a u8) {}", 5));
+    }
+
+    #[test]
+    fn test_squeeze_ws_catches_whitespace_bypass() {
+        // 插空写法原文未命中、去空白命中 → 拦截 (TCB-2026-24)
+        let bypass = "let x = v.unwrap ();";
+        assert!(!bypass.contains(".unwrap("));
+        assert!(squeeze_ws(bypass).contains(".unwrap("));
+        assert!(squeeze_ws("let m: Hash Map<u8, u8>;").contains("HashMap"));
+        // 原文直命中路径不受影响; 合法代码不误伤
+        assert!("let x = v.unwrap();".contains(".unwrap("));
+        assert!(!squeeze_ws("let x = v.unwrap_or(1);").contains(".unwrap("));
     }
 }
