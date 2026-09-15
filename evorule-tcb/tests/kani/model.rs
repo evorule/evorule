@@ -169,7 +169,11 @@ fn exists_domain(path: &str) -> JsonValue {
     obj(vec![("type", s("exists")), ("path", s(path))])
 }
 fn lt_domain(path: &str, value: i64) -> JsonValue {
-    obj(vec![("type", s("lt")), ("path", s(path)), ("value", iv(value))])
+    obj(vec![
+        ("type", s("lt")),
+        ("path", s(path)),
+        ("value", iv(value)),
+    ])
 }
 fn branch(domain: JsonValue, on_true: Vec<JsonValue>, on_false: Vec<JsonValue>) -> JsonValue {
     obj(vec![
@@ -189,7 +193,11 @@ fn set_instr(attr: &str, op: &str, value: JsonValue) -> JsonValue {
         ("type", s("set")),
         (
             "params",
-            obj(vec![("attr", s(attr)), ("operation", s(op)), ("value", value)]),
+            obj(vec![
+                ("attr", s(attr)),
+                ("operation", s(op)),
+                ("value", value),
+            ]),
         ),
     ])
 }
@@ -198,7 +206,10 @@ fn push_noop() -> JsonValue {
         ("type", s("push")),
         (
             "params",
-            obj(vec![("instructions", arr(vec![obj(vec![("type", s("noop"))])]))]),
+            obj(vec![(
+                "instructions",
+                arr(vec![obj(vec![("type", s("noop"))])]),
+            )]),
         ),
     ])
 }

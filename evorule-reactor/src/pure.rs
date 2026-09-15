@@ -363,8 +363,8 @@ pub mod kani_proofs;
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
-    use evorule_tcb::ObjectMap;
     use crate::fact::FactId;
+    use evorule_tcb::ObjectMap;
 
     // 辅助：创建带初始队列的 state
     fn state_with_queue(instructions: Vec<JsonValue>) -> ReactorState {

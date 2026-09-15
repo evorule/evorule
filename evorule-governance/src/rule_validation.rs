@@ -503,8 +503,7 @@ fn check_infinite_loop_risk(transforms: &[JsonValue]) -> ValidationCheck {
         passed: !risk,
         level: if risk { "warn" } else { "info" },
         message: if risk {
-            "检测到 while_loop 但未找到状态变更指令 (set)，可能导致无限循环"
-                .to_string()
+            "检测到 while_loop 但未找到状态变更指令 (set)，可能导致无限循环".to_string()
         } else if has_while_loop {
             "while_loop 存在配套的状态变更指令，循环可终止".to_string()
         } else {
