@@ -52,7 +52,7 @@
 
 ## 二、build.rs 模式索引
 
-> **匹配口径（TCB-2026-24）**：四仓 L1 字面量门禁对每行同时按**原文**与**去空白文本**匹配（`x.unwrap ()`、`Hash Map` 等插空写法同样拦截）；注释/属性行判定仍用原文。宁可极小概率字符串误报，不可漏报。
+> **匹配口径（TCB-2026-24/-25）**：四仓 L1 字面量门禁对每行同时按**原文**与**去空白文本**匹配（`x.unwrap ()`、`Hash Map` 等插空写法同样拦截）；注释行豁免判定仍用原文。属性行对 `unsafe` 模式（tcb/reactor）不再整体豁免——剥离行首 `#![...]`/`#[...]` 语法（方括号深度感知，未闭合保守按原文匹配）后对余下内容匹配（TCB-2026-25）。宁可极小概率字符串误报，不可漏报。
 
 ### 2.1 evorule-tcb — 23 模式 (T 编号)
 
@@ -86,6 +86,7 @@
 
 **豁免机制**:
 - `strip_test_mod()`: 剥离 `#[cfg(test)] mod tests { ... }` 块, 不扫描测试代码
+- 属性行剥离匹配 (TCB-2026-25): unsafe 模式对 `#[`/`#!` 开头行剥离行首属性语法 (方括号深度感知) 后匹配余下内容——`#[forbid(unsafe_code)]` 剥离后为空不误报; `#[inline] unsafe fn` 借道逃逸被拦截; 属性未闭合保守按原文匹配 (fail-closed)
   - **状态机生命周期判别（2026-08-30 修复）**: `char_lit_starts()` 在撇号处判别字符字面量与生命周期——`'` 后跟 `\` 或"单字符+`'`"是字面量（进入字符态），`'ident` 是生命周期（跳过标识符，不进入字符态）。旧实现把 `'static` 误判为字符态开头，吞掉直到下一个 `'` 之间的所有 `{}`，导致 match_brace 永不闭合、tests 模块整体不被剥离、门禁对测试代码全量误报。修复已同步五仓（tcb/reactor/governance/cli/server），每仓 build.rs 内含 3 个单元测试（cargo test 不运行 build script 测试，用探针 crate 以 lib.rs 方式加载真实 build.rs 运行）
 - `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁, 编译警告 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
 - `EVORULE_SKIP_CR_GATE=1`: 跳过 L1b 变更治理门禁 (仅限本地开发, v0.3.2 新增)
@@ -113,6 +114,7 @@
 
 **豁免机制**:
 - `strip_test_mod()`: 剥离测试模块
+- 属性行剥离匹配 (TCB-2026-25): unsafe 模式对 `#[`/`#!` 开头行剥离行首属性语法 (方括号深度感知) 后匹配余下内容——`#![deny(unsafe_code)]` 等纯属性行剥离后为空不误报; `#[inline] unsafe fn` 借道逃逸被拦截; 属性未闭合保守按原文匹配 (fail-closed)
 - `fact.rs` 豁免: G8/S5.2 模式在 `fact.rs` 豁免 (IoType/ControlFlowType 字符串映射唯一真值来源)
 - `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
 - `EVORULE_SKIP_CR_GATE=1`: 跳过 L1b 变更治理门禁 (v0.3.2 新增)
