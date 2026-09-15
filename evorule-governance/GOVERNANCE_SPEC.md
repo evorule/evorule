@@ -129,7 +129,7 @@ evorule-governance/build.rs 跟 evorule-reactor/build.rs **结构相同** (字�
 - FORBIDDEN 数组: 字面量门禁模式完全相同
 - `strip_test_mod` 函数: 实现方式相同
 - `fact.rs` 豁免: **两者都必须包含** (G8/§5.2 模式在 fact.rs 中豁免)
-- **L1b 变更治理门禁 (v0.3.2 新增)**: `validate_change_request_gate` + `detect_strategy_patterns` 函数必须三仓(evorule-tcb / evorule-reactor / evorule-governance)同步, 防止三个核心模块的审查标准走偏
+- **L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**: `detect_strategy_patterns` 函数必须三仓(evorule-tcb / evorule-reactor / evorule-governance)同步, 防止三个核心模块的检测标准走偏。旧 `validate_change_request_gate` 已移出公开仓 (自查本地化), 不再要求同步
 
 ---
 
