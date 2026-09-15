@@ -123,6 +123,146 @@ fn squeeze_ws(line: &str) -> String {
     out
 }
 
+/// 同行块注释剥离（TCB-2026-32 整改）。
+///
+/// 假阳性背景：注释判定只认 `//` 开头，行中块注释区段内的示例文字
+/// （如 `/* conditional */`）会让 L1 误报。本函数把同行**自闭合**的
+/// 块注释区段（含嵌套 `/* /* */ */`）从匹配文本中剥离。
+///
+/// 字符串感知（防漏报）：`"..."`、`b"..."`、原始字符串 `r"..."` /
+/// `r#"..."#` / `r##"..."##` 内的 `/*` 不是注释起点——否则字符串内伪
+/// `/*` 会把后续真代码吃进伪注释区一起剥掉，构成漏报面（违背「宁可
+/// 误报不可漏报」）。常规字符串内 `\"` 转义跳过；原始字符串按定义
+/// 不处理转义。字符字面量 `'x'` 不设独立状态：`'/​*'` 形态在合法 Rust
+/// 中不存在（char 只装一个标量），代价只是 `'"';` 这类写法让本行
+/// 「未闭合」而保守降级——误报方向，安全。
+///
+/// fail-closed 边界：`/*` 无同行 `*/`、字符串未在本行闭合——一律放弃
+/// 剥离、整行按原文匹配；跨行块注释首行同样整行保留。剥离器自身不
+/// 允许成为漏报面。字符串内容原样保留参与匹配（字符串内命中是设计
+/// 接受的误报）。
+///
+/// 字节级扫描安全：UTF-8 多字节序列所有连续字节 > 0x7F，不会与 ASCII
+/// 的 `/ * " ' # b r` 混淆。
+fn strip_inline_block_comments(line: &str) -> String {
+    let b = line.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(b.len());
+    let mut i = 0usize;
+    while i < b.len() {
+        // 字符串类起点（顺序敏感：br# 先于 b" / r# 判定；起点序列内
+        // 计数前导 # 数，闭合时要求同数 # 配平）
+        let mut hashes = 0usize;
+        let mut raw = false;
+        let mut start_len = 0usize;
+        if b[i] == b'"' {
+            start_len = 1;
+        } else if b[i] == b'b' && i + 1 < b.len() && b[i + 1] == b'"' {
+            start_len = 2;
+        } else if b[i] == b'r' && i + 1 < b.len() && b[i + 1] == b'"' {
+            start_len = 2;
+            raw = true;
+        } else if b[i] == b'r' && i + 1 < b.len() && b[i + 1] == b'#'
+            || b[i] == b'b' && i + 2 < b.len() && b[i + 1] == b'r' && b[i + 2] == b'#'
+        {
+            let mut j = i + if b[i] == b'b' { 2 } else { 1 };
+            while j < b.len() && b[j] == b'#' {
+                hashes += 1;
+                j += 1;
+            }
+            if j < b.len() && b[j] == b'"' {
+                raw = true;
+                start_len = j - i + 1;
+            }
+        }
+        if start_len > 0 {
+            // 扫到本行闭合：常规串处理 `\"` 转义，原始串不处理转义
+            let mut j = i + start_len;
+            let mut closed = false;
+            while j < b.len() {
+                if !raw && b[j] == b'\\' {
+                    j += 2;
+                    continue;
+                }
+                if b[j] == b'"' {
+                    let mut k = j + 1;
+                    let mut h = 0usize;
+                    while k < b.len() && b[k] == b'#' {
+                        h += 1;
+                        k += 1;
+                    }
+                    if h == hashes {
+                        closed = true;
+                        j = k;
+                        break;
+                    }
+                }
+                j += 1;
+            }
+            if !closed {
+                return line.to_string(); // 本行未闭合 → 保守整行
+            }
+            out.extend_from_slice(&b[i..j]); // 字符串内容原样保留
+            i = j;
+            continue;
+        }
+        // 块注释起点：嵌套计数，同行配平才剥离
+        if b[i] == b'/' && i + 1 < b.len() && b[i + 1] == b'*' {
+            let mut depth = 1usize;
+            let mut j = i + 2;
+            while j < b.len() {
+                if b[j] == b'/' && j + 1 < b.len() && b[j + 1] == b'*' {
+                    depth += 1;
+                    j += 2;
+                } else if b[j] == b'*' && j + 1 < b.len() && b[j + 1] == b'/' {
+                    depth -= 1;
+                    j += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    j += 1;
+                }
+            }
+            if depth != 0 {
+                return line.to_string(); // 跨行块注释 → 保守整行
+            }
+            out.push(b' '); // 剥离区段以一个空格占位，防相邻 token 粘连
+            i = j;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| line.to_string())
+}
+
+/// 裸词命中判定（TCB-2026-32 整改）。
+///
+/// `async` / `await` 作为裸词 needle 在普通子串匹配下会被
+/// "asynchronous" / "awaiting" 等英文单词误命中（假阳性）。命中后检查
+/// 前后字符均非 ASCII 字母——真正使用 async/await 关键字时两侧是
+/// 空白/符号/标点（含 `.await` 后缀调用形式）。去空白口径下 `async fn`
+/// 合并为 `asyncfn`，词界检查自然拒绝该合并词——但原文口径已保证
+/// `async fn` 照常命中，两口径协同无漏报。其余 needle 走普通子串匹配。
+fn bare_word_hit(hay: &str, needle: &str) -> bool {
+    if needle != "async" && needle != "await" {
+        return hay.contains(needle);
+    }
+    let hb = hay.as_bytes();
+    let mut from = 0usize;
+    while let Some(pos) = hay[from..].find(needle) {
+        let p = from + pos;
+        let before_ok = p == 0 || !hb[p - 1].is_ascii_alphabetic();
+        let end = p + needle.len();
+        let after_ok = end >= hb.len() || !hb[end].is_ascii_alphabetic();
+        if before_ok && after_ok {
+            return true;
+        }
+        from = p + 1;
+    }
+    false
+}
+
 /// 剥离行首属性语法 `#![...]` / `#[...]`（TCB-2026-25 整改）。
 ///
 /// 括号深度感知：自行首 `#`（可选 `!`）后的 `[` 起计数嵌套 `[`/`]`，配平为 0
@@ -672,8 +812,13 @@ fn main() -> ExitCode {
                 if (label.starts_with("S5.2") || label.starts_with("G8")) && is_fact_rs {
                     continue;
                 }
-                let squeezed = squeeze_ws(scan_src);
-                if scan_src.contains(needle) || squeezed.contains(needle) {
+                // 同行块注释剥离 (TCB-2026-32 整改): `/* conditional */` 等
+                // 注释示例文字不再误报; 字符串感知防漏报, 跨行未闭合保守整行。
+                let stripped = strip_inline_block_comments(scan_src);
+                let squeezed = squeeze_ws(&stripped);
+                // 裸词词界判定 (TCB-2026-32 整改): async/await 不再被
+                // "asynchronous"/"awaiting" 等英文单词误命中。
+                if bare_word_hit(&stripped, needle) || bare_word_hit(&squeezed, needle) {
                     violations.push((
                         path.clone(),
                         label.to_string(),
@@ -997,5 +1142,54 @@ mod tests {
         );
         // 未闭合属性 → None → 调用方按原文匹配 (fail-closed)
         assert_eq!(strip_leading_attr("#[doc = \"unterminated"), None);
+    }
+
+    #[test]
+    fn test_strip_inline_block_comments() {
+        // 同行自闭合块注释 → 剥离, 注释内示例文字不再误报 (TCB-2026-32)
+        let s = strip_inline_block_comments("let x = 1; /* conditional */ let y = 2;");
+        assert!(!s.contains("conditional"), "got: {}", s);
+        assert!(s.contains("let y = 2;"));
+        // 嵌套块注释配平剥离
+        let s = strip_inline_block_comments("fn f() {} /* a /* b */ c */ fn g() {}");
+        assert!(!s.contains(" /* "), "got: {}", s);
+        // 字符串感知: 字符串内 /* 不是注释起点 (防伪起点吃真代码 → 漏报)
+        let s = strip_inline_block_comments("let s = \"a/*b\"; v.unwrap();");
+        assert!(s.contains("v.unwrap();"), "got: {}", s);
+        // 原始字符串 r#...# 内 /* 不起注释
+        let s = strip_inline_block_comments("let s = r#\"/*\"#; v.unwrap();");
+        assert!(s.contains("v.unwrap();"), "got: {}", s);
+        // 常规字符串转义 \" 跳过
+        let s = strip_inline_block_comments("let s = \"say \\\"hi\\\"\"; v.unwrap();");
+        assert!(s.contains("v.unwrap();"), "got: {}", s);
+        // 未闭合字符串 → 整行保守 (fail-closed)
+        assert_eq!(
+            strip_inline_block_comments("let s = \"unterminated /* x"),
+            "let s = \"unterminated /* x"
+        );
+        // 跨行块注释首行 → 整行保守 (fail-closed)
+        assert_eq!(
+            strip_inline_block_comments("fn f() { /* tail comment"),
+            "fn f() { /* tail comment"
+        );
+        // 字符串内容原样保留 (字符串内命中是设计接受的误报)
+        let s = strip_inline_block_comments("let a = \"keep\"; /* drop */ let b = \"kept\";");
+        assert!(s.contains("\"keep\"") && s.contains("\"kept\""), "got: {}", s);
+    }
+
+    #[test]
+    fn test_bare_word_hit() {
+        // 裸词词界: "asynchronous"/"awaiting" 不再误命中 (TCB-2026-32)
+        assert!(!bare_word_hit("this is asynchronous work", "async"));
+        assert!(!bare_word_hit("awaiting result", "await"));
+        // 真实关键字形态照常命中 (含 .await 后缀形式)
+        assert!(bare_word_hit("async fn f() {}", "async"));
+        assert!(bare_word_hit("f().await", "await"));
+        assert!(bare_word_hit("async move {}", "async"));
+        // 去空白口径: asyncfn 合并词被词界检查拒绝 (原文口径保证 async fn 命中)
+        assert!(!bare_word_hit("asyncfn", "async"));
+        // 非 bare 词 needle 走普通 contains
+        assert!(bare_word_hit("x.unwrap(", ".unwrap("));
+        assert!(!bare_word_hit("x.unwrap_or(1)", ".unwrap("));
     }
 }
