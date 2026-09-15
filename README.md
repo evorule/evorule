@@ -339,9 +339,11 @@ cargo test -p evorule-governance
 cargo test -p evorule-cli
 ```
 
-### Change-governance gate
+### Policy-layer check
 
-This repo enables a `build.rs` change-governance gate: every build automatically checks the registration status in `CHANGE_REQUEST.md` and policy-layer anti-patterns. All four crates print `变更治理门禁 PASSED` / `策略层检测 PASSED` (change-governance gate passed / policy-layer check passed).
+Each build runs a `build.rs` policy-layer anti-pattern check (always on, no bypass valve): policy code such as control-flow instruction names must never leak into the mechanism layer. All four crates print `策略层检测 PASSED` (policy-layer check passed).
+
+Change-request self-check: the `CHANGE_REQUEST.md` registration discipline remains in force, but its field validation is a maintainer-local git pre-commit hook, **not** a published build gate — it is an engineering self-check reminder, never an anti-forgery mechanism (TCB-2026-29).
 
 ---
 
@@ -425,7 +427,7 @@ evorule/
 │       ├── signing.rs            # signature verification
 │       └── error.rs              # CliError + exit-code mapping
 │
-├── CHANGE_REQUEST.md             # change request registry (build gate checks)
+├── CHANGE_REQUEST.md             # change request registry (self-checked locally before commit)
 ├── CHANGELOG.md                  # version history
 ├── LICENSE                       # AGPL-3.0-or-later
 └── README.md                     # this file
@@ -474,7 +476,7 @@ evorule/
 5. Open a Pull Request on Gitee
 
 **Change requirements**:
-- Every change must be registered in `CHANGE_REQUEST.md` (enforced by the build gate)
+- Every change must be registered in `CHANGE_REQUEST.md` (self-checked locally before commit; the field check is a maintainer-local hook, not a published build gate)
 - New features must ship with tests
 - No `unsafe` (forbidden in tcb/governance/cli; only allowed under the `ffi` feature in reactor)
 - No silent pass-through — every error path must raise explicitly
@@ -828,9 +830,11 @@ cargo test -p evorule-governance
 cargo test -p evorule-cli
 ```
 
-### 变更治理门禁
+### 策略层检测
 
-本仓库启用 build.rs 变更治理门禁：每次构建自动检查 `CHANGE_REQUEST.md` 登记状态与策略层反模式。四 crate 构建均输出 `变更治理门禁 PASSED` / `策略层检测 PASSED`。
+每次构建执行 build.rs 策略层反模式检测（无阀常开，不设旁路）：conditional / while_loop / sequence 等控制流指令名等策略层代码禁止混入机制层。四 crate 构建均输出 `策略层检测 PASSED`。
+
+变更请求（CHANGE_REQUEST.md）登记纪律保持不变；其字段自查由维护者本地 git pre-commit hook 执行，**不作为随仓发布的构建门禁**——这是工程质量自查提醒，不是防伪造审查机制（TCB-2026-29 定性）。
 
 ---
 
@@ -914,7 +918,7 @@ evorule/
 │       ├── signing.rs            # 签名验证
 │       └── error.rs              # CliError + 退出码映射
 │
-├── CHANGE_REQUEST.md             # 变更请求登记（构建门禁检查）
+├── CHANGE_REQUEST.md             # 变更请求登记（提交前本地自查）
 ├── CHANGELOG.md                  # 版本历史
 ├── LICENSE                       # AGPL-3.0-or-later
 └── README.md                     # 本文件
@@ -963,7 +967,7 @@ evorule/
 5. 在 Gitee 创建 Pull Request
 
 **变更要求**：
-- 所有变更必须在 `CHANGE_REQUEST.md` 登记（构建门禁强制检查）
+- 所有变更必须在 `CHANGE_REQUEST.md` 登记（提交前本地自查；字段校验为维护者本地 hook，非随仓发布的构建门禁）
 - 新增功能必须附带测试
 - 不得引入 unsafe（tcb/governance/cli forbid；reactor 仅限 ffi feature）
 - 不得引入静默通过——任何错误路径必须显式报错

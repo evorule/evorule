@@ -190,7 +190,7 @@ If a build is failing and you believe the gate is wrong, the question
 to ask is not "can I bypass it" but "does the spec need updating". If
 the spec needs updating, update it **first**, then update `build.rs`.
 
-**L1b 变更治理门禁 (v0.3.2 新增)**: 除 L1a 字面量门禁外, `build.rs` 还执行 CHANGE_REQUEST.md 校验(必须存在且审查状态为"已批准"/"紧急通过")和策略层反模式检测。可用 `EVORULE_SKIP_CR_GATE=1` 跳过(仅限本地开发)。
+**L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**: 除 L1a 字面量门禁外, `build.rs` 还执行策略层反模式检测（无阀常开）。旧 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已移出公开仓, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。
 
 **`verify_hash_chain` 已删除 (v0.3.2)**: 原函数始终返回 `true` 是"假验证"陷阱,已彻底删除。替代方案:用 `compute_chain_hash` 重算后与存储的链哈希比对,或用 `verify-chain` 命令读取带哈希字段的 WAL 并逐一校验。
 

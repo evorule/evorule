@@ -187,6 +187,7 @@ let verified = auditor.verify_chain()?;
 - **规则校验行为变更**: 元指令白名单修正为 6 种（branch/set/push/io_request/collect/merge），移除误混的 noop/increment/decrement；MAX_NESTING_DEPTH 8→64；set 非法 operation 提升为 error；merge 新增 tool_result/tool_results 校验
 - **Fact 类型映射修正**: 移除 ControlSignal（Fact 枚举无此变体），新增 Stable（终止事实）
 - **build.rs 新增 L1b 变更治理门禁**: CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"；新增策略层反模式检测
+- > **现状注记（TCB-2026-29 整改, 2026-09-15）**：上述 CR 构建校验属工程质量自查纪律（非防伪造审查机制），已从 build.rs 移出公开仓，`EVORULE_SKIP_CR_GATE` 随之删除；自查由维护者本地 git pre-commit hook 承接。策略层检测保留且无阀常开。历史条目按当时事实保留。
 
 ## v0.6.0 更新
 

@@ -24,7 +24,7 @@ body:
       options:
         - 仅文档 / 流程
         - 单一 crate 内部
-        - 跨 crate (需 CHANGE_REQUEST 门禁)
+        - 跨 crate (需 CHANGE_REQUEST 登记)
         - 公共 API / 协议 (需谨慎)
     validations:
       required: true

@@ -44,6 +44,7 @@
 - **字面量门禁空格旁路封堵（TCB-2026-24）**：`x.unwrap ()` / `Hash Map` 等插空写法在纯原文子串匹配下漏检。四仓 build.rs 现对每行同时按原文与去空白文本匹配，任一命中即拦截；注释/属性行判定仍用原文。四仓 build.rs 各新增 `test_squeeze_ws_catches_whitespace_bypass` 单元测试
 - **策略层检测撤测试豁免（TCB-2026-28）**：策略层反模式检测旧实现先「剥离 `mod tests` 再扫」，既留绕过面（注释伪装 `mod tests`、`mod tests_foo` 命名误吞整块），又给策略层概念留了测试区藏身处。现改为扫描 `src/` **全文件**（含测试模块——测试代码同为机制层，须守同一纪律），朴素行级剥离函数 `strip_test_modules` 随之成为死代码、四仓一并删除。自查机制不给自己留豁免
 - **unsafe 属性行整体豁免封堵（TCB-2026-25）**：字面量门禁对 `unsafe` 模式旧实现把 `#[`/`#!` 开头行**整体跳过**，`#[inline] unsafe fn` 借属性前缀逃逸检测。现改为剥离行首 `#![...]`/`#[...]` 属性语法（方括号深度感知）后对余下内容匹配——`#[forbid(unsafe_code)]` / `#![deny(unsafe_code)]` 等纯属性行剥离后为空、不误报；属性未闭合保守按原文整行匹配（fail-closed）。tcb/reactor 两仓同改（governance/cli 不扫 unsafe、无此豁免），各新增 `test_strip_leading_attr` 单元测试
+- **CR 构建校验移出公开仓，策略层检测无阀常开（TCB-2026-29/-27，裁定⑤⑥）**：旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律（提交前停下来自查的提醒），从来不是防伪造审查机制；公开形态易引发「伪门禁」质疑，故从四仓 build.rs 中彻底移除，`EVORULE_SKIP_CR_GATE` 环境变量随之删除。策略层反模式检测改为**无阀常开**——机制-策略分离是设计不变量，不设旁路环境变量。CR 自查职责由维护者本地 git pre-commit hook 承接（hook 脚本与模板存维护者本地工具区，不随仓库/发布公开）；CHANGE_REQUEST.md 登记文件与登记纪律本身不变。公开仓 `.github/CHANGE_REQUEST_TEMPLATE.md` 删除，根 README / GOVERNANCE.md / GATE_REFERENCE.md / 四仓 SPEC·README / `.github` Issue·PR 模板同批更新口径，历史版本条目按当时事实保留并附现状注记
 
 ---
 

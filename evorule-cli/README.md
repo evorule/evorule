@@ -649,6 +649,7 @@ CI 双轨并行:Gitee Go(`.gitee-ci/`)+ GitHub Actions(`.github/workflows/`),Git
 - **`validate` 元指令白名单修正**: 仅 6 种真元指令（branch/set/push/io_request/collect/merge）。noop/increment/decrement 是指令层类型，不是元指令，不得混入白名单
 - **build.rs 新增 L1b 变更治理门禁**: CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"；新增策略层反模式检测
 - **`EVORULE_SKIP_CR_GATE=1`** 环境变量可跳过 L1b 变更治理门禁（仅限本地开发）
+- > **现状注记（TCB-2026-29 整改, 2026-09-15）**：上述 CR 构建校验属工程质量自查纪律（非防伪造审查机制），已从 build.rs 移出公开仓，`EVORULE_SKIP_CR_GATE` 随之删除；自查由维护者本地 git pre-commit hook 承接。策略层检测保留且无阀常开。历史条目按当时事实保留。
 
 ## v0.6.0 更新
 

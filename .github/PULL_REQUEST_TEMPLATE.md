@@ -1,7 +1,7 @@
 # Pull Request
 
 ## 变更说明
-<!-- 简述本次 PR 改了什么、为什么。跨 crate 改动请先走 CHANGE_REQUEST 门禁。 -->
+<!-- 简述本次 PR 改了什么、为什么。跨 crate 改动请先完成 CHANGE_REQUEST 登记。 -->
 
 ## 关联
 - 关联 Issue / CHANGE_REQUEST: #

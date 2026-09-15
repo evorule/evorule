@@ -226,6 +226,7 @@ evorule_reactor_free(reactor);
 - **新增 `io_context` 模块**: CallerRole / IoCallContext / CallerRoleResolver（I/O 调用上下文与角色解析）
 - **build.rs 新增 L1b 变更治理门禁**: CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"；新增策略层反模式检测；三仓（evorule-tcb/reactor/governance）build.rs 保持同一份内联副本实现
 - **`EVORULE_SKIP_CR_GATE=1`** 环境变量可跳过 L1b 变更治理门禁（仅限本地开发）
+- > **现状注记（TCB-2026-29 整改, 2026-09-15）**：上述 CR 构建校验属工程质量自查纪律（非防伪造审查机制），已从 build.rs 移出公开仓，`EVORULE_SKIP_CR_GATE` 随之删除；自查由维护者本地 git pre-commit hook 承接。策略层检测保留且无阀常开。历史条目按当时事实保留。
 
 ## 设计文档参考
 
