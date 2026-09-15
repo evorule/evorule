@@ -363,7 +363,8 @@ evorule-cli 的 `build.rs` 强制执行 G8 + F11,**与 evorule-reactor / evorule
 **紧急跳过**(不推荐):
 
 ```bash
-EVORULE_SKIP_GATE=1 cargo build
+EVORULE_SKIP_GATE=1 cargo build       # 阀值仅 1/true 生效 (0/空/其他值 = 门禁照常执行, fail-closed)
+EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 warning)
 ```
 
 ## 规则文件格式

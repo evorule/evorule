@@ -36,6 +36,14 @@
 
 ---
 
+## [Unreleased]
+
+### 🐛 修复
+
+- **门禁跳过阀 fail-closed 化（TCB-2026-26）**：`EVORULE_SKIP_GATE` / `EVORULE_SKIP_CR_GATE` 旧实现用 `is_ok()` 判定，`=0`/空串/乱值也会意外跳过门禁（fail-open）。现改为仅 `1`/`true`（trim 后大小写不敏感）生效，其余任何值门禁照常执行并发出 warning；四仓（tcb/reactor/governance/cli）build.rs 同步同改。附带 `EVORULE_SKIP_REASON` 跳过理由登记——跳过生效时未登记理由将出现 warning（大声原则：任何跳过必须可追溯）
+
+---
+
 ## [0.6.0] - 2026-09-14
 
 ### ⚠️ Breaking Change（破坏性变更）

@@ -47,9 +47,10 @@
 ```bash
 EVORULE_SKIP_GATE=1 cargo build       # 跳过 L1a 字面量门禁
 EVORULE_SKIP_CR_GATE=1 cargo build    # 跳过 L1b 变更治理门禁 (仅限本地开发, v0.3.2 新增)
+EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 warning)
 ```
 
-跳过必须临时且有书面理由。**永不永久禁用。** 当门控触发时, 正确做法几乎总是:
+阀值仅 `1`/`true` 生效 (`0`/空/其他值 = 门禁照常执行, fail-closed)。跳过必须临时且有书面理由。**永不永久禁用。** 当门控触发时, 正确做法几乎总是:
 将违规字面量移入 `core_eval.json` 并通过元指令层引用, 或重命名它。
 
 ### L1b 变更治理门禁 (v0.3.2 新增)

@@ -628,7 +628,8 @@ pub enum TcbError {
 ### 9.3 紧急跳过（不推荐）
 
 ```bash
-EVORULE_SKIP_GATE=1 cargo build
+EVORULE_SKIP_GATE=1 cargo build       # 阀值仅 1/true 生效 (0/空/其他值 = 门禁照常执行, fail-closed)
+EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 warning)
 ```
 
 跳过必须临时且有书面理由，永不永久禁用。任何违规立即构建失败（exit 1），违规行号 + 标签全打印。
