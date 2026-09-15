@@ -178,7 +178,7 @@ all = { level = "warn", priority = -1 }
 
 ### 3.2 各 crate 启用
 
-`evorule-tcb/Cargo.toml`, `evorule-reactor/Cargo.toml`, `evorule-governance/Cargo.toml`, `evorule-cli/Cargo.toml`:
+`evorule-tcb/Cargo.toml`, `evorule-reactor/Cargo.toml`, `evorule-governance/Cargo.toml`, `evorule-cli/Cargo.toml` 四仓统一（TCB-2026-31 整改：tcb 旧本地 `[lints.rust]`/`[lints.clippy]` 与 workspace 同值但双份维护，已收敛为继承）：
 
 ```toml
 [lints]
