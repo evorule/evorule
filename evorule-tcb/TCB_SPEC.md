@@ -344,7 +344,8 @@ branch:
 ### 5.4 紧急跳过
 
 ```bash
-EVORULE_SKIP_GATE=1 cargo build
+EVORULE_SKIP_GATE=1 cargo build       # 阀值仅 1/true 生效 (0/空/其他值 = 门禁照常执行, fail-closed)
+EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 warning)
 ```
 
 必须临时跳过，并在 commit message 中写明书面理由，永不永久禁用。

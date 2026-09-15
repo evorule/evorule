@@ -85,7 +85,7 @@
 **豁免机制**:
 - `strip_test_mod()`: 剥离 `#[cfg(test)] mod tests { ... }` 块, 不扫描测试代码
   - **状态机生命周期判别（2026-08-30 修复）**: `char_lit_starts()` 在撇号处判别字符字面量与生命周期——`'` 后跟 `\` 或"单字符+`'`"是字面量（进入字符态），`'ident` 是生命周期（跳过标识符，不进入字符态）。旧实现把 `'static` 误判为字符态开头，吞掉直到下一个 `'` 之间的所有 `{}`，导致 match_brace 永不闭合、tests 模块整体不被剥离、门禁对测试代码全量误报。修复已同步五仓（tcb/reactor/governance/cli/server），每仓 build.rs 内含 3 个单元测试（cargo test 不运行 build script 测试，用探针 crate 以 lib.rs 方式加载真实 build.rs 运行）
-- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁, 编译警告
+- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26), 编译警告 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
 - `EVORULE_SKIP_CR_GATE=1`: 跳过 L1b 变更治理门禁 (仅限本地开发, v0.3.2 新增)
 
 ### 2.2 evorule-reactor — 14 模式 (G8 + F11 + S5.2)
@@ -112,7 +112,7 @@
 **豁免机制**:
 - `strip_test_mod()`: 剥离测试模块
 - `fact.rs` 豁免: G8/S5.2 模式在 `fact.rs` 豁免 (IoType/ControlFlowType 字符串映射唯一真值来源)
-- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁
+- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
 - `EVORULE_SKIP_CR_GATE=1`: 跳过 L1b 变更治理门禁 (v0.3.2 新增)
 
 ### 2.3 evorule-governance — 14 模式 (跟 tier1 相同)
@@ -135,7 +135,7 @@
 | F11-expect        | `.expect(`             | G1 panic-prone          |
 
 **豁免**: `VALID_TRANSFORM_TYPES` 白名单 (允许 G8 控制流指令名出现在类型白名单定义中)
-- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁
+- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
 - `EVORULE_SKIP_CR_GATE=1`: 跳过 L1b 变更治理门禁 (v0.3.2 新增)
 
 **注意**: evorule-cli 是 binary crate, 不需要 `F11-panic` 模式 (tier1/tier2 的 lib crate 才需要检测 `panic!(`, 因为 lib 可能被多处调用, panic 影响范围更大; binary 直接 panic 等于进程退出, 由 `Result<>` 链强制保证)。

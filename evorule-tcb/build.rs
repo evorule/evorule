@@ -33,7 +33,9 @@
 //! ```bash
 //! EVORULE_SKIP_GATE=1 cargo build       # 跳过 L1 字面量门禁
 //! EVORULE_SKIP_CR_GATE=1 cargo build    # 跳过 L2 变更治理门禁 (仅限本地开发)
+//! EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 warning)
 //! ```
+//! 阀值仅 `1`/`true` 生效 (`0`/空/其他值 = 门禁照常执行, fail-closed)。
 //! 跳过必须临时且有书面理由, 永不永久禁用。
 
 use std::fs;
@@ -76,6 +78,39 @@ const FORBIDDEN: &[(&str, &str)] = &[
     ("T14-await", "await"),
     ("T14-spawn", "spawn("),
 ];
+
+/// 跳过类环境变量解析（fail-closed 阀值语义，TCB-2026-26 整改）。
+///
+/// 仅 `1` / `true`（trim 后、大小写不敏感）视为请求跳过；其余任何值
+/// （`0`、空串、乱值）一律不跳过——门禁照常执行，并发出 warning 提示
+/// 该值被忽略。旧实现 `is_ok()` 把 `=0`/空值也当跳过，属意外 fail-open。
+///
+/// 附带跳过理由登记（EVORULE_SKIP_REASON）：跳过生效时若未设置非空理由，
+/// 追加 warning——「大声原则」：任何跳过都必须可追溯。
+fn skip_requested(var: &str) -> bool {
+    match std::env::var(var) {
+        Ok(v) => {
+            let t = v.trim().to_ascii_lowercase();
+            if t == "1" || t == "true" {
+                match std::env::var("EVORULE_SKIP_REASON") {
+                    Ok(r) if !r.trim().is_empty() => {
+                        println!("cargo:warning={var} skip reason: {r}");
+                    }
+                    _ => {
+                        println!(
+                            "cargo:warning={var} 已跳过但未登记理由 (EVORULE_SKIP_REASON)——跳过须有书面理由"
+                        );
+                    }
+                }
+                true
+            } else {
+                println!("cargo:warning={var}={v} 非肯定值 (仅 1/true 生效)，门禁照常执行");
+                false
+            }
+        }
+        Err(_) => false,
+    }
+}
 
 /// 从源码中剥离 `#[cfg(test)] mod tests { ... }` 块体。
 ///
@@ -371,7 +406,7 @@ fn is_test_tolerant(label: &str) -> bool {
 
 fn main() -> ExitCode {
     // 变更治理门禁 (L2): CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"
-    if std::env::var("EVORULE_SKIP_CR_GATE").is_ok() {
+    if skip_requested("EVORULE_SKIP_CR_GATE") {
         println!(
             "cargo:warning=evorule-tcb change governance gate SKIPPED via EVORULE_SKIP_CR_GATE"
         );
@@ -389,7 +424,7 @@ fn main() -> ExitCode {
         }
     }
 
-    if std::env::var("EVORULE_SKIP_GATE").is_ok() {
+    if skip_requested("EVORULE_SKIP_GATE") {
         println!("cargo:warning=evorule-tcb compile-time gate SKIPPED via EVORULE_SKIP_GATE");
         return ExitCode::SUCCESS;
     }
