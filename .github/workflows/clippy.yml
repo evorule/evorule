@@ -1,0 +1,43 @@
+# clippy 静态检查门禁 (独立 workflow)
+#
+# 覆盖:
+# - workspace 全 target clippy, 严格模式 -D warnings
+# - 应用 [workspace.lints.clippy] 规则:
+#   unwrap_used / expect_used / panic / panic_in_result_fn 全部 deny (fail-closed)
+# - 与本地 `cargo clippy --workspace --all-targets -- -D warnings` 行为一致
+#
+# 设计说明:
+# - 使用 rust-toolchain.toml 锁定的 1.97.1 (stable 通道), 组件含 clippy
+# - 独立于 ci.yml 运行, push/PR 到 main 时并行触发
+name: Clippy
+
+on:
+  push:
+    branches: [main, master, "release/**"]
+  pull_request:
+    branches: [main, master]
+  # 允许手动触发
+  workflow_dispatch:
+
+# 显式最小权限 (Scorecard Token-Permissions): 仅需只读
+permissions: read-all
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  clippy:
+    name: clippy (workspace, -D warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      # 缓存 cargo 构建产物 (与 ci.yml 共享缓存 key)
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: . -> target
+
+      - name: clippy (workspace 全 target, -D warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
