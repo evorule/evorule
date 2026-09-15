@@ -15,7 +15,7 @@
 - **外部依赖**:0（`Cargo.toml` `[dependencies]` 为空；`Cargo.lock` 确认无第三方 crate）
 - **测试**:`cargo test` 全量 PASS / 0 failed（2026-09-14 v0.6.0 全量回归，CI 常驻）
 - **Clippy**:零警告(`deny(unwrap_used/expect_used/indexing_slicing/panic)`)
-- **build.rs 编译时门禁**:23 个禁用模式 (T4/T5/T6/T8/T9/T10/T11/T12/T14) + BOM 检测 编译期强制,PASSED
+- **build.rs 编译时门禁**:24 个禁用模式 (T 编号 + F11 panic-prone 组) + BOM 检测 编译期强制,PASSED
 - **协议**:AGPL-3.0-or-later(代码) + CC0-1.0(`core_eval.json` 公共领域)
 
 > **Kani 形式化验证**:34 个 `#[kani::proof]` 分 A/B 两档(v0.6.0 随 69 号清理退役 P15/P16/P17,原 37 个)——A 档 14 个 v0.6.0 重跑(2026-09-14,`25c0cc0`)全 PASS 并入 CI 闸门;B 档 20 个实测 600s/3600s 超时,判定当前不可运行(proptest 间接覆盖)。详见 [`TCB_SPEC.md` §六](TCB_SPEC.md#六形式化验证-kani-proof) 与 [`docs/KANI.md`](docs/KANI.md);状态唯一权威:[`verification/STATUS.md`](../verification/STATUS.md)。
@@ -50,7 +50,7 @@
 | 纯函数     | 所有公开函数无副作用；相同输入 → 相同输出                                                       |
 | 确定性     | `BTreeMap` 保证迭代顺序；`Vec` 顺序明确；无 `Float` 类型                                        |
 | 永不 panic | 路径解析返回 `Option`；`checked_add/checked_sub`；递归深度限制；Clippy lint 强制禁用 panic 模式 |
-| 可审计     | 整数为 `i64`；无 `unsafe`；无浮点；`core_eval.json` 编译时结构校验                               |
+| 可审计     | 整数为 `i64`；无 `unsafe`；无浮点；`core_eval` 运行时结构校验（规则数上限 / 路径解析 / 未知指令报错；`core_eval.json` 由装载层在运行时读入并解析后传入，TCB 无编译期校验） |
 
 ### 快速开始（3 行）
 
@@ -236,7 +236,7 @@ call_service   → io_request(工具) → 恢复：set service_result（单轮�
 ```text
 evorule-tcb/
 ├── Cargo.toml      # 零依赖配置 + std feature
-├── build.rs        # 编译时门禁（23 禁用模式 + BOM 检测）
+├── build.rs        # 编译时门禁（24 禁用模式 + BOM 检测）
 ├── core_eval.json  # TCB 宪法（业务指令 → 元指令映射，含 I/O 双路径）
 ├── src/
 │   ├── lib.rs      # 模块声明 + lint 配置 + 公开 API 重导出
@@ -593,7 +593,7 @@ pub enum TcbError {
 
 `evorule-tcb` 的源码审计通过以下方式进行:
 
-1. **build.rs 编译时门禁** — 23 个禁用模式 (T4/T5/T6/T8/T9/T10/T11/T12/T14) 强制,
+1. **build.rs 编译时门禁** — 24 个禁用模式 (T 编号 + F11 panic-prone 组) 强制,
    详见 [§九 build.rs 门禁](#九-buildrs-编译时门禁) 与 [`TCB_SPEC.md`](TCB_SPEC.md)。
 2. **属性测试** — 确定性专项测试（同一输入重复执行一致性、状态隔离、I/O 结果清除）已纳入
    [`tests/integration_test.rs`](tests/integration_test.rs)。
@@ -603,14 +603,15 @@ pub enum TcbError {
 
 ## 九、build.rs 编译时门禁
 
-### 9.1 23 个禁用模式
+### 9.1 24 个禁用模式
 
 [build.rs](build.rs) 扫描 `src/**/*.rs`（测试模块自动剥离后扫描），禁止以下破坏确定性的构造：
 
 | 规则          | 禁止模式                                              | 破坏点                       |
 | ------------- | ----------------------------------------------------- | ---------------------------- |
 | T8 (哈希容器) | `HashMap`, `HashSet`                                  | 迭代顺序非确定               |
-| T9/T11 (panic)| `.unwrap(`, `.expect(`, `debug_assert!`               | 可 panic                    |
+| T9/F11 (panic)| `.unwrap(`, `.expect(`, `panic!(`                     | 可 panic                    |
+| T11 (assert)  | `debug_assert!`                                       | 可 panic（发布构建消失）     |
 | T10 (unsafe)  | `unsafe`                                              | 内存非确定行为               |
 | T12 (浮点)    | `f32`, `f64`, `Float`                                 | 跨平台非确定                 |
 | T5 (系统时间) | `SystemTime`, `Instant`                               | 依赖当前时间                 |
@@ -618,7 +619,7 @@ pub enum TcbError {
 | T4 (I/O)      | `std::fs::`, `std::net::`, `std::io::`, `File::open`, `std::process::` | 依赖外部环境 |
 | T14 (线程异步)| `std::thread`, `tokio::`, `async`, `await`, `spawn(`  | 并发非确定                   |
 
-- **测试模块剥离**：T8/T9 是 test-tolerant（`#[cfg(test)] mod tests` 内允许，通过 lib.rs lints 控制）；T10/T11 在所有位置强制。
+- **测试模块剥离**：T8/T9/F11-panic 是 test-tolerant（`#[cfg(test)] mod <ident>` 任意命名测试模块内允许，TCB-2026-35）；T10/T11 等其余标签在所有位置强制。
 - **注释跳过**：`//` 行注释内的模式被跳过；行内注释（代码部分含模式）仍被拦截。
 
 ### 9.2 BOM 检测
