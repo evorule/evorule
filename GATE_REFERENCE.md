@@ -102,7 +102,7 @@
   - **状态机生命周期判别（2026-08-30 修复）**: `char_lit_starts()` 在撇号处判别字符字面量与生命周期——`'` 后跟 `\` 或"单字符+`'`"是字面量（进入字符态），`'ident` 是生命周期（跳过标识符，不进入字符态）。旧实现把 `'static` 误判为字符态开头，吞掉直到下一个 `'` 之间的所有 `{}`，导致 match_brace 永不闭合、tests 模块整体不被剥离、门禁对测试代码全量误报。修复已同步五仓（tcb/reactor/governance/cli/server），每仓 build.rs 内含 3 个单元测试（cargo test 不运行 build script 测试，用探针 crate 以 lib.rs 方式加载真实 build.rs 运行）
 - `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁, 编译警告 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
 
-### 2.2 evorule-reactor — 14 模式 (G8 + F11 + S5.2)
+### 2.2 evorule-reactor — 15 模式 (G8 + F11 + S5.2 + T10)
 
 实施文件: `D:\evorule\evorule-reactor\build.rs` (扫描 `src/` 全部 `.rs`)
 
@@ -122,18 +122,20 @@
 | S5.2-teacher      | `"teacher"`            | §5.2 角色硬编码        |
 | S5.2-call_external | `"call_external"`    | §5.2 I/O 指令硬编码    |
 | S5.2-call_service | `"call_service"`      | §5.2 I/O 指令硬编码    |
+| T10-unsafe-keyword | `unsafe`             | G2 unsafe 关键字 (T10) |
 
 **豁免机制**:
-- `strip_test_mod()`: 剥离测试模块
+- `strip_test_mod()`: 剥离 `#[cfg(test)] mod <ident>` 任意命名测试模块 (TCB-2026-35)
 - 属性行剥离匹配 (TCB-2026-25): unsafe 模式对 `#[`/`#!` 开头行剥离行首属性语法 (方括号深度感知) 后匹配余下内容——`#![deny(unsafe_code)]` 等纯属性行剥离后为空不误报; `#[inline] unsafe fn` 借道逃逸被拦截; 属性未闭合保守按原文匹配 (fail-closed)
+- T10 文件级豁免 (`T10_FILE_EXEMPT`): `ffi.rs` (文件级 `#![allow(unsafe_code)]` + 仅 `feature="ffi"` 编译) / `facts_log.rs` (`unsafe impl Sync` 由 `#[cfg(kani)]` + `#[allow(unsafe_code)]` 单点保护)——其余 src 文件裸 `unsafe` 一律拦截
 - `fact.rs` 豁免: G8/S5.2 模式在 `fact.rs` 豁免 (IoType/ControlFlowType 字符串映射唯一真值来源)
 - `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
 
-### 2.3 evorule-governance — 14 模式 (跟 tier1 相同)
+### 2.3 evorule-governance — 14 模式 (G8 + F11 + S5.2)
 
-实施文件: `D:\evorule\evorule-governance\build.rs` (跟 tier1 结构相同)
+实施文件: `D:\evorule\evorule-governance\build.rs` (扫描 `src/` 全部 `.rs`)
 
-**有意重复**: tier1/tier2 用同一组 14 模式, 保证两个反应器/治理层不会走偏。
+**有意重复**: governance 与 reactor 用同一组 14 模式 (3 G8 + 4 F11 + 7 S5.2, 无 T10), 保证反应器/治理层双层不走偏; 与 tcb (24 模式, 额外 T 编号扫描) 为有意差异, 见 §一 有意差异表。
 
 ### 2.4 evorule-cli — 7 模式 (G8 + F11)
 
@@ -147,11 +149,12 @@
 | F11-debug_assert  | `debug_assert!`        | G1 panic-prone          |
 | F11-unwrap        | `.unwrap(`             | G1 panic-prone          |
 | F11-expect        | `.expect(`             | G1 panic-prone          |
+| F11-panic         | `panic!(`              | G1 panic-prone          |
 
-**豁免**: `VALID_TRANSFORM_TYPES` 白名单 (允许 G8 控制流指令名出现在类型白名单定义中)
+**豁免**: 无业务字面量豁免 (阶段5 起零豁免——`VALID_TRANSFORM_TYPES` 已删除, 用 tier1 RuleValidator 替代; G8/F11 对 `src/**/*.rs` 非测试代码零容忍)
 - `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
 
-**注意**: evorule-cli 是 binary crate, 不需要 `F11-panic` 模式 (tier1/tier2 的 lib crate 才需要检测 `panic!(`, 因为 lib 可能被多处调用, panic 影响范围更大; binary 直接 panic 等于进程退出, 由 `Result<>` 链强制保证)。
+**注意**: cli 的 FORBIDDEN 清单**实有** `F11-panic` (TCB-2026-39 如实化)——旧版本文档称「binary crate 不需要 F11-panic」与实现矛盾。lib crate 检测 `panic!(` 的理由 (panic 影响调用方) 对 binary 同样成立: CLI 主路径 panic-prone 构造一样破坏 `Result<>` 错误链纪律, 由 `cargo:warning` 门禁在编译期拦截。
 
 ### 2.5 panic-prone 门控的跨仓一致性
 

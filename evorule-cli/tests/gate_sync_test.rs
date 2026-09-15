@@ -71,7 +71,10 @@ fn four_repo_shared_gate_fns_are_in_sync() {
             match fs::read_to_string(&path) {
                 Ok(s) => (name.to_string(), s),
                 Err(e) => {
-                    drifts.push(format!("[{name}] build.rs 不可读: {} ({e})", path.display()));
+                    drifts.push(format!(
+                        "[{name}] build.rs 不可读: {} ({e})",
+                        path.display()
+                    ));
                     (name.to_string(), String::new())
                 }
             }
@@ -80,7 +83,10 @@ fn four_repo_shared_gate_fns_are_in_sync() {
 
     let (baseline_name, baseline_src) = &sources[0];
 
-    for fn_name in LOCKED_FNS_ALL_FOUR.iter().chain(LOCKED_FNS_TCB_REACTOR.iter()) {
+    for fn_name in LOCKED_FNS_ALL_FOUR
+        .iter()
+        .chain(LOCKED_FNS_TCB_REACTOR.iter())
+    {
         let Some(baseline) = extract_fn(baseline_src, fn_name) else {
             drifts.push(format!("[{baseline_name}] 基准缺失共享函数 `{fn_name}`"));
             continue;
@@ -140,10 +146,7 @@ fn locked_fn_inventory_matches_reality() {
 /// workspace 根 = evorule-cli 的上一级（四仓 build.rs 均在 workspace 根下）。
 fn workspace_root() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .parent()
-        .unwrap_or(Path::new("."))
-        .to_path_buf()
+    manifest.parent().unwrap_or(Path::new(".")).to_path_buf()
 }
 
 /// 提取顶层函数体: 行首 `fn <name>`（行首至 fn 之间只允许空白），
