@@ -38,26 +38,11 @@ default = ["std"]
 # std 特性：启用标准库支持（用于测试和错误处理）
 std = []
 
-[lints.rust]
-# kani cfg 由 kani 工具链注入，Cargo 不识别，显式声明以抑制 warning
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
-
-[lints.clippy]
-# G1: panic-prone（build.rs L1 已守，clippy L2 双保险）
-unwrap_used = "deny"
-expect_used = "deny"
-panic = "deny"
-panic_in_result_fn = "deny"
-# F7/F8: 嵌套复杂度
-cognitive_complexity = { level = "warn", priority = -1 }
-# F9: 函数长度
-too_many_lines = { level = "warn", priority = -1 }
-# F10 部分: 类型复杂度
-type_complexity = { level = "warn", priority = -1 }
-# F6 部分: 模块导入图
-module_inception = "warn"
-# 通用代码质量（warn 级，不阻断 CI）
-all = { level = "warn", priority = -1 }
+# lints 统一继承 workspace (TCB-2026-31 整改): 旧本地 [lints.rust]/[lints.clippy]
+# 与 workspace 定义逐条同值但双份维护, 曾造成「四仓统一继承」文档声明失实。
+# 单一真值源 = 根 Cargo.toml [workspace.lints], 其余三仓同此。
+[lints]
+workspace = true
 
 [[bench]]
 name = "tcb_core"
