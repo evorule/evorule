@@ -408,19 +408,17 @@ fn main() -> ExitCode {
 
     let mut violations: Vec<(PathBuf, String, String)> = Vec::new();
 
-    let entries = match fs::read_dir(&src_dir) {
-        Ok(it) => it,
-        Err(e) => {
-            eprintln!("build.rs: cannot read src/: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
+    // L1a 必须递归: src/ 下任何层级的子模块同样受 TCB 红线约束。
+    // 此处与 reactor/governance/cli 三仓的 collect_rs_files 语义对齐
+    // (见 GATE_REFERENCE.md 跨仓同步契约)。文件列表按路径排序, 扫描顺序确定。
+    let mut l1a_files: Vec<PathBuf> = Vec::new();
+    collect_rs_files_for_strategy(&src_dir, &mut l1a_files);
+    if l1a_files.is_empty() {
+        eprintln!("build.rs: no .rs file found under {}", src_dir.display());
+        return ExitCode::FAILURE;
+    }
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("rs") {
-            continue;
-        }
+    for path in l1a_files {
         let mut raw = match fs::read_to_string(&path) {
             Ok(s) => s,
             Err(e) => {
@@ -845,7 +843,7 @@ fn detect_strategy_patterns(crate_name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 收集目录下所有 .rs 文件（用于策略检测）
+/// 收集目录下所有 .rs 文件（递归；供 L1a 字面量门禁与策略层检测共用）
 fn collect_rs_files_for_strategy(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;

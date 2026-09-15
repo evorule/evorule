@@ -23,7 +23,9 @@ use alloc::vec::Vec;
 use evorule_tcb::domain::{evaluate_domain, MAX_DOMAIN_DEPTH};
 use evorule_tcb::executor::{execute_meta_instruction, MetaInstructionResult, MAX_BRANCH_DEPTH};
 use evorule_tcb::path::resolve_path;
-use evorule_tcb::{execute_transition, JsonValue, ObjectMap, TcbError, TransitionResult, MAX_TRANSFORM_RULES};
+use evorule_tcb::{
+    execute_transition, JsonValue, ObjectMap, TcbError, TransitionResult, MAX_TRANSFORM_RULES,
+};
 
 use super::model;
 
@@ -86,11 +88,7 @@ fn shape_str_in(v: &JsonValue, what: &str, allowed: &[&str]) {
                     ok = true;
                 }
             }
-            assert!(
-                ok,
-                "结构自检失败 [{}]: 字符串值不在允许集合内",
-                what
-            );
+            assert!(ok, "结构自检失败 [{}]: 字符串值不在允许集合内", what);
         }
         None => panic!("结构自检失败 [{}]: 应为字符串", what),
     }
@@ -352,7 +350,11 @@ fn verify_evaluate_domain_eq_never_panics() {
         ("value", JsonValue::Integer(1)),
     ]);
     shape_str(shape_field(&domain, "domain", "type"), "domain.type", "eq");
-    shape_str(shape_field(&domain, "domain", "path"), "domain.path", "payload.x");
+    shape_str(
+        shape_field(&domain, "domain", "path"),
+        "domain.path",
+        "payload.x",
+    );
     shape_field(&domain, "domain", "value");
     shape_payload_leaf(&exec_state, "exec_state", "x");
     let _ = evaluate_domain(&domain, &exec_state);
@@ -371,7 +373,11 @@ fn verify_evaluate_domain_lt_never_panics() {
         ("value", JsonValue::Integer(1)),
     ]);
     shape_str(shape_field(&domain, "domain", "type"), "domain.type", "lt");
-    shape_str(shape_field(&domain, "domain", "path"), "domain.path", "payload.x");
+    shape_str(
+        shape_field(&domain, "domain", "path"),
+        "domain.path",
+        "payload.x",
+    );
     shape_field(&domain, "domain", "value");
     shape_payload_leaf(&exec_state, "exec_state", "x");
     let _ = evaluate_domain(&domain, &exec_state);
@@ -388,8 +394,16 @@ fn verify_evaluate_domain_exists_never_panics() {
         ("type", JsonValue::string("exists")),
         ("path", JsonValue::string("payload.x")),
     ]);
-    shape_str(shape_field(&domain, "domain", "type"), "domain.type", "exists");
-    shape_str(shape_field(&domain, "domain", "path"), "domain.path", "payload.x");
+    shape_str(
+        shape_field(&domain, "domain", "type"),
+        "domain.type",
+        "exists",
+    );
+    shape_str(
+        shape_field(&domain, "domain", "path"),
+        "domain.path",
+        "payload.x",
+    );
     shape_payload_leaf(&exec_state, "exec_state", "x");
     let _ = evaluate_domain(&domain, &exec_state);
     core::mem::forget(exec_state);
@@ -407,7 +421,11 @@ fn verify_evaluate_domain_instruction_never_panics() {
         ("type", JsonValue::string("instruction")),
         ("instruction_type", JsonValue::string("set")),
     ]);
-    shape_str(shape_field(&domain, "domain", "type"), "domain.type", "instruction");
+    shape_str(
+        shape_field(&domain, "domain", "type"),
+        "domain.type",
+        "instruction",
+    );
     shape_str(
         shape_field(&domain, "domain", "instruction_type"),
         "domain.instruction_type",
@@ -453,8 +471,16 @@ fn verify_evaluate_domain_not_never_panics() {
     ]);
     shape_str(shape_field(&domain, "domain", "type"), "domain.type", "not");
     let inner = shape_field(&domain, "domain", "inner");
-    shape_str(shape_field(inner, "domain.inner", "type"), "domain.inner.type", "exists");
-    shape_str(shape_field(inner, "domain.inner", "path"), "domain.inner.path", "payload.x");
+    shape_str(
+        shape_field(inner, "domain.inner", "type"),
+        "domain.inner.type",
+        "exists",
+    );
+    shape_str(
+        shape_field(inner, "domain.inner", "path"),
+        "domain.inner.path",
+        "payload.x",
+    );
     shape_payload_leaf(&exec_state, "exec_state", "x");
     let _ = evaluate_domain(&domain, &exec_state);
     core::mem::forget(exec_state);
@@ -472,8 +498,16 @@ fn verify_evaluate_domain_has_fields_never_panics() {
         ("path", JsonValue::string("payload.x")),
         ("fields", JsonValue::array(vec![JsonValue::string("flag")])),
     ]);
-    shape_str(shape_field(&domain, "domain", "type"), "domain.type", "has_fields");
-    shape_str(shape_field(&domain, "domain", "path"), "domain.path", "payload.x");
+    shape_str(
+        shape_field(&domain, "domain", "type"),
+        "domain.type",
+        "has_fields",
+    );
+    shape_str(
+        shape_field(&domain, "domain", "path"),
+        "domain.path",
+        "payload.x",
+    );
     let fields = shape_array(shape_field(&domain, "domain", "fields"), "domain.fields", 1);
     shape_str(&fields[0], "domain.fields[0]", "flag");
     shape_payload_leaf(&exec_state, "exec_state", "x");
@@ -496,7 +530,11 @@ fn verify_evaluate_domain_deterministic() {
     ]);
     let exec_state = model::concrete_exec_state();
     shape_str(shape_field(&domain, "domain", "type"), "domain.type", "eq");
-    shape_str(shape_field(&domain, "domain", "path"), "domain.path", "payload.x");
+    shape_str(
+        shape_field(&domain, "domain", "path"),
+        "domain.path",
+        "payload.x",
+    );
     shape_field(&domain, "domain", "value");
     shape_concrete_exec_state(&exec_state);
     let _ = evaluate_domain(&domain, &exec_state);
@@ -516,8 +554,7 @@ fn verify_domain_depth_limit() {
         ("path", JsonValue::string("payload.x")),
     ]);
     for _ in 0..(MAX_DOMAIN_DEPTH + 1) {
-        domain =
-            model::obj(vec![("type", JsonValue::string("not")), ("inner", domain)]);
+        domain = model::obj(vec![("type", JsonValue::string("not")), ("inner", domain)]);
     }
     let exec_state = model::concrete_exec_state();
     let mut cur = &domain;
@@ -559,8 +596,16 @@ fn verify_has_fields_empty_array() {
         "exec_state.payload.obj.tool_calls",
         0,
     );
-    shape_str(shape_field(&domain, "domain", "type"), "domain.type", "has_fields");
-    shape_str(shape_field(&domain, "domain", "path"), "domain.path", "__exec__.payload.obj");
+    shape_str(
+        shape_field(&domain, "domain", "type"),
+        "domain.type",
+        "has_fields",
+    );
+    shape_str(
+        shape_field(&domain, "domain", "path"),
+        "domain.path",
+        "__exec__.payload.obj",
+    );
     let fields = shape_array(shape_field(&domain, "domain", "fields"), "domain.fields", 1);
     shape_str(&fields[0], "domain.fields[0]", "tool_calls");
     // evaluate_domain 现返回 Result<bool, TcbError>（UV-147 fail-fast 语义）：
@@ -646,17 +691,11 @@ fn verify_branch_depth_limit() {
                 ),
                 (
                     "on_true",
-                    JsonValue::Array(vec![model::obj(vec![(
-                        "type",
-                        JsonValue::string("noop"),
-                    )])]),
+                    JsonValue::Array(vec![model::obj(vec![("type", JsonValue::string("noop"))])]),
                 ),
                 (
                     "on_false",
-                    JsonValue::Array(vec![model::obj(vec![(
-                        "type",
-                        JsonValue::string("noop"),
-                    )])]),
+                    JsonValue::Array(vec![model::obj(vec![("type", JsonValue::string("noop"))])]),
                 ),
             ]),
         ),
@@ -665,15 +704,31 @@ fn verify_branch_depth_limit() {
     shape_str(shape_field(&instr, "instr", "type"), "instr.type", "branch");
     let params = shape_field(&instr, "instr", "params");
     let domain = shape_field(params, "params", "domain");
-    shape_str(shape_field(domain, "params.domain", "type"), "params.domain.type", "exists");
-    shape_str(shape_field(domain, "params.domain", "path"), "params.domain.path", "x");
-    let on_true = shape_array(shape_field(params, "params", "on_true"), "params.on_true", 1);
+    shape_str(
+        shape_field(domain, "params.domain", "type"),
+        "params.domain.type",
+        "exists",
+    );
+    shape_str(
+        shape_field(domain, "params.domain", "path"),
+        "params.domain.path",
+        "x",
+    );
+    let on_true = shape_array(
+        shape_field(params, "params", "on_true"),
+        "params.on_true",
+        1,
+    );
     shape_str(
         shape_field(&on_true[0], "params.on_true[0]", "type"),
         "params.on_true[0].type",
         "noop",
     );
-    let on_false = shape_array(shape_field(params, "params", "on_false"), "params.on_false", 1);
+    let on_false = shape_array(
+        shape_field(params, "params", "on_false"),
+        "params.on_false",
+        1,
+    );
     shape_str(
         shape_field(&on_false[0], "params.on_false[0]", "type"),
         "params.on_false[0].type",
@@ -702,9 +757,17 @@ fn verify_io_request_safe() {
         ),
     ]);
     let state = model::state_with_payload(ObjectMap::new());
-    shape_str(shape_field(&instr, "instr", "type"), "instr.type", "io_request");
+    shape_str(
+        shape_field(&instr, "instr", "type"),
+        "instr.type",
+        "io_request",
+    );
     let params = shape_field(&instr, "instr", "params");
-    shape_str(shape_field(params, "params", "io_type"), "params.io_type", "call_external");
+    shape_str(
+        shape_field(params, "params", "io_type"),
+        "params.io_type",
+        "call_external",
+    );
     shape_str(
         shape_field(params, "params", "messages"),
         "params.messages",
@@ -778,8 +841,16 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
                 ("path", JsonValue::string("payload.x")),
                 ("value", JsonValue::Integer(2)),
             ]);
-            shape_str(shape_field(&d, "domain[eq]", "type"), "domain[eq].type", "eq");
-            shape_str(shape_field(&d, "domain[eq]", "path"), "domain[eq].path", "payload.x");
+            shape_str(
+                shape_field(&d, "domain[eq]", "type"),
+                "domain[eq].type",
+                "eq",
+            );
+            shape_str(
+                shape_field(&d, "domain[eq]", "path"),
+                "domain[eq].path",
+                "payload.x",
+            );
             shape_field(&d, "domain[eq]", "value");
             d
         }
@@ -789,8 +860,16 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
                 ("path", JsonValue::string("payload.x")),
                 ("value", JsonValue::Integer(2)),
             ]);
-            shape_str(shape_field(&d, "domain[lt]", "type"), "domain[lt].type", "lt");
-            shape_str(shape_field(&d, "domain[lt]", "path"), "domain[lt].path", "payload.x");
+            shape_str(
+                shape_field(&d, "domain[lt]", "type"),
+                "domain[lt].type",
+                "lt",
+            );
+            shape_str(
+                shape_field(&d, "domain[lt]", "path"),
+                "domain[lt].path",
+                "payload.x",
+            );
             shape_field(&d, "domain[lt]", "value");
             d
         }
@@ -799,8 +878,16 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
                 ("type", JsonValue::string("exists")),
                 ("path", JsonValue::string("payload.x")),
             ]);
-            shape_str(shape_field(&d, "domain[exists]", "type"), "domain[exists].type", "exists");
-            shape_str(shape_field(&d, "domain[exists]", "path"), "domain[exists].path", "payload.x");
+            shape_str(
+                shape_field(&d, "domain[exists]", "type"),
+                "domain[exists].type",
+                "exists",
+            );
+            shape_str(
+                shape_field(&d, "domain[exists]", "path"),
+                "domain[exists].path",
+                "payload.x",
+            );
             d
         }
         3 => {
@@ -808,7 +895,11 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
                 ("type", JsonValue::string("instruction")),
                 ("instruction_type", JsonValue::string("noop")),
             ]);
-            shape_str(shape_field(&d, "domain[instr]", "type"), "domain[instr].type", "instruction");
+            shape_str(
+                shape_field(&d, "domain[instr]", "type"),
+                "domain[instr].type",
+                "instruction",
+            );
             shape_str(
                 shape_field(&d, "domain[instr]", "instruction_type"),
                 "domain[instr].instruction_type",
@@ -827,8 +918,16 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
                     ])]),
                 ),
             ]);
-            shape_str(shape_field(&d, "domain[all]", "type"), "domain[all].type", "all");
-            let inner = shape_array(shape_field(&d, "domain[all]", "inner"), "domain[all].inner", 1);
+            shape_str(
+                shape_field(&d, "domain[all]", "type"),
+                "domain[all].type",
+                "all",
+            );
+            let inner = shape_array(
+                shape_field(&d, "domain[all]", "inner"),
+                "domain[all].inner",
+                1,
+            );
             shape_str(
                 shape_field(&inner[0], "domain[all].inner[0]", "type"),
                 "domain[all].inner[0].type",
@@ -847,7 +946,11 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
                     ]),
                 ),
             ]);
-            shape_str(shape_field(&d, "domain[not]", "type"), "domain[not].type", "not");
+            shape_str(
+                shape_field(&d, "domain[not]", "type"),
+                "domain[not].type",
+                "not",
+            );
             let inner = shape_field(&d, "domain[not]", "inner");
             shape_str(
                 shape_field(inner, "domain[not].inner", "type"),
@@ -862,7 +965,11 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
                 ("path", JsonValue::string("payload.obj")),
                 ("fields", JsonValue::Array(vec![JsonValue::string("flag")])),
             ]);
-            shape_str(shape_field(&d, "domain[has_fields]", "type"), "domain[has_fields].type", "has_fields");
+            shape_str(
+                shape_field(&d, "domain[has_fields]", "type"),
+                "domain[has_fields].type",
+                "has_fields",
+            );
             let fields = shape_array(
                 shape_field(&d, "domain[has_fields]", "fields"),
                 "domain[has_fields].fields",
@@ -895,7 +1002,11 @@ fn enforce_instruction(domain: JsonValue, with_domain: bool, with_reason: bool) 
     instr.insert("type".to_string(), JsonValue::string("enforce"));
     instr.insert("params".to_string(), JsonValue::Object(params));
     let instr = JsonValue::Object(instr);
-    shape_str(shape_field(&instr, "enforce.instr", "type"), "enforce.instr.type", "enforce");
+    shape_str(
+        shape_field(&instr, "enforce.instr", "type"),
+        "enforce.instr.type",
+        "enforce",
+    );
     shape_field(&instr, "enforce.instr", "params");
     instr
 }
@@ -921,8 +1032,16 @@ fn eq_enforce_instruction(v: i64) -> JsonValue {
         ("path", JsonValue::string("payload.x")),
         ("value", JsonValue::Integer(v)),
     ]);
-    shape_str(shape_field(&domain, "eq_domain", "type"), "eq_domain.type", "eq");
-    shape_str(shape_field(&domain, "eq_domain", "path"), "eq_domain.path", "payload.x");
+    shape_str(
+        shape_field(&domain, "eq_domain", "type"),
+        "eq_domain.type",
+        "eq",
+    );
+    shape_str(
+        shape_field(&domain, "eq_domain", "path"),
+        "eq_domain.path",
+        "payload.x",
+    );
     shape_field(&domain, "eq_domain", "value");
     enforce_instruction(domain, true, true)
 }
@@ -989,14 +1108,14 @@ fn verify_exec_enforce_deterministic() {
 /// P19: execute_transition 永不 panic（结构化符号）
 #[kani::proof]
 fn verify_execute_transition_never_panics() {
-    let core_eval = vec![model::obj(vec![(
-        "type",
-        JsonValue::string("noop"),
-    )])]; // 固定规则数（1），避免全符号 Vec 展开
+    let core_eval = vec![model::obj(vec![("type", JsonValue::string("noop"))])]; // 固定规则数（1），避免全符号 Vec 展开
     let instruction = model::any_instruction();
     let payload = model::any_payload();
     let queue: Vec<JsonValue> = vec![]; // 固定空队列
-    assert!(core_eval.len() == 1, "结构自检失败 [core_eval]: 应为 1 条规则");
+    assert!(
+        core_eval.len() == 1,
+        "结构自检失败 [core_eval]: 应为 1 条规则"
+    );
     shape_str(&core_eval[0], "core_eval[0]", "noop");
     shape_str_in(
         shape_field(&instruction, "instruction", "type"),
@@ -1025,8 +1144,15 @@ fn verify_transform_rules_limit() {
     );
     shape_str(&core_eval[0], "core_eval[0]", "noop");
     shape_str(&core_eval[MAX_TRANSFORM_RULES], "core_eval[last]", "noop");
-    shape_str(shape_field(&instruction, "instruction", "type"), "instruction.type", "noop");
-    assert!(payload.as_object().is_some(), "结构自检失败 [payload]: 应为 Object");
+    shape_str(
+        shape_field(&instruction, "instruction", "type"),
+        "instruction.type",
+        "noop",
+    );
+    assert!(
+        payload.as_object().is_some(),
+        "结构自检失败 [payload]: 应为 Object"
+    );
     let r = execute_transition(&core_eval, &instruction, &payload, &queue);
     assert!(matches!(r, Err(TcbError::TooManyTransformRules { .. })));
 }
@@ -1054,13 +1180,20 @@ fn verify_react_io_required() {
     ]);
     let payload = JsonValue::empty_object();
     let queue: Vec<JsonValue> = vec![];
-    assert!(core_eval.len() == 3, "结构自检失败 [core_eval]: 应为 3 条 ReAct 规则");
+    assert!(
+        core_eval.len() == 3,
+        "结构自检失败 [core_eval]: 应为 3 条 ReAct 规则"
+    );
     shape_str(&core_eval[0], "core_eval[0]", "branch");
     shape_str(&core_eval[1], "core_eval[1]", "branch");
     shape_str(&core_eval[2], "core_eval[2]", "branch");
     let p0 = shape_field(&core_eval[0], "core_eval[0]", "params");
     let d0 = shape_field(p0, "core_eval[0].params", "domain");
-    shape_str(shape_field(d0, "core_eval[0].params.domain", "type"), "self_init.domain.type", "all");
+    shape_str(
+        shape_field(d0, "core_eval[0].params.domain", "type"),
+        "self_init.domain.type",
+        "all",
+    );
     let inner0 = shape_array(
         shape_field(d0, "core_eval[0].params.domain", "inner"),
         "self_init.domain.inner",
@@ -1078,37 +1211,68 @@ fn verify_react_io_required() {
     );
     let p1 = shape_field(&core_eval[1], "core_eval[1]", "params");
     let d1 = shape_field(p1, "core_eval[1].params", "domain");
-    shape_str(shape_field(d1, "call_external.domain", "type"), "call_external.domain.type", "instruction");
+    shape_str(
+        shape_field(d1, "call_external.domain", "type"),
+        "call_external.domain.type",
+        "instruction",
+    );
     shape_str(
         shape_field(d1, "call_external.domain", "instruction_type"),
         "call_external.domain.instruction_type",
         "call_external",
     );
-    let on_true1 = shape_array(shape_field(p1, "call_external.params", "on_true"), "call_external.on_true", 1);
+    let on_true1 = shape_array(
+        shape_field(p1, "call_external.params", "on_true"),
+        "call_external.on_true",
+        1,
+    );
     shape_str(
         shape_field(&on_true1[0], "call_external.on_true[0]", "type"),
         "call_external.on_true[0].type",
         "branch",
     );
-    shape_array(shape_field(p1, "call_external.params", "on_false"), "call_external.on_false", 0);
+    shape_array(
+        shape_field(p1, "call_external.params", "on_false"),
+        "call_external.on_false",
+        0,
+    );
     let p2 = shape_field(&core_eval[2], "core_eval[2]", "params");
     let d2 = shape_field(p2, "core_eval[2].params", "domain");
-    shape_str(shape_field(d2, "call_service.domain", "type"), "call_service.domain.type", "instruction");
+    shape_str(
+        shape_field(d2, "call_service.domain", "type"),
+        "call_service.domain.type",
+        "instruction",
+    );
     shape_str(
         shape_field(d2, "call_service.domain", "instruction_type"),
         "call_service.domain.instruction_type",
         "call_service",
     );
-    shape_str(shape_field(&instruction, "instruction", "type"), "instruction.type", "call_external");
+    shape_str(
+        shape_field(&instruction, "instruction", "type"),
+        "instruction.type",
+        "call_external",
+    );
     let iparams = shape_field(&instruction, "instruction", "params");
-    let msgs = shape_array(shape_field(iparams, "instruction.params", "messages"), "instruction.params.messages", 1);
+    let msgs = shape_array(
+        shape_field(iparams, "instruction.params", "messages"),
+        "instruction.params.messages",
+        1,
+    );
     shape_str(
         shape_field(&msgs[0], "instruction.params.messages[0]", "role"),
         "instruction.params.messages[0].role",
         "user",
     );
-    shape_array(shape_field(iparams, "instruction.params", "tools"), "instruction.params.tools", 0);
-    assert!(payload.as_object().is_some(), "结构自检失败 [payload]: 应为 Object");
+    shape_array(
+        shape_field(iparams, "instruction.params", "tools"),
+        "instruction.params.tools",
+        0,
+    );
+    assert!(
+        payload.as_object().is_some(),
+        "结构自检失败 [payload]: 应为 Object"
+    );
     let r = execute_transition(&core_eval, &instruction, &payload, &queue);
     match r {
         Ok(TransitionResult::IoRequired { io_type, .. }) => assert_eq!(io_type, "call_external"),

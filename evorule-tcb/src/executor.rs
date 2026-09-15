@@ -47,13 +47,7 @@ pub const MAX_TOTAL_META_INSTRUCTIONS: usize = 1024;
 ///   dispatch 不返回 `UnknownMetaInstruction`；
 /// - dispatch → 本表：新增 dispatch 分支时须同步更新本表并登记变更
 ///   （该方向不可由枚举自动穷尽，靠 CR 门禁约束）。
-pub const META_INSTRUCTION_TYPES: &[&str] = &[
-    "branch",
-    "set",
-    "push",
-    "io_request",
-    "enforce",
-];
+pub const META_INSTRUCTION_TYPES: &[&str] = &["branch", "set", "push", "io_request", "enforce"];
 
 /// 元指令执行结果
 #[derive(Debug, Clone, PartialEq)]

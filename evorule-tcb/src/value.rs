@@ -570,6 +570,20 @@ impl JsonValue {
     /// assert!(obj.try_insert("k".to_string(), JsonValue::Integer(1)).is_ok());
     /// assert!(obj.try_insert("k".to_string(), JsonValue::Integer(2)).is_err());
     /// ```
+    /// # 为什么显式 `allow(clippy::map_entry)` 而不是改用 Entry API
+    ///
+    /// Clippy 的 `map_entry` 建议改写为 `BTreeMap::entry`，但**本函数的类型
+    /// 由 cfg 决定**（见 [`ObjectMap`]）：
+    ///
+    /// - `cfg(not(kani))` → `BTreeMap`，**有** `Entry` API；
+    /// - `cfg(kani)` → [`KaniMap`]（有序 `Vec`），**没有** `Entry` API——
+    ///   它的存在正是为了绕开 CBMC 对红黑树插入的状态爆炸。
+    ///
+    /// 两条分支都必须编译同一份源码，所以**不能**使用任一后端专有的 API。
+    /// 这里保留 `contains_key` + `get`/`insert` 是**唯一后端无关**的写法，
+    /// 且零性能代价（`contains_key` 与 `get` 走的是同一个 `BTreeMap` 查找路径，
+    /// 差别仅在返回类型）。**不要"修好"它。**
+    #[allow(clippy::map_entry)]
     pub fn try_insert(&mut self, key: String, value: JsonValue) -> Result<(), &JsonValue> {
         // 后端无关实现（BTreeMap / KaniMap 通用）：命中返回既有值的引用，
         // 未命中插入。不使用 BTreeMap 专有的 Entry API，保证 cfg(kani) 下
