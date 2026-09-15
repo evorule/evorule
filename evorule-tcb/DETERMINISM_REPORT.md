@@ -27,14 +27,18 @@
 
 ## 一、零依赖实现
 
-### 1.1 依赖声明为空
+### 1.1 运行时依赖为空
 
-[cargo.toml](cargo.toml#L12-L19) 中 `[dependencies]` 为**空**，无 `[dev-dependencies]`、无 `[build-dependencies]`：
+[Cargo.toml](Cargo.toml#L25-L34) 中 `[dependencies]` 为**空**（零运行时依赖，`#![no_std]` 兼容，alloc 由 Rust 标准库提供），无 `[build-dependencies]`；`[dev-dependencies]` 实有 proptest（确定性属性测试）与 criterion（性能基准）——仅测试/基准用，且随 `exclude` 清单（`benches/`、`verification/` 等）排除在发布产物之外，不进入零依赖核心：
 
 ```toml
 [dependencies]
 # 无外部依赖（#![no_std] 兼容）
 # alloc 由 Rust 标准库提供
+
+[dev-dependencies]
+proptest = "1.4"                                              # 确定性属性测试 (dev-only)
+criterion = { version = "0.5", features = ["html_reports"] }  # 性能基准 (dev-only)
 
 [features]
 default = ["std"]
@@ -43,11 +47,11 @@ std = []
 
 ### 1.2 Cargo.lock 实测确认
 
-`Cargo.lock` 中 evorule-tcb 条目**没有 `dependencies` 字段**——Cargo 解析后确认零依赖，不含 serde/serde_json/tokio 等任何第三方 crate。
+`Cargo.lock` 中 evorule-tcb 条目的 `dependencies = ["criterion", "proptest"]` **均为 dev-dependencies**——运行时依赖面为零，不含 serde/serde_json/tokio 等任何第三方 crate。
 
 ### 1.3 build.rs 零依赖
 
-[build.rs](build.rs#L33-L40) 仅用 `std::fs` / `std::path` / `std::process`，禁止模式用**字节子串匹配**而非 regex，注释明确"保持 build.rs 零依赖"。
+[build.rs](build.rs#L53-L55) 仅用 `std::fs` / `std::path` / `std::process`，禁止模式用**字节子串匹配**而非 regex，注释明确"保持 build.rs 零依赖"。
 
 ### 1.4 serde 隔离
 
