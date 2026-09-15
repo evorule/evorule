@@ -872,10 +872,16 @@ fn main() -> ExitCode {
     }
 
     if violations.is_empty() {
-        // Gate passed silently — success is the default expected state, not a warning.
-        // SKIP path still emits cargo:warning (skipping a security gate is noteworthy).
-        // FAILURE path uses eprintln! (loud, visible on build failure).
-        // Gate execution is verifiable by build success (gate failure → build failure).
+        // 大声原则 (TCB-2026-36 整改): 通过也要可见——零输出的通过无法与
+        // "build.rs 被删/被短路/未执行" 区分。cargo:warning 每次构建常态
+        // 可见, 与 SKIPPED 输出及 L1b 策略层检测 PASSED 输出口径一致;
+        // 文件数/模式数动态取值, 模式清单变更不产生假数字。
+        println!(
+            "cargo:warning={} 字面量门禁 PASSED - 已扫 {} 文件 x {} 模式, 0 违规",
+            crate_name,
+            files.len(),
+            FORBIDDEN.len()
+        );
         return ExitCode::SUCCESS;
     }
 
