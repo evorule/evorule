@@ -6,12 +6,12 @@
 //! 强制执行 TCB_SPEC.md 的 T4-T14 + G1/G2 规则 (见 §五 编译时门禁)。
 //! 跨模块设计见 ../../GATE_REFERENCE.md §四(跨模块门控图)+ §五(SPEC 章节编号映射)。
 //!
-//! # 扫描的 23 个模式
+//! # 扫描的 24 个模式
 //!
 //! | 规则          | 模式                                           | 数量 |
 //! |---------------|------------------------------------------------|------|
 //! | T8 (哈希容器) | `HashMap`, `HashSet`                           | 2    |
-//! | G1/T9 (panic) | `.unwrap(`, `.expect(`, `debug_assert!`        | 3    |
+//! | G1/T9 (panic) | `.unwrap(`, `.expect(`, `debug_assert!`, `panic!(` | 4 |
 //! | G2/T10 (unsafe)| `unsafe`                                      | 1    |
 //! | T12 (浮点)    | `f32`, `f64`, `Float`                          | 3    |
 //! | T5 (系统时间) | `SystemTime`, `Instant`                        | 2    |
@@ -20,9 +20,12 @@
 //! | T14 (线程异步)| `std::thread`, `tokio::`, `async`, `await`, `spawn(` | 5 |
 //!
 //! 匹配口径: 每行同时按原文与去空白文本匹配 (`x.unwrap ()` 等插空写法同样
-//! 拦截, TCB-2026-24); 注释/属性行判定仍用原文。
+//! 拦截, TCB-2026-24); 行内自闭合块注释先剥离再匹配 (字符串感知, 跨行
+//! 未闭合保守整行, TCB-2026-32); `async`/`await` 裸词按词界匹配
+//! ("asynchronous" 等英文单词不再误命中, TCB-2026-32); 注释/属性行判定
+//! 仍用原文。
 //!
-//! 除上述 23 个逐行子串模式外, 还执行 1 项文件级检查:
+//! 除上述 24 个逐行子串模式外, 还执行 1 项文件级检查:
 //! `BOM-detected` —— 源码文件不得以 UTF-8 BOM (U+FEFF) 开头。
 //! 编辑器引入 BOM 会遮蔽首行 `//` 前缀, 使注释跳过失效 (首行被误当代码扫描)。
 //! 门禁检测到 BOM 时: 剥离 BOM 保证后续扫描正确, 同时将 BOM 记为违规强制移除。
@@ -58,10 +61,13 @@ const FORBIDDEN: &[(&str, &str)] = &[
     // T8 / G6: 哈希容器 (非确定性迭代顺序)
     ("T8-HashMap", "HashMap"),
     ("T8-HashSet", "HashSet"),
-    // G1 / T9 / T11: panic-prone 构造 (TCB 不得 panic)
+    // G1 / T9 / T11 / F11: panic-prone 构造 (TCB 不得 panic)
     ("T9-unwrap-call", ".unwrap("),
     ("T9-expect-call", ".expect("),
     ("T11-debug_assert", "debug_assert!"),
+    // F11-panic (TCB-2026-35 整改): 旧清单缺 panic!(, GitHub 侧又无 clippy
+    // job, panic!( 在 tcb 内零门禁覆盖。补齐后 L1 每次构建必扫。
+    ("F11-panic", "panic!("),
     // G2 / T10: unsafe 关键字 (禁止内存非确定行为)
     ("T10-unsafe-keyword", "unsafe"),
     // T12: 浮点类型 (跨平台非确定)
@@ -331,8 +337,14 @@ fn strip_test_mod(src: &str) -> String {
                 if let Some(rel_brace) = find_inline_lbrace(&src[mod_abs..]) {
                     let open_idx = mod_abs + rel_brace;
                     if let Some(close_idx) = match_brace(src, open_idx) {
+                        // 只补回闭合花括号 (TCB-2026-35 整改暴露的存量缺陷修复):
+                        // 旧实现把 src[close_idx..] 整段尾部原样压入输出后又从
+                        // close_idx+1 重扫一遍——单测试模块时尾部无违规内容故从未
+                        // 暴露; 一文件含多个 cfg(test) 模块时 (如 executor.rs 的
+                        // executor_ssot_tests + tests), 第一个模块的尾部拷贝把未
+                        // 剥离的后续测试模块体带进扫描输出 (92 条误报)。
                         out.push_str(&src[i..=open_idx]);
-                        out.push_str(&src[close_idx..]);
+                        out.push('}');
                         i = close_idx + 1;
                         continue;
                     }
@@ -387,7 +399,38 @@ fn skip_to_mod_tests(src: &str) -> Option<usize> {
             }
             continue;
         }
-        return src[i..].find("mod tests").map(|rel| i + rel);
+        // #[cfg(test)] 属性/注释跳过后必须紧跟 `mod <ident>` (TCB-2026-35 整改
+        // 附带加固): 旧实现用 "mod tests" 字面子串定位——`mod executor_ssot_tests`
+        // 等非 tests 命名测试模块不被剥 (测试内模式暴露 → 误报), `mod tests_foo`
+        // 反而借前缀命中被误吞 (漏报面)。cfg(test) 限定的模块本就不进生产构建,
+        // 剥离任意命名测试模块是安全豁免。
+        if src[i..].starts_with("mod") {
+            let after = i + 3;
+            if after < bytes.len() && (bytes[after] as char).is_whitespace() {
+                let mut j = after + 1;
+                loop {
+                    while j < bytes.len() && (bytes[j] as char).is_whitespace() {
+                        j += 1;
+                    }
+                    if j + 1 < bytes.len() && bytes[j] == b'/' && bytes[j + 1] == b'/' {
+                        while j < bytes.len() && bytes[j] != b'\n' {
+                            j += 1;
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                let s = j;
+                while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+                    j += 1;
+                }
+                if j > s {
+                    return Some(i); // `mod <ident>` 命中; 无体形式由 find_inline_lbrace 兜住
+                }
+            }
+            return None; // `mod` 后非空白/非标识符 (如 `modular`) → 保守不剥
+        }
+        return None; // 属性后非 mod item → 保守不剥
     }
     None
 }
@@ -597,12 +640,14 @@ fn match_brace(src: &str, open_idx: usize) -> Option<usize> {
     None
 }
 
-/// T8/T9 是 test-tolerant (测试中允许, 通过 lib.rs lints 控制);
+/// T8/T9/F11-panic 是 test-tolerant (测试中允许: HashMap/unwrap/expect 是
+/// 测试惯例, panic!/assert! 是测试断言机制本体; 生产代码由 clippy panic=deny
+/// 与 L1 双守);
 /// T10/T11 (unsafe/debug_assert) 在所有位置强制。
 fn is_test_tolerant(label: &str) -> bool {
     matches!(
         label,
-        "T8-HashMap" | "T8-HashSet" | "T9-unwrap-call" | "T9-expect-call"
+        "T8-HashMap" | "T8-HashSet" | "T9-unwrap-call" | "T9-expect-call" | "F11-panic"
     )
 }
 
@@ -977,6 +1022,46 @@ mod tests {
     }
 
     #[test]
+    fn test_strip_multiple_test_mods() {
+        // 一文件多个 cfg(test) 模块 (executor.rs 实况: executor_ssot_tests +
+        // tests): 旧实现把第一个模块的尾部整段原样压入输出又重扫一遍, 后续
+        // 测试模块体未被剥离; 且生产代码被重复计入输出。
+        let src = concat!(
+            "fn prod() { let _x = 1; }\n",
+            "#[cfg(test)]\n",
+            "mod ssot_tests {\n",
+            "    fn a() { something.unwrap(); }\n",
+            "}\n",
+            "fn prod2() { let _y = 2; }\n",
+            "#[cfg(test)]\n",
+            "mod tests {\n",
+            "    fn b() { other.unwrap(); panic!(\"x\"); }\n",
+            "}\n",
+        );
+        let stripped = strip_test_mod(src);
+        assert_eq!(
+            stripped.matches(".unwrap(").count(),
+            0,
+            "两个测试模块体都须被剥离, got: {stripped:?}"
+        );
+        assert_eq!(
+            stripped.matches("panic!(").count(),
+            0,
+            "非 tests 命名的测试模块体同样剥离, got: {stripped:?}"
+        );
+        assert!(
+            stripped.contains("fn prod()") && stripped.contains("fn prod2()"),
+            "生产代码不得被误吞, got: {:?}",
+            stripped
+        );
+        assert_eq!(
+            stripped.matches("fn prod2()").count(),
+            1,
+            "模块间生产代码不得因尾部重复压入被计入两次, got: {stripped:?}"
+        );
+    }
+
+    #[test]
     fn test_char_lit_starts_discrimination() {
         // 转义字符字面量
         assert!(char_lit_starts(b"let c = '\\n';", 8));
@@ -1050,7 +1135,11 @@ mod tests {
         );
         // 字符串内容原样保留 (字符串内命中是设计接受的误报)
         let s = strip_inline_block_comments("let a = \"keep\"; /* drop */ let b = \"kept\";");
-        assert!(s.contains("\"keep\"") && s.contains("\"kept\""), "got: {}", s);
+        assert!(
+            s.contains("\"keep\"") && s.contains("\"kept\""),
+            "got: {}",
+            s
+        );
     }
 
     #[test]
