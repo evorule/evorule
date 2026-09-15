@@ -44,7 +44,7 @@
 
 **L1b 变更治理门禁 (v0.3.2 新增)**:
 - **CHANGE_REQUEST.md 校验**: 构建时检查仓根 `CHANGE_REQUEST.md` 是否存在、是否包含所有必填字段、审查状态是否为"已批准"或"紧急通过"
-- **策略层反模式检测**: 扫描 `src/` 目录(自动剥离 `mod tests` 块),禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层
+- **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块——TCB-2026-28 撤豁免: 测试代码同为机制层, 须守同一纪律; 旧「剥离 mod tests 再扫」既留注释伪装/`mod tests_foo` 误吞绕过面, 又给策略层留测试区藏身处),禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层
 - **跳过方式**: `EVORULE_SKIP_CR_GATE=1` 环境变量可跳过(仅限本地开发,跳过必须临时且有书面理由)
 - **三仓同步**: `evorule-tcb` / `evorule-reactor` / `evorule-governance` 的 build.rs 保持同一份内联副本实现,任何修改必须三仓同步
 
@@ -87,7 +87,7 @@
 **豁免机制**:
 - `strip_test_mod()`: 剥离 `#[cfg(test)] mod tests { ... }` 块, 不扫描测试代码
   - **状态机生命周期判别（2026-08-30 修复）**: `char_lit_starts()` 在撇号处判别字符字面量与生命周期——`'` 后跟 `\` 或"单字符+`'`"是字面量（进入字符态），`'ident` 是生命周期（跳过标识符，不进入字符态）。旧实现把 `'static` 误判为字符态开头，吞掉直到下一个 `'` 之间的所有 `{}`，导致 match_brace 永不闭合、tests 模块整体不被剥离、门禁对测试代码全量误报。修复已同步五仓（tcb/reactor/governance/cli/server），每仓 build.rs 内含 3 个单元测试（cargo test 不运行 build script 测试，用探针 crate 以 lib.rs 方式加载真实 build.rs 运行）
-- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26), 编译警告 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
+- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁, 编译警告 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
 - `EVORULE_SKIP_CR_GATE=1`: 跳过 L1b 变更治理门禁 (仅限本地开发, v0.3.2 新增)
 
 ### 2.2 evorule-reactor — 14 模式 (G8 + F11 + S5.2)

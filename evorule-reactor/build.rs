@@ -969,13 +969,12 @@ fn detect_strategy_patterns(crate_name: &str) -> Result<(), String> {
             Err(_) => continue,
         };
 
-        // 跳过测试模块（测试代码中可能包含业务语义）
-        let content_without_tests = strip_test_modules(&content);
-
+        // 全文件扫描 (TCB-2026-28 撤测试豁免): 测试代码同为机制层, 须守同一
+        // 纪律; 旧「剥离 mod tests 再扫」既留注释伪装/`mod tests_foo` 误吞等
+        // 绕过面, 又给策略层留测试区藏身处——自查机制不给自己留豁免。
         for pattern_def in STRATEGY_PATTERNS {
             for pattern in pattern_def.patterns {
-                // 检查模式是否出现在非测试代码中
-                if content_without_tests.contains(pattern) {
+                if content.contains(pattern) {
                     violations.push((
                         path.clone(),
                         pattern_def.label.to_string(),
@@ -1039,54 +1038,6 @@ fn collect_rs_files_for_strategy(dir: &Path, out: &mut Vec<PathBuf>) {
             out.push(path);
         }
     }
-}
-
-/// 剥离测试模块内容（简单处理，跳过 mod tests { ... } 块）
-fn strip_test_modules(content: &str) -> String {
-    let mut result = String::new();
-    let mut in_test_module = false;
-    let mut brace_depth = 0;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-
-        // 检测测试模块开始
-        if trimmed.contains("mod tests") && trimmed.ends_with('{') {
-            in_test_module = true;
-            brace_depth = 1;
-            continue;
-        }
-
-        // 检测 #[cfg(test)] mod tests {
-        if trimmed.contains("#[cfg(test)]") {
-            // 下一行应该是 mod tests {
-            result.push_str(line);
-            result.push('\n');
-            continue;
-        }
-
-        if in_test_module {
-            // 跟踪花括号深度
-            for ch in line.chars() {
-                if ch == '{' {
-                    brace_depth += 1;
-                } else if ch == '}' {
-                    brace_depth -= 1;
-                }
-            }
-
-            if brace_depth <= 0 {
-                in_test_module = false;
-                brace_depth = 0;
-            }
-            continue;
-        }
-
-        result.push_str(line);
-        result.push('\n');
-    }
-
-    result
 }
 
 #[cfg(test)]
