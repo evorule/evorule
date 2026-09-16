@@ -1,5 +1,9 @@
 # EvoRule — A deterministic-first reactive rule execution engine
 
+> **仓库角色**：本仓库是 **GitHub 镜像**。权威源（primary repo）在 **Gitee**：[https://gitee.com/evorule/evorule](https://gitee.com/evorule/evorule)。
+> Issue / PR 请提交到 Gitee，GitHub 侧仅供镜像与推广展示。
+
+
 ![EvoRule — deterministic-first reactive rule execution engine](assets/evorule-banner.svg)
 
 [![CI](https://github.com/evorule/evorule/actions/workflows/ci.yml/badge.svg)](https://github.com/evorule/evorule/actions/workflows/ci.yml)
