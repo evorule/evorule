@@ -38,4 +38,5 @@
 1. **新建仓**：按本表模板登记 → 两端建仓（Gitee 主仓 + GitHub 镜像）→ 加 mirror.yml（参数化模板，例外硬编码）→ README 顶部 Mirror 标识 → 提交本表。
 2. **变更**：迁移 / 改名 / 默认分支 / 可见性 / License 变化 → 先改本表再执行，执行后回填实际结果。
 3. **双 agent 红线**：`evo-agent` 与 `evorule-agent` 是两个独立项目，任何场景不得合并、不得将对方链接当作自身 canonical。
-4. **缺口跟踪**：`evorule-console`、`evorule-dsh-skill` 无独立 CI（T4）；`evorule-agent` 镜像豁免（用户决策）；迁组织（品牌）降为可选。
+4. **tag 例外规则**：`checkpoint-*` / `pre-*` 开发 checkpoint tag（主仓 evorule 现有 37 个）为开发痕迹，**仅存 Gitee，不同步 GitHub**；audit 门禁按此规则放行，其余版本 tag 双端必须一致。
+5. **缺口跟踪**：`evorule-console`、`evorule-dsh-skill` 无独立 CI（T4）；`evorule-agent` 镜像豁免（用户决策）；`evorule-agent` GitHub 分支保护待公开时补（PAT 权限限制）；迁组织（品牌）降为可选。

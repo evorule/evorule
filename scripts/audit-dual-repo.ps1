@@ -51,6 +51,12 @@ foreach ($r in $repos) {
   # 4) 默认分支(远端 HEAD 指向)
   $headRef = git -C $path ls-remote --symref $($r.Gitee) HEAD 2>$null | Select-String "ref: refs/heads/"
   Report (($headRef -and $headRef.ToString().Contains("refs/heads/main"))) "Gitee 默认分支=main"
+
+  # 5) 双端版本 tag 一致性（排除开发 checkpoint tag: pre-*/checkpoint-* 允许仅 Gitee）
+  $gt = @(git -C $path ls-remote --tags $($r.Gitee) 2>$null | ForEach-Object { if ($_ -match "refs/tags/([^^]+)") { $matches[1] } })
+  $ht = @(git -C $path ls-remote --tags $($r.Github) 2>$null | ForEach-Object { if ($_ -match "refs/tags/([^^]+)") { $matches[1] } })
+  $verMissing = @($gt | Where-Object { $_ -notin $ht -and $_ -notlike "pre-*" -and $_ -notlike "checkpoint-*" })
+  Report ($verMissing.Count -eq 0) "双端版本 tag 一致 (missing=$($verMissing -join ','))"
 }
 
 # 私有仓: 本地 + Gitee HEAD 一致(SSH)
