@@ -62,7 +62,7 @@
 
 ### ⚠️ Breaking Change（破坏性变更）
 
-- **移除 `collect` / `merge` 元指令**：LLM ReAct 多轮编排属于应用层职责，机制层不再内置循环原语。两者曾由应用层（evo-agent runner）内置至 TCB，现随专项退役：
+- **移除 `collect` / `merge` 元指令**：LLM ReAct 多轮编排属于应用层职责，机制层不再内置循环原语。
   - `evorule-tcb`：删除 `exec_collect` / `exec_merge` 及指令分发分支；`META_INSTRUCTION_TYPES` 收窄为 5 种（`branch` / `set` / `push` / `io_request` / `enforce`）；Kani proof P15/P16/P17 随删
   - `evorule-governance`：`VALID_TRANSFORM_TYPES` 收窄为 4 种（= TCB − enforce）
   - `evorule-cli` / `evorule-reactor` / schema（`_shared/v1.0.json` 双副本）/ console / console-cloud / evo-agent 宪法 / server 宪法（`server_eval.json` v0.5.0）全链同步收窄
@@ -237,23 +237,13 @@
 
 ### 🔄 变更
 
-- **核心仓最小化：ReAct 应用剧本整体迁出至消费方**(2026-08-27 决策：应用自持运行宪法):
+- **核心仓最小化：ReAct 应用剧本整体迁出至消费方**:
   - `evorule-tcb/core_eval.json` v0.3.1 → **v0.4.0**:移除三条 ReAct 循环规则(约全文 54%),回归最小引擎自评估集(increment/decrement/set/sequence/conditional/while_loop/noop/兜底);经 rule_set v1.0 门禁校验
   - **机制零改动**:6 元指令白名单、9 指令类型(call_external 等)、has_fields/collect/merge 语言层能力全部保留——迁出的是剧本不是语言
   - `transition.rs` 测试去 ReAct 化改名:`react_e2e_tests` → `io_loop_e2e_tests`(断言零改动)
   - `reactive_researcher` 示例自带 `assets/constitution.json`(app.evorule.example.researcher v0.4.0),CLI 参数 `--core-eval`/`EVORULE_CORE_EVAL` 改为 `--constitution`/`EVORULE_CONSTITUTION`,解除对核心仓资产的跨路径加载
   - 消费方范式:evo-agent 已自持 `app.evoagent.agent` v0.4.0(evo-agent 仓先行提交 `0845282`)
   - 迁移指引:凡依赖 org.evorule.core.eval v0.3.1 中 call_external/call_service 规则的部署,请改用消费方自持的运行宪法(副作用:未知指令交兜底规则处理,不再产生 LLM 循环)
-
-### ❌ 移除
-
-- **核心仓脚本瘦身：一次性维护脚本退场（25 个）**(2026-08-27 决策：四 crate 内核):
-  - markdownlint 清洗群(15):`fix-md040{,.js,-v2}.ps1`、`show-{errors,md013*,md037,md051}`、`list-md013`、`find-md040`、`count-errors`、`show-remaining`、`fix-corrupted-{lines,newlines,quotes}`
-  - SPDX 头灌装群(4):`add-spdx-ffi`、`add-spdx-safe`、`add_spdx_headers`、`update-spdx.js`(头部已全线就位)
-  - 迁移/调试残留(4):`migrate-cli-examples-to-application.{ps1,sh}`、`agents-md-to-schema.py`(输入 AGENTS.md 已不存在)、`test-api-with-hash-diagnosis.ps1`
-  - 历史演变工具(2):`update-sdk-license.js`(许可证格局已定型)、`start-server.ps1`(零引用零文档，已批准删除)
-  - 全部经全仓调用方取证为零存活引用;生产链路零依赖;git 历史可考古
-- **保留判据入档**:evorule 仓 = 四 crate(tcb/reactor/governance/cli) + 支撑测试验证 CI 门禁 + 对外契约文档;新增 `scripts/` 文件须能回答"谁还在用它"。
 
 ## [0.3.2] - 2026-08-26
 
@@ -420,25 +410,6 @@
 - ✅ 合法规则文件的加载与确定性排序不变
 - ✅ fact log 格式不变
 - ✅ CLI 命令与输出格式不变(仅修复误加载场景)
-
----
-
-## [0.2.2] - 2026-08-10
-
-**协议文档修正 + SDK 合规脚本方向反转** — 修正 SDK 许可证在文档中的"MIT 漏网之鱼"。SDK 是 evorule 核心的衍生作品,协议必须与核心保持一致。本次 PATCH 不含任何 Rust 源代码改动。
-
-### 🔄 变更
-
-- **SDK 许可证策略修正**: TypeScript SDK / Python SDK 由 `MIT` → `AGPL-3.0-or-later`(SDK 是核心衍生作品,协议不能自相矛盾);许可档位(内部集成 / 政府学术非营利免费豁免 / 企业闭源 SaaS 商业许可)
-- **`scripts/update-sdk-license.js` 方向反转**: 从"匹配旧 AGPL header → 替换为 MIT"反转为"匹配旧 MIT header → 替换为 AGPL";新增 SDK 目录不存在的防御性检查
-
-### 🐛 修复
-
-- **`update-sdk-license.js` 在 SDK 目录不存在时崩溃**: 原脚本假定 SDK 目录已存在,直接 `readdirSync` 导致 `ENOENT`;新增 `fs.existsSync` 防御检查,跳过并打印警告
-
-### 🔒 安全
-
-- **SDK 许可对齐核心**: SDK 由 MIT 改为 AGPL-3.0-or-later;对外 SaaS 场景须开源应用层或购买商业许可。内部集成 / 政府学术非营利不受影响
 
 ---
 
