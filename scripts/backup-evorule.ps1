@@ -1,13 +1,13 @@
-# backup-evorule.ps1 — EvoRule 黄金备份链 v2（单人版去单点）
+﻿# backup-evorule.ps1 — EvoRule 黄金备份链 v2.1（单人版去单点）
 # 用法:
 #   powershell -File backup-evorule.ps1            # 全量备份
 #   powershell -File backup-evorule.ps1 -Verify    # 备份后从裸仓恢复演练(抽查前 2 仓)
-# 建议: Windows 任务计划每周日 02:00 运行(见 README 末尾或 REPO_REGISTRY 维护规则)
+# 建议: Windows 任务计划每周日 02:00 运行(见 REPO_REGISTRY 维护规则)
 # 备份源: Gitee 主仓(权威源)。GitHub 镜像无需备份(其存在本身即灾备)。
 # 覆盖: 11 公开仓(HTTPS) + evorule-agent 私有仓(SSH, 无 GitHub 灾备, 必须备份)。
+# 注意: 不要在脚本内设置 $ErrorActionPreference='Stop'——PS5.1 会把 git 的 stderr
+#       进度输出当作终止错误抛出; 改用目录存在性校验判断成败。
 param([switch]$Verify)
-
-$ErrorActionPreference = 'Stop'
 
 $public = @(
   "evorule","evorule-server","evorule-rule","evorule-system-rules",
@@ -24,13 +24,15 @@ New-Item -ItemType Directory -Force -Path $dest | Out-Null
 $failed = 0
 foreach ($r in $public) {
   Write-Host "备份: $r"
-  git clone --mirror "https://gitee.com/evorule/$r.git" (Join-Path $dest "$r.git") 2>&1 | Out-Null
-  if ($LASTEXITCODE -ne 0) { Write-Warning "备份失败: $r"; $failed++ }
+  $target = Join-Path $dest "$r.git"
+  & cmd /c "git clone --mirror https://gitee.com/evorule/$r.git `"$target`" 2>nul"
+  if (-not (Test-Path $target)) { Write-Warning "备份失败: $r"; $failed++ }
 }
 foreach ($k in $private.Keys) {
   Write-Host "备份(私有): $k"
-  git clone --mirror $private[$k] (Join-Path $dest "$k.git") 2>&1 | Out-Null
-  if ($LASTEXITCODE -ne 0) { Write-Warning "备份失败: $k"; $failed++ }
+  $target = Join-Path $dest "$k.git"
+  & cmd /c "git clone --mirror $($private[$k]) `"$target`" 2>nul"
+  if (-not (Test-Path $target)) { Write-Warning "备份失败: $k"; $failed++ }
 }
 
 # 保留最近 4 份
@@ -49,8 +51,8 @@ if ($Verify) {
     $mirror = Join-Path $dest "$r.git"
     if (-not (Test-Path $mirror)) { Write-Warning "演练跳过(无备份): $r"; continue }
     Write-Host "演练: 从裸仓恢复 $r"
-    git clone $mirror (Join-Path $probe $r) 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Warning "恢复失败: $r"; continue }
+    & cmd /c "git clone `"$mirror`" `"$(Join-Path $probe $r)`" 2>nul"
+    if (-not (Test-Path (Join-Path $probe $r))) { Write-Warning "恢复失败: $r"; continue }
     $head = git -C (Join-Path $probe $r) rev-parse --short HEAD
     Write-Host "  恢复成功: $r @ $head"
   }
