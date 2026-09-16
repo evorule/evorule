@@ -58,7 +58,7 @@ EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 wa
 
 - **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块, TCB-2026-28 撤豁免), 禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。检测到违规时构建失败。**无阀常开**——机制-策略分离是设计不变量, 不设旁路环境变量。
 - **CR 自查已移出公开仓 (裁定⑤⑥)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已从 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。CHANGE_REQUEST.md 登记纪律本身不变。
-- **三仓同步**: `evorule-tcb` / `evorule-reactor` / `evorule-governance` 的 build.rs 保持同一份内联副本实现, 任何修改必须三仓同步。
+- **四仓同步**: `evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli` 的 build.rs 共享函数保持同一份内联副本实现, 任何修改必须四仓同步; 同步纪律已机器化 (`evorule-cli/tests/gate_sync_test.rs`, TCB-2026-30)。
 
 ---
 
@@ -121,15 +121,16 @@ EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 wa
 
 ## 五、build.rs 一致性
 
-evorule-governance/build.rs 跟 evorule-reactor/build.rs **结构相同** (字面量门禁模式完全相同),
-这是有意的双层一致 (避免 tier1/tier2 走偏)。
+evorule-governance/build.rs 跟 evorule-reactor/build.rs **结构相同** (共享函数同一份内联副本),
+这是有意的双层一致 (避免 tier1/tier2 走偏)。字面量门禁模式为 reactor 的 14/15 子集——
+governance 不设 T10 `unsafe` 模式 (该仓 `#![deny(unsafe_code)]` 由 rustc 直接兜底)。
 
 **关键一致性要求**:
 
-- FORBIDDEN 数组: 字面量门禁模式完全相同
+- FORBIDDEN 数组: governance 14 模式为 reactor 15 模式去掉 T10 的子集
 - `strip_test_mod` 函数: 实现方式相同
 - `fact.rs` 豁免: **两者都必须包含** (G8/§5.2 模式在 fact.rs 中豁免)
-- **L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**: `detect_strategy_patterns` 函数必须三仓(evorule-tcb / evorule-reactor / evorule-governance)同步, 防止三个核心模块的检测标准走偏。旧 `validate_change_request_gate` 已移出公开仓 (自查本地化), 不再要求同步
+- **L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**: `detect_strategy_patterns` 函数必须四仓(evorule-tcb / evorule-reactor / evorule-governance / evorule-cli)同步, 防止四个模块的检测标准走偏; 同步已机器化 (`evorule-cli/tests/gate_sync_test.rs` 逐函数比对, TCB-2026-30)。旧 `validate_change_request_gate` 已移出公开仓 (自查本地化), 不再要求同步
 
 ---
 

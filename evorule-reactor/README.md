@@ -14,7 +14,7 @@
 - **依赖**:evorule-tcb = "0.6.0"(io_request 单轮触发/消费;多轮编排由应用层负责)
 - **协议**:AGPL-3.0-or-later
 - **测试**:`cargo test` 全量 PASS / 0 failed（2026-09-14 v0.6.0 全量回归，CI 常驻）
-- **build.rs 编译时门禁**:14 模式(G8 控制流 `conditional`/`while_loop`/`sequence` + F11 `unwrap`/`expect`/`panic!`/`debug_assert!` + S5.2 业务术语 7 条),非测试代码强制,PASSED
+- **build.rs 编译时门禁**:15 模式(G8 控制流 `conditional`/`while_loop`/`sequence` + F11 `unwrap`/`expect`/`panic!`/`debug_assert!` + S5.2 业务术语 7 条 + T10 `unsafe`,文件级豁免 `ffi.rs`/`facts_log.rs`),非测试代码强制,PASSED
 - **G8 门控遵守**:反应器主循环(`reactor.rs`)的控制流分支是**策略数据**(Fact 变体的 match)而非**硬编码业务逻辑**;任何业务分支均由 `core_eval.json` 数据驱动,编译期通过 `build.rs` 递归扫描确认。
 - **`unsafe`**:`#![deny(unsafe_code)]`(`ffi.rs` 在 `ffi` feature 下局部 `#[allow(unsafe_code)]`,FFI 边界,已文档化)
 - **P0 修复(2026-07-25)**:`Box::leak` 内存泄漏已修复(`IoType::parse` 返回 `Option`);锁中毒改为 `e.into_inner()` 恢复(非 panic)

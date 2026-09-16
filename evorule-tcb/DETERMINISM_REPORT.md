@@ -118,14 +118,14 @@ pub type ObjectMap = BTreeMap<String, JsonValue>;
 
 `JsonValue` 手动实现 `Ord`（[value.rs](src/value.rs#L111-L157)），保证任意 JSON 值可排序——BTreeMap 迭代顺序完全确定，与序列化顺序无关。
 
-### 3.2 编译时门禁（build.rs，23 模式）
+### 3.2 编译时门禁（build.rs，24 模式）
 
 [build.rs](build.rs#L40-L72) 扫描 `src/` 禁止以下破坏确定性的构造（测试模块自动剥离后扫描）：
 
 | 类别 | 禁止模式 | 破坏点 |
 |------|---------|--------|
 | 哈希容器 | `HashMap`, `HashSet` | 迭代顺序非确定 |
-| panic-prone | `.unwrap(`, `.expect(`, `debug_assert!` | 可 panic |
+| panic-prone | `.unwrap(`, `.expect(`, `debug_assert!`, `panic!(` | 可 panic |
 | unsafe | `unsafe` | 内存非确定行为 |
 | 浮点 | `f32`, `f64`, `Float` | 跨平台非确定 |
 | 系统时间 | `SystemTime`, `Instant` | 依赖当前时间 |
@@ -162,9 +162,9 @@ pub type ObjectMap = BTreeMap<String, JsonValue>;
 
 ```
 evorule-tcb
-  ├─ 零依赖  →  Cargo.toml 空依赖 + Cargo.lock 确认无第三方
+  ├─ 零运行时依赖  →  Cargo.toml [dependencies] 为空 + 无 build-dependencies（dev-deps proptest/criterion 不进发布产物）
   ├─ no_std  →  #![no_std] + extern crate alloc，仅用 alloc/core
-  ├─ 确定性  →  BTreeMap 模型 + build.rs 23 模式门禁 + 纯函数 + 禁止 panic/unsafe/浮点/时间/随机
+  ├─ 确定性  →  BTreeMap 模型 + build.rs 24 模式门禁 + 纯函数 + 禁止 panic/unsafe/浮点/时间/随机
   └─ 验证    →  175 单元 + 20 集成 + 18 doctest 全通过（v0.3.1 时点）
 ```
 

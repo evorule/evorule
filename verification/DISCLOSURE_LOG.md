@@ -40,7 +40,7 @@
 | # | 事实 | 依据 | 影响 | 修正去向 |
 | - | ---- | ---- | ---- | -------- |
 | ① | `verification/INDEX.md` 删除 | 功能被 MECHANISM.md（规则）、STATUS.md（状态）、README.md（导航与登记）三方吸收，消灭第二状态源（M1） | 存量引用（DOCS_INDEX.md ×4、plan v3 ×2 等）需更新 | 修正批次更新全部引用 |
-| ② | 根目录 `CHANGE_REQUEST_TEMPLATE.md` 删除 | 与 `.github/` 版内容漂移 5 行，双份维护实证 | 仅保留 `.github/` 版 | DOCS_INDEX.md 登记核对 |
+| ② | 根目录 `CHANGE_REQUEST_TEMPLATE.md` 删除 | 与 `.github/` 版内容漂移 5 行，双份维护实证 | 仅保留 `.github/` 版 | DOCS_INDEX.md 登记核对（**后续**：`.github/` 版亦已于 2026-09-15 随 CR 构建校验移出公开仓一并删除，见追加区该日条目） |
 | ③ | 4 个零证据价值文件（`ps_check.txt`、`ps_count.txt`、`p4567_tmp.log`、`p8_11.log`）直接 `git rm`，不随批隔离 | 进程诊断残留与仅含单行 harness 标题的残文件，无历史证据价值（M3.3）；git 历史可溯 | 无 | — |
 
 ### 初值说明
@@ -156,3 +156,10 @@
 - **依据**：check_status_sync.py 实测输出（修复前 4 PASS / 7 FAIL，修复后 11 规则全 PASS）；文件系统实测（36 份笔误命名、reactor 隔离区缺 README）；Cargo.toml workspace version = 0.6.0。
 - **影响**：S1–S11 全绿；对外数字（45 total / 18 verified / TCB 34 / A 档 14 / B 档 20）与 STATUS.md 附录推导值全对齐；P0-11 最新证据（2026-09-14 PASS）与主状态 ✅ 闭环；reactor 隔离区满足 M3.5。
 - **修正去向**：本条目即修正记录；证据盘面与 STATUS.md / MECHANISM.md / ROADMAP.md / verification/README.md / `evorule-reactor/verification/evidence/kani/_invalidated/README.md`。
+
+### 2026-09-16：CR 构建校验移出公开仓，CR 模板双份清零（TCB-2026-29，裁定⑤⑥）
+
+- **事实**：L1b 的 CHANGE_REQUEST.md 构建校验经裁定移出公开仓（该检查属提交前自查纪律，非防伪造审查机制），`EVORULE_SKIP_CR_GATE` 环境变量随之删除；策略层反模式检测改为**无阀常开**。首条处置记录② 保留的 `.github/CHANGE_REQUEST_TEMPLATE.md`（267 行）随本次整改删除（`8a8f04c`），根目录版已于 2026-09-12 删除——两个模板至此**全部离线**，CR 自查职责由维护者本地 git pre-commit hook 承接（hook 不随仓库/发布公开）。`CHANGE_REQUEST.md` 登记文件与登记纪律本身不变。
+- **依据**：`8a8f04c` diff（`.github/CHANGE_REQUEST_TEMPLATE.md` −267 行）；四仓 build.rs 实跑输出（旧「变更治理门禁 PASSED」消失，策略层检测无阀常开 PASSED）；`CHANGELOG.md` [Unreleased] TCB-2026-29 条目。
+- **影响**：① 首条处置记录② 的「仅保留 `.github/` 版」结论作废，该行已就地附现状注记；② 全仓源码/文档中 `CHANGE_REQUEST_TEMPLATE` 仅剩 `CHANGELOG.md` 0.4.3 历史条目（按「历史条目保留 + 现状注记」原则处理）与本日志两处登记性出现（首条②、本条目）；③ 公开仓不再存在任何 CR 模板载体，「伪门禁」质疑面消除。
+- **修正去向**：本条目即修正记录；`CHANGELOG.md` [Unreleased]（TCB-2026-29）、本日志首条处置记录② 现状注记、`GATE_REFERENCE.md` §一/§二、`GOVERNANCE.md` §二/§五、四仓 SPEC·README。

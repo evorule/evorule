@@ -709,8 +709,8 @@ fn main() -> ExitCode {
 
 // ===== 策略模式检测器 (Strategy Pattern Detector) =====
 //
-// 与 evorule-tcb/build.rs、evorule-reactor/build.rs 保持同一份实现 (内联副本)。
-// 任何对检测逻辑的修改必须三仓同步, 防止三个核心模块的机制层边界走偏。
+// 与 evorule-tcb/build.rs、evorule-reactor/build.rs、evorule-cli/build.rs 保持同一份实现 (内联副本)。
+// 任何对检测逻辑的修改必须四仓同步, 防止核心模块的机制层边界走偏。
 
 /// 策略层反模式定义
 ///

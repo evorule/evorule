@@ -118,23 +118,24 @@
 
 ## 四、编译时门禁 (build.rs)
 
-**build.rs 扫描的 14 个模式**:
+**build.rs 扫描的 15 个模式**:
 
 | 规则                 | 模式                                                                                                        | 数量 |
 | :------------------- | :---------------------------------------------------------------------------------------------------------- | :--- |
 | G7/G8 (控制流硬编码) | `"conditional"`, `"while_loop"`, `"sequence"`                                                               | 3    |
-| G1/F11 (panic-prone) | `debug_assert!`, `.unwrap(`, `.expect(`                                                                     | 3    |
+| G1/F11 (panic-prone) | `debug_assert!`, `.unwrap(`, `.expect(`, `panic!(`                                                          | 4    |
 | §5.2 (业务术语)      | `"math_rule"`, `"physics_rule"`, `"summarize"`, `"admin"`, `"teacher"`, `"call_external"`, `"call_service"` | 7    |
+| G2/T10 (unsafe)      | `unsafe` (文件级豁免: `ffi.rs` / `facts_log.rs`)                                                            | 1    |
 
 **豁免**:
 
-- `#[cfg(test)] mod tests { ... }` 测试模块 — 测试 fixture 可构造这些字符串
+- 任意命名的 `#[cfg(test)] mod <ident> { ... }` 测试模块 — 测试 fixture 可构造这些字符串（TCB-2026-35：按 `mod <ident>` 定位，非固定 `tests` 字面）
 - 注释 (`//`, `///`, `//!`, `/* */`) — 文档可自由提及
 - `src/fact.rs` (G8/§5.2 模式) — IoType 内置字符串值 / ControlFlowType 枚举映射的唯一真值来源
 
 **紧急跳过**: `EVORULE_SKIP_GATE=1 cargo build` (阀值仅 `1`/`true` 生效 fail-closed, 须有书面理由 + `EVORULE_SKIP_REASON` 登记, 永不永久禁用)
 
-**L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**: 除上述 L1a 字面量门禁外, `build.rs` 还执行策略层反模式检测(扫描 src/ **全文件**禁止策略层代码, TCB-2026-28 撤测试豁免; **无阀常开**, 不设旁路环境变量)。旧 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已移出公开仓, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。三仓(evorule-tcb / evorule-reactor / evorule-governance)build.rs 保持同一份内联副本实现。
+**L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**: 除上述 L1a 字面量门禁外, `build.rs` 还执行策略层反模式检测(扫描 src/ **全文件**禁止策略层代码, TCB-2026-28 撤测试豁免; **无阀常开**, 不设旁路环境变量)。旧 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已移出公开仓, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。四仓(evorule-tcb / evorule-reactor / evorule-governance / evorule-cli)build.rs 的共享函数保持同一份内联副本实现, 同步纪律由 `evorule-cli/tests/gate_sync_test.rs` 机器化锁定 (TCB-2026-30: 按函数名提取函数体, 规范化后逐仓比对, 漂移即 `cargo test` 红)。
 
 ---
 
@@ -146,7 +147,7 @@
 - **D1-D10** (数据流约束): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四
 
 evorule-governance 的 `GOVERNANCE_SPEC.md` 与本文档**结构相同** (G8 + F11 + §5.2),
-这是有意的双层一致 (避免 tier1/tier2 走偏)。
+这是有意的双层一致 (避免 tier1/tier2 走偏); 模式清单差异仅在 reactor 多一个 T10 `unsafe`。
 
 ---
 

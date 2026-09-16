@@ -135,7 +135,7 @@
 
 实施文件: `D:\evorule\evorule-governance\build.rs` (扫描 `src/` 全部 `.rs`)
 
-**有意重复**: governance 与 reactor 用同一组 14 模式 (3 G8 + 4 F11 + 7 S5.2, 无 T10), 保证反应器/治理层双层不走偏; 与 tcb (24 模式, 额外 T 编号扫描) 为有意差异, 见 §一 有意差异表。
+**有意重复**: governance 取 reactor 同组模式 (3 G8 + 4 F11 + 7 S5.2 = 14), 保证反应器/治理层双层不走偏; reactor 在此之上另有 T10-unsafe-keyword 共 **15** 模式 (§2.2), governance 不扫 unsafe (该仓 `#![deny(unsafe_code)]` 由 rustc 直接兜底) 故为 14; 与 tcb (24 模式, 额外 T 编号扫描) 为有意差异, 见 §一 有意差异表。
 
 ### 2.4 evorule-cli — 7 模式 (G8 + F11)
 
@@ -234,7 +234,7 @@ workspace = true
    (T1-T14 + G1/G2 + D1-D10)   (F1-F11 + G1/G7/G8)    (G1 + G7 + G8 + D1-D10)
         |                     |                     |
    build.rs (L1)          build.rs (L1)          build.rs (L1)
-   24 模式 (T 标签)       14 模式 (G8/F11/S5.2)  14 模式 (跟 tier1 相同)
+   24 模式 (T 标签)       15 模式 (G8/F11/S5.2/T10)  14 模式 (G8/F11/S5.2)
         |                     |                     |
    [lints] workspace     [lints] workspace     [lints] workspace
    (L2 clippy 继承根)    (L2 clippy 继承根)    (L2 clippy 继承根)
@@ -276,7 +276,7 @@ workspace = true
 | 一、允许在 Rust 反应器中做的事情       | F1, F2, F3, F4, F5, F6 (反向) | L3 引用 |
 | 二、绝对禁止在 Rust 反应器做的事情     | F1, F2, F3, F4, F5, F6, G7, G8 | L1 引用 |
 | 三、§5.2 业务术语表                    | G8 (7 术语)         | L1 (S5.2 标签) |
-| 四、编译时门禁 (build.rs)              | G1 (F11) + G7 (G8 合并) + G8 | L1 (14 模式) |
+| 四、编译时门禁 (build.rs)              | G1 (F11) + G7 (G8 合并) + G8 + T10 | L1 (15 模式) |
 | 五、跨模块引用                         | G1-G8 + T1 redline  | 跨模块         |
 | 总结口诀                              | —                    | —              |
 
@@ -289,7 +289,7 @@ workspace = true
 | 二、允许在 Rust 治理层中做的事情       | F1-F6 (反向)              | L3 引用        |
 | 三、绝对禁止在 Rust 治理层做的事情     | F1-F6, G7, G8              | L1 引用        |
 | 四、跨模块引用                         | G1-G8 + F1-F10 + D1-D10 + T1 redline | 跨模块 |
-| 五、build.rs 一致性                    | 跟 tier1 相同 (14 模式)   | L1 (14 模式)   |
+| 五、build.rs 一致性                    | 同 tier1 骨架, 模式取子集 (14, 无 T10) | L1 (14 模式)   |
 | 如何新增约束                          | §5.2 / FORBIDDEN / build.rs 验证 | — |
 | 总结口诀                              | —                          | —              |
 
@@ -367,8 +367,8 @@ src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allo
 - `evorule-reactor/REACTOR_SPEC.md` (权威)
 - `evorule-governance/GOVERNANCE_SPEC.md` (权威)
 - `evorule-tcb/build.rs` (L1 字面量门禁, 24 模式)
-- `evorule-reactor/build.rs` (L1 字面量门禁, 14 模式)
-- `evorule-governance/build.rs` (L1 字面量门禁, 14 模式, 跟 tier1 相同)
+- `evorule-reactor/build.rs` (L1 字面量门禁, 15 模式)
+- `evorule-governance/build.rs` (L1 字面量门禁, 14 模式, 同 tier1 骨架减 T10)
 - `evorule-cli/build.rs` (L1 字面量门禁, 7 模式)
 - `Cargo.toml` (根 `[workspace.lints]` 集中配置)
 - `{evorule-tcb,evorule-reactor,evorule-governance,evorule-cli}/Cargo.toml` (各 crate `[lints] workspace = true`)

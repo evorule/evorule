@@ -132,7 +132,7 @@
 - 🔄 **[NOTICE.md](NOTICE.md)**：增补三选项指引表与 CC0 官方链接
 - 🔄 **CONTRIBUTING / CONTRIBUTING_ZH**：版本对齐 0.4.2、CLA 标注"已发布"并补 corporate 链接
 - 🔄 **[TRADEMARK.md](TRADEMARK.md)**：修正死链（evorule-logo.png / banner.svg → evorule-banner.svg）
-- 🔄 **.github/CHANGE_REQUEST_TEMPLATE.md**：镜像自根目录正本（SSOT）
+- 🔄 **.github/CHANGE_REQUEST_TEMPLATE.md**：镜像自根目录正本（SSOT）（**现状注记**：该模板自身已于 [Unreleased] TCB-2026-29 随 CR 构建校验移出公开仓一并删除）
 - 🆕 **新增 [GOVERNANCE.md](GOVERNANCE.md)**：变更审查审批人、状态流转、CLA 处理流程
 - 🗑 **scripts/**：清理临时运行残留（_cargo_gate / _stage_a_runner），.gitignore 显式兜底
 

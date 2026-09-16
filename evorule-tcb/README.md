@@ -667,7 +667,7 @@ EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 wa
 实际权威源:
 
 - `evorule-tcb/TCB_SPEC.md` — 本模块 redline 规则 (T1-T14)
-- `evorule-tcb/DETERMINISM_REPORT.md` — 确定性保障报告（零依赖 / no_std / 23 模式门禁）
+- `evorule-tcb/DETERMINISM_REPORT.md` — 确定性保障报告（零运行时依赖 / no_std / 24 模式门禁）
 - `evorule-reactor/REACTOR_SPEC.md` — 反应器机制-策略分离
 - `evorule-governance/GOVERNANCE_SPEC.md` — 治理层机制-策略分离
 - 项目级文档总索引: [`DOCS_INDEX.md`](../DOCS_INDEX.md)（所有 L1 公开文档的唯一入口）
