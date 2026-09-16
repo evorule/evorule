@@ -135,6 +135,7 @@ Also use Issues with the `enhancement` label.
 4. **Local validation**:
 
    ```bash
+   cargo fmt --all -- --check               # 0 diffs required
    cargo check --workspace
    cargo test --workspace
    cargo clippy --workspace -- -D warnings   # 0 warnings required

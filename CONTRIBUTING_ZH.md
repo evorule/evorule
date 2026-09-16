@@ -139,6 +139,7 @@
 4. **本地验证**:
 
    ```bash
+   cargo fmt --all -- --check                # 格式无 diff 才能合
    cargo check --workspace
    cargo test --workspace
    cargo clippy --workspace -- -D warnings   # 0 warnings 才能合

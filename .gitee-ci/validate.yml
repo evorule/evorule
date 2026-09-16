@@ -1,8 +1,14 @@
 # Gitee Go pipeline for evorule (core)
-# Parity with .github/workflows/ci.yml
+# Parity with .github/workflows/ci.yml (validate/test/build) + clippy.yml (lint = fmt + clippy)
 #
 # Gitee Go does not support actions/checkout, so we use git clone explicitly.
 # evorule 核心仓: tcb / reactor / governance / cli 同仓联调, 不发独立 crate 镜像。
+#
+# Rust 镜像版本 (TCB-2026-48 整改): lint / test / build 三 stage 统一 `rust:1.97.1-slim`,
+# 与仓库根 rust-toolchain.toml 的 `channel = "1.97.1"` 对齐, 镜像自带该版本工具链,
+# rustup 无需再下载。旧值 `rust:1.92-slim` 落后锁定 5 个 minor 系列 (镜像里是 1.92.0,
+# 发布于 2025-12), 实际编译版本靠 rustup 读 toolchain 文件覆盖为 1.97.1,
+# 声明与实际执行版本不符。
 
 stages:
   - validate
@@ -44,7 +50,7 @@ validate-pr:
 # === 1. Clippy + fmt ===
 lint:
   stage: lint
-  image: rust:1.92-slim
+  image: rust:1.97.1-slim
   script:
     - apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev pkg-config git
     - cargo fmt --all -- --check
@@ -59,7 +65,7 @@ lint:
 # === 2. Rust tests ===
 test:
   stage: test
-  image: rust:1.92-slim
+  image: rust:1.97.1-slim
   script:
     - apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev pkg-config git
     - cargo test --workspace --all-targets
@@ -72,7 +78,7 @@ test:
 # === 3. Release build (evorule CLI 二进制) ===
 build:
   stage: build
-  image: rust:1.92-slim
+  image: rust:1.97.1-slim
   script:
     - apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev pkg-config git
     - cargo build --release --bin evorule

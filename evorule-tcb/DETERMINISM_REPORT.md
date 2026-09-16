@@ -120,18 +120,19 @@ pub type ObjectMap = BTreeMap<String, JsonValue>;
 
 ### 3.2 编译时门禁（build.rs，24 模式）
 
-[build.rs](build.rs#L40-L72) 扫描 `src/` 禁止以下破坏确定性的构造（测试模块自动剥离后扫描）：
+[build.rs](build.rs#L40-L72) 递归扫描 `src/`，禁止以下破坏确定性的构造。测试模块按标签**区别对待**：`.unwrap(` / `.expect(` / `panic!(` / `HashMap` / `HashSet` 为 test-tolerant（剥离任意命名 `#[cfg(test)] mod <ident>` 测试块后扫描——测试断言与 fixture 是其惯用手段，剥离逻辑感知字符串/字符/注释）；`unsafe` / `debug_assert!` 及其余全部标签在 `src/` 内**所有位置强制**，测试模块内同样拦截：
 
-| 类别 | 禁止模式 | 破坏点 |
-|------|---------|--------|
-| 哈希容器 | `HashMap`, `HashSet` | 迭代顺序非确定 |
-| panic-prone | `.unwrap(`, `.expect(`, `debug_assert!`, `panic!(` | 可 panic |
-| unsafe | `unsafe` | 内存非确定行为 |
-| 浮点 | `f32`, `f64`, `Float` | 跨平台非确定 |
-| 系统时间 | `SystemTime`, `Instant` | 依赖当前时间 |
-| 随机数 | `rand::`, `random()` | 非确定 |
-| I/O | `std::fs::`, `std::net::`, `std::io::`, `File::open`, `std::process::` | 依赖外部环境 |
-| 线程/异步 | `std::thread`, `tokio::`, `async`, `await`, `spawn(` | 并发非确定 |
+| 类别 | 禁止模式 | 破坏点 | `#[cfg(test)]` 模块内 |
+|------|---------|--------|---------------------|
+| 哈希容器 | `HashMap`, `HashSet` | 迭代顺序非确定 | 豁免 (test-tolerant) |
+| panic-prone (T9/F11) | `.unwrap(`, `.expect(`, `panic!(` | 可 panic | 豁免 (test-tolerant) |
+| 断言 (T11) | `debug_assert!` | release 下消失，debug/release 行为不一致 | **强制拦截** |
+| unsafe (T10) | `unsafe` | 内存非确定行为 | **强制拦截** |
+| 浮点 | `f32`, `f64`, `Float` | 跨平台非确定 | **强制拦截** |
+| 系统时间 | `SystemTime`, `Instant` | 依赖当前时间 | **强制拦截** |
+| 随机数 | `rand::`, `random()` | 非确定 | **强制拦截** |
+| I/O | `std::fs::`, `std::net::`, `std::io::`, `File::open`, `std::process::` | 依赖外部环境 | **强制拦截** |
+| 线程/异步 | `std::thread`, `tokio::`, `async`, `await`, `spawn(` | 并发非确定 | **强制拦截** |
 
 门禁失败则**构建失败**（`ExitCode::FAILURE`），紧急情况需 `EVORULE_SKIP_GATE=1` + 书面理由。
 
