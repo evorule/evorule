@@ -471,8 +471,6 @@ evorule/
 
 ## Contributing
 
-> **The primary repo is on Gitee**: <https://gitee.com/evorule/evorule>. GitHub is a sync mirror; **please file Issues and Pull Requests on Gitee**.
-
 1. Fork the repo (Gitee)
 2. Create a feature branch (`git checkout -b feature/xxx`)
 3. Commit your change (`git commit -m 'feat: xxx'`)
