@@ -40,21 +40,21 @@
 
 ### 🐛 修复
 
-- **门禁跳过阀 fail-closed 化（TCB-2026-26）**：`EVORULE_SKIP_GATE` / `EVORULE_SKIP_CR_GATE` 旧实现用 `is_ok()` 判定，`=0`/空串/乱值也会意外跳过门禁（fail-open）。现改为仅 `1`/`true`（trim 后大小写不敏感）生效，其余任何值门禁照常执行并发出 warning；四仓（tcb/reactor/governance/cli）build.rs 同步同改。附带 `EVORULE_SKIP_REASON` 跳过理由登记——跳过生效时未登记理由将出现 warning（大声原则：任何跳过必须可追溯）
-- **字面量门禁空格旁路封堵（TCB-2026-24）**：`x.unwrap ()` / `Hash Map` 等插空写法在纯原文子串匹配下漏检。四仓 build.rs 现对每行同时按原文与去空白文本匹配，任一命中即拦截；注释/属性行判定仍用原文。四仓 build.rs 各新增 `test_squeeze_ws_catches_whitespace_bypass` 单元测试
-- **策略层检测撤测试豁免（TCB-2026-28）**：策略层反模式检测旧实现先「剥离 `mod tests` 再扫」，既留绕过面（注释伪装 `mod tests`、`mod tests_foo` 命名误吞整块），又给策略层概念留了测试区藏身处。现改为扫描 `src/` **全文件**（含测试模块——测试代码同为机制层，须守同一纪律），朴素行级剥离函数 `strip_test_modules` 随之成为死代码、四仓一并删除。自查机制不给自己留豁免
-- **unsafe 属性行整体豁免封堵（TCB-2026-25）**：字面量门禁对 `unsafe` 模式旧实现把 `#[`/`#!` 开头行**整体跳过**，`#[inline] unsafe fn` 借属性前缀逃逸检测。现改为剥离行首 `#![...]`/`#[...]` 属性语法（方括号深度感知）后对余下内容匹配——`#[forbid(unsafe_code)]` / `#![deny(unsafe_code)]` 等纯属性行剥离后为空、不误报；属性未闭合保守按原文整行匹配（fail-closed）。tcb/reactor 两仓同改（governance/cli 不扫 unsafe、无此豁免），各新增 `test_strip_leading_attr` 单元测试
-- **CR 构建校验移出公开仓，策略层检测无阀常开（TCB-2026-29/-27，裁定⑤⑥）**：旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律（提交前停下来自查的提醒），从来不是防伪造审查机制；公开形态易引发「伪门禁」质疑，故从四仓 build.rs 中彻底移除，`EVORULE_SKIP_CR_GATE` 环境变量随之删除。策略层反模式检测改为**无阀常开**——机制-策略分离是设计不变量，不设旁路环境变量。CR 自查职责由维护者本地 git pre-commit hook 承接（hook 脚本与模板存维护者本地工具区，不随仓库/发布公开）；CHANGE_REQUEST.md 登记文件与登记纪律本身不变。公开仓 `.github/CHANGE_REQUEST_TEMPLATE.md` 删除，根 README / GOVERNANCE.md / GATE_REFERENCE.md / 四仓 SPEC·README / `.github` Issue·PR 模板同批更新口径，历史版本条目按当时事实保留并附现状注记
-- **字面量门禁假阳性收敛（TCB-2026-32）**：行内**自闭合块注释**区段（含嵌套 `/* /* */ */`）现先剥离再匹配——`/* conditional */` 等注释示例文字不再误报。剥离器带**字符串感知**防漏报：常规/字节/原始字符串内的 `/*` 不作注释起点（否则字符串内伪 `/*` 会把后续真代码吃进伪注释区一起剥掉）；`\"` 转义跳过、原始字符串按定义不处理转义；跨行未闭合或字符串未在本行闭合一律放弃剥离、整行按原文匹配（fail-closed——剥离器自身不得成为漏报面）。`async`/`await` 裸词改**词界匹配**（命中前后须非 ASCII 字母），"asynchronous"/"awaiting" 等英文单词不再误命中；去空白口径的 `asyncfn` 合并词被词界检查自然拒绝，原文口径保证真关键字照常命中。字符串字面量内凑巧命中的极小概率误报为设计接受（宁可误报不可漏报）。四仓同改，各新增 `test_strip_inline_block_comments` / `test_bare_word_hit` 单元测试
-- **tcb lints 收敛 workspace 继承（TCB-2026-31）**：`evorule-tcb/Cargo.toml` 旧本地 `[lints.rust]`/`[lints.clippy]` 与根 `[workspace.lints]` 逐条同值但双份维护（曾造成「四仓统一继承」的 GATE_REFERENCE 声明失实）。现改为 `[lints] workspace = true` 与其余三仓统一——lint 配置单一真值源回到根 `Cargo.toml`。`cargo clippy -p evorule-tcb --all-targets -- -D warnings` 复验通过，lint 语义零变化
-- **tcb 字面量门禁补齐 `panic!(` 模式（TCB-2026-35）**：tcb FORBIDDEN 清单旧缺 `panic!(`——`.unwrap(` / `.expect(` / `debug_assert!` 均在列，唯独直写 `panic!(` 零门禁覆盖。补入后与 T9/T11 同归 G1 panic-prone 组、同为 test-tolerant（测试断言机制本体，生产代码禁用；补入即暴露 4 处测试内 `panic!`，经测试模块豁免修复后门禁全绿）。随修复加固 `skip_to_mod_tests`：旧实现按 `"mod tests"` 字面子串定位测试模块，`mod executor_ssot_tests` 等非 tests 命名模块漏剥（测试内模式误报）、`mod tests_foo` 借前缀误吞（漏报面），现改为属性/注释跳过后必须紧跟 `mod <ident>`（cfg(test) 限定的模块本就不进生产构建，剥离任意命名测试模块是安全豁免）；同批修复 `strip_test_mod` 存量缺陷——一文件含多个 cfg(test) 模块时第一个模块的尾部被整段重复压入扫描输出，后续测试模块体未被剥离。四仓 build.rs 同步同改，各新增 `test_strip_multiple_test_mods` 单元测试
-- **L1 门禁通过输出大声化（TCB-2026-36）**：四仓 L1 字面量门禁旧实现通过时零输出（「Gate passed silently」自辩成功是默认态）——零输出的通过无法与「build.rs 被删/被短路/未执行」区分，门禁存在性无从自证。现通过时发 `cargo:warning={crate} 字面量门禁 PASSED - 已扫 N 文件 x M 模式, 0 违规`，与 SKIPPED 输出、L1b 策略层检测 PASSED 输出、违规时 stderr 逐条列明构成完整三态可见口径；文件数/模式数动态取值，模式清单变更不产生假数字。四仓 build.rs 同步同改
-- **跨仓 build.rs 内联副本漂移锁死（TCB-2026-30）**：四仓 build.rs 的门禁共享函数（`strip_test_mod` / `skip_to_mod_tests` / `squeeze_ws` / `match_brace` 等 13 个）是同一份实现的内联副本，此前仅靠「同步同改」人工纪律维护，已实际漂移（模式清单 24/15/14/7 各仓不同、GATE_REFERENCE 行数声明失实）。新增 `evorule-cli/tests/gate_sync_test.rs` 集成测试：按函数名提取四仓 build.rs 顶层函数体，剥离注释/字面量并去空白规范化后以 tcb 为基准逐仓比对，任何一处漂移即测试红并精确输出差异函数；附带锁定清单完整性测试（新增共享函数不入清单即失败，防清单腐化）。阳性对照验证过测试确实能咬住漂移。GATE_REFERENCE §一同步声明改写为机器化同步纪律：明确共享函数锁定清单、「新增共享函数必须同批入清单」规则，并以**有意差异表**如实登记四仓豁免模型/模式清单/BOM/T15 等既定差异——差异是设计决定，不再假装「完全相同」；删除全部失实行数声明
-- **门禁文档扫描口径与模式清单如实化（TCB-2026-33/-39）**：TCB_SPEC §5.3 旧称 T10/T11「所有位置都扫描」与实现矛盾——L1 字面量门禁只递归扫描 `src/`，`tests/`/`benches/`/`examples/` 从不读取。现如实声明扫描范围（`src/` 递归，集成测试纪律由 `cargo test` 与 clippy `--all-targets` 承接），「所有位置」限定为 `src/` 文件内所有位置（含测试模块体）；§5.3 豁免口径同步 TCB-2026-35 后实际行为（任意命名测试模块、T8/T9/F11-panic test-tolerant）。GATE_REFERENCE §2.2 reactor 模式数 14→15（表补 T10-unsafe-keyword 行 + T10 文件级豁免说明）、§2.3 删除「跟 tier1 相同」失实声明（tcb 24 模式 vs governance 14 模式为有意差异，指回 §一差异表）、§2.4 cli 表补 F11-panic 行并删除「binary crate 不需要 F11-panic」错误声明（cli FORBIDDEN 实有该模式）与已删除的 `VALID_TRANSFORM_TYPES` 豁免残留（阶段5 起零豁免）；reactor/governance build.rs 头注释模式数漏算 F11-panic 同步修正（reactor 14→15、governance 13→14），头注释测试模块豁免口径同步。TCB-2026-34（README 递归声明）经复核随递归收集修复已自然准确，无需变更
-- **tcb README 审计声明如实化（TCB-2026-37）**：README「可审计」行旧称 `core_eval.json` 「编译时结构校验」与实现矛盾——build.rs 零读取该文件（仅策略层错误提示文案提及），`core_eval.json` 由装载层在运行时读入并解析为 transform 规则列表传入 TCB，结构校验全部发生在运行时（`MAX_TRANSFORM_RULES` 上限、路径解析、未知指令报错）。现按实况改写。同批修正 README 门禁模式数 23→24（TCB-2026-35 补入 `panic!(` 时的文档同步遗漏）：§9.1 表补 `panic!(` 行并按代码实况拆分 T9/F11 (panic) 与 T11 (debug_assert) 两行、测试模块豁免口径同步任意命名；概览/目录树/§八三处「23 个禁用模式」同步
-- **确定性报告 dev-dependencies 陈述如实化（TCB-2026-38）**：DETERMINISM_REPORT §1.1 旧称「无 `[dev-dependencies]`」、§1.2 旧称「Cargo.lock 中 evorule-tcb 条目没有 dependencies 字段」，两处均与事实相反——tcb Cargo.toml 实有 `[dev-dependencies]` proptest 1.4 + criterion 0.5，Cargo.lock 条目实有 `dependencies = ["criterion", "proptest"]`。现按实况改写：零依赖结论限定为**零运行时依赖**（`[dependencies]` 为空、无 build-dependencies；dev-deps 仅测试/基准用且随 `exclude` 清单不进发布产物，运行时依赖面为零）；§1.3 build.rs 行号链接随多轮修改漂移一并校正。README 概览「外部依赖:0」行的「Cargo.lock 确认无第三方 crate」同病同步修正
-- **双轨 lint 门禁不对称修复：GitHub 侧补 fmt（TCB-2026-48）**：Gitee `.gitee-ci/validate.yml` 的 lint stage 为 `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` 两道，GitHub 侧 `.github/workflows/clippy.yml` 只有 clippy 一道——「本地 fmt 未过」可在 GitHub 侧全绿通过，仅 Gitee 侧被拦。现补独立 `fmt` job 对齐。采用**独立 job 而非并入 clippy job**：workflow 名与既有 `clippy` job 名保持不变，因分支保护的 required status check 以 `<workflow> / <job>` 全名匹配，改名会使该 check 永久 pending 而阻塞合入；新增 job 不改变既有 check 标识。贡献者指引同批补齐——`.github/PULL_REQUEST_TEMPLATE.md` / `CONTRIBUTING.md` / `CONTRIBUTING_ZH.md` 的本地验证清单加入 `cargo fmt --all -- --check`，避免新门禁对贡献者静默生效
-- **Gitee CI 镜像与 toolchain 锁定对齐 + tcb 门禁口径如实化（TCB-2026-48）**：`.gitee-ci/validate.yml` 的 lint/test/build 三 stage 镜像 `rust:1.92-slim` → `rust:1.97.1-slim`，与根 `rust-toolchain.toml` 的 `channel = "1.97.1"` 对齐——旧值落后 5 个 minor 系列，实际编译版本靠 rustup 读 toolchain 文件覆盖为 1.97.1，镜像 tag 从不代表执行版本（声明误导）；两版镜像同为 Debian trixie/slim 基座（docker-library 自 2025-08 起 trixie 为默认），`apt` 依赖与构建脚本零变化。同批 `DETERMINISM_REPORT.md` §3.2 门禁口径如实化：旧称「扫描 `src/`，测试模块自动剥离后扫描」对 T10/T11 不准确——build.rs 实按标签区别对待，T8 哈希容器 / T9 unwrap·expect / F11-panic 为 test-tolerant（剥离任意命名 `#[cfg(test)] mod <ident>` 后扫描），T10 `unsafe` / T11 `debug_assert!` 及其余全部标签在 `src/` 内所有位置强制（测试模块内同样拦截）；现改写总述并给模式表补「`#[cfg(test)]` 模块内」列，`debug_assert!` 自 panic-prone 行拆出（其豁免口径与 T9/F11 不同）
+- **门禁跳过阀 fail-closed 化**：`EVORULE_SKIP_GATE` / `EVORULE_SKIP_CR_GATE` 旧实现用 `is_ok()` 判定，`=0`/空串/乱值也会意外跳过门禁（fail-open）。现改为仅 `1`/`true`（trim 后大小写不敏感）生效，其余任何值门禁照常执行并发出 warning；四仓（tcb/reactor/governance/cli）build.rs 同步同改。附带 `EVORULE_SKIP_REASON` 跳过理由登记——跳过生效时未登记理由将出现 warning（大声原则：任何跳过必须可追溯）
+- **字面量门禁空格旁路封堵**：`x.unwrap ()` / `Hash Map` 等插空写法在纯原文子串匹配下漏检。四仓 build.rs 现对每行同时按原文与去空白文本匹配，任一命中即拦截；注释/属性行判定仍用原文。四仓 build.rs 各新增 `test_squeeze_ws_catches_whitespace_bypass` 单元测试
+- **策略层检测撤测试豁免**：策略层反模式检测旧实现先「剥离 `mod tests` 再扫」，既留绕过面（注释伪装 `mod tests`、`mod tests_foo` 命名误吞整块），又给策略层概念留了测试区藏身处。现改为扫描 `src/` **全文件**（含测试模块——测试代码同为机制层，须守同一纪律），朴素行级剥离函数 `strip_test_modules` 随之成为死代码、四仓一并删除。自查机制不给自己留豁免
+- **unsafe 属性行整体豁免封堵**：字面量门禁对 `unsafe` 模式旧实现把 `#[`/`#!` 开头行**整体跳过**，`#[inline] unsafe fn` 借属性前缀逃逸检测。现改为剥离行首 `#![...]`/`#[...]` 属性语法（方括号深度感知）后对余下内容匹配——`#[forbid(unsafe_code)]` / `#![deny(unsafe_code)]` 等纯属性行剥离后为空、不误报；属性未闭合保守按原文整行匹配（fail-closed）。tcb/reactor 两仓同改（governance/cli 不扫 unsafe、无此豁免），各新增 `test_strip_leading_attr` 单元测试
+- **CR 构建校验移出公开仓，策略层检测无阀常开**：旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律（提交前停下来自查的提醒），从来不是防伪造审查机制；公开形态易引发「伪门禁」质疑，故从四仓 build.rs 中彻底移除，`EVORULE_SKIP_CR_GATE` 环境变量随之删除。策略层反模式检测改为**无阀常开**——机制-策略分离是设计不变量，不设旁路环境变量。CR 自查职责由维护者本地 git pre-commit hook 承接（hook 脚本与模板存维护者本地工具区，不随仓库/发布公开）；CHANGE_REQUEST.md 登记文件与登记纪律本身不变。公开仓 `.github/CHANGE_REQUEST_TEMPLATE.md` 删除，根 README / GOVERNANCE.md / GATE_REFERENCE.md / 四仓 SPEC·README / `.github` Issue·PR 模板同批更新口径，历史版本条目按当时事实保留并附现状注记
+- **字面量门禁假阳性收敛**：行内**自闭合块注释**区段（含嵌套 `/* /* */ */`）现先剥离再匹配——`/* conditional */` 等注释示例文字不再误报。剥离器带**字符串感知**防漏报：常规/字节/原始字符串内的 `/*` 不作注释起点（否则字符串内伪 `/*` 会把后续真代码吃进伪注释区一起剥掉）；`\"` 转义跳过、原始字符串按定义不处理转义；跨行未闭合或字符串未在本行闭合一律放弃剥离、整行按原文匹配（fail-closed——剥离器自身不得成为漏报面）。`async`/`await` 裸词改**词界匹配**（命中前后须非 ASCII 字母），"asynchronous"/"awaiting" 等英文单词不再误命中；去空白口径的 `asyncfn` 合并词被词界检查自然拒绝，原文口径保证真关键字照常命中。字符串字面量内凑巧命中的极小概率误报为设计接受（宁可误报不可漏报）。四仓同改，各新增 `test_strip_inline_block_comments` / `test_bare_word_hit` 单元测试
+- **tcb lints 收敛 workspace 继承**：`evorule-tcb/Cargo.toml` 旧本地 `[lints.rust]`/`[lints.clippy]` 与根 `[workspace.lints]` 逐条同值但双份维护（曾造成「四仓统一继承」的 GATE_REFERENCE 声明失实）。现改为 `[lints] workspace = true` 与其余三仓统一——lint 配置单一真值源回到根 `Cargo.toml`。`cargo clippy -p evorule-tcb --all-targets -- -D warnings` 复验通过，lint 语义零变化
+- **tcb 字面量门禁补齐 `panic!(` 模式**：tcb FORBIDDEN 清单旧缺 `panic!(`——`.unwrap(` / `.expect(` / `debug_assert!` 均在列，唯独直写 `panic!(` 零门禁覆盖。补入后与 T9/T11 同归 G1 panic-prone 组、同为 test-tolerant（测试断言机制本体，生产代码禁用；补入即暴露 4 处测试内 `panic!`，经测试模块豁免修复后门禁全绿）。随修复加固 `skip_to_mod_tests`：旧实现按 `"mod tests"` 字面子串定位测试模块，`mod executor_ssot_tests` 等非 tests 命名模块漏剥（测试内模式误报）、`mod tests_foo` 借前缀误吞（漏报面），现改为属性/注释跳过后必须紧跟 `mod <ident>`（cfg(test) 限定的模块本就不进生产构建，剥离任意命名测试模块是安全豁免）；同批修复 `strip_test_mod` 存量缺陷——一文件含多个 cfg(test) 模块时第一个模块的尾部被整段重复压入扫描输出，后续测试模块体未被剥离。四仓 build.rs 同步同改，各新增 `test_strip_multiple_test_mods` 单元测试
+- **L1 门禁通过输出大声化**：四仓 L1 字面量门禁旧实现通过时零输出（「Gate passed silently」自辩成功是默认态）——零输出的通过无法与「build.rs 被删/被短路/未执行」区分，门禁存在性无从自证。现通过时发 `cargo:warning={crate} 字面量门禁 PASSED - 已扫 N 文件 x M 模式, 0 违规`，与 SKIPPED 输出、L1b 策略层检测 PASSED 输出、违规时 stderr 逐条列明构成完整三态可见口径；文件数/模式数动态取值，模式清单变更不产生假数字。四仓 build.rs 同步同改
+- **跨仓 build.rs 内联副本漂移锁死**：四仓 build.rs 的门禁共享函数（`strip_test_mod` / `skip_to_mod_tests` / `squeeze_ws` / `match_brace` 等 13 个）是同一份实现的内联副本，此前仅靠「同步同改」人工纪律维护，已实际漂移（模式清单 24/15/14/7 各仓不同、GATE_REFERENCE 行数声明失实）。新增 `evorule-cli/tests/gate_sync_test.rs` 集成测试：按函数名提取四仓 build.rs 顶层函数体，剥离注释/字面量并去空白规范化后以 tcb 为基准逐仓比对，任何一处漂移即测试红并精确输出差异函数；附带锁定清单完整性测试（新增共享函数不入清单即失败，防清单腐化）。阳性对照验证过测试确实能咬住漂移。GATE_REFERENCE §一同步声明改写为机器化同步纪律：明确共享函数锁定清单、「新增共享函数必须同批入清单」规则，并以**有意差异表**如实登记四仓豁免模型/模式清单/BOM/T15 等既定差异——差异是设计决定，不再假装「完全相同」；删除全部失实行数声明
+- **门禁文档扫描口径与模式清单如实化**：TCB_SPEC §5.3 旧称 T10/T11「所有位置都扫描」与实现矛盾——L1 字面量门禁只递归扫描 `src/`，`tests/`/`benches/`/`examples/` 从不读取。现如实声明扫描范围（`src/` 递归，集成测试纪律由 `cargo test` 与 clippy `--all-targets` 承接），「所有位置」限定为 `src/` 文件内所有位置（含测试模块体）；§5.3 豁免口径同步 TCB-2026-35 后实际行为（任意命名测试模块、T8/T9/F11-panic test-tolerant）。GATE_REFERENCE §2.2 reactor 模式数 14→15（表补 T10-unsafe-keyword 行 + T10 文件级豁免说明）、§2.3 删除「跟 tier1 相同」失实声明（tcb 24 模式 vs governance 14 模式为有意差异，指回 §一差异表）、§2.4 cli 表补 F11-panic 行并删除「binary crate 不需要 F11-panic」错误声明（cli FORBIDDEN 实有该模式）与已删除的 `VALID_TRANSFORM_TYPES` 豁免残留（阶段5 起零豁免）；reactor/governance build.rs 头注释模式数漏算 F11-panic 同步修正（reactor 14→15、governance 13→14），头注释测试模块豁免口径同步。TCB-2026-34（README 递归声明）经复核随递归收集修复已自然准确，无需变更
+- **tcb README 审计声明如实化**：README「可审计」行旧称 `core_eval.json` 「编译时结构校验」与实现矛盾——build.rs 零读取该文件（仅策略层错误提示文案提及），`core_eval.json` 由装载层在运行时读入并解析为 transform 规则列表传入 TCB，结构校验全部发生在运行时（`MAX_TRANSFORM_RULES` 上限、路径解析、未知指令报错）。现按实况改写。同批修正 README 门禁模式数 23→24（TCB-2026-35 补入 `panic!(` 时的文档同步遗漏）：§9.1 表补 `panic!(` 行并按代码实况拆分 T9/F11 (panic) 与 T11 (debug_assert) 两行、测试模块豁免口径同步任意命名；概览/目录树/§八三处「23 个禁用模式」同步
+- **确定性报告 dev-dependencies 陈述如实化**：DETERMINISM_REPORT §1.1 旧称「无 `[dev-dependencies]`」、§1.2 旧称「Cargo.lock 中 evorule-tcb 条目没有 dependencies 字段」，两处均与事实相反——tcb Cargo.toml 实有 `[dev-dependencies]` proptest 1.4 + criterion 0.5，Cargo.lock 条目实有 `dependencies = ["criterion", "proptest"]`。现按实况改写：零依赖结论限定为**零运行时依赖**（`[dependencies]` 为空、无 build-dependencies；dev-deps 仅测试/基准用且随 `exclude` 清单不进发布产物，运行时依赖面为零）；§1.3 build.rs 行号链接随多轮修改漂移一并校正。README 概览「外部依赖:0」行的「Cargo.lock 确认无第三方 crate」同病同步修正
+- **双轨 lint 门禁不对称修复：GitHub 侧补 fmt**：Gitee `.gitee-ci/validate.yml` 的 lint stage 为 `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` 两道，GitHub 侧 `.github/workflows/clippy.yml` 只有 clippy 一道——「本地 fmt 未过」可在 GitHub 侧全绿通过，仅 Gitee 侧被拦。现补独立 `fmt` job 对齐。采用**独立 job 而非并入 clippy job**：workflow 名与既有 `clippy` job 名保持不变，因分支保护的 required status check 以 `<workflow> / <job>` 全名匹配，改名会使该 check 永久 pending 而阻塞合入；新增 job 不改变既有 check 标识。贡献者指引同批补齐——`.github/PULL_REQUEST_TEMPLATE.md` / `CONTRIBUTING.md` / `CONTRIBUTING_ZH.md` 的本地验证清单加入 `cargo fmt --all -- --check`，避免新门禁对贡献者静默生效
+- **Gitee CI 镜像与 toolchain 锁定对齐 + tcb 门禁口径如实化**：`.gitee-ci/validate.yml` 的 lint/test/build 三 stage 镜像 `rust:1.92-slim` → `rust:1.97.1-slim`，与根 `rust-toolchain.toml` 的 `channel = "1.97.1"` 对齐——旧值落后 5 个 minor 系列，实际编译版本靠 rustup 读 toolchain 文件覆盖为 1.97.1，镜像 tag 从不代表执行版本（声明误导）；两版镜像同为 Debian trixie/slim 基座（docker-library 自 2025-08 起 trixie 为默认），`apt` 依赖与构建脚本零变化。同批 `DETERMINISM_REPORT.md` §3.2 门禁口径如实化：旧称「扫描 `src/`，测试模块自动剥离后扫描」对 T10/T11 不准确——build.rs 实按标签区别对待，T8 哈希容器 / T9 unwrap·expect / F11-panic 为 test-tolerant（剥离任意命名 `#[cfg(test)] mod <ident>` 后扫描），T10 `unsafe` / T11 `debug_assert!` 及其余全部标签在 `src/` 内所有位置强制（测试模块内同样拦截）；现改写总述并给模式表补「`#[cfg(test)]` 模块内」列，`debug_assert!` 自 panic-prone 行拆出（其豁免口径与 T9/F11 不同）
 
 ---
 
@@ -62,7 +62,7 @@
 
 ### ⚠️ Breaking Change（破坏性变更）
 
-- **移除 `collect` / `merge` 元指令（69 号清理）**：LLM ReAct 多轮编排属于应用层职责，机制层不再内置循环原语。两者系早期架构事故中由应用层（evo-agent runner）误下沉至 TCB 的能力，本次随专项彻底退役：
+- **移除 `collect` / `merge` 元指令**：LLM ReAct 多轮编排属于应用层职责，机制层不再内置循环原语。两者曾由应用层（evo-agent runner）内置至 TCB，现随专项退役：
   - `evorule-tcb`：删除 `exec_collect` / `exec_merge` 及指令分发分支；`META_INSTRUCTION_TYPES` 收窄为 5 种（`branch` / `set` / `push` / `io_request` / `enforce`）；Kani proof P15/P16/P17 随删
   - `evorule-governance`：`VALID_TRANSFORM_TYPES` 收窄为 4 种（= TCB − enforce）
   - `evorule-cli` / `evorule-reactor` / schema（`_shared/v1.0.json` 双副本）/ console / console-cloud / evo-agent 宪法 / server 宪法（`server_eval.json` v0.5.0）全链同步收窄
@@ -134,7 +134,7 @@
 - 🔄 **[NOTICE.md](NOTICE.md)**：增补三选项指引表与 CC0 官方链接
 - 🔄 **CONTRIBUTING / CONTRIBUTING_ZH**：版本对齐 0.4.2、CLA 标注"已发布"并补 corporate 链接
 - 🔄 **[TRADEMARK.md](TRADEMARK.md)**：修正死链（evorule-logo.png / banner.svg → evorule-banner.svg）
-- 🔄 **.github/CHANGE_REQUEST_TEMPLATE.md**：镜像自根目录正本（SSOT）（**现状注记**：该模板自身已于 [Unreleased] TCB-2026-29 随 CR 构建校验移出公开仓一并删除）
+- 🔄 **.github/CHANGE_REQUEST_TEMPLATE.md**：镜像自根目录正本（SSOT）（**现状注记**：该模板自身已随 [Unreleased] 的 CR 构建校验移除一并删除）
 - 🆕 **新增 [GOVERNANCE.md](GOVERNANCE.md)**：变更审查审批人、状态流转、CLA 处理流程
 - 🗑 **scripts/**：清理临时运行残留（_cargo_gate / _stage_a_runner），.gitignore 显式兜底
 
@@ -237,7 +237,7 @@
 
 ### 🔄 变更
 
-- **T8 核心仓最小化：ReAct 应用剧本整体迁出至消费方**(依据 [system-rules T8 调查报告],2026-08-27 定调方案 A"应用自持运行宪法"):
+- **核心仓最小化：ReAct 应用剧本整体迁出至消费方**(2026-08-27 决策：应用自持运行宪法):
   - `evorule-tcb/core_eval.json` v0.3.1 → **v0.4.0**:移除三条 ReAct 循环规则(约全文 54%),回归最小引擎自评估集(increment/decrement/set/sequence/conditional/while_loop/noop/兜底);经 rule_set v1.0 门禁校验
   - **机制零改动**:6 元指令白名单、9 指令类型(call_external 等)、has_fields/collect/merge 语言层能力全部保留——迁出的是剧本不是语言
   - `transition.rs` 测试去 ReAct 化改名:`react_e2e_tests` → `io_loop_e2e_tests`(断言零改动)
@@ -247,11 +247,11 @@
 
 ### ❌ 移除
 
-- **T7 核心仓瘦身：一次性战地脚本退场（25 个）**(依据 [system-rules T7 调查报告],2026-08-27 定调"四 crate 内核论"):
+- **核心仓脚本瘦身：一次性维护脚本退场（25 个）**(2026-08-27 决策：四 crate 内核):
   - markdownlint 清洗群(15):`fix-md040{,.js,-v2}.ps1`、`show-{errors,md013*,md037,md051}`、`list-md013`、`find-md040`、`count-errors`、`show-remaining`、`fix-corrupted-{lines,newlines,quotes}`
   - SPDX 头灌装群(4):`add-spdx-ffi`、`add-spdx-safe`、`add_spdx_headers`、`update-spdx.js`(头部已全线就位)
   - 迁移/调试残留(4):`migrate-cli-examples-to-application.{ps1,sh}`、`agents-md-to-schema.py`(输入 AGENTS.md 已不存在)、`test-api-with-hash-diagnosis.ps1`
-  - 历史演变工具(2):`update-sdk-license.js`(许可证格局已定型)、`start-server.ps1`(零引用零文档,2026-08-27 明示批准删除)
+  - 历史演变工具(2):`update-sdk-license.js`(许可证格局已定型)、`start-server.ps1`(零引用零文档，已批准删除)
   - 全部经全仓调用方取证为零存活引用;生产链路零依赖;git 历史可考古
 - **保留判据入档**:evorule 仓 = 四 crate(tcb/reactor/governance/cli) + 支撑测试验证 CI 门禁 + 对外契约文档;新增 `scripts/` 文件须能回答"谁还在用它"。
 
@@ -429,7 +429,7 @@
 
 ### 🔄 变更
 
-- **SDK 许可证策略修正**: TypeScript SDK / Python SDK 由 `MIT` → `AGPL-3.0-or-later`(SDK 是核心衍生作品,协议不能自相矛盾);双轨许可兜底(内部集成不对外 SaaS / 政府学术非营利免费豁免 / 企业闭源 SaaS 走商业许可)
+- **SDK 许可证策略修正**: TypeScript SDK / Python SDK 由 `MIT` → `AGPL-3.0-or-later`(SDK 是核心衍生作品,协议不能自相矛盾);许可档位(内部集成 / 政府学术非营利免费豁免 / 企业闭源 SaaS 商业许可)
 - **`scripts/update-sdk-license.js` 方向反转**: 从"匹配旧 AGPL header → 替换为 MIT"反转为"匹配旧 MIT header → 替换为 AGPL";新增 SDK 目录不存在的防御性检查
 
 ### 🐛 修复
@@ -438,7 +438,7 @@
 
 ### 🔒 安全
 
-- **堵死 MIT SDK 灰色通道**: MIT 时期可通过 SDK 绕过核心 AGPL 不付费;SDK 改为 AGPL 后,对外 SaaS 场景必须二选一:开源 SaaS 应用层 或 购买商业许可。内部集成 / 政府学术非营利不受影响
+- **SDK 许可对齐核心**: SDK 由 MIT 改为 AGPL-3.0-or-later;对外 SaaS 场景须开源应用层或购买商业许可。内部集成 / 政府学术非营利不受影响
 
 ---
 
@@ -609,7 +609,7 @@
 ## [0.1.0-internal-baseline] - 2026-07-28
 
 > ⚠️ **本段是 v0.1.0 内部基线记录(2026-07-28)。**
-> 2026-07-30 决策后,evorule 仓真发 crates.io,公开发布版见上方 [0.1.0] - 2026-07-30 段。
+> 2026-07-30 起,evorule 仓公开发布至 crates.io,公开发布版见上方 [0.1.0] - 2026-07-30 段。
 > 本段保留作决策历史。
 
 项目首次公开版本。EvoRule 是一个只接受和运行 JSON 数据集的反应式执行引擎,采用三层架构(TCB / Reactor / Governance),提供确定性执行、可审计链、时间旅行调试。

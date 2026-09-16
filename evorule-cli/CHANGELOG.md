@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v0.6.0 - 2026-09-14
 
-**69 号清理：`validate` 元指令白名单收窄（MINOR，含破坏性）** — 适配 `evorule-tcb` v0.6.0 `META_INSTRUCTION_TYPES` SSOT 常量收窄（CR-20260914-001）。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.6.0]` 段。
+**`validate` 元指令白名单收窄（MINOR，含破坏性）** — 适配 `evorule-tcb` v0.6.0 `META_INSTRUCTION_TYPES` SSOT 常量收窄。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.6.0]` 段。
 
 ### 🔄 变更
 
@@ -104,7 +104,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v0.4.0 - 2026-09-01
 
-**单会话长跑 O(n²) 缺陷修复配套（MINOR，含破坏性）** — 适配 `evorule-reactor` v0.4.0 `Fact::Stable` 瘦身（CR-20260901-001）。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.4.0]` 段。
+**单会话长跑 O(n²) 缺陷修复配套（MINOR，含破坏性）** — 适配 `evorule-reactor` v0.4.0 `Fact::Stable` 瘦身。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.4.0]` 段。
 
 ### 🔄 变更
 
@@ -288,7 +288,7 @@ fact log 从自定义 JSON 格式改为 **evorule-reactor WAL JSONL 格式**,与
 - **确定性加载**:`load_rules` 按 `file_name()` 字典序排序后加载
   - 消除 `fs::read_dir` 顺序差异(Windows NTFS 字典序 vs Linux ext4 hash 序)
   - 保证同目录规则在不同平台执行结果一致
-- **max_steps 先检后 pop**:对齐 evorule-reactor BUG-3 修复,超限发 `Fact::Error` + break
+- **max_steps 先检后 pop**:对齐 evorule-reactor 相应修复,超限发 `Fact::Error` + break
 - **I/O 两阶段架构**:`pending_io: HashMap<FactId, JsonValue>` 缓存 orig 指令
   - 0.1.0 无 handler 时发 `Fact::Error` 退出,但架构正确
   - 后续加 handler 时只需在 IoRequest 分支注入 IoResponse + push_front(orig) 即可
@@ -410,8 +410,8 @@ src/
 
 ### 配套示例
 
-- `examples/hospital/` —— 医院 HIPAA / 等保 2.0 合规规则（待发布）
-- `examples/law-firm/` —— 律所客户保密 / GDPR 合规规则（待发布）
+- `examples/hospital/` —— 医院 HIPAA / 等保 2.0 合规规则（示例）
+- `examples/law-firm/` —— 律所客户保密 / GDPR 合规规则（示例）
 
 详见 [`README.md`](README.md) + [`CLI_SPEC.md`](CLI_SPEC.md)。
 
