@@ -28,6 +28,8 @@
 | evorule-dsh-skill | 安装器 Skill | gitee.com/evorule/evorule-dsh-skill | github.com/evorule/evorule-dsh-skill | 公开 | main | AGPL-3.0-or-later | mirror | — | ✅ | 无独立 CI（T4 缺口，待补）；安装指引已改 Gitee 主仓 |
 | evo-agent | 应用层编排（可信 AI 工作站） | gitee.com/evorule/evo-agent | github.com/evorule/evo-agent | 公开 | **main**（2026-09-16 由 master 迁移） | AGPL-3.0-or-later | ci,cla,mirror | ✅ | ✅（2026-09-16 补齐） | 与 evorule-agent **严格区分**（不同设计/功能） |
 | evorule-agent | 大脑主控 agent 运行时（技术预览） | **gitee.com/evorulelab/evorule-agent（私有）** | github.com/evorule/evorule-agent（私有镜像） | 私有 | main | AGPL-3.0-or-later | ci,cla,mirror | — | ⏸ 豁免（org secret 不覆盖私有仓，公开时启用） | canonical 为私有路径；未来公开时一次性双仓推送 |
+| evorule-application | 大众版应用层（等保2.0 门禁演示） | **gitee.com/evorule/evorule-application（私有）** | —（无 GitHub） | 私有 | main | AGPL-3.0-or-later | — | — | N/A | 2026-09-16 补录：本地 remote 由旧路径 evo-rule-lab 修正为 SSH canonical；无镜像，仅备份链覆盖 |
+| rpsm | 实时物理仿真原型（内核纯净+PLA 审计验证，Rust） | **gitee.com/evorule/rpsm（私有）** | —（无 GitHub） | 私有 | **main**（2026-09-16 由 master 迁移） | AGPL-3.0-or-later | — | — | N/A | 2026-09-16 补录：首次克隆本地；无镜像，仅备份链覆盖 |
 | evorule.github.io | GitHub Pages 站点 | —（无 Gitee） | github.com/evorule/evorule.github.io | 公开 | main | CC0-1.0 | — | — | N/A | 站点示例与 wasm demo |
 | .github | GitHub 组织健康文件 | —（无 Gitee） | github.com/evorule/.github | 公开 | main | CC0-1.0 | — | — | N/A | org profile/health 文件 |
 

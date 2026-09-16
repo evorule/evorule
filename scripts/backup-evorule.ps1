@@ -4,7 +4,8 @@
 #   powershell -File backup-evorule.ps1 -Verify    # 备份后从裸仓恢复演练(抽查前 2 仓)
 # 建议: Windows 任务计划每周日 02:00 运行(见 REPO_REGISTRY 维护规则)
 # 备份源: Gitee 主仓(权威源)。GitHub 镜像无需备份(其存在本身即灾备)。
-# 覆盖: 11 公开仓(HTTPS) + evorule-agent 私有仓(SSH, 无 GitHub 灾备, 必须备份)。
+# 覆盖: 11 公开仓(HTTPS) + 3 私有仓(SSH: evorule-agent / evorule-application / rpsm,
+#       均无 GitHub 灾备, 必须备份)。
 # 注意: 不要在脚本内设置 $ErrorActionPreference='Stop'——PS5.1 会把 git 的 stderr
 #       进度输出当作终止错误抛出; 改用目录存在性校验判断成败。
 param([switch]$Verify)
@@ -14,7 +15,11 @@ $public = @(
   "evorule-console-cloud","evorule-console","evo-agent","evorule-hash",
   "evorule-bundle","evorule-sdk","evorule-dsh-skill"
 )
-$private = @{ "evorule-agent" = "git@gitee.com:evorulelab/evorule-agent.git" }
+$private = @{
+  "evorule-agent"      = "git@gitee.com:evorulelab/evorule-agent.git"
+  "evorule-application"= "git@gitee.com:evorule/evorule-application.git"
+  "rpsm"               = "git@gitee.com:evorule/rpsm.git"
+}
 
 $base   = "D:\evorule-backup\golden"
 $stamp  = Get-Date -Format "yyyyMMdd"
