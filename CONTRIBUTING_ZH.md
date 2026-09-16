@@ -274,7 +274,7 @@ cargo kani -p evorule-tcb --tests --harness <proof函数名> --output-format=ter
 
 - **Gitee**: <https://gitee.com/evorule/evorule/issues>
 - **邮箱**: <evorulelab@gmail.com>
-- **组织**: [EvoRule Lab](https://gitee.com/evorule)
+- **组织**: [EvoRule](https://gitee.com/evorule)
 
 ---
 

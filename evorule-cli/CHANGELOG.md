@@ -419,7 +419,7 @@ src/
 
 ## v0.1.0 (baseline) - 2026-07-25 (EvoRule 公开 baseline)
 
-随 [`evorule` v0.1.0](https://gitee.com/evo-rule-lab/evorule) 同步发布,作为
+随 [`evorule` v0.1.0](https://gitee.com/evorule/evorule) 同步发布,作为
 evorule workspace 内的子 crate。
 
 ### 已知缺陷(已在 v0.1.0 corrective rewrite 中修复)

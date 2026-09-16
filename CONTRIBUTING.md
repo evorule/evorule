@@ -270,7 +270,7 @@ All `.rs` files must include the SPDX header:
 
 - **Gitee**: <https://gitee.com/evorule/evorule/issues>
 - **Email**: <evorulelab@gmail.com>
-- **Org**: [EvoRule Lab](https://gitee.com/evorule)
+- **Org**: [EvoRule](https://gitee.com/evorule)
 
 ---
 
