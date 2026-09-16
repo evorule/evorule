@@ -277,10 +277,11 @@ def check_l1_mentions_l2l3(docs: List[Path], root: Path) -> List[Tuple[Path, int
 # R-兄弟仓引用合规：L1 公开文档禁止谈论未核实/规划态的兄弟仓内容,允许引用已核实实现
 # ---------------------------------------------------------------------------
 
-def check_sibling_mention(docs: List[Path], root: Path) -> List[Tuple[Path, int, str, str]]:
+def check_sibling_mention(docs: List[Path], root: Path, self_name: str = '') -> List[Tuple[Path, int, str, str]]:
     """返回 [(path, lineno, repo_name, snippet)]
     规则(v1.x 调整,允许引用已核实的兄弟仓实现):
       - 废弃文档(顶部 [已废弃] 横幅)跳过(保留历史不深清)
+      - 本仓名(self_name)引用跳过——各仓文档引用自身 URL/名称属正常(跨仓复制推广适配)
       - 命中 SIBLING_UNVERIFIED_HINTS(未核实/规划态) → 违规(即使带"实现/位于"字样)
       - 命中 SIBLING_IMPLEMENTATION_REFERENCE_HINTS(已实现引用) 或
         DEPENDENCY_DECLARATION_HINTS(依赖声明) → 放行
@@ -309,6 +310,9 @@ def check_sibling_mention(docs: List[Path], root: Path) -> List[Tuple[Path, int,
                 if not m:
                     continue
                 repo_name = m.group(0)
+                # 本仓名引用跳过(自我引用,非兄弟仓谈论)
+                if self_name and repo_name == self_name:
+                    continue
                 # 未核实 / 规划态 → 直接违规(即使带"实现/位于"字样)
                 if SIBLING_UNVERIFIED_HINTS.search(line):
                     violations.append((doc, i, repo_name, line.strip()))
@@ -503,7 +507,7 @@ def check_docs_index_exist(docs: List[Path], root: Path) -> List[Tuple[Path, int
 # 主流程
 # ---------------------------------------------------------------------------
 
-def collect_all(root: Path, skip_git: bool) -> Dict[str, Any]:
+def collect_all(root: Path, skip_git: bool, self_name: str = '') -> Dict[str, Any]:
     result: Dict[str, Any] = {
         'gate_staged': {'ok': True, 'staged_violations': [], 'history_violations': []},
         'private_leak_l1': [],
@@ -536,7 +540,7 @@ def collect_all(root: Path, skip_git: bool) -> Dict[str, Any]:
             'line': ln, 'snippet': snip,
         })
     # R-兄弟仓零谈论
-    for (p, ln, repo, snip) in check_sibling_mention(docs, root):
+    for (p, ln, repo, snip) in check_sibling_mention(docs, root, self_name=self_name):
         result['sibling_mention_l1'].append({
             'file': str(p.relative_to(root)),
             'line': ln, 'repo': repo, 'snippet': snip,
@@ -636,13 +640,14 @@ def main():
     p = argparse.ArgumentParser(description='EvoRule 文档安全 + 引用完整性检查')
     p.add_argument('--warn', action='store_true', help='只警告不报错（exit 恒 0）')
     p.add_argument('--skip-git', action='store_true', help='跳过 git staged/history 检查（非 git 环境）')
+    p.add_argument('--self', default='', help='本仓名：兄弟仓规则豁免自我引用（跨仓推广适配）')
     p.add_argument('--json', action='store_true', help='JSON 输出')
     p.add_argument('--cwd', default=default_root, help='repo 根目录（默认自动定位 scripts/..）')
     args = p.parse_args()
 
     cwd = Path(args.cwd).resolve()
 
-    r = collect_all(cwd, skip_git=args.skip_git)
+    r = collect_all(cwd, skip_git=args.skip_git, self_name=args.self)
 
     if args.json:
         r['summary'] = {
