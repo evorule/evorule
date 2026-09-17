@@ -358,6 +358,9 @@ def check_sibling_mention(docs: List[Path], root: Path, self_name: str = '') -> 
         # CHANGELOG 为历史发布记录:记录的是"已实现/已发布"的跨仓事实,同审计快照不深查待核实表述
         if doc.name.lower() == 'changelog.md':
             continue
+        # REPO_REGISTRY.md 为生态仓登记表:登记兄弟仓 URL/名称是其职责本体(同 CHANGELOG 先例豁免)
+        if doc.name.upper() == 'REPO_REGISTRY.MD':
+            continue
         if re.search(r'AUDIT|THREAT_MODEL', doc.name):
             continue
         for i, line in enumerate(lines, 1):
