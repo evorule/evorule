@@ -11,6 +11,8 @@
 //! 界声明（R2）：T5 样本 ≤ 8、字符串长度 ≤ 64；T6 append 次数 ≤ 8（单线程，
 //! 并发数据竞争验证由既有审计链测试覆盖，本 harness 不重复）。
 
+#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
+
 use evorule_reactor::{chain_step, content_hash, fact_hash};
 use evorule_reactor::{Fact, FactId, FactsLog};
 use evorule_tcb::JsonValue;
@@ -57,12 +59,10 @@ fn t5b_chain_step_injective_and_idempotent() {
 /// T5c：`fact_hash` 对 PayloadUpdate 确定性 + 篡改必变。
 #[test]
 fn t5c_fact_hash_deterministic_tamper_detected() {
-    let mk = |v: i64| {
-        Fact::PayloadUpdate {
-            id: FactId(1),
-            path: "shared.probe".to_string(),
-            value: JsonValue::Integer(v),
-        }
+    let mk = |v: i64| Fact::PayloadUpdate {
+        id: FactId(1),
+        path: "shared.probe".to_string(),
+        value: JsonValue::Integer(v),
     };
     let a1 = fact_hash(&mk(1)).expect("合法 Fact 不得报错");
     let a2 = fact_hash(&mk(1)).expect("合法 Fact 不得报错");
@@ -88,7 +88,9 @@ fn t6a_append_version_monotonic_and_snapshot_consistent() {
     let log = FactsLog::new();
     let mut prev = log.version();
     for i in 1..=8 {
-        let v = log.append(payload("shared.probe", i)).expect("append 不得失败");
+        let v = log
+            .append(payload("shared.probe", i))
+            .expect("append 不得失败");
         assert_eq!(v, prev + 1, "version 必须严格 +1 递增");
         prev = v;
         let (_, _, snap_v) = log.snapshot();
@@ -102,7 +104,8 @@ fn t6a_append_version_monotonic_and_snapshot_consistent() {
 fn t6b_append_only_history_preserved() {
     let log = FactsLog::new();
     for i in 1..=4 {
-        log.append(payload("shared.probe", i)).expect("append 不得失败");
+        log.append(payload("shared.probe", i))
+            .expect("append 不得失败");
     }
     let facts = log.facts_by_path_prefix("shared.probe");
     assert_eq!(

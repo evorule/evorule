@@ -350,7 +350,9 @@ mod tests {
     use evorule_reactor::{CallerRole, FactId, IoCallContext};
 
     use super::{PermissionTable, ENTRY_PREFIX};
-    use crate::permission::{Effect, PermissionEntry, PermissionState, Resource, ResourceType, Subject};
+    use crate::permission::{
+        Effect, PermissionEntry, PermissionState, Resource, ResourceType, Subject,
+    };
     use crate::shared_facts_log::SharedFactsLog;
 
     /// 构造一条 `Active + Allow` 的具名主体权限条目（subject = human「human」，资源 `io:*`）

@@ -14,6 +14,8 @@
 //! 界声明（R2）：T1 键数 ≤ 64（对齐 D1 替身验证键量级），值字符串长度 ≤ 16；
 //! T2 嵌套深度 ≤ 65（恰好跨过生产上界 64 的两侧）。
 
+#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
+
 use evorule_tcb::domain::evaluate_domain;
 use evorule_tcb::{JsonValue, ObjectMap};
 
@@ -37,10 +39,14 @@ fn t1a_objectmap_iter_order_deterministic() {
     let a = build();
     let b = build();
 
-    let seq_a: Vec<&String> = a.iter().map(|(k, _)| k).collect();
-    let seq_b: Vec<&String> = b.iter().map(|(k, _)| k).collect();
+    let seq_a: Vec<&String> = a.keys().collect();
+    let seq_b: Vec<&String> = b.keys().collect();
     assert_eq!(seq_a, seq_b, "两次独立构造的迭代序必须一致（确定性）");
-    assert_eq!(seq_a, keys.iter().collect::<Vec<_>>(), "迭代序必须为字典序（BTreeMap 生产语义）");
+    assert_eq!(
+        seq_a,
+        keys.iter().collect::<Vec<_>>(),
+        "迭代序必须为字典序（BTreeMap 生产语义）"
+    );
 }
 
 /// T1b：`JsonValue` object 构造 → 访问往返 no-panic 且值稳定；
@@ -94,15 +100,12 @@ fn t2a_domain_eval_bounded_depth64_ok() {
     // 恰好 64 层 not 包裹（最内 eq 处于 depth=64，不超界）
     let mut domain = eq_x10();
     for _ in 0..64 {
-        domain = JsonValue::object_from_pairs(&[
-            ("type", JsonValue::string("not")),
-            ("inner", domain),
-        ]);
+        domain =
+            JsonValue::object_from_pairs(&[("type", JsonValue::string("not")), ("inner", domain)]);
     }
     // 64 层 not 为偶数次取反：eq(x,10)=true → 结果仍 true，且必须是 Ok 而非 Err/panic
-    assert_eq!(
+    assert!(
         evaluate_domain(&domain, &state).expect("深度 64 不得超界报错"),
-        true,
         "64 层 not（偶数次取反）后应仍为 true"
     );
 }
@@ -113,10 +116,8 @@ fn t2b_domain_eval_over_limit_explicit_reject() {
     let state = exec_state();
     let mut domain = eq_x10();
     for _ in 0..65 {
-        domain = JsonValue::object_from_pairs(&[
-            ("type", JsonValue::string("not")),
-            ("inner", domain),
-        ]);
+        domain =
+            JsonValue::object_from_pairs(&[("type", JsonValue::string("not")), ("inner", domain)]);
     }
     assert!(
         matches!(
