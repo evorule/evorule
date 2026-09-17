@@ -185,3 +185,10 @@
 - **依据**：实测测试输出（governance 5/5 + 161 全绿；tcb 4/4 + reactor 5/5）；git 事实核查（d9ceb9c 载体、governance 零 `cfg(kani)`）；`facts_by_path_prefix`/`append` 源码链路核读。
 - **影响**：① STATUS：C6.5 ⏳→**✅**（AL1），C6 表五子命题中四项 ✅、C6.4 🔵；§3.1 C6 行判读依据同步（C6.2 证据产出矛盾消除）；② snapshot_at 缺陷修复属产品代码变更，回归由链路 2/3 常驻守护；③ DEV-6 维持「未关闭」（T3/T4 待补齐 + 保真损失项边界化）；④ C6.5 尾部条目自「待验证」状态收口为已验证。
 - **修正去向**：本条目即披露记录；`verification/STATUS.md`（C6.5 行、§3.1 C6 行、维护区同日条目）、`evorule-governance/src/permission/table.rs`（围栏修复）、`verification/carrier-identity/`（两文档修订 + evidence/ 两份归档）。
+
+### 2026-09-17：C6.4 装配可观测 e2e 运行时断言——真实起进程观测 guard_assembled==true（P0 收尾②闭环）
+
+- **事实**：C6.4 运行时断言批次完成（形式化验证 roadmap P0 收尾②，收尾① C6.2/C6.5 登记批次已于同日早批闭环）：新增 `verify_c64_guard_assembled.py`（evorule-server 仓 plugins/wasm-host/tests/，与既有 wasm-host e2e 回归族同 harness 模式），真实起 server 进程（与 HEAD `9e6f574` 同源二进制）两轮——首启 + 换全新数据目录重启——逐轮断言 `GET /api/health` `guard_assembled` 字段存在、类型 bool、值 == true，且 server.log 含启动装配日志「入口守卫（PermissionGate）已装配」（信号与实际装配动作相关）；两轮 **8/8 PASS**（2026-09-17 实测）。负向 `false` 分支在当前构建不可达（装配为无条件 fail-closed），负向信号存在性/类型由编译级验证承载（脚本 docstring 留痕）。STATUS 同步：C6.4 🔵→**✅**（AL1）——C6 表五子命题全部 ✅；§3.1 C6 行维持 **AL2（部分）**（AL4 仍受 DEV-6 阻断）。
+- **依据**：脚本实测输出（两轮 8/8 PASS）；server 二进制经 `cargo build` 与仓 HEAD 同源后实跑；`main.rs` 装配调用链（无条件 `mark_guard_assembled`）源码核读。
+- **影响**：① STATUS C6 表五子命题全部 ✅；§3.1 C6 行判读依据更新、达成等级不变；② 形式化验证 roadmap P0 两项收尾全部闭环，P0 整体完成；③ 无行为变更（纯测试脚本新增 + 状态文档，产品代码零改动）。
+- **修正去向**：本条目即披露记录；`verification/STATUS.md`（C6.4 行、§3.1 C6 行、维护区同日条目）；evorule-server 仓 `plugins/wasm-host/tests/verify_c64_guard_assembled.py`（新增）。
