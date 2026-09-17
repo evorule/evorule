@@ -11,11 +11,14 @@
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
 [![Version](https://img.shields.io/badge/version-0.6.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
+[![Constitution CC0-1.0](https://img.shields.io/badge/constitution-CC0--1.0%20public%20domain-lightgrey.svg)](LICENSES/core_eval-CC0-1.0.txt)
 [![Tests](https://img.shields.io/badge/tests-782%20passed%20%C2%B7%202026--09--14-brightgreen.svg)](#testing--verification)
 [![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2818%20verified%20%C2%B7%20AL2%29-blue.svg)](#formal-verification)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb--minimal-trusted-computing-base)
 
 > **EvoRule is a deterministic rule-governance engine.** A BLAKE3 cryptographically-signed, tamper-evident audit chain and time-machine replay make critical decisions *provable and replayable* — not just *logged*.
+
+> **The constitution is public domain.** [`core_eval.json`](evorule-tcb/core_eval.json) — the core_eval rule spec (v0.4.0, ~7KB) — is dedicated to the public domain under [CC0-1.0](LICENSES/core_eval-CC0-1.0.txt): 8 transform rules built from just 3 meta-instructions (branch / set / push) define all 7 instruction semantics. Implement a compatible engine — no permission required.
 
 **Where EvoRule sits**
 
@@ -127,7 +130,7 @@
 │  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘    │
 │  ┌──────────┐ ┌──────────┐                                       │
 │  │   path   │ │  error   │   no_std · forbid(unsafe_code)        │
-│  │ path     │ │ error    │   zero deps · 6 meta-instrs          │
+│  │ path     │ │ error    │   zero deps · 5 meta-instrs          │
 │  │ resolve  │ │ type     │                                       │
 │  └──────────┘ └──────────┘                                       │
 └─────────────────────────────────────────────────────────────────┘
@@ -361,7 +364,7 @@ evorule/
 │   │   ├── value.rs              # JsonValue (no Float, BTreeMap ordered)
 │   │   ├── domain.rs             # condition evaluation language
 │   │   ├── path.rs               # path resolution (array index, escaping)
-│   │   ├── executor.rs           # 6 meta-instruction execution (SSOT constant)
+│   │   ├── executor.rs           # 5 meta-instruction execution (SSOT constant)
 │   │   ├── transition.rs         # transform rule engine
 │   │   └── error.rs              # TcbError type
 │   ├── tests/
@@ -514,11 +517,14 @@ evorule/
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
 [![Version](https://img.shields.io/badge/version-0.6.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
+[![Constitution CC0-1.0](https://img.shields.io/badge/constitution-CC0--1.0%20public%20domain-lightgrey.svg)](LICENSES/core_eval-CC0-1.0.txt)
 [![Tests](https://img.shields.io/badge/tests-782%20passed%20%C2%B7%202026--09--14-brightgreen.svg)](#测试与验证)
 [![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2818%20verified%20%C2%B7%20AL2%29-blue.svg)](#形式化验证)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb---最小信任基)
 
 > **EvoRule 是确定性规则治理引擎。** BLAKE3 密码学签名、不可篡改审计链 + 时光机回放，让关键决策**可被证明、可重放**，而不只是被记录下来。
+
+> **宪法已进入公有领域。** [`core_eval.json`](evorule-tcb/core_eval.json)（core_eval 规则规范，v0.4.0，约 7KB）以 [CC0-1.0](LICENSES/core_eval-CC0-1.0.txt) 奉献至公共领域：仅用 3 种元指令（branch / set / push）写就的 8 条 transform 规则，定义了全部 7 种指令语义。实现兼容引擎，无需任何授权。
 
 **EvoRule 的定位**
 
