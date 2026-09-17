@@ -175,4 +175,81 @@ mod tests {
             "条件求值失败必须 fail-closed Deny，不得静默跳过 Deny 条目造成 fail-open"
         );
     }
+
+    /// C6.1（判定正确性）+ C6.3（默认拒绝方向）穷尽决策表验证（AL2 证据，对齐 ASSURANCE.md §3.6）。
+    ///
+    /// 枚举有限判定域（CallerRole × io_type）的全部组合，断言：
+    /// 1. 判定是**全函数**：任意组合必有确定 Verdict（Allow/Deny），不 panic、不返回 Candidate；
+    /// 2. 判定**确定性**：同输入重复调用结果一致（无隐藏随机/时钟依赖）；
+    /// 3. 默认拒绝方向（C6.3）：除显式 seeded Human→io:* Allow 外，Llm/Unknown 一律 Deny（fail-closed）；
+    /// 4. 种子精确性：seeded Human 仅放大 Human，不泄漏到 Llm/Unknown（主体匹配精确，无 Any 通配）。
+    #[test]
+    fn exhaustive_decision_table_default_deny() {
+        use crate::permission::{
+            Effect, PermissionEntry, PermissionState, Resource, ResourceType, Subject, SubjectType,
+        };
+
+        let log = Arc::new(SharedFactsLog::new());
+        // 镜像 server 启动种子：仅 Human 对 io:* 放行（与 main.rs 种子逻辑一致）
+        let mut seed = PermissionEntry::new(
+            "default-human-allow-io",
+            Subject {
+                subject_type: SubjectType::User,
+                id: "human".to_string(),
+            },
+            Resource {
+                resource_type: ResourceType::IoAction,
+                path: "io:*".to_string(),
+            },
+            Effect::Allow,
+        );
+        seed.state = PermissionState::Active;
+        PermissionTable::store_entry(&log, &seed, 0).expect("seed store");
+
+        let gate = PermissionGate::new(log);
+
+        let roles = [CallerRole::Human, CallerRole::Llm, CallerRole::Unknown];
+        let io_types = [
+            "http_get",
+            "call_external",
+            "call_service",
+            "query_db",
+            "save_memory",
+            "fake_io",
+        ];
+
+        for &role in &roles {
+            for &io in &io_types {
+                let mut ctx = IoCallContext::new(FactId(1), 0, None);
+                ctx.caller_role = role;
+                let first = gate.check(&mut ctx, io, None);
+
+                // 1) 全函数：必有确定 verdict，且只可能是 Allow/Deny（不是 Candidate）
+                assert!(
+                    matches!(first, Verdict::Allow | Verdict::Deny),
+                    "判定必须全函数：{role:?}/{io} 得到 {first:?}"
+                );
+
+                // 2) 确定性：重复调用结果一致
+                let mut ctx2 = IoCallContext::new(FactId(1), 0, None);
+                ctx2.caller_role = role;
+                let second = gate.check(&mut ctx2, io, None);
+                assert_eq!(first, second, "判定必须确定性：{role:?}/{io}");
+
+                // 3)+4) 默认拒绝方向 + 种子精确性
+                match role {
+                    CallerRole::Human => assert_eq!(
+                        first,
+                        Verdict::Allow,
+                        "seeded Human 应放行 io:*，但 {io} 得到 {first:?}"
+                    ),
+                    CallerRole::Llm | CallerRole::Unknown => assert_eq!(
+                        first,
+                        Verdict::Deny,
+                        "Llm/Unknown 无匹配条目必须 fail-closed Deny，但 {role:?}/{io} 得到 {first:?}"
+                    ),
+                }
+            }
+        }
+    }
 }

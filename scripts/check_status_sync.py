@@ -12,6 +12,9 @@
 #
 # 规则（S 系，条款依据见 MECHANISM.md M 系）：
 #   S1  状态词汇合规（M2）：主状态列仅允许五档（✅🟡🔵⏳❌）及复合
+#   S12 全表状态词汇合规（M2 盲区补全）：全文所有列头含「主状态」的表格，
+#       数据行主状态格必须整体匹配五档及复合（堵 P0/P1 节之外表格的
+#       自造状态词，如「🔵（in-progress）」）
 #   S2  状态→证据齐备（M2/M3.1）：✅ 行证据列非空；声明的证据文件/模式
 #       在证据库（非隔离区）中可匹配；「N 份」计数声明核对
 #   S3  证据→状态闭环（M1）：证据库中每个 proof 的最新证据（按时间戳）
@@ -367,6 +370,37 @@ def cargo_workspace_version(cargo_toml_path):
 # S 系规则
 # ---------------------------------------------------------------------------
 
+def rule_s12(status_text, rep):
+    """S12 全表状态词汇合规（M2 盲区补全）。
+
+    S1 仅覆盖 P0/P1 两节（parse_status 限定）；本规则对 STATUS.md **全文**
+    所有列头含「主状态」的表格生效：数据行主状态格必须整体匹配五档词汇
+    或其复合（如 ❌+🔵），禁止任何文字后缀/括号注记
+    （堵「🔵（in-progress，待 CI 跑）」类自造状态词）。
+    """
+    status_col = None
+    for line_no, line in enumerate(status_text.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            if status_col is not None and (not stripped or stripped.startswith(("#", ">"))):
+                status_col = None  # 表结束（空行/标题/引用块）→ 重置
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if cells and all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
+            continue  # 分隔行
+        if "主状态" in cells:
+            status_col = cells.index("主状态")
+            continue
+        if status_col is None or status_col >= len(cells) or not cells[0]:
+            continue
+        if not re.match(r"^[A-Za-z]", cells[0]):
+            continue  # 非属性行
+        status = cells[status_col]
+        if status and not STATUS_CELL_RE.match(status):
+            rep.error("S12", f"STATUS.md:{line_no} {cells[0]}：主状态「{status}」不符合五档词汇"
+                             f"（M2：✅🟡🔵⏳❌ 及复合，禁止文字后缀/注记）")
+
+
 def rule_s1(rows, rep):
     """S1 状态词汇合规（M2）。"""
     for attr, row in sorted(rows.items()):
@@ -697,6 +731,7 @@ def rule_s11(git, rep):
 
 RULE_LABELS = [
     ("S1", "状态词汇合规（M2）"),
+    ("S12", "全表状态词汇合规（M2 盲区补全）"),
     ("S2", "状态→证据齐备（M2/M3.1）"),
     ("S3", "证据→状态闭环（M1）"),
     ("S4", "证据命名与配对（M3.1/M3.3）"),
@@ -763,6 +798,7 @@ def main():
 
         # ---- 规则执行 ----
         rule_s1(rows, rep)
+        rule_s12(status_text, rep)
         rule_s2(rows, log_basenames, rep)
         rule_s3(rows, ev_index, rep)
         rule_s4(ev_files, rep)

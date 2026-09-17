@@ -171,3 +171,10 @@
   自查与实测：① `G-[1-7]` 在 ASSURANCE.md **零命中**（缺口类编号已彻底移出规范文件）；② M9 内部知识库零泄露、M11 个人身份零命中；③ M6.3 比较级词仅出现在禁令条款（§0.7、NC-15）与「不超过」类非比较语义处；④ 全部相对链接目标存在性核验通过（`../ROADMAP.md`、`DISCLOSURE_LOG.md`、`MECHANISM.md`、`plan/`、`STATUS.md`）；⑤ `check_status_sync.py` 本条目落盘前实测 10 PASS / 1 FAIL（S11 披露留痕联动——即本条目的触发原因），落盘后复跑。
 - **影响**：① `STATUS.md` 的状态权威范围扩展至「保证声明达成等级 + 偏离登记」，新增 §三；② `ASSURANCE.md` 成为纯规范文件，其修订不再受项目进度驱动（项目进展、偏离消除、证据补足**只改 STATUS.md**）；③ 规范条款的准入新增机器可检约束（TIT + 禁止写入清单）；④ 现有对外数字与 §一/§二 属性状态**未经本次改动**；⑤ 偏离登记义务生效：实现与规范条款的偏离须附依据与处置方向，「长期存在且不处置」明确不被允许。
 - **修正去向**：本条目即修正记录；`verification/ASSURANCE.md`（v1.0）、`verification/STATUS.md` §三、`verification/README.md` §4.4 与场景导航。
+
+### 2026-09-17：C6 守卫强制运行时装配批次——STATUS 初稿失实更正 + C6 属性状态落档 + DEV-4/DEV-5 关闭
+
+- **事实**：C6 运行时装配批次完成（事后补录立项，见内部台账 iterations/85 号，工作区不随仓公开）：① server 三处 `IoSubscriber` 注入 `PermissionGate`（主干全局路径 + 两条 per-session 路径）+ 启动种子 `default-human-allow-io` + `GUARD_ASSEMBLED` 装配信号（`/api/health` `guard_assembled` 字段与启动日志）；② governance 新增穷尽决策表测试 `exhaustive_decision_table_default_deny`（C6.1/C6.3，枚举 CallerRole×io_type 全组合）；③ 验证：`cargo check` RC=0、双仓全量测试 0 失败（governance lib 156 含新测试、server lib 362 等 58 目标）、wasm-host 4 个 e2e 脚本回归全 PASS（v6_offline / t5_concurrency / t6_sensitive_guard / v79_auto_discover，真实起进程，敏感守卫与直调语义零回归）。**同批状态更正**：STATUS.md 本批初稿（工作树版、未曾提交）存在三处失实——(a) 归因于一个不存在的提交 SHA；(b) C6.1/C6.3/C6.4 主状态使用非五档词汇「in-progress」（M2 五档之外的自造状态）；(c) DEV-5 关闭条件写成既成事实（代码落地时验证尚未执行）。经专项核查发现后于本批更正为最终事实。
+- **依据**：双仓全量测试实测输出；4 个 e2e 脚本实测输出（全 PASS）；git 状态核查（初稿未经提交，三处注入均为本批工作树新增）；STATUS.md 维护区 2026-09-17 条目（含更正声明）。
+- **影响**：① STATUS C6 表：C6.1/C6.3 主状态 🔵→**✅**（本地实跑证据落定 + CI `test` job 常驻），C6.4 保持 🔵（编译级验证，运行时观测待 e2e 断言补强）；② §3.1 C6 行保持 **AL2（部分）**（判定依据更新为实跑证据），关联偏离收窄为 DEV-6；③ **DEV-4 关闭移出**（C6 属性条目已建于 §一/§二 之间的 C6 表）、**DEV-5 关闭移出**（装配信号已实施并验证）——§3.2 现存 DEV-1/2/3/6/7；④ 行为变更登记：装配后 LLM/Unknown 调用者 I/O 直调由 fail-open 转 fail-closed（有意变更，既有 e2e 场景实证未受影响）。
+- **修正去向**：本条目即修正记录；`verification/STATUS.md`（C6 表、§3.1 C6 行、§3.2 偏离登记、维护区 2026-09-17 条目含更正声明）。

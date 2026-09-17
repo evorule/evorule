@@ -51,6 +51,19 @@
 | P1-11 | 多会话并发隔离 | tier2 | ⏳ | — | — | — | 计划中 | |
 | P1-12 | SSE 序列化完备 | 应用层 | 🔵 | 静态分析 + 集成测试 | — | CI（ci.yml） | CI 常驻 | 应用层级覆盖，非形式化 |
 
+## C6 守卫强制属性状态（对齐 ASSURANCE.md §3.6）
+
+> 本表登记 C6 守卫强制的 5 个子命题证据形式（判定点唯一 / `pub` 写路径穷尽 / 默认拒绝 / 装配可观测 / 权限表经账本）。
+> 与 §一/§二 同属**证据清单**，是 §三 3.1 C6 行达成等级的派生依据（M2 / §0.4），不引入新事实。
+
+| 属性号 | 子命题（ASSURANCE §3.6） | 证据形式 | 目标 AL | 主状态 | 证据 | 状态依据 | 备注 |
+| ------ | ----------------------- | -------- | ------ | ------ | ---- | -------- | ---- |
+| C6.1 | 判定点唯一 / 判定正确性 | 穷尽决策表验证（枚举输入组合） | AL2（有限域）/ AL3（符号输入） | ✅ | `evorule-governance/src/permission/gate.rs` `exhaustive_decision_table_default_deny`（2026-09-17 新增） | 本地 cargo test 实跑 PASS（2026-09-17，governance lib 156 含本测试）；随 ci.yml `test` job（cargo test --workspace --all-targets）CI 常驻。枚举 CallerRole×io_type 全组合，断言全函数/确定性/默认拒绝；有限域枚举非符号输入，按 R1 封顶 AL2 | 符号输入 AL3 待 TLA+/Kani 覆盖 |
+| C6.2 | `pub` 写路径穷尽（不可绕过性） | 接口可达性分析（枚举 `pub` API 对受保护状态写路径） | 静态分析 + AL2 | ⏳ | — | 待静态可达性分析：枚举全部 `pub` API，确认无旁路写入受保护状态 | P0 待补 |
+| C6.3 | 默认拒绝方向 | 符号/穷尽验证 | AL2 | ✅ | 同 C6.1 决策表（Llm/Unknown 全 Deny 断言）；`broken_deny_condition_is_fail_closed`（条件求值失败 fail-closed） | 本地实跑 PASS（2026-09-17，与 C6.1 同批同测试目标）；默认策略 human=Allow / llm=unknown=Deny，fail-closed 已实现并测 | AL2 |
+| C6.4 | 装配可观测 | 装配可观测性测试 | AL1 | 🔵 | server `GUARD_ASSEMBLED` 全局 + `GET /api/health` `guard_assembled` 字段 + 启动日志 `mark_guard_assembled`（2026-09-17 新增） | 编译验证通过（2026-09-17 cargo check + 全量测试）；信号存在性与类型保证成立，运行时观测（health 实际返回 true）待 e2e 断言，故暂 🔵 间接覆盖 | AL1 |
+| C6.5 | 权限表经账本 | 链路测试 | AL1 | ⏳ | — | 待账本链路测试：权限变更须经 `SharedFactsLog` 追加，无旁路写入 | P0 待补 |
+
 ## 三、保证声明达成状态与偏离登记（对齐 ASSURANCE.md）
 
 > **本节的定位**：保证声明的**内容**（应达到什么程度、证据形式、假设、不保证事项）定义于 [ASSURANCE.md](ASSURANCE.md)，该文件为规范性文件、**不含任何状态**。本节回答另一半问题——**当前已达到什么、尚未对齐什么**，是这些问题的**唯一状态权威**（M1）。
@@ -66,7 +79,7 @@
 | C3 执行有界 | AL3（参数化）/ AL2（具体配置） | **AL0** | P0-7 / P0-8 ❌+🟡；TLA+ 为降级模型（N_MAX=2，1/6 模型）且为 🟡 历史 PASS（M2），不构成当前 AL2 证据；上界未参数化 | DEV-3 |
 | C4 审计不可篡改 | AL3 + AL1 | **AL0** | P0-14 / P0-15 ⏳（证据未产出）；P1-4 🟡（历史 PASS，非当前）；链构造单射性的演绎证明未产出 | DEV-6 |
 | C5 重放忠实 | AL3 + AL1 | **AL1** | P0-10 🔵（差分 CI 常驻，重放状态重建一致）；由 C1+C4 的 AL3 推导因 C1/C4 未达 AL3 而不成立 | — |
-| C6 守卫强制 | AL4 | **AL0** | §一/§二 属性表中**无守卫判定点对应条目**；ASSURANCE.md §3.6 所列五类证据形式（穷尽决策表 / `pub` 写路径可达性 / 默认拒绝方向 / 装配可观测 / 权限表经账本）均未产出 | DEV-4、DEV-5 |
+| C6 守卫强制 | AL4 | **AL2（部分）** | 判定正确性（C6.1）+ 默认拒绝方向（C6.3）穷尽决策表本地实跑 PASS（2026-09-17，CI 常驻；有限域枚举，按 R1 封顶 AL2）；装配可观测（C6.4）信号编译级验证（AL1，运行时待 e2e 断言）；但 `pub` 写路径穷尽（C6.2，AL2）与权限表经账本（C6.5，AL1）证据未产出；AL4 载体同一性待 DEV-6 | DEV-6 |
 | C7 规则静态安全性 | AL2 + AL1 | **AL0** | §一/§二 属性表中**无规则静态安全性对应条目**；判定逻辑的界内穷尽验证未产出 | — |
 
 ### 3.2 偏离登记（Deviation Register）
@@ -78,8 +91,6 @@
 | **DEV-1** | 验证配置与生产配置存在**行为级分叉**（`#[cfg(kani)]` 替换数据结构与常量、注入函数行为收窄） | C1、C2、C3 全部可能晋升 AL3/AL4 的证据；[ASSURANCE.md](ASSURANCE.md) §2.3 规则 R1、§8.1 载体差异声明 | R1：此类证据最高封顶 AL2，无论证明技术多强。分叉点由各 crate 源码内 `#[cfg(kani)]` 标记可枚举 | **向规范对齐** → 收敛验证配置，或将生产配置参数化（而非扩大替身范围） |
 | **DEV-2** | 部分验证证据实际覆盖的是**依赖库（标准库）提供的行为**（如受检算术的溢出语义），而非引擎自身逻辑 | C2 的证据归属；[ASSURANCE.md](ASSURANCE.md) §3.2、H3.2 | 证据真实但归属错误：它证明的是标准库性质，不是 EvoRule 的性质 | **向规范对齐** → 该证据重述为对依赖的假设（登记入 H3.2），不计为对引擎的保证 |
 | **DEV-3** | 深度/步数上界以**具体常量**参与验证，未参数化 | C3「上界应以参数形式存在并参与证明」；[ASSURANCE.md](ASSURANCE.md) §3.3 精确化、§2.4 目标等级理由 | §3.3 明文要求：只对具体常量成立的证明，对生产配置的另一常量不提供任何保证 | **向规范对齐** → 上界改为注入参数并重新产出证据 |
-| **DEV-4** | 守卫判定点在属性目录中**无对应条目** | C6（§4.2 追溯矩阵所列 C6 子命题未被覆盖） | §4.2 C6 行所列子命题（判定点唯一 / `pub` 写路径穷尽 / 默认拒绝 / 装配可观测 / 权限表经账本）在 §一/§二 中无对应属性 | **向规范对齐** → 为判定点定义属性条目 |
-| **DEV-5** | 守卫**装配状态缺少可对外观测的信号** | C6 条款 5（装配可检测义务）；[ASSURANCE.md](ASSURANCE.md) §3.6 | §3.6 条款 5 为规范义务；当前不存在可复现的检测手段 | **向规范对齐** → 提供可检测信号 |
 | **DEV-6** | AL4 所要求的**载体同一性证据形态**（构建配置比对 + 差分验证）尚未建立 | 全部 AL4 目标；[ASSURANCE.md](ASSURANCE.md) §2.2 AL4 判定条件、§8.1 | 与 DEV-1 不同：即使分叉被消除，该证据形态本身仍须产出并归档，否则无法判定 AL4 | **向规范对齐** → 建立构建配置比对与差分验证证据 |
 | **DEV-7** | **规格未经外部独立审查** | 全部声明（规则 R4 / NC-10 指定的唯一缓解手段）；[ASSURANCE.md](ASSURANCE.md) §9.1 | §9.1 与 NC-10 明确：规格正确性不在任何等级覆盖内，唯一缓解是外部独立审查 | **向规范对齐** → 引入外部独立审查 |
 
@@ -152,3 +163,4 @@
 - 2026-09-14 W3-3 owned 构造迁移**已完成**（Tier 5.3 先行项，G2 构造层与 Clone 解绑，执行记录见 CR-20260913-004 §3.10，DISCLOSURE_LOG 同日条目）：`model.rs` obj() 改 `object_from_pairs_owned`（move 语义零深克隆）+ 23 个 B 档 harness 调用点适配（`90b77aa`），旧构造形态零残留。A 档 14 proof 随 proof 源码变更于 `90b77aa` 重跑 14/14 PASS，新证据 `*_PASS_90b77aa_20260914_*` 落盘，旧 `1b340e5` 14 对隔离 `_invalidated/` 批次 4，P0-3/P0-6 证据列同批更新。B 档 23 个 proof 状态不变（❌）。W3-4 前置就绪（16 项 unwind 校准表 + owned 构造两要素齐备）。
 - 2026-09-14 W3-4 精确 unwind 校准落地 + eq 族首数据点超时路由（CR-20260913-004 §3.11，DISCLOSURE_LOG 同日条目）：W3-2 校准表一次落地（instruction 32 / all 16 / deterministic 补 16 / domain_depth 16）+ 清理 W3-3 临时 canary（`627330a`）。eq 族首数据点（unwind 24 + owned）600s 超时，kill criteria 触发路由 Phase 2 stub 试点——支持构造墙主因判断（String/KaniMap 建模开销，owned 仅解 clone 分量）。A 档 14 proof 于 `627330a` 重跑 14/14 PASS，旧 `90b77aa` 14 对隔离批次 5。其余 8 个 P8 系首轮实测合并至 69 号 Step 10 全量 proof 重跑（post-69 基线，CR §3.11：预跑数据随 proof 源码变更失效，机时纪律）。B 档 23 个 proof 状态不变（❌）。
 - 2026-09-14 69 号清理（collect/merge 元指令退役）**已完成**（CR-20260914-001，提交 `10c743d` + `25c0cc0`，破坏性变更 v0.6.0）：proof P15/P16/P17 删除（总数 37→34，B 档 23→20）、`model.rs` any_instruction %6→%4、P12/P19 allowed 集合收窄；附录 A/B 删号与计数同批更新。A 档 14 proof 于 `25c0cc0`（与 `10c743d` proof 源码一致，仅差 test.js）重跑 14/14 PASS（单 proof 0.3~4.0s），reactor 4 个 CI proof 谨慎复跑 4/4 PASS（proof 源码未变更但被验证依赖 TCB 生产代码变更），合计 18/18；旧 `627330a` 14 对隔离 `_invalidated/` 批次 6，reactor 旧 4 对（`03643aa`/`bdfb8d4` 锚定）隔离该仓同级 `_invalidated/`。B 档 20 个 proof 状态不变（❌；eq 族已路由 Phase 2 stub 试点，CR §3.11）。
+- 2026-09-17 C6 运行时装配**已完成（本地验证通过；事后补录立项见 85 号，DISCLOSURE_LOG 同日条目）**：① 三处 `IoSubscriber` 注入全部落地（`main.rs` 全局 subscriber、`server.rs` WorkspaceSessionOps 路径、`server.rs` SessionApi `create_session` 路径，均 `.with_permission_gate(PermissionGate::new(...))`）→ 主干与全部 per-session 路径 fail-closed（装配前 LLM/Unknown 直调 I/O 无判定放行，属有意的行为变更，既有调用方如 e2e 脚本内 LLM 角色直调场景将由 2xx 转 4xx）；② 启动种子 `default-human-allow-io`（human/io:* Allow、Active、幂等）；③ 穷尽决策表 property test `exhaustive_decision_table_default_deny`（C6.1 判定正确性 + C6.3 默认拒绝方向，枚举 CallerRole×io_type 全组合，有限域 AL2 封顶 R1）；④ `GUARD_ASSEMBLED` 全局标志 + `GET /api/health` `guard_assembled` 字段 + 启动日志 `mark_guard_assembled`（C6.4 信号，DEV-5 关闭）。**验证**：`cargo check` RC=0；双仓全量测试 0 失败（governance lib 156 含新测试、server lib 362 等 58 目标）；wasm-host 4 个 e2e 脚本回归（结果见 DISCLOSURE_LOG 同日条目）。STATUS 同步：新增「C6 守卫强制属性状态」表（C6.1–C6.5，五档词汇）、§3.1 C6 行 **AL2（部分）**、DEV-4/DEV-5 移出（M5）。本变更属状态事务，不触发 ASSURANCE.md 修订（§0.4/§0.6）。**更正声明**：本条目初稿（核查前工作树版）含不存在的提交 SHA 归因与「部分落地/回退」失实中间态描述，经核查后于本批更正为上述最终事实——该初稿未曾提交，不构成历史状态。
