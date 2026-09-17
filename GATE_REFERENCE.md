@@ -67,7 +67,7 @@
 
 ### 2.1 evorule-tcb — 24 模式 (T 编号)
 
-实施文件: `D:\evorule\evorule-tcb\build.rs` (扫描 `src/` 全部 `.rs`)
+实施文件: `evorule-tcb\build.rs` (扫描 `src/` 全部 `.rs`)
 
 | 编号       | 模式 (字节子串)            | 门控含义                |
 | ---------- | --------------------------- | ----------------------- |
@@ -104,7 +104,7 @@
 
 ### 2.2 evorule-reactor — 15 模式 (G8 + F11 + S5.2 + T10)
 
-实施文件: `D:\evorule\evorule-reactor\build.rs` (扫描 `src/` 全部 `.rs`)
+实施文件: `evorule-reactor/build.rs` (扫描 `src/` 全部 `.rs`)
 
 | 编号              | 模式 (字节子串)       | 门控含义                |
 | ----------------- | ---------------------- | ----------------------- |
@@ -133,13 +133,13 @@
 
 ### 2.3 evorule-governance — 14 模式 (G8 + F11 + S5.2)
 
-实施文件: `D:\evorule\evorule-governance\build.rs` (扫描 `src/` 全部 `.rs`)
+实施文件: `evorule-governance\build.rs` (扫描 `src/` 全部 `.rs`)
 
 **有意重复**: governance 取 reactor 同组模式 (3 G8 + 4 F11 + 7 S5.2 = 14), 保证反应器/治理层双层不走偏; reactor 在此之上另有 T10-unsafe-keyword 共 **15** 模式 (§2.2), governance 不扫 unsafe (该仓 `#![deny(unsafe_code)]` 由 rustc 直接兜底) 故为 14; 与 tcb (24 模式, 额外 T 编号扫描) 为有意差异, 见 §一 有意差异表。
 
 ### 2.4 evorule-cli — 7 模式 (G8 + F11)
 
-实施文件: `D:\evorule\evorule-cli\build.rs`
+实施文件: `evorule-cli/build.rs`
 
 | 编号              | 模式 (字节子串)       | 门控含义                |
 | ----------------- | ---------------------- | ----------------------- |
@@ -167,7 +167,7 @@
 
 ### 3.1 根 `Cargo.toml` 配置
 
-`D:\evorule\Cargo.toml`:
+`Cargo.toml`:
 
 ```toml
 [workspace.lints.rust]

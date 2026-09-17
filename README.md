@@ -12,7 +12,7 @@
 [![Version](https://img.shields.io/badge/version-0.6.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-782%20passed%20%C2%B7%202026--09--14-brightgreen.svg)](#testing--verification)
-[![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2818%20verified%29-blue.svg)](#formal-verification)
+[![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2818%20verified%20%C2%B7%20AL2%29-blue.svg)](#formal-verification)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb--minimal-trusted-computing-base)
 
 > **EvoRule is a deterministic rule-governance engine.** A BLAKE3 cryptographically-signed, tamper-evident audit chain and time-machine replay make critical decisions *provable and replayable* — not just *logged*.
@@ -515,7 +515,7 @@ evorule/
 [![Version](https://img.shields.io/badge/version-0.6.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-782%20passed%20%C2%B7%202026--09--14-brightgreen.svg)](#测试与验证)
-[![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2818%20verified%29-blue.svg)](#形式化验证)
+[![Kani](https://img.shields.io/badge/Kani-45%20proofs%20%2818%20verified%20%C2%B7%20AL2%29-blue.svg)](#形式化验证)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb---最小信任基)
 
 > **EvoRule 是确定性规则治理引擎。** BLAKE3 密码学签名、不可篡改审计链 + 时光机回放，让关键决策**可被证明、可重放**，而不只是被记录下来。
@@ -776,6 +776,7 @@ cargo test --workspace --features persistence
   - tcb：`evorule-tcb/tests/kani/kani_proofs.rs`（34 个 = A 档 14 + B 档 20；A 档 v0.6.0 重跑 @ `25c0cc0` 全 PASS，B 档实测 600s/3600s 超时，判定当前不可运行）
   - reactor：`evorule-reactor/verification/kani_proofs.rs`（11 个，覆盖 pure 函数）
   - **当前实跑验证**：18 个——见 [`verification/STATUS.md`](verification/STATUS.md)（唯一权威，五档词汇）
+  - **保证等级封顶（R1）**：这 18 个 PASS 的 proof 在 `cfg(kani)` 替身配置下实跑（如 `KaniMap`/`BTreeMap` 替换、`MAX_DOMAIN_DEPTH` 降为 1、`inject_io_result` 被桩化）。按规则 **R1**（载体同一性），其保证等级封顶 **AL2**；AL4 所需的载体同一性证据尚未建立（见 `STATUS.md` §三 DEV-1 / DEV-6）。
 - **差分测试**：reactor vs pure 模块 11 项（`differential_test.rs`），保证有副作用执行器与纯函数参考实现一致
 - **确定性 proptest**：tcb `determinism_proptest.rs` 5 项，含 `never_panics_on_valid_input`
 

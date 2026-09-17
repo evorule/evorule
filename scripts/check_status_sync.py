@@ -591,7 +591,8 @@ def rule_s8(known_tcb, known_reactor, a_names, b_names, ci_names, nonci_names,
 
 # S9 对外数字锚点：(文件, regex, 捕获组对应的推导键, 是否必须存在)
 S9_ANCHORS = [
-    ("README.md", re.compile(r"Kani-(\d+)%20proofs%20%28(\d+)%20verified%29"), ("total", "verified"), True),
+    # badge 允许可选「· ALn」保证等级后缀（R1 载体封顶标注，2026-09-17）
+    ("README.md", re.compile(r"Kani-(\d+)%20proofs%20%28(\d+)%20verified(?:%20%C2%B7%20AL\d)?%29"), ("total", "verified"), True),
     ("README.md", re.compile(r"Verified \(current re-run\)\*?\*?:\s*(\d+)"), ("verified",), False),
     ("README.md", re.compile(r"当前实跑验证\*\*：\s*(\d+)\s*个"), ("verified",), False),
     ("README.md", re.compile(r"(\d+) 个 proof 中 (\d+) 个当前实跑验证"), ("total", "verified"), False),

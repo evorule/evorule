@@ -8,7 +8,7 @@
 
 # EvoRule 形式化验证文档系统
 
-> **版本对齐**：`Cargo.toml` workspace `version = "0.5.0"`（commit `5fac8bd`，2026-09-12）
+> **版本对齐**：`Cargo.toml` workspace `version = "0.6.0"`（commit `25c0cc0`，2026-09-14）
 > **机制**：本目录文档体系受 [MECHANISM.md](MECHANISM.md)（M1–M11）约束。
 > **状态**：验证状态唯一权威是 [STATUS.md](STATUS.md)（M1）。本 README 只做导航与资产登记，不承载状态断言。
 
@@ -25,7 +25,9 @@ EvoRule 的形式化验证工作产生大量资产：**验证方案、证明源�
 
 | 想做什么                       | 去哪里                                                                                          |
 | ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| 查对外保证内容（**规范条款**） | [ASSURANCE.md](ASSURANCE.md)                                                                     |
 | 查某属性的验证状态（唯一权威） | [STATUS.md](STATUS.md)                                                                           |
+| 查保证声明的**当前达成等级**与**偏离登记** | [STATUS.md](STATUS.md) §三                                                             |
 | 查验证机制规则（状态/证据/披露）| [MECHANISM.md](MECHANISM.md)                                                                     |
 | 查历史变更与偏离披露           | [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md)                                                           |
 | 查七层方法论与属性目录        | [plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)         |
@@ -42,7 +44,8 @@ EvoRule 的形式化验证工作产生大量资产：**验证方案、证明源�
 verification/
 ├── README.md               ← 本文件（导航与资产登记）
 ├── MECHANISM.md            ← 验证机制（M1–M11，宪法性文档）
-├── STATUS.md               ← 验证状态唯一权威（快照 + proof 分档清单附录）
+├── ASSURANCE.md            ← 保证声明（**规范性文件**：顶层声明、保证等级与判定规则、假设登记册、不保证事项、修订程序；**不含任何状态**）
+├── STATUS.md               ← 验证状态唯一权威（快照 + P0/P1 属性状态 + **保证声明达成状态与偏离登记** + proof 分档清单附录）
 ├── DISCLOSURE_LOG.md       ← 变更与偏离披露日志
 ├── plan/                   ← 验证方案与计划（指导性文档）
 │   └── EVORULE_FORMAL_VERIFICATION_PLAN_v3.md  ← 白皮书（七层验证体系，现行）
@@ -78,7 +81,7 @@ verification/
 
 | 资产                                        | 位置                                                              | 关联属性          |
 | ------------------------------------------- | ----------------------------------------------------------------- | ----------------- |
-| TCB Kani proof（37 个，A/B 档分档见 STATUS.md 附录 B） | `evorule-tcb/tests/kani/kani_proofs.rs`                | P0-1~P0-8        |
+| TCB Kani proof（34 个，A/B 档分档见 STATUS.md 附录 B） | `evorule-tcb/tests/kani/kani_proofs.rs`                | P0-1~P0-8        |
 | TCB Kani 验证设计（P1–P21，历史文档，编号已作废见 STATUS.md 附录 A） | `evorule-tcb/verification/kani-formal-verification-design.md` | P0-1~P0-8 |
 | Reactor Kani proof（11 个，CI 状态见 STATUS.md 附录 C） | `evorule-reactor/verification/kani_proofs.rs`       | P0-11 / P1-1~P1-6 |
 | Kani 运行脚本（reactor）                    | `evorule-reactor/run_kani_proofs.sh`                              | —                 |
@@ -143,6 +146,18 @@ verification/
 | `.github/workflows/mutants.yml`           | 变异测试                                                                 |
 
 > CI 行为以 yml 文件本身为真相源（M1.3）。
+
+### 4.4 保证声明
+
+| 资产                       | 位置                                 | 性质                                                                                                                                                                                                                                                                                                                              | 关联                                                                       |
+| -------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 保证声明（Assurance Case） | [ASSURANCE.md](ASSURANCE.md)         | **规范性文件**（"保证宪法"）：规定对外保证内容（C1–C7）、保证等级与判定规则（AL0–AL4 + R1–R4）、共享责任模型、假设登记册（H1–H6）、不保证事项（NC-1–16）、工具信任基登记、证据要求与失效规则（§8）、效力分层与修订程序（§0.3–§0.6）。**全文不含任何验证状态、缺口或进度表述** | 状态与偏离一律引用 [STATUS.md](STATUS.md) §三（M1）                          |
+| 保证达成状态与偏离登记     | [STATUS.md](STATUS.md) §三           | **状态事务**：各条声明的当前达成等级（由 §一/§二 属性状态按 AL 定义与 R1–R4 聚合的派生视图）+ 偏离登记（DEV-x，含受影响条款、判定依据、处置方向）                                                                                                                  | 规范条款由 [ASSURANCE.md](ASSURANCE.md) 定义；偏离登记义务见其 §4.3          |
+
+> **分工是强制的**：ASSURANCE.md 规定「**应**达到什么」（规范），STATUS.md §三 记录「**已**达到什么、尚未对齐什么」（状态）。二者不得互相混入（ASSURANCE.md §0.4）。
+> **对齐方向是单向的**：项目向 ASSURANCE.md 对齐，而非 ASSURANCE.md 向项目现状让步。项目取得进展、偏离被消除、证据被补足，**只改 STATUS.md**，不构成声明文件的修订理由（ASSURANCE.md §0.6）。
+> **条款准入**：任何拟写入 ASSURANCE.md 的条款须先过「时效不变量测试（TIT）」（ASSURANCE.md §0.5）；任一项不过者不得写入。
+> **修订规则**：仅因**自身缺陷**（内部矛盾 / 不可证伪 / 范围遗漏 / 与 MECHANISM.md 冲突）或**对外承诺实质变化**才修订；声明集合与目标等级变更属 B 类，按 M5 记入 [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md)。
 
 ## 五、维护规则（强制）
 
