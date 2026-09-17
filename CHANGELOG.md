@@ -40,6 +40,7 @@
 
 ### 🆕 新增
 
+- **文档门禁覆盖补全：R 系进 CI、提交期 S 系快查与文档同步提示接线**：`.github/workflows/ci.yml` 新增 `doc-safety` job（L1 私有信息零泄露 + CHANGELOG 六类治理 + 交叉引用完整性），与 status-sync 构成完整双安全检查；本地 pre-commit hook 新增 S1–S11 快查段（触及 verification/、kani.yml、Cargo.toml、proof 源码时触发；STATUS ↔ DISCLOSURE_LOG 暂存配对检查只有提交期暂存区语义能命中）与文档同步提示段（源码/配置变更自动列出受影响 SPEC/README/CHANGELOG 映射，提示性不阻断；`scripts/pre-commit-doc-check.ps1` 接入 hook）
 - **ASSURANCE 规范合规门禁（T 系）与文档门禁一键串跑**：新增 `scripts/check_assurance_compliance.py`，把 [ASSURANCE.md](verification/ASSURANCE.md) 当作规范文件即时执法——T1 规范自体零状态词（第 0–9 章正文禁五档 emoji / 达成表述 / 百分比，§0.5 元规则区与附录资料性内容豁免）、T2 规范自体零裸 hex SHA、T3 内部信息零容忍（本机盘符路径 / 内部目录路径 / 邮箱 PII，公开联系方式豁免）、T4 对外材料比较级禁令（认证体系名 × 比较断言词，否定自指行豁免）、T5 等级冒领禁令（「已达成 ALn」仅 STATUS / ASSURANCE 可承载）、T6 状态承载纪律（verification/ 顶层文档不得独立断言状态，MECHANISM M2 词汇定义节区豁免）。支持 `--files` 增量（提交期快查）与 `--json`（CI 消费）。同批接线：CI 新增 `assurance-compliance` job 常态化执法；新增 `scripts/run_doc_gates.ps1` 本地一键串跑全部纯文本文档门禁（doc_safety / status_sync / assurance_compliance / docs_bilingual，存在兄弟仓快照时另跑 error_code_i18n）；verification/README 维护规则登记第 7 条。同批清理 3 处本机路径泄露（CONTRIBUTING_ZH 宪法仓预检指引改为仓名指称、DESIGN_PHILOSOPHY 两处来源引用改为仓内相对链接）
 
 ### 🐛 修复

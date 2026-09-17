@@ -7,6 +7,7 @@
 # - i18n 双语门禁 (docs 中英漂移 + server code→err.* 字典对照)
 # - 验证状态同步门禁 (STATUS.md ↔ 证据库 ↔ 文档/CI 清单, scripts/check_status_sync.py)
 # - ASSURANCE 规范合规门禁 (规范/状态分离 T 系执法, scripts/check_assurance_compliance.py)
+# - 文档安全门禁 (L1 私有信息零泄露 + CHANGELOG 六类治理, scripts/check_doc_safety.py)
 #
 # 设计说明:
 # - 测试矩阵覆盖当前支持的平台 (Linux / Windows)
@@ -176,6 +177,21 @@ jobs:
 
       - name: ASSURANCE 规范合规 (规范自体 / 对外材料 / verification 顶层文档)
         run: python3 scripts/check_assurance_compliance.py
+
+  # ==========================================================================
+  # 5c. 文档安全门禁 (与 status-sync 构成双安全检查)
+  #     R 系规则: L1 公开文档私有信息零泄露 (M9) + agent 身份零泄露 +
+  #     交叉引用完整性 + CHANGELOG 六类内容治理。
+  #     R-门控1 (staged 检查) 在 CI 无暂存区语义自动为空集, 不影响其余规则。
+  # ==========================================================================
+  doc-safety:
+    name: doc safety (R rules)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: L1 文档安全与引用完整性
+        run: python3 scripts/check_doc_safety.py
 
   # ==========================================================================
   # 6. 依赖门禁 (cargo-deny, A2 供应链三件套)

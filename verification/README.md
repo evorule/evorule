@@ -167,4 +167,4 @@ verification/
 4. **版本对齐**：本文件头部版本声明与 `Cargo.toml` 当前 workspace `version` 一致（M4）；`plan/` 下被取代的方案必须加 `[已废弃]` 横幅；
 5. **一次性散落日志不入库**：根目录/临时位置的一次性运行日志（`cargo test` 原始输出等）不迁入公开 `verification/`（会随仓发布且可能含本机路径）；需要时直接重跑复现，只有收集器产出的规范化证据才入库；
 6. **文档安全合规**：公开验证文档适用 `scripts/check_doc_safety.py` 的私有信息零泄露约束（M9）。
-7. **ASSURANCE 合规门禁**：规范自体、对外材料与 `verification/` 顶层文档适用 `scripts/check_assurance_compliance.py`（T 系：零状态词/零 SHA/内部信息零容忍、比较级禁令、等级冒领禁令、状态承载纪律；规范/状态分离见 [ASSURANCE.md](ASSURANCE.md) §0.4–§0.7）。本地一键串跑全部门禁：`scripts/run_doc_gates.ps1`。
+7. **ASSURANCE 合规门禁**：规范自体、对外材料与 `verification/` 顶层文档适用 `scripts/check_assurance_compliance.py`（T 系：零状态词/零 SHA/内部信息零容忍、比较级禁令、等级冒领禁令、状态承载纪律；规范/状态分离见 [ASSURANCE.md](ASSURANCE.md) §0.4–§0.7）。本地一键串跑全部门禁：`scripts/run_doc_gates.ps1`；提交期快查（T 系文档增量 + S 系状态面触发）由维护者本地 pre-commit hook 承接（hook 为本地工具，不入仓）。
