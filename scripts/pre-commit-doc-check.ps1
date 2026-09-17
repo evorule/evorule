@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     EvoRule pre-commit 文档同步检查钩子
 .DESCRIPTION
