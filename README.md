@@ -36,7 +36,7 @@
 
 ## Experience & Navigation
 
-- **Online console (no install)**: [evorule-console-cloud live demo](https://evorule.github.io/evorule-console-cloud/)
+- **Online console (no install)**: [evorule-console-cloud live demo](https://evorule.github.io/evorule-console-cloud/)（GitHub Pages，海外入口；国内推荐 Cloudflare Pages 镜像，部署后补充链接）
 - **evorule-server** — exposes HTTP API / SSE / debug control / I/O Handler (application layer): [Gitee](https://gitee.com/evorule/evorule-server) ｜ [GitHub](https://github.com/evorule/evorule-server)
 - **evorule-console-cloud** — governance & audit console (web frontend): [Gitee](https://gitee.com/evorule/evorule-console-cloud) ｜ [GitHub](https://github.com/evorule/evorule-console-cloud)
 - **Organization home**: [Gitee @evorule](https://gitee.com/evorule) ｜ [GitHub @evorule](https://github.com/evorule)
@@ -535,7 +535,7 @@ evorule/
 
 ## 体验与导航
 
-- **在线控制台（无需安装）**：[evorule-console-cloud 在线 Demo](https://evorule.github.io/evorule-console-cloud/)
+- **在线控制台（无需安装）**：[evorule-console-cloud 在线 Demo](https://evorule.github.io/evorule-console-cloud/)（GitHub Pages，海外入口；国内推荐 Cloudflare Pages 镜像，部署后补充链接）
 - **evorule-server** —— HTTP API / SSE / 调试控制 / I/O Handler（应用层）：[Gitee](https://gitee.com/evorule/evorule-server) ｜ [GitHub](https://github.com/evorule/evorule-server)
 - **evorule-console-cloud** —— 治理与审计控制台（Web 前端）：[Gitee](https://gitee.com/evorule/evorule-console-cloud) ｜ [GitHub](https://github.com/evorule/evorule-console-cloud)
 - **组织主页**：[Gitee @evorule](https://gitee.com/evorule) ｜ [GitHub @evorule](https://github.com/evorule)
