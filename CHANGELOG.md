@@ -38,6 +38,10 @@
 
 ## [Unreleased]
 
+### 🆕 新增
+
+- **ASSURANCE 规范合规门禁（T 系）与文档门禁一键串跑**：新增 `scripts/check_assurance_compliance.py`，把 [ASSURANCE.md](verification/ASSURANCE.md) 当作规范文件即时执法——T1 规范自体零状态词（第 0–9 章正文禁五档 emoji / 达成表述 / 百分比，§0.5 元规则区与附录资料性内容豁免）、T2 规范自体零裸 hex SHA、T3 内部信息零容忍（本机盘符路径 / 内部目录路径 / 邮箱 PII，公开联系方式豁免）、T4 对外材料比较级禁令（认证体系名 × 比较断言词，否定自指行豁免）、T5 等级冒领禁令（「已达成 ALn」仅 STATUS / ASSURANCE 可承载）、T6 状态承载纪律（verification/ 顶层文档不得独立断言状态，MECHANISM M2 词汇定义节区豁免）。支持 `--files` 增量（提交期快查）与 `--json`（CI 消费）。同批接线：CI 新增 `assurance-compliance` job 常态化执法；新增 `scripts/run_doc_gates.ps1` 本地一键串跑全部纯文本文档门禁（doc_safety / status_sync / assurance_compliance / docs_bilingual，存在兄弟仓快照时另跑 error_code_i18n）；verification/README 维护规则登记第 7 条。同批清理 3 处本机路径泄露（CONTRIBUTING_ZH 宪法仓预检指引改为仓名指称、DESIGN_PHILOSOPHY 两处来源引用改为仓内相对链接）
+
 ### 🐛 修复
 
 - **门禁跳过阀 fail-closed 化**：`EVORULE_SKIP_GATE` / `EVORULE_SKIP_CR_GATE` 旧实现用 `is_ok()` 判定，`=0`/空串/乱值也会意外跳过门禁（fail-open）。现改为仅 `1`/`true`（trim 后大小写不敏感）生效，其余任何值门禁照常执行并发出 warning；四仓（tcb/reactor/governance/cli）build.rs 同步同改。附带 `EVORULE_SKIP_REASON` 跳过理由登记——跳过生效时未登记理由将出现 warning（大声原则：任何跳过必须可追溯）

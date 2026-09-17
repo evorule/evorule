@@ -6,6 +6,7 @@
 # - TCB 构建门禁 (build.rs 在 cargo build 时自动执行)
 # - i18n 双语门禁 (docs 中英漂移 + server code→err.* 字典对照)
 # - 验证状态同步门禁 (STATUS.md ↔ 证据库 ↔ 文档/CI 清单, scripts/check_status_sync.py)
+# - ASSURANCE 规范合规门禁 (规范/状态分离 T 系执法, scripts/check_assurance_compliance.py)
 #
 # 设计说明:
 # - 测试矩阵覆盖当前支持的平台 (Linux / Windows)
@@ -161,6 +162,20 @@ jobs:
 
       - name: 验证状态一致性 (STATUS.md ↔ 证据 ↔ 文档/CI)
         run: python3 scripts/check_status_sync.py
+
+  # ==========================================================================
+  # 5b. ASSURANCE 规范合规门禁 (规范/状态分离执法, 纯文本扫描, 无需 Rust 工具链)
+  #     T 系规则: 规范自体零状态词(T1)/零SHA(T2)/内部信息零容忍(T3)/
+  #     对外材料比较级禁令(T4)/等级冒领禁令(T5)/状态承载纪律(T6)
+  # ==========================================================================
+  assurance-compliance:
+    name: assurance compliance (T1-T6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: ASSURANCE 规范合规 (规范自体 / 对外材料 / verification 顶层文档)
+        run: python3 scripts/check_assurance_compliance.py
 
   # ==========================================================================
   # 6. 依赖门禁 (cargo-deny, A2 供应链三件套)

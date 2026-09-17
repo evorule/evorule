@@ -280,7 +280,7 @@ TCB = while 循环 + InstructionExecutor
 
 **版本号反映代码真实状态,不是营销数字。**
 
-来源:`D:\evorule\VERSION_STRATEGY.md`(v1.2,2026-08-02)
+来源:[VERSION_STRATEGY.md](VERSION_STRATEGY.md)(v1.2,2026-08-02)
 
 | 原则         | 说明                                |
 | ------------ | ----------------------------------- |
@@ -349,4 +349,4 @@ TCB = while 循环 + InstructionExecutor
 | D9       | 路径解析永不 panic                      | 错误路径   |
 | D10      | 6 种 JSON 类型(无 Float)                | 数据模型   |
 
-完整定义:`D:\evorule\evorule-tcb\TCB_SPEC.md`(权威)
+完整定义:[evorule-tcb/TCB_SPEC.md](evorule-tcb/TCB_SPEC.md)(权威)

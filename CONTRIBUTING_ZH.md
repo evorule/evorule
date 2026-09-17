@@ -63,8 +63,8 @@
 **数据格式治理（2026-08-27 起）**:被引擎加载执行的**系统 JSON**必须符合
 [evorule-system-rules](https://evorule.org/schemas) 宪法——携带 5 顶层字段
 (`$schema`/`kind`/`id`/`version`/`metadata`)并通过对应 kind schema 校验。
-新增 JSON 文件入仓前用宪法仓一键预检确认:
-`powershell -File D:\evorule-system-rules\verify-all.ps1`（第五步扫描本仓,
+新增 JSON 文件入仓前用宪法仓一键预检确认:在本机 evorule-system-rules
+宪法仓根目录运行 `powershell -File verify-all.ps1`（第五步扫描本仓,
 无壳文件需先在宪法仓 `docs/explanation/04-governance-scope.md` 豁免表登记）。
 测试夹具等豁免资产的判定依据见该文档。
 
