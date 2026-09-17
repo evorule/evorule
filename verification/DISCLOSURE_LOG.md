@@ -178,3 +178,10 @@
 - **依据**：双仓全量测试实测输出；4 个 e2e 脚本实测输出（全 PASS）；git 状态核查（初稿未经提交，三处注入均为本批工作树新增）；STATUS.md 维护区 2026-09-17 条目（含更正声明）。
 - **影响**：① STATUS C6 表：C6.1/C6.3 主状态 🔵→**✅**（本地实跑证据落定 + CI `test` job 常驻），C6.4 保持 🔵（编译级验证，运行时观测待 e2e 断言补强）；② §3.1 C6 行保持 **AL2（部分）**（判定依据更新为实跑证据），关联偏离收窄为 DEV-6；③ **DEV-4 关闭移出**（C6 属性条目已建于 §一/§二 之间的 C6 表）、**DEV-5 关闭移出**（装配信号已实施并验证）——§3.2 现存 DEV-1/2/3/6/7；④ 行为变更登记：装配后 LLM/Unknown 调用者 I/O 直调由 fail-open 转 fail-closed（有意变更，既有 e2e 场景实证未受影响）。
 - **修正去向**：本条目即修正记录；`verification/STATUS.md`（C6 表、§3.1 C6 行、§3.2 偏离登记、维护区 2026-09-17 条目含更正声明）。
+
+### 2026-09-17：C6.5 链路测试实跑验证 + snapshot_at 版本围栏缺陷修复 + DEV-6 差分证据部分归档（T1/T2/T5/T6）
+
+- **事实**：① C6.5 账本链路测试组 5 项实跑 PASS（`cargo test -p evorule-governance permission::table` 5/5；lib 全量 161 全绿）；链路 2/3 回归暴露**产品缺陷**：`PermissionTable::snapshot_at` 版本围栏 off-by-one——账本 history 记录 `version_before` 而 append 返回写入后版本，原 `> v_shared` 剔除会把 `version_before == v_shared` 的事实错误纳入历史时点投影；已修为 `>=`（table.rs 同批，附回归注释）。当前时点判定（`v_trigger = version()`）语义不受影响，受影响面为历史时点重建（审计回放/决策可追溯）。② DEV-6 差分 harness 落地：`evorule-tcb/tests/carrier_diff.rs`（T1/T2）与 `evorule-reactor/tests/carrier_diff.rs`（T5/T6）9 测全 PASS，证据归档 `verification/carrier-identity/evidence/DIFF-T1_T2_*` 与 `DIFF-T5_T6_*`（载体 `d9ceb9c`）；T3/T4 须触达 reactor 私有内部，待 src 内 `#[cfg(test)]` 落位。③ 载体同一性两文档修订：去工作环境表述、修正 unwind 计数 22→23（实测 `kani_proofs.rs`）、差分运行命令修正（stable `cargo test` 下 `cfg(not(kani))` 恒真，无需 cfg 旗标）。
+- **依据**：实测测试输出（governance 5/5 + 161 全绿；tcb 4/4 + reactor 5/5）；git 事实核查（d9ceb9c 载体、governance 零 `cfg(kani)`）；`facts_by_path_prefix`/`append` 源码链路核读。
+- **影响**：① STATUS：C6.5 ⏳→**✅**（AL1），C6 表五子命题中四项 ✅、C6.4 🔵；§3.1 C6 行判读依据同步（C6.2 证据产出矛盾消除）；② snapshot_at 缺陷修复属产品代码变更，回归由链路 2/3 常驻守护；③ DEV-6 维持「未关闭」（T3/T4 待补齐 + 保真损失项边界化）；④ C6.5 尾部条目自「待验证」状态收口为已验证。
+- **修正去向**：本条目即披露记录；`verification/STATUS.md`（C6.5 行、§3.1 C6 行、维护区同日条目）、`evorule-governance/src/permission/table.rs`（围栏修复）、`verification/carrier-identity/`（两文档修订 + evidence/ 两份归档）。
