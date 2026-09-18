@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-or-later
+﻿# SPDX-License-Identifier: AGPL-3.0-or-later
 # check-ci-green.ps1 — 推送后 CI 绿灯检查（推送远端后 CI 绿灯纪律的机械化工具）
 #
 # 纪律（2026-09-18 建立）：任何推送至公开远端后，必须检查远端 CI 是否全绿；
@@ -24,6 +24,29 @@ $ErrorActionPreference = 'Stop'
 $api = "https://api.github.com/repos/$Repo/actions/runs"
 $deadline = (Get-Date).AddMinutes($TimeoutMin)
 $headers = @{ 'User-Agent' = 'evorule-ci-green-check'; 'X-GitHub-Api-Version' = '2022-11-28' }
+
+# 鉴权：优先取本机 git 凭据（匿名限额 60 req/h 极易触发 rate limit，鉴权 5000 req/h）；token 仅进内存，不落输出
+# 注意：Windows PowerShell 5.1 的「字符串/数组 | git credential fill」管道会把 stdin 弄丢协议行
+#       （实测 fatal: missing protocol field；pwsh 7 无此问题），故改用临时文件 + cmd 输入重定向。
+#       输入内容仅 protocol/host 两行，无敏感信息；token 只进内存头，不落输出。
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$tmpIn = Join-Path ([IO.Path]::GetTempPath()) ("cred-in-" + [IO.Path]::GetRandomFileName() + ".tmp")
+try {
+    [IO.File]::WriteAllText($tmpIn, "protocol=https`nhost=github.com`n", [Text.Encoding]::ASCII)
+    $credOut = @(cmd /c "git credential fill < `"$tmpIn`"")
+    $line = @($credOut) | Where-Object { $_ -match '^(password|oauth_token)=' } | Select-Object -First 1
+    if ($line) {
+        $headers['Authorization'] = "Bearer $(($line -split '=', 2)[1])"
+    } else {
+        Write-Host "  未取到 git 凭据，匿名访问（可能触发 GitHub API 限流）"
+    }
+} catch {
+    Write-Host "  git 凭据获取失败，匿名访问（可能触发 GitHub API 限流）"
+} finally {
+    Remove-Item $tmpIn -ErrorAction SilentlyContinue
+    $ErrorActionPreference = $prevEap
+}
 
 function Get-Runs {
     # 网络瞬断重试（GitHub 443 间歇阻断为已知问题）：4 次退避重试后仍失败才中止
