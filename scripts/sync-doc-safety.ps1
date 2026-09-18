@@ -14,7 +14,7 @@
 param(
     [switch]$Check,
     [switch]$Sync,
-    [string[]]$Repos = @('evorule-server', 'evorule-console-cloud', 'evorule-rule', 'evorule-system-rules', 'evo-agent'),
+    [string[]]$Repos = @('evorule-server', 'evorule-console-cloud', 'evorule-rule', 'evorule-system-rules', 'evo-agent', 'evorule-sdk'),
     # 默认假定各仓与母本仓同级（母本仓父目录下）；布局不同时用 -Base 显式指定仓根父目录
     [string]$Base = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent)
 )
