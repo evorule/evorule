@@ -215,12 +215,15 @@ mod tests {
     use crate::fact::FactId;
 
     /// 测试辅助：向 payload.__io_results__.call_external 注入非 null 结果
+    // 2026-09-18：原用 BTreeMap::entry().or_insert_with()，但 kani cfg 下 Object 底层
+    // 是 KaniMap 替身（Vec 模型，见 tcb value.rs L58-132），替身无 entry（建模成本不划算）；
+    // 改用 contains_key + get_mut / insert 组合，BTreeMap 与 KaniMap 两 cfg API 统一。
     fn set_io_result(state: &mut ReactorState) {
         if let JsonValue::Object(map) = &mut state.payload {
-            let results = map
-                .entry("__io_results__".to_string())
-                .or_insert_with(JsonValue::empty_object);
-            if let JsonValue::Object(io_map) = results {
+            if !map.contains_key("__io_results__") {
+                map.insert("__io_results__".to_string(), JsonValue::empty_object());
+            }
+            if let JsonValue::Object(io_map) = map.get_mut("__io_results__").unwrap() {
                 io_map.insert("call_external".to_string(), JsonValue::string("test"));
             }
         }

@@ -107,3 +107,15 @@
 **同批跨仓处置**：`evorule-reactor/verification/evidence/kani/` 4 对旧 PASS 证据（锚定 `25c0cc0`）隔离至该仓同级 `_invalidated/` 批次 2（reactor `src/pure.rs` 同批 rustfmt import 排序，零语义）。
 
 **披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-15 lint 清零条目。
+
+## 批次 8（2026-09-18）：A 档 14 对证据随仓库提交历史整理失效隔离
+
+**来源**：`../`（`evorule-tcb/verification/evidence/kani/`），28 个文件（14 对 `.log` + `.stdout.txt`，命名锚定 `34c841d`，产出于 2026-09-15）。
+
+**失效判定**（[MECHANISM.md](../../../../../verification/MECHANISM.md) M3.4）：2026-09-18 仓库提交历史整理（公开历史 commit message 规范化清洗，全链 commit 重写、版本 tag 重打），原基线 `34c841d` 在整理后历史中不复存在，本批证据的 SHA 绑定失效；被验证代码与 proof 源码零变更（新基线 `a3d728f` 树与 `34c841d` 树一致），按 M3.4 以复跑替代。
+
+**替代证据**：于 `a3d728f` 重跑 A 档 14 个全 PASS（2026-09-18，WSL Kani 0.67.0，单 proof 0.3~4.0s；合计 18/18 = TCB 14 + reactor 4），按 M3.1 命名归档于 `../`（见 [STATUS.md](../../../../../verification/STATUS.md) P0-3/P0-6 证据列）。
+
+**同批跨仓处置**：`evorule-reactor/verification/evidence/kani/` 4 对旧 PASS 证据（锚定 `34c841d`）隔离至该仓同级 `_invalidated/` 批次 3（reactor `src/invariants.rs` 单元测试辅助 `set_io_result` 同批适配 kani cfg Object 后端 API——`entry` → `contains_key` + `get_mut`/`insert`，proof 函数与生产代码零变更）。
+
+**披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-18 条目。

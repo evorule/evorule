@@ -192,3 +192,10 @@
 - **依据**：脚本实测输出（两轮 8/8 PASS）；server 二进制经 `cargo build` 与仓 HEAD 同源后实跑；`main.rs` 装配调用链（无条件 `mark_guard_assembled`）源码核读。
 - **影响**：① STATUS C6 表五子命题全部 ✅；§3.1 C6 行判读依据更新、达成等级不变；② 形式化验证 roadmap P0 两项收尾全部闭环，P0 整体完成；③ 无行为变更（纯测试脚本新增 + 状态文档，产品代码零改动）。
 - **修正去向**：本条目即披露记录；`verification/STATUS.md`（C6.4 行、§3.1 C6 行、维护区同日条目）；evorule-server 仓 `plugins/wasm-host/tests/verify_c64_guard_assembled.py`（新增）。
+
+### 2026-09-18：仓库提交历史整理（公开历史 commit message 规范化清洗）与 A 档证据基线重置
+
+- **事实**：① 主仓执行仓库提交历史整理：全链 commit 重写（公开历史 commit message 规范化清洗）+ 版本 tag 重打，新基线 `a3d728f`，树内容与整理前末端 `34c841d` 完全一致（`git diff 34c841d a3d728f` 为空）；整理前链（旧历史 hash）：`bdfb8d4` → `1c6ad84` → `1b340e5` → `90b77aa` → `627330a` → `25c0cc0` → `34c841d`。② A 档 Kani 证据基线随历史整理重置：旧证据 SHA 锚定全部失效（旧 hash 不在新历史），按 M3.4 复跑替代（拒绝修改既有证据内容）——18 个 kani proof 于 `a3d728f` 复跑全 PASS（TCB 14：`20260918_105558`；reactor 4：`20260918_110527`；WSL Kani 0.67.0），旧证据 18 对（`34c841d` 锚定）按 M3.5 移入各仓 `_invalidated/`（TCB README 批次 8 / reactor README 批次 3）。③ 复跑前置修复：reactor `src/invariants.rs` 测试辅助 `set_io_result` 做了 cfg 兼容适配（原 `BTreeMap::entry()` 在 kani cfg 下 Object 的替身实现上无此 API，E0599）——属 `#[cfg(test)]` 测试辅助，不触及 proof 源码（`verification/kani_proofs.rs`），不影响证据锚定。④ 首轮复跑暴露证据生成脚本两处缺陷（stdout 配对文件未落盘、文件名硬编码 `_PASS_`）：修复后由既有 `.log` 内嵌全量 stdout 逐字节重建 18 个 `.stdout.txt` 配对；4 个误名文件（文件名 PASS、内容为编译失败输出，零证据价值）废弃删除。
+- **依据**：`git diff 34c841d a3d728f` 树零变更实测；18 proof 复跑实测输出（全 PASS）；check_status_sync.py S7 追踪范围源码核读（仅 `evorule-reactor/verification/kani_proofs.rs` 与 `evorule-tcb/tests/kani/kani_proofs.rs`）；配对重建前后文件计数与首尾行抽检（reconstructed 18 / moved 18，主目录旧锚残留 0）。
+- **影响**：① STATUS.md 快照基线更新为 `a3d728f`，P0-3/P0-6/P0-11/P1-3/P1-5/P1-6 六行证据列与状态依据同步（旧 `34c841d` 版指针全部改指隔离批次）；② B 档 20 个不变量与差分证据不在本轮重置范围（无本批变更触及）；③ 门禁 12 规则复跑全绿；④ 旧证据全部可溯（M3.5 `git log --follow`）。
+- **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照、六行证据列/状态依据、维护区同日条目）；`evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 8、`evorule-reactor/verification/evidence/kani/_invalidated/README.md` 批次 3；新证据 18 对（`*_PASS_a3d728f_20260918_*`）。

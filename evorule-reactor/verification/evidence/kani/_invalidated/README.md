@@ -52,3 +52,24 @@
 **说明**：P0-11 修复前 3 份超时 FAIL 过程证据（`FAIL_bdfb8d4_20260912_*`）按 M3.2 合规存档，保留于 `../` 主目录，不属于本隔离区范围。
 
 **披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-15 lint 清零条目。
+
+## 批次 3（2026-09-18）：reactor 4 对证据随仓库提交历史整理失效隔离
+
+**来源**：`../`（`evorule-reactor/verification/evidence/kani/`），8 个文件（4 对 `.log` + `.stdout.txt`，命名锚定 `34c841d`，产出于 2026-09-15）。
+
+**失效判定**（[MECHANISM.md](../../../../../verification/MECHANISM.md) M3.4）：主仓 2026-09-18 仓库提交历史整理（公开历史 commit message 规范化清洗，全链 commit 重写、版本 tag 重打）致证据 SHA 锚定全部失效（旧 hash 不在新历史中）；树内容与整理前末端 `34c841d` 零变更，proof 源码文件本身未变更。按 M3.4 复跑替代（拒绝修改既有证据内容），旧证据随批隔离。
+
+**逐文件清单**（适用共同判定，无逐文件特有问题）：
+
+| 文件对 | 归档时结果 |
+| ------ | ---------- |
+| P0-11.invariant_cause_queue_sync_PASS_34c841d_20260915_202409 | PASS |
+| P1-3.invariant_version_monotonic_PASS_34c841d_20260915_202409 | PASS |
+| P1-5.command_does_not_decrease_queue_PASS_34c841d_20260915_202409 | PASS（`--default-unwind 4`） |
+| P1-6.max_rounds_termination_PASS_34c841d_20260915_202409 | PASS（`--default-unwind 4`） |
+
+**替代证据**：于 `a3d728f` 重跑 4 个 CI proof 全 PASS（2026-09-18，WSL Kani 0.67.0；合计 18/18 = TCB 14 + reactor 4），按 M3.1 命名归档于 `../`（见 [STATUS.md](../../../../../verification/STATUS.md) P0-11/P1-3/P1-5/P1-6 证据列）。复跑前置修复：`src/invariants.rs` 测试辅助 `set_io_result` 做了 cfg 兼容适配——原 `BTreeMap::entry()` 在 kani cfg 下 Object 的替身实现（有序 Vec 模型）上无此 API（E0599），改用 `contains_key` + `get_mut`/`insert` 组合使两种 cfg 下 API 统一；该修复属 `#[cfg(test)]` 测试辅助代码，不触及本批 proof 源码（`verification/kani_proofs.rs`），不影响证据锚定。
+
+**同批其他处置**：复跑首轮产物中 4 个文件（文件名 `*_PASS_a3d728f_20260918_105558`，实为上述 E0599 编译失败输出）因证据生成脚本文件名硬编码 `_PASS_` 而误名（文件名 PASS、内容 FAIL），确认零证据价值（编译失败过程，非属性反例）后直接删除，不适用隔离；脚本缺陷同批修复（stdout 配对文件落盘、命名按实测状态生成）。
+
+**披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-18 仓库提交历史整理与证据基线重置条目。

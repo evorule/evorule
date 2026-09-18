@@ -1,0 +1,56 @@
+Verification evidence: P0-3.verify_array_index_bounds
+Status: PASS (exit code 0)
+# Evidence metadata
+- commit SHA: a3d728fbd5f4cb311a4032a36886faec35e7c5e7
+- kani: cargo-kani 0.67.0
+- rustc: rustc 1.97.1 (8bab26f4f 2026-07-14)（Kani 0.67 内置 pinned 工具链 nightly-2025-11-21）
+- timestamp: 2026-09-18 10:55:58 +0800
+- platform: Linux 6.18.33.2-microsoft-standard-WSL2 (x86_64)
+- command: cargo kani -p evorule-tcb --tests --harness verify_array_index_bounds --output-format=terse
+- per-proof timeout: 300s (kill 30s)
+- log: P0-3.verify_array_index_bounds_PASS_a3d728f_20260918_105558.stdout.txt
+--- result summary (tail) ---
+Kani Rust Verifier 0.67.0 (cargo plugin)
+warning: evorule-tcb@0.6.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+warning: evorule-tcb@0.6.0: evorule-tcb 字面量门禁 PASSED - 已扫 7 文件 x 24 模式, 0 违规
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.81s
+warning: evorule-tcb@0.6.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+warning: evorule-tcb@0.6.0: evorule-tcb 字面量门禁 PASSED - 已扫 7 文件 x 24 模式, 0 违规
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.97s
+warning: evorule-tcb@0.6.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+warning: evorule-tcb@0.6.0: evorule-tcb 字面量门禁 PASSED - 已扫 7 文件 x 24 模式, 0 违规
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.84s
+warning: evorule-tcb@0.6.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+warning: evorule-tcb@0.6.0: evorule-tcb 字面量门禁 PASSED - 已扫 7 文件 x 24 模式, 0 违规
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.89s
+warning: evorule-tcb@0.6.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+warning: evorule-tcb@0.6.0: evorule-tcb 字面量门禁 PASSED - 已扫 7 文件 x 24 模式, 0 违规
+warning: unused import: `String`
+  --> evorule-tcb/tests/kani/model.rs:16:21
+   |
+16 | use alloc::string::{String, ToString};
+   |                     ^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: Found the following unsupported constructs:
+             - caller_location (1)
+             - foreign function (2)
+         
+         Verification will fail if one or more of these constructs is reachable.
+         See https://model-checking.github.io/kani/rust-feature-support.html for more details.
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.84s
+warning: evorule-tcb@0.6.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+warning: evorule-tcb@0.6.0: evorule-tcb 字面量门禁 PASSED - 已扫 7 文件 x 24 模式, 0 违规
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.02s
+Checking harness kani::kani_proofs::verify_array_index_bounds...
+
+VERIFICATION RESULT:
+ ** 0 of 970 failed (20 unreachable)
+
+VERIFICATION:- SUCCESSFUL
+Verification Time: 2.2271183s
+
+Manual Harness Summary:
+Complete - 1 successfully verified harnesses, 0 failures, 1 total.
