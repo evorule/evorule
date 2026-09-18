@@ -14,7 +14,12 @@
 //! 界声明（R2）：T1 键数 ≤ 64（对齐 D1 替身验证键量级），值字符串长度 ≤ 16；
 //! T2 嵌套深度 ≤ 65（恰好跨过生产上界 64 的两侧）。
 
-#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::expect_used,
+    clippy::iter_kv_map
+)]
 
 use evorule_tcb::domain::evaluate_domain;
 use evorule_tcb::{JsonValue, ObjectMap};
@@ -39,8 +44,10 @@ fn t1a_objectmap_iter_order_deterministic() {
     let a = build();
     let b = build();
 
-    let seq_a: Vec<&String> = a.keys().collect();
-    let seq_b: Vec<&String> = b.keys().collect();
+    // ⚠️ 不可改用 .keys()：`cargo kani --tests` 在 kani cfg 下 ObjectMap=KaniMap（无 keys 方法），
+    // iter().map 取 key 为三闸（stable test / clippy / kani）兼容写法；iter_kv_map 由文件头 allow 豁免。
+    let seq_a: Vec<&String> = a.iter().map(|(k, _)| k).collect();
+    let seq_b: Vec<&String> = b.iter().map(|(k, _)| k).collect();
     assert_eq!(seq_a, seq_b, "两次独立构造的迭代序必须一致（确定性）");
     assert_eq!(
         seq_a,
