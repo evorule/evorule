@@ -26,8 +26,17 @@ $deadline = (Get-Date).AddMinutes($TimeoutMin)
 $headers = @{ 'User-Agent' = 'evorule-ci-green-check'; 'X-GitHub-Api-Version' = '2022-11-28' }
 
 function Get-Runs {
-    $r = Invoke-RestMethod -Uri "$api`?head_sha=$Sha&per_page=100" -Headers $headers
-    @($r.workflow_runs)
+    # 网络瞬断重试（GitHub 443 间歇阻断为已知问题）：4 次退避重试后仍失败才中止
+    for ($i = 1; $i -le 4; $i++) {
+        try {
+            $r = Invoke-RestMethod -Uri "$api`?head_sha=$Sha&per_page=100" -Headers $headers
+            return @($r.workflow_runs)
+        } catch {
+            if ($i -eq 4) { throw }
+            Write-Host "  API 调用瞬断（第 $i 次），退避重试..."
+            Start-Sleep -Seconds (5 * $i)
+        }
+    }
 }
 
 # 阶段 1：等待至少一个 run 注册（push 后 runs 有秒级延迟）
