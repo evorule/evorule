@@ -286,7 +286,7 @@ Thanks to all contributors! Your name will appear in [AUTHORS.md](AUTHORS.md).
 
 ---
 
-**Style follows `evorule-core-backup` + community best practices
+**Style follows community best practices
 ([Keep a Changelog](https://keepachangelog.com/),
 [Conventional Commits](https://www.conventionalcommits.org/),
 [Contributor Covenant](https://www.contributor-covenant.org/)).**

@@ -290,5 +290,5 @@ cargo kani -p evorule-tcb --tests --harness <proof函数名> --output-format=ter
 
 ---
 
-**遵循 evorule-core-backup 风格的贡献指南。**
+**本贡献指南遵循社区通行风格。**
 **参考了 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)、[Conventional Commits](https://www.conventionalcommits.org/)、[Contributor Covenant](https://www.contributor-covenant.org/) 等社区最佳实践。**

@@ -146,6 +146,7 @@ PRIVATE_PATH_PATTERNS = [
     re.compile('evorule' + r'-agent'),
     re.compile('evorule' + r'-application'),
     re.compile('evorule-' + r'backup'),
+    re.compile('evorule-' + r'core-backup'),
     re.compile(r'文档[\\/](design|implement|benchmarks|archive)'),
 ]
 

@@ -178,7 +178,7 @@ if ($canonicalVersion -and $canonicalVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
     $versionLiteralPattern = '(?<![a-zA-Z_])v(\d+\.\d+\.\d+)\b|version\s*=\s*"(\d+\.\d+\.\d+)"'
     # === v0.2.2 引入: 历史性引用白名单 ===
     # 1) 文件名匹配 MIGRATION_v*.md / RELEASE_PROCESS_v*.md → 整个文件跳过(文档本身讲特定版本迁移/发布流程)
-    # 2) 文档版本表行 → 行内匹配 "基于 evorule-core-backup" 或 "| X.Y | YYYY-MM-DD |" 表格行格式
+    # 2) 文档版本表行 → "| X.Y | YYYY-MM-DD |" 表格行格式
     # 3) 历史性描述行 → 行内同时含 v\d.\d.\d 和以下关键词之一: 重构/下沉/已移除/未实现/迁移/达标条件/边界再调整/从 governance/已废弃/已发布/迁移指南/破坏性变更/路线图规划
     $docVersionTableRowPattern = '\|\s*\d+\.\d+\s*\|\s*\d{4}-\d{2}-\d{2}\s*\|'
     $historyKeywordPattern = '重构|下沉|已移除|未实现|迁移|达标条件|边界再调整|从 governance|已废弃|已发布|迁移指南|破坏性变更|路线图规划|初版|自\s*v\d+\.\d+\.\d+\s*起|新增|撤销|已删除|移除|修正|收紧|规范化|升级|落地|补入|合并|回滚|基础仓|在 vault|审计治理|历史说明|审计版|新设计|旧版|早期规划|性能基准|文档系统|验证设计|格式说明|重放契约|当前实现|当前状态|宪法|命名约定|仅保留|代码量目标|是历史对比'
@@ -232,8 +232,10 @@ if ($canonicalVersion -and $canonicalVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
             $lineEnd = $content.IndexOf("`n", $matchStart)
             if ($lineEnd -lt 0) { $lineEnd = $content.Length }
             $lineText = $content.Substring($lineStart, $lineEnd - $lineStart)
-            # 文档版本表行: "| 1.0 | 2026-07-19 | 初版,基于 evorule-core-backup v0.2.0-beta ..."
-            if ($lineText -match $docVersionTableRowPattern -or $lineText -match '基于 evorule-core-backup') { continue }
+            # 文档版本表行: "| 1.0 | 2026-07-19 | 初版,... " 表格行格式
+            if ($lineText -match $docVersionTableRowPattern) { continue }
+            # core_eval.json 宪法规范版本行: 规范版本与产品版本独立演进, 跳过
+            if ($lineText -match 'core_eval') { continue }
             # 历史性描述行: 同行同时含 v0.2.X 和历史关键词
             if ($lineText -match $historyKeywordPattern) { continue }
             # === v0.4.1 完善门禁: 历史锚点白名单 ===

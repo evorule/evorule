@@ -61,4 +61,4 @@ Code of Conduct documents are community norms; we release them under CC0 for max
 
 ---
 
-**本公约遵循 evorule-core-backup 的发布原则,采用 Contributor Covenant v2.1 标准。**
+**本公约采用 Contributor Covenant v2.1 标准。**
