@@ -25,7 +25,7 @@
 | 证据       | 实跑产生的 PASS/FAIL 日志 + 元数据（规范见 [evidence/README.md](evidence/README.md)）        |
 | 验证文档   | `verification/` 及各 crate `verification/`、`docs/` 下表述验证状态的文档                     |
 
-规则编号采用 **M 系**，与 `scripts/check_doc_safety.py` 的安全规则体系（R-门控1 / R3 / R-兄弟仓 / R-agent 身份零泄露等）相互独立、互为补充；M9 对后者为引用与扩展关系，不另起炉灶。
+规则编号采用 **M 系**，与 `scripts/check_doc_safety.py` 的安全规则体系（R-门控1 / R3 / R-agent 身份零泄露等）相互独立、互为补充；M9 对后者为引用与扩展关系，不另起炉灶。
 
 M 系条款由 `scripts/check_status_sync.py`（S 系 11 项一致性规则）在 CI（`ci.yml` 的 `status-sync` job）中机器执法：验证状态、证据库、对外文档、CI 清单任一漂移，该 job 即红。
 
@@ -95,7 +95,7 @@ M 系条款由 `scripts/check_status_sync.py`（S 系 11 项一致性规则）�
 ## M9 信息分级与内外隔离
 
 1. 文档分两级：**公开级**（本仓承载）与**内部级**（存放于项目私有知识库）。公开仓文档只可陈述「内部级文档存在于私有知识库」这一事实，不得出现其路径、目录名、文件名或内容。
-2. 本条是 `scripts/check_doc_safety.py` 既有安全规则（R-门控1 私有文档禁止入库、R3 私有路径零容忍、R-兄弟仓引用合规、R-agent 身份零泄露）在验证文档侧的**引用与扩展**，不替代。
+2. 本条是 `scripts/check_doc_safety.py` 既有安全规则（R-门控1 私有文档禁止入库、R3 私有路径零容忍、R-agent 身份零泄露）在验证文档侧的**引用与扩展**，不替代。
 3. 公开仓验证文档提交前必须通过 `check_doc_safety.py` 检查。
 
 ## M10 披露内容规范
