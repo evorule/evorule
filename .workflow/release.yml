@@ -6,7 +6,7 @@
 #       Windows x86_64 二进制由 .github/workflows/release.yml 的 attach-gitee
 #       job 构建后经 Gitee OpenAPI 附加到同一 Release(幂等,不存在则创建)
 #
-# 网页配置指引(见台账 UV-098):
+# 网页配置指引:
 # 1. 仓库页 → 流水线 → 新建流水线 → 代码视图,粘贴本文件
 #    (若 triggers 段保存报错,删除 triggers 段,改在网页触发器里配 Tag 前缀 v)
 # 2. 流水线参数/私密参数: 添加 GITEE_TOKEN (个人令牌,勾选 releases+projects 权限)
