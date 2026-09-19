@@ -75,6 +75,18 @@ pub struct SharedFactsMetadata {
     pub rolled_up: BTreeSet<u64>,
 }
 
+/// `mark_as_rollup` 的显式结果（R11 静默失败修复）
+///
+/// 修复前返回 `()`——调用方无法感知"标记了不存在的 id"这一静默失败。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RollupOutcome {
+    /// 实际存在的、成功标记（或已标记，幂等）的 id 数量
+    pub marked: usize,
+    /// 共享账本中不存在的 id 清单（典型原因：误用 payload 侧 fact_id，
+    /// 与共享表 ID 空间不通用）。调用方必须显式处理，不得忽略。
+    pub unknown: Vec<FactId>,
+}
+
 /// 跨会话共享事实存储
 ///
 /// 作为跨会话共享事实的全局存储，支持按路径前缀查询。
@@ -489,13 +501,39 @@ impl SharedFactsLog {
     ///
     /// # 参数
     /// - `fact_ids`: 要标记为 rollup 的 fact ID 列表
-    pub fn mark_as_rollup(&self, fact_ids: &[FactId]) {
+    ///
+    /// # 返回
+    /// [`RollupOutcome`]：实际标记数 + 共享账本中不存在的 id 清单。
+    ///
+    /// # R11（静默失败修复）
+    /// 修复前：不存在的 id 也被无条件插入 `rolled_up` 并返回 `()`——调用方
+    /// （server 端点）无法区分"标记成功"与"标记了不存在的 id"。典型事故：
+    /// 调用方误用写入响应里的 payload 侧 fact_id（与共享表 ID 空间不通用），
+    /// 得到 HTTP 200 但实际什么都没标记 → 旧摘要永不失效 → 反复 rollup 膨胀。
+    /// 现在：不存在的 id **不入** `rolled_up`（不给账本塞垃圾标记），
+    /// 并在返回值中显式列出，由调用方决定如何上报。
+    pub fn mark_as_rollup(&self, fact_ids: &[FactId]) -> RollupOutcome {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        let mut marked = 0usize;
+        let mut unknown = Vec::new();
         for id in fact_ids {
-            inner.rolled_up.insert(*id);
+            // 存在性锚点与 fact_by_id 一致：fact_sources 表
+            if inner.fact_sources.contains_key(id) {
+                inner.rolled_up.insert(*id);
+                marked += 1;
+            } else {
+                unknown.push(*id);
+            }
         }
         // 持久化 metadata（best-effort）
         inner.persist_metadata_locked();
+        RollupOutcome { marked, unknown }
+    }
+
+    /// 查询某 fact 是否已标记为 rollup（诊断/审计用途，R11 新增）
+    pub fn is_rolled_up(&self, fact_id: &FactId) -> bool {
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        inner.rolled_up.contains(fact_id)
     }
 
     /// 重置 SharedFactsLog 到初始状态
@@ -717,6 +755,37 @@ mod tests {
         let fact = log.fact_by_id(FactId(1));
         assert!(fact.is_some());
         assert_eq!(fact.unwrap().path, "shared.ns.sessions.s1.summary");
+    }
+
+    #[test]
+    fn test_mark_as_rollup_unknown_ids_reported_not_marked() {
+        // R11：不存在的 id 不得静默入 rolled_up，必须显式上报
+        let log = SharedFactsLog::new();
+
+        log.append(
+            "shared.ns.sessions.s1.summary",
+            JsonValue::string("s1"),
+            100,
+        )
+        .unwrap();
+
+        // 混合批次：1 存在、999/1000 不存在（payload 侧 id 误用的典型形态）
+        let outcome = log.mark_as_rollup(&[FactId(1), FactId(999), FactId(1000)]);
+        assert_eq!(outcome.marked, 1, "只有存在的 id 被标记");
+        assert_eq!(
+            outcome.unknown,
+            vec![FactId(999), FactId(1000)],
+            "不存在的 id 必须逐个上报"
+        );
+
+        // 不存在的 id 不进 rolled_up（不给账本塞垃圾标记）
+        assert!(!log.is_rolled_up(&FactId(999)));
+        assert!(log.is_rolled_up(&FactId(1)));
+
+        // 幂等：已标记的 id 再次标记 = marked，不算 unknown
+        let again = log.mark_as_rollup(&[FactId(1)]);
+        assert_eq!(again.marked, 1);
+        assert!(again.unknown.is_empty());
     }
 
     #[test]
