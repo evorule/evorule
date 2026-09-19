@@ -194,6 +194,22 @@ jobs:
         run: python3 scripts/check_doc_safety.py
 
   # ==========================================================================
+  # 5d. 公开面矩阵扫描 (全文件类型, 纯文本扫描)
+  #     词表五类: AI 身份 / 厂商名 / 内部批次编号 / 私有路径仓名 / 治理语境。
+  #     本 job 对 A1(AI 身份) 与 B(内部编号) 计入退出码即红;
+  #     C/D 类当前为复核项不阻断, 待存量处置后逐类收紧。
+  #     工程主键类编号豁免清单: scripts/scan_public_face_allowlist.txt
+  # ==========================================================================
+  public-face-scan:
+    name: public face scan (A1/B blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: 公开面矩阵扫描 (AI 身份 + 内部编号阻断)
+        run: python3 scripts/scan_public_face.py --fail-on A1 --fail-on B
+
+  # ==========================================================================
   # 6. 依赖门禁 (cargo-deny, A2 供应链三件套)
   #    许可合规 (deny.toml [licenses]) + RUSTSEC 漏洞 ([advisories])
   #    + 重复依赖/通配符 ([bans]) + 来源白名单 ([sources])
