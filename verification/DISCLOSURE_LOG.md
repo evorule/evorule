@@ -54,6 +54,13 @@
 
 （此后按时间顺序追加，格式：日期 + 事实 / 依据 / 影响 / 修正去向）
 
+### 2026-09-20：快照版本随 0.6.1 发版收口同步（v0.6.0 → v0.6.1）
+
+- **事实**：workspace 版本收口 0.6.1（commit `c7e6266`，2026-09-20），STATUS.md 快照同步 v0.6.0 → v0.6.1。本批为文档版本号收口与历史版本锚去版本化改写（教程/参考/README 中失效的旧版本字面量清零），proof 源码、生产源码、证据库零变更——A 档证据基线 `a3d728f` 有效性不受影响（M3.4：无触及 proof 源码或所验证生产源码的变更）。
+- **依据**：`c7e6266` diff 实测（18 文件均为文档/版本号/CI 加固，`verification/kani_proofs.rs` 与 `evorule-tcb/tests/kani/kani_proofs.rs` 不在变更集）；全量验证绿（fmt / clippy / cargo test --workspace / validate-version / validate-release）。
+- **影响**：S10 版本对齐三方（Cargo.toml / STATUS.md / MECHANISM.md 头部声明）回到一致；无状态行变更（P0/P1/C6/DEV 各表状态与证据列不动）。
+- **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行）、`verification/MECHANISM.md`（头部版本对齐声明）。
+
 ### 2026-09-12：证据隔离批次 1 执行 + 表述修正
 
 - **事实**：阶段 1 证据隔离执行——12 个 TCB 旧证据 `git mv` 至 `evorule-tcb/verification/evidence/kani/_invalidated/`，4 个零价值文件 `git rm`；隔离区 README 落盘（作废原因与批次记录）。同时修正首条 #2 与处置记录③ 中「0KB 空文件」的不准表述：`p4567_tmp.log`（46 字节）与 `p8_11.log`（49 字节）实际各含单行 harness 标题、无验证结果，非 0KB。

@@ -8,7 +8,7 @@
 
 # EvoRule 验证状态（STATUS）
 
-> **快照**：v0.6.0（代码基线 `a3d728f`——2026-09-18 仓库提交历史整理（公开历史 commit message 规范化清洗，全链 commit 重写、版本 tag 重打）后的新基线，树内容与整理前末端 `34c841d`（lint 清零批：workspace clippy/fmt 清零 + dependabot 关闭）一致；A 档 Kani 证据基线随历史整理重置为 `a3d728f`（2026-09-18，M3.4 复跑替代：TCB 14 + reactor 4，见维护区与 [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md) 同日条目）；整理前链（旧历史 hash）：`bdfb8d4`（2026-09-12）→ `1c6ad84`（Batch 1）→ `1b340e5`（W3-1）→ `90b77aa`（W3-3）→ `627330a`（W3-4）→ `25c0cc0`（历史批次）→ `34c841d`（lint 清零））
+> **快照**：v0.6.1（代码基线 `a3d728f`——2026-09-18 仓库提交历史整理（公开历史 commit message 规范化清洗，全链 commit 重写、版本 tag 重打）后的新基线，树内容与整理前末端 `34c841d`（lint 清零批：workspace clippy/fmt 清零 + dependabot 关闭）一致；A 档 Kani 证据基线随历史整理重置为 `a3d728f`（2026-09-18，M3.4 复跑替代：TCB 14 + reactor 4，见维护区与 [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md) 同日条目）；整理前链（旧历史 hash）：`bdfb8d4`（2026-09-12）→ `1c6ad84`（Batch 1）→ `1b340e5`（W3-1）→ `90b77aa`（W3-3）→ `627330a`（W3-4）→ `25c0cc0`（历史批次）→ `34c841d`（lint 清零））
 > **性质**：验证状态的唯一权威（[MECHANISM.md](MECHANISM.md) M1），并承载**保证声明达成状态与偏离登记**（§三）。其他文档引用状态时以本表为准，不得独立断言。
 > **与 ASSURANCE.md 的分工**：保证声明（应达到什么）见 [ASSURANCE.md](ASSURANCE.md)（规范性，不承载状态）；本节（已达到什么、尚未对齐什么）为状态事务。**方向是单向的：项目向 ASSURANCE.md 对齐。**
 > **状态词汇**：五档（M2）：✅当前实跑 / 🟡历史PASS / 🔵间接覆盖 / ⏳计划中 / ❌不可运行，允许复合（如 ❌+🔵）。
