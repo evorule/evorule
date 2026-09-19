@@ -8,7 +8,7 @@
 
 # `evorule` CLI
 
-[![版本 v0.6.0](https://img.shields.io/badge/version-v0.6.0-blue)](../Cargo.toml)
+[![版本 v0.6.1](https://img.shields.io/badge/version-v0.6.1-blue)](../Cargo.toml)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-green)](../LICENSE)
 [![文档索引 DOCS_INDEX](https://img.shields.io/badge/docs-DOCS_INDEX-8A2BE2)](../DOCS_INDEX.md)
 
@@ -29,7 +29,7 @@
 - ✅ **零网络** —— 不调用任何外部服务
 - ✅ **零遥测** —— 无任何隐式上报
 - ✅ **零 AI 决策** —— 不调用 LLM
-- ✅ **零系统依赖** —— musl 静态链接,单文件分发(v0.6.0 Linux 产物约 2.3 MB,以实际构建为准)
+- ✅ **零系统依赖** —— musl 静态链接,单文件分发(v0.6.1 Linux 产物约 2.3 MB,以实际构建为准)
 - ✅ **完整审计** —— 每步 fact 落盘(tier1 WAL JSONL 格式,与 evorule-governance 互通)
 - ✅ **哈希链** —— blake3 哈希链 + 结构不变量校验(防篡改)
 - ✅ **FIFO 队列** —— 修复原 LIFO bug,正确执行 push 语义
@@ -45,9 +45,9 @@
 ## 快速开始(圈 2 项目方)
 
 ```bash
-# 1) 下载(按平台选,直达 v0.6.0 release 产物)
-wget https://gitee.com/evorule/evorule/releases/download/v0.6.0/evorule-linux-x86_64   # Linux x86_64
-# Windows x86_64: https://gitee.com/evorule/evorule/releases/download/v0.6.0/evorule-windows-x86_64.exe
+# 1) 下载(按平台选,直达 v0.6.1 release 产物)
+wget https://gitee.com/evorule/evorule/releases/download/v0.6.1/evorule-linux-x86_64   # Linux x86_64
+# Windows x86_64: https://gitee.com/evorule/evorule/releases/download/v0.6.1/evorule-windows-x86_64.exe
 
 # 2) 验证(可选,记录哈希备查)
 sha256sum evorule-linux-x86_64
@@ -158,7 +158,7 @@ evorule validate ./rules/
 - `[ERROR] transform[N]: unknown type 'X'` —— 未知 type(阻断)
 - `[ERROR] transform[N]: missing 'type' field` —— 缺少 type 字段(阻断)
 
-合法 type 白名单(core_eval 元指令,v0.6.0 SSOT 常量 `META_INSTRUCTION_TYPES`,5 种):
+合法 type 白名单(core_eval 元指令,SSOT 常量 `META_INSTRUCTION_TYPES`,5 种):
 
 | type         | 用途                                     |
 | ------------ | ---------------------------------------- |
@@ -472,7 +472,7 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 ```bash
 # Linux x86_64 圈 2 项目方
-wget https://gitee.com/evorule/evorule/releases/download/v0.6.0/evorule-linux-x86_64
+wget https://gitee.com/evorule/evorule/releases/download/v0.6.1/evorule-linux-x86_64
 chmod +x evorule-linux-x86_64
 ./evorule-linux-x86_64 validate /etc/company-rules/
 ./evorule-linux-x86_64 run /etc/company-rules/ -o /var/log/evorule-fact.log
@@ -559,7 +559,7 @@ bash tests/e2e.sh .build/rust/aarch64-unknown-linux-musl/release/evorule
 
 ---
 
-## 已知限制(v0.6.0 时点)
+## 已知限制(v0.6.1 时点)
 
 - ❌ 无 I/O handler(`io_request` 会产生 IoRequest fact + Error fact,不实际执行 I/O)
 - ❌ 无 HTTP API(本 crate 是本地 CLI，不提供 HTTP 服务；如需 HTTP/SSE 由应用层基于核心仓机制自行构建)
@@ -651,7 +651,7 @@ CI 双轨并行:Gitee Go(`.gitee-ci/`)+ GitHub Actions(`.github/workflows/`),Git
 - **`EVORULE_SKIP_CR_GATE=1`** 环境变量可跳过 L1b 变更治理门禁（仅限本地开发）
 - > **现状注记（TCB-2026-29 整改, 2026-09-15）**：上述 CR 构建校验属工程质量自查纪律（非防伪造审查机制），已从 build.rs 移出公开仓，`EVORULE_SKIP_CR_GATE` 随之删除；自查由维护者本地 git pre-commit hook 承接。策略层检测保留且无阀常开。历史条目按当时事实保留。
 
-## v0.6.0 更新
+## 更新历史
 
 - **`validate` 元指令白名单收窄（规则清理，破坏性变更）**: SSOT 常量 `META_INSTRUCTION_TYPES` 收窄为 5 种（branch/set/push/io_request/enforce）；`collect`/`merge` 规则加载即拒，LLM 多轮编排归应用层
 

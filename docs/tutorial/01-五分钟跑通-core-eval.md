@@ -169,7 +169,7 @@ let core_eval = vec![
 
 ## 接下来
 
-- [教程 02:反应器循环示例](./02-反应器循环示例.md) — 单轮 LLM/工具 I/O 触发与消费（v0.6.0 起多轮编排由应用层 runner 负责）
+- [教程 02:反应器循环示例](./02-反应器循环示例.md) — 单轮 LLM/工具 I/O 触发与消费（多轮编排由应用层 runner 负责）
 - [教程 03:写一条业务规则](./03-写一条业务规则.md) — 用 JSON 写业务规则,跑 `evorule` CLI
 - 元指令集参考 — 5 种元指令(`branch` / `set` / `push` / `io_request` / `enforce`)的完整说明（待发布）
 - 域类型参考 — 7 基础域 + 派生域的完整说明（待发布）
@@ -347,7 +347,7 @@ payload after execution: {"x": 42, "y": "hello, evorule"}
 
 ## Next steps
 
-- [Tutorial 02: Reactor loop example](./02-反应器循环示例.md) — single-round LLM/tool I/O trigger & consume (since v0.6.0, multi-turn orchestration is the application-layer runner's job)
+- [Tutorial 02: Reactor loop example](./02-反应器循环示例.md) — single-round LLM/tool I/O trigger & consume (multi-turn orchestration is the application-layer runner's job)
 - [Tutorial 03: Writing a business rule](./03-写一条业务规则.md) — write business rules in JSON and run them with the `evorule` CLI
 - Meta-instruction reference — full docs for the 5 meta-instructions (`branch` / `set` / `push` / `io_request` / `enforce`) (coming soon)
 - Domain reference — full docs for 7 base domains + derived domains (coming soon)

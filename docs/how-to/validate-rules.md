@@ -32,7 +32,7 @@ evorule validate ./my-rules
 | `io_request` | I/O 请求 |
 | `enforce` | 强制执行（自进化预留，governance tier 门禁） |
 
-> v0.6.0 变更：`collect`/`merge` 已随规则清理退役，规则文件使用将被拒。
+> 规则清理变更：`collect`/`merge` 已随规则清理退役，规则文件使用将被拒。
 >
 > 注意：`increment`、`decrement`、`noop`、`conditional`、`while_loop`、`sequence` 是**指令层类型**，不是元指令类型，不在 validate 白名单中。它们出现在指令的 `type` 字段中，被规则的 `instruction` domain 匹配。
 
@@ -121,7 +121,7 @@ The whitelist SSOT is `evorule_tcb::META_INSTRUCTION_TYPES` (`evorule-tcb/src/ex
 | `io_request` | I/O request |
 | `enforce` | Enforce (reserved for self-evolution, gated by the governance tier) |
 
-> v0.6.0 change: `collect`/`merge` were retired in the iteration #69 cleanup; rule sets using them are rejected.
+> Change: `collect`/`merge` were retired by rule cleanup; rule sets using them are rejected.
 >
 > Note: `increment`, `decrement`, `noop`, `conditional`, `while_loop`, `sequence` are **instruction-layer types**, not meta-instruction types, and are not in the validate whitelist. They appear in the `type` field of an instruction and are matched by a rule's `instruction` domain.
 

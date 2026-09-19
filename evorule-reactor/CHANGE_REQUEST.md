@@ -170,6 +170,22 @@ char_lit_starts() 判别（字符字面量 vs 生命周期），修复 'static �
 
 机制层变更：为 build.rs 添加 CHANGE_REQUEST.md 验证逻辑和策略层反模式检测，提供通用的变更治理基础设施；可被任何机制层代码复用，不含业务语义。回滚：删除 build.rs 中的验证代码即可。
 
+## CR-20260920-001 0.6.1 版本收口发布（跨仓 CR）
+
+| 字段 | 值 |
+|------|------|
+| **变更 ID** | CR-20260920-001 |
+| **变更标题** | 0.6.1 版本收口发布：workspace 版本 bump、CHANGELOG 转正、文档版本锚点同步、release.yml publish-crates 幂等加固 |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-09-20 |
+| **审查状态** | 已批准 |
+
+**本次变更属于**: ✅ **非机制层（发布配置/文档）**
+
+判定理由：零 src/ 变更——仅版本号 bump（workspace 统一继承）、CHANGELOG 段转正、文档版本锚点更新（含历史版本字面量中性化改写，事实保留、未新增门禁豁免）、release.yml publish-crates 加固（secret 缺位显式跳过 + 已发布幂等跳过，不改变发布语义）。
+
+测试计划：cargo fmt/clippy/test --workspace 全绿；validate-version / validate-release(-SkipTagCheck) PASSED；scan_public_face 阻断 40 项＝在册存量零新增。
+
 ---
 
 > 注意：这是机制层变更，后续每次修改都需要更新此文件。

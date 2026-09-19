@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 # EvoRule workspace：tcb / reactor / governance / cli 四 crate 统一版本。
+# 2026-09-20：v0.6.1（R10 origin_fact_id / R11 mark_as_rollup 返回 RollupOutcome / snapshot_at off-by-one 修复；版本策略见 VERSION_STRATEGY.md）。
 # 2026-09-14：v0.6.0（破坏性变更：collect/merge 原语退役；版本策略见 VERSION_STRATEGY.md）。
 members = [
     "evorule-tcb",
@@ -14,7 +15,7 @@ members = [
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 authors = ["EvoRule Project"]

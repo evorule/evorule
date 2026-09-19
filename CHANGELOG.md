@@ -36,11 +36,11 @@
 
 ---
 
-## [Unreleased]
+## [0.6.1] - 2026-09-20
 
 ### 🆕 新增
 
-- **共享事实跨链溯源 `origin_fact_id`（N6 链路统一，R10）**：`SharedFactsLog` 新增 `append_with_origin(path, value, source_session_id, origin_fact_id)`（既有 `append` 签名不变、委托并传 `None`，全部既有调用点零改动）——共享侧条目记录其会话侧源头 fact_id，使 `GET /api/shared/facts/{id}/source` 可出示双侧证据。origin 存 `SharedFactsMetadata`（新增 `fact_origins` 映射，`#[serde(default)]` 保证旧 metadata 文件零报错加载），**不触碰 `Fact` 枚举与 WAL 字节面**——哈希链、确定性、可回放语义不变；origin 索引与 `fact_sources` 同级（辅助索引，WAL 为权威数据源）。新增查询出口 `origin_fact_id(FactId)`；`SharedFact` 投影结构新增同名字段（`Option<u64>`）。版本号随本批发布动作统一定版（见发版说明）。
+- **共享事实跨链溯源 `origin_fact_id`（N6 链路统一，R10）**：`SharedFactsLog` 新增 `append_with_origin(path, value, source_session_id, origin_fact_id)`（既有 `append` 签名不变、委托并传 `None`，全部既有调用点零改动）——共享侧条目记录其会话侧源头 fact_id，使 `GET /api/shared/facts/{id}/source` 可出示双侧证据。origin 存 `SharedFactsMetadata`（新增 `fact_origins` 映射，`#[serde(default)]` 保证旧 metadata 文件零报错加载），**不触碰 `Fact` 枚举与 WAL 字节面**——哈希链、确定性、可回放语义不变；origin 索引与 `fact_sources` 同级（辅助索引，WAL 为权威数据源）。新增查询出口 `origin_fact_id(FactId)`；`SharedFact` 投影结构新增同名字段（`Option<u64>`）。
 
 ### 🔄 变更
 

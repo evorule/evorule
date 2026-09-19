@@ -221,7 +221,7 @@ TCB = while 循环 + InstructionExecutor
 - 把 Rust 代码"展开"成等价的中间表示
 - 穷举所有可能的输入(在合理范围内)
 - 验证"对所有输入,程序都不违反性质"
-- **34 个 proof**(A 档 14 + B 档 20;5 层覆盖 — L1 基础类型 3 / L2 路径解析 11 / L3 域评估 10 / L4 元指令 7 / L5 状态转换 3),v0.6.0 重跑(2026-09-14,`25c0cc0`)A 档 14 个全 PASS;B 档 20 个(`evaluate_domain`/`execute_transition` 系列)实测 600s/3600s 超时,判定当前不可运行(由 proptest 间接覆盖):状态见 `verification/STATUS.md`(唯一权威)
+- **34 个 proof**(A 档 14 + B 档 20;5 层覆盖 — L1 基础类型 3 / L2 路径解析 11 / L3 域评估 10 / L4 元指令 7 / L5 状态转换 3),2026-09-14 全量复跑实测:A 档 14 个全 PASS;B 档 20 个(`evaluate_domain`/`execute_transition` 系列)实测 600s/3600s 超时,判定当前不可运行(由 proptest 间接覆盖):状态见 `verification/STATUS.md`(唯一权威)
 
 **TLA+**(TLC 模型检测):
 

@@ -100,8 +100,23 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -e
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::warning::CARGO_REGISTRY_TOKEN secret 未配置 - crates.io 自动发布跳过(需手工按依赖序发布或补配 secret); 二进制构建与 Release 不受影响"
+            exit 0
+          fi
           for p in evorule-tcb evorule-reactor evorule-governance evorule-cli; do
-            cargo publish -p "$p"
+            echo "publishing $p ..."
+            if cargo publish -p "$p" > /tmp/pub_$p.log 2>&1; then
+              echo "$p published"
+              cat /tmp/pub_$p.log
+            elif grep -qE "already exists|is already uploaded" /tmp/pub_$p.log; then
+              echo "$p 已在 crates.io(幂等跳过: 手工先行或重跑场景)"
+              cat /tmp/pub_$p.log
+            else
+              echo "$p publish FAILED"
+              cat /tmp/pub_$p.log
+              exit 1
+            fi
             sleep 15  # 等待 crates.io 索引更新, 避免下游依赖解析未就绪
           done
 
