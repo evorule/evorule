@@ -33,7 +33,7 @@ exclude = [
 workspace = true
 [dependencies]
 # 本地依赖
-evorule-tcb = { path = "../evorule-tcb", version = "0.6.0" }
+evorule-tcb = { path = "../evorule-tcb", version = "0.6.1" }
 
 # 日志
 tracing = "0.1"
@@ -69,7 +69,7 @@ thiserror = "2"
 # - wasm32 下禁用 rt-multi-thread（WASM 无多线程 runtime）
 # - persistence 两个目标均保持启用（见下方 wasm32 块注释，2026-09-14 更正）
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-evorule-reactor = { path = "../evorule-reactor", version = "0.6.0", features = ["persistence"] }
+evorule-reactor = { path = "../evorule-reactor", version = "0.6.1", features = ["persistence"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 getrandom = { version = "0.2", features = ["std"] }
 
@@ -78,7 +78,7 @@ getrandom = { version = "0.2", features = ["std"] }
 # 禁用 feature 会导致 13 处编译错误。std::fs 在 wasm32 下可编译但运行时返回
 # Unsupported，最小原型使用内存模式、不调用持久化 API。
 # 注意：此处与 reactor 侧同款，属"仅求可编译"，非"wasm32 可用"。
-evorule-reactor = { path = "../evorule-reactor", version = "0.6.0", features = ["persistence"] }
+evorule-reactor = { path = "../evorule-reactor", version = "0.6.1", features = ["persistence"] }
 # `time` 不可裁剪（TB-WASM-004）：生产代码 src/io_subscriber.rs:409 在瞬时错误指数退避
 # 重试路径中使用 `tokio::time::sleep(backoff).await`，无 wasm32 门控。
 # 与 reactor 侧同理——保留只为编过，wasm32 下 `std::time::Instant` 未实现，

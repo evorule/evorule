@@ -34,7 +34,7 @@ exclude = [
 [lints]
 workspace = true
 [dependencies]
-evorule-tcb = { path = "../evorule-tcb", version = "0.6.0" }
+evorule-tcb = { path = "../evorule-tcb", version = "0.6.1" }
 tracing = "0.1"
 serde_json = "1.0" # P0-1: WAL 持久化序列化（Fact ↔ JSON）
 # 审计链哈希（两套 WAL 合并：哈希链提升到 tier1）
