@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-or-later
+﻿# SPDX-License-Identifier: AGPL-3.0-or-later
 # sync-doc-safety.ps1 — check_doc_safety.py 多仓副本同步器（同步真相源机制）
 #
 # 母本 = 本仓 scripts/check_doc_safety.py（evorule 主仓）；各公开仓副本
@@ -10,7 +10,7 @@
 #   .\scripts\sync-doc-safety.ps1 -Sync      # 复制母本到各副本并逐文件哈希校验（只复制，不删除）
 #
 # 纪律：-Sync 后各仓产生未提交变更，须逐仓提交并推送双远端（Gitee 权威仓 + GitHub 镜像）；
-#       推送后按 CI 绿灯纪律检查远端 CI 全绿。词表/豁免内容的变更须先修订 80 号术语表再改母本。
+#       推送后按 CI 绿灯纪律检查远端 CI 全绿。词表/豁免内容的变更须先修订内部术语表再改母本。
 param(
     [switch]$Check,
     [switch]$Sync,
