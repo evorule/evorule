@@ -5,7 +5,7 @@
 | 字段 | 值 |
 |------|------|
 | **变更 ID** | CR-20260914-001 |
-| **变更标题** | 69 号清理：collect/merge 元指令退役（v0.6.0 破坏性变更）——LLM ReAct 多轮编排职责归应用层，机制层回归单轮 io_request 语义 |
+| **变更标题** | collect/merge 元指令退役（v0.6.0 破坏性变更）——LLM ReAct 多轮编排职责归应用层，机制层回归单轮 io_request 语义 |
 | **提交人** | EvoRule Team |
 | **提交日期** | 2026-09-14 |
 | **审查状态** | 已批准 |
@@ -34,8 +34,8 @@ runner / tool_registry 承担，机制层仅保留 io_request 单轮触发/消�
 ### 3.1 变更理由
 
 事故残留原语跨仓扩散（schema/前端/宪法按「功能完整性」附带实现），
-久拖不清理将持续误导消费方按 7 种原语设计规则；v1.1 清理计划为
-经批准的彻底清理方案。
+久拖不清理将持续误导消费方按 7 种原语设计规则；本方案为经批准
+的彻底清理方案。
 
 ### 3.2 变更范围
 
@@ -62,14 +62,14 @@ tool_registry 实现。
   console-cloud 前端白名单与 LLM 提示词 / evo-agent 宪法单轮化 /
   server INTEGRATION_GUIDE 口径 / registry E 族 5 种收尾
 - Kani：proof 34 个（删 P15/P16/P17）；kani.yml 同步 14A+20B；
-  A 档 14 + reactor 4 于 post-69 基线重跑（M3.4 批次 6），B 档 20 个
+  A 档 14 + reactor 4 于清理后基线重跑，B 档 20 个
   状态不变（❌）
 - 规则资产：30 个规则文件零 collect/merge 引用（Step 9 验证），演示
   规则执行结果与清理前一致（确定性）
 
 ### 3.5 测试计划
 
-- [x] `cargo build/test/clippy --workspace` 全绿（69 号 Step 8，
+- [x] `cargo build/test/clippy --workspace` 全绿（Step 8，
       2026-09-14）
 - [x] 30 个规则文件全部加载 + 16 条演示规则确定性验证（Step 9）
 - [ ] A 档 14 + reactor 4 WSL Kani 重跑 14/14 + 4/4 PASS（Step 10，
@@ -79,7 +79,7 @@ tool_registry 实现。
 ### 3.6 回滚方案
 
 git revert 本提交即恢复 collect/merge 原语与 0.5.0 版本；schema /
-前端 / 宪法 / registry 同批回滚。证据批次 6 隔离记录不受影响。
+前端 / 宪法 / registry 同批回滚。
 
 ## 1. 基本信息
 
@@ -141,7 +141,7 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 - verification/STATUS.md：属性表新增"模型偏差"列（Phase 1 落地）
 - cfg(kani) 偏差登记簿（K 系）：新增"爆炸半径"列与补偿合规规则
   （爆炸半径全调用点映射 / 证据-实现绑定 / 补偿不得引用受该模型
-  影响的 proof——S12/S13 机器检查草案）
+  影响的 proof——机器检查草案）
 
 ### 3.3 破坏性分析
 
@@ -153,7 +153,7 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 - A 档证据 SHA 绑定随 value.rs 回退重核：Batch 1 在 WSL 重跑 A 档
   14 个，新 SHA 证据补档（P0-3/P0-6 证据列同批更新）
 - reactor 4 个闸门 proof：stub 载体下零影响（爆炸半径限于声明
-  stub 的 harness）；cfg 回退场景下需重新论证（G1 强制）
+  stub 的 harness）；cfg 回退场景下需重新论证（强制）
 - 登记簿 K-4/K-5 补偿：stub 载体下挂 A 档
   `verify_partial_eq_never_panics`（真实现侧证明）成立；
   cfg 回退场景下降级为测试级补偿并显式标注
@@ -169,7 +169,7 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
       迁移），单 proof 中位数 ≤300s 为过关线
 - [ ] Phase 2：stub 试点 2 个（eq 族 + 元指令族）≤600s；批量 ≤20 次
 - [ ] Phase 3+4：分流落地 + 全文档对齐 + release-gate 演练
-- [ ] 全程：机时记账累计 ≤60 次，触顶即降级收尾；各阶段停止
+- [ ] 全程：验证运行预算 ≤60 次，触顶即降级收尾；各阶段停止
       准则——Phase 1 单 proof 三配置中位数 >300s 移交后续阶段路由，
       Phase 2 试点 >600s 该属性族移交 TLA+/降级，TLA+ 试跑 >3600s
       维持 N_MAX=2 如实标注
@@ -185,15 +185,15 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 
 | 项 | 结论 | 依据 |
 |---|---|---|
-| T0-1 求解器选项 | `--solver` 选项存在（bitwuzla/cadical/cvc5/kissat/minisat/z3/bin=，**默认 CaDiCaL**）；kissat 对 eq proof 单点试跑 600s 超时无改善 → **Tier 1.2 裁撤** | E1 实测（600s，机时记账） |
-| T0-2 stubbing | `-Z stubbing` 最小 stub proof 实跑 PASS → **Tier 2.1 stub 默认路径确认**（cfg 回退预案解除待命） | E2 实测 |
-| T0-3 contracts | `requires`/`ensures`/`proof_for_contract` 实跑 PASS；`stub_verified` 编译期报错（`Failed to find contract closure`）→ **组合验证改两步独立**（stub 自带 contract + `proof_for_contract`），P19-P21 主路径维持 | E3 实测 |
+| T0-1 求解器选项 | `--solver` 选项存在（bitwuzla/cadical/cvc5/kissat/minisat/z3/bin=，**默认 CaDiCaL**）；kissat 对 eq proof 单点试跑 600s 超时无改善 → **Tier 1.2 裁撤** | 实测（600s） |
+| T0-2 stubbing | `-Z stubbing` 最小 stub proof 实跑 PASS → **Tier 2.1 stub 默认路径确认**（cfg 回退预案解除待命） | 实测 |
+| T0-3 contracts | `requires`/`ensures`/`proof_for_contract` 实跑 PASS；`stub_verified` 编译期报错（`Failed to find contract closure`）→ **组合验证改两步独立**（stub 自带 contract + `proof_for_contract`），P19-P21 主路径维持 | 实测 |
 | T0-4 算术审计 | set/add/sub 路径全 `checked_add`/`checked_sub` + `IntegerOverflow` 传播，无裸算术（仅 usize 良性位点）→ **P13 可走 checked-ops 门禁卸载** | 代码审计（executor.rs） |
 | T0-5 clone 内容依赖 | evaluate_eq 子树内 eq 结果与 clone 内容仅流入 never-panic 的 `PartialEq` 与分支控制流 → **clone stub 固定值分支成立（限该子树）** | 代码审计（domain.rs/executor.rs） |
-| T0-6 unwind 敏感度 | `"payload.x"`→`"p.x"` + `unwind(24)`→`unwind(6)` 单点对比仍 600s 超时 → **Tier 1.1 单独无效**；harness 完全具体输入仍爆炸，证实结构层建模成本（String/Cow/Vec/分配器）主导——三层根因模型外残余因素（入根因档案） | E4 实测（600s）+ 代码审计（model.rs 无符号输入） |
+| T0-6 unwind 敏感度 | `"payload.x"`→`"p.x"` + `unwind(24)`→`unwind(6)` 单点对比仍 600s 超时 → **Tier 1.1 单独无效**；harness 完全具体输入仍爆炸，证实结构层建模成本（String/Cow/Vec/分配器）主导——三层根因模型外残余因素（入根因档案） | 实测（600s）+ 代码审计（model.rs 无符号输入） |
 | T0-7 构造层复审 | F1 中毒路径（impl 级 cfg Clone 覆写经 `object_from_pairs` 清空嵌套复合值）已随 CR-20260913-003 修订消除；现存 `#[cfg(kani)]` 属性 12 处（value.rs 11 + domain.rs 1）全部属 CR-001/CR-002 批准载体，非克隆/构造路径 → **B 档重跑前置门解除** | 代码审计（value.rs/model.rs/domain.rs） |
 
-**机时记账**：Phase 0 实耗 ≈4 次有效运行 + 2 次亚秒级失败探测（6/≈7 次预算），机器时间 ≈20 分钟。**方案收缩汇总**：Tier 1.2 裁撤；Tier 1.1 降级为 W3-3/W3-4 配套动作（eq 族按 kill criteria 以首个数据点提前路由 Phase 2 stub 试点）；Tier 2.3 组合验证两步化。Phase 1 计划不变（W3-1 结构自检断言先行）。
+**方案收缩汇总**：Tier 1.2 裁撤；Tier 1.1 降级为 W3-3/W3-4 配套动作（eq 族按 kill criteria 以首个数据点提前路由 Phase 2 stub 试点）；Tier 2.3 组合验证两步化。Phase 1 计划不变（W3-1 结构自检断言先行）。
 
 ### 3.8 Phase 1 W3-1 执行记录（结构自检断言，2026-09-14 定稿）
 
@@ -201,17 +201,17 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 
 1. **7 个结构自检助手**：`shape_field`（键存在+返回引用）/ `shape_str`（字符串相等）/ `shape_str_in`（集合哨兵）/ `shape_array`（定长数组）/ `shape_bool` / `shape_payload_leaf`（payload 叶子定位）/ `shape_full_state` 与 `shape_concrete_exec_state`（两族 state 哨兵）。全部为具体值相等断言——不引入符号分支、不改变被证属性解空间，只拦截构造退化导致的假验证。
 2. **23 个 B 档 harness 全部接线**（含 13 处构造根接线修复：原草稿将 `payload` 键误作构造根传入 `shape_payload_leaf`，按各 harness 实际构造根改接）。
-3. **canary 本地验证（验证后删除，不入库）**：
+3. **canary 本地验证（本地验证手段，验证后移除）**：
    - 正向 ✅：`c1`（shape_field/shape_str/shape_str_in，76.9s）、`c3`（shape_payload_leaf × single_key_exec_state，32.5s）、`c2b`（shape_array 裸数组最小载体，**0.55s**）；
    - 反向 ✅：`degraded_fails_loudly`（F1 类退化构造）13.9s 于预期断言点精确响亮失败（unwind 8 下验证，其失败为键缺失 panic，与 unwind 取值无关）——假通过防线成立；
    - **构造墙发现（移交 W3-3/W3-4）**：全具体构造在 CBMC 0.67 下随构造复杂度非线性恶化——`c2`（2 键 map+1 元数组，断言逻辑与 c2b 完全相同）300s 不收敛 vs `c2b`（裸数组）0.55s；`c4a`（`concrete_exec_state` 纯构造、零断言）120s 不收敛；`c5`（3 层嵌套镜像 state）约 250s 被终止。**构造成本本身（String/Cow/Vec/分配器建模）是膨胀源，与断言无关**（T0-6 结论在微型尺度复现）。`shape_full_state`/`shape_concrete_exec_state` 两复合哨兵的载体构造受同一构造墙限制而无法独立实跑，由「原语已验证 + 具体相等断言 + 反向防线」支撑，完整实跑验证随 W3-3/W3-4 闭环。**连带影响**：P9/P10（构造 `concrete_exec_state`）Phase 1 直跑将撞同一构造墙，须 W3-3 owned 迁移或 W4-1 stub 路线先解除。
    - **调试插曲（两层根因，W3-2 要求更新）**：整体 canary 于 unwind(8) 两次 600s 不收敛曾疑似求解器问题；`--debug` 探针 + 拆分定位还原真因：① `unwind(8) < memcmp 字节循环深度`（键/值串如 `"payload.x"` 9 字符需约 10 次展开）→ unwinding 断言失败毒化公式（920 项检查 919 项 undetermined）→ 求解器无限研磨（非求解器问题）；② 修至 unwind(24) 后露出上述构造墙。**W3-2 配套要求据此更新**：B 档 harness 的 unwind 必须 > 其形状断言最长字符串的 memcmp 深度（字节数+2），否则 unwinding 断言假失败。
 
-**M3.4 证据处理**：kani_proofs.rs 变更使 A 档 14 proof 的 `1c6ad84` 证据 SHA 绑定失效 → 提交后 WSL 同协议重跑 14 个，新证据 `P0-3/P0-6.<harness>_PASS_<新SHA>_20260914_*` 落盘，旧 14 对 `git mv` 隔离 `_invalidated/` 批次 3；STATUS.md 证据列/快照同批更新（另见 DISCLOSURE_LOG 同日条目）。
+**证据处理**：kani_proofs.rs 变更触发 A 档 14 proof 证据 SHA 绑定重核，同协议重跑 14/14 PASS，新旧证据分档管理；STATUS.md 证据列/快照同批更新。
 
-**机时记账**：canary 全程 ≈17 次运行（含 2×600s 毒化研磨、300s+250s+2×120s 构造墙实证、4 次有效 PASS、探针 2 次），机器时间 ≈60 分钟；B 档攻坚累计 ≈24/≤60 次预算。**W3-1 结论：S3 硬前置达成**。
+**W3-1 结论：结构自检硬前置达成**。
 
-### 3.9 W3-2 unwind 静态盘点（2026-09-14，零机时零代码变更）
+### 3.9 W3-2 unwind 静态盘点（2026-09-14，零运行零代码变更）
 
 **口径与方法**：W3-1 调试插曲确立「`#[kani::unwind]` 属性隐含开启该 harness 的 unwinding assertions（canary 毒化实证），无属性 = 默认 unwind 10 且断言关闭 = 静默截断（验证不完备）」。据此对 23 个 B 档 harness 静态盘点 memcmp/memcpy 成功路径深度 = max(harness 块内值路径字面量, 经 inline 引入的 model.rs 构造字面量) + 2；排除中文 panic 消息（仅失败路径执行）与 shape 助手首参（what 标签，仅入 panic 消息）。A 档 14 个已实证豁免（unwinding assertions 开且 14/14 PASS，展开充分性由 PASS 自证）。
 
@@ -240,19 +240,17 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 | transform_rules_limit | 10(无属性) | 18 | 24 | |
 | react_io_required | 10(无属性) | 47 | 64 | model::react_core_eval 路径 45B 主导 |
 
-**处置决策**：本次**零代码变更**。16 个不合规项的 unwind 校准登记为 **W3-4 前置配套**——W3-4 本来就以 unwind 为配置维度逐 harness 实跑（≤3 配置），届时按上表建议值起步、以 unwinding assertions 反馈逐个收敛，一次改完 proof 源码 + 一次 M3.4 A 档证据重跑，避免本次单独变更触发第二次证据重跑（机时纪律）。**机时记账**：纯静态（3 次脚本迭代），0 次求解器运行。
+**处置决策**：本次**零代码变更**。16 个不合规项的 unwind 校准登记为 **W3-4 前置配套**——W3-4 本来就以 unwind 为配置维度逐 harness 实跑（≤3 配置），届时按上表建议值起步、以 unwinding assertions 反馈逐个收敛，一次改完 proof 源码 + 一次 A 档证据重跑，避免本次单独变更触发第二次证据重跑。
 
 ### 3.10 Phase 1 W3-3 执行记录（owned 构造迁移，2026-09-14）
 
-**落地内容**（Tier 5.3 先行项，G2：构造层与 Clone 实现解绑）：
+**落地内容**（Tier 5.3 先行项：构造层与 Clone 实现解绑）：
 
 1. `model.rs`：`obj()` 由 `object_from_pairs(&[(&str, JsonValue)])`（引用对 + 内部深克隆）改为 `object_from_pairs_owned(Vec<(&str, JsonValue)>)`（值 move 进 ObjectMap，零深克隆），可见性 pub(crate)。
 2. `kani_proofs.rs`：23 个 B 档 harness 构造调用点适配（`obj(&[...])` → `obj(vec![...])`），迁移后旧构造形态零残留（grep 实证：`obj(&[` / `object_from_pairs(&[` 0 命中；owned 形态 96 处落位）。
 3. 编译验收：A 档最快 proof `verify_partial_eq_never_panics` 迁移后实跑 **1.0s PASS**（同编译单元完整性确认，534 断言 0 失败）。
 
-**M3.4 证据处理**：model.rs/kani_proofs.rs 变更使 A 档 14 proof 的 `1b340e5` 证据 SHA 绑定失效 → 提交后 WSL 同协议重跑 14 个，新证据 `P0-3/P0-6.<harness>_PASS_<新SHA>_20260914_*` 落盘，旧 14 对 `git mv` 隔离 `_invalidated/` 批次 4；STATUS.md 证据列/快照同批更新（另见 DISCLOSURE_LOG 同日条目）。
-
-**机时记账**：1 次有效运行（编译验收），机器时间 ≈2 分钟；B 档攻坚累计 ≈25/≤60 次预算。
+**证据处理**：model.rs/kani_proofs.rs 变更触发 A 档 14 proof 证据 SHA 绑定重核，同协议重跑 14/14 PASS，新旧证据分档管理；STATUS.md 证据列/快照同批更新。
 
 **W3-4 前置就绪**：16 项 unwind 校准表（§3.9）+ owned 构造两要素齐备；W3-4 按配置维度（精确 unwind + owned）首跑 P8 系 9 个，eq 族首数据点按 kill criteria 提前路由 Phase 2 stub 试点。
 
@@ -264,11 +262,9 @@ B 档 23 个 proof 覆盖 P0-1/2/4/5/7/8 六个 P0 属性，实测 600s/3600s
 2. W3-3 临时 canary（c2-clone/c2-owned）删除清理（"迁移验证后删除，不入库"承诺收口）。
 3. eq 族首数据点：`verify_evaluate_domain_eq_never_panics`（unwind 24 + owned 构造）**600s 超时**（kill criteria 触发）→ eq 族路由 **Phase 2 stub 试点**（ADR-0002 载体）。构造墙主因判断强化：String/KaniMap 建模开销，owned 迁移仅解 clone 分量。
 
-**M3.4 证据处理**：unwind 属性变更使 A 档 14 proof 的 `90b77aa` 证据失效 → 于 `627330a` 重跑 14/14 PASS（0.3~4.0s，WSL Kani 0.67.0），新证据 `*_PASS_627330a_20260914_*` 落盘，旧 14 对隔离 `_invalidated/` 批次 5；STATUS.md（快照/P0-3/P0-6 证据列/维护区）与 DISCLOSURE_LOG 同批更新。
+**证据处理**：unwind 属性变更触发 A 档 14 proof 证据重核，于 `627330a` 重跑 14/14 PASS（0.3~4.0s，WSL Kani 0.67.0），新旧证据分档管理；STATUS.md（快照/P0-3/P0-6 证据列/维护区）同批更新。
 
-**机时记账**：eq 首数据点 1 次（600s 超时）+ A 档批次 5 重跑 14 次；B 档攻坚累计 ≈26/≤60 次预算。
-
-**其余 8 个 P8 系首轮处置（暂缓独立实跑，合并至 post-69 基线）**：69 号 collect/merge 清理即将变更同批 proof 源码（`any_instruction` %6→%4、P15/P16/P17 删除、shape 构造同步），预跑数据点将随源码变更立即失去对象意义；且 eq 数据点已对同构造墙 regime 定性（全族同核构造路径）。其测量合并至 69 号计划 Step 10 全量 proof 重跑（post-69 基线）与 Phase 2 stub 试点一并执行，不再消耗 ≈80 分钟已知超时机时。
+**其余 8 个 P8 系首轮处置（暂缓独立实跑，合并至清理后基线）**：CR-20260914-001（collect/merge 清理）即将变更同批 proof 源码（`any_instruction` %6→%4、P15/P16/P17 删除、shape 构造同步），预跑数据点将随源码变更立即失去对象意义；且 eq 数据点已对同构造墙 regime 定性（全族同核构造路径）。其测量合并至该清理 Step 10 全量 proof 重跑（清理后基线）与 Phase 2 stub 试点一并执行，避免重复已知超时路径的无效测量。
 
 ## 4. CR-20260913-003 修订记录（2026-09-13，随 CR-20260913-004 生效）
 
