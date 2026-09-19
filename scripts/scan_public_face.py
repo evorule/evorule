@@ -180,6 +180,49 @@ CATEGORIES = [
     ('D-治理语境', False, GOV_CONTEXT_PATTERNS, None),
 ]
 
+# ---------------------------------------------------------------------------
+# 文件级白名单（可选）：scripts/scan_public_face_allowlist.txt
+# 用途：经项目方裁定接受留痕的工程主键类编号（变更记录主键）按文件豁免。
+# 格式：每行 `<文件相对路径> <KIND>`；# 开头为注释；KIND 见下表（匹配值
+#       由本扫描器内部正则定义，白名单文件自身不携带任何具体编号字面量）。
+# ---------------------------------------------------------------------------
+ALLOWLIST_KIND_RES = {
+    # 工程变更主键（CR-/TCB- 编号，变更登记表与门禁整改溯源；用户裁定 2026-09-19）
+    'change-key': [
+        re.compile('^TC' + r'B-\d{4}-\d+$'),
+        re.compile('^CR-' + r'\d{8}-\d{3}$'),
+    ],
+}
+ALLOWLIST_DEFAULT_REL = 'scripts/scan_public_face_allowlist.txt'
+
+
+def load_allowlist(root: Path, override: str = None):
+    """返回 (dict: 相对路径 -> KIND 集合, 生效路径或 None)。"""
+    path = Path(override) if override else root / ALLOWLIST_DEFAULT_REL
+    if not path.exists():
+        return {}, None
+    entries = {}
+    for lineno, raw in enumerate(path.read_text(encoding='utf-8-sig').splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith('#'):
+            continue
+        parts = line.split()
+        if len(parts) != 2 or parts[1] not in ALLOWLIST_KIND_RES:
+            raise SystemExit(
+                f'ERROR: 白名单格式错（行 {lineno}）: {line!r}（文件 {path}）')
+        entries.setdefault(parts[0].replace('\\', '/'), set()).add(parts[1])
+    return entries, path
+
+
+def finding_exempted(rel: str, match: str, allowlist: dict) -> bool:
+    kinds = allowlist.get(rel)
+    if not kinds:
+        return False
+    for kind in kinds:
+        if any(r.fullmatch(match) for r in ALLOWLIST_KIND_RES[kind]):
+            return True
+    return False
+
 
 def tracked_files(root: Path):
     """返回 (相对路径列表, 错误信息)。"""
@@ -201,8 +244,9 @@ def decode_text(data: bytes):
     return None
 
 
-def scan_repo(root: Path):
+def scan_repo(root: Path, allowlist: dict = None):
     """返回 (findings, skipped, error)。finding = dict。"""
+    allowlist = allowlist or {}
     names, err = tracked_files(root)
     if err is not None:
         return [], [], err
@@ -239,12 +283,15 @@ def scan_repo(root: Path):
                 for pat in patterns:
                     m = pat.search(line)
                     if m:
+                        match_text = m.group(0)[:60]
+                        if finding_exempted(rel, m.group(0), allowlist):
+                            continue
                         findings.append({
                             'file': rel,
                             'line': lineno,
                             'category': cat_name,
                             'blocking': blocking,
-                            'match': m.group(0)[:60],
+                            'match': match_text,
                             'text': line.strip()[:160],
                         })
     return findings, skipped, None
@@ -255,6 +302,12 @@ def main() -> int:
     parser.add_argument('--root', default=None,
                         help='待扫描仓库根目录（默认 = 本脚本所在仓）')
     parser.add_argument('--json', action='store_true', help='JSON 输出')
+    parser.add_argument('--allowlist', default=None,
+                        help='白名单文件路径（默认探测 scripts/scan_public_face_allowlist.txt）')
+    parser.add_argument('--fail-on', action='append', default=None, metavar='PREFIX',
+                        help='仅对命中类别以 PREFIX 开头的阻断类计入退出码（可多次传；'
+                             '缺省=全部阻断类计入。用于分类别收紧门禁，如 C 类存量未裁定前'
+                             ' CI 传 --fail-on A1 --fail-on B）')
     args = parser.parse_args()
 
     root = Path(args.root).resolve() if args.root else \
@@ -263,7 +316,9 @@ def main() -> int:
         print(f'ERROR: 非 git 仓库: {root}', file=sys.stderr)
         return 2
 
-    findings, skipped, err = scan_repo(root)
+    allowlist, allowlist_path = load_allowlist(root, args.allowlist)
+
+    findings, skipped, err = scan_repo(root, allowlist)
     if err is not None:
         print(f'ERROR: git ls-files 失败: {err}', file=sys.stderr)
         return 2
@@ -276,6 +331,8 @@ def main() -> int:
         }, ensure_ascii=False, indent=2))
     else:
         print(f'扫描仓: {root}')
+        if allowlist_path is not None:
+            print(f'白名单: {allowlist_path}（{len(allowlist)} 文件）')
         blocking = [f for f in findings if f['blocking']]
         advisory = [f for f in findings if not f['blocking']]
         for title, group, mark in (('阻断类', blocking, '[阻断]'),
@@ -288,11 +345,20 @@ def main() -> int:
         if skipped:
             print(f'\n（跳过 {len(skipped)} 个文件：二进制/超限/不可解码，'
                   f'明细见 --json）')
-        verdict = 'FAIL' if blocking else 'PASS'
+        enforce = [f for f in blocking
+                   if not args.fail_on
+                   or any(f['category'].startswith(p) for p in args.fail_on)]
+        if args.fail_on:
+            print(f'\n（阻断计入口径: 前缀 {args.fail_on} → 计入 {len(enforce)} 项）')
+        verdict = 'FAIL' if enforce else 'PASS'
         print(f'\n{verdict}: 阻断类 {len(blocking)} 项 / 复核类 '
               f'{len(advisory)} 项')
 
-    blocking_count = sum(1 for f in findings if f['blocking'])
+    blocking_count = sum(
+        1 for f in findings
+        if f['blocking']
+        and (not args.fail_on
+             or any(f['category'].startswith(p) for p in args.fail_on)))
     return 1 if blocking_count else 0
 
 

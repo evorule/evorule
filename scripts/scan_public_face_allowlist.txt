@@ -1,0 +1,37 @@
+# scan_public_face 白名单 —— 工程主键类编号（KIND=change-key）
+#
+# 依据（用户裁定 2026-09-19，E1 公开面盘点 B 类处置）：CR-/TCB- 编号为工程
+# 变更主键（变更登记表 / 门禁整改溯源），在下列文件中接受留痕；其余内部
+# 编号不在白名单之列。匹配值由 scan_public_face.py ALLOWLIST_KIND_RES 定义，
+# 本文件不携带任何具体编号字面量。
+# 格式：<文件相对路径> <KIND>
+
+GATE_REFERENCE.md change-key
+GOVERNANCE.md change-key
+README.md change-key
+REPO_REGISTRY.md change-key
+docs/adr/ADR-0002-B档proof模型载体与stub化验证策略.md change-key
+evorule-cli/CHANGE_REQUEST.md change-key
+evorule-cli/CLI_SPEC.md change-key
+evorule-cli/README.md change-key
+evorule-cli/build.rs change-key
+evorule-cli/tests/gate_sync_test.rs change-key
+evorule-governance/CHANGE_REQUEST.md change-key
+evorule-governance/GOVERNANCE_SPEC.md change-key
+evorule-governance/README.md change-key
+evorule-governance/build.rs change-key
+evorule-reactor/CHANGE_REQUEST.md change-key
+evorule-reactor/REACTOR_SPEC.md change-key
+evorule-reactor/README.md change-key
+evorule-reactor/build.rs change-key
+evorule-reactor/verification/evidence/kani/_invalidated/README.md change-key
+evorule-tcb/CHANGE_REQUEST.md change-key
+evorule-tcb/Cargo.toml change-key
+evorule-tcb/README.md change-key
+evorule-tcb/TCB_SPEC.md change-key
+evorule-tcb/build.rs change-key
+evorule-tcb/src/domain.rs change-key
+evorule-tcb/tests/kani/kani_proofs.rs change-key
+evorule-tcb/verification/evidence/kani/_invalidated/README.md change-key
+verification/DISCLOSURE_LOG.md change-key
+verification/STATUS.md change-key
