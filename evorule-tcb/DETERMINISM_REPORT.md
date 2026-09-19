@@ -19,7 +19,7 @@
 
 # evorule-tcb 确定性保障报告
 
-> 版本：v0.6.0（5 元指令版；collect/merge 已随 69 号清理退役，has_fields 保留）
+> 版本：v0.6.0（5 元指令版；collect/merge 已随规则清理退役，has_fields 保留）
 > 本文档简要总结 evorule-tcb 的**零依赖**与 **no_std** 实现细节，及其对**确定性**的保障机制。
 > 对应源码：`src/`（lib.rs, value.rs, path.rs, domain.rs, executor.rs, transition.rs, error.rs）+ `build.rs` + `core_eval.json`
 

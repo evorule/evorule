@@ -45,7 +45,7 @@ PROOFS=(
   verify_merge_safe
   verify_substitute_template_never_panics
   verify_io_request_safe
-  # === Layer 4.5: enforce 强制原语（UV-147，P18a-P18c）===
+  # === Layer 4.5: enforce 强制原语（回归验证，P18a-P18c）===
   verify_exec_enforce_never_panics
   verify_exec_enforce_halt_semantics
   verify_exec_enforce_deterministic

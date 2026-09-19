@@ -137,7 +137,7 @@ $ ldd evorule
 ### Windows 开发构建
 
 ```cmd
-cd D:\evorule
+cd <仓库根目录>
 cargo build --release --bin evorule
 REM 产物: .build\rust\release\evorule.exe
 ```
@@ -653,7 +653,7 @@ CI 双轨并行:Gitee Go(`.gitee-ci/`)+ GitHub Actions(`.github/workflows/`),Git
 
 ## v0.6.0 更新
 
-- **`validate` 元指令白名单收窄（69 号清理，破坏性变更）**: SSOT 常量 `META_INSTRUCTION_TYPES` 收窄为 5 种（branch/set/push/io_request/enforce）；`collect`/`merge` 规则加载即拒，LLM 多轮编排归应用层
+- **`validate` 元指令白名单收窄（规则清理，破坏性变更）**: SSOT 常量 `META_INSTRUCTION_TYPES` 收窄为 5 种（branch/set/push/io_request/enforce）；`collect`/`merge` 规则加载即拒，LLM 多轮编排归应用层
 
 ## 参见(项目级治理文档)
 

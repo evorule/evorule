@@ -57,7 +57,7 @@ EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 wa
 除上述 L1a 字面量门禁外, `build.rs` 还执行:
 
 - **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块, TCB-2026-28 撤豁免), 禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。检测到违规时构建失败。**无阀常开**——机制-策略分离是设计不变量, 不设旁路环境变量。
-- **CR 自查已移出公开仓 (裁定⑤⑥)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已从 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。CHANGE_REQUEST.md 登记纪律本身不变。
+- **CR 自查已移出公开仓 (既定裁定)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已从 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。CHANGE_REQUEST.md 登记纪律本身不变。
 - **四仓同步**: `evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli` 的 build.rs 共享函数保持同一份内联副本实现, 任何修改必须四仓同步; 同步纪律已机器化 (`evorule-cli/tests/gate_sync_test.rs`, TCB-2026-30)。
 
 ---

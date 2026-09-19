@@ -712,7 +712,7 @@ impl Reactor {
                         continue 'main;
                     }
                     Ok(TransitionResult::Halted { rule_index, reason }) => {
-                        // enforce 强制原语命中（UV-147）：违规指令被**拒绝执行**
+                        // enforce 强制原语命中（回归验证）：违规指令被**拒绝执行**
                         // —— 指令已出队即丢弃（不推回队列、不产生 StateTransition、
                         // 不 bump version：payload/queue 保持该步前原样，动作被阻止
                         // 而非仅留痕）。系统独占发射 Violation 事实（三权分立：

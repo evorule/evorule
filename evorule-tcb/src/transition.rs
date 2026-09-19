@@ -87,7 +87,7 @@ pub enum TransitionResult {
         /// I/O 请求参数（路径引用已解析为具体值）
         params: JsonValue,
     },
-    /// `enforce` 强制原语命中（UV-147）：违规指令被拒绝执行
+    /// `enforce` 强制原语命中（回归验证）：违规指令被拒绝执行
     ///
     /// # 语义（与 `IoRequired` 同构的纯信号）
     ///
@@ -229,7 +229,7 @@ pub fn execute_transition(
             MetaInstructionResult::IoRequired { io_type, params } => {
                 return Ok(TransitionResult::IoRequired { io_type, params });
             }
-            // enforce 强制原语命中（UV-147）：立即返回 Halted 纯信号，
+            // enforce 强制原语命中（回归验证）：立即返回 Halted 纯信号，
             // 不继续执行后续 transform；此前状态修改随半成品一并丢弃，
             // 不携带 rule_hits（半成品纪律同 IoRequired）。
             // rule_index 由转换层填入（此处即为命中规则下标，确定性成立）。
@@ -898,7 +898,7 @@ mod tests {
         assert!(matches!(result, TransitionResult::State { .. }));
     }
 
-    // ===== enforce 强制原语测试（UV-147）=====
+    // ===== enforce 强制原语测试（回归验证）=====
 
     fn enforce_rule(domain: JsonValue, reason: Option<&str>) -> JsonValue {
         let mut params = vec![("domain", domain)];
@@ -2590,7 +2590,7 @@ mod tests {
     // ===== I/O 循环组合语义端到端测试（io_request 的语言层组合回归） =====
     // 规则集为内联构造的应用剧本形态：1) 计数器自初始化；2) call_external；3) call_service。
     // 核心仓最小评估集不再携带此类剧本（T8 迁出）；此模块守护的是元指令组合的执行语义，
-    // 工具扇出/结果合并等循环编排职责在应用层 runner（collect/merge 原语已退役，69 号）。
+    // 工具扇出/结果合并等循环编排职责在应用层 runner（collect/merge 原语已退役，历史批次）。
     // 嵌套子 mod（不写 `#[cfg(test)]`，继承父 mod 的 cfg(test)，
     // build.rs L1 门禁的 strip_test_mod 会把整个 mod tests 块一起剥掉）
     mod io_loop_e2e_tests {

@@ -44,7 +44,7 @@
 
 **L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**:
 - **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块——TCB-2026-28 撤豁免: 测试代码同为机制层, 须守同一纪律; 旧「剥离 mod tests 再扫」既留注释伪装/`mod tests_foo` 误吞绕过面, 又给策略层留测试区藏身处),禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。**无阀常开**——机制-策略分离是设计不变量, 不设旁路环境变量
-- **CR 变更自查已移出公开仓 (裁定⑤, TCB-2026-29)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制; 为避免公开形态引发「伪门禁」质疑, 已从四仓 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除。自查职责由本地 git pre-commit hook 承接 (hook 不随仓库/发布公开); CHANGE_REQUEST.md 登记文件与登记纪律本身不变
+- **CR 变更自查已移出公开仓 (既定裁定, TCB-2026-29)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制; 为避免公开形态引发「伪门禁」质疑, 已从四仓 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除。自查职责由本地 git pre-commit hook 承接 (hook 不随仓库/发布公开); CHANGE_REQUEST.md 登记文件与登记纪律本身不变
 - **四仓同步 (TCB-2026-30 整改)**: 四仓 build.rs 是**同一骨架的内联副本**——build.rs 必须零依赖, 共享逻辑只能逐份内联, 无法运行期复用。同步纪律已机器化: `evorule-cli/tests/gate_sync_test.rs` 按函数名提取共享函数体, 规范化 (字符串/字符字面量感知剥离注释+去空白) 后以 evorule-tcb 为基准逐函数比对四仓, 任何漂移即 `cargo test` 红。锁定函数: `skip_requested` / `squeeze_ws` / `strip_inline_block_comments` / `bare_word_hit` / `skip_to_mod_tests` / `strip_test_mod` / `char_lit_starts` / `skip_lifetime` / `find_inline_lbrace` / `match_brace` / `detect_strategy_patterns` / `collect_rs_files_for_strategy` (四仓) + `strip_leading_attr` (tcb/reactor)。**新增共享函数必须同批加入测试锁定清单**; 修改任何共享函数必须四仓同批提交
 
   **有意差异表** (以下为设计差异, 不参与同步比对, 变更须各自留痕):

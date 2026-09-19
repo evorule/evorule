@@ -8,7 +8,7 @@
 //! - Layer 2 路径解析层：P4-P7
 //! - Layer 3 域评估层：P8-P11
 //! - Layer 4 元指令层：P12-P14、P18（经公开 `execute_meta_instruction` 间接覆盖私有元指令；
-//!   P15/P16/P17 随 collect/merge 原语退役删除，见 69 号清理计划）
+//!   P15/P16/P17 随 collect/merge 原语退役删除，见规则清理方案）
 //! - Layer 5 状态转换层：P19-P21
 //!
 //! 原则：只调用公开 API；结构化符号输入（见 model.rs）；验证"属性"而非具体行为。
@@ -608,7 +608,7 @@ fn verify_has_fields_empty_array() {
     );
     let fields = shape_array(shape_field(&domain, "domain", "fields"), "domain.fields", 1);
     shape_str(&fields[0], "domain.fields[0]", "tool_calls");
-    // evaluate_domain 现返回 Result<bool, TcbError>（UV-147 fail-fast 语义）：
+    // evaluate_domain 现返回 Result<bool, TcbError>（回归验证 fail-fast 语义）：
     // 结构合法域求值 Ok(false)——空数组视为不存在
     let r = evaluate_domain(&domain, &exec_state);
     assert!(matches!(r, Ok(false)), "空数组应视为不存在");
@@ -783,7 +783,7 @@ fn verify_io_request_safe() {
     assert!(r.is_ok(), "io_request 不应 panic");
 }
 
-// ==================== Layer 4.5: enforce 强制原语（UV-147，P18a-P18c） ====================
+// ==================== Layer 4.5: enforce 强制原语（回归验证，P18a-P18c） ====================
 
 // ⚠️ 实测教训（沿用 P8 系列经验，见 model.rs 注释）：符号叶子 exec_state + 域求值
 // 会让 CBMC/SAT 展开状态爆炸（P18a 首版实测 2.5h 不收敛）。因此：

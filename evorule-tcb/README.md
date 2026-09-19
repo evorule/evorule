@@ -18,7 +18,7 @@
 - **build.rs 编译时门禁**:24 个禁用模式 (T 编号 + F11 panic-prone 组) + BOM 检测 编译期强制,PASSED
 - **协议**:AGPL-3.0-or-later(代码) + CC0-1.0(`core_eval.json` 公共领域)
 
-> **Kani 形式化验证**:34 个 `#[kani::proof]` 分 A/B 两档(v0.6.0 随 69 号清理退役 P15/P16/P17,原 37 个)——A 档 14 个 v0.6.0 重跑(2026-09-14,`25c0cc0`)全 PASS 并入 CI 闸门;B 档 20 个实测 600s/3600s 超时,判定当前不可运行(proptest 间接覆盖)。详见 [`TCB_SPEC.md` §六](TCB_SPEC.md#六形式化验证-kani-proof) 与 [`docs/KANI.md`](docs/KANI.md);状态唯一权威:[`verification/STATUS.md`](../verification/STATUS.md)。
+> **Kani 形式化验证**:34 个 `#[kani::proof]` 分 A/B 两档(v0.6.0 随规则清理退役 P15/P16/P17,原 37 个)——A 档 14 个 v0.6.0 重跑(2026-09-14,`25c0cc0`)全 PASS 并入 CI 闸门;B 档 20 个实测 600s/3600s 超时,判定当前不可运行(proptest 间接覆盖)。详见 [`TCB_SPEC.md` §六](TCB_SPEC.md#六形式化验证-kani-proof) 与 [`docs/KANI.md`](docs/KANI.md);状态唯一权威:[`verification/STATUS.md`](../verification/STATUS.md)。
 
 > 本 crate 属于 [EvoRule](https://gitee.com/evorule) 生态:[主仓](https://gitee.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://gitee.com/evorule/evorule-server)
 
@@ -83,7 +83,7 @@ let result = execute_transition(&core_eval, &instr, &payload, &queue).unwrap();
 
 注：dispatch **没有** `noop` 分支——未知元指令类型返回 `TcbError::UnknownMetaInstruction`。「未识别指令变 noop」是 `core_eval.json` 层的兜底：最后一条 `all([])` 规则匹配一切未识别指令，其 transform 为空操作。`noop` 作为**业务指令**（队列中的空操作指令）由该兜底规则经 `push` 产生。
 
-**注**：5 种元指令中 `io_request` 计 0.5 个物理原语（不修改任何状态，只产生对外信号），合计 **4.5 物理原语**。v0.6.0 随 69 号清理退役 `collect` / `merge`（架构事故中由应用层误下沉至机制层的 LLM ReAct 编排能力），机制层回归最小指令集；`enforce` 为 L2 元规则强制阻断（自进化预留）。
+**注**：5 种元指令中 `io_request` 计 0.5 个物理原语（不修改任何状态，只产生对外信号），合计 **4.5 物理原语**。v0.6.0 随规则清理退役 `collect` / `merge`（架构事故中由应用层误下沉至机制层的 LLM ReAct 编排能力），机制层回归最小指令集；`enforce` 为 L2 元规则强制阻断（自进化预留）。
 
 **设计要点**：
 
@@ -218,7 +218,7 @@ instruction(call_external) → branch(exists=true) → set(llm_response, 结果)
 
 ### 2.8 I/O 单轮触发/消费（v0.6.0 现行；原「ReAct 循环」节）
 
-LLM/工具**多轮编排属应用层职责**（v0.6.0 随 69 号清理退役 `collect`/`merge`），机制层保留 `io_request` 单轮触发/消费语义：
+LLM/工具**多轮编排属应用层职责**（v0.6.0 随规则清理退役 `collect`/`merge`），机制层保留 `io_request` 单轮触发/消费语义：
 
 ```text
 call_external  → io_request(LLM) → 恢复：set llm_response（单轮终态）
@@ -644,7 +644,7 @@ EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 wa
 | 编号 | 事项                        | 状态      | 说明                                                                                                                |
 | ---- | --------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- |
 | N-01 | `MAX_TRANSFORM_RULES` 限制  | ✅ 已完成 | `execute_transition` 入口检查 `core_eval.len() ≤ 64`,超限返回 `TcbError::TooManyTransformRules`(SPEC T6 终止性保证) |
-| N-02 | Kani 形式化验证重建         | 🟡 历史 PASS | v0.3.1 以「结构化符号输入 + `KIdSet`/`KIdMap`」重建为 34 个 `#[kani::proof]`(P1-P21 旧编号),后增至 37 个并改行 A/B 两档;v0.6.0 随 69 号清理退役 P15/P16/P17(37→34)——A 档 14 个 v0.6.0 重跑(2026-09-14,`25c0cc0`)全 PASS 并入 CI 闸门,B 档 20 个实测超时判定当前不可运行(proptest 间接覆盖);详情见 §6.3 与 `docs/KANI.md`,状态唯一权威见 [`verification/STATUS.md`](../verification/STATUS.md) |
+| N-02 | Kani 形式化验证重建         | 🟡 历史 PASS | v0.3.1 以「结构化符号输入 + `KIdSet`/`KIdMap`」重建为 34 个 `#[kani::proof]`(P1-P21 旧编号),后增至 37 个并改行 A/B 两档;v0.6.0 随规则清理退役 P15/P16/P17(37→34)——A 档 14 个 v0.6.0 重跑(2026-09-14,`25c0cc0`)全 PASS 并入 CI 闸门,B 档 20 个实测超时判定当前不可运行(proptest 间接覆盖);详情见 §6.3 与 `docs/KANI.md`,状态唯一权威见 [`verification/STATUS.md`](../verification/STATUS.md) |
 
 ### 10.2 后续 Tier 路线
 

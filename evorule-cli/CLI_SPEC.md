@@ -194,4 +194,4 @@ the spec needs updating, update it **first**, then update `build.rs`.
 
 **`verify_hash_chain` 已删除 (v0.3.2)**: 原函数始终返回 `true` 是"假验证"陷阱,已彻底删除。替代方案:用 `compute_chain_hash` 重算后与存储的链哈希比对,或用 `verify-chain` 命令读取带哈希字段的 WAL 并逐一校验。
 
-**validate 元指令白名单 (v0.6.0 收窄,69 号清理)**: 仅 5 种真元指令(branch / set / push / io_request / enforce,= TCB SSOT 常量 `META_INSTRUCTION_TYPES`)。noop / increment / decrement 是**指令层**类型,不是元指令,不得混入白名单;`collect` / `merge` 已于 v0.6.0 退役,规则文件使用将加载即拒。
+**validate 元指令白名单 (v0.6.0 收窄,规则清理)**: 仅 5 种真元指令(branch / set / push / io_request / enforce,= TCB SSOT 常量 `META_INSTRUCTION_TYPES`)。noop / increment / decrement 是**指令层**类型,不是元指令,不得混入白名单;`collect` / `merge` 已于 v0.6.0 退役,规则文件使用将加载即拒。

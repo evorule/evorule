@@ -22,7 +22,7 @@
       "每条 transform 规则中最多包含一个 io_request 元指令",
       "原因: __io_results__ 是按 io_type 隔离的字段，多个 io_request 会冲突",
       "io_request 必须是 branch 的叶子节点（on_false 分支），之前不能有 set/push 操作",
-      "v0.3.0 新增: has_fields 域类型（语言层能力，本最小集未使用；collect/merge 元指令已于 v0.6.0 随 69 号清理退役——LLM 循环机制下沉 TCB 属架构事故，多轮编排回归应用层）",
+      "v0.3.0 新增: has_fields 域类型（语言层能力，本最小集未使用；collect/merge 元指令已于 v0.6.0 随规则清理退役——LLM 循环机制下沉 TCB 属架构事故，多轮编排回归应用层）",
       "设计决策: fork-join 批处理聚合已整体移除——批处理策略违反 TCB 最小顺序语义，多工具的 token 聚合优化由 governance 层负责",
       "I/O 结果按类型隔离: __io_results__.{io_type}；消费后以 JSON null 清除（exists 将 null 视为不存在）",
       "v0.3.1: set 的 attr 引用 payload 内以 __ 开头的字段时必须写显式前缀（如 __exec__.payload.__io_results__.call_external），否则会被误判为状态根路径",

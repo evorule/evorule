@@ -584,7 +584,7 @@ impl FactsLog {
                             .ok_or(FactsLogError::VersionOverflow)?;
                     }
                     // TransitionTrace / Violation：记录性事实，不更新快照、不推进版本
-                    // （与 Command/IoRequest/Error 同类；Violation 为 UV-147 enforce 拦截事实）
+                    // （与 Command/IoRequest/Error 同类；Violation 为 enforce 拦截事实）
                     Fact::Command { .. }
                     | Fact::IoRequest { .. }
                     | Fact::Error { .. }
@@ -812,7 +812,7 @@ impl FactsLog {
                 // 记录性事实，不修改快照，版本号不变（与 Command 同类）
             }
             Fact::Violation { .. } => {
-                // 违规拦截事实（UV-147）：记录性事实，不修改快照，版本号不变
+                // 违规拦截事实（回归验证）：记录性事实，不修改快照，版本号不变
                 // —— 违规动作被拒，payload/queue 保持原样（与 TransitionTrace 同类）
             }
         }
@@ -2318,7 +2318,7 @@ mod tests {
     #[test]
     fn test_file_backend_via_trait_unchanged_roundtrip() {
         // 默认文件后端经 trait 对象分发,行为与直挂 WalWriter 一致(回归锁)
-        let path = temp_wal_path("uv026_file_trait");
+        let path = temp_wal_path("reg026_file_trait");
         let log = FactsLog::with_wal(&path).unwrap();
         log.append(Fact::PayloadUpdate {
             id: FactId(1),

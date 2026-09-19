@@ -34,7 +34,7 @@ use serde::Serialize;
 ///
 /// 来源：evorule-tcb/src/executor.rs::META_INSTRUCTION_TYPES，
 /// 4 种：set / push / branch / io_request（enforce 由 tier 门禁控制不入选；
-/// collect/merge 已退役，69 号清理计划 2026-09-14）。
+/// collect/merge 已退役，规则清理方案 2026-09-14）。
 /// noop/increment/decrement 是**指令层（instruction）**类型，不是元指令层，不得混入本白名单
 /// （双层语言框架，records/75；P0-01 修前曾误混，导致假阳性/假阴性）。
 /// 不含 G8 禁止词（conditional/while_loop/sequence），故无需 build.rs 豁免。

@@ -78,7 +78,7 @@ fn load_core_eval() -> Vec<JsonValue> {
 }
 
 /// 内联最小 I/O 单轮（应用剧本）规则链：call_external 触发/消费 +
-/// call_service 触发/消费 + 兜底。69 号清理（2026-09-14）后逐条对齐宪法
+/// call_service 触发/消费 + 兜底。规则清理（2026-09-14）后逐条对齐宪法
 /// evo-agent agent_constitution.json v0.5.0 单轮口径：react_iteration 初始化 /
 /// collect 工具扇出 / merge 结果回环已随 ReAct 循环退役，多轮编排由应用层负责。
 fn io_loop_rules() -> Vec<JsonValue> {
@@ -1214,7 +1214,7 @@ async fn test_consecutive_different_io_requests_no_interference() {
     })
     .unwrap();
 
-    // 3. 等待 Stable（69 号清理后单轮口径：call_service 消费后止步，
+    // 3. 等待 Stable（规则清理后单轮口径：call_service 消费后止步，
     //    不再由 merge 生成下一轮 call_external）
     let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
     let final_llm = make_llm_response("llm answer");
@@ -1310,7 +1310,7 @@ fn make_call_service_instruction(service_name: &str) -> JsonValue {
 ///
 /// core_eval 夹具的 call_external 消费分支执行 `set llm_response`，
 /// IoResponse 返回含 `messages` 数组的对象（形态对齐真实 LLM 响应；
-/// 69 号清理后宪法单轮止步，不再由 merge 引用 messages 生成下一轮）。
+/// 规则清理后宪法单轮止步，不再由 merge 引用 messages 生成下一轮）。
 fn make_llm_response(content: &str) -> JsonValue {
     JsonValue::object_from_pairs(&[(
         "messages",
@@ -1360,7 +1360,7 @@ async fn test_two_different_io_types_sequence() {
     // v0.3.1：core_eval 仅内置 call_external（LLM 推理）与 call_service（工具/服务）两类 I/O；
     // query_db/http_get/save_memory 已移出宪法，由应用层以 call_service 实现。
     //
-    // 69 号清理后单轮口径：call_service 消费结果后止步（push noop），
+    // 规则清理后单轮口径：call_service 消费结果后止步（push noop），
     // 不再由 merge 生成下一轮 call_external。因此共 2 次 IoRequest：
     // call_external(#1) → call_service(#2)。
     let core_eval = load_core_eval();
@@ -1513,7 +1513,7 @@ async fn test_io_interleaved_with_normal_instructions() {
 #[tokio::test]
 async fn test_all_supported_io_types_sequence() {
     // 终极验证：v0.3.1 支持的 2 种 I/O 类型全部连续调用
-    // （69 号清理后单轮口径：call_service 消费后止步，无 merge 回环）
+    // （规则清理后单轮口径：call_service 消费后止步，无 merge 回环）
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(500).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();

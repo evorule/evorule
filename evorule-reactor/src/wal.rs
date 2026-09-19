@@ -1306,7 +1306,7 @@ mod tests {
 
     #[test]
     fn test_fact_violation_roundtrip() {
-        // UV-147：Violation 事实（enforce 拦截记录）WAL 往返
+        // 回归验证：Violation 事实（enforce 拦截记录）WAL 往返
         let fact = Fact::Violation {
             id: FactId(10),
             cause: FactId(3),

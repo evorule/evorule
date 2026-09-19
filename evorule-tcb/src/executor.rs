@@ -8,7 +8,7 @@
 //! - `push`：推指令到队列前端
 //! - `branch`：条件执行子指令列表
 //! - `io_request`：产生 I/O 请求信号（不修改状态）
-//! - `enforce`：元规则强制原语（UV-147）——params.domain 匹配即返回 Halted 信号
+//! - `enforce`：元规则强制原语（回归验证）——params.domain 匹配即返回 Halted 信号
 //!
 //! # 设计原则
 //! `io_request` 是"半元指令"——在执行器中硬编码识别，但行为完全由 JSON 参数驱动。
@@ -61,7 +61,7 @@ pub enum MetaInstructionResult {
         /// I/O 请求参数（路径引用已解析为具体值）
         params: JsonValue,
     },
-    /// 强制中断信号（`enforce` 原语命中，UV-147）
+    /// 强制中断信号（`enforce` 原语命中，回归验证）
     ///
     /// 纯信号：立即向上传播，不携带状态；状态转换层据此返回
     /// `TransitionResult::Halted`（违规指令被拒，此前状态修改随
@@ -249,7 +249,7 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
             })
     };
 
-    // 写侧 attr 禁止 payload. 前缀（UV-146 方案 a，引擎级运行时守卫）：
+    // 写侧 attr 禁止 payload. 前缀（方案 a，引擎级运行时守卫）：
     // attr 相对 __exec__.payload 解析，带 payload. 前缀会双重嵌套写入
     // payload.payload.*（静默失败——不报错但写到错误位置，读者永远 miss，
     // 实证：种子元规则哨兵自读不到自身状态标记恒违规）。
@@ -712,7 +712,7 @@ fn exec_branch(
             match result {
                 MetaInstructionResult::State(new_state) => state = new_state,
                 io_required @ MetaInstructionResult::IoRequired { .. } => return Ok(io_required),
-                // enforce 信号传播即停（UV-147）：branch 子指令内的 enforce
+                // enforce 信号传播即停（回归验证）：branch 子指令内的 enforce
                 // 命中同样中断整个转换（半成品纪律与顶层一致）
                 halted @ MetaInstructionResult::Halted { .. } => return Ok(halted),
             }
@@ -722,7 +722,7 @@ fn exec_branch(
     Ok(MetaInstructionResult::State(state))
 }
 
-/// `enforce` 元指令：元规则强制原语（UV-147，纯机制不存策略）
+/// `enforce` 元指令：元规则强制原语（回归验证，纯机制不存策略）
 ///
 /// # 参数（schema 门禁同口径：domain/reason 必填）
 /// - `domain`：域结构（7 基础域类型，与 branch 的 domain 同构；支持
@@ -945,7 +945,7 @@ mod tests {
         assert_eq!(value, &JsonValue::string("hello"));
     }
 
-    // ===== 写侧 attr payload. 前缀守卫测试（UV-146 方案 a）=====
+    // ===== 写侧 attr payload. 前缀守卫测试（方案 a）=====
 
     /// 错误形态：attr 带 payload. 前缀 → 显式报错（拒绝双重嵌套静默写歪）
     #[test]

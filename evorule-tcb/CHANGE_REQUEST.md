@@ -430,7 +430,7 @@ proof 回到不可运行状态，无其他副作用）。
 ### CR-20260913-001（已批准）：ObjectMap Kani 后端切换：cfg(kani) 下 KaniMap（有序 Vec）替代 BTreeMap，消除 23 个 B 档 proof 状态爆炸
 
 > 归档说明：原 CR 整表置顶至 2026-09-13（CR-20260913-002 置顶），与 002 同批次提交入库，完整内容见 git 历史。要点：kani 构建下 ObjectMap=KaniMap（有序 Vec 模拟 BTreeMap，条目键字典序不变，API 兼容），JsonValue/KaniMap 增 cfg(kani) no-op Drop；生产构建零改动。
-### CR-20260902-001（已批准）：元指令类型白名单 SSOT 化：META_INSTRUCTION_TYPES 常量导出 + 漂移防线（UV-046 C2）
+### CR-20260902-001（已批准）：元指令类型白名单 SSOT 化：META_INSTRUCTION_TYPES 常量导出 + 漂移防线（回归验证 C2）
 
 > 归档说明：原 CR 整表置于顶层至 2026-09-13（CR-20260913-001 置顶），完整内容见 git 历史。
 

@@ -70,7 +70,7 @@ pub(crate) enum StepOutcome {
         /// I/O 参数
         params: JsonValue,
     },
-    /// `enforce` 强制拦截（UV-147）：违规指令被拒绝执行
+    /// `enforce` 强制拦截（回归验证）：违规指令被拒绝执行
     ///
     /// 指令已出队即丢弃（不推回队列）；payload/queue 保持该步前原样、
     /// version 不 bump（无任何状态转移发生）。调用方需系统独占发射
@@ -172,7 +172,7 @@ pub(crate) fn next_step(
             Some(StepOutcome::IoRequired { io_type, params })
         }
         Ok(TransitionResult::Halted { rule_index, reason }) => {
-            // enforce 强制拦截（UV-147）：指令已出队即丢弃（不推回队列），
+            // enforce 强制拦截（回归验证）：指令已出队即丢弃（不推回队列），
             // payload/queue 保持该步前原样，version 不 bump（无状态转移发生）。
             // 调用方据此系统独占发射 Fact::Violation。
             Some(StepOutcome::Halted { rule_index, reason })
@@ -451,7 +451,7 @@ mod tests {
         assert_eq!(state.prev_version, prev_version);
     }
 
-    // ===== enforce 强制拦截（UV-147）=====
+    // ===== enforce 强制拦截（回归验证）=====
 
     /// 辅助：构造 enforce 规则（单条 core_eval）
     fn enforce_core_eval(domain: JsonValue, reason: &str) -> Vec<JsonValue> {
@@ -475,7 +475,7 @@ mod tests {
     #[test]
     #[allow(clippy::panic)] // 测试断言失败提示使用 panic!（assert 风格，符合测试惯用法）
     fn test_next_step_enforce_halt_drops_instruction_and_keeps_state() {
-        // UV-147 语义：违规指令被拒——出队即丢弃（不推回）、payload/queue
+        // enforce 语义：违规指令被拒——出队即丢弃（不推回）、payload/queue
         // 保持原样、version 不 bump（无状态转移发生）
         let domain = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("instruction")),

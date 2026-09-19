@@ -251,7 +251,7 @@ pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> 
             reason,
             instruction,
         } => {
-            // 违规拦截事实参与哈希链（审计链防篡改覆盖拦截记录；UV-147）
+            // 违规拦截事实参与哈希链（审计链防篡改覆盖拦截记录；回归验证）
             trace!(事实ID = ?id, 原因ID = ?cause, 规则下标 = rule_index, "处理违规拦截事实");
             obj.insert("type".into(), serde_json::Value::String("Violation".into()));
             obj.insert("id".into(), serde_json::Value::Number(id.0.into()));

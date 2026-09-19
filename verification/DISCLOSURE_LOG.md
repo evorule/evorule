@@ -140,24 +140,24 @@
 
 - **事实**：W3-2 校准表按"一次改完 proof 源码"纪律落地（instruction 24→32 / all 4→16 / deterministic 补 16 / domain_depth 12→16），同批清理 W3-3 临时 canary c2-clone/c2-owned（"迁移验证后删除，不入库"承诺收口）。eq 族首数据点 `verify_evaluate_domain_eq_never_panics`（unwind 24 合规 + owned 构造）**600s 超时**——kill criteria 触发，eq 族路由 Phase 2 stub 试点。提交 `627330a` 后于 WSL 重跑 A 档 14 proof：14/14 PASS。
 - **依据**：eq 首数据点实测（timeout 600s，`Checking harness...` 后无验证结论输出）；W3-2 §3.9 校准表；新证据 `P0-3/P0-6.<harness>_PASS_627330a_20260914_*`（evorule-tcb/verification/evidence/kani/）。
-- **影响**：① 旧 `90b77aa` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 5；② B 档 23 个 proof 状态不变（❌）；③ eq 族路由结论强化构造墙主因判断（String/KaniMap 建模开销；owned 迁移仅解 clone 分量，未解构造墙）；④ W3-4 机时 +1 次（eq），其余 8 个 P8 系首轮实测合并至 69 号 Step 10 全量重跑（post-69 基线，机时纪律，§3.11）。
+- **影响**：① 旧 `90b77aa` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 5；② B 档 23 个 proof 状态不变（❌）；③ eq 族路由结论强化构造墙主因判断（String/KaniMap 建模开销；owned 迁移仅解 clone 分量，未解构造墙）；④ W3-4 机时 +1 次（eq），其余 8 个 P8 系首轮实测合并至历史批次 Step 10 全量重跑（post-69 基线，机时纪律，§3.11）。
 - **修正去向**：本条目即修正记录；执行详情见 CR-20260913-004 §3.11；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 5；STATUS.md（快照/P0-3/P0-6/维护区）。
 
-### 2026-09-14：69 号清理（collect/merge 元指令退役），A 档证据重置 + reactor 4 proof 复跑（`25c0cc0`）
+### 2026-09-14：规则清理（collect/merge 元指令退役），A 档证据重置 + reactor 4 proof 复跑（`25c0cc0`）
 
-- **事实**：69 号专项实施完成（CR-20260914-001，v0.6.0 破坏性变更）——TCB 删除 `exec_collect`/`exec_merge`/`substitute_template` 及指令分发分支，`META_INSTRUCTION_TYPES` 收窄 5 种；proof P15/P16/P17 删除（总数 37→34，B 档 23→20），`tests/kani/model.rs` any_instruction %6→%4，P12/P19 allowed 集合收窄（提交 `10c743d`；`25c0cc0` 仅差 wasm-demo test.js）。 governance/cli/server/system-rules/console/console-cloud/evo-agent 宪法/reactor 全链同步收窄，跨仓处置随主仓 CR。提交后于 WSL（Kani 0.67.0 + nightly-2025-11-21）重跑：TCB A 档 14/14 PASS（单 proof 0.3~4.0s）+ reactor 4 个 CI proof 4/4 PASS，合计 18/18。
+- **事实**：规则清理批次实施完成（CR-20260914-001，v0.6.0 破坏性变更）——TCB 删除 `exec_collect`/`exec_merge`/`substitute_template` 及指令分发分支，`META_INSTRUCTION_TYPES` 收窄 5 种；proof P15/P16/P17 删除（总数 37→34，B 档 23→20），`tests/kani/model.rs` any_instruction %6→%4，P12/P19 allowed 集合收窄（提交 `10c743d`；`25c0cc0` 仅差 wasm-demo test.js）。 governance/cli/server/system-rules/console/console-cloud/evo-agent 宪法/reactor 全链同步收窄，跨仓处置随主仓 CR。提交后于 WSL（Kani 0.67.0 + nightly-2025-11-21）重跑：TCB A 档 14/14 PASS（单 proof 0.3~4.0s）+ reactor 4 个 CI proof 4/4 PASS，合计 18/18。
 - **依据**：新证据 `P0-3/P0-6.<harness>_PASS_25c0cc0_20260914_190211_*`（evorule-tcb/verification/evidence/kani/）与 `P0-11/P1-3/P1-5/P1-6.*.PASS_25c0cc0_20260914_190211_*`（evorule-reactor/verification/evidence/kani/）；CHANGELOG 0.6.0 破坏性变更条目；STATUS.md 附录 A/B 删号与计数更新。
-- **影响**：① 旧 `627330a` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 6；② reactor 旧 4 对（`03643aa`/`bdfb8d4` 锚定，proof 源码未变更但被验证依赖 TCB 生产代码变更，谨慎起见复跑替代）隔离至该仓同级 `_invalidated/`；③ B 档 20 个 proof 状态不变（❌；eq 族已路由 Phase 2 stub 试点，CR-20260913-004 §3.11）；④ 69 号 Step 10 Kani 重跑项收口。
+- **影响**：① 旧 `627330a` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 6；② reactor 旧 4 对（`03643aa`/`bdfb8d4` 锚定，proof 源码未变更但被验证依赖 TCB 生产代码变更，谨慎起见复跑替代）隔离至该仓同级 `_invalidated/`；③ B 档 20 个 proof 状态不变（❌；eq 族已路由 Phase 2 stub 试点，CR-20260913-004 §3.11）；④历史批次 Step 10 Kani 重跑项收口。
 - **修正去向**：本条目即修正记录；执行详情见 CR-20260914-001（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 6；STATUS.md（快照/P0-3/P0-6/附录 A/B/维护区）。
 
-### 2026-09-15：REM-1 CI 门禁整改——证据命名修正 + reactor 隔离区 README 补建 + 文档对齐
+### 2026-09-15：历史遗留项CI 门禁整改——证据命名修正 + reactor 隔离区 README 补建 + 文档对齐
 
-- **事实**：check_status_sync.py 门禁 7 项 FAIL（S2/S3/S4/S6/S8/S9/S10）整改完成：① 36 份证据文件名 `.PASS_` 笔误批量 `git mv` 修正为 `_PASS_`（TCB A 档 28 + reactor 8，均属 2026-09-14 `25c0cc0` 批次，内容零变更，STATUS.md 证据列本就按正确命名声明）；② `evorule-reactor/verification/evidence/kani/_invalidated/README.md` 补建（批次 1 = 69 号 Step 10 隔离的 4 对 `03643aa`/`bdfb8d4` 证据，原提交 `f013989` 漏建 README）；③ STATUS.md 附录 B A 档标题行批次锚 `25c0cc0` 去反引号（此前被 S8 解析为第 15 个 proof 名，致「声明 14 / 清单 15」）；④ STATUS.md P0-11 证据列更新为 `25c0cc0` 复跑证据（原 `03643aa` 引用已隔离于 _invalidated/，S2/S3 随之闭环）；⑤ MECHANISM.md 版本对齐声明 v0.5.0→v0.6.0（M4，69 号发布漏更）；⑥ ROADMAP.md 与 verification/README.md B 档计数 23→20（69 号 P15/P16/P17 退役漏更）。
+- **事实**：check_status_sync.py 门禁 7 项 FAIL（S2/S3/S4/S6/S8/S9/S10）整改完成：① 36 份证据文件名 `.PASS_` 笔误批量 `git mv` 修正为 `_PASS_`（TCB A 档 28 + reactor 8，均属 2026-09-14 `25c0cc0` 批次，内容零变更，STATUS.md 证据列本就按正确命名声明）；② `evorule-reactor/verification/evidence/kani/_invalidated/README.md` 补建（批次 1 =历史批次 Step 10 隔离的 4 对 `03643aa`/`bdfb8d4` 证据，原提交 `f013989` 漏建 README）；③ STATUS.md 附录 B A 档标题行批次锚 `25c0cc0` 去反引号（此前被 S8 解析为第 15 个 proof 名，致「声明 14 / 清单 15」）；④ STATUS.md P0-11 证据列更新为 `25c0cc0` 复跑证据（原 `03643aa` 引用已隔离于 _invalidated/，S2/S3 随之闭环）；⑤ MECHANISM.md 版本对齐声明 v0.5.0→v0.6.0（M4，历史批次发布漏更）；⑥ ROADMAP.md 与 verification/README.md B 档计数 23→20（历史批次 P15/P16/P17 退役漏更）。
 - **依据**：check_status_sync.py 实测输出（修复前 4 PASS / 7 FAIL，修复后 11 规则全 PASS）；文件系统实测（36 份笔误命名、reactor 隔离区缺 README）；Cargo.toml workspace version = 0.6.0。
 - **影响**：S1–S11 全绿；对外数字（45 total / 18 verified / TCB 34 / A 档 14 / B 档 20）与 STATUS.md 附录推导值全对齐；P0-11 最新证据（2026-09-14 PASS）与主状态 ✅ 闭环；reactor 隔离区满足 M3.5。
 - **修正去向**：本条目即修正记录；证据盘面与 STATUS.md / MECHANISM.md / ROADMAP.md / verification/README.md / `evorule-reactor/verification/evidence/kani/_invalidated/README.md`。
 
-### 2026-09-16：CR 构建校验移出公开仓，CR 模板双份清零（TCB-2026-29，裁定⑤⑥）
+### 2026-09-16：CR 构建校验移出公开仓，CR 模板双份清零（TCB-2026-29，既定裁定）
 
 - **事实**：L1b 的 CHANGE_REQUEST.md 构建校验经裁定移出公开仓（该检查属提交前自查纪律，非防伪造审查机制），`EVORULE_SKIP_CR_GATE` 环境变量随之删除；策略层反模式检测改为**无阀常开**。首条处置记录② 保留的 `.github/CHANGE_REQUEST_TEMPLATE.md`（267 行）随本次整改删除（`8a8f04c`），根目录版已于 2026-09-12 删除——两个模板至此**全部离线**，CR 自查职责由维护者本地 git pre-commit hook 承接（hook 不随仓库/发布公开）。`CHANGE_REQUEST.md` 登记文件与登记纪律本身不变。
 - **依据**：`8a8f04c` diff（`.github/CHANGE_REQUEST_TEMPLATE.md` −267 行）；四仓 build.rs 实跑输出（旧「变更治理门禁 PASSED」消失，策略层检测无阀常开 PASSED）；`CHANGELOG.md` [Unreleased] TCB-2026-29 条目。
@@ -174,7 +174,7 @@
 
 ### 2026-09-17：C6 守卫强制运行时装配批次——STATUS 初稿失实更正 + C6 属性状态落档 + DEV-4/DEV-5 关闭
 
-- **事实**：C6 运行时装配批次完成（事后补录立项，见内部台账 iterations/85 号，工作区不随仓公开）：① server 三处 `IoSubscriber` 注入 `PermissionGate`（主干全局路径 + 两条 per-session 路径）+ 启动种子 `default-human-allow-io` + `GUARD_ASSEMBLED` 装配信号（`/api/health` `guard_assembled` 字段与启动日志）；② governance 新增穷尽决策表测试 `exhaustive_decision_table_default_deny`（C6.1/C6.3，枚举 CallerRole×io_type 全组合）；③ 验证：`cargo check` RC=0、双仓全量测试 0 失败（governance lib 156 含新测试、server lib 362 等 58 目标）、wasm-host 4 个 e2e 脚本回归全 PASS（v6_offline / t5_concurrency / t6_sensitive_guard / v79_auto_discover，真实起进程，敏感守卫与直调语义零回归）。**同批状态更正**：STATUS.md 本批初稿（工作树版、未曾提交）存在三处失实——(a) 归因于一个不存在的提交 SHA；(b) C6.1/C6.3/C6.4 主状态使用非五档词汇「in-progress」（M2 五档之外的自造状态）；(c) DEV-5 关闭条件写成既成事实（代码落地时验证尚未执行）。经专项核查发现后于本批更正为最终事实。
+- **事实**：C6 运行时装配批次完成（事后补录立项，见内部工作区记录，工作区不随仓公开）：① server 三处 `IoSubscriber` 注入 `PermissionGate`（主干全局路径 + 两条 per-session 路径）+ 启动种子 `default-human-allow-io` + `GUARD_ASSEMBLED` 装配信号（`/api/health` `guard_assembled` 字段与启动日志）；② governance 新增穷尽决策表测试 `exhaustive_decision_table_default_deny`（C6.1/C6.3，枚举 CallerRole×io_type 全组合）；③ 验证：`cargo check` RC=0、双仓全量测试 0 失败（governance lib 156 含新测试、server lib 362 等 58 目标）、wasm-host 4 个 e2e 脚本回归全 PASS（v6_offline / t5_concurrency / t6_sensitive_guard / v79_auto_discover，真实起进程，敏感守卫与直调语义零回归）。**同批状态更正**：STATUS.md 本批初稿（工作树版、未曾提交）存在三处失实——(a) 归因于一个不存在的提交 SHA；(b) C6.1/C6.3/C6.4 主状态使用非五档词汇「in-progress」（M2 五档之外的自造状态）；(c) DEV-5 关闭条件写成既成事实（代码落地时验证尚未执行）。经专项核查发现后于本批更正为最终事实。
 - **依据**：双仓全量测试实测输出；4 个 e2e 脚本实测输出（全 PASS）；git 状态核查（初稿未经提交，三处注入均为本批工作树新增）；STATUS.md 维护区 2026-09-17 条目（含更正声明）。
 - **影响**：① STATUS C6 表：C6.1/C6.3 主状态 🔵→**✅**（本地实跑证据落定 + CI `test` job 常驻），C6.4 保持 🔵（编译级验证，运行时观测待 e2e 断言补强）；② §3.1 C6 行保持 **AL2（部分）**（判定依据更新为实跑证据），关联偏离收窄为 DEV-6；③ **DEV-4 关闭移出**（C6 属性条目已建于 §一/§二 之间的 C6 表）、**DEV-5 关闭移出**（装配信号已实施并验证）——§3.2 现存 DEV-1/2/3/6/7；④ 行为变更登记：装配后 LLM/Unknown 调用者 I/O 直调由 fail-open 转 fail-closed（有意变更，既有 e2e 场景实证未受影响）。
 - **修正去向**：本条目即修正记录；`verification/STATUS.md`（C6 表、§3.1 C6 行、§3.2 偏离登记、维护区 2026-09-17 条目含更正声明）。

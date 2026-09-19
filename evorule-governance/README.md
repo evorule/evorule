@@ -191,7 +191,7 @@ let verified = auditor.verify_chain()?;
 
 ## v0.6.0 更新
 
-- **元指令白名单收窄（69 号清理，破坏性变更）**: `VALID_TRANSFORM_TYPES` 收窄为 4 种（branch/set/push/io_request，= TCB − enforce）；`collect`/`merge` 校验逻辑删除，规则文件使用将**加载即拒**；LLM 多轮编排归应用层
+- **元指令白名单收窄（规则清理，破坏性变更）**: `VALID_TRANSFORM_TYPES` 收窄为 4 种（branch/set/push/io_request，= TCB − enforce）；`collect`/`merge` 校验逻辑删除，规则文件使用将**加载即拒**；LLM 多轮编排归应用层
 
 ## 设计文档参考
 

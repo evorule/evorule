@@ -44,7 +44,7 @@
 //! 本文件全部门禁是工程质量自查纪律（机制-策略分离、确定性红线），不是
 //! 对抗主动攻击者的安全边界；策略层检测无阀常开。CR 变更自查
 //! （CHANGE_REQUEST.md 字段清单）已移出公开仓，由本地 git pre-commit hook
-//! 承接——它从来不是防伪造审查机制（裁定⑤，TCB-2026-29 定性）。
+//! 承接——它从来不是防伪造审查机制（既定裁定，TCB-2026-29 定性）。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -773,7 +773,7 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 fn main() -> ExitCode {
     let crate_name = std::env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "unknown".into());
 
-    // 策略层反模式检测 (无阀常开, TCB-2026-27 整改 + 裁定⑤): 机制-策略分离是
+    // 策略层反模式检测 (无阀常开, TCB-2026-27 整改 + 既定裁定): 机制-策略分离是
     // 设计不变量, 不设旁路阀。CR 自查 (CHANGE_REQUEST.md 校验) 已移出公开仓
     // build.rs——EVORULE_SKIP_CR_GATE 随之移除, 自查由本地 git pre-commit hook
     // 承接 (hook 源落本地工具区, 不随仓库/发布公开)。

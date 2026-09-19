@@ -216,7 +216,7 @@ fn push_noop() -> JsonValue {
 
 /// 与 core_eval.json v0.3.1 的 ReAct 三条规则一一对应
 /// （self_init / call_external / call_service；工具扇出/结果合并的循环编排
-/// 职责在应用层 runner，collect/merge 原语已退役（69 号），终止统一 push noop）。
+/// 职责在应用层 runner，collect/merge 原语已退役（历史批次），终止统一 push noop）。
 pub(crate) fn react_core_eval() -> Vec<JsonValue> {
     // 1) react_iteration 自初始化（缺失时置 0，否则跳过）
     let self_init = branch(
@@ -238,7 +238,7 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
     );
 
     // 2) call_external：消费 LLM 结果（工具扇出编排在应用层 runner，
-    //    collect 已退役 69 号，消费轮统一 push noop 终止）
+    //    collect 已退役，消费轮统一 push noop 终止）
     let call_external = branch(
         instr_domain("call_external"),
         vec![branch(
@@ -282,7 +282,7 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
     );
 
     // 3) call_service：消费工具结果 → lt 检查（结果合并与下一条 LLM 调用的生成
-    //    由应用层 runner 编排，merge 已退役 69 号，消费轮统一 push noop 终止）
+    //    由应用层 runner 编排，merge 已退役，消费轮统一 push noop 终止）
     let call_service = branch(
         instr_domain("call_service"),
         vec![branch(

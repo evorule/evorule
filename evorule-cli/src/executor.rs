@@ -176,7 +176,7 @@ pub fn execute(
                 break;
             }
             Ok(TransitionResult::Halted { rule_index, reason }) => {
-                // UV-147：enforce 强制原语命中——违规指令被拒绝执行（不执行、不回队）。
+                // 回归验证：enforce 强制原语命中——违规指令被拒绝执行（不执行、不回队）。
                 // CLI 与 reactor 同语义：系统独占发射 Violation 事实，继续处理后续指令
                 let v_id = id_gen.next_id();
                 facts.push(Fact::Violation {

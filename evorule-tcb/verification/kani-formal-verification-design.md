@@ -6,9 +6,9 @@
 
 > **当前状态（2026-09-14，v0.6.0）**：共 **34 个 `#[kani::proof]`**——
 > A 档 14 个全 PASS（已入 kani.yml PR 闸门）+ B 档 20 个实测超时判不可运行。
-> 初版 P1-P21 经后续演进：resolve_path 域拆分细化、`enforce` 原语三 proof 新增（UV-147）、
+> 初版 P1-P21 经后续演进：resolve_path 域拆分细化、`enforce` 原语三 proof 新增（回归验证）、
 > W3-1 形状助手接线；`collect`/`merge`/`substitute_template` 与 P15/P16/P17 已随
-> v0.6.0（69 号清理）退役。
+> v0.6.0（规则清理）退役。
 > **权威 proof 清单以 [verification/STATUS.md](../../verification/STATUS.md) 附录 A/B 为准**，
 > 本文承担设计原理与演进记录职责，不重复维护逐条清单。
 
@@ -29,7 +29,7 @@
 | **路径解析正确性** | `resolve_path` 符合 ABNF 规格，无效路径返回 `None`（不 panic） | P2 |
 
 > **v0.6.0 覆盖重点**：`io_request` 单轮触发/消费语义（多轮编排已于 v0.6.0 移交应用层）、
-> `enforce` 强制原语（UV-147，v0.4.3 新增）与 `has_fields`/`lt` 域类型。
+> `enforce` 强制原语（回归验证，v0.4.3 新增）与 `has_fields`/`lt` 域类型。
 
 ### 1.2 非目标（本次不验证）
 
@@ -68,7 +68,7 @@
 │  - 5 种元指令永不 panic（branch/set/push/io_request/enforce）      │
 │  - set/add/sub 算术安全（溢出返回 IntegerOverflow）                │
 │  - branch 嵌套深度限制生效（MAX_BRANCH_DEPTH=64）                  │
-│  - enforce 强制原语语义（Halted 信号 + 传播即停，UV-147，v0.4.3）   │
+│  - enforce 强制原语语义（Halted 信号 + 传播即停，回归验证，v0.4.3）   │
 │  - io_request 可选参数容错（单轮触发/消费语义）                     │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Layer 5: 状态转换层                                               │
@@ -447,7 +447,7 @@ fn verify_branch_depth_limit() {
     assert!(matches!(r, Err(TcbError::NestingTooDeep { .. })));
 }
 
-/// P15:【已退役 v0.6.0，69 号清理】collect 遍历安全 + after 参数排序（v0.3.1 设计记录）
+/// P15:【已退役 v0.6.0，规则清理】collect 遍历安全 + after 参数排序（v0.3.1 设计记录）
 #[cfg(kani)]
 #[kani::proof]
 fn verify_collect_safe_with_after() {
@@ -471,7 +471,7 @@ fn verify_collect_safe_with_after() {
     assert!(r.is_ok());
 }
 
-/// P16:【已退役 v0.6.0，69 号清理】merge 结果合并正确（v0.3.1：追加 tool 消息 + 无条件推 next_instruction）
+/// P16:【已退役 v0.6.0，规则清理】merge 结果合并正确（v0.3.1：追加 tool 消息 + 无条件推 next_instruction）
 #[cfg(kani)]
 #[kani::proof]
 fn verify_merge_safe() {
@@ -491,7 +491,7 @@ fn verify_merge_safe() {
     assert!(r.is_ok(), "merge 不应失败/panic");
 }
 
-/// P17:【已退役 v0.6.0，69 号清理】substitute_template 永不 panic（经 collect/merge 间接）
+/// P17:【已退役 v0.6.0，规则清理】substitute_template 永不 panic（经 collect/merge 间接）
 /// 覆盖：模板字段存在/缺失、嵌套路径、非字符串字段
 #[cfg(kani)]
 #[kani::proof]
@@ -624,9 +624,9 @@ fn verify_react_io_required() {
 | P12 | `verify_execute_meta_instruction_never_panics` | 公开 | 元指令不 panic（set/push/branch/io_request） | P0 |
 | P13 | `verify_exec_set_arithmetic_safe` | execute_meta_instruction | set 算术安全 | P0 |
 | P14 | `verify_branch_depth_limit` | execute_meta_instruction | branch 深度限制 | P1 |
-| P15 | ~~`verify_collect_safe_with_after`~~ | — | **退役**（collect 已于 v0.6.0 移除，69 号清理） | — |
-| P16 | ~~`verify_merge_safe`~~ | — | **退役**（merge 已于 v0.6.0 移除，69 号清理） | — |
-| P17 | ~~`verify_substitute_template_never_panics`~~ | — | **退役**（substitute_template 已于 v0.6.0 移除，69 号清理） | — |
+| P15 | ~~`verify_collect_safe_with_after`~~ | — | **退役**（collect 已于 v0.6.0 移除，规则清理） | — |
+| P16 | ~~`verify_merge_safe`~~ | — | **退役**（merge 已于 v0.6.0 移除，规则清理） | — |
+| P17 | ~~`verify_substitute_template_never_panics`~~ | — | **退役**（substitute_template 已于 v0.6.0 移除，规则清理） | — |
 | P18 | `verify_io_request_safe` | execute_meta_instruction | io_request 容错（单轮触发/消费） | P1 |
 | P19 | `verify_execute_transition_never_panics` | 公开 | 状态转换不 panic | P0 |
 | P20 | `verify_transform_rules_limit` | 公开 | 规则数限制 | P2 |

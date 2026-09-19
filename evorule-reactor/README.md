@@ -20,7 +20,7 @@
 - **P0 修复(2026-07-25)**:`Box::leak` 内存泄漏已修复(`IoType::parse` 返回 `Option`);锁中毒改为 `e.into_inner()` 恢复(非 panic)
 - **v0.2.0 重构(2026-08-04)**:`IoType` 内部从 `&'static str` 改为 `Arc<str>`,支持 `IoType::new()` 注册任意 io_type(失去 `Copy`,5 个 `const` 改工厂函数);`IoHandler`/`IoDispatcher` 从 governance 下沉至本 crate(trait 改 `#[async_trait]` object-safe);`IoType::parse` 标记 `#[deprecated]`
 - **v0.3.1 TCB 升级**:依赖 evorule-tcb 升至 0.3.1,ReAct 循环由 `call_external`/`call_service`/`collect`/`merge` 驱动(迭代上限 10);I/O 结果按 `__io_results__.{io_type}` 类型隔离,消费后以 null 清除
-- **v0.6.0 收窄(2026-09-14,69 号清理)**:依赖 evorule-tcb 升至 0.6.0;`collect`/`merge` 元指令退役,`io_loop_rules` 改单轮——ReAct 多轮编排归应用层,`io_request` 保留单轮触发/消费语义
+- **v0.6.0 收窄(2026-09-14,规则清理)**:依赖 evorule-tcb 升至 0.6.0;`collect`/`merge` 元指令退役,`io_loop_rules` 改单轮——ReAct 多轮编排归应用层,`io_request` 保留单轮触发/消费语义
 - **Kani 形式化验证**:11 个 `#[kani::proof]`(`verification/kani_proofs.rs`),其中 4 个入 CI PR 闸门(根仓 `.github/workflows/kani.yml`,v0.6.0 重跑 4/4 PASS);状态唯一权威见根 [`verification/STATUS.md`](../verification/STATUS.md)
 
 > 本 crate 属于 [EvoRule](https://gitee.com/evorule) 生态:[主仓](https://gitee.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://gitee.com/evorule/evorule-server)

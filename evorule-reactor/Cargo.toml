@@ -61,7 +61,7 @@ tokio = { version = "1.0", features = ["sync", "rt", "rt-multi-thread", "time", 
 #   故任何 wasm32 下**真正可达**的 tokio 计时调用都会在运行时 panic。
 #   当前 wasm32 唯一入口 evorule-wasm-demo 走纯同步子集，不构造 runtime，不触碰计时 API。
 # - 纪律：新增 wasm32 可达代码不得使用 tokio::time / tokio::runtime；否则必须先把该路径
-#   改为不依赖计时的实现（或推动 66 号 §九 方案 B「Runtime trait 抽象」）。
+#   改为不依赖计时的实现（或推动 设计文档 §九 方案 B「Runtime trait 抽象」）。
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 tokio = { version = "1.0", features = ["sync", "rt", "time", "macros"] }
 

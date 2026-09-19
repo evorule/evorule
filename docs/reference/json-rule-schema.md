@@ -60,7 +60,7 @@ evorule 规则集是一个 JSON 文件，描述**指令到状态转换的映射*
 | `io_request` | I/O 请求：产生 IoRequired 信号，不修改状态 | `exec_io_request` |
 | `enforce` | 强制执行：自进化预留原语，由 governance tier 门禁控制 | `exec_enforce` |
 
-> **v0.6.0 破坏性变更（69 号清理）**：`collect` 与 `merge` 元指令已退役——LLM 多轮编排属于应用层职责，机制层不再内置 ReAct 循环原语。规则文件中使用这两个类型将被 schema 拒绝。多轮编排请由应用层 runner 实现。
+> **v0.6.0 破坏性变更（规则清理）**：`collect` 与 `merge` 元指令已退役——LLM 多轮编排属于应用层职责，机制层不再内置 ReAct 循环原语。规则文件中使用这两个类型将被 schema 拒绝。多轮编排请由应用层 runner 实现。
 
 > 终止性保证：整棵规则树共享单一执行预算 `MAX_TOTAL_META_INSTRUCTIONS`（executor.rs L87），branch 递归深度上限 `MAX_BRANCH_DEPTH`（executor.rs L703）。
 
@@ -162,7 +162,7 @@ evorule 规则集是一个 JSON 文件，描述**指令到状态转换的映射*
 
 ### 已退役元指令：collect / merge（v0.6.0）
 
-`collect`（批量生成指令）与 `merge`（合并工具结果到消息历史）原语已在 v0.6.0 随 69 号清理退役。这两个原语用于在机制层内嵌 LLM ReAct 多轮循环（collect 遍历 LLM tool_calls 扇出 call_service、merge 合并工具结果回环生成下一条 LLM 调用），该编排属于应用层职责。
+`collect`（批量生成指令）与 `merge`（合并工具结果到消息历史）原语已在 v0.6.0 随规则清理退役。这两个原语用于在机制层内嵌 LLM ReAct 多轮循环（collect 遍历 LLM tool_calls 扇出 call_service、merge 合并工具结果回环生成下一条 LLM 调用），该编排属于应用层职责。
 
 - 规则文件中使用 `"type": "collect"` / `"type": "merge"` 将被 schema 枚举直接拒绝（加载即报错，不静默忽略）
 - 多轮工具编排请由应用层 runner / tool_registry 实现；机制层保留 `io_request` 单轮触发/消费语义

@@ -40,7 +40,7 @@
 
 **必须**: 实现层只能支持固定数目的元指令，不允许动态注册新元指令。
 
-**当前实现**: 5 种真元指令（v0.6.0；collect/merge 已随 69 号清理退役）：
+**当前实现**: 5 种真元指令（v0.6.0；collect/merge 已随规则清理退役）：
 
 | 序号 | 元指令   | 作用 |
 | ---- | -------- | ---- |
@@ -50,7 +50,7 @@
 | 4    | `io_request` | 产生 I/O 请求信号（不修改状态） |
 | 5    | `enforce` | L2 元规则强制阻断（halt 语义，TCB 自进化预留） |
 
-> **v0.6.0（69 号清理）**：原第 5/6 号 `collect` / `merge` 已退役——LLM 多轮编排属应用层职责，机制层回归单轮 `io_request` 语义；规则文件使用将加载即拒。
+> **v0.6.0（规则清理）**：原第 5/6 号 `collect` / `merge` 已退役——LLM 多轮编排属应用层职责，机制层回归单轮 `io_request` 语义；规则文件使用将加载即拒。
 
 注：`noop` 是**业务指令**层的概念（队列中的空操作指令，用于终止 ReAct 循环等），不是元指令——`core_eval` transform 编译器从不产出 `noop` 类型规则，TCB dispatch 遇到未知类型一律返回 `UnknownMetaInstruction`。
 
@@ -359,7 +359,7 @@ EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 wa
 
 ## 六、形式化验证 (Kani proof)
 
-> **当前状态**：34 个 `#[kani::proof]` 分 A/B 两档（v0.6.0 随 69 号清理退役 P15/P16/P17，原 37 个）——A 档 14 个于 v0.6.0 重跑（2026-09-14，证据基线 `25c0cc0`）全 PASS 并入 kani.yml PR 闸门；B 档 20 个实测 600s/3600s 超时，判定当前不可运行（proptest 间接覆盖）。五档状态详见 [`verification/STATUS.md`](../verification/STATUS.md)（唯一权威）。
+> **当前状态**：34 个 `#[kani::proof]` 分 A/B 两档（v0.6.0 随规则清理退役 P15/P16/P17，原 37 个）——A 档 14 个于 v0.6.0 重跑（2026-09-14，证据基线 `25c0cc0`）全 PASS 并入 kani.yml PR 闸门；B 档 20 个实测 600s/3600s 超时，判定当前不可运行（proptest 间接覆盖）。五档状态详见 [`verification/STATUS.md`](../verification/STATUS.md)（唯一权威）。
 
 ### 6.1 已实装资产
 

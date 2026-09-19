@@ -8,7 +8,7 @@
 
 # Kani 形式化验证指南
 
-[evorule-tcb](../) 的 34 个 Kani proof（v0.6.0 随 69 号清理退役 P15/P16/P17，原 37 个）位于 [`tests/kani/kani_proofs.rs`](../tests/kani/kani_proofs.rs)，
+[evorule-tcb](../) 的 34 个 Kani proof（v0.6.0 随规则清理退役 P15/P16/P17，原 37 个）位于 [`tests/kani/kani_proofs.rs`](../tests/kani/kani_proofs.rs)，
 经 [`tests/kani_entry.rs`](../tests/kani_entry.rs) 顶层入口引入，由 `#[cfg(kani)]` 门控
 （`cargo kani` 自动注入 `--cfg kani`，普通 `cargo build`/`cargo test` 不编译）。
 

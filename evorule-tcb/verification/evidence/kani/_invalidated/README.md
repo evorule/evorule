@@ -84,17 +84,17 @@
 
 **披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-14 W3-4 条目。
 
-## 批次 6（2026-09-14）：A 档 14 对证据随 69 号清理 proof 源码变更失效隔离
+## 批次 6（2026-09-14）：A 档 14 对证据随规则清理 proof 源码变更失效隔离
 
 **来源**：`../`（`evorule-tcb/verification/evidence/kani/`），28 个文件（14 对 `.log` + `.stdout.txt`，命名锚定 `627330a`，产出于 2026-09-14）。
 
-**失效判定**（[MECHANISM.md](../../../../../verification/MECHANISM.md) M3.4）：69 号清理提交 `10c743d` 变更了被验证代码与 proof 源码（CR-20260914-001：collect/merge 元指令退役——`exec_collect`/`exec_merge`/`substitute_template` 删除、`META_INSTRUCTION_TYPES` 收窄 5 种；`tests/kani/kani_proofs.rs` P15/P16/P17 删除（37→34）、`tests/kani/model.rs` `any_instruction` %6→%4），本批证据的 SHA 绑定早于 proof 源码最后一次变更，按 M3.4 自动失效。
+**失效判定**（[MECHANISM.md](../../../../../verification/MECHANISM.md) M3.4）：规则清理提交 `10c743d` 变更了被验证代码与 proof 源码（CR-20260914-001：collect/merge 元指令退役——`exec_collect`/`exec_merge`/`substitute_template` 删除、`META_INSTRUCTION_TYPES` 收窄 5 种；`tests/kani/kani_proofs.rs` P15/P16/P17 删除（37→34）、`tests/kani/model.rs` `any_instruction` %6→%4），本批证据的 SHA 绑定早于 proof 源码最后一次变更，按 M3.4 自动失效。
 
 **替代证据**：于 `25c0cc0`（与 `10c743d` proof 源码一致，仅差 test.js）重跑 A 档 14 个全 PASS（2026-09-14，WSL Kani 0.67.0，单 proof 秒级；18/18 = TCB 14 + reactor 4），按 M3.1 命名归档于 `../`（见 [STATUS.md](../../../../../verification/STATUS.md) P0-3/P0-6 证据列）。
 
 **同批跨仓处置**：`evorule-reactor/verification/evidence/kani/` 4 对旧 PASS 证据（P0-11/P1-5 锚定 `03643aa`、P1-3/P1-6 锚定 `bdfb8d4`，proof 源码未变更但被验证依赖 TCB 生产代码变更，谨慎起见复跑替代）隔离至该仓同级 `_invalidated/`；P0-11 修复前 3 份 FAIL 过程证据按 STATUS 原注记原地保留。
 
-**披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-14 69 号清理条目。
+**披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-14 规则清理条目。
 
 ## 批次 7（2026-09-15）：A 档 14 对证据随 lint 清零生产源码变更失效隔离
 

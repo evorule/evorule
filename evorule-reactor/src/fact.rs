@@ -279,7 +279,7 @@ pub enum Fact {
         rule_hits: Vec<TraceHit>,
     },
 
-    /// 违规被强制拦截（`enforce` 原语命中，UV-147）
+    /// 违规被强制拦截（`enforce` 原语命中，回归验证）
     ///
     /// # 系统独占（三权分立：阻止权/记录权在系统）
     ///
@@ -600,7 +600,7 @@ mod tests {
 
     #[test]
     fn test_violation_fact_to_json_and_meta() {
-        // UV-147：Violation 事实序列化 + 元信息（type_name/id/is_terminal）
+        // 回归验证：Violation 事实序列化 + 元信息（type_name/id/is_terminal）
         let fact = Fact::Violation {
             id: FactId(9),
             cause: FactId(3),
