@@ -34,6 +34,20 @@ pub struct SharedFact {
     pub source_session_id: u64,
     /// 版本号
     pub version: u64,
+    /// 来源会话侧的源头 fact_id（N6 链路统一，R10）
+    ///
+    /// 同一逻辑记忆存在两个账本节点：会话侧（session WAL 哈希链上的
+    /// `Fact::PayloadUpdate`）与共享侧（本账本）。本字段记录共享侧条目
+    /// 对应的会话侧源头事实 ID，使跨链溯源可出示双侧证据。
+    ///
+    /// 语义边界：`fact_id` 是**链内节点地址**（会话链/共享链各自独立编址），
+    /// 逻辑身份由 `path` 承载——两个 fact_id 不是"同一 ID 的分裂"，而是
+    /// 两个审计事件（"会话写入 X" 与 "X 被广播进共享账本"）的节点地址。
+    ///
+    /// `None` 表示：经旧签名 `append` 写入（无 origin 通道），或该条目
+    /// 先于 R10 存在（metadata 中无映射）。溯源索引随 metadata 持久化，
+    /// 丢失语义与 `fact_sources` 一致（辅助索引，WAL 为权威）。
+    pub origin_fact_id: Option<u64>,
 }
 
 /// 共享事实元数据持久化容器
@@ -49,6 +63,12 @@ pub struct SharedFactsMetadata {
     pub next_fact_id: u64,
     /// FactId(u64) → source_session_id 映射
     pub fact_sources: BTreeMap<u64, u64>,
+    /// FactId(u64) → 会话侧源头 fact_id 映射（N6 链路统一，R10）
+    ///
+    /// 仅存 `Some` 项；`#[serde(default)]` 保证旧 metadata 文件（无此字段）
+    /// 反序列化不报错——溯源索引是辅助数据，缺失只损失跨链出处，不损审计链。
+    #[serde(default)]
+    pub fact_origins: BTreeMap<u64, u64>,
     /// session_id → 启动时使用的 fact_id 列表
     pub used_at_startup: BTreeMap<u64, Vec<u64>>,
     /// 已标记为 rollup 的 fact_id 集合（`facts_by_path_prefix` 查询时过滤）
@@ -67,6 +87,8 @@ struct SharedFactsLogInner {
     facts_log: FactsLog,
     next_fact_id: u64,
     fact_sources: BTreeMap<FactId, u64>,
+    /// FactId → 会话侧源头 fact_id（N6 链路统一，R10；仅存 Some 项）
+    fact_origins: BTreeMap<FactId, u64>,
     used_at_startup: BTreeMap<u64, Vec<FactId>>,
     /// 已标记为 rollup 的 fact_id 集合（`facts_by_path_prefix` 过滤，`fact_by_id` 不过滤）
     rolled_up: BTreeSet<FactId>,
@@ -112,6 +134,7 @@ impl SharedFactsLog {
                 facts_log: FactsLog::new(),
                 next_fact_id: 1,
                 fact_sources: BTreeMap::new(),
+                fact_origins: BTreeMap::new(),
                 used_at_startup: BTreeMap::new(),
                 rolled_up: BTreeSet::new(),
                 metadata_path: None,
@@ -130,6 +153,7 @@ impl SharedFactsLog {
                 facts_log,
                 next_fact_id: 1,
                 fact_sources: BTreeMap::new(),
+                fact_origins: BTreeMap::new(),
                 used_at_startup: BTreeMap::new(),
                 rolled_up: BTreeSet::new(),
                 metadata_path: None,
@@ -189,6 +213,13 @@ impl SharedFactsLog {
             .map(|(k, v)| (FactId(k), v))
             .collect();
 
+        // R10：溯源索引恢复（旧 metadata 无此字段时为空 map，语义 = origin 未知）
+        let fact_origins: BTreeMap<FactId, u64> = metadata
+            .fact_origins
+            .into_iter()
+            .map(|(k, v)| (FactId(k), v))
+            .collect();
+
         let used_at_startup: BTreeMap<u64, Vec<FactId>> = metadata
             .used_at_startup
             .into_iter()
@@ -221,6 +252,7 @@ impl SharedFactsLog {
                 facts_log,
                 next_fact_id: metadata.next_fact_id.max(1),
                 fact_sources,
+                fact_origins,
                 used_at_startup,
                 rolled_up,
                 metadata_path: Some(metadata_path.as_ref().to_path_buf()),
@@ -260,6 +292,39 @@ impl SharedFactsLog {
         value: JsonValue,
         source_session_id: u64,
     ) -> Result<u64, FactsLogError> {
+        self.append_inner(path, value, source_session_id, None)
+    }
+
+    /// 追加共享事实并携带会话侧源头 fact_id（N6 链路统一，R10）
+    ///
+    /// 与 [`append`](Self::append) 唯一区别：共享侧条目记录其会话侧源头
+    /// 事实 ID，使 `/{id}/source` 可出示双侧证据。`origin_fact_id: None`
+    /// 时行为与 `append` 完全一致。
+    ///
+    /// # 参数
+    /// - `origin_fact_id`: 会话侧源头 fact_id。调用方须保证该事实已确定
+    ///   入链（server 路由先 `command_tx.send` 成功后广播，origin 永不悬空）
+    ///
+    /// # 返回
+    /// 追加后的版本号
+    pub fn append_with_origin(
+        &self,
+        path: &str,
+        value: JsonValue,
+        source_session_id: u64,
+        origin_fact_id: Option<u64>,
+    ) -> Result<u64, FactsLogError> {
+        self.append_inner(path, value, source_session_id, origin_fact_id)
+    }
+
+    /// 两个公开 append 入口的共同实现（私有）
+    fn append_inner(
+        &self,
+        path: &str,
+        value: JsonValue,
+        source_session_id: u64,
+        origin_fact_id: Option<u64>,
+    ) -> Result<u64, FactsLogError> {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
 
         let fact_id = FactId(inner.next_fact_id);
@@ -276,11 +341,23 @@ impl SharedFactsLog {
 
         let version = inner.facts_log.append(fact)?;
         inner.fact_sources.insert(fact_id, source_session_id);
+        if let Some(origin) = origin_fact_id {
+            inner.fact_origins.insert(fact_id, origin);
+        }
 
         // 持久化 metadata（best-effort：失败只记日志，不阻塞 append）
         inner.persist_metadata_locked();
 
         Ok(version)
+    }
+
+    /// 查询指定事实的会话侧源头 fact_id（N6 链路统一，R10）
+    ///
+    /// # 返回
+    /// 会话侧源头 fact_id；无 origin 通道（旧签名写入/历史条目）时返回 `None`
+    pub fn origin_fact_id(&self, fact_id: FactId) -> Option<u64> {
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        inner.fact_origins.get(&fact_id).copied()
     }
 
     /// 按路径前缀查询共享事实
@@ -309,6 +386,7 @@ impl SharedFactsLog {
                             value,
                             source_session_id: *inner.fact_sources.get(&id).unwrap_or(&0),
                             version,
+                            origin_fact_id: inner.fact_origins.get(&id).copied(),
                         })
                     }
                     _ => None,
@@ -350,6 +428,7 @@ impl SharedFactsLog {
                         value,
                         source_session_id,
                         version,
+                        origin_fact_id: inner.fact_origins.get(&id).copied(),
                     });
                 }
             }
@@ -450,6 +529,7 @@ fn write_metadata_atomic(path: &Path, inner: &SharedFactsLogInner) -> Result<(),
     let metadata = SharedFactsMetadata {
         next_fact_id: inner.next_fact_id,
         fact_sources: inner.fact_sources.iter().map(|(k, v)| (k.0, *v)).collect(),
+        fact_origins: inner.fact_origins.iter().map(|(k, v)| (k.0, *v)).collect(),
         used_at_startup: inner
             .used_at_startup
             .iter()
@@ -809,5 +889,101 @@ mod tests {
             log.verify_causal_consistency().is_empty(),
             "一致的 WAL+metadata 被误报为孤立：F1 对照测试失败"
         );
+    }
+
+    // ===== R10：origin_fact_id 跨链溯源（N6） =====
+
+    /// append_with_origin → 前缀查询 / fact_by_id / 独立查询三出口均携带 origin
+    #[test]
+    fn test_append_with_origin_visible_in_all_query_paths() {
+        let log = SharedFactsLog::new();
+
+        log.append_with_origin("shared.ns.key", JsonValue::string("v1"), 100, Some(53))
+            .unwrap();
+
+        let facts = log.facts_by_path_prefix("shared.ns.");
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].origin_fact_id, Some(53), "前缀查询应携带 origin");
+
+        let by_id = log.fact_by_id(FactId(1)).unwrap();
+        assert_eq!(by_id.origin_fact_id, Some(53), "fact_by_id 应携带 origin");
+
+        assert_eq!(log.origin_fact_id(FactId(1)), Some(53), "独立查询应命中");
+        assert_eq!(log.origin_fact_id(FactId(999)), None, "未知 id 应返回 None");
+    }
+
+    /// 旧签名 append（无 origin 通道）→ origin 恒 None（向后兼容语义）
+    #[test]
+    fn test_append_without_origin_is_none() {
+        let log = SharedFactsLog::new();
+
+        log.append("shared.ns.key", JsonValue::string("v1"), 100)
+            .unwrap();
+
+        let facts = log.facts_by_path_prefix("shared.ns.");
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].origin_fact_id, None, "旧签名写入不得伪造 origin");
+        assert_eq!(log.origin_fact_id(FactId(1)), None);
+    }
+
+    /// origin 随 metadata 持久化，recover 后可查（与 fact_sources 同级语义）
+    #[test]
+    fn test_origin_persists_across_recover() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("shared.wal");
+        let meta_path = dir.path().join("shared_meta.json");
+
+        {
+            let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
+            log.append_with_origin("shared.ns.key", JsonValue::string("v1"), 100, Some(53))
+                .unwrap();
+        } // drop：模拟进程退出
+
+        let log2 = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
+        assert_eq!(
+            log2.origin_fact_id(FactId(1)),
+            Some(53),
+            "重启后 origin 丢失：R10 持久化回归失败"
+        );
+        let facts = log2.facts_by_path_prefix("shared.ns.");
+        assert_eq!(facts[0].origin_fact_id, Some(53));
+    }
+
+    /// 旧 metadata 文件（无 fact_origins 字段）→ 恢复零报错、origin=None
+    /// （serde(default) 是升级兼容的硬前提：升级前数据不得因新字段拒绝加载）
+    #[test]
+    fn test_legacy_metadata_without_origins_recovers_cleanly() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("shared.wal");
+        let meta_path = dir.path().join("shared_meta.json");
+
+        // 先正常写入产生 WAL
+        {
+            let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
+            log.append("shared.ns.key", JsonValue::string("v1"), 100)
+                .unwrap();
+        }
+        // 手写 R10 之前形态的 metadata（无 fact_origins 字段）
+        let legacy = serde_json::json!({
+            "fact_sources": {"1": 100},
+            "next_fact_id": 2,
+            "rolled_up": [],
+            "used_at_startup": {}
+        });
+        std::fs::write(&meta_path, legacy.to_string()).unwrap();
+
+        let log2 = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
+        assert_eq!(
+            log2.origin_fact_id(FactId(1)),
+            None,
+            "旧 metadata 恢复后 origin 应为 None"
+        );
+        // 事实与来源不受影响
+        assert_eq!(log2.source_session_id(FactId(1)), Some(100));
+        assert_eq!(log2.history_len(), 1);
     }
 }
