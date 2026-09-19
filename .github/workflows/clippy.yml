@@ -11,7 +11,7 @@
 # 设计说明:
 # - 使用 rust-toolchain.toml 锁定的 1.97.1 (stable 通道), 组件含 rustfmt/clippy
 # - 独立于 ci.yml 运行, push/PR 到 main 时并行触发
-# - TCB-2026-48 整改: 此前本 workflow 只有 clippy 无 fmt, Gitee 侧两者都有 ——
+# - 此前本 workflow 只有 clippy 无 fmt, Gitee 侧两者都有 ——
 #   双轨不对称, 「本地 fmt 未过」可在 GitHub 侧全绿通过。现补 fmt job 对齐。
 #   workflow 名 (`Clippy`) 与既有 clippy job 名保持不变: 分支保护的 required status
 #   check 以 "<workflow> / <job>" 全名匹配, 改名会让该 check 永久 pending 阻塞合入;

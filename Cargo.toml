@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 # EvoRule workspace：tcb / reactor / governance / cli 四 crate 统一版本。
-# 2026-09-14：v0.6.0（69 号清理，破坏性变更：collect/merge 原语退役；版本策略见 VERSION_STRATEGY.md）。
+# 2026-09-14：v0.6.0（破坏性变更：collect/merge 原语退役；版本策略见 VERSION_STRATEGY.md）。
 members = [
     "evorule-tcb",
     "evorule-reactor",

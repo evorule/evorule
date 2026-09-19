@@ -89,7 +89,6 @@
 | constitution.md（待发布）  | 治理结构：治理模型、决策层级、贡献者阶梯、冲突解决 |
 | oss_strategy.md（待发布）  | 开源策略：仓组织、贡献模型、发布模型、商业化模型   |
 | **HTTP API 文档**                        | 见 evorule-server 独立仓                           |
-| **全量应用 CLI（HTTP 调用/规则脚手架）** | 见 evorule-application 仓                          |
 
 ---
 

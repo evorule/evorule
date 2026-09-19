@@ -330,7 +330,7 @@ jobs:
 
   # ==========================================================================
   # 4. 四 target 产物附加到 Gitee Release (gitee 是主仓/发布主入口)
-  #    Gitee Go 云端 agent 对当前账号不可用(agents not available,登记台账 UV-098),故四 target 二进制均由本侧构建并经 Gitee OpenAPI 附加到
+  #    Gitee Go 云端 agent 对当前账号不可用(agents not available),故四 target 二进制均由本侧构建并经 Gitee OpenAPI 附加到
   #    gitee Release;Gitee Go agent 就绪后可切回原生构建(脚本见 .workflow/release.yml)。
   #    防挂: 所有 curl 带 --max-time（历史事故登记: 无超时的 gitee 同步曾无限挂起）。
   #    幂等: gitee release 不存在则创建,存在则复用。

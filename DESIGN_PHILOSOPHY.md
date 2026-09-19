@@ -81,7 +81,7 @@ evorule 仓 = **机制层**。**业务编排、HTTP、SDK、CLI demo、AI agent 
 | 类别               | 在哪                                                                                               |
 | ------------------ | -------------------------------------------------------------------------------------------------- |
 | **机制层(本仓)**   | evorule-tcb / evorule-reactor / evorule-governance / evorule-cli                                   |
-| **应用层**(其他仓) | evorule-server / evorule-sdk / evorule-application / evorule-dev-tools / evorule-agent / evo-agent |
+| **应用层**(其他仓) | evorule-server / evorule-sdk / evo-agent                                                          |
 
 **边界规则**(来源:`evorule-governance/src/lib.rs:14-15`):
 
@@ -319,7 +319,7 @@ TCB = while 循环 + InstructionExecutor
 | 误解                       | 真相                                                                                                                                                                                    |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | "evorule 是规则引擎"       | evorule 是 **JSON 数据集的执行引擎**。规则 = 数据,引擎 = 解释器。区别在于:规则引擎通常有专门的 DSL 和可视化 IDE,evorule 只认 JSON。                                                     |
-| "evorule 是 AI Agent 框架" | evorule 是 **确定性执行引擎,零 AI / 零 LLM**。evorule 不调用 LLM,不做 embedding,不"思考"。AI Agent 框架在 `evorule-agent` / `evo-agent` 仓(应用层),它们用 evorule 作底座。              |
+| "evorule 是 AI Agent 框架" | evorule 是 **确定性执行引擎,零 AI / 零 LLM**。evorule 不调用 LLM,不做 embedding,不"思考"。AI Agent 框架在 `evo-agent` 仓(应用层),它们用 evorule 作底座。              |
 | "evorule 是工作流引擎"     | evorule 是 **反应式执行引擎**。工作流 = 预定义的步骤序列(控制流在业务层);evorule = 由 JSON 规则动态决定的下一步(数据驱动)。区别在于:工作流是"先定好怎么做",evorule 是"运行时算怎么做"。 |
 | "evorule 是数据库"         | evorule 是 **状态机 + 审计链**,不是数据库。FactsLog 是 append-only 事件流,不是关系型存储。需要数据库请在应用层集成。                                                                    |
 | "evorule 是分布式系统"     | evorule 仓本身是**单进程反应器**。多反应器协作原语(`join` / `channel` / `shared_facts_space`)已从核心仓移除,改到 application 仓实现。                                                            |
