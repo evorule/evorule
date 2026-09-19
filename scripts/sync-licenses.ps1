@@ -3,7 +3,7 @@
 # 仓名定制规则：副本仓文本中 gitee.com/evorule/<repo> 等本仓名 token，归一化
 # （repo 名 → evorule）后与主仓文本逐行比对，一致即合规（NOTICE 末行 URL、
 # COMMERCIAL 等仓名替换版均按此规则核验）。
-# 特例：evorule-sdk 维持 Apache-2.0 自治体系（裁定留痕 89 号档），仅核验
+# 特例：evorule-sdk 维持 Apache-2.0 自治体系（仓级许可差异设计），仅核验
 # LICENSE/NOTICE 存在性，不做内容对比。
 # 用法：powershell -File scripts/sync-licenses.ps1 -Check   （默认）
 #       powershell -File scripts/sync-licenses.ps1 -Sync
@@ -22,7 +22,7 @@ $repos = @(
   'evorule-console-cloud','evorule-console','evorule-hash','evorule-bundle',
   'evorule-sdk','evorule-dsh-skill','evorule-experience-pack'
 )
-# Apache 自治仓：仅核验存在性（裁定：89 号 Q1 维持 Apache-2.0）
+# Apache 自治仓：仅核验存在性（sdk 按设计维持 Apache-2.0）
 $apacheRepos = @('evorule-sdk')
 # Apache 自治仓裁定不补的五件（存在性也不核验）
 $filesSkipApache = @('CLA-corporate.md','CLA-individual.md','COMMERCIAL_LICENSE.md','DUAL_LICENSE.md','FREE_COMMERCIAL_LICENSE.md')
