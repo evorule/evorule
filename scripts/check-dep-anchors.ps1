@@ -1,10 +1,10 @@
 # check-dep-anchors.ps1 — evorule 生态依赖锚点结构不变量核验
 # 依据：《专项-evorule生态仓全景基线-20260921.md》§6/§9（工作约束绑定，2026-09-21 项目方令）
 # 层级规则（设计/实施/核验三阶段共用的机器化表达）：
-#   A1 evo-agent 零 evorule-* 依赖（O-044 契约恒久化）
+#   A1 evo-agent 零 evorule-* 依赖（依赖契约恒久化）
 #   A2 evorule-hash 纯原语（零家族依赖、零 I/O 框架）
 #   A3 evorule-bundle 集装箱纯度（家族仅许 hash、零 I/O 框架）
-#   A4 非主仓活仓禁 path 指向主仓布局、禁 git 直连主仓仓 URL（UV-189 退役原则恒久化）
+#   A4 非主仓活仓禁 path 指向主仓布局、禁 git 直连主仓仓 URL（registry 化退役原则恒久化）
 #   A5 server 家族锁（tcb/reactor/governance 同仓单版本且互等）
 #   A6 跨仓 evorule-bundle 版本一致（两域契约）
 #   A7 console-cloud 运行时单依赖（@noble/hashes）
