@@ -500,6 +500,7 @@ evorule/
 ## Related resources
 
 - **Formal verification**: [`verification/`](verification/) — whitepaper, status (single source of truth) and evidence conventions
+- **System JSON schema validation (governance component)**: applications that consume EvoRule system JSON (agent definitions, workflow DAGs, rule sets) validate via the shared `evorule-constitution` crate (hosted in [evorule-system-rules](https://gitee.com/evorule/evorule-system-rules)); since 0.2.0 all schemas are embedded at compile time (zero runtime disk dependency) and the degradation policy defaults to `Strict` (fail-fast) — see the crate docs for the explicit-directory mode and the `Lenient` opt-in for non-gate consumers
 - Entry points for the other repos and the live demo are at the top under [Experience & Navigation](#experience--navigation)
 
 ---
@@ -993,6 +994,7 @@ evorule/
 ## 相关资源
 
 - **形式化验证**：[`verification/`](verification/) —— 白皮书、状态（唯一权威）与证据规范
+- **系统 JSON schema 校验（治理组件）**：消费 EvoRule 系统 JSON（agent 定义 / workflow DAG / 规则集）的应用，经共享组件 `evorule-constitution` crate 校验（托管于 [evorule-system-rules](https://gitee.com/evorule/evorule-system-rules)）；自 0.2.0 起 schema 全部编译期内嵌（运行时零磁盘依赖），降级策略缺省 `Strict`（fail-fast）——显式目录模式与非门禁场景的 `Lenient` 显式选用见 crate 文档
 - 生态各仓与在线 Demo 入口见顶部[「体验与导航」](#体验与导航)
 
 ---
