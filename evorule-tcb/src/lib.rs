@@ -45,6 +45,7 @@
 extern crate alloc;
 
 // 模块声明（按依赖顺序：基础类型在前）
+pub mod discipline;
 pub mod domain;
 pub mod error;
 pub mod executor;

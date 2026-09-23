@@ -49,7 +49,7 @@
 ## Highlights of the current release (v0.6.0)
 
 - **Slimmer Stable fact**: carries only the `version` number, not a full payload snapshot; WAL volume for long-lived sessions is O(n). Code: `evorule-reactor/src/fact.rs:228-242`
-- **Meta-instruction SSOT**: the tcb exports the authoritative `META_INSTRUCTION_TYPES` constant (5 types, `collect`/`merge` retired in v0.6.0); the cli `validate` references it. Code: `evorule-tcb/src/executor.rs`; test: `test_meta_instruction_types_ssot`
+- **Meta-instruction SSOT**: the tcb exports the authoritative `META_INSTRUCTION_TYPES` constant (5 types, `collect`/`merge` retired in v0.6.0); the cli `validate` enforces the L2 ruleset discipline set (DC-01..) whose accepted instruction types are test-locked to this SSOT. Code: `evorule-tcb/src/executor.rs`, `evorule-tcb/src/discipline.rs`; tests: `test_meta_instruction_types_ssot`, `discipline_types_match_tcb_ssot`
 - **WAL failure escalation**: 3 consecutive WAL write failures auto-terminate the session (fail-closed). Code: `evorule-reactor/src/facts_log.rs` (`WAL_FAIL_TERMINATE_THRESHOLD=3`)
 - **Hash-chain SSOT**: the BLAKE3 algorithm lives in the reactor and is re-exported by governance/cli; the three-way `cross_validate` agrees. Code: `evorule-reactor/src/hash.rs`; test: `test_three_way_hash_consistency`
 - **Full suite 782 passed / 0 failed** (`cargo test --workspace --features persistence`, EXIT=0, measured 2026-09-14)

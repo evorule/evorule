@@ -182,6 +182,9 @@ pub enum TransitionResult {
 ///     Err(e) => panic!("unexpected error: {:?}", e),
 /// }
 /// ```
+// 119 行: 约束前置门(BUG-P0-005) + transform 主循环 + 归因合并必须单函数原子语义,
+// 拆函数需共享 budget 与 rule_hits 中间状态; 豁免登记见 GATE_REFERENCE.md §6.3
+#[allow(clippy::too_many_lines)]
 pub fn execute_transition(
     core_eval: &[JsonValue],
     instruction: &JsonValue,
@@ -202,9 +205,55 @@ pub fn execute_transition(
     // 2. 执行 core_eval transform 列表（整棵规则树共享单一执行预算，
     //    M6 终止性宽度防线：约束 branch 子指令列表的宽度）
     //    同步收集每条规则的结构命中（命中口径见 RuleHit / executor 文档）。
-    let mut state = exec_state;
+    let mut state = exec_state.clone();
     let mut budget = MAX_TOTAL_META_INSTRUCTIONS;
     let mut rule_hits: Vec<RuleHit> = Vec::with_capacity(core_eval.len());
+
+    // 2.0 【约束前置门】enforce 约束先于任何状态变换 / IO 路由求值
+    //     （2026-09-23 P0 修复：L2 约束层被 L1 规则遮蔽导致守卫静默失效）
+    //
+    //     根因：原实现按列表顺序单趟求值，任一条更早的规则产生 `IoRequired`
+    //     即"传播即停"立即返回，其后的 `enforce` 规则**永不求值**。而 server
+    //     的合并装载顺序是"L1 core_eval 在前、L2/L3 在后"（`load_merged_with_layout`），
+    //     L1 覆盖 set/increment/call_external 等核心原语，凡 L1 已处理的指令类型，
+    //     其上的 L2 enforce 约束全部成为死规则——动作未被拦且无 Violation 留痕。
+    //
+    //     语义裁决：**约束不是状态变换**。enforce 必须在所有 transform 之前求值：
+    //     - 不可被更早规则的 `IoRequired` 早退遮蔽；
+    //     - 判定上下文固定为**转换前输入状态**（exec_state），不随规则在列表中的
+    //       位置或前序半成品状态漂移，杜绝"靠调整规则加载顺序绕过约束"这一通道。
+    //
+    //     求值顺序仍按列表下标升序（确定性保持）；命中首个 enforce 即返回
+    //     `Halted { rule_index }`，**下标契约不变**（= 合并规则列表下标，
+    //     hit-stats 归因与重放确定性依赖此契约）。
+    //
+    //     已知边界：本门只覆盖**顶层** `type == "enforce"` 规则；嵌在 branch
+    //     子指令内的 enforce 仍受"传播即停"影响（残留风险，见 P0 bug 报告）。
+    let mut enforce_hits: Vec<RuleHit> = Vec::new();
+    for (index, rule) in core_eval.iter().enumerate() {
+        let instr_type = rule
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        if instr_type != "enforce" {
+            continue;
+        }
+        let mut hit = false;
+        let result =
+            execute_meta_instruction_budgeted(rule, exec_state.clone(), 0, &mut budget, &mut hit)?;
+        enforce_hits.push(RuleHit {
+            index,
+            instr_type: instr_type.to_string(),
+            hit,
+        });
+        if let MetaInstructionResult::Halted { reason } = result {
+            // 半成品纪律同 IoRequired：不携带 rule_hits，状态修改随丢弃
+            return Ok(TransitionResult::Halted {
+                rule_index: index,
+                reason,
+            });
+        }
+    }
 
     for (index, transform_rule) in core_eval.iter().enumerate() {
         let instr_type = transform_rule
@@ -212,6 +261,10 @@ pub fn execute_transition(
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string();
+        // 约束门已求值过的 enforce 不重复执行：预算与命中归因均只计一次
+        if instr_type == "enforce" {
+            continue;
+        }
         let mut hit = false;
         let result =
             execute_meta_instruction_budgeted(transform_rule, state, 0, &mut budget, &mut hit)?;
@@ -241,6 +294,12 @@ pub fn execute_transition(
             }
         }
     }
+
+    // 2.1 归因合并：enforce 命中在约束门阶段收集，此处按下标归并回全序。
+    //     对外口径不变：按 index 升序、与输入列表等长（IoRequired/Halted
+    //     早退路径不携带 rule_hits 的既有契约不变）。
+    rule_hits.extend(enforce_hits);
+    rule_hits.sort_by_key(|h| h.index);
 
     // 3. 静默失败检测：检查是否存在匹配当前指令的宪法规则
     //    规则分类（参见 docs/rule_taxonomy.md）：
@@ -956,6 +1015,158 @@ mod tests {
                 assert_eq!(reason, "违规：禁删数据集");
             }
             other => panic!("expected Halted, got {:?}", other),
+        }
+    }
+
+    // ===== 约束前置门回归（2026-09-23 P0：L2 enforce 被 L1 IoRequired 遮蔽）=====
+
+    /// L1 风格规则：`call_external` → `io_request`（命中即产生 IoRequired 早退）
+    fn call_external_io_rule() -> JsonValue {
+        JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("branch")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    (
+                        "domain",
+                        JsonValue::object_from_pairs(&[
+                            ("type", JsonValue::string("instruction")),
+                            ("instruction_type", JsonValue::string("call_external")),
+                        ]),
+                    ),
+                    (
+                        "on_true",
+                        JsonValue::array(vec![JsonValue::object_from_pairs(&[
+                            ("type", JsonValue::string("io_request")),
+                            (
+                                "params",
+                                JsonValue::object_from_pairs(&[(
+                                    "io_type",
+                                    JsonValue::string("call_external"),
+                                )]),
+                            ),
+                        ])]),
+                    ),
+                ]),
+            ),
+        ])
+    }
+
+    /// L2 风格规则：模型白名单 `enforce`（顶层 `type=enforce`，治理链晋升写入）
+    fn model_allowlist_rule(banned: &str) -> JsonValue {
+        enforce_rule(
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("all")),
+                (
+                    "inner",
+                    JsonValue::array(vec![
+                        JsonValue::object_from_pairs(&[
+                            ("type", JsonValue::string("instruction")),
+                            ("instruction_type", JsonValue::string("call_external")),
+                        ]),
+                        JsonValue::object_from_pairs(&[
+                            ("type", JsonValue::string("eq")),
+                            ("path", JsonValue::string("instruction.params.model")),
+                            ("value", JsonValue::string(banned)),
+                        ]),
+                    ]),
+                ),
+            ]),
+            Some("模型不在白名单"),
+        )
+    }
+
+    #[test]
+    fn test_enforce_not_shadowed_by_earlier_io_required() {
+        // 修复前：L1（branch→io_request）在 index 0 命中 → IoRequired 立即返回，
+        // index 1 的 enforce 永不求值 → 违规指令拿到 IoRequest 而非被拦
+        // （守卫静默失效：无 Violation 事实、调用方视为正常）。
+        // 修复后：约束门前置求值 → Halted{rule_index:1}。
+        let instruction = make_instruction(
+            "call_external",
+            &[("model", JsonValue::string("banned-model"))],
+        );
+        let payload = make_payload(0);
+        let core_eval = vec![
+            call_external_io_rule(),
+            model_allowlist_rule("banned-model"),
+        ];
+
+        match execute_transition(&core_eval, &instruction, &payload, &[]).unwrap() {
+            TransitionResult::Halted { rule_index, reason } => {
+                assert_eq!(rule_index, 1, "rule_index 必须仍是合并列表中的原始下标");
+                assert_eq!(reason, "模型不在白名单");
+            }
+            other => panic!("expected Halted（约束门前置）, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_enforce_pass_through_preserves_io_required() {
+        // 反向回归：enforce 未命中时 IO 路由语义不变（仍为 IoRequired），
+        // 证明修复只改变"违规"路径，不侵扰正常路径。
+        let instruction = make_instruction(
+            "call_external",
+            &[("model", JsonValue::string("allowed-model"))],
+        );
+        let payload = make_payload(0);
+        let core_eval = vec![
+            call_external_io_rule(),
+            model_allowlist_rule("banned-model"),
+        ];
+
+        match execute_transition(&core_eval, &instruction, &payload, &[]).unwrap() {
+            TransitionResult::IoRequired { io_type, .. } => {
+                assert_eq!(io_type, "call_external");
+            }
+            other => panic!("expected IoRequired, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_enforce_judged_on_pre_transform_input_state() {
+        // 语义变更断言：约束判定基于**转换前输入状态**，前序 set 改写的 payload
+        // 不得进入 enforce 判定——否则"调整规则顺序"即可操纵约束是否被满足。
+        // 规则：set(x=1) → enforce(eq payload.x == 1 → 违规)
+        // 修复前（enforce 在 set 之后、基于半成品求值）→ 命中 Halted；
+        // 修复后（约束门基于输入状态 x=0）→ 不命中，正常收敛。
+        let instruction = make_instruction("noop", &[]);
+        let payload = make_payload(0);
+        let core_eval = vec![
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("set")),
+                (
+                    "params",
+                    JsonValue::object_from_pairs(&[
+                        ("attr", JsonValue::string("x")),
+                        ("operation", JsonValue::string("set")),
+                        ("value", JsonValue::Integer(1)),
+                    ]),
+                ),
+            ]),
+            enforce_rule(
+                JsonValue::object_from_pairs(&[
+                    ("type", JsonValue::string("eq")),
+                    ("path", JsonValue::string("payload.x")),
+                    ("value", JsonValue::Integer(1)),
+                ]),
+                Some("x 被置 1"),
+            ),
+        ];
+
+        match execute_transition(&core_eval, &instruction, &payload, &[]).unwrap() {
+            TransitionResult::State {
+                new_payload,
+                rule_hits,
+                ..
+            } => {
+                assert_eq!(new_payload.get("x").and_then(|v| v.as_i64()), Some(1));
+                // 归因口径不变：按下标升序、与输入列表等长
+                assert_eq!(rule_hits.len(), 2);
+                assert_eq!(rule_hits[0].index, 0);
+                assert_eq!(rule_hits[1].index, 1);
+            }
+            other => panic!("expected State（约束基于输入状态求值）, got {:?}", other),
         }
     }
 

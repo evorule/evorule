@@ -36,6 +36,12 @@
 
 ---
 
+## [Unreleased]
+
+- 🔄 **P0 修复（BUG-P0-005）：约束前置门**——`execute_transition` 中所有顶层 `enforce` 约束现在**先于任何状态变换 / IO 路由**求值，判定上下文固定为转换前输入状态（`exec_state`），不再参与序列内的早退竞争。根因：原实现按列表顺序单趟求值，更早规则的 `IoRequired`「传播即停」导致其后 L2 `enforce` 守卫永不求值（动作未被拦且无 Violation 留痕）。语义裁决：约束不是状态变换。求值顺序仍按列表下标升序（确定性保持），`Halted.rule_index` 下标契约不变；命中归并按下标恢复全序，`rule_hits` 对外口径不变。已知边界：嵌在 branch 子指令内的 enforce 仍受「传播即停」影响（残留风险 R-1，由纪律条款 DC-02 拦载）
+- 🆕 **L2 规则集形态纪律**：`evorule-tcb` 新增 `discipline` 模块——判定条款数据化为 `discipline/core_eval.json`（可版本化 / 可 diff / 可评审，`include_str!` 编译期嵌入，运行时零 I/O），并附 SSOT 漂移防线测试（纪律承认的元指令集合必须与 `META_INSTRUCTION_TYPES` 一致，两个方向都拦）；`evorule-cli` 新增 `discipline_gate` 子命令模块，把内核看不见的列表级事实标注进 `instruction._ctx` 后交 `execute_transition` 求值。`evorule validate` 从「顶层元指令白名单」升级为「规则集形态门禁」：作用域扩大到含 branch 内嵌子指令的全部节点，条款 DC-01..DC-NN（未知类型 / enforce 非顶层 / enforce 缺 reason / io_request 缺 io_type / 遮蔽检测等）；首次在存量规则仓跑出新违规属预期（违规历史上一直存在，只是此前无检查）
+- 🔄 **Rust 工具链锁定 1.97.1 → 1.98.1**：1.97.1 对 `evorule-reactor` 存在稳定触发的 ICE（rmeta/encoder），1.98.1 实测全仓测试通过；`rust-toolchain.toml` 与 `.gitee-ci/validate.yml`（lint/test/build 三 stage 镜像）、`.workflow/release.yml`（自装工具链）同步对齐，不得回退
+
 ## [0.6.1] - 2026-09-20
 
 ### 🆕 新增

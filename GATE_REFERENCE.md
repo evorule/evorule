@@ -334,7 +334,7 @@ src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allo
 
 > 注：H5 + 走神 9 外迁后，`object_pool.rs` / `cluster.rs` / `api/{auth,session,server,hot_reload}.rs` / `io_handlers/{http,memory}_handler.rs` / `bin/evorule_server.rs` 均已迁出 evorule-governance（现位于 evorule-server 独立仓）；evorule-governance 现为纯机制层库。
 
-### 6.3 src/ 函数级 cognitive_complexity / too_many_lines 豁免 (16 处)
+### 6.3 src/ 函数级 cognitive_complexity / too_many_lines 豁免 (17 处)
 
 按"重构成本/收益"权衡, 大型 dispatch / 拆函数影响接口稳定性的生产函数:
 
@@ -356,6 +356,7 @@ src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allo
 | `evorule-cli/src/executor.rs:53` | `pub fn execute` | 108/100 (v0.3.1 新增) | CLI 主循环 + I/O 两阶段 + max_steps 门禁必须单函数 |
 | `evorule-tcb/src/transition.rs:1245` | `fn test_while_loop_condition_false_returns_state_not_ignored` | 102/100 (v0.3.1 新增) | test fixture 故意复杂, 拆函数让上下文散落 |
 | `evorule-tcb/src/transition.rs:1955` | `fn react_core_eval` | 149/100 (v0.3.1 新增) | 3 条 ReAct 规则必须在同一函数内构造完整 context |
+| `evorule-tcb/src/transition.rs:185` | `pub fn execute_transition` | 119/100 (2026-09-23 新增) | 约束前置门(BUG-P0-005) + transform 主循环 + 归因合并必须单函数原子语义, 拆函数需共享 budget 与 rule_hits 中间状态 |
 
 每处豁免都配 `// 豁免理由: ...` 注释, 说明豁免依据(deny 类永不豁免 / warn 类按"成本/收益"权衡)。
 

@@ -5,6 +5,9 @@ target/
 **/.build/
 .check-target/
 **/.check-target/
+# rustc ICE 调试产物目录（工具链排查时生成）
+target-ice/
+**/target-ice/
 
 # 测试日志与中间产物
 test_results/

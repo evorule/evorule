@@ -2,13 +2,15 @@
 # Rust toolchain 锁定
 #
 # 目的:
-# - 锁 1.97.0(Gitee Go runner 与本机都是 stable 通道,2026-07 出 1.97.1)
+# - 锁 1.98.1(本机 stable 通道;2026-07 出 1.97.1,但 1.97.1 对 evorule-reactor
+#   存在稳定触发的 ICE(rmeta/encoder no entry found for key,见 report-006 R-T1),
+#   1.98.1 实测全仓 821 测试通过,故最低可用锁定 = 1.98.1)
 # - 与 Cargo.toml `[workspace.package].rust-version = "1.74"` 兼容(MSRV 是下限)
 # - CI / 本地 / 贡献者使用相同版本,避免 stable 漂移
 # - clippy + rustfmt 组件必须装(clippy 是 1.0 升门条件之一)
-# - Kani 用自带工具链,不依赖此文件
+# - Kani 用自带工具链,不依赖此文件(evorule-tcb/ 下另有 nightly pin)
 # =============================================================================
 [toolchain]
-channel = "1.97.1"
+channel = "1.98.1"
 profile = "minimal"
 components = ["rustfmt", "clippy"]

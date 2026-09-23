@@ -4,7 +4,7 @@
 //! 子命令模块
 //!
 //! 每个子命令对应一个文件：
-//! - `validate`：用 tier1 RuleValidator 校验规则
+//! - `validate`：规则集形态门禁（L2 纪律，见 `discipline_gate`）
 //! - `run`：调 executor 执行规则，输出 fact log
 //! - `replay`：pretty-print fact log
 //! - `diff`：按 FactId 对齐对比两个 fact log
@@ -14,6 +14,7 @@
 
 pub mod anchor_keygen;
 pub mod diff;
+pub mod discipline_gate;
 pub mod replay;
 pub mod run;
 pub mod validate;
