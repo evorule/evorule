@@ -54,6 +54,13 @@
 
 （此后按时间顺序追加，格式：日期 + 事实 / 依据 / 影响 / 修正去向）
 
+### 2026-09-24：约束前置门（BUG-P0-005）执行语义变更的验证影响登记
+
+- **事实**：`evorule-tcb/src/transition.rs` 的 `execute_transition` 发生执行语义变更（commit `0cd1a6b`/`48cacda`，2026-09-23/24）——所有顶层 `enforce` 约束改为**先于任何状态变换/IO 路由**求值（约束前置门，修复 BUG-P0-005：L2 守卫被更早规则的 `IoRequired`「传播即停」静默遮蔽），判定上下文固定为转换前输入状态快照（`exec_state.clone()`），求值顺序仍按列表下标升序，`Halted.rule_index` 下标契约与 `rule_hits` 对外口径（等长/升序）经归并保持；同批新增 `discipline` 模块（规则集形态纪律数据化）与工具链锁定 1.98.1。proof 源码（`evorule-tcb/tests/kani/kani_proofs.rs`）**不在变更集**。CI kani.yml 于 `48cacda` 全量实跑 PASS（TCB+reactor job 全绿，主仓 7 workflow 全绿）。**无既有 PASS 证据失效需隔离**。
+- **依据**：diff 实测（A 档 14 个 proof harness——resolve_path 11 个 + JsonValue 3 个——全部不经过 `execute_transition`，与变更文件作用面**零交集**；B 档 enforce 系 3 个 `verify_exec_enforce_{never_panics,halt_semantics,deterministic}` 与 P19 `verify_execute_transition_never_panics`/P21 `verify_react_io_required` 的 harness 符号化执行整个函数体，直接覆盖新增约束门路径）；终止性核验（约束门与主循环**共享同一** `&mut budget`，enforce 在主循环 continue 跳过不重复扣——M6 总预算防线保持）；CI runs（head_sha=`48cacda` kani job success）。
+- **影响**：① P0-5 的确定性语义**增强**（enforce 判定不再依赖规则排列位置），B 档主状态不变（仍 ❌ 实测超时），🔵 兜底强化（新增 3 个行为回归测试：遮蔽场景 Halted/IoRequired 两向）；② P0-7/P0-8 终止性语义保持（共享预算），TLA+ 模型（N_MAX=2）无需变更；③ A 档证据基线 `a3d728f` 维持有效（harness 零交集 + CI 实跑旁证），按 M3.4 严格口径的 WSL 复跑落盘列为待办，交项目方裁定是否执行；④ 「enforce 判定与规则排列无关」这一新保证目前仅行为测试覆盖、无 proof——列为 B 档 proof 候选（排列等价性），交遗留清单。
+- **修正去向**：本条目即披露记录；`verification/STATUS.md`（P0-3/P0-5/P0-6/P0-7/P0-8 五行状态依据与备注同步）；待办两项（WSL A 档复跑落盘、排列等价性 proof）登记于本条目，交项目方裁定。
+
 ### 2026-09-20：快照版本随 0.6.1 发版收口同步（v0.6.0 → v0.6.1）
 
 - **事实**：workspace 版本收口 0.6.1（commit `c7e6266`，2026-09-20），STATUS.md 快照同步 v0.6.0 → v0.6.1。本批为文档版本号收口与历史版本锚去版本化改写（教程/参考/README 中失效的旧版本字面量清零），proof 源码、生产源码、证据库零变更——A 档证据基线 `a3d728f` 有效性不受影响（M3.4：无触及 proof 源码或所验证生产源码的变更）。
