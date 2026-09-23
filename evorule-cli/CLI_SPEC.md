@@ -49,7 +49,7 @@
 | `io_util.rs` | 规则加载(确定性排序)+ payload 解析 | `load_rules()`, `parse_initial_payload()` |
 | `output.rs` | human-readable 格式化 + diff 前缀 | `fact_to_human()`, `facts_to_human()` |
 | `signing.rs` | G-A1 审计锚点签名(复制自 evorule-governance,ed25519 确定性签名) | `AuditSigner`, `verify_signature()` |
-| `commands/validate.rs` | validate 子命令:core_eval 元指令白名单 | `run()` |
+| `commands/validate.rs` | validate 子命令:规则集形态门禁(判定条款=`evorule-tcb/discipline/core_eval.json`,机制=`commands/discipline_gate.rs`) | `run()` |
 | `commands/run.rs` | run 子命令:加载→执行→输出 fact log | `run()` |
 | `commands/replay.rs` | replay 子命令:读 fact log → pretty-print | `run()` |
 | `commands/diff.rs` | diff 子命令:按 FactId 数组下标对齐 | `run()` |
@@ -194,4 +194,4 @@ the spec needs updating, update it **first**, then update `build.rs`.
 
 **`verify_hash_chain` 已删除 (v0.3.2)**: 原函数始终返回 `true` 是"假验证"陷阱,已彻底删除。替代方案:用 `compute_chain_hash` 重算后与存储的链哈希比对,或用 `verify-chain` 命令读取带哈希字段的 WAL 并逐一校验。
 
-**validate 元指令白名单 (规则清理批次收窄)**: 仅 5 种真元指令(branch / set / push / io_request / enforce,= TCB SSOT 常量 `META_INSTRUCTION_TYPES`)。noop / increment / decrement 是**指令层**类型,不是元指令,不得混入白名单;`collect` / `merge` 已随规则清理退役,规则文件使用将加载即拒。
+**validate 规则集形态门禁 (2026-09-23 起)**: validate 从「顶层元指令白名单」升级为「规则集形态门禁」——判定条款数据化于 `evorule-tcb/discipline/core_eval.json`(DC-01..DC-NN, 可版本化/可 diff/可评审), 机制在 `commands/discipline_gate.rs`(把内核看不见的列表级事实标注进 `instruction._ctx` 后交 `execute_transition` 求值), 作用域覆盖含 branch 内嵌子指令的全部节点。条款含: 未知元指令(DC-01, 即旧白名单职责, SSOT 仍为 `META_INSTRUCTION_TYPES` 且由 tcb 测试双向锁定)/enforce 必须顶层声明(DC-02)/enforce 必须携带 params.reason(DC-03)/io_request 必须携带 params.io_type(DC-04)/遮蔽检测(DC-05)等。元指令类型总集不变(5 种真元指令; `noop` / `increment` / `decrement` 是**指令层**类型; `collect` / `merge` 已退役, 规则文件使用将加载即拒)。首次在存量规则仓跑出新违规属预期——违规历史上一直存在, 只是此前无检查。

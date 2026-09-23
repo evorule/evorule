@@ -146,29 +146,23 @@ REM 产物: .build\rust\release\evorule.exe
 
 ### 1. `evorule validate <rules-dir>`
 
-校验 JSON 规则文件,验证 transform 类型是否在 core_eval 元指令白名单内。
+校验 JSON 规则文件的**形态纪律**(L2 discipline)——判定条款在 `evorule-tcb/discipline/core_eval.json`(DC-01..DC-NN), 机制在 `commands/discipline_gate.rs`: 遍历含 branch 内嵌子指令的全部节点, 把内核看不见的列表级事实标注进 `instruction._ctx`, 交 `execute_transition` 求值; 命中即拒载。作用域超出旧版「顶层 type 白名单」——BUG 不住在顶层(BUG-P0-005: 每条规则 type 都合法、整个规则集仍可能让守卫永不求值)。
 
 ```bash
 evorule validate ./rules/
 ```
 
-输出:
+主要纪律条款(完整清单见 `evorule-tcb/discipline/core_eval.json`, 可 diff 可评审):
 
-- `[OK]   transform[N]: type='branch'` —— 合法 type
-- `[ERROR] transform[N]: unknown type 'X'` —— 未知 type(阻断)
-- `[ERROR] transform[N]: missing 'type' field` —— 缺少 type 字段(阻断)
+| 条款 | 含义 |
+| --- | --- |
+| DC-01 | 未知元指令类型(旧白名单职责; SSOT=`META_INSTRUCTION_TYPES`, 与纪律集由 tcb 测试双向锁定) |
+| DC-02 | `enforce` 必须顶层声明(嵌 branch 子指令时受「传播即停」影响) |
+| DC-03 | `enforce` 必须携带 `params.reason`(缺 reason 的 Halted 不可审计) |
+| DC-04 | `io_request` 必须携带 `params.io_type`(缺失时上层无法路由 I/O) |
+| DC-05 | 遮蔽检测(排列组合导致约束永不求值) |
 
-合法 type 白名单(core_eval 元指令,SSOT 常量 `META_INSTRUCTION_TYPES`,5 种):
-
-| type         | 用途                                     |
-| ------------ | ---------------------------------------- |
-| `branch`     | 条件分支(domain 匹配 → on_true/on_false) |
-| `set`        | 修改 payload 字段(set/add/sub)           |
-| `push`       | 推指令到队列前端(插队语义)               |
-| `io_request` | 产生 I/O 请求信号(不修改状态)            |
-| `enforce`    | L2 元规则强制阻断(halt 语义)             |
-
-注:`noop` / `increment` / `decrement` 是**业务指令层**类型(由 `core_eval.json` 映射),不是元指令,不在 transform 白名单内。
+注: 首次在存量规则仓跑出新违规属预期——违规历史上一直存在, 只是此前没有任何东西检查它们。元指令类型总集(5 种真元指令)与退役类型(`collect` / `merge` 加载即拒)口径不变。
 
 退出码:
 
@@ -595,7 +589,8 @@ evorule-cli
 │   ├── signing.rs       # G-A1 审计锚点签名(ed25519)
 │   └── commands/
 │       ├── mod.rs           # 子命令模块声明
-│       ├── validate.rs      # validate:core_eval 元指令白名单校验
+│       ├── validate.rs      # validate:规则集形态门禁(条款=discipline/core_eval.json)
+│       ├── discipline_gate.rs # 形态门禁机制:_ctx 事实标注+execute_transition 求值
 │       ├── run.rs           # run:加载→执行→输出 fact log
 │       ├── replay.rs        # replay:读 fact log → pretty-print
 │       ├── diff.rs          # diff:按 FactId 数组下标对齐比对

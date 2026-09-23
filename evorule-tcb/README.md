@@ -244,7 +244,8 @@ evorule-tcb/
 │   ├── path.rs     # 路径解析（点号 + 数组索引 + 转义）
 │   ├── domain.rs   # 域类型评估器（7 基本类型 + has_fields + 递归深度限制）
 │   ├── executor.rs # 元指令执行器（set/push/branch/io_request/enforce）
-│   ├── transition.rs # execute_transition：状态转换入口
+│   ├── transition.rs # execute_transition：状态转换入口（含约束前置门：顶层 enforce 先于一切 transform/IO 求值）
+│   ├── discipline.rs # L2 规则集形态纪律：core_eval.json 判定条款编译期嵌入（include_str!）+ SSOT 漂移防线测试
 │   └── error.rs    # TcbError（11 个变体，std feature 下实现 std::error::Error）
 └── tests/
     └── integration_test.rs  # 外部 crate 视角集成测试
