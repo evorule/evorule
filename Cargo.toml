@@ -7,6 +7,7 @@ members = [
     "evorule-tcb",
     "evorule-reactor",
     "evorule-governance",
+    "evorule-discipline",
     "evorule-cli",
     "evorule-wasm-demo",
 ]

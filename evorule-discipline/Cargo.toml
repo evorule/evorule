@@ -1,0 +1,23 @@
+[package]
+name = "evorule-discipline"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+description = "EvoRule L2 规则集形态纪律门禁 —— 机制侧遍历/事实标注 + 内核求值（纪律数据 SSOT 在 evorule-tcb）"
+
+[dependencies]
+evorule-tcb = { path = "../evorule-tcb", version = "0.6.1" }
+# serde_to_tcb 同源序列化（SSOT：门禁看到的 JSON 与内核/WAL/auditor 看到的完全一致，
+# 见 discipline.rs 模块文档「使用方」一节，禁止在本 crate 自写转换）
+evorule-reactor = { path = "../evorule-reactor", version = "0.6.1", features = [
+    "persistence",
+] }
+serde_json = "1.0" # 解析嵌入的纪律 core_eval（tcb 零依赖不解析，消费方负责）
+
+[lints]
+workspace = true

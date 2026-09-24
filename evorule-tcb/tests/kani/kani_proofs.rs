@@ -1103,6 +1103,89 @@ fn verify_exec_enforce_deterministic() {
     }
 }
 
+/// P18d: 约束前置门排列等价——顶层 enforce 的判定与其在 core_eval 中的
+/// 排列位置无关（BUG-P0-005 修复的核心语义保证，2026-09-24 约束前置门引入）。
+/// 同一 {enforce, noop} 两规则集按两种排列分别执行：
+/// - x == v（domain 为真）：两排列都必须 `Halted`，`reason` 原文一致
+///   （`rule_index` 允许不同——它是各自列表内的下标，本就随排列变化）；
+/// - x != v（domain 为假）：两排列都不得因 enforce 停，状态面等价
+///   （State 载荷一致 / Ignored 归因向量等长）。
+/// 判定依据：约束前置门把 enforce 判定上下文固定为转换前输入状态快照，
+/// 且 noop 不修改 `__exec__.*` 求值面。
+#[kani::proof]
+fn verify_exec_enforce_permutation_equivalence() {
+    let x = kani::any::<i64>();
+    let v = kani::any::<i64>();
+    let enforce_rule = eq_enforce_instruction(v);
+    let noop_rule = model::obj(vec![("type", JsonValue::string("noop"))]);
+    let instruction = model::obj(vec![("type", JsonValue::string("noop"))]);
+    let queue: Vec<JsonValue> = vec![];
+    // 排列 A：enforce 在前；排列 B：noop 在前。各独立构造相同 payload（避免 JsonValue 深拷贝展开）。
+    let core_a = vec![enforce_rule.clone(), noop_rule.clone()];
+    let core_b = vec![noop_rule, enforce_rule];
+    assert!(
+        core_a.len() == 2 && core_b.len() == 2,
+        "结构自检失败 [core]: 应各为 2 条规则"
+    );
+    shape_str(&core_a[0], "core_a[0]", "enforce");
+    shape_str(&core_b[1], "core_b[1]", "enforce");
+    shape_str(&core_a[1], "core_a[1]", "noop");
+    shape_str(&core_b[0], "core_b[0]", "noop");
+    shape_str(
+        shape_field(&instruction, "instruction", "type"),
+        "instruction.type",
+        "noop",
+    );
+    let mut pm_a = ObjectMap::new();
+    pm_a.insert("x".to_string(), JsonValue::Integer(x));
+    let payload_a = JsonValue::Object(pm_a);
+    let mut pm_b = ObjectMap::new();
+    pm_b.insert("x".to_string(), JsonValue::Integer(x));
+    let payload_b = JsonValue::Object(pm_b);
+
+    let ra = execute_transition(&core_a, &instruction, &payload_a, &queue);
+    let rb = execute_transition(&core_b, &instruction, &payload_b, &queue);
+    match (ra, rb) {
+        // domain 为真：两排列都必须 Halted，reason 原文跨排列一致
+        (
+            Ok(TransitionResult::Halted { reason: r1, .. }),
+            Ok(TransitionResult::Halted { reason: r2, .. }),
+        ) => {
+            kani::assert(
+                x == v,
+                "Halted 收场当且仅当 enforce domain 为真（payload.x == value）",
+            );
+            kani::assert(r1 == r2, "Halted.reason 原文必须跨排列一致");
+        }
+        // domain 为假：两排列都不得因 enforce 停；状态面（payload/queue）等价
+        (
+            Ok(TransitionResult::State {
+                new_payload: pa,
+                new_queue: qa,
+                ..
+            }),
+            Ok(TransitionResult::State {
+                new_payload: pb,
+                new_queue: qb,
+                ..
+            }),
+        ) => {
+            kani::assert(x != v, "State 收场当且仅当 enforce domain 为假");
+            kani::assert(pa == pb, "两排列终态 payload 必须等价");
+            kani::assert(qa == qb, "两排列终态 queue 必须等价");
+        }
+        // domain 为假且规则整体产生 noop 效果：归因向量等长（下标本异，不逐位比）
+        (
+            Ok(TransitionResult::Ignored { rule_hits: ha, .. }),
+            Ok(TransitionResult::Ignored { rule_hits: hb, .. }),
+        ) => {
+            kani::assert(x != v, "Ignored 收场当且仅当 enforce domain 为假");
+            kani::assert(ha.len() == hb.len(), "两排列归因向量必须等长");
+        }
+        _ => kani::assert(false, "两排列的结果形态必须一致（判定与排列无关）"),
+    }
+}
+
 // ==================== Layer 5: 状态转换层 ====================
 
 /// P19: execute_transition 永不 panic（结构化符号）

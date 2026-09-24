@@ -54,6 +54,13 @@
 
 （此后按时间顺序追加，格式：日期 + 事实 / 依据 / 影响 / 修正去向）
 
+### 2026-09-24：evorule-discipline crate 抽取、排列等价 proof 入库与证据残留隔离
+
+- **事实**：① 纪律门禁判定引擎自 `evorule-cli/src/commands/discipline_gate.rs` 抽出为独立 crate `evorule-discipline`（机制侧遍历/事实标注 + 内核求值，判定 SSOT 与 evorule-server 共享），workspace 接线、cli 切换依赖，cli 侧逻辑文件减 552 行；② `evorule-tcb/tests/kani/kani_proofs.rs` 新增排列等价 proof `verify_exec_enforce_permutation_equivalence`（上一条目④的落地——「enforce 判定与规则排列位置无关」新保证的 proof 化），按 B 档登记（STATUS.md 附录 A 对照表/附录 B 分档清单、kani.yml b-tier batch 3 三处同步，proof 总数 45→46、tcb 34→35、B 档 20→21，对外数字 README/ROADMAP/verification README 同步）；③ 两仓 `verification/evidence/kani/` 下 19 个 `.FAIL.raw` 残留（2026-09-24 本地 Kani 批验尝试产物，未入库）隔离至各自 `_invalidated/`（TCB 批次 9 / reactor 批次 4）——内容为 WSL rustup 工具链安装故障（os error 39 Directory not empty）原始输出，**验证未实际执行**，不构成证据（M3.2 不满足），涉及 A 档/CI proofs 均有现行有效替代证据（批次 8 于 `a3d728f` 复跑 18/18 PASS）。
+- **依据**：cargo fmt / clippy -D warnings / test --workspace 全绿（2026-09-24 本地）；`check_status_sync.py` 12 项全 PASS（含 S4 命名、S7 证据时效——A 档既有 proof 函数本体零变更、S8 附录对齐、S9 对外数字、S11 本条目联动）。
+- **影响**：A 档 14 个证据基线 `a3d728f` 有效性不变（既有 harness 函数零变更，新增证明不触及）；B 档 21 个（排列等价 proof 待人工验证，B 档整体「当前不可运行」判定不变）；`evorule-discipline` 0.6.1 以 path 依赖供本机联调，crates.io 发布与 server 侧纯 version 切换待后续批次。
+- **修正去向**：本条目即披露记录；`verification/STATUS.md`（附录 A/B、P0-5 行口径）；`README.md`/`ROADMAP.md`/`verification/README.md`（proof 总数）；两仓 `_invalidated/README.md`（隔离批次 9/4）；rustup 环境故障根因（工具链目录残留冲突）留待验证环境专项处理。
+
 ### 2026-09-24：约束前置门（BUG-P0-005）执行语义变更的验证影响登记
 
 - **事实**：`evorule-tcb/src/transition.rs` 的 `execute_transition` 发生执行语义变更（commit `0cd1a6b`/`48cacda`，2026-09-23/24）——所有顶层 `enforce` 约束改为**先于任何状态变换/IO 路由**求值（约束前置门，修复 BUG-P0-005：L2 守卫被更早规则的 `IoRequired`「传播即停」静默遮蔽），判定上下文固定为转换前输入状态快照（`exec_state.clone()`），求值顺序仍按列表下标升序，`Halted.rule_index` 下标契约与 `rule_hits` 对外口径（等长/升序）经归并保持；同批新增 `discipline` 模块（规则集形态纪律数据化）与工具链锁定 1.98.1。proof 源码（`evorule-tcb/tests/kani/kani_proofs.rs`）**不在变更集**。CI kani.yml 于 `48cacda` 全量实跑 PASS（TCB+reactor job 全绿，主仓 7 workflow 全绿）。**无既有 PASS 证据失效需隔离**。

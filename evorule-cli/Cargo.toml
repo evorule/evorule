@@ -50,6 +50,8 @@ evorule-tcb = { path = "../evorule-tcb", version = "0.6.1" }
 evorule-reactor = { path = "../evorule-reactor", version = "0.6.1", features = [
     "persistence",
 ] }
+# L2 纪律门禁判定引擎（2026-09-24 接线：机制自 cli 抽出，与 server 共享 SSOT）
+evorule-discipline = { path = "../evorule-discipline", version = "0.6.1" }
 
 # CLI essentials (all pure Rust)
 serde = { version = "1", features = ["derive"] }

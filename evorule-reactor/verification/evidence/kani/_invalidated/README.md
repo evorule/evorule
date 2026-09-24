@@ -73,3 +73,13 @@
 **同批其他处置**：复跑首轮产物中 4 个文件（文件名 `*_PASS_a3d728f_20260918_105558`，实为上述 E0599 编译失败输出）因证据生成脚本文件名硬编码 `_PASS_` 而误名（文件名 PASS、内容 FAIL），确认零证据价值（编译失败过程，非属性反例）后直接删除，不适用隔离；脚本缺陷同批修复（stdout 配对文件落盘、命名按实测状态生成）。
 
 **披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-18 仓库提交历史整理与证据基线重置条目。
+
+## 批次 4（2026-09-24）：4 个 `.FAIL.raw` 环境故障残留隔离
+
+**来源**：`../`（`evorule-reactor/verification/evidence/kani/`），4 个 `.raw` 文件（2026-09-24 本地 Kani 批验尝试的原始输出，未入库）。
+
+**失效判定**（[MECHANISM.md](../../../../../verification/MECHANISM.md) M3）：`.raw` 命名不符合 M3.1 四要素规范，且内容为 WSL rustup 工具链安装故障原始输出（`os error 39: Directory not empty`）——**验证未实际执行**，无验证结论（M3.2 不满足）。涉及 4 个 CI proofs（P0-11/P1-3/P1-5/P1-6）均有现行有效替代证据（批次 3 于 `a3d728f` 复跑 4/4 PASS，见 [STATUS.md](../../../../../verification/STATUS.md)）。
+
+**处置**：移入本隔离区（未入库文件，直接 `Move-Item`，无 git 历史锚定）；故障根因（rustup 工具链目录残留冲突）留待验证环境专项处理。
+
+**披露记录**：本次为提交前置门禁（check_status_sync S4）整改，随 evorule-discipline crate 抽取批次提交。

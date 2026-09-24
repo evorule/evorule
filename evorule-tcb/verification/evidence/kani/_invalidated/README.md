@@ -119,3 +119,18 @@
 **同批跨仓处置**：`evorule-reactor/verification/evidence/kani/` 4 对旧 PASS 证据（锚定 `34c841d`）隔离至该仓同级 `_invalidated/` 批次 3（reactor `src/invariants.rs` 单元测试辅助 `set_io_result` 同批适配 kani cfg Object 后端 API——`entry` → `contains_key` + `get_mut`/`insert`，proof 函数与生产代码零变更）。
 
 **披露记录**：见 [DISCLOSURE_LOG.md](../../../../../verification/DISCLOSURE_LOG.md) 2026-09-18 条目。
+
+## 批次 9（2026-09-24）：15 个 `.FAIL.raw` 环境故障残留隔离
+
+**来源**：`../`（`evorule-tcb/verification/evidence/kani/`），15 个 `.raw` 文件（2026-09-24 本地 Kani 批验尝试的原始输出，未入库）。
+
+**失效判定**（[MECHANISM.md](../../../../../verification/MECHANISM.md) M3）：
+
+1. **命名违规**：`.raw` 为脚本直出文件名，不符合 M3.1 四要素命名规范（无 commit SHA/时间戳）；
+2. **不构成证据**：内容为 WSL rustup 工具链安装故障原始输出（`os error 39: Directory not empty`，组件重命名冲突）——**验证未实际执行**，无验证结论（M3.2 不满足）；
+3. **涉及 A 档 proofs（P0-3 系 12 个、P0-6 系 3 个）均有现行有效替代证据**（批次 8 于 `a3d728f` 复跑 18/18 PASS，见 [STATUS.md](../../../../../verification/STATUS.md)）；
+4. `P0-5.verify_exec_enforce_permutation_equivalence.FAIL.raw`：排列等价新证明首次尝试因同一环境故障未跑成，无有效证据；该证明按 B 档登记（[STATUS.md](../../../../../verification/STATUS.md) 附录 B），待环境修复后人工验证。
+
+**处置**：移入本隔离区（未入库文件，直接 `Move-Item`，无 git 历史锚定）；故障根因（rustup 工具链目录残留冲突）留待验证环境专项处理。
+
+**披露记录**：本次为提交前置门禁（check_status_sync S4）整改，随 evorule-discipline crate 抽取批次提交。
