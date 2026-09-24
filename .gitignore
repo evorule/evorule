@@ -19,6 +19,7 @@ test_output.log
 # 例外：验证证据日志必须入库（verification/evidence/README.md §六 强制，防止"跑完即丢"）
 !verification/evidence/**/*.log
 !**/verification/evidence/**/*.log
+!**/verification/*/evidence/**/*.log
 
 # 运行时数据
 data/

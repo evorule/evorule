@@ -1,0 +1,13 @@
+warning: evorule-tcb@0.6.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+warning: evorule-tcb@0.6.0: evorule-tcb 字面量门禁 PASSED - 已扫 7 文件 x 24 模式, 0 违规
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running tests\carrier_diff.rs (target\debug\deps\carrier_diff-a19f6f47a624a95d.exe)
+
+running 4 tests
+test t1b_jsonvalue_construct_access_roundtrip ... ok
+test t1a_objectmap_iter_order_deterministic ... ok
+test t2b_domain_eval_over_limit_explicit_reject ... ok
+test t2a_domain_eval_bounded_depth64_ok ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

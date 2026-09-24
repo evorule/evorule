@@ -1,0 +1,22 @@
+warning: evorule-tcb@0.6.0: evorule-tcb 策略层检测 PASSED - 未发现策略层反模式
+warning: evorule-tcb@0.6.0: evorule-tcb 字面量门禁 PASSED - 已扫 7 文件 x 24 模式, 0 违规
+   Compiling evorule-reactor v0.6.0 (D:\evorule\evorule-reactor)
+warning: evorule-reactor@0.6.0: evorule-reactor 策略层检测 PASSED - 未发现策略层反模式
+warning: evorule-reactor@0.6.0: evorule-reactor 字面量门禁 PASSED - 已扫 17 文件 x 15 模式, 0 违规
+warning: linker stdout: 正在创建库 D:\evorule\target\debug\deps\evorule_reactor.dll.lib 和对象 D:\evorule\target\debug\deps\evorule_reactor.dll.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `evorule-reactor` (lib) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.41s
+     Running tests\carrier_diff.rs (target\debug\deps\carrier_diff-1cea922b8d0c83fd.exe)
+
+running 5 tests
+test t5c_fact_hash_deterministic_tamper_detected ... ok
+test t5b_chain_step_injective_and_idempotent ... ok
+test t5a_content_hash_deterministic_and_discriminating ... ok
+test t6b_append_only_history_preserved ... ok
+test t6a_append_version_monotonic_and_snapshot_consistent ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
