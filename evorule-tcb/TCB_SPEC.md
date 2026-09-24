@@ -150,6 +150,8 @@
 
 **L1 字面量门禁**: 禁止模式 `f32` / `f64` / `Float`（3 条）。
 
+**L1 浮点字面量独立检测通道（2026-09-24 收紧）**: 浮点字面量推断（`let x = 1.0;`，无类型注记）默认 `f64`，同属浮点非确定面——由独立检测通道拦截（非固定子串，不入 FORBIDDEN 表）：对注释剥离+字符串内容掩码后的文本做「数字.数字」手工判定（零依赖），版本号（`0.6.1`）/元组索引链（`x.0.1`）边界排除；测试模块豁免（与 T8/T9/F11 同口径——测试夹具数据可含小数形文本，红线约束的是生产确定性）；跨行字符串保守跳过（已知诚实边界）。
+
 ### T13: 禁止 `static mut`
 
 **必须**: TCB Rust 代码中不得使用 `static mut`（引入可变全局状态，破坏确定性）。
@@ -170,11 +172,11 @@
 
 ### G1: 禁止 panic-prone 构造
 
-**必须**: TCB 生产代码中不得使用 `.unwrap(` / `.expect(` / `debug_assert!` / `panic!(`。路径解析必须返回 `Option` / `Result`。
+**必须**: TCB 生产代码中不得使用 `.unwrap(` / `.expect(` / `debug_assert!` / `panic!(` / `assert!(` / `unreachable!(` / `todo!(`。路径解析必须返回 `Option` / `Result`。
 
-**别名**: G1 = T9 (`unwrap`/`expect`) + T11 (`debug_assert!`) + F11 (`panic!(`，TCB-2026-35 补入 L1——旧清单缺 `panic!(`，GitHub 侧又无 clippy job，直写 `panic!(` 此前零门禁覆盖)。
+**别名**: G1 = T9 (`unwrap`/`expect`) + T11 (`debug_assert!`) + F11 (`panic!(`，TCB-2026-35 补入 L1——旧清单缺 `panic!(`，GitHub 侧又无 clippy job，直写 `panic!(` 此前零门禁覆盖；2026-09-24 收紧补入 `assert!(` / `unreachable!(` / `todo!(`——panic! 之外的 panic 路径宏同属生产代码 panic 面。注: `assert!(` 与 T11 `debug_assert!(` 子串重叠，命中行双报两标签，均为真实违规)。
 
-**L1 字面量门禁**: 禁止模式 `.unwrap(` / `.expect(` / `debug_assert!` / `panic!(`（4 条）。
+**L1 字面量门禁**: 禁止模式 `.unwrap(` / `.expect(` / `debug_assert!` / `panic!(` / `assert!(` / `unreachable!(` / `todo!(`（7 条）。
 
 **豁免**: `#[cfg(test)] mod <ident>` 测试模块内允许（L1 `strip_test_mod` 自动剥离测试块，任意命名；测试断言机制本体——`panic!`/`assert!` 家族是测试惯用断言手段，生产代码禁用）。
 
@@ -317,15 +319,15 @@ branch:
 | 规则          | 模式                                              | 数量 | 含义                   |
 | ------------- | ------------------------------------------------- | ---- | ---------------------- |
 | T8 (哈希容器) | `HashMap`, `HashSet`                              | 2    | 非确定性迭代           |
-| G1/T9/T11/F11 | `.unwrap(`, `.expect(`, `debug_assert!`, `panic!(` | 4   | panic-prone 构造       |
+| G1/T9/T11/F11 | `.unwrap(`, `.expect(`, `debug_assert!`, `panic!(`, `assert!(`, `unreachable!(`, `todo!(` | 7   | panic-prone 构造       |
 | G2/T10        | `unsafe`                                          | 1    | unsafe 关键字          |
-| T12 (浮点)    | `f32`, `f64`, `Float`                             | 3    | 浮点非确定             |
+| T12 (浮点)    | `f32`, `f64`, `Float`（另设浮点字面量独立检测通道，见 T12 节） | 3    | 浮点非确定             |
 | T5 (系统时间) | `SystemTime`, `Instant`                           | 2    | 依赖环境时间           |
 | T6 (随机数)   | `rand::`, `random()`                              | 2    | 非确定随机             |
 | T4 (I/O)      | `std::fs::`, `std::net::`, `std::io::`, `File::open`, `std::process::` | 5 | I/O 依赖外部           |
 | T14 (异步)    | `std::thread`, `tokio::`, `async`, `await`, `spawn(` | 5 | 并发非确定             |
 
-合计: 2+4+1+3+2+2+5+5 = **24 模式**。
+合计: 2+7+1+3+2+2+5+5 = **27 模式** + 1 独立检测通道（T12-float-lit 浮点字面量推断）。
 
 ### 5.2 文件级额外检查：UTF-8 BOM
 
@@ -448,7 +450,7 @@ EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 wa
 | T9     | 禁止 .unwrap/.expect          | G1 别名 | （同 G1）              |
 | T10    | 禁止 unsafe                   | G2 别名 | （同 G2）              |
 | T11    | 禁止 debug_assert!            | G1 别名 | （同 G1）              |
-| T12    | 禁止浮点                      | —      | —                      |
+| T12    | 禁止浮点（含字面量推断独立检测通道） | —      | —                      |
 | T13    | 禁止 static mut               | —      | —                      |
 | T14    | 禁止线程/异步                 | —      | —                      |
 

@@ -68,6 +68,13 @@ const FORBIDDEN: &[(&str, &str)] = &[
     // F11-panic (TCB-2026-35 整改): 旧清单缺 panic!(, GitHub 侧又无 clippy
     // job, panic!( 在 tcb 内零门禁覆盖。补齐后 L1 每次构建必扫。
     ("F11-panic", "panic!("),
+    // F11 panic 路径宏收紧 (O-101 裁定): panic! 之外的 panic 路径——
+    // assert!/unreachable!/todo! 同属生产代码 panic 面。注: assert!(
+    // 与 T11-debug_assert 子串重叠 (`debug_assert!(` 内含 `assert!(`),
+    // 命中行会双报两标签——均为真实违规, 属可接受噪声。
+    ("F11-assert", "assert!("),
+    ("F11-unreachable", "unreachable!("),
+    ("F11-todo", "todo!("),
     // G2 / T10: unsafe 关键字 (禁止内存非确定行为)
     ("T10-unsafe-keyword", "unsafe"),
     // T12: 浮点类型 (跨平台非确定)
@@ -640,15 +647,95 @@ fn match_brace(src: &str, open_idx: usize) -> Option<usize> {
     None
 }
 
-/// T8/T9/F11-panic 是 test-tolerant (测试中允许: HashMap/unwrap/expect 是
-/// 测试惯例, panic!/assert! 是测试断言机制本体; 生产代码由 clippy panic=deny
-/// 与 L1 双守);
+/// T8/T9/F11 是 test-tolerant (测试中允许: HashMap/unwrap/expect 是
+/// 测试惯例, panic!/assert!/unreachable!/todo! 是测试断言与失败路径
+/// 机制本体; 生产代码由 clippy panic=deny 与 L1 双守);
 /// T10/T11 (unsafe/debug_assert) 在所有位置强制。
 fn is_test_tolerant(label: &str) -> bool {
     matches!(
         label,
-        "T8-HashMap" | "T8-HashSet" | "T9-unwrap-call" | "T9-expect-call" | "F11-panic"
+        "T8-HashMap"
+            | "T8-HashSet"
+            | "T9-unwrap-call"
+            | "T9-expect-call"
+            | "F11-panic"
+            | "F11-assert"
+            | "F11-unreachable"
+            | "F11-todo"
     )
+}
+
+/// 字符串字面量内容掩码（T12-float-lit 专用，防版本串误报）。
+///
+/// 把 `"` 字符串字面量的内容替换为空格（引号也掩掉），`\` 转义对整体
+/// 跳过两字符。版本号/IP 等数字点串几乎只出现在字符串与注释中——
+/// 注释由调用方剥离（行注释经掩码文本截断，块注释经
+/// strip_inline_block_comments），字符串在此掩码。
+/// 返回 (掩码文本, 引号是否行内闭合)；未闭合 = 多行字符串跨行，
+/// 调用方保守跳过该行（诚实边界：跨行字符串内的浮点形文本不检）。
+fn mask_string_contents(line: &str) -> (String, bool) {
+    let mut out = String::with_capacity(line.len());
+    let mut in_str = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if in_str {
+            match c {
+                '\\' => {
+                    chars.next();
+                }
+                '"' => in_str = false,
+                _ => {}
+            }
+            out.push(' ');
+        } else {
+            match c {
+                '"' => {
+                    in_str = true;
+                    out.push(' ');
+                }
+                _ => out.push(c),
+            }
+        }
+    }
+    (out, !in_str)
+}
+
+/// 浮点字面量判定（T12-float-lit，O-101 收紧；build.rs 零依赖手工判定）。
+///
+/// 对注释剥离+字符串掩码后的文本找「数字.数字」模式（数字组含 `_`
+/// 分隔符），并做边界排除：
+/// - 前组首字符紧邻 `.` → 版本号中段/元组索引链上下文（`0.6.1` 的
+///   `6.1`、`x.0.1` 的 `0.1`），跳过；
+/// - 后组尾字符紧邻 `.` → 版本号前段上下文（`1.0.2` 的 `1.0`），跳过。
+///
+/// 保留命中：`1.0`、`1.0e5`、`2.5_f64` 等——代码位置（非字符串/注释）
+/// 的「数字.数字」除上述边界外只能是浮点字面量（推断默认 f64）。
+/// 范围 `0..1` 的连写 `..` 不构成数字.数字。已知残余漏报面：跨行字符
+/// 串内的浮点形文本（调用方跳过未闭合行）。
+fn float_lit_hit(text: &str) -> bool {
+    let b = text.as_bytes();
+    let is_d = |c: u8| c.is_ascii_digit() || c == b'_';
+    for i in 1..b.len().saturating_sub(1) {
+        if b[i] != b'.' || !is_d(b[i - 1]) || !is_d(b[i + 1]) {
+            continue;
+        }
+        let mut s = i - 1;
+        while s > 0 && is_d(b[s - 1]) {
+            s -= 1;
+        }
+        let mut e = i + 1;
+        while e + 1 < b.len() && is_d(b[e + 1]) {
+            e += 1;
+        }
+        if s > 0 && b[s - 1] == b'.' {
+            continue; // 版本号中段/元组索引链
+        }
+        if e + 1 < b.len() && b[e + 1] == b'.' {
+            continue; // 版本号前段
+        }
+        return true;
+    }
+    false
 }
 
 fn main() -> ExitCode {
@@ -755,6 +842,38 @@ fn main() -> ExitCode {
                         format!("L{}: {}", lineno + 1, line.trim()),
                     ));
                 }
+            }
+        }
+
+        // T12-float-lit 独立通道 (O-101 收紧): 浮点字面量推断 (`let x = 1.0;`)
+        // 无 f32/f64/Float 字面量, T12 关键字模式漏报——推断字面量默认 f64,
+        // 同属浮点非确定面。非固定子串, 不入 FORBIDDEN 表, 走手工判定
+        // (mask_string_contents + float_lit_hit)。测试模块豁免 (与 T8/T9/F11
+        // 同口径: 测试夹具数据可含小数形文本, 红线约束的是生产确定性);
+        // 注释行豁免与同行块注释剥离与主扫描同口径。
+        let float_scan = strip_test_mod(&raw);
+        for (lineno, line) in float_scan.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            let stripped = strip_inline_block_comments(trimmed);
+            let (masked, closed) = mask_string_contents(&stripped);
+            if !closed {
+                // 行内引号未闭合 (多行字符串跨行): 保守跳过本行
+                // (诚实边界: 跨行字符串内浮点形文本不检, 见 mask_string_contents 文档)。
+                continue;
+            }
+            let code = match masked.find("//") {
+                Some(p) => &masked[..p],
+                None => masked.as_str(),
+            };
+            if float_lit_hit(code) {
+                violations.push((
+                    path.clone(),
+                    "T12-float-lit".to_string(),
+                    format!("L{}: {}", lineno + 1, line.trim()),
+                ));
             }
         }
     }

@@ -65,7 +65,7 @@
 >
 > **匹配口径（TCB-2026-24/-25/-32）**：四仓 L1 字面量门禁对每行同时按**原文**与**去空白文本**匹配（`x.unwrap ()`、`Hash Map` 等插空写法同样拦截）；注释行豁免判定仍用原文。属性行对 `unsafe` 模式（tcb/reactor）不再整体豁免——剥离行首 `#![...]`/`#[...]` 语法（方括号深度感知，未闭合保守按原文匹配）后对余下内容匹配（TCB-2026-25）。行内**自闭合块注释**区段先剥离再匹配（含嵌套；字符串感知——常规/字节/原始字符串内的 `/*` 不作注释起点，防伪起点吃真代码构成漏报面；跨行未闭合保守整行，fail-closed）（TCB-2026-32）。`async`/`await` 裸词按**词界**匹配（命中前后须非 ASCII 字母——"asynchronous"/"awaiting" 等英文单词不再误命中；去空白口径的 `asyncfn` 合并词被词界检查自然拒绝，原文口径保证真关键字照常命中）（TCB-2026-32）。字符串字面量内凑巧命中的极小概率误报是设计接受（宁可误报不可漏报）。
 
-### 2.1 evorule-tcb — 24 模式 (T 编号)
+### 2.1 evorule-tcb — 27 模式 (T 编号) + 1 独立检测通道
 
 实施文件: `evorule-tcb\build.rs` (扫描 `src/` 全部 `.rs`)
 
@@ -77,6 +77,9 @@
 | T9-expect-call | `.expect(`              | G1 panic-prone (T9 别名) |
 | T11-debug_assert | `debug_assert!`      | G1 panic-prone (T11 别名) |
 | F11-panic | `panic!(`                    | G1 panic-prone (TCB-2026-35 补齐) |
+| F11-assert | `assert!(`                  | G1 panic-prone (panic 路径宏收紧；与 T11 子串重叠双报，均为真实违规) |
+| F11-unreachable | `unreachable!(`        | G1 panic-prone (panic 路径宏收紧) |
+| F11-todo   | `todo!(`                    | G1 panic-prone (panic 路径宏收紧) |
 | T10-unsafe-keyword | `unsafe`           | G2 unsafe 关键字 (T10 别名) |
 | T12-f32    | `f32`                       | T12 浮点禁止            |
 | T12-f64    | `f64`                       | T12 浮点禁止            |
@@ -95,6 +98,8 @@
 | T14-async  | `async`                     | T14 异步禁止            |
 | T14-await  | `await`                     | T14 异步禁止            |
 | T14-spawn  | `spawn(`                    | T14 异步生成禁止        |
+
+**T12-float-lit 独立检测通道（2026-09-24 收紧）**：浮点字面量推断（`let x = 1.0;`，无类型注记，默认 `f64`）由独立检测通道拦截——非固定子串，不入 FORBIDDEN 表，对注释剥离+字符串内容掩码后的文本做「数字.数字」手工判定（零依赖）；版本号（`0.6.1`）/元组索引链（`x.0.1`）边界排除；测试模块豁免（与 T8/T9/F11 同口径）；跨行字符串保守跳过（已知诚实边界）。详见 TCB_SPEC.md T12 节。
 
 **豁免机制**:
 - `strip_test_mod()`: 剥离 `#[cfg(test)] mod <ident> { ... }` 测试模块块体 (任意命名——cfg(test) 限定的模块本就不进生产构建; TCB-2026-35 修复: 旧实现按 `"mod tests"` 字面子串定位, `mod executor_ssot_tests` 等非 tests 命名模块漏剥致测试内模式误报, `mod tests_foo` 借前缀误吞; 同批修复一文件多测试模块时第一个模块尾部被整段重复压入输出的存量缺陷), 不扫描测试代码
@@ -160,6 +165,8 @@
 
 > 跨仓说明:evorule-server 为**独立仓**, panic-prone 门控与本仓一致 (S1 = F11 = G1),
 > 其构建脚本实现与豁免细则见 evorule-server 仓自身文档, 本仓不承载兄弟仓内部细节。
+> 跨仓同步契约（跳过阀 fail-closed 解析器 / PASSED 横幅 / CI 门禁旁路断言的两侧同改清单与同步验证命令）落 evorule-server 仓 `GATE_REFERENCE.md` §十；本仓 CI 侧对应件 = `.github/workflows/release.yml` release-gate job 的 `EVORULE_SKIP_GATE` 存在即 fail 断言（2026-09-24 加）。
+> 历史教训: 跳过阀 fail-closed 化修复（TCB-2026-26）当年只覆盖本仓四 crate 未同步 server 仓，旧版 `is_ok()` fail-open 阀在 server 仓存活——同步靠人记忆不可靠，须按契约清单逐件核对。
 
 ---
 
