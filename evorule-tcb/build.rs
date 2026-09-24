@@ -738,6 +738,39 @@ fn float_lit_hit(text: &str) -> bool {
     false
 }
 
+/// T12-float-lit 独立通道 (O-101 收紧): 浮点字面量推断 (`let x = 1.0;`)
+/// 无 f32/f64/Float 字面量, T12 关键字模式漏报——推断字面量默认 f64,
+/// 同属浮点非确定面。非固定子串, 不入 FORBIDDEN 表, 走手工判定
+/// (mask_string_contents + float_lit_hit)。测试模块豁免 (与 T8/T9/F11
+/// 同口径: 测试夹具数据可含小数形文本, 红线约束的是生产确定性);
+/// 注释行豁免与同行块注释剥离与主扫描同口径。
+/// 返回 (行号, 违规行裁剪文本) 列表。
+fn float_lit_violations(raw: &str) -> Vec<(usize, String)> {
+    let mut hits: Vec<(usize, String)> = Vec::new();
+    let float_scan = strip_test_mod(raw);
+    for (lineno, line) in float_scan.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("//") {
+            continue;
+        }
+        let stripped = strip_inline_block_comments(trimmed);
+        let (masked, closed) = mask_string_contents(&stripped);
+        if !closed {
+            // 行内引号未闭合 (多行字符串跨行): 保守跳过本行
+            // (诚实边界: 跨行字符串内浮点形文本不检, 见 mask_string_contents 文档)。
+            continue;
+        }
+        let code = match masked.find("//") {
+            Some(p) => &masked[..p],
+            None => masked.as_str(),
+        };
+        if float_lit_hit(code) {
+            hits.push((lineno + 1, line.trim().to_string()));
+        }
+    }
+    hits
+}
+
 fn main() -> ExitCode {
     // 策略层反模式检测 (无阀常开, TCB-2026-27 整改 + 既定裁定): 机制-策略分离是
     // 设计不变量, 不设旁路阀。CR 自查 (CHANGE_REQUEST.md 校验) 已移出公开仓
@@ -845,36 +878,14 @@ fn main() -> ExitCode {
             }
         }
 
-        // T12-float-lit 独立通道 (O-101 收紧): 浮点字面量推断 (`let x = 1.0;`)
-        // 无 f32/f64/Float 字面量, T12 关键字模式漏报——推断字面量默认 f64,
-        // 同属浮点非确定面。非固定子串, 不入 FORBIDDEN 表, 走手工判定
-        // (mask_string_contents + float_lit_hit)。测试模块豁免 (与 T8/T9/F11
-        // 同口径: 测试夹具数据可含小数形文本, 红线约束的是生产确定性);
-        // 注释行豁免与同行块注释剥离与主扫描同口径。
-        let float_scan = strip_test_mod(&raw);
-        for (lineno, line) in float_scan.lines().enumerate() {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("//") {
-                continue;
-            }
-            let stripped = strip_inline_block_comments(trimmed);
-            let (masked, closed) = mask_string_contents(&stripped);
-            if !closed {
-                // 行内引号未闭合 (多行字符串跨行): 保守跳过本行
-                // (诚实边界: 跨行字符串内浮点形文本不检, 见 mask_string_contents 文档)。
-                continue;
-            }
-            let code = match masked.find("//") {
-                Some(p) => &masked[..p],
-                None => masked.as_str(),
-            };
-            if float_lit_hit(code) {
-                violations.push((
-                    path.clone(),
-                    "T12-float-lit".to_string(),
-                    format!("L{}: {}", lineno + 1, line.trim()),
-                ));
-            }
+        // T12-float-lit 独立通道 (O-101 收紧): 浮点字面量推断检测,
+        // 判定逻辑与豁免口径见 float_lit_violations 文档。
+        for (lineno, trimmed) in float_lit_violations(&raw) {
+            violations.push((
+                path.clone(),
+                "T12-float-lit".to_string(),
+                format!("L{}: {}", lineno, trimmed),
+            ));
         }
     }
 
@@ -891,16 +902,21 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    report_gate_failures(&violations);
+    ExitCode::FAILURE
+}
+
+/// 违规报告输出 (stderr 逐条列明 + 紧急跳过指引)。
+fn report_gate_failures(violations: &[(PathBuf, String, String)]) {
     eprintln!();
     eprintln!("==== evorule-tcb compile-time gate FAILED ====");
     eprintln!("{} violation(s):", violations.len());
-    for (path, label, detail) in &violations {
+    for (path, label, detail) in violations {
         eprintln!("  [{}] {}: {}", label, path.display(), detail);
     }
     eprintln!();
     eprintln!("These patterns are forbidden by TCB_SPEC.md (compile-time gate).");
     eprintln!("To bypass in an emergency, set EVORULE_SKIP_GATE=1 (with justification comment).");
-    ExitCode::FAILURE
 }
 
 // ===== 策略模式检测器 (Strategy Pattern Detector) =====
