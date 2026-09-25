@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-or-later
+﻿# SPDX-License-Identifier: AGPL-3.0-or-later
 # check-ci-green.ps1 — 推送后 CI 绿灯检查（推送远端后 CI 绿灯纪律的机械化工具）
 #
 # 纪律（2026-09-18 建立）：任何推送至公开远端后，必须检查远端 CI 是否全绿；
@@ -50,9 +50,13 @@ try {
 }
 
 # 短 SHA 展开：GitHub API 的 head_sha 过滤器只匹配完整 40 位 SHA，短值会导致恒空 → 假超时（O-127）
-# 优先本地 git rev-parse（快）；SHA 不在本机仓（如在本仓校另一远仓的 CI）时回退 GitHub API 解析
+# 优先本地 git rev-parse（快）；SHA 不在本机仓（如在本仓校另一远仓的 CI）时回退 GitHub API 解析。
+# 注意：PS 5.1 + EAP=Stop 会把原生命令 stderr（rev-parse fatal）包装成终止错误，须临时降级 EAP
 $ShaIn = $Sha
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 $Sha = ((git rev-parse $Sha 2>$null) | Select-Object -First 1)
+$ErrorActionPreference = $prevEap
 if (-not $Sha -or $Sha -notmatch '^[0-9a-f]{40}$') {
     try {
         $Sha = (Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/commits/$ShaIn" -Headers $headers).sha
@@ -113,5 +117,5 @@ if ($failed.Count -gt 0) {
     }
     exit 1
 }
-Write-Host "PASS: $($runs.Count) 个 workflow 全绿（head_sha=$Sha）"
+Write-Host "PASS: $(@($runs).Count) 个 workflow 全绿（head_sha=$Sha）"
 exit 0
