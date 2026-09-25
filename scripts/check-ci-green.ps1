@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # check-ci-green.ps1 — 推送后 CI 绿灯检查（推送远端后 CI 绿灯纪律的机械化工具）
 #
 # 纪律（2026-09-18 建立）：任何推送至公开远端后，必须检查远端 CI 是否全绿；
@@ -7,6 +7,7 @@
 # 用法：
 #   .\scripts\check-ci-green.ps1 -Sha a3d728fbd5f4cb311a4032a36886faec35e7c5e7
 #   .\scripts\check-ci-green.ps1 -Sha <full-or-7+-char-sha> -Repo evorule/evorule -TimeoutMin 15
+#   （短 SHA 自动展开为完整 40 位——GitHub API head_sha 过滤器只匹配完整 SHA，O-127）
 #
 # 判定：head_sha 匹配的全部 workflow runs 至终态：
 #   - 全部 success / skipped（paths 过滤未跑，非红）→ RC=0 输出 PASS
@@ -46,6 +47,20 @@ try {
 } finally {
     Remove-Item $tmpIn -ErrorAction SilentlyContinue
     $ErrorActionPreference = $prevEap
+}
+
+# 短 SHA 展开：GitHub API 的 head_sha 过滤器只匹配完整 40 位 SHA，短值会导致恒空 → 假超时（O-127）
+# 优先本地 git rev-parse（快）；SHA 不在本机仓（如在本仓校另一远仓的 CI）时回退 GitHub API 解析
+$ShaIn = $Sha
+$Sha = ((git rev-parse $Sha 2>$null) | Select-Object -First 1)
+if (-not $Sha -or $Sha -notmatch '^[0-9a-f]{40}$') {
+    try {
+        $Sha = (Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/commits/$ShaIn" -Headers $headers).sha
+    } catch { $Sha = $null }
+}
+if (-not $Sha -or $Sha -notmatch '^[0-9a-f]{40}$') {
+    Write-Host "ERROR: 无法将 -Sha 展开为完整 40 位 SHA（原值无效或远端不存在）"
+    exit 2
 }
 
 function Get-Runs {
