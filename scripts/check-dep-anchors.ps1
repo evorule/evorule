@@ -1,7 +1,7 @@
 # check-dep-anchors.ps1 — evorule 生态依赖锚点结构不变量核验
-# 依据：《专项-evorule生态仓全景基线-20260921.md》§6/§9（工作约束绑定，2026-09-21 项目方令）
+# 依据：生态仓全景基线档 §6/§9（工作约束绑定，2026-09-21 项目方令）
 # 层级规则（设计/实施/核验三阶段共用的机器化表达）：
-#   A1 evo-agent 零主仓 evorule-* 依赖（O-044；独立仓治理组件走显式 allowlist）
+#   A1 evo-agent 零主仓 evorule-* 依赖（2026-09-20 起解耦；独立仓治理组件走显式 allowlist）
 #   A2 evorule-hash 纯原语（零家族依赖、零 I/O 框架）
 #   A3 evorule-bundle 集装箱纯度（家族仅许 hash、零 I/O 框架）
 #   A4 非主仓活仓禁 path 指向主仓布局、禁 git 直连主仓仓 URL（registry 化退役原则恒久化）
@@ -40,7 +40,7 @@ function Get-Manifests([string]$dir) {
 }
 
 # ---- A1 evo-agent 零主仓家族依赖 ----
-# O-044 (2026-09-20): evo-agent 与主仓 decoupled，数据面仅 HTTP；ban 对象=主仓
+# Since 2026-09-20: evo-agent 与主仓 decoupled，数据面仅 HTTP；ban 对象=主仓
 # crates（path OR version 依赖均禁）。独立仓治理组件走显式 allowlist（2026-09-22
 # 宪法 crate 收编精确化，与 evo-agent verify.ps1 [4/4] 同口径——两处 allowlist
 # 须同步维护）：evorule-constitution（宪法仓 crates/，schema 校验，0.2.0 起

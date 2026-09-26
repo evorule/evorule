@@ -68,7 +68,7 @@ const FORBIDDEN: &[(&str, &str)] = &[
     // F11-panic (TCB-2026-35 整改): 旧清单缺 panic!(, GitHub 侧又无 clippy
     // job, panic!( 在 tcb 内零门禁覆盖。补齐后 L1 每次构建必扫。
     ("F11-panic", "panic!("),
-    // F11 panic 路径宏收紧 (O-101 裁定): panic! 之外的 panic 路径——
+    // F11 panic 路径宏收紧 (裁定): panic! 之外的 panic 路径——
     // assert!/unreachable!/todo! 同属生产代码 panic 面。注: assert!(
     // 与 T11-debug_assert 子串重叠 (`debug_assert!(` 内含 `assert!(`),
     // 命中行会双报两标签——均为真实违规, 属可接受噪声。
@@ -700,7 +700,7 @@ fn mask_string_contents(line: &str) -> (String, bool) {
     (out, !in_str)
 }
 
-/// 浮点字面量判定（T12-float-lit，O-101 收紧；build.rs 零依赖手工判定）。
+/// 浮点字面量判定（T12-float-lit 收紧；build.rs 零依赖手工判定）。
 ///
 /// 对注释剥离+字符串掩码后的文本找「数字.数字」模式（数字组含 `_`
 /// 分隔符），并做边界排除：
@@ -738,7 +738,7 @@ fn float_lit_hit(text: &str) -> bool {
     false
 }
 
-/// T12-float-lit 独立通道 (O-101 收紧): 浮点字面量推断 (`let x = 1.0;`)
+/// T12-float-lit 独立通道 (收紧): 浮点字面量推断 (`let x = 1.0;`)
 /// 无 f32/f64/Float 字面量, T12 关键字模式漏报——推断字面量默认 f64,
 /// 同属浮点非确定面。非固定子串, 不入 FORBIDDEN 表, 走手工判定
 /// (mask_string_contents + float_lit_hit)。测试模块豁免 (与 T8/T9/F11
@@ -878,7 +878,7 @@ fn main() -> ExitCode {
             }
         }
 
-        // T12-float-lit 独立通道 (O-101 收紧): 浮点字面量推断检测,
+        // T12-float-lit 独立通道 (收紧): 浮点字面量推断检测,
         // 判定逻辑与豁免口径见 float_lit_violations 文档。
         for (lineno, trimmed) in float_lit_violations(&raw) {
             violations.push((
