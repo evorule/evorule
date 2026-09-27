@@ -3,9 +3,11 @@
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! R1 —— 重放位精确率（replay bit-precision）
 //!
-//! 方法：真实工作负载 × 真实种子指令（wasm-demo plan.json，16 规则 × pass/fail
-//! + 3 序列，determinism_run.js 已验证可命中）× K 次独立运行（每次全新
-//! FactIdGenerator / 队列 / 状态），比对：
+//! 方法：真实工作负载 × 真实种子指令 × K 次独立运行，比对以下三项。
+//! 种子指令来自 wasm-demo plan.json（16 规则 × pass/fail + 3 序列，determinism_run.js 已验证可命中）；
+//! 每次运行使用全新 FactIdGenerator、队列与状态。
+//!
+//! 比对项：
 //!
 //! 1. 事实序列规范哈希（逐条 fact_to_json 拼接 blake3）
 //! 2. 终态 payload 规范哈希

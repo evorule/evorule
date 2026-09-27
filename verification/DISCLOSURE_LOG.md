@@ -61,6 +61,13 @@
 - **影响**：A 档证据基线 `a3d728f` 有效性维持判定不变（既有 harness 函数本体零变更；行为面影响归 2026-09-24 条目）；S10 版本对齐三方回到一致；无状态行变更。
 - **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行）、`verification/MECHANISM.md`（头部版本对齐声明）。
 
+### 2026-09-27：v0.7.0 发版收口遗漏工作区内部依赖同步的修复与 tag 重打
+
+- **事实**：v0.7.0 release commit `60781db` 存在版本推进遗漏——workspace 统一版本升至 0.7.0，但 5 个成员 crate（governance / discipline / cli / reactor / wasm-demo）对同 workspace 内部依赖的 `version` requirement 仍为 `"0.6.1"`，cargo 依赖解析失败（`evorule-tcb ^0.6.1` 无匹配候选，本地 path 实际 0.7.0），连锁导致 CI 7 个 workflow 中 5 个失败（CI 三平台 test + deny、Clippy、differential、kani、Release 的 M4 gate 与 sbom）。发版前本地 DoD 验证面不完整（fmt 未含此面、clippy 修 eval lint 时仅对单包执行、test 未全 workspace 实跑），缺陷漏网。修复：5 个 Cargo.toml 共 12 处 version requirement 同步 0.7.0；另修复 `evorule-eval/src/bin/r1_replay.rs` 头部 doc 注释 `doc_lazy_continuation` lint（CI Clippy 拦截点，单包验证时未暴露）。v0.7.0 tag 自 `60781db` 删除并重打于本修复 commit（crates.io publish 因 M4 gate 失败 skipped，无外部产物，tag 重打无消费方影响）。
+- **依据**：cargo 解析实测报错（candidate versions found which didn't match: 0.7.0）；GitHub Actions runs 明细（head_sha=`60781db`，5/7 失败；前序 `ddd945f` 全绿，证明红灯为本 commit 引入）；修复后本地 fmt / clippy（全 workspace）/ test（全 workspace）全绿（2026-09-27 实测）。
+- **影响**：A 档证据基线 `a3d728f` 有效性不变（修复仅触及依赖声明与 doc 注释，proof 源码与所验证生产源码零变更）；v0.7.0 tag 指向本修复 commit；发版级 DoD「fmt / clippy / test 必须全 workspace 实跑」的流程教训随本条目沉淀。
+- **修正去向**：本条目即披露记录；5 个 Cargo.toml 与 `evorule-eval/src/bin/r1_replay.rs`（修复本体）。
+
 ### 2026-09-24：evorule-discipline crate 抽取、排列等价 proof 入库与证据残留隔离
 
 - **事实**：① 纪律门禁判定引擎自 `evorule-cli/src/commands/discipline_gate.rs` 抽出为独立 crate `evorule-discipline`（机制侧遍历/事实标注 + 内核求值，判定 SSOT 与 evorule-server 共享），workspace 接线、cli 切换依赖，cli 侧逻辑文件减 552 行；② `evorule-tcb/tests/kani/kani_proofs.rs` 新增排列等价 proof `verify_exec_enforce_permutation_equivalence`（上一条目④的落地——「enforce 判定与规则排列位置无关」新保证的 proof 化），按 B 档登记（STATUS.md 附录 A 对照表/附录 B 分档清单、kani.yml b-tier batch 3 三处同步，proof 总数 45→46、tcb 34→35、B 档 20→21，对外数字 README/ROADMAP/verification README 同步）；③ 两仓 `verification/evidence/kani/` 下 19 个 `.FAIL.raw` 残留（2026-09-24 本地 Kani 批验尝试产物，未入库）隔离至各自 `_invalidated/`（TCB 批次 9 / reactor 批次 4）——内容为 WSL rustup 工具链安装故障（os error 39 Directory not empty）原始输出，**验证未实际执行**，不构成证据（M3.2 不满足），涉及 A 档/CI proofs 均有现行有效替代证据（批次 8 于 `a3d728f` 复跑 18/18 PASS）。
