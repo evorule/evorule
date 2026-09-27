@@ -63,10 +63,10 @@
 
 ### 2026-09-27：v0.7.0 发版收口遗漏工作区内部依赖同步的修复与 tag 重打
 
-- **事实**：v0.7.0 release commit `60781db` 存在版本推进遗漏——workspace 统一版本升至 0.7.0，但 5 个成员 crate（governance / discipline / cli / reactor / wasm-demo）对同 workspace 内部依赖的 `version` requirement 仍为 `"0.6.1"`，cargo 依赖解析失败（`evorule-tcb ^0.6.1` 无匹配候选，本地 path 实际 0.7.0），连锁导致 CI 7 个 workflow 中 5 个失败（CI 三平台 test + deny、Clippy、differential、kani、Release 的 M4 gate 与 sbom）。发版前本地 DoD 验证面不完整（fmt 未含此面、clippy 修 eval lint 时仅对单包执行、test 未全 workspace 实跑），缺陷漏网。修复：5 个 Cargo.toml 共 12 处 version requirement 同步 0.7.0；另修复 `evorule-eval/src/bin/r1_replay.rs` 头部 doc 注释 `doc_lazy_continuation` lint（CI Clippy 拦截点，单包验证时未暴露）。v0.7.0 tag 自 `60781db` 删除并重打于本修复 commit（crates.io publish 因 M4 gate 失败 skipped，无外部产物，tag 重打无消费方影响）。
+- **事实**：v0.7.0 release commit `60781db` 存在版本推进遗漏——workspace 统一版本升至 0.7.0，但 5 个成员 crate（governance / discipline / cli / reactor / wasm-demo）对同 workspace 内部依赖的 `version` requirement 仍为 `"0.6.1"`（12 处），新入库的 `evorule-eval` 的 3 个内部 path 依赖则完全缺失 `version` 字段（cargo-deny bans 判 wildcard 违规），cargo 依赖解析失败连锁导致 CI 7 个 workflow 中 5 个失败（CI 三平台 test + deny、Clippy、differential、kani、Release 的 M4 gate 与 sbom）。发版前本地 DoD 验证面不完整（fmt 未含此面、clippy 修 eval lint 时仅对单包执行、test 未全 workspace 实跑），缺陷漏网。修复：6 个 Cargo.toml 共 15 处 version requirement 同步 0.7.0；另修复 `evorule-eval/src/bin/r1_replay.rs` 头部 doc 注释 `doc_lazy_continuation` lint（CI Clippy 拦截点，单包验证时未暴露）。v0.7.0 tag 自 `60781db` 删除并重打（crates.io publish 因 M4 gate 失败 skipped，无外部产物，tag 重打无消费方影响）。
 - **依据**：cargo 解析实测报错（candidate versions found which didn't match: 0.7.0）；GitHub Actions runs 明细（head_sha=`60781db`，5/7 失败；前序 `ddd945f` 全绿，证明红灯为本 commit 引入）；修复后本地 fmt / clippy（全 workspace）/ test（全 workspace）全绿（2026-09-27 实测）。
 - **影响**：A 档证据基线 `a3d728f` 有效性不变（修复仅触及依赖声明与 doc 注释，proof 源码与所验证生产源码零变更）；v0.7.0 tag 指向本修复 commit；发版级 DoD「fmt / clippy / test 必须全 workspace 实跑」的流程教训随本条目沉淀。
-- **修正去向**：本条目即披露记录；5 个 Cargo.toml 与 `evorule-eval/src/bin/r1_replay.rs`（修复本体）。
+- **修正去向**：本条目即披露记录；6 个 Cargo.toml 与 `evorule-eval/src/bin/r1_replay.rs`（修复本体）。
 
 ### 2026-09-24：evorule-discipline crate 抽取、排列等价 proof 入库与证据残留隔离
 
