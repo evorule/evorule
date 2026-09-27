@@ -34,6 +34,7 @@ on:
       - "evorule-reactor/src/**"
       - "evorule-reactor/verification/**"
       - "evorule-reactor/Cargo.toml"
+      - "evorule-eval/Cargo.toml"
       - "Cargo.toml"
       - ".github/workflows/kani.yml"
   pull_request:
@@ -44,6 +45,7 @@ on:
       - "evorule-reactor/src/**"
       - "evorule-reactor/verification/**"
       - "evorule-reactor/Cargo.toml"
+      - "evorule-eval/Cargo.toml"
       - "Cargo.toml"
       - ".github/workflows/kani.yml"
   # 手动触发（a / b / all）
