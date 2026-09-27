@@ -54,6 +54,13 @@
 
 （此后按时间顺序追加，格式：日期 + 事实 / 依据 / 影响 / 修正去向）
 
+### 2026-09-27：快照版本随 0.7.0 发版收口同步（v0.6.1 → v0.7.0）
+
+- **事实**：workspace 版本收口 0.7.0（本批 release commit，2026-09-27），STATUS.md 快照同步 v0.6.1 → v0.7.0，MECHANISM.md 头部版本对齐声明同步。随 0.7.0 收口的 workspace 变更（v0.6.1..HEAD 18 commits）：evorule-eval 评估 crate 入库（publish=false，不在验证面）、L2 形态门禁与 discipline 抽取（影响已由 2026-09-24 条目登记）、tcb 字面量门禁收紧（build.rs 辅助函数化，proof harness 零变更）、wasm-demo 构建身份自报、脚本工具链（密钥扫描/锚点检查/检绿修复）与文档收口。
+- **依据**：S 系检查实测（S10 三方对齐修复：Cargo.toml / STATUS.md / MECHANISM.md）；0.6.1..0.7.0 区间 diff 归类（proof 源码 `kani_proofs.rs` 不在变更集；tcb build.rs 仅结构重构）；排列等价 proof 影响已按 2026-09-24 条目登记在案。
+- **影响**：A 档证据基线 `a3d728f` 有效性维持判定不变（既有 harness 函数本体零变更；行为面影响归 2026-09-24 条目）；S10 版本对齐三方回到一致；无状态行变更。
+- **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行）、`verification/MECHANISM.md`（头部版本对齐声明）。
+
 ### 2026-09-24：evorule-discipline crate 抽取、排列等价 proof 入库与证据残留隔离
 
 - **事实**：① 纪律门禁判定引擎自 `evorule-cli/src/commands/discipline_gate.rs` 抽出为独立 crate `evorule-discipline`（机制侧遍历/事实标注 + 内核求值，判定 SSOT 与 evorule-server 共享），workspace 接线、cli 切换依赖，cli 侧逻辑文件减 552 行；② `evorule-tcb/tests/kani/kani_proofs.rs` 新增排列等价 proof `verify_exec_enforce_permutation_equivalence`（上一条目④的落地——「enforce 判定与规则排列位置无关」新保证的 proof 化），按 B 档登记（STATUS.md 附录 A 对照表/附录 B 分档清单、kani.yml b-tier batch 3 三处同步，proof 总数 45→46、tcb 34→35、B 档 20→21，对外数字 README/ROADMAP/verification README 同步）；③ 两仓 `verification/evidence/kani/` 下 19 个 `.FAIL.raw` 残留（2026-09-24 本地 Kani 批验尝试产物，未入库）隔离至各自 `_invalidated/`（TCB 批次 9 / reactor 批次 4）——内容为 WSL rustup 工具链安装故障（os error 39 Directory not empty）原始输出，**验证未实际执行**，不构成证据（M3.2 不满足），涉及 A 档/CI proofs 均有现行有效替代证据（批次 8 于 `a3d728f` 复跑 18/18 PASS）。

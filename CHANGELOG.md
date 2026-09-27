@@ -24,6 +24,22 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
+## [0.7.0] - 2026-09-27
+
+### 新增
+
+- **evorule-eval 评估 crate**：论文评估 harness（R1 重放位精确率 / R2 执行开销 / R3 审计复核吞吐 / R4 违规拦截率），基于 evorule-tcb + evorule-reactor（persistence）+ evorule-discipline 构建，`publish = false`
+- **L2 规则集形态门禁**：规则集装载期结构校验引擎，抽取为共享 evorule-discipline crate；P0 约束门禁
+- **tcb 字面量门禁收紧** + CI 旁路断言（build.rs 辅助函数化）
+- **wasm-demo 构建身份自报**：`engine_version()` 运行时标识
+- **脚本工具链**：跨仓依赖锚点不变量检查器、预推送密钥泄露扫描器、A 级 kani 证据复跑脚本（WSL）
+
+### 修正
+
+- 公开面扫描器词表加固与注释标识泛化
+- check-ci-green.ps1 兼容 Windows PowerShell 5.1、短 SHA 展开
+- 载体身份差分证据日志纳入 verification 目录
+
 徽章说明:
 
 - 🆕 新增
