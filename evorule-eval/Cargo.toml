@@ -1,0 +1,31 @@
+[package]
+name = "evorule-eval"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+description = "论文评估 harness：R1 重放位精确率 / R2 执行开销 / R3 审计复核吞吐 / R4 违规拦截率"
+
+[dependencies]
+evorule-tcb = { path = "../evorule-tcb" }
+evorule-reactor = { path = "../evorule-reactor", features = ["persistence"] }
+evorule-discipline = { path = "../evorule-discipline" }
+blake3 = "1"
+serde_json = "1"
+
+[[bin]]
+name = "r1_replay"
+path = "src/bin/r1_replay.rs"
+
+[[bin]]
+name = "r2_overhead"
+path = "src/bin/r2_overhead.rs"
+
+[[bin]]
+name = "r3_verify"
+path = "src/bin/r3_verify.rs"
+
+[[bin]]
+name = "r4_interception"
+path = "src/bin/r4_interception.rs"

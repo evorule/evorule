@@ -483,6 +483,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "evorule-eval"
+version = "0.6.1"
+dependencies = [
+ "blake3",
+ "evorule-discipline",
+ "evorule-reactor",
+ "evorule-tcb",
+ "serde_json",
+]
+
+[[package]]
 name = "evorule-governance"
 version = "0.6.1"
 dependencies = [
