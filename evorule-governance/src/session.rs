@@ -73,6 +73,16 @@ pub const DEFAULT_SESSION_TTL: Duration = Duration::from_secs(30 * 60);
 pub const REAPER_INTERVAL: Duration = Duration::from_secs(5 * 60);
 /// 默认分片数（16 片，平衡并发度和内存开销）
 pub const DEFAULT_SHARD_COUNT: usize = 16;
+/// pending I/O 超时警告阈值缺省（30s，与引擎 ReactorBuilder 缺省一致）
+pub const DEFAULT_IO_WARN_TIMEOUT: Duration = Duration::from_secs(30);
+/// pending I/O 超时错误阈值缺省（60s，与引擎 ReactorBuilder 缺省一致）
+///
+/// 多轮编排语义下（core_eval T8：`io_request→io_response` 窗口承载整个
+/// agent ReAct 循环），分钟级窗口需要部署方按任务墙钟预算显式放宽，
+/// 经 `SessionManager::with_io_timeouts` 贯通。
+pub const DEFAULT_IO_ERROR_TIMEOUT: Duration = Duration::from_secs(60);
+/// pending I/O 超时扫描间隔缺省（5s，与引擎常量一致；测试可缩短）
+pub const DEFAULT_IO_TIMEOUT_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
 /// 会话 ID
 pub type SessionId = u64;
@@ -345,6 +355,12 @@ pub struct SessionManager {
     ///
     /// 每 N 次 audit_new 执行一次自动验证。1 表示每次都验证。
     auto_verify_interval: usize,
+    /// pending I/O 超时警告阈值（贯通至本管理器创建的每个会话反应器）
+    io_warn_timeout: Duration,
+    /// pending I/O 超时错误阈值（超时发射 `Fact::Error` 并移除请求，贯通至每个会话反应器）
+    io_error_timeout: Duration,
+    /// pending I/O 超时扫描间隔（贯通至每个会话反应器；测试可缩短）
+    io_timeout_check_interval: Duration,
     /// 当前总会话数（乐观计数）
     count: AtomicU64,
     /// 待回收的 FactsLog 列表（会话关闭后等待反应器退出）
@@ -552,9 +568,35 @@ impl SessionManager {
             } else {
                 auto_verify_interval
             },
+            io_warn_timeout: DEFAULT_IO_WARN_TIMEOUT,
+            io_error_timeout: DEFAULT_IO_ERROR_TIMEOUT,
+            io_timeout_check_interval: DEFAULT_IO_TIMEOUT_CHECK_INTERVAL,
             count: AtomicU64::new(0),
             pending_recycle: Mutex::new(Vec::new()),
         }
+    }
+
+    /// 覆盖 pending I/O 超时预算（贯通至本管理器后续创建的每个会话反应器）
+    ///
+    /// `None` 项保持引擎缺省（warn 30s / error 60s / 扫描 5s），缺省行为
+    /// 与未调用本方法逐位一致。部署方按任务墙钟预算放宽 error 阈值
+    /// （多轮编排窗口可远超单发调用秒级假设）。
+    pub fn with_io_timeouts(
+        mut self,
+        io_warn_timeout: Option<Duration>,
+        io_error_timeout: Option<Duration>,
+        io_timeout_check_interval: Option<Duration>,
+    ) -> Self {
+        if let Some(d) = io_warn_timeout {
+            self.io_warn_timeout = d;
+        }
+        if let Some(d) = io_error_timeout {
+            self.io_error_timeout = d;
+        }
+        if let Some(d) = io_timeout_check_interval {
+            self.io_timeout_check_interval = d;
+        }
+        self
     }
 
     /// 扫描 WAL 目录，返回既有会话 WAL 文件的最大序号（无文件时为 0）
@@ -668,6 +710,9 @@ impl SessionManager {
 
         let reactor = Reactor::builder(self.core_eval.clone())
             .max_rounds(self.max_rounds)
+            .io_warn_timeout(self.io_warn_timeout)
+            .io_error_timeout(self.io_error_timeout)
+            .io_timeout_check_interval(self.io_timeout_check_interval)
             .facts_log(facts_log)
             .build();
         let (command_tx, _event_rx, event_tx, handle, facts_log) = reactor.spawn();
@@ -813,6 +858,9 @@ impl SessionManager {
 
         let reactor = Reactor::builder(self.core_eval.clone())
             .max_rounds(self.max_rounds)
+            .io_warn_timeout(self.io_warn_timeout)
+            .io_error_timeout(self.io_error_timeout)
+            .io_timeout_check_interval(self.io_timeout_check_interval)
             .facts_log(facts_log)
             .build();
         let (command_tx, _event_rx, event_tx, handle, facts_log) = reactor.spawn();
@@ -1913,5 +1961,121 @@ mod tests {
 
         let _ = mgr.close_session(child_id);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ===== pending I/O 超时预算贯通 =====
+
+    /// io_request 元指令 core_eval：任意命令触发一次 pending I/O（不自动响应）
+    fn make_io_core_eval() -> Vec<JsonValue> {
+        let mut io_params = BTreeMap::new();
+        io_params.insert("io_type".to_string(), JsonValue::string("slow_call"));
+        let mut instr = BTreeMap::new();
+        instr.insert("type".to_string(), JsonValue::string("io_request"));
+        instr.insert("params".to_string(), JsonValue::Object(io_params));
+        vec![JsonValue::Object(instr)]
+    }
+
+    /// 向会话发送一条触发 pending I/O 的命令，并在时限内等待超时 `Fact::Error`
+    async fn expect_timeout_error(
+        mgr: &SessionManager,
+        session_id: SessionId,
+        deadline: Duration,
+    ) -> String {
+        let session = mgr.get_session(session_id).unwrap();
+        let mut rx = session.event_tx.subscribe();
+
+        let mut instr = BTreeMap::new();
+        instr.insert("type".to_string(), JsonValue::string("tick"));
+        session
+            .command_tx
+            .send(Fact::Command {
+                id: evorule_reactor::FactId(1),
+                instruction: JsonValue::Object(instr),
+            })
+            .unwrap();
+
+        let start = tokio::time::Instant::now();
+        let mut saw_io_request = false;
+        loop {
+            assert!(
+                start.elapsed() < deadline,
+                "时限内未收到超时 Fact::Error（io_request 已见={saw_io_request}）"
+            );
+            match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
+                Ok(Ok(Fact::IoRequest { .. })) => saw_io_request = true,
+                Ok(Ok(Fact::Error { message, .. })) => {
+                    assert!(
+                        message.contains("timed out"),
+                        "首个 Fact::Error 必须是超时错误而非其他失败: {message}"
+                    );
+                    assert!(saw_io_request, "超时 Error 前必须先登记 pending I/O");
+                    return message;
+                }
+                Ok(Ok(_)) => {}
+                _ => {}
+            }
+        }
+    }
+
+    /// 自定义超时预算贯通实证（create_session 路径）：error 阈值 150ms 时，
+    /// 未响应的 pending I/O 在 2s 内触发超时 Fact::Error（引擎 fail-fast
+    /// 语义经 SessionManager 贯通到达会话事件面）。
+    #[tokio::test]
+    async fn test_io_timeouts_custom_error_threshold_fires_fast() {
+        let core_eval = make_io_core_eval();
+        let mgr = SessionManager::new(core_eval, 100).with_io_timeouts(
+            Some(Duration::from_millis(50)),
+            Some(Duration::from_millis(150)),
+            Some(Duration::from_millis(50)),
+        );
+        let id = mgr.create_session().unwrap();
+        let msg = expect_timeout_error(&mgr, id, Duration::from_secs(2)).await;
+        assert!(
+            msg.contains("after"),
+            "超时消息应携带实际预算: {msg}"
+        );
+        let _ = mgr.close_session(id);
+    }
+
+    /// 自定义超时预算贯通实证（派生会话路径）：derive 会话的反应器
+    /// 同样吃 SessionManager 的超时预算（第二处 builder 接线）。
+    #[tokio::test]
+    async fn test_io_timeouts_pass_through_to_derived_session() {
+        let core_eval = make_io_core_eval();
+        let mgr = SessionManager::new(core_eval, 100).with_io_timeouts(
+            Some(Duration::from_millis(50)),
+            Some(Duration::from_millis(150)),
+            Some(Duration::from_millis(50)),
+        );
+        let parent_id = mgr.create_session().unwrap();
+        let child_id = mgr.create_session_from_parent(parent_id).unwrap();
+        expect_timeout_error(&mgr, child_id, Duration::from_secs(2)).await;
+        let _ = mgr.close_session(child_id);
+        let _ = mgr.close_session(parent_id);
+    }
+
+    /// 缺省防漂移：不调用 with_io_timeouts（或全 None）时，预算逐位等于
+    /// 引擎缺省（warn 30s / error 60s / 扫描 5s）；部分覆盖只动显式项。
+    #[test]
+    fn test_io_timeouts_defaults_unchanged() {
+        assert_eq!(DEFAULT_IO_WARN_TIMEOUT, Duration::from_secs(30));
+        assert_eq!(DEFAULT_IO_ERROR_TIMEOUT, Duration::from_secs(60));
+        assert_eq!(DEFAULT_IO_TIMEOUT_CHECK_INTERVAL, Duration::from_secs(5));
+
+        let mgr = SessionManager::new(make_core_eval(), 100);
+        assert_eq!(mgr.io_warn_timeout, Duration::from_secs(30));
+        assert_eq!(mgr.io_error_timeout, Duration::from_secs(60));
+        assert_eq!(mgr.io_timeout_check_interval, Duration::from_secs(5));
+
+        let mgr2 = SessionManager::new(make_core_eval(), 100).with_io_timeouts(None, None, None);
+        assert_eq!(mgr2.io_warn_timeout, Duration::from_secs(30));
+        assert_eq!(mgr2.io_error_timeout, Duration::from_secs(60));
+        assert_eq!(mgr2.io_timeout_check_interval, Duration::from_secs(5));
+
+        let mgr3 = SessionManager::new(make_core_eval(), 100)
+            .with_io_timeouts(None, Some(Duration::from_secs(3600)), None);
+        assert_eq!(mgr3.io_warn_timeout, Duration::from_secs(30));
+        assert_eq!(mgr3.io_error_timeout, Duration::from_secs(3600));
+        assert_eq!(mgr3.io_timeout_check_interval, Duration::from_secs(5));
     }
 }
