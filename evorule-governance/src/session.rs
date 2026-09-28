@@ -2030,10 +2030,7 @@ mod tests {
         );
         let id = mgr.create_session().unwrap();
         let msg = expect_timeout_error(&mgr, id, Duration::from_secs(2)).await;
-        assert!(
-            msg.contains("after"),
-            "超时消息应携带实际预算: {msg}"
-        );
+        assert!(msg.contains("after"), "超时消息应携带实际预算: {msg}");
         let _ = mgr.close_session(id);
     }
 
@@ -2072,8 +2069,11 @@ mod tests {
         assert_eq!(mgr2.io_error_timeout, Duration::from_secs(60));
         assert_eq!(mgr2.io_timeout_check_interval, Duration::from_secs(5));
 
-        let mgr3 = SessionManager::new(make_core_eval(), 100)
-            .with_io_timeouts(None, Some(Duration::from_secs(3600)), None);
+        let mgr3 = SessionManager::new(make_core_eval(), 100).with_io_timeouts(
+            None,
+            Some(Duration::from_secs(3600)),
+            None,
+        );
         assert_eq!(mgr3.io_warn_timeout, Duration::from_secs(30));
         assert_eq!(mgr3.io_error_timeout, Duration::from_secs(3600));
         assert_eq!(mgr3.io_timeout_check_interval, Duration::from_secs(5));
