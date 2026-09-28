@@ -511,3 +511,19 @@ char_lit_starts() 判别（字符字面量 vs 生命周期），新增 skip_life
 判定理由：core_eval.json transform 增补 1 条 branch(tool_trace) 规则（与既有 set 处理规则完全同构，仅组合既有 set 动作/branch 控制流/instruction 域函数——元指令与域函数零新增，不触及物理原语）；version 0.4.0→0.5.0；metadata description/provenance/constraints 随动。transition.rs 仅新增 3 个测试（写入/累积/enforce 拦截），机制代码零改动。背景：工具调用不过引擎=治理面盲区，tool_trace 使应用层工具轨迹经 StateTransition 事实落审计链，规则面可对 instruction_type=tool_trace 精确求值（事前检测）；违规轨迹经约束门 Halted→Violation 留痕，两类留痕互补。确定性/可回放/审计链红线不触及：轨迹数据只经 set 进入 payload，哈希链与状态机语义零改动。
 
 测试计划：cargo fmt/clippy/test 全绿（231 单元测试含 3 新增）；build.rs 策略层检测/字面量门禁 PASSED；下游 reactor/governance 门禁 PASSED。回滚：git revert 即恢复 v0.4.0。
+
+## CR-20260929-001 core_eval.json v0.6.0：tool_trace 规则迁出至部署面规则集（项目方裁定）
+
+| 字段 | 值 |
+|------|------|
+| **变更 ID** | CR-20260929-001 |
+| **变更标题** | core_eval.json v0.6.0：tool_trace 规则迁出至部署面规则集（server_eval.json 自持） |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-09-29 |
+| **审查状态** | 已批准（用户裁定：v0.5.0 的 tool_trace 增补属应用层策略规则越界入宪法，按双文件职责模型应落部署面；同批裁定部署面规则集拆分独立 id org.evorule.server.eval） |
+
+**本次变更属于**: ✅ **资产层变更（core_eval.json），机制语义零改动**
+
+判定理由：transform 移除 1 条 branch(tool_trace) 规则（9→8 条），本宪法回归纯计算原则集——应用层策略规则不再进入宪法（双文件职责模型 2026-09-02 定调，2026-09-29 经项目方改判强化）；version 0.5.0→0.6.0 单调递增；metadata description/provenance/constraints 随动（含 tool_trace 撤销兼容说明——在本宪法单独使用时提交 tool_trace 将 Ignored→Error 事实显式警告，与 query_db 等同款口径）。部署面 server_eval.json 已自持 tool_trace 规则（2026-09-28 同步），运行面零影响；executor 代码层 tool_trace 指令类型注册属语言规范能力，保留不动。确定性/可回放/审计链红线不触及：规则集数据变更不进入哈希链。
+
+测试计划：cargo fmt/clippy/test --workspace 全绿；公开面扫描零阻断。回滚：git revert 即恢复 v0.5.0。

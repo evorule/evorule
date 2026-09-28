@@ -957,10 +957,12 @@ mod tests {
         assert!(matches!(result, TransitionResult::State { .. }));
     }
 
-    // ===== tool_trace 轨迹记录通道测试（core_eval v0.5.0）=====
+    // ===== tool_trace 轨迹记录通道测试 =====
 
-    /// v0.5.0 `tool_trace` 规则（与 core_eval.json v0.5.0 transform 同构：
-    /// branch(tool_trace) → set(attr=params.attr, value=params.value)）
+    /// `tool_trace` 规则（内联构造，不加载任何规则集文件；与部署面
+    /// server_eval.json 的 tool_trace transform 同构：branch(tool_trace) →
+    /// set(attr=params.attr, value=params.value)；该规则自 v0.6.0 起属
+    /// 部署面规则集，主仓宪法已迁出应用层策略规则）
     fn tool_trace_rule() -> JsonValue {
         JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
@@ -1029,7 +1031,7 @@ mod tests {
 
     #[test]
     fn test_tool_trace_writes_value_into_payload() {
-        // tool_trace 指令 → 宪法规则 set 入 payload（meta_tool 缺失时中间路径自动创建）
+        // tool_trace 指令 → 部署面规则集 transform set 入 payload（meta_tool 缺失时中间路径自动创建）
         // 关键：payload 必须变化——noop 效果会被判 Ignored（反应器产生 Error 事实），
         // 本测试即 tool_trace「Ignored 陷阱」的回归验证。
         let instruction = tool_trace_instr("meta_tool.tool_traces.0", 0, "shell_exec");
@@ -1086,7 +1088,7 @@ mod tests {
     fn test_tool_trace_enforce_halts_on_violation() {
         // 约束前置门对 instruction_type=tool_trace 精确求值：违规轨迹在约束门拦截
         // （Halted→反应器派生 Violation 留痕），合法轨迹才落 StateTransition——
-        // 两类留痕互补（core_eval.json v0.5.0 constraints 契约）。
+        // 两类留痕互补（部署面 server_eval.json constraints 契约）。
         let instruction = tool_trace_instr("meta_tool.tool_traces.0", 0, "shell_exec");
         let payload = JsonValue::object_from_pairs(&[]);
         let core_eval = vec![
