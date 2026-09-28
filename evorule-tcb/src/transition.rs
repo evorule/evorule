@@ -957,7 +957,7 @@ mod tests {
         assert!(matches!(result, TransitionResult::State { .. }));
     }
 
-    // ===== tool_trace 轨迹记录通道测试（O-077，core_eval v0.5.0）=====
+    // ===== tool_trace 轨迹记录通道测试（core_eval v0.5.0）=====
 
     /// v0.5.0 `tool_trace` 规则（与 core_eval.json v0.5.0 transform 同构：
     /// branch(tool_trace) → set(attr=params.attr, value=params.value)）
@@ -999,7 +999,7 @@ mod tests {
         ])
     }
 
-    /// tool_trace 指令（O-077 形态）：attr=meta_tool.tool_traces.<seq>（序号由
+    /// tool_trace 指令（轨迹形态）：attr=meta_tool.tool_traces.<seq>（序号由
     /// 应用层控制实现 payload 累积），value=轨迹全文（tool_name/args/ok/duration/seq）
     /// TCB 零依赖（无 std），attr 由调用方以字面量给出。
     fn tool_trace_instr(attr: &'static str, seq: i64, tool: &str) -> JsonValue {
@@ -1031,7 +1031,7 @@ mod tests {
     fn test_tool_trace_writes_value_into_payload() {
         // tool_trace 指令 → 宪法规则 set 入 payload（meta_tool 缺失时中间路径自动创建）
         // 关键：payload 必须变化——noop 效果会被判 Ignored（反应器产生 Error 事实），
-        // 本测试即 O-077「Ignored 陷阱」的回归验证。
+        // 本测试即 tool_trace「Ignored 陷阱」的回归验证。
         let instruction = tool_trace_instr("meta_tool.tool_traces.0", 0, "shell_exec");
         let payload = JsonValue::object_from_pairs(&[]);
 

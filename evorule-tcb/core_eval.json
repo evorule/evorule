@@ -4,14 +4,14 @@
   "id": "org.evorule.core.eval",
   "rule_id": "core.eval",
   "version": "0.5.0",
-  "description": "TCB 最小引擎自评估集（原子计算+控制流+兜底）；ReAct 应用剧本已整体迁出至消费方自持（T8,2026-08-27），应用可参照 app.evoagent.agent v0.4.0 范式；v0.5.0 新增 tool_trace 规则（O-077）——应用层工具调用轨迹的事实记录通道，仅复用既有 set 动作与 instruction 域函数，零新原语",
+  "description": "TCB 最小引擎自评估集（原子计算+控制流+兜底）；ReAct 应用剧本已整体迁出至消费方自持（T8,2026-08-27），应用可参照 app.evoagent.agent v0.4.0 范式；v0.5.0 新增 tool_trace 规则——应用层工具调用轨迹的事实记录通道，仅复用既有 set 动作与 instruction 域函数，零新原语",
   "metadata": {
     "author": "evorule-core",
     "license": "CC0-1.0 Universal (Public Domain)",
     "public_domain_notice": "本文件(core_eval.json,即 EvoRule 宪法)以 CC0 1.0 公共领域奉献。任何人都可以自由使用、修改、再分发,无需保留版权声明。EvoRule 代码本身采用 AGPL-3.0-or-later,但本解释器规范是公共领域 —— 任何人都可以实现兼容的 EvoRule 引擎。",
     "spdx_license_id": "CC0-1.0",
     "provenance": {
-      "note": "v0.3.1 及此前版本含 ReAct 循环规则(call_external/call_service 剧本),2026-08-27 经 T8 专项迁出至消费方;机制层(6 元指令/9 指令类型/has_fields 等域函数)始终属于语言规范,不受本次迁出影响;v0.5.0 经 O-077 立项批复(2026-09-28)新增 tool_trace 规则——策略级增补(仅组合既有 set 动作/branch 控制流/instruction 域函数,未添加任何物理原语)"
+      "note": "v0.3.1 及此前版本含 ReAct 循环规则(call_external/call_service 剧本),2026-08-27 经 T8 专项迁出至消费方;机制层(6 元指令/9 指令类型/has_fields 等域函数)始终属于语言规范,不受本次迁出影响;v0.5.0 经立项批复(2026-09-28)新增 tool_trace 规则——策略级增补(仅组合既有 set 动作/branch 控制流/instruction 域函数,未添加任何物理原语)"
     },
     "sections": [
       "1. 原子计算指令: increment, decrement, set",
@@ -29,7 +29,7 @@
       "本版撤销兼容说明: query_db/http_get/save_memory 不再是内置指令类型（宪法未定义对应 transform 规则，提交会触发显式警告——TCB 层检测到 noop 效果返回 TransitionResult::Ignored，反应器产生 Error 事实）；需要这些能力的应用在其自有 rule_set 中定义 call_service 类规则",
       "本版 call_external 参数: 仅使用 messages（LLM 消息历史数组）与 tools（可选工具描述）；prompt/system 不再作为指令参数（live handler 可直接从 messages 透传）。注意: 本最小评估集不定义 call_external 规则,需 LLM 循环的应用自带剧本（范式见 app.evoagent.agent）",
       "语义澄清: 业务 set 指令为纯覆盖语义——宪法规则硬编码元指令 operation=set，指令 params 中的 operation 字段（如 add/sub）被忽略；算术更新必须使用 increment（add）/decrement（sub）指令。误用 set+add 做循环体累加会导致计数器每轮被覆盖回常量、while_loop 条件永真（差分测试回归教训）",
-      "v0.5.0 (O-077): tool_trace 为应用层工具轨迹记录指令——形态 {type:tool_trace, params:{attr,value}}，宪法规则将其 value 按指令给定 attr set 入 payload（attr 约定 meta_tool.tool_traces.<seq>，序号由应用层控制实现累积）。合法轨迹经 StateTransition 事实落审计链；违规轨迹由 rules_dir enforce 在约束门拦截（Halted→Violation），以 Violation 形态留痕——两类留痕互补，审计面完整。约束门对 instruction_type=tool_trace 精确求值，规则面可事前检测（如 shell_exec 危险命令黑名单）",
+      "v0.5.0: tool_trace 为应用层工具轨迹记录指令——形态 {type:tool_trace, params:{attr,value}}，宪法规则将其 value 按指令给定 attr set 入 payload（attr 约定 meta_tool.tool_traces.<seq>，序号由应用层控制实现累积）。合法轨迹经 StateTransition 事实落审计链；违规轨迹由 rules_dir enforce 在约束门拦截（Halted→Violation），以 Violation 形态留痕——两类留痕互补，审计面完整。约束门对 instruction_type=tool_trace 精确求值，规则面可事前检测（如 shell_exec 危险命令黑名单）",
       "v0.5.0 纪律: tool_trace 属宪法策略增补（可接受、必要时添加），不触及物理原语（元指令/域函数零新增）；确定性/可回放/审计链为无商量红线——轨迹数据只经 set 进入 payload 随 StateTransition 落链，不触碰哈希链与状态机语义"
     ]
   },
