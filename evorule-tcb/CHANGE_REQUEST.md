@@ -495,3 +495,19 @@ char_lit_starts() 判别（字符字面量 vs 生命周期），新增 skip_life
 判定理由：零 src/ 变更——仅版本号 bump（workspace 统一继承）、CHANGELOG 段转正、文档版本锚点更新（含历史版本字面量中性化改写，事实保留、未新增门禁豁免）、release.yml publish-crates 加固（secret 缺位显式跳过 + 已发布幂等跳过，不改变发布语义）。
 
 测试计划：cargo fmt/clippy/test --workspace 全绿；validate-version / validate-release(-SkipTagCheck) PASSED；scan_public_face 阻断 40 项＝在册存量零新增。
+
+## CR-20260928-001 core_eval.json v0.5.0：tool_trace 工具轨迹记录规则（O-077 立项批复）
+
+| 字段 | 值 |
+|------|------|
+| **变更 ID** | CR-20260928-001 |
+| **变更标题** | core_eval.json v0.5.0：新增 tool_trace 规则——应用层工具调用轨迹的事实记录通道（O-077） |
+| **提交人** | EvoRule Team |
+| **提交日期** | 2026-09-28 |
+| **审查状态** | 已批准（用户批复：宪法策略增补属低代价系统增强，必要时可添加；物理原语零新增） |
+
+**本次变更属于**: ✅ **资产层变更（core_eval.json）+ 测试补充，机制语义零改动**
+
+判定理由：core_eval.json transform 增补 1 条 branch(tool_trace) 规则（与既有 set 处理规则完全同构，仅组合既有 set 动作/branch 控制流/instruction 域函数——元指令与域函数零新增，不触及物理原语）；version 0.4.0→0.5.0；metadata description/provenance/constraints 随动。transition.rs 仅新增 3 个测试（写入/累积/enforce 拦截），机制代码零改动。背景：O-077 立项（工具调用不过引擎=治理面盲区），tool_trace 使应用层工具轨迹经 StateTransition 事实落审计链，规则面可对 instruction_type=tool_trace 精确求值（事前检测）；违规轨迹经约束门 Halted→Violation 留痕，两类留痕互补。确定性/可回放/审计链红线不触及：轨迹数据只经 set 进入 payload，哈希链与状态机语义零改动。
+
+测试计划：cargo fmt/clippy/test 全绿（231 单元测试含 3 新增）；build.rs 策略层检测/字面量门禁 PASSED；下游 reactor/governance 门禁 PASSED。回滚：git revert 即恢复 v0.4.0。

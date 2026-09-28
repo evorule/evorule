@@ -957,6 +957,158 @@ mod tests {
         assert!(matches!(result, TransitionResult::State { .. }));
     }
 
+    // ===== tool_trace 轨迹记录通道测试（O-077，core_eval v0.5.0）=====
+
+    /// v0.5.0 `tool_trace` 规则（与 core_eval.json v0.5.0 transform 同构：
+    /// branch(tool_trace) → set(attr=params.attr, value=params.value)）
+    fn tool_trace_rule() -> JsonValue {
+        JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("branch")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    (
+                        "domain",
+                        JsonValue::object_from_pairs(&[
+                            ("type", JsonValue::string("instruction")),
+                            ("instruction_type", JsonValue::string("tool_trace")),
+                        ]),
+                    ),
+                    (
+                        "on_true",
+                        JsonValue::array(vec![JsonValue::object_from_pairs(&[
+                            ("type", JsonValue::string("set")),
+                            (
+                                "params",
+                                JsonValue::object_from_pairs(&[
+                                    (
+                                        "attr",
+                                        JsonValue::string("__exec__.instruction.params.attr"),
+                                    ),
+                                    ("operation", JsonValue::string("set")),
+                                    (
+                                        "value",
+                                        JsonValue::string("__exec__.instruction.params.value"),
+                                    ),
+                                ]),
+                            ),
+                        ])]),
+                    ),
+                ]),
+            ),
+        ])
+    }
+
+    /// tool_trace 指令（O-077 形态）：attr=meta_tool.tool_traces.<seq>（序号由
+    /// 应用层控制实现 payload 累积），value=轨迹全文（tool_name/args/ok/duration/seq）
+    /// TCB 零依赖（无 std），attr 由调用方以字面量给出。
+    fn tool_trace_instr(attr: &'static str, seq: i64, tool: &str) -> JsonValue {
+        make_instruction(
+            "tool_trace",
+            &[
+                ("attr", JsonValue::string(attr)),
+                (
+                    "value",
+                    JsonValue::object_from_pairs(&[
+                        ("tool_name", JsonValue::string(tool)),
+                        (
+                            "args",
+                            JsonValue::object_from_pairs(&[(
+                                "command",
+                                JsonValue::string("echo hi"),
+                            )]),
+                        ),
+                        ("ok", JsonValue::Bool(true)),
+                        ("duration_ms", JsonValue::Integer(12)),
+                        ("seq", JsonValue::Integer(seq)),
+                    ]),
+                ),
+            ],
+        )
+    }
+
+    #[test]
+    fn test_tool_trace_writes_value_into_payload() {
+        // tool_trace 指令 → 宪法规则 set 入 payload（meta_tool 缺失时中间路径自动创建）
+        // 关键：payload 必须变化——noop 效果会被判 Ignored（反应器产生 Error 事实），
+        // 本测试即 O-077「Ignored 陷阱」的回归验证。
+        let instruction = tool_trace_instr("meta_tool.tool_traces.0", 0, "shell_exec");
+        let payload = JsonValue::object_from_pairs(&[]);
+
+        match execute_transition(&[tool_trace_rule()], &instruction, &payload, &[]).unwrap() {
+            TransitionResult::State { new_payload, .. } => {
+                let entry = new_payload
+                    .get("meta_tool")
+                    .and_then(|m| m.get("tool_traces"))
+                    .and_then(|t| t.get("0"))
+                    .and_then(|e| e.get("tool_name"))
+                    .and_then(|v| v.as_str());
+                assert_eq!(entry, Some("shell_exec"));
+            }
+            other => panic!("expected State with trace payload, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_tool_trace_accumulates_two_entries() {
+        // 两条轨迹（seq 0/1）先后转换：第二条以第一条输出为输入，验证按序号累积互不覆盖
+        let first = tool_trace_instr("meta_tool.tool_traces.0", 0, "file_read");
+        let second = tool_trace_instr("meta_tool.tool_traces.1", 1, "shell_exec");
+        let payload = JsonValue::object_from_pairs(&[]);
+
+        let state1 = match execute_transition(&[tool_trace_rule()], &first, &payload, &[]).unwrap()
+        {
+            TransitionResult::State { new_payload, .. } => new_payload,
+            other => panic!("first: expected State, got {:?}", other),
+        };
+        match execute_transition(&[tool_trace_rule()], &second, &state1, &[]).unwrap() {
+            TransitionResult::State { new_payload, .. } => {
+                let t0 = new_payload
+                    .get("meta_tool")
+                    .and_then(|m| m.get("tool_traces"))
+                    .and_then(|t| t.get("0"))
+                    .and_then(|e| e.get("tool_name"))
+                    .and_then(|v| v.as_str());
+                let t1 = new_payload
+                    .get("meta_tool")
+                    .and_then(|m| m.get("tool_traces"))
+                    .and_then(|t| t.get("1"))
+                    .and_then(|e| e.get("tool_name"))
+                    .and_then(|v| v.as_str());
+                assert_eq!(t0, Some("file_read"));
+                assert_eq!(t1, Some("shell_exec"));
+            }
+            other => panic!("second: expected State, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_tool_trace_enforce_halts_on_violation() {
+        // 约束前置门对 instruction_type=tool_trace 精确求值：违规轨迹在约束门拦截
+        // （Halted→反应器派生 Violation 留痕），合法轨迹才落 StateTransition——
+        // 两类留痕互补（core_eval.json v0.5.0 constraints 契约）。
+        let instruction = tool_trace_instr("meta_tool.tool_traces.0", 0, "shell_exec");
+        let payload = JsonValue::object_from_pairs(&[]);
+        let core_eval = vec![
+            enforce_rule(
+                JsonValue::object_from_pairs(&[
+                    ("type", JsonValue::string("instruction")),
+                    ("instruction_type", JsonValue::string("tool_trace")),
+                ]),
+                Some("违规：工具轨迹命中危险命令黑名单"),
+            ),
+            tool_trace_rule(),
+        ];
+
+        match execute_transition(&core_eval, &instruction, &payload, &[]).unwrap() {
+            TransitionResult::Halted { rule_index, reason } => {
+                assert_eq!(rule_index, 0);
+                assert_eq!(reason, "违规：工具轨迹命中危险命令黑名单");
+            }
+            other => panic!("expected Halted, got {:?}", other),
+        }
+    }
+
     // ===== enforce 强制原语测试（回归验证）=====
 
     fn enforce_rule(domain: JsonValue, reason: Option<&str>) -> JsonValue {
