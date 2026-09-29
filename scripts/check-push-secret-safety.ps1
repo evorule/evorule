@@ -44,6 +44,10 @@ Write-Output "repo=$Repo range=$Range"
 
 # --- collect literal secret candidates from env files ---
 $literals = @{}
+# keys naming configuration rather than credentials: their values are public
+# facts (model names, endpoints, paths, levels) already present in the repos
+# and must not block pushes (false-positive class observed on MINIMAX_MODEL)
+$configKeyRe = '(_MODEL|_NAME|_URL|_URI|_HOST|_PORT|_PATH|_DIR|_DIRS|_LOG|_LEVEL|_MODE|_TYPE|_VERSION)$'
 foreach ($f in $EnvFile) {
     if (-not (Test-Path $f)) { Write-Output "WARN: env file not found, skipped: $f"; continue }
     foreach ($line in (Get-Content $f)) {
@@ -52,6 +56,7 @@ foreach ($f in $EnvFile) {
             # skip placeholders and short values to avoid false positives
             if ($v.Length -lt 8) { continue }
             if ($v -match '^(your_|changeme|xxx|<|\$\{)' -or $v -match '_here$') { continue }
+            if ($k -match $configKeyRe) { continue }
             $literals[$v] = $k
         }
     }
