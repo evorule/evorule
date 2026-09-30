@@ -664,10 +664,7 @@ impl Reactor {
                         let trace_fact = Fact::TransitionTrace {
                             id: trace_id,
                             cause: id,
-                            rule_hits: rule_hits
-                                .iter()
-                                .map(TraceHit::from_rule_hit)
-                                .collect(),
+                            rule_hits: rule_hits.iter().map(TraceHit::from_rule_hit).collect(),
                         };
                         Self::emit_fact(&self.facts_log, &event_tx, trace_fact);
                     }
@@ -694,10 +691,7 @@ impl Reactor {
                         let trace_fact = Fact::TransitionTrace {
                             id: trace_id,
                             cause: id,
-                            rule_hits: rule_hits
-                                .iter()
-                                .map(TraceHit::from_rule_hit)
-                                .collect(),
+                            rule_hits: rule_hits.iter().map(TraceHit::from_rule_hit).collect(),
                         };
                         Self::emit_fact(&self.facts_log, &event_tx, trace_fact);
                         state.phase = ReactorPhase::Idle;

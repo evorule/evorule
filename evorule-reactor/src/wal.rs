@@ -308,7 +308,10 @@ fn trace_attr_to_json(attr: &TraceDomainAttribution) -> serde_json::Value {
         );
     }
     if let Some(policy) = &attr.on_missing {
-        attr_obj.insert("on_missing".into(), serde_json::Value::String(policy.clone()));
+        attr_obj.insert(
+            "on_missing".into(),
+            serde_json::Value::String(policy.clone()),
+        );
     }
     serde_json::Value::Object(attr_obj)
 }
@@ -620,13 +623,14 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
                 let domain_attr = match h.get("domain_attr") {
                     None => None,
                     Some(attr) => {
-                        let outcome = attr.get("outcome").and_then(|v| v.as_str()).ok_or_else(
-                            || {
-                                WalError::InvalidFact(
-                                    "TransitionTrace domain_attr missing 'outcome'".into(),
-                                )
-                            },
-                        )?;
+                        let outcome =
+                            attr.get("outcome")
+                                .and_then(|v| v.as_str())
+                                .ok_or_else(|| {
+                                    WalError::InvalidFact(
+                                        "TransitionTrace domain_attr missing 'outcome'".into(),
+                                    )
+                                })?;
                         let missing_reason = attr
                             .get("missing_reason")
                             .map(|v| {
@@ -1453,7 +1457,10 @@ mod tests {
             Fact::TransitionTrace { rule_hits, .. } => {
                 assert_eq!(rule_hits.len(), 1);
                 assert!(
-                    rule_hits.first().and_then(|h| h.domain_attr.as_ref()).is_none(),
+                    rule_hits
+                        .first()
+                        .and_then(|h| h.domain_attr.as_ref())
+                        .is_none(),
                     "absent domain_attr 必须解析为 None"
                 );
             }

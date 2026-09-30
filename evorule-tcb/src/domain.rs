@@ -154,7 +154,7 @@ pub struct DomainAttribution {
 /// `^(instruction|payload|queue)(\.[A-Za-z0-9_]+)+$` → 写作错误
 /// （像路径引用但缺 `__` 前缀）。根段名单与 `resolve_exec_path`
 /// 相对路径自动补全的根命名空间一致。
-/// 存量实证（T4a 盘点）：O-211 旧形态 `instruction.params.milestone_target`
+/// 存量实证（T4a 盘点）：历史实测旧形态 `instruction.params.milestone_target`
 /// 精确命中；`meta_workflow.phase` 等合法符号常量字面量零误伤。
 pub const VALUE_LITERAL_AMBIGUOUS_RULE: &str = "root-segment-dot-path.v1";
 
@@ -534,11 +534,13 @@ fn evaluate_not_outcome(
     let inner = domain.get("inner").ok_or_else(|| TcbError::MissingField {
         field: "inner".to_string(),
     })?;
-    Ok(match evaluate_domain_outcome_inner(inner, exec_state, depth + 1)? {
-        DomainOutcome::Sat => DomainOutcome::Unsat,
-        DomainOutcome::Unsat => DomainOutcome::Sat,
-        DomainOutcome::Missing(m) => DomainOutcome::Missing(m),
-    })
+    Ok(
+        match evaluate_domain_outcome_inner(inner, exec_state, depth + 1)? {
+            DomainOutcome::Sat => DomainOutcome::Unsat,
+            DomainOutcome::Unsat => DomainOutcome::Sat,
+            DomainOutcome::Missing(m) => DomainOutcome::Missing(m),
+        },
+    )
 }
 
 /// HasFields：检查对象是否包含指定的非空字段
@@ -1793,14 +1795,22 @@ mod tests {
         assert!(!evaluate_domain(&d_default, &state).unwrap());
 
         // 显式 unsat → Missing + 归因（显式声明下的 false，非静默）
-        let d_unsat = eq_with_missing("__exec__.payload.missing", JsonValue::Integer(1), Some("unsat"));
+        let d_unsat = eq_with_missing(
+            "__exec__.payload.missing",
+            JsonValue::Integer(1),
+            Some("unsat"),
+        );
         assert_eq!(
             evaluate_domain_outcome(&d_unsat, &state).unwrap(),
             DomainOutcome::Missing(MissingReason::PathNotFound)
         );
 
         // 显式 error → Err(MissingRejected) 拒绝执行（detail 含归因标签与路径）
-        let d_error = eq_with_missing("__exec__.payload.missing", JsonValue::Integer(1), Some("error"));
+        let d_error = eq_with_missing(
+            "__exec__.payload.missing",
+            JsonValue::Integer(1),
+            Some("error"),
+        );
         assert!(matches!(
             evaluate_domain_outcome(&d_error, &state),
             Err(TcbError::MissingRejected { detail })
@@ -1815,7 +1825,11 @@ mod tests {
         p.insert("name".to_string(), JsonValue::string("hello"));
         let state = make_exec_state("noop", JsonValue::Object(p));
 
-        let d_unsat = lt_with_missing("__exec__.payload.name", JsonValue::Integer(0), Some("unsat"));
+        let d_unsat = lt_with_missing(
+            "__exec__.payload.name",
+            JsonValue::Integer(0),
+            Some("unsat"),
+        );
         assert_eq!(
             evaluate_domain_outcome(&d_unsat, &state).unwrap(),
             DomainOutcome::Missing(MissingReason::Incomparable)
@@ -1823,14 +1837,18 @@ mod tests {
         // 显式声明下的 false：投影与改前一致
         assert!(!evaluate_domain(&d_unsat, &state).unwrap());
 
-        let d_error = lt_with_missing("__exec__.payload.name", JsonValue::Integer(0), Some("error"));
+        let d_error = lt_with_missing(
+            "__exec__.payload.name",
+            JsonValue::Integer(0),
+            Some("error"),
+        );
         assert!(matches!(
             evaluate_domain_outcome(&d_error, &state),
             Err(TcbError::MissingRejected { detail }) if detail.starts_with("incomparable:")
         ));
     }
 
-    /// DoD-A 素材：O-211 复现形态（pack v1 eq 无前缀 value）——
+    /// DoD-A 素材：历史实测复现形态（eq value 无前缀字面量）——
     /// unsat 声明 → 归因 Missing(ValueLiteralAmbiguous)；
     /// error 声明 → Err（ValueLiteralAmbiguous 一律从严）
     #[test]
@@ -1861,11 +1879,13 @@ mod tests {
     }
 
     /// ValueLiteralAmbiguous 判定口径（root-segment-dot-path.v1）正负例锚定：
-    /// 正例=O-211 旧形态；负例=T4a 盘点 10 处合法字面量（零误伤）
+    /// 正例=历史实测旧形态（eq value 无前缀）；负例=T4a 盘点 10 处合法字面量（零误伤）
     #[test]
     fn test_value_literal_ambiguous_rule_cases() {
         // 正例：根段点分形态（像路径引用但缺 __ 前缀，写作错误）
-        assert!(is_root_segment_dot_path("instruction.params.milestone_target"));
+        assert!(is_root_segment_dot_path(
+            "instruction.params.milestone_target"
+        ));
         assert!(is_root_segment_dot_path("payload.x"));
         assert!(is_root_segment_dot_path("queue.front"));
 
@@ -1947,14 +1967,10 @@ mod tests {
     fn test_all_missing_short_circuit_boundary_preserved() {
         let state = make_exec_state("noop", make_payload(10));
         let missing_eq = eq_with_missing("__exec__.payload.missing", JsonValue::Integer(1), None);
-        let structural_err =
-            JsonValue::object_from_pairs(&[("type", JsonValue::string("eq"))]); // 缺 path/value
+        let structural_err = JsonValue::object_from_pairs(&[("type", JsonValue::string("eq"))]); // 缺 path/value
         let all = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("all")),
-            (
-                "inner",
-                JsonValue::array(vec![missing_eq, structural_err]),
-            ),
+            ("inner", JsonValue::array(vec![missing_eq, structural_err])),
         ]);
         // 改前：false（false 短路，不报错）；改后：Missing 投影 false（不报错）
         assert!(!evaluate_domain(&all, &state).unwrap());
@@ -1991,7 +2007,11 @@ mod tests {
     #[test]
     fn test_outcome_deterministic_idempotent() {
         let state = make_exec_state("noop", make_payload(10));
-        let domain = eq_with_missing("__exec__.payload.missing", JsonValue::Integer(1), Some("unsat"));
+        let domain = eq_with_missing(
+            "__exec__.payload.missing",
+            JsonValue::Integer(1),
+            Some("unsat"),
+        );
         let first = evaluate_domain_outcome(&domain, &state);
         for _ in 0..10 {
             assert_eq!(evaluate_domain_outcome(&domain, &state), first);

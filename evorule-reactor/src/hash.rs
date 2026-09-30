@@ -91,7 +91,10 @@ fn trace_attr_to_json(attr: &crate::fact::TraceDomainAttribution) -> serde_json:
         );
     }
     if let Some(policy) = &attr.on_missing {
-        attr_obj.insert("on_missing".into(), serde_json::Value::String(policy.clone()));
+        attr_obj.insert(
+            "on_missing".into(),
+            serde_json::Value::String(policy.clone()),
+        );
     }
     serde_json::Value::Object(attr_obj)
 }
@@ -267,10 +270,7 @@ pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> 
                     );
                     hit_obj.insert("hit".into(), serde_json::Value::Bool(h.hit));
                     if let Some(attr) = &h.domain_attr {
-                        hit_obj.insert(
-                            "domain_attr".into(),
-                            trace_attr_to_json(attr),
-                        );
+                        hit_obj.insert("domain_attr".into(), trace_attr_to_json(attr));
                     }
                     serde_json::Value::Object(hit_obj)
                 })

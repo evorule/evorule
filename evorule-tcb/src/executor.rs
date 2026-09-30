@@ -85,14 +85,7 @@ pub fn execute_meta_instruction(
     let mut budget = MAX_TOTAL_META_INSTRUCTIONS;
     let mut hit = false;
     let mut domain_attr = None;
-    execute_meta_instruction_budgeted(
-        instr,
-        state,
-        depth,
-        &mut budget,
-        &mut hit,
-        &mut domain_attr,
-    )
+    execute_meta_instruction_budgeted(instr, state, depth, &mut budget, &mut hit, &mut domain_attr)
 }
 
 /// 执行一条元指令（受共享预算约束，M6 终止性宽度防线）
@@ -715,7 +708,11 @@ fn exec_branch(
     let outcome = evaluate_domain_outcome(&domain, &state)?;
 
     // R1 归因不回灌执行：走向仅由投影 bool 决定，三态归因（含声明值）仅作审计透传
-    let branch_key = if outcome.to_bool() { "on_true" } else { "on_false" };
+    let branch_key = if outcome.to_bool() {
+        "on_true"
+    } else {
+        "on_false"
+    };
     *domain_attr_out = Some(DomainAttribution {
         outcome,
         on_missing: declared_on_missing(&domain),
@@ -1962,14 +1959,7 @@ mod tests {
         // depth = 63 (MAX-1) 应该可以执行（预算充足）
         let mut budget = MAX_TOTAL_META_INSTRUCTIONS;
         let mut hit = false;
-        let result = exec_branch(
-            &instr,
-            state.clone(),
-            63,
-            &mut budget,
-            &mut hit,
-            &mut None,
-        );
+        let result = exec_branch(&instr, state.clone(), 63, &mut budget, &mut hit, &mut None);
         assert!(result.is_ok());
 
         // depth = 64 (MAX) 应该返回 NestingTooDeep（深度检查先于预算扣减）
@@ -2023,15 +2013,9 @@ mod tests {
 
         let mut budget = 1usize;
         let mut hit = false;
-        let result = execute_meta_instruction_budgeted(
-            &instr,
-            state,
-            0,
-            &mut budget,
-            &mut hit,
-            &mut None,
-        )
-        .unwrap();
+        let result =
+            execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit, &mut None)
+                .unwrap();
         assert!(matches!(result, MetaInstructionResult::State(_)));
         // 单条指令恰好耗尽预算
         assert_eq!(budget, 0);
@@ -2093,15 +2077,9 @@ mod tests {
         let state = make_exec_state("branch", make_payload(0), vec![]);
         let mut budget = 3usize;
         let mut hit2 = false;
-        let result = execute_meta_instruction_budgeted(
-            &instr,
-            state,
-            0,
-            &mut budget,
-            &mut hit2,
-            &mut None,
-        )
-        .unwrap();
+        let result =
+            execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit2, &mut None)
+                .unwrap();
         match result {
             MetaInstructionResult::State(new_state) => {
                 let x = resolve_path(&new_state, "__exec__.payload.x").unwrap();
@@ -2126,15 +2104,9 @@ mod tests {
 
         let mut budget = 0usize;
         let mut hit = false;
-        let err = execute_meta_instruction_budgeted(
-            &instr,
-            state,
-            0,
-            &mut budget,
-            &mut hit,
-            &mut None,
-        )
-        .unwrap_err();
+        let err =
+            execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit, &mut None)
+                .unwrap_err();
         match err {
             TcbError::TooManyExecutedInstructions { limit } => {
                 assert_eq!(limit, MAX_TOTAL_META_INSTRUCTIONS);
