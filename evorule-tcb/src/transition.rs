@@ -14,6 +14,7 @@
 //! - 永不 panic：所有错误返回 `TcbError`
 //! - I/O 请求通过 `core_eval` 中的 `io_request` 元指令触发
 
+use crate::domain::DomainOutcome;
 use crate::error::TcbError;
 use crate::executor::{
     execute_meta_instruction_budgeted, MetaInstructionResult, MAX_TOTAL_META_INSTRUCTIONS,
@@ -47,6 +48,16 @@ pub struct RuleHit {
     pub instr_type: String,
     /// 是否结构命中
     pub hit: bool,
+    /// 域判定三态归因（branch/enforce 专属；其余指令类型为 `None`）
+    ///
+    /// 专项-20261001 方案 2' v4：eq/lt 域遇到状态侧缺失/不可比/引用歧义时，
+    /// 二态投影压平为 false 的信息由本字段还原，供 FactsLog 落账与消费面
+    /// 审计「为什么走了 on_false / 为什么没拦住」。
+    /// - **R1 归因不回灌执行**：branch 走向 / enforce 命中仅由投影 bool +
+    ///   规则文本 `on_missing` 静态声明决定，本字段不参与执行；
+    /// - **R2 半成品纪律**：`IoRequired`/`Halted` 不携带 `rule_hits`，
+    ///   中途归因不随半成品交付，以收敛后的重放结果为准。
+    pub domain_attr: Option<DomainOutcome>,
 }
 
 /// 状态转换结果
@@ -239,12 +250,20 @@ pub fn execute_transition(
             continue;
         }
         let mut hit = false;
-        let result =
-            execute_meta_instruction_budgeted(rule, exec_state.clone(), 0, &mut budget, &mut hit)?;
+        let mut domain_attr = None;
+        let result = execute_meta_instruction_budgeted(
+            rule,
+            exec_state.clone(),
+            0,
+            &mut budget,
+            &mut hit,
+            &mut domain_attr,
+        )?;
         enforce_hits.push(RuleHit {
             index,
             instr_type: instr_type.to_string(),
             hit,
+            domain_attr,
         });
         if let MetaInstructionResult::Halted { reason } = result {
             // 半成品纪律同 IoRequired：不携带 rule_hits，状态修改随丢弃
@@ -266,12 +285,20 @@ pub fn execute_transition(
             continue;
         }
         let mut hit = false;
-        let result =
-            execute_meta_instruction_budgeted(transform_rule, state, 0, &mut budget, &mut hit)?;
+        let mut domain_attr = None;
+        let result = execute_meta_instruction_budgeted(
+            transform_rule,
+            state,
+            0,
+            &mut budget,
+            &mut hit,
+            &mut domain_attr,
+        )?;
         rule_hits.push(RuleHit {
             index,
             instr_type,
             hit,
+            domain_attr,
         });
 
         match result {
@@ -409,6 +436,7 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
+    use crate::domain::MissingReason;
     use crate::value::JsonValue;
     use alloc::vec;
 
@@ -1412,6 +1440,183 @@ mod tests {
             "expected UnknownDomainType, got {:?}",
             result
         );
+    }
+
+    // ===== 域判定归因透传（专项-20261001 方案 2' v4，R1/R2 纪律）=====
+
+    #[test]
+    fn test_execute_transition_branch_missing_projects_false_with_attr() {
+        // eq 域路径缺失 + 缺省（on_missing 未声明 = unsat 兼容缺省）：
+        // 走向 = 投影 false → on_false（R1：归因不回灌执行）；
+        // 归因 = Missing(PathNotFound) 透传出 RuleHit（审计「为什么走 on_false」）
+        let instruction = make_instruction("noop", &[]);
+        let core_eval = vec![make_instruction(
+            "branch",
+            &[
+                (
+                    "domain",
+                    JsonValue::object_from_pairs(&[
+                        ("type", JsonValue::string("eq")),
+                        ("path", JsonValue::string("__exec__.payload.missing")),
+                        ("value", JsonValue::Integer(1)),
+                    ]),
+                ),
+                ("on_true", JsonValue::array(vec![])),
+                (
+                    "on_false",
+                    JsonValue::array(vec![make_instruction(
+                        "set",
+                        &[
+                            ("attr", JsonValue::string("x")),
+                            ("operation", JsonValue::string("set")),
+                            ("value", JsonValue::Integer(9)),
+                        ],
+                    )]),
+                ),
+            ],
+        )];
+
+        match execute_transition(&core_eval, &instruction, &make_payload(0), &[]).unwrap() {
+            TransitionResult::State {
+                new_payload,
+                rule_hits,
+                ..
+            } => {
+                assert_eq!(new_payload.get("x"), Some(&JsonValue::Integer(9)));
+                assert_eq!(rule_hits.len(), 1);
+                assert!(rule_hits[0].hit, "on_false 非空 = 结构命中");
+                assert_eq!(
+                    rule_hits[0].domain_attr,
+                    Some(DomainOutcome::Missing(MissingReason::PathNotFound))
+                );
+            }
+            other => panic!("expected State, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_execute_transition_branch_missing_on_missing_error_rejects() {
+        // eq 域路径缺失 + on_missing=error：拒绝执行（MissingRejected），
+        // 静默通道从根上铲除
+        let instruction = make_instruction("noop", &[]);
+        let core_eval = vec![make_instruction(
+            "branch",
+            &[
+                (
+                    "domain",
+                    JsonValue::object_from_pairs(&[
+                        ("type", JsonValue::string("eq")),
+                        ("path", JsonValue::string("__exec__.payload.missing")),
+                        ("value", JsonValue::Integer(1)),
+                        ("on_missing", JsonValue::string("error")),
+                    ]),
+                ),
+                ("on_true", JsonValue::array(vec![])),
+                ("on_false", JsonValue::array(vec![])),
+            ],
+        )];
+
+        let result = execute_transition(&core_eval, &instruction, &make_payload(0), &[]);
+        assert!(
+            matches!(&result, Err(TcbError::MissingRejected { detail }) if detail.contains("path_not_found")),
+            "expected MissingRejected(path_not_found), got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_execute_transition_enforce_missing_unsat_no_halt_with_attr() {
+        // enforce 域路径缺失 + 缺省：投影 false = 不命中不拦截（不 Halted）；
+        // 归因 Missing(PathNotFound) 留痕——「为什么没拦住」的审计答案
+        let instruction = make_instruction("risky_op", &[]);
+        let core_eval = vec![enforce_rule(
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("eq")),
+                ("path", JsonValue::string("__exec__.payload.missing")),
+                ("value", JsonValue::Integer(1)),
+            ]),
+            Some("blocked"),
+        )];
+
+        match execute_transition(&core_eval, &instruction, &make_payload(0), &[]).unwrap() {
+            TransitionResult::State { rule_hits, .. } => {
+                assert_eq!(rule_hits.len(), 1);
+                assert!(!rule_hits[0].hit);
+                assert_eq!(
+                    rule_hits[0].domain_attr,
+                    Some(DomainOutcome::Missing(MissingReason::PathNotFound))
+                );
+            }
+            other => panic!("expected State, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_execute_transition_enforce_missing_on_missing_error_rejects() {
+        // enforce 域路径缺失 + on_missing=error：拒绝执行（MissingRejected）
+        let instruction = make_instruction("risky_op", &[]);
+        let core_eval = vec![enforce_rule(
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("eq")),
+                ("path", JsonValue::string("__exec__.payload.missing")),
+                ("value", JsonValue::Integer(1)),
+                ("on_missing", JsonValue::string("error")),
+            ]),
+            Some("blocked"),
+        )];
+
+        let result = execute_transition(&core_eval, &instruction, &make_payload(0), &[]);
+        assert!(
+            matches!(&result, Err(TcbError::MissingRejected { detail }) if detail.contains("path_not_found")),
+            "expected MissingRejected(path_not_found), got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_execute_transition_enforce_sat_halted_rule_hits_not_delivered() {
+        // R2 半成品纪律：enforce 命中（Halted）不携带 rule_hits——
+        // 归因不随半成品交付（返回变体层面无 rule_hits 字段，此处验证外层口径）
+        let instruction = make_instruction("risky_op", &[]);
+        let core_eval = vec![enforce_rule(
+            JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("eq")),
+                ("path", JsonValue::string("__exec__.payload.x")),
+                ("value", JsonValue::Integer(1)),
+            ]),
+            Some("blocked"),
+        )];
+
+        match execute_transition(&core_eval, &instruction, &make_payload(1), &[]).unwrap() {
+            TransitionResult::Halted { rule_index, reason } => {
+                assert_eq!(rule_index, 0);
+                assert_eq!(reason, "blocked");
+            }
+            other => panic!("expected Halted, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_execute_transition_non_domain_rule_has_no_domain_attr() {
+        // 非域消费指令（set）：domain_attr = None（branch/enforce 专属归因）
+        let instruction = make_instruction("set", &[]);
+        let core_eval = vec![make_instruction(
+            "set",
+            &[
+                ("attr", JsonValue::string("x")),
+                ("operation", JsonValue::string("set")),
+                ("value", JsonValue::Integer(1)),
+            ],
+        )];
+
+        match execute_transition(&core_eval, &instruction, &make_payload(0), &[]).unwrap() {
+            TransitionResult::State { rule_hits, .. } => {
+                assert_eq!(rule_hits.len(), 1);
+                assert!(rule_hits[0].hit);
+                assert_eq!(rule_hits[0].domain_attr, None);
+            }
+            other => panic!("expected State, got {:?}", other),
+        }
     }
 
     #[test]

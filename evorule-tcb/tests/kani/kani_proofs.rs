@@ -20,7 +20,7 @@ extern crate alloc;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use evorule_tcb::domain::{evaluate_domain, MAX_DOMAIN_DEPTH};
+use evorule_tcb::domain::{evaluate_domain, evaluate_domain_outcome, MAX_DOMAIN_DEPTH};
 use evorule_tcb::executor::{execute_meta_instruction, MetaInstructionResult, MAX_BRANCH_DEPTH};
 use evorule_tcb::path::resolve_path;
 use evorule_tcb::{
@@ -358,6 +358,45 @@ fn verify_evaluate_domain_eq_never_panics() {
     shape_field(&domain, "domain", "value");
     shape_payload_leaf(&exec_state, "exec_state", "x");
     let _ = evaluate_domain(&domain, &exec_state);
+    core::mem::forget(exec_state);
+    core::mem::forget(domain);
+}
+
+/// P8h: evaluate_domain_outcome eq 永不 panic（三态版缺省路径，专项-20261001）
+///
+/// 与 P8a 同构（无 on_missing 声明 → 兼容缺省 unsat 分派），验证
+/// DomainOutcome 三态求值路径（含 is_root_segment_dot_path 判定与
+/// Missing 构造）不 panic。
+#[kani::proof]
+#[kani::unwind(24)]
+fn verify_evaluate_domain_outcome_eq_never_panics() {
+    let exec_state = model::single_key_exec_state();
+    let domain = model::obj(vec![
+        ("type", JsonValue::string("eq")),
+        ("path", JsonValue::string("payload.x")),
+        ("value", JsonValue::Integer(1)),
+    ]);
+    let _ = evaluate_domain_outcome(&domain, &exec_state);
+    core::mem::forget(exec_state);
+    core::mem::forget(domain);
+}
+
+/// P8i: evaluate_domain_outcome 的 MissingRejected 分派路径永不 panic
+///
+/// on_missing="error" 显式声明 + 路径缺失 → dispatch_missing 构造
+/// `Err(MissingRejected)`（含 format! 拼接 detail）——验证错误构造
+/// 路径不 panic（拼接口径：reason.label() 固定串 + 具体路径串）。
+#[kani::proof]
+#[kani::unwind(32)]
+fn verify_evaluate_domain_outcome_missing_rejected_never_panics() {
+    let exec_state = model::single_key_exec_state();
+    let domain = model::obj(vec![
+        ("type", JsonValue::string("eq")),
+        ("path", JsonValue::string("payload.missing")),
+        ("value", JsonValue::Integer(1)),
+        ("on_missing", JsonValue::string("error")),
+    ]);
+    let _ = evaluate_domain_outcome(&domain, &exec_state);
     core::mem::forget(exec_state);
     core::mem::forget(domain);
 }

@@ -14,7 +14,7 @@
 //! `io_request` 是"半元指令"——在执行器中硬编码识别，但行为完全由 JSON 参数驱动。
 //! 它不修改任何状态，仅返回 `MetaInstructionResult::IoRequired` 信号。
 
-use crate::domain::evaluate_domain;
+use crate::domain::{evaluate_domain_outcome, DomainOutcome};
 use crate::error::TcbError;
 use crate::path::{parse_path_segments, resolve_path, resolve_path_mut, PathSegment};
 use crate::value::{JsonValue, ObjectMap};
@@ -84,7 +84,15 @@ pub fn execute_meta_instruction(
 ) -> Result<MetaInstructionResult, TcbError> {
     let mut budget = MAX_TOTAL_META_INSTRUCTIONS;
     let mut hit = false;
-    execute_meta_instruction_budgeted(instr, state, depth, &mut budget, &mut hit)
+    let mut domain_attr = None;
+    execute_meta_instruction_budgeted(
+        instr,
+        state,
+        depth,
+        &mut budget,
+        &mut hit,
+        &mut domain_attr,
+    )
 }
 
 /// 执行一条元指令（受共享预算约束，M6 终止性宽度防线）
@@ -104,12 +112,24 @@ pub fn execute_meta_instruction(
 /// 如 `set` 同值仍算命中），判定稳定且零状态对比开销。调用方在
 /// `Err` 返回时不得采信 `hit_out`（未定义）。递归子指令的命中
 /// 不计入顶层规则（命中粒度 = 顶层规则级，见 `TransitionResult`）。
+///
+/// # 域判定归因（专项-20261001 方案 2' v4，R1/R2 纪律）
+///
+/// `domain_attr_out` 在 branch/enforce 的域求值成功后写入三态归因
+/// （`DomainOutcome`，含 Missing 分类）；其余指令类型不写入（保持 `None`）。
+/// - **R1 归因不回灌执行**：branch 走向仅由投影 bool（`Sat → true`，其余
+///   `→ false`）+ 规则文本 `on_missing` 静态声明决定；归因仅作审计用途。
+/// - **R2 半成品纪律**：`IoRequired`/`Halted` 不携带 `rule_hits`（转换层
+///   既有契约），中途归因同样不随半成品交付，以收敛后的重放结果为准。
+/// - 调用方在 `Err` 返回时不得采信 `domain_attr_out`（未定义）。
+/// - 递归子指令的域归因不计入顶层规则（同命中粒度：顶层规则级）。
 pub(crate) fn execute_meta_instruction_budgeted(
     instr: &JsonValue,
     state: JsonValue,
     depth: usize,
     budget: &mut usize,
     hit_out: &mut bool,
+    domain_attr_out: &mut Option<DomainOutcome>,
 ) -> Result<MetaInstructionResult, TcbError> {
     // 预算检查：先扣减后执行（失败指令同样计入，防止用错误路径消耗无界资源）
     if let Some(next) = budget.checked_sub(1) {
@@ -134,9 +154,9 @@ pub(crate) fn execute_meta_instruction_budgeted(
         "push" => exec_push(instr, state)
             .map(MetaInstructionResult::State)
             .inspect(|_| *hit_out = true),
-        "branch" => exec_branch(instr, state, depth, budget, hit_out),
+        "branch" => exec_branch(instr, state, depth, budget, hit_out, domain_attr_out),
         "io_request" => exec_io_request(instr, state).inspect(|_| *hit_out = true),
-        "enforce" => exec_enforce(instr, state).inspect(|result| {
+        "enforce" => exec_enforce(instr, state, domain_attr_out).inspect(|result| {
             // 结构命中口径：domain 求值为真（Halted 信号产生）即命中；
             // 求值为假（noop 继续）不命中。
             if matches!(result, MetaInstructionResult::Halted { .. }) {
@@ -676,6 +696,7 @@ fn exec_branch(
     depth: usize,
     budget: &mut usize,
     hit_out: &mut bool,
+    domain_attr_out: &mut Option<DomainOutcome>,
 ) -> Result<MetaInstructionResult, TcbError> {
     if depth >= MAX_BRANCH_DEPTH {
         return Err(TcbError::NestingTooDeep {
@@ -688,10 +709,14 @@ fn exec_branch(
     })?;
 
     let domain = resolve_path_or_literal(&state, params.get("domain"))?;
-    // 域结构错误（未知类型/缺字段/超深）显式报错，不在 TCB 层静默求值
-    let result = evaluate_domain(&domain, &state)?;
+    // 域结构错误（未知类型/缺字段/超深/结构错误）显式报错，不在 TCB 层静默求值；
+    // on_missing=error 声明的 Missing 同样显式报错（MissingRejected，专项-20261001）
+    let outcome = evaluate_domain_outcome(&domain, &state)?;
 
-    let branch_key = if result { "on_true" } else { "on_false" };
+    // R1 归因不回灌执行：走向仅由投影 bool 决定，三态归因仅作审计透传
+    let branch_key = if outcome.to_bool() { "on_true" } else { "on_false" };
+    *domain_attr_out = Some(outcome);
+
     let branch_instrs = params.get(branch_key).and_then(|v| v.as_array());
 
     if let Some(instrs) = branch_instrs {
@@ -702,12 +727,15 @@ fn exec_branch(
         }
         for sub_instr in instrs {
             let mut sub_hit = false;
+            // 子指令的域归因不细记（同命中粒度：顶层规则级），落本地变量丢弃
+            let mut sub_attr = None;
             let result = execute_meta_instruction_budgeted(
                 sub_instr,
                 state,
                 depth + 1,
                 budget,
                 &mut sub_hit,
+                &mut sub_attr,
             )?;
             match result {
                 MetaInstructionResult::State(new_state) => state = new_state,
@@ -741,14 +769,26 @@ fn exec_branch(
 /// # 层级边界（引擎无层级概念）
 /// 本原语不感知 tier——"enforce 仅允许出现在 L2 元规则文件"由 server
 /// 侧装载门禁强制（见 evorule-server tier gate / schema 门禁）。
-fn exec_enforce(instr: &JsonValue, state: JsonValue) -> Result<MetaInstructionResult, TcbError> {
+fn exec_enforce(
+    instr: &JsonValue,
+    state: JsonValue,
+    domain_attr_out: &mut Option<DomainOutcome>,
+) -> Result<MetaInstructionResult, TcbError> {
     let params = instr.get("params").ok_or(TcbError::MissingField {
         field: "params".to_string(),
     })?;
 
     let domain = resolve_path_or_literal(&state, params.get("domain"))?;
-    // 域结构错误（未知类型/缺字段/超深）显式报错，不在 TCB 层静默求值
-    if !evaluate_domain(&domain, &state)? {
+    // 域结构错误（未知类型/缺字段/超深/结构错误）显式报错，不在 TCB 层静默求值；
+    // on_missing=error 声明的 Missing 同样显式报错（MissingRejected，专项-20261001）
+    let outcome = evaluate_domain_outcome(&domain, &state)?;
+
+    // R1 归因不回灌执行：命中与否仅由投影 bool 决定，三态归因仅作审计透传
+    // （Unsat/Missing 不命中也要留归因——「为什么没拦住」的审计答案）
+    let domain_satisfied = outcome.to_bool();
+    *domain_attr_out = Some(outcome);
+
+    if !domain_satisfied {
         return Ok(MetaInstructionResult::State(state));
     }
 
@@ -1914,13 +1954,27 @@ mod tests {
         // depth = 63 (MAX-1) 应该可以执行（预算充足）
         let mut budget = MAX_TOTAL_META_INSTRUCTIONS;
         let mut hit = false;
-        let result = exec_branch(&instr, state.clone(), 63, &mut budget, &mut hit);
+        let result = exec_branch(
+            &instr,
+            state.clone(),
+            63,
+            &mut budget,
+            &mut hit,
+            &mut None,
+        );
         assert!(result.is_ok());
 
         // depth = 64 (MAX) 应该返回 NestingTooDeep（深度检查先于预算扣减）
         let mut budget2 = MAX_TOTAL_META_INSTRUCTIONS;
         let mut hit2 = false;
-        let result = exec_branch(&instr, state, MAX_BRANCH_DEPTH, &mut budget2, &mut hit2);
+        let result = exec_branch(
+            &instr,
+            state,
+            MAX_BRANCH_DEPTH,
+            &mut budget2,
+            &mut hit2,
+            &mut None,
+        );
         assert!(matches!(result, Err(TcbError::NestingTooDeep { .. })));
     }
 
@@ -1940,7 +1994,8 @@ mod tests {
 
         let mut budget = 0usize;
         let mut hit = false;
-        let result = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit);
+        let result =
+            execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit, &mut None);
         assert!(
             matches!(result, Err(TcbError::TooManyExecutedInstructions { limit }) if limit == MAX_TOTAL_META_INSTRUCTIONS)
         );
@@ -1960,8 +2015,15 @@ mod tests {
 
         let mut budget = 1usize;
         let mut hit = false;
-        let result =
-            execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit).unwrap();
+        let result = execute_meta_instruction_budgeted(
+            &instr,
+            state,
+            0,
+            &mut budget,
+            &mut hit,
+            &mut None,
+        )
+        .unwrap();
         assert!(matches!(result, MetaInstructionResult::State(_)));
         // 单条指令恰好耗尽预算
         assert_eq!(budget, 0);
@@ -2012,7 +2074,8 @@ mod tests {
         let state = make_exec_state("branch", make_payload(0), vec![]);
         let mut budget = 2usize;
         let mut hit = false;
-        let result = execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit);
+        let result =
+            execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit, &mut None);
         assert!(matches!(
             result,
             Err(TcbError::TooManyExecutedInstructions { .. })
@@ -2022,8 +2085,15 @@ mod tests {
         let state = make_exec_state("branch", make_payload(0), vec![]);
         let mut budget = 3usize;
         let mut hit2 = false;
-        let result =
-            execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit2).unwrap();
+        let result = execute_meta_instruction_budgeted(
+            &instr,
+            state,
+            0,
+            &mut budget,
+            &mut hit2,
+            &mut None,
+        )
+        .unwrap();
         match result {
             MetaInstructionResult::State(new_state) => {
                 let x = resolve_path(&new_state, "__exec__.payload.x").unwrap();
@@ -2048,8 +2118,15 @@ mod tests {
 
         let mut budget = 0usize;
         let mut hit = false;
-        let err =
-            execute_meta_instruction_budgeted(&instr, state, 0, &mut budget, &mut hit).unwrap_err();
+        let err = execute_meta_instruction_budgeted(
+            &instr,
+            state,
+            0,
+            &mut budget,
+            &mut hit,
+            &mut None,
+        )
+        .unwrap_err();
         match err {
             TcbError::TooManyExecutedInstructions { limit } => {
                 assert_eq!(limit, MAX_TOTAL_META_INSTRUCTIONS);
@@ -2631,7 +2708,10 @@ mod tests {
                     JsonValue::array(vec![JsonValue::string("tool_calls")]),
                 ),
             ]);
-            assert!(evaluate_domain(&domain, &state).unwrap());
+            assert_eq!(
+                evaluate_domain_outcome(&domain, &state).unwrap(),
+                DomainOutcome::Sat
+            );
         }
 
         #[test]
@@ -2645,7 +2725,10 @@ mod tests {
                     JsonValue::array(vec![JsonValue::string("missing_field")]),
                 ),
             ]);
-            assert!(!evaluate_domain(&domain, &state).unwrap());
+            assert_eq!(
+                evaluate_domain_outcome(&domain, &state).unwrap(),
+                DomainOutcome::Unsat
+            );
         }
 
         #[test]
@@ -2668,7 +2751,10 @@ mod tests {
                     JsonValue::array(vec![JsonValue::string("tool_calls")]),
                 ),
             ]);
-            assert!(!evaluate_domain(&domain, &state).unwrap());
+            assert_eq!(
+                evaluate_domain_outcome(&domain, &state).unwrap(),
+                DomainOutcome::Unsat
+            );
         }
     }
 }

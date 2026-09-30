@@ -210,7 +210,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        batch: [1, 2, 3, 4, 5, 6]
+        batch: [1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -247,6 +247,7 @@ jobs:
             4) LIST="verify_execute_meta_instruction_never_panics verify_execute_transition_never_panics verify_has_fields_empty_array verify_io_request_safe" ;;
             5) LIST="verify_react_io_required" ;;
             6) LIST="verify_branch_depth_limit verify_domain_depth_limit verify_transform_rules_limit" ;;
+            7) LIST="verify_evaluate_domain_outcome_eq_never_panics verify_evaluate_domain_outcome_missing_rejected_never_panics" ;;
           esac
           for h in $LIST; do
             echo "==> $h"

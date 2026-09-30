@@ -13,7 +13,7 @@
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Constitution CC0-1.0](https://img.shields.io/badge/constitution-CC0--1.0%20public%20domain-lightgrey.svg)](LICENSES/core_eval-CC0-1.0.txt)
 [![Tests](https://img.shields.io/badge/tests-782%20passed%20%C2%B7%202026--09--14-brightgreen.svg)](#testing--verification)
-[![Kani](https://img.shields.io/badge/Kani-46%20proofs%20%2818%20verified%20%C2%B7%20AL2%29-blue.svg)](#formal-verification)
+[![Kani](https://img.shields.io/badge/Kani-48%20proofs%20%2818%20verified%20%C2%B7%20AL2%29-blue.svg)](#formal-verification)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb--minimal-trusted-computing-base)
 
 > **EvoRule is a deterministic rule-governance engine.** A BLAKE3 cryptographically-signed, tamper-evident audit chain and time-machine replay make critical decisions *provable and replayable* — not just *logged*.
@@ -520,7 +520,7 @@ evorule/
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Constitution CC0-1.0](https://img.shields.io/badge/constitution-CC0--1.0%20public%20domain-lightgrey.svg)](LICENSES/core_eval-CC0-1.0.txt)
 [![Tests](https://img.shields.io/badge/tests-782%20passed%20%C2%B7%202026--09--14-brightgreen.svg)](#测试与验证)
-[![Kani](https://img.shields.io/badge/Kani-46%20proofs%20%2818%20verified%20%C2%B7%20AL2%29-blue.svg)](#形式化验证)
+[![Kani](https://img.shields.io/badge/Kani-48%20proofs%20%2818%20verified%20%C2%B7%20AL2%29-blue.svg)](#形式化验证)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb---最小信任基)
 
 > **EvoRule 是确定性规则治理引擎。** BLAKE3 密码学签名、不可篡改审计链 + 时光机回放，让关键决策**可被证明、可重放**，而不只是被记录下来。
@@ -779,8 +779,8 @@ cargo test --workspace --features persistence
 
 ### 形式化验证
 
-- **Kani proof**：共 **46 个**（tcb 35 + reactor 11）
-  - tcb：`evorule-tcb/tests/kani/kani_proofs.rs`（35 个 = A 档 14 + B 档 21；A 档 v0.6.0 重跑 @ `25c0cc0` 全 PASS，B 档实测 600s/3600s 超时，判定当前不可运行）
+- **Kani proof**：共 **48 个**（tcb 37 + reactor 11）
+  - tcb：`evorule-tcb/tests/kani/kani_proofs.rs`（37 个 = A 档 14 + B 档 23；A 档 v0.6.0 重跑 @ `25c0cc0` 全 PASS，B 档实测 600s/3600s 超时，判定当前不可运行）
   - reactor：`evorule-reactor/verification/kani_proofs.rs`（11 个，覆盖 pure 函数）
   - **当前实跑验证**：18 个——见 [`verification/STATUS.md`](verification/STATUS.md)（唯一权威，五档词汇）
   - **保证等级封顶（R1）**：这 18 个 PASS 的 proof 在 `cfg(kani)` 替身配置下实跑（如 `KaniMap`/`BTreeMap` 替换、`MAX_DOMAIN_DEPTH` 降为 1、`inject_io_result` 被桩化）。按规则 **R1**（载体同一性），其保证等级封顶 **AL2**；AL4 所需的载体同一性证据尚未建立（见 `STATUS.md` §三 DEV-1 / DEV-6）。
@@ -944,7 +944,7 @@ evorule/
 - **cli 无 I/O handler**：IoRequest 即 Error 停止（可审计的失败）
 - **ffi 无传统调试语义**：事件驱动状态机不提供 pause/resume/step/is_paused；调试由专门方案提供
 - **调试控制为应用层能力**：非真正单步执行，为 rewind 回放
-- **Kani 覆盖为部分**：46 个 proof 中 18 个当前实跑验证；B 档 21 个判定当前不可运行（见 [`verification/STATUS.md`](verification/STATUS.md)）
+- **Kani 覆盖为部分**：48 个 proof 中 18 个当前实跑验证；B 档 23 个判定当前不可运行（见 [`verification/STATUS.md`](verification/STATUS.md)）
 - **未知 IoResponse warn 忽略**：设计待确认
 
 ### 路线图

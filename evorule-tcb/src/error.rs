@@ -109,6 +109,17 @@ pub enum TcbError {
         /// 允许的最大执行总数
         limit: usize,
     },
+
+    /// 域判定 Missing 被显式声明拒绝（`on_missing: "error"`）
+    ///
+    /// eq/lt 域判定遇到状态侧缺失/不可比/value 引用歧义时，若规则作者
+    /// 通过 `on_missing: "error"` 显式声明「缺失即错误」，则拒绝执行
+    /// （分支不执行），错误经结构侧错误通道全链留痕——静默通道从根上
+    /// 铲除（专项-20261001 方案 2' v4）。
+    MissingRejected {
+        /// 缺失原因与定位（如 "path_not_found: instruction.params.x"）
+        detail: String,
+    },
 }
 
 impl core::fmt::Display for TcbError {
@@ -165,6 +176,13 @@ impl core::fmt::Display for TcbError {
                     f,
                     "total executed meta instructions exceed limit ({})",
                     limit
+                )
+            }
+            TcbError::MissingRejected { detail } => {
+                write!(
+                    f,
+                    "domain missing rejected by on_missing=error declaration: {}",
+                    detail
                 )
             }
         }
@@ -262,6 +280,14 @@ mod tests {
         assert_eq!(
             format!("{}", err),
             "core_eval transform rules exceed limit: 100 > 64"
+        );
+
+        let err = TcbError::MissingRejected {
+            detail: "path_not_found: instruction.params.x".to_string(),
+        };
+        assert_eq!(
+            format!("{}", err),
+            "domain missing rejected by on_missing=error declaration: path_not_found: instruction.params.x"
         );
     }
 

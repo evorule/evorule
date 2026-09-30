@@ -23,6 +23,7 @@ use crate::error::TcbError;
 use crate::executor::json_type_name;
 use crate::path::resolve_exec_path;
 use crate::value::JsonValue;
+use alloc::format;
 use alloc::string::ToString;
 
 /// 域评估最大递归深度
@@ -33,7 +34,7 @@ use alloc::string::ToString;
 ///
 /// # Kani 验证模型（CR-20260913-002）
 ///
-/// Kani 构建下取 4：`evaluate_domain_inner` 的 `all`/`not` 分支递归调用
+/// Kani 构建下取 4：`evaluate_domain_outcome_inner` 的 `all`/`not` 分支递归调用
 /// 自身，CBMC 无条件编码整棵递归调用树（每层扇出 2），64 层 = 2^64 节点
 /// 不可收敛（2026-09-13 六轮二分探针定位：同逻辑去递归版 35s PASS，
 /// 真递归版 150s 超时，与运行时输入无关）。4 层 = 2^5 个评估实例，深度
@@ -59,6 +60,156 @@ fn resolve_domain_path<'a>(exec_state: &'a JsonValue, path: &str) -> Option<&'a 
     resolve_exec_path(exec_state, path)
 }
 
+// ===== 三态域判定本体（专项-20261001 方案 2' v4）=====
+
+/// 域判定三态结果
+///
+/// 「真实比对为假」「路径不存在」「类型不可比」「value 引用歧义」四种
+/// 情形在二态输出上不可区分（信息丢失）——三态结果还原被压平的输出，
+/// Missing 的处理由规则文本的 `on_missing` 显式声明决定（`error` = 拒绝
+/// 执行 / `unsat` = 走 on_false + 归因），静默通道从根上铲除。
+#[derive(Debug, Clone, PartialEq)]
+pub enum DomainOutcome {
+    /// 路径存在且比较成立
+    Sat,
+    /// 路径存在且比较不成立（真实为假）
+    Unsat,
+    /// 状态侧缺失/不可比/引用歧义（处理策略见 `on_missing` 声明）
+    Missing(MissingReason),
+}
+
+/// Missing 的归因分类
+#[derive(Debug, Clone, PartialEq)]
+pub enum MissingReason {
+    /// 比较路径（或 `__` 引用路径）在执行状态中不存在
+    PathNotFound,
+    /// 两侧值均存在但类型不可比（`lt` 非 i64 等）
+    Incomparable,
+    /// value 为根段点分形态字符串（像路径引用但缺 `__` 前缀，写作错误）
+    ValueLiteralAmbiguous,
+}
+
+impl MissingReason {
+    /// 归因标签（审计落账/错误 detail 用，版本化锁定）
+    pub fn label(&self) -> &'static str {
+        match self {
+            MissingReason::PathNotFound => "path_not_found",
+            MissingReason::Incomparable => "incomparable",
+            MissingReason::ValueLiteralAmbiguous => "value_literal_ambiguous",
+        }
+    }
+}
+
+impl DomainOutcome {
+    /// 二态投影：Missing → false（兼容包装投影，与改前行为一致）
+    pub fn to_bool(&self) -> bool {
+        matches!(self, DomainOutcome::Sat)
+    }
+
+    fn from_bool(b: bool) -> Self {
+        if b {
+            DomainOutcome::Sat
+        } else {
+            DomainOutcome::Unsat
+        }
+    }
+}
+
+/// ValueLiteralAmbiguous 判定规则版本（版本化锁定，防跨版本归因漂移）
+///
+/// 判定口径：value 字符串匹配「TCB exec 根段开头的点分形态」
+/// `^(instruction|payload|queue)(\.[A-Za-z0-9_]+)+$` → 写作错误
+/// （像路径引用但缺 `__` 前缀）。根段名单与 `resolve_exec_path`
+/// 相对路径自动补全的根命名空间一致。
+/// 存量实证（T4a 盘点）：O-211 旧形态 `instruction.params.milestone_target`
+/// 精确命中；`meta_workflow.phase` 等合法符号常量字面量零误伤。
+pub const VALUE_LITERAL_AMBIGUOUS_RULE: &str = "root-segment-dot-path.v1";
+
+fn is_root_segment_dot_path(s: &str) -> bool {
+    let mut parts = s.split('.');
+    match parts.next() {
+        Some("instruction") | Some("payload") | Some("queue") => {}
+        _ => return false,
+    }
+    let mut seg_count = 0usize;
+    for seg in parts {
+        seg_count += 1;
+        if seg.is_empty() || !seg.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            return false;
+        }
+    }
+    seg_count >= 1
+}
+
+/// `on_missing` 声明（eq/lt 域可选字段；缺省 = 兼容缺省 unsat）
+#[derive(Debug, Clone, PartialEq)]
+enum OnMissingPolicy {
+    /// Missing → Err 拒绝执行（显式报错，分支不执行）
+    Error,
+    /// Missing → 走 on_false + 归因（显式声明下的 false，非静默）
+    Unsat,
+}
+
+/// 解析 eq/lt 域的 `on_missing` 声明；缺省 None（运行时兼容缺省 unsat，
+/// 仅防旧数据直灌——装载面对新装载规则强制显式声明）
+fn parse_on_missing(domain: &JsonValue) -> Result<Option<OnMissingPolicy>, TcbError> {
+    match domain.get("on_missing") {
+        None => Ok(None),
+        Some(v) => match v.as_str() {
+            Some("error") => Ok(Some(OnMissingPolicy::Error)),
+            Some("unsat") => Ok(Some(OnMissingPolicy::Unsat)),
+            _ => Err(TcbError::InvalidType {
+                expected: "\"error\" | \"unsat\"",
+                actual: json_type_name(v),
+                context: "on_missing".to_string(),
+            }),
+        },
+    }
+}
+
+/// Missing 按声明分派：`error` → `Err(MissingRejected)`（拒绝执行，走
+/// 结构侧错误通道全链留痕）；`unsat`/缺省 → `Ok(Missing)`（消费点投影
+/// false + 归因落账）
+fn dispatch_missing(
+    policy: Option<OnMissingPolicy>,
+    reason: MissingReason,
+    context: &str,
+) -> Result<DomainOutcome, TcbError> {
+    match policy {
+        Some(OnMissingPolicy::Error) => Err(TcbError::MissingRejected {
+            detail: format!("{}: {}", reason.label(), context),
+        }),
+        _ => Ok(DomainOutcome::Missing(reason)),
+    }
+}
+
+fn value_context(value: &JsonValue) -> &str {
+    value.as_str().unwrap_or("?")
+}
+
+/// 解析 `eq`/`lt` 的 `value` 字段（三态版）：`__` 开头字符串视为路径引用
+/// （解析失败 → `PathNotFound`）；根段点分形态 → `ValueLiteralAmbiguous`；
+/// 其余为字面值。
+fn resolve_value_reference_outcome(
+    value: &JsonValue,
+    exec_state: &JsonValue,
+) -> Result<JsonValue, MissingReason> {
+    match value {
+        JsonValue::String(s) => {
+            if s.starts_with("__") {
+                resolve_domain_path(exec_state, s)
+                    .cloned()
+                    .ok_or(MissingReason::PathNotFound)
+            } else if is_root_segment_dot_path(s) {
+                Err(MissingReason::ValueLiteralAmbiguous)
+            } else {
+                Ok(value.clone())
+            }
+        }
+        _ => Ok(value.clone()),
+    }
+}
+
 /// 评估域条件，返回布尔值
 ///
 /// # 支持的域类型
@@ -74,18 +225,25 @@ fn resolve_domain_path<'a>(exec_state: &'a JsonValue, path: &str) -> Option<&'a 
 ///
 /// | 情形 | 返回 | 例子 |
 /// |------|------|------|
-/// | 域对象缺必需字段 / 字段类型错误 | `Err(MissingField/InvalidType)` | `eq` 缺 `value` |
+/// | 域对象缺必需字段 / 字段类型错误 | `Err(MissingField/InvalidType)` | `eq` 缺 `value`；`on_missing` 非法值 |
 /// | 未知域类型 | `Err(UnknownDomainType)` | `type: "e"`（拼错的 eq） |
 /// | `has_fields.fields` 为空数组 | `Err(InvalidType)` | 无意义结构 |
 /// | 嵌套深度超 `MAX_DOMAIN_DEPTH` | `Err(NestingTooDeep)` | 65 层 `not` |
-/// | 路径在状态中不存在 | `Ok(false)` | `eq` 的 path 未就位 |
-/// | 值不可比较（非整数等） | `Ok(false)` | `lt` 对字符串 |
+/// | 路径在状态中不存在 | `Ok(false)`（三态投影） | `eq` 的 path 未就位 |
+/// | 值不可比较（非整数等） | `Ok(false)`（三态投影） | `lt` 对字符串 |
+/// | value 根段点分形态（引用歧义） | `Ok(false)`（三态投影） | `value: "instruction.params.x"` |
 /// | `all` 的 `inner` 为空数组 | `Ok(true)` | 真空真（逻辑学标准约定） |
 ///
 /// 该决策表确立单一原则：**规则结构错误显式报错（fail-fast），
 /// 业务状态缺失静默求值（fail-closed）**。特别地，未知域类型不再
 /// 静默求值为 false——否则经 `not` 包裹后反转为 true，fail-closed
 /// 退化为 fail-open。
+///
+/// **三态归因（专项-20261001）**：本函数是 [`evaluate_domain_outcome`]
+/// 的二态兼容包装（Missing → false），状态侧三情形（路径缺失/不可比/
+/// 引用歧义）在 outcome 上可归因，行为与改前逐情形一致；对带
+/// `on_missing: "error"` 声明的输入，Missing → `Err(MissingRejected)`
+/// 拒绝执行。
 ///
 /// # 路径约定
 /// - `path` 字段支持相对路径（自动补全 `__exec__.` 前缀）
@@ -122,15 +280,30 @@ fn resolve_domain_path<'a>(exec_state: &'a JsonValue, path: &str) -> Option<&'a 
 ///
 /// 见上方决策表：域结构错误返回 `TcbError`，业务状态缺失返回 `Ok(false)`。
 pub fn evaluate_domain(domain: &JsonValue, exec_state: &JsonValue) -> Result<bool, TcbError> {
-    evaluate_domain_inner(domain, exec_state, 0)
+    evaluate_domain_outcome_inner(domain, exec_state, 0).map(|o| o.to_bool())
 }
 
-/// 域评估内部实现（带递归深度限制）
-fn evaluate_domain_inner(
+/// 三态域评估（专项-20261001 方案 2' v4 主入口）
+///
+/// eq/lt 三态求值 + `on_missing` 声明分派（`error` →
+/// `Err(MissingRejected)` / `unsat` → `Ok(Missing)` 由消费点投影 false
+/// + 归因落账）。
+///
+/// all/not 三值同构短路；exists/instruction/has_fields
+/// 为存在性检查本体（二态，无 Missing）。
+pub fn evaluate_domain_outcome(
+    domain: &JsonValue,
+    exec_state: &JsonValue,
+) -> Result<DomainOutcome, TcbError> {
+    evaluate_domain_outcome_inner(domain, exec_state, 0)
+}
+
+/// 域评估内部实现（带递归深度限制，三态版）
+fn evaluate_domain_outcome_inner(
     domain: &JsonValue,
     exec_state: &JsonValue,
     depth: usize,
-) -> Result<bool, TcbError> {
+) -> Result<DomainOutcome, TcbError> {
     if depth > MAX_DOMAIN_DEPTH {
         return Err(TcbError::NestingTooDeep {
             limit: MAX_DOMAIN_DEPTH,
@@ -140,13 +313,13 @@ fn evaluate_domain_inner(
     let domain_type = get_str_field(domain, "type")?;
 
     match domain_type {
-        "eq" => evaluate_eq(domain, exec_state),
-        "lt" => evaluate_lt(domain, exec_state),
-        "exists" => evaluate_exists(domain, exec_state),
-        "instruction" => evaluate_instruction_eq(domain, exec_state),
-        "all" => evaluate_all(domain, exec_state, depth),
-        "not" => evaluate_not(domain, exec_state, depth),
-        "has_fields" => evaluate_has_fields(domain, exec_state),
+        "eq" => evaluate_eq_outcome(domain, exec_state),
+        "lt" => evaluate_lt_outcome(domain, exec_state),
+        "exists" => evaluate_exists(domain, exec_state).map(DomainOutcome::from_bool),
+        "instruction" => evaluate_instruction_eq(domain, exec_state).map(DomainOutcome::from_bool),
+        "all" => evaluate_all_outcome(domain, exec_state, depth),
+        "not" => evaluate_not_outcome(domain, exec_state, depth),
+        "has_fields" => evaluate_has_fields(domain, exec_state).map(DomainOutcome::from_bool),
         other => Err(TcbError::UnknownDomainType {
             domain_type: other.to_string(),
         }),
@@ -167,48 +340,71 @@ fn get_str_field<'a>(domain: &'a JsonValue, field: &'static str) -> Result<&'a s
     })
 }
 
-/// 解析 `eq`/`lt` 的 `value` 字段：`__` 开头字符串视为路径引用，
-/// 其余为字面值。路径引用解析失败返回 `None`（调用方据此求值为 false）。
-fn resolve_value_reference(value: &JsonValue, exec_state: &JsonValue) -> Option<JsonValue> {
-    match value {
-        JsonValue::String(s) if s.starts_with("__") => resolve_domain_path(exec_state, s).cloned(),
-        other => Some(other.clone()),
-    }
-}
-
-/// Eq：路径值 == 目标值
+/// Eq 三态求值：路径值 == 目标值
 ///
 /// `value` 支持 `__` 开头路径引用（跨字段相等比较）。
-/// 路径不存在或引用不可解析 → `Ok(false)`（状态侧）。
-pub fn evaluate_eq(domain: &JsonValue, exec_state: &JsonValue) -> Result<bool, TcbError> {
+/// 路径不存在 → `Missing(PathNotFound)`；`__` 引用解析失败 → 对应
+/// Missing 归因；根段点分形态 value → `Missing(ValueLiteralAmbiguous)`。
+/// Missing 按 `on_missing` 声明分派（error → Err 拒绝执行 / unsat、
+/// 缺省 → Missing 由消费点投影 false）。
+fn evaluate_eq_outcome(
+    domain: &JsonValue,
+    exec_state: &JsonValue,
+) -> Result<DomainOutcome, TcbError> {
+    let policy = parse_on_missing(domain)?;
     let path = get_str_field(domain, "path")?;
     let value = domain.get("value").ok_or_else(|| TcbError::MissingField {
         field: "value".to_string(),
     })?;
-    let target = resolve_value_reference(value, exec_state);
-
-    match (resolve_domain_path(exec_state, path), target) {
-        (Some(actual), Some(target)) => Ok(actual == &target),
-        _ => Ok(false),
+    let target = match resolve_value_reference_outcome(value, exec_state) {
+        Ok(t) => t,
+        Err(reason) => return dispatch_missing(policy, reason, value_context(value)),
+    };
+    match resolve_domain_path(exec_state, path) {
+        Some(actual) => Ok(if actual == &target {
+            DomainOutcome::Sat
+        } else {
+            DomainOutcome::Unsat
+        }),
+        None => dispatch_missing(policy, MissingReason::PathNotFound, path),
     }
 }
 
-/// Lt：路径值 < 目标值（仅 i64）
+/// Eq 二态兼容包装（旧签名，供未迁移调用方与回归基准；Missing → false）
+pub fn evaluate_eq(domain: &JsonValue, exec_state: &JsonValue) -> Result<bool, TcbError> {
+    evaluate_eq_outcome(domain, exec_state).map(|o| o.to_bool())
+}
+
+/// Lt 三态求值：路径值 < 目标值（仅 i64）
 ///
-/// 任一侧非整数或路径不存在 → `Ok(false)`（状态侧，不可比较即不满足）。
-fn evaluate_lt(domain: &JsonValue, exec_state: &JsonValue) -> Result<bool, TcbError> {
+/// 路径不存在 → `Missing(PathNotFound)`；value 引用失败 → 对应归因；
+/// 两侧均存在但任一侧非 i64 → `Missing(Incomparable)`。
+/// Missing 按 `on_missing` 声明分派。
+fn evaluate_lt_outcome(
+    domain: &JsonValue,
+    exec_state: &JsonValue,
+) -> Result<DomainOutcome, TcbError> {
+    let policy = parse_on_missing(domain)?;
     let path = get_str_field(domain, "path")?;
     let value = domain.get("value").ok_or_else(|| TcbError::MissingField {
         field: "value".to_string(),
     })?;
-    let target = resolve_value_reference(value, exec_state);
-
-    if let (Some(actual), Some(target)) = (resolve_domain_path(exec_state, path), target) {
-        if let (Some(actual_int), Some(target_int)) = (actual.as_i64(), target.as_i64()) {
-            return Ok(actual_int < target_int);
-        }
+    let target = match resolve_value_reference_outcome(value, exec_state) {
+        Ok(t) => t,
+        Err(reason) => return dispatch_missing(policy, reason, value_context(value)),
+    };
+    let actual = match resolve_domain_path(exec_state, path) {
+        Some(a) => a.clone(),
+        None => return dispatch_missing(policy, MissingReason::PathNotFound, path),
+    };
+    match (actual.as_i64(), target.as_i64()) {
+        (Some(a), Some(t)) => Ok(if a < t {
+            DomainOutcome::Sat
+        } else {
+            DomainOutcome::Unsat
+        }),
+        _ => dispatch_missing(policy, MissingReason::Incomparable, path),
     }
-    Ok(false)
 }
 
 /// Exists：路径存在且值非 null
@@ -239,14 +435,16 @@ fn evaluate_instruction_eq(domain: &JsonValue, exec_state: &JsonValue) -> Result
     Ok(current == Some(instr_type))
 }
 
-/// All：所有子域为真（空列表 = 真，真空真约定）
+/// All 三态求值：所有子域为真（空列表 = Sat，真空真约定）
 ///
-/// 缺 `inner` 或非数组 → `Err`（结构侧）。
-fn evaluate_all(
+/// 三值同构短路：遇 `Unsat` 短路返回、遇 `Missing` 短路返回——与改前
+/// bool 版 false 短路逐情形同构（Missing 投影 false 后行为一致，后续
+/// 子域不求值，结构错误暴露边界不变）。缺 `inner` 或非数组 → `Err`。
+fn evaluate_all_outcome(
     domain: &JsonValue,
     exec_state: &JsonValue,
     depth: usize,
-) -> Result<bool, TcbError> {
+) -> Result<DomainOutcome, TcbError> {
     let inner = domain.get("inner").ok_or_else(|| TcbError::MissingField {
         field: "inner".to_string(),
     })?;
@@ -257,26 +455,33 @@ fn evaluate_all(
     })?;
 
     for sub_domain in arr {
-        if !evaluate_domain_inner(sub_domain, exec_state, depth + 1)? {
-            return Ok(false);
+        match evaluate_domain_outcome_inner(sub_domain, exec_state, depth + 1)? {
+            DomainOutcome::Sat => continue,
+            other => return Ok(other),
         }
     }
-    Ok(true)
+    Ok(DomainOutcome::Sat)
 }
 
-/// Not：子域取反
+/// Not 三态求值：Missing 原样传播（归因保留），Sat/Unsat 取反。
+/// 缺 `inner` → `Err`（结构侧）。
 ///
-/// 缺 `inner` → `Err`（结构侧）。此前"缺 inner 返回 true"的约定
-/// 与未知类型静默 false 组合会放大 fail-open 风险，一并收紧。
-fn evaluate_not(
+/// 语义修正（vs 改前 bool 版）：改前 not(Missing)=not(false)=true——
+/// 「路径缺失」经 not 反转为「真」（fail-open，派生 gt/ge 同源受累）；
+/// 三态版 Missing 原样传播、投影 false。见 tests::test_not_missing_propagates 留痕。
+fn evaluate_not_outcome(
     domain: &JsonValue,
     exec_state: &JsonValue,
     depth: usize,
-) -> Result<bool, TcbError> {
+) -> Result<DomainOutcome, TcbError> {
     let inner = domain.get("inner").ok_or_else(|| TcbError::MissingField {
         field: "inner".to_string(),
     })?;
-    Ok(!evaluate_domain_inner(inner, exec_state, depth + 1)?)
+    Ok(match evaluate_domain_outcome_inner(inner, exec_state, depth + 1)? {
+        DomainOutcome::Sat => DomainOutcome::Unsat,
+        DomainOutcome::Unsat => DomainOutcome::Sat,
+        DomainOutcome::Missing(m) => DomainOutcome::Missing(m),
+    })
 }
 
 /// HasFields：检查对象是否包含指定的非空字段
@@ -1469,5 +1674,286 @@ mod tests {
             ("fields", JsonValue::array(vec![JsonValue::string("ok")])),
         ]);
         assert!(eval_ok(&with_ok, &state));
+    }
+
+    // ===== 三态域判定测试（专项-20261001 方案 2' v4，DoD G/I/J 素材）=====
+
+    /// 测试辅助：构造带 on_missing 声明的 eq 域
+    fn eq_with_missing(path: &str, value: JsonValue, on_missing: Option<&str>) -> JsonValue {
+        let mut map = ObjectMap::new();
+        map.insert("type".to_string(), JsonValue::string("eq"));
+        map.insert("path".to_string(), JsonValue::string(path));
+        map.insert("value".to_string(), value);
+        if let Some(om) = on_missing {
+            map.insert("on_missing".to_string(), JsonValue::string(om));
+        }
+        JsonValue::Object(map)
+    }
+
+    /// 测试辅助：构造带 on_missing 声明的 lt 域
+    fn lt_with_missing(path: &str, value: JsonValue, on_missing: Option<&str>) -> JsonValue {
+        let mut map = ObjectMap::new();
+        map.insert("type".to_string(), JsonValue::string("lt"));
+        map.insert("path".to_string(), JsonValue::string(path));
+        map.insert("value".to_string(), value);
+        if let Some(om) = on_missing {
+            map.insert("on_missing".to_string(), JsonValue::string(om));
+        }
+        JsonValue::Object(map)
+    }
+
+    #[test]
+    fn test_outcome_eq_sat_unsat_with_declaration() {
+        let state = make_exec_state("noop", make_payload(10));
+        let mk = |v: i64, om: Option<&str>| {
+            eq_with_missing("__exec__.payload.x", JsonValue::Integer(v), om)
+        };
+        assert_eq!(
+            evaluate_domain_outcome(&mk(10, None), &state).unwrap(),
+            DomainOutcome::Sat
+        );
+        assert_eq!(
+            evaluate_domain_outcome(&mk(20, None), &state).unwrap(),
+            DomainOutcome::Unsat
+        );
+        assert_eq!(
+            evaluate_domain_outcome(&mk(20, Some("unsat")), &state).unwrap(),
+            DomainOutcome::Unsat
+        );
+    }
+
+    /// DoD-J（声明执行语义）前半：eq 路径缺失的三种声明走向
+    #[test]
+    fn test_outcome_eq_path_missing_on_missing_policies() {
+        let state = make_exec_state("noop", make_payload(10));
+
+        // 缺省（无声明，存量兼容缺省 unsat）→ Missing(PathNotFound)，投影 false
+        let d_default = eq_with_missing("__exec__.payload.missing", JsonValue::Integer(1), None);
+        assert_eq!(
+            evaluate_domain_outcome(&d_default, &state).unwrap(),
+            DomainOutcome::Missing(MissingReason::PathNotFound)
+        );
+        assert!(!evaluate_domain(&d_default, &state).unwrap());
+
+        // 显式 unsat → Missing + 归因（显式声明下的 false，非静默）
+        let d_unsat = eq_with_missing("__exec__.payload.missing", JsonValue::Integer(1), Some("unsat"));
+        assert_eq!(
+            evaluate_domain_outcome(&d_unsat, &state).unwrap(),
+            DomainOutcome::Missing(MissingReason::PathNotFound)
+        );
+
+        // 显式 error → Err(MissingRejected) 拒绝执行（detail 含归因标签与路径）
+        let d_error = eq_with_missing("__exec__.payload.missing", JsonValue::Integer(1), Some("error"));
+        assert!(matches!(
+            evaluate_domain_outcome(&d_error, &state),
+            Err(TcbError::MissingRejected { detail })
+                if detail == "path_not_found: __exec__.payload.missing"
+        ));
+    }
+
+    /// DoD-J 后半：lt 类型不可比（Incomparable）两种声明走向
+    #[test]
+    fn test_outcome_lt_incomparable_policies() {
+        let mut p = ObjectMap::new();
+        p.insert("name".to_string(), JsonValue::string("hello"));
+        let state = make_exec_state("noop", JsonValue::Object(p));
+
+        let d_unsat = lt_with_missing("__exec__.payload.name", JsonValue::Integer(0), Some("unsat"));
+        assert_eq!(
+            evaluate_domain_outcome(&d_unsat, &state).unwrap(),
+            DomainOutcome::Missing(MissingReason::Incomparable)
+        );
+        // 显式声明下的 false：投影与改前一致
+        assert!(!evaluate_domain(&d_unsat, &state).unwrap());
+
+        let d_error = lt_with_missing("__exec__.payload.name", JsonValue::Integer(0), Some("error"));
+        assert!(matches!(
+            evaluate_domain_outcome(&d_error, &state),
+            Err(TcbError::MissingRejected { detail }) if detail.starts_with("incomparable:")
+        ));
+    }
+
+    /// DoD-A 素材：O-211 复现形态（pack v1 eq 无前缀 value）——
+    /// unsat 声明 → 归因 Missing(ValueLiteralAmbiguous)；
+    /// error 声明 → Err（ValueLiteralAmbiguous 一律从严）
+    #[test]
+    fn test_outcome_value_literal_ambiguous_policies() {
+        let state = make_exec_state("noop", make_payload(10));
+
+        let d_unsat = eq_with_missing(
+            "__exec__.payload.x",
+            JsonValue::string("instruction.params.milestone_target"),
+            Some("unsat"),
+        );
+        assert_eq!(
+            evaluate_domain_outcome(&d_unsat, &state).unwrap(),
+            DomainOutcome::Missing(MissingReason::ValueLiteralAmbiguous)
+        );
+        assert!(!evaluate_domain(&d_unsat, &state).unwrap());
+
+        let d_error = eq_with_missing(
+            "__exec__.payload.x",
+            JsonValue::string("instruction.params.milestone_target"),
+            Some("error"),
+        );
+        assert!(matches!(
+            evaluate_domain_outcome(&d_error, &state),
+            Err(TcbError::MissingRejected { detail })
+                if detail == "value_literal_ambiguous: instruction.params.milestone_target"
+        ));
+    }
+
+    /// ValueLiteralAmbiguous 判定口径（root-segment-dot-path.v1）正负例锚定：
+    /// 正例=O-211 旧形态；负例=T4a 盘点 10 处合法字面量（零误伤）
+    #[test]
+    fn test_value_literal_ambiguous_rule_cases() {
+        // 正例：根段点分形态（像路径引用但缺 __ 前缀，写作错误）
+        assert!(is_root_segment_dot_path("instruction.params.milestone_target"));
+        assert!(is_root_segment_dot_path("payload.x"));
+        assert!(is_root_segment_dot_path("queue.front"));
+
+        // 负例：T4a 盘点合法符号常量/模型名字面量（零误伤锚定）
+        assert!(!is_root_segment_dot_path("meta_tool.pending_target_scope"));
+        assert!(!is_root_segment_dot_path("meta_workflow.phase"));
+        assert!(!is_root_segment_dot_path("meta_tool.pending_tool_intent"));
+        assert!(!is_root_segment_dot_path("meta_signal.node_done"));
+        assert!(!is_root_segment_dot_path("MiniMax-M2.5"));
+
+        // 边界：单段（无点）不是路径形态；空段/非法字符/大写根段保守当字面量
+        assert!(!is_root_segment_dot_path("instruction"));
+        assert!(!is_root_segment_dot_path("instruction..x"));
+        assert!(!is_root_segment_dot_path("instruction.params.x "));
+        assert!(!is_root_segment_dot_path("Instruction.params.x"));
+        // __ 前缀走引用分支，不进歧义判定
+        assert!(!is_root_segment_dot_path("__exec__.payload.x"));
+    }
+
+    /// 版本化锁定锚：判定口径变更必须换版本号（防跨版本归因漂移）
+    #[test]
+    fn test_value_literal_ambiguous_rule_versioned() {
+        assert_eq!(VALUE_LITERAL_AMBIGUOUS_RULE, "root-segment-dot-path.v1");
+    }
+
+    /// DoD-I（包装一致性）：无 on_missing 声明输入下，outcome 二态投影
+    /// 与改前 bool 实现逐情形一致（Missing → false）
+    #[test]
+    fn test_wrapper_consistency_missing_projects_false() {
+        let state = make_exec_state("noop", make_payload(10));
+
+        // 路径缺失 → Missing → false
+        let d1 = eq_with_missing("__exec__.payload.missing", JsonValue::Integer(42), None);
+        assert!(!evaluate_domain(&d1, &state).unwrap());
+        assert_eq!(
+            evaluate_domain_outcome(&d1, &state).unwrap(),
+            DomainOutcome::Missing(MissingReason::PathNotFound)
+        );
+
+        // 引用路径缺失 → PathNotFound → false
+        let d2 = eq_with_missing(
+            "__exec__.payload.x",
+            JsonValue::string("__exec__.payload.missing"),
+            None,
+        );
+        assert!(!evaluate_domain(&d2, &state).unwrap());
+        assert_eq!(
+            evaluate_domain_outcome(&d2, &state).unwrap(),
+            DomainOutcome::Missing(MissingReason::PathNotFound)
+        );
+
+        // 不可比 → Incomparable → false
+        let mut p = ObjectMap::new();
+        p.insert("name".to_string(), JsonValue::string("hello"));
+        let state2 = make_exec_state("noop", JsonValue::Object(p));
+        let d3 = lt_with_missing("__exec__.payload.name", JsonValue::Integer(0), None);
+        assert!(!evaluate_domain(&d3, &state2).unwrap());
+        assert_eq!(
+            evaluate_domain_outcome(&d3, &state2).unwrap(),
+            DomainOutcome::Missing(MissingReason::Incomparable)
+        );
+
+        // 引用歧义 → ValueLiteralAmbiguous → false
+        let d4 = eq_with_missing(
+            "__exec__.payload.x",
+            JsonValue::string("instruction.params.milestone_target"),
+            None,
+        );
+        assert!(!evaluate_domain(&d4, &state).unwrap());
+        assert_eq!(
+            evaluate_domain_outcome(&d4, &state).unwrap(),
+            DomainOutcome::Missing(MissingReason::ValueLiteralAmbiguous)
+        );
+    }
+
+    /// 包装一致性边界锚：all([Missing, 结构错误])——Missing 短路不暴露
+    /// 后续结构错误，与改前 bool 版 false 短路边界一致
+    #[test]
+    fn test_all_missing_short_circuit_boundary_preserved() {
+        let state = make_exec_state("noop", make_payload(10));
+        let missing_eq = eq_with_missing("__exec__.payload.missing", JsonValue::Integer(1), None);
+        let structural_err =
+            JsonValue::object_from_pairs(&[("type", JsonValue::string("eq"))]); // 缺 path/value
+        let all = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("all")),
+            (
+                "inner",
+                JsonValue::array(vec![missing_eq, structural_err]),
+            ),
+        ]);
+        // 改前：false（false 短路，不报错）；改后：Missing 投影 false（不报错）
+        assert!(!evaluate_domain(&all, &state).unwrap());
+        assert!(matches!(
+            evaluate_domain_outcome(&all, &state),
+            Ok(DomainOutcome::Missing(_))
+        ));
+    }
+
+    /// not 对 Missing 原样传播（归因不被取反吞掉）。
+    ///
+    /// **语义修正留痕（vs 改前）**：改前 bool 版 not(Missing)=not(false)=true
+    /// ——「路径缺失」经 not 反转为「真」（fail-open）；三态版 Missing
+    /// 原样传播，投影 false。这是归因显式化的必然语义（Missing 被 not
+    /// 吞掉=归因丢失=静默通道借 not 还魂），属根修语义修复，见实施
+    /// 留痕「not 包裹比较域存量影响面核查」。
+    #[test]
+    fn test_not_missing_propagates() {
+        let state = make_exec_state("noop", make_payload(10));
+        let missing_eq = eq_with_missing("__exec__.payload.missing", JsonValue::Integer(1), None);
+        let not = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("not")),
+            ("inner", missing_eq),
+        ]);
+        assert!(matches!(
+            evaluate_domain_outcome(&not, &state),
+            Ok(DomainOutcome::Missing(MissingReason::PathNotFound))
+        ));
+        // Missing 投影 false（不再被 not 反转为 true）
+        assert!(!evaluate_domain(&not, &state).unwrap());
+    }
+
+    /// DoD-G（确定性幂等）：同输入重复求值 N 次 outcome 逐次全等
+    #[test]
+    fn test_outcome_deterministic_idempotent() {
+        let state = make_exec_state("noop", make_payload(10));
+        let domain = eq_with_missing("__exec__.payload.missing", JsonValue::Integer(1), Some("unsat"));
+        let first = evaluate_domain_outcome(&domain, &state);
+        for _ in 0..10 {
+            assert_eq!(evaluate_domain_outcome(&domain, &state), first);
+        }
+    }
+
+    /// on_missing 非法值 = 结构错误（TCB 无警告只有报错，"warn" 等不设警告通道）
+    #[test]
+    fn test_on_missing_invalid_value_is_structural_error() {
+        let state = make_exec_state("noop", make_payload(10));
+        let mut map = ObjectMap::new();
+        map.insert("type".to_string(), JsonValue::string("eq"));
+        map.insert("path".to_string(), JsonValue::string("__exec__.payload.x"));
+        map.insert("value".to_string(), JsonValue::Integer(10));
+        map.insert("on_missing".to_string(), JsonValue::string("warn"));
+        let domain = JsonValue::Object(map);
+        assert!(matches!(
+            evaluate_domain(&domain, &state),
+            Err(TcbError::InvalidType { context, .. }) if context == "on_missing"
+        ));
     }
 }
