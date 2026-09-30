@@ -48,7 +48,7 @@ use std::path::{Path, PathBuf};
 
 use evorule_tcb::JsonValue;
 
-use crate::fact::{Fact, FactId, IoType, TraceHit};
+use crate::fact::{Fact, FactId, IoType, TraceDomainAttribution, TraceHit};
 
 /// WAL 错误类型
 #[derive(Debug)]
@@ -291,6 +291,28 @@ pub fn serde_to_tcb(v: &serde_json::Value) -> JsonValue {
     }
 }
 
+/// 域归因条目 → JSON（None 字段省略）
+///
+/// 与 `hash.rs` 的同名私有函数保持同构：WAL 持久化与哈希链序列化
+/// 必须产出一致形状，否则回放重算哈希将失配。
+fn trace_attr_to_json(attr: &TraceDomainAttribution) -> serde_json::Value {
+    let mut attr_obj = serde_json::Map::new();
+    attr_obj.insert(
+        "outcome".into(),
+        serde_json::Value::String(attr.outcome.clone()),
+    );
+    if let Some(reason) = &attr.missing_reason {
+        attr_obj.insert(
+            "missing_reason".into(),
+            serde_json::Value::String(reason.clone()),
+        );
+    }
+    if let Some(policy) = &attr.on_missing {
+        attr_obj.insert("on_missing".into(), serde_json::Value::String(policy.clone()));
+    }
+    serde_json::Value::Object(attr_obj)
+}
+
 /// `Fact` → `serde_json::Value`
 ///
 /// 每个变体序列化为带 `type` 鉴别字段的 JSON 对象，例如：
@@ -400,11 +422,19 @@ pub fn fact_to_json(fact: &Fact) -> serde_json::Value {
             let hits: Vec<serde_json::Value> = rule_hits
                 .iter()
                 .map(|h| {
-                    serde_json::json!({
-                        "index": h.index,
-                        "instr_type": h.instr_type,
-                        "hit": h.hit,
-                    })
+                    // domain_attr 仅在 Some 时写入键（None 省略）：
+                    // 存量 WAL 记录无该键，解析侧 absent → None 兼容旧格式。
+                    let mut hit_obj = serde_json::Map::new();
+                    hit_obj.insert("index".into(), serde_json::json!(h.index));
+                    hit_obj.insert(
+                        "instr_type".into(),
+                        serde_json::Value::String(h.instr_type.clone()),
+                    );
+                    hit_obj.insert("hit".into(), serde_json::Value::Bool(h.hit));
+                    if let Some(attr) = &h.domain_attr {
+                        hit_obj.insert("domain_attr".into(), trace_attr_to_json(attr));
+                    }
+                    serde_json::Value::Object(hit_obj)
                 })
                 .collect();
             obj.insert("rule_hits".into(), serde_json::Value::Array(hits));
@@ -585,10 +615,52 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
                 let hit = h.get("hit").and_then(|v| v.as_bool()).ok_or_else(|| {
                     WalError::InvalidFact("TransitionTrace hit missing 'hit'".into())
                 })?;
+                // domain_attr 可选（absent → None，兼容存量 WAL 无归因记录）；
+                // 键存在但结构不合法则拒收（哈希链回放依赖忠实解析，不静默丢归因）。
+                let domain_attr = match h.get("domain_attr") {
+                    None => None,
+                    Some(attr) => {
+                        let outcome = attr.get("outcome").and_then(|v| v.as_str()).ok_or_else(
+                            || {
+                                WalError::InvalidFact(
+                                    "TransitionTrace domain_attr missing 'outcome'".into(),
+                                )
+                            },
+                        )?;
+                        let missing_reason = attr
+                            .get("missing_reason")
+                            .map(|v| {
+                                v.as_str().map(str::to_string).ok_or_else(|| {
+                                    WalError::InvalidFact(
+                                        "TransitionTrace domain_attr 'missing_reason' not a string"
+                                            .into(),
+                                    )
+                                })
+                            })
+                            .transpose()?;
+                        let on_missing = attr
+                            .get("on_missing")
+                            .map(|v| {
+                                v.as_str().map(str::to_string).ok_or_else(|| {
+                                    WalError::InvalidFact(
+                                        "TransitionTrace domain_attr 'on_missing' not a string"
+                                            .into(),
+                                    )
+                                })
+                            })
+                            .transpose()?;
+                        Some(TraceDomainAttribution {
+                            outcome: outcome.into(),
+                            missing_reason,
+                            on_missing,
+                        })
+                    }
+                };
                 rule_hits.push(TraceHit {
                     index,
                     instr_type: instr_type.into(),
                     hit,
+                    domain_attr,
                 });
             }
             Ok(Fact::TransitionTrace {
@@ -1321,6 +1393,93 @@ mod tests {
             ]),
         };
         assert_fact_roundtrip(&fact);
+    }
+
+    #[test]
+    fn test_fact_transition_trace_without_attr_roundtrip() {
+        // 无归因（存量形态）：domain_attr 为 None，WAL 往返后仍为 None
+        let fact = Fact::TransitionTrace {
+            id: FactId(11),
+            cause: FactId(2),
+            rule_hits: vec![
+                TraceHit {
+                    index: 0,
+                    instr_type: "set".into(),
+                    hit: true,
+                    domain_attr: None,
+                },
+                TraceHit {
+                    index: 1,
+                    instr_type: "branch".into(),
+                    hit: false,
+                    domain_attr: None,
+                },
+            ],
+        };
+        assert_fact_roundtrip(&fact);
+    }
+
+    #[test]
+    fn test_fact_transition_trace_with_attr_roundtrip() {
+        // 三态归因落账：missing 分类 + on_missing 声明值随 WAL 往返保真（专项-20261001）
+        let fact = Fact::TransitionTrace {
+            id: FactId(12),
+            cause: FactId(2),
+            rule_hits: vec![TraceHit {
+                index: 1,
+                instr_type: "branch".into(),
+                hit: false,
+                domain_attr: Some(TraceDomainAttribution {
+                    outcome: "missing".into(),
+                    missing_reason: Some("path_not_found".into()),
+                    on_missing: Some("unsat".into()),
+                }),
+            }],
+        };
+        assert_fact_roundtrip(&fact);
+    }
+
+    #[test]
+    fn test_transition_trace_legacy_without_domain_attr_key() {
+        // 存量 WAL 兼容：无 domain_attr 键的记录解析为 None（absent → None）
+        let json = serde_json::json!({
+            "type": "TransitionTrace",
+            "id": 5,
+            "cause": 2,
+            "rule_hits": [{"index": 0, "instr_type": "branch", "hit": false}]
+        });
+        let restored = fact_from_json(&json).expect("旧格式 TransitionTrace 必须可解析");
+        match restored {
+            Fact::TransitionTrace { rule_hits, .. } => {
+                assert_eq!(rule_hits.len(), 1);
+                assert!(
+                    rule_hits.first().and_then(|h| h.domain_attr.as_ref()).is_none(),
+                    "absent domain_attr 必须解析为 None"
+                );
+            }
+            other => panic!("unexpected variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_transition_trace_malformed_domain_attr_rejected() {
+        // 不静默丢归因：domain_attr 键存在但缺 outcome → 拒收（fail-fast）
+        let json = serde_json::json!({
+            "type": "TransitionTrace",
+            "id": 5,
+            "cause": 2,
+            "rule_hits": [{
+                "index": 0,
+                "instr_type": "branch",
+                "hit": false,
+                "domain_attr": {"missing_reason": "path_not_found"}
+            }]
+        });
+        let result = fact_from_json(&json);
+        assert!(
+            matches!(result, Err(WalError::InvalidFact(_))),
+            "结构不合法的 domain_attr 必须拒收，不得静默丢归因"
+        );
     }
 
     #[test]

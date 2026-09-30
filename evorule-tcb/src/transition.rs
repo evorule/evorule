@@ -14,7 +14,7 @@
 //! - 永不 panic：所有错误返回 `TcbError`
 //! - I/O 请求通过 `core_eval` 中的 `io_request` 元指令触发
 
-use crate::domain::DomainOutcome;
+use crate::domain::DomainAttribution;
 use crate::error::TcbError;
 use crate::executor::{
     execute_meta_instruction_budgeted, MetaInstructionResult, MAX_TOTAL_META_INSTRUCTIONS,
@@ -48,16 +48,16 @@ pub struct RuleHit {
     pub instr_type: String,
     /// 是否结构命中
     pub hit: bool,
-    /// 域判定三态归因（branch/enforce 专属；其余指令类型为 `None`）
+    /// 域判定归因（branch/enforce 专属；其余指令类型为 `None`）
     ///
     /// 专项-20261001 方案 2' v4：eq/lt 域遇到状态侧缺失/不可比/引用歧义时，
     /// 二态投影压平为 false 的信息由本字段还原，供 FactsLog 落账与消费面
-    /// 审计「为什么走了 on_false / 为什么没拦住」。
+    /// 审计「为什么走了 on_false / 为什么没拦住」（含 on_missing 声明值）。
     /// - **R1 归因不回灌执行**：branch 走向 / enforce 命中仅由投影 bool +
     ///   规则文本 `on_missing` 静态声明决定，本字段不参与执行；
     /// - **R2 半成品纪律**：`IoRequired`/`Halted` 不携带 `rule_hits`，
     ///   中途归因不随半成品交付，以收敛后的重放结果为准。
-    pub domain_attr: Option<DomainOutcome>,
+    pub domain_attr: Option<DomainAttribution>,
 }
 
 /// 状态转换结果
@@ -436,7 +436,7 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
-    use crate::domain::MissingReason;
+    use crate::domain::{DomainOutcome, MissingReason};
     use crate::value::JsonValue;
     use alloc::vec;
 
@@ -1487,7 +1487,10 @@ mod tests {
                 assert!(rule_hits[0].hit, "on_false 非空 = 结构命中");
                 assert_eq!(
                     rule_hits[0].domain_attr,
-                    Some(DomainOutcome::Missing(MissingReason::PathNotFound))
+                    Some(DomainAttribution {
+                        outcome: DomainOutcome::Missing(MissingReason::PathNotFound),
+                        on_missing: None,
+                    })
                 );
             }
             other => panic!("expected State, got {:?}", other),
@@ -1544,7 +1547,47 @@ mod tests {
                 assert!(!rule_hits[0].hit);
                 assert_eq!(
                     rule_hits[0].domain_attr,
-                    Some(DomainOutcome::Missing(MissingReason::PathNotFound))
+                    Some(DomainAttribution {
+                        outcome: DomainOutcome::Missing(MissingReason::PathNotFound),
+                        on_missing: None,
+                    })
+                );
+            }
+            other => panic!("expected State, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_execute_transition_domain_attr_carries_declared_on_missing() {
+        // 声明值透传：on_missing="unsat" 显式声明 → 归因含声明标签；
+        // Missing 场景走 on_false（声明下的 false，非静默）
+        let instruction = make_instruction("noop", &[]);
+        let core_eval = vec![make_instruction(
+            "branch",
+            &[
+                (
+                    "domain",
+                    JsonValue::object_from_pairs(&[
+                        ("type", JsonValue::string("eq")),
+                        ("path", JsonValue::string("__exec__.payload.missing")),
+                        ("value", JsonValue::Integer(1)),
+                        ("on_missing", JsonValue::string("unsat")),
+                    ]),
+                ),
+                ("on_true", JsonValue::array(vec![])),
+                ("on_false", JsonValue::array(vec![])),
+            ],
+        )];
+
+        match execute_transition(&core_eval, &instruction, &make_payload(0), &[]).unwrap() {
+            TransitionResult::State { rule_hits, .. } => {
+                assert_eq!(rule_hits.len(), 1);
+                assert_eq!(
+                    rule_hits[0].domain_attr,
+                    Some(DomainAttribution {
+                        outcome: DomainOutcome::Missing(MissingReason::PathNotFound),
+                        on_missing: Some("unsat"),
+                    })
                 );
             }
             other => panic!("expected State, got {:?}", other),

@@ -106,6 +106,23 @@ impl DomainOutcome {
         matches!(self, DomainOutcome::Sat)
     }
 
+    /// 三态标签（审计落账用，版本化锁定）
+    pub fn label(&self) -> &'static str {
+        match self {
+            DomainOutcome::Sat => "sat",
+            DomainOutcome::Unsat => "unsat",
+            DomainOutcome::Missing(_) => "missing",
+        }
+    }
+
+    /// Missing 归因分类标签（非 Missing 返回 None）
+    pub fn missing_reason(&self) -> Option<&'static str> {
+        match self {
+            DomainOutcome::Missing(reason) => Some(reason.label()),
+            _ => None,
+        }
+    }
+
     fn from_bool(b: bool) -> Self {
         if b {
             DomainOutcome::Sat
@@ -113,6 +130,22 @@ impl DomainOutcome {
             DomainOutcome::Unsat
         }
     }
+}
+
+/// 域判定归因记录（归因透传，专项-20261001 方案 2' v4 T3）
+///
+/// 由 branch/enforce 消费点在求值成功后产出，随 `RuleHit` 交付 FactsLog
+/// 落账与消费面审计（含 on_missing 声明值）。
+///
+/// **R1 归因不回灌执行**：本记录仅作审计观测位，branch 走向 / enforce 命中
+/// 均在求值时由投影 bool + 规则静态声明决定，本记录永不参与执行决策。
+#[derive(Debug, Clone, PartialEq)]
+pub struct DomainAttribution {
+    /// 三态判定结果
+    pub outcome: DomainOutcome,
+    /// 规则文本的 `on_missing` 声明值（`"error"` / `"unsat"`）；
+    /// `None` = 未声明（存量兼容缺省 unsat——装载面新规则已强制显式声明）
+    pub on_missing: Option<&'static str>,
 }
 
 /// ValueLiteralAmbiguous 判定规则版本（版本化锁定，防跨版本归因漂移）
@@ -148,6 +181,16 @@ enum OnMissingPolicy {
     Error,
     /// Missing → 走 on_false + 归因（显式声明下的 false，非静默）
     Unsat,
+}
+
+impl OnMissingPolicy {
+    /// 声明标签（审计落账用，与规则文本字面量一致）
+    fn label(&self) -> &'static str {
+        match self {
+            OnMissingPolicy::Error => "error",
+            OnMissingPolicy::Unsat => "unsat",
+        }
+    }
 }
 
 /// 解析 eq/lt 域的 `on_missing` 声明；缺省 None（运行时兼容缺省 unsat，
@@ -296,6 +339,16 @@ pub fn evaluate_domain_outcome(
     exec_state: &JsonValue,
 ) -> Result<DomainOutcome, TcbError> {
     evaluate_domain_outcome_inner(domain, exec_state, 0)
+}
+
+/// 读取规则文本的 `on_missing` 声明值（归因透传用，T3）
+///
+/// 返回声明标签（`"error"` / `"unsat"`）；未声明返回 `None`。与运行时
+/// 求值共用同一解析函数（单一权威，零镜像复算）；非法声明值返回 `None`
+/// ——此类域无法通过求值（结构错误通道显式报错），本助手只服务已求值
+/// 成功的域对象。
+pub fn declared_on_missing(domain: &JsonValue) -> Option<&'static str> {
+    parse_on_missing(domain).ok().flatten().map(|p| p.label())
 }
 
 /// 域评估内部实现（带递归深度限制，三态版）

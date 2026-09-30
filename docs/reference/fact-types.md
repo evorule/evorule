@@ -137,10 +137,23 @@ Stable 后反应器进入 Idle 长驻，等待新 Command 或 IoResponse。
 | `cause` | FactId(u64) | 同次转换的 StateTransition / Error(ignored) 事实 ID | fact.rs L277 |
 | `rule_hits` | Vec\<TraceHit\> | 各规则命中归因（与合并规则列表等长，按执行顺序） | fact.rs L279 |
 
-**TraceHit 结构**（fact.rs L169）：
+**TraceHit 结构**（fact.rs）：
 - `index`：规则在合并规则列表中的下标
 - `instr_type`：规则顶层指令类型（如 "branch"、"set"；缺失记 "unknown"）
 - `hit`：是否结构命中
+- `domain_attr`：域判定归因（可选；仅 branch/enforce 求值成功时出现）
+
+**domain_attr 结构**（`TraceDomainAttribution`，专项-20261001 三态域判定）：
+- `outcome`：域判定结果标签，`"sat"` / `"unsat"` / `"missing"` 三态
+- `missing_reason`：仅 outcome 为 `"missing"` 时出现（`"path_not_found"` / `"incomparable"` / `"value_literal_ambiguous"`）
+- `on_missing`：规则文本的 `on_missing` 静态声明值（`"error"` / `"unsat"`；未声明省略）
+
+**三口径正交语义**（消费面必读）：
+- `hit` = 结构命中（所选路径存在且非空——branch 走向 / enforce 是否拦截）
+- `domain_attr.outcome` = 域条件的三态求值结果（eq/lt 遇状态侧缺失/不可比/引用歧义时为 `missing`，默认投影 false——「为什么走了 on_false / 为什么没拦住」的审计答案由此还原）
+- `on_missing` = 规则作者对该场景的**静态声明**（"error" → 拒收报错；"unsat"/缺省 → 投影 false 并留归因）
+- 三者独立成立：`hit` 只看所选路径是否存在且非空，与域值无关（如 branch：`hit=true` 且 `outcome=unsat` = 走了非空的 on_false 分支；enforce：`hit=false` 且 `outcome=missing` = 域求值缺失投影 false 未拦截）。R1 纪律：归因仅作审计用途，**不回灌执行**
+- 序列化口径：`domain_attr` 为 None 时整个键省略（JSON 面/哈希面/WAL 面一致），存量事实无该键，哈希链与 WAL 回放向后兼容
 
 **命中口径**（transition.rs）：
 - 直接指令（set/push）：执行成功即命中
@@ -315,10 +328,23 @@ A rule-hit attribution trace, appended by the reactor after each convergent tran
 | `cause` | FactId(u64) | Fact ID of the StateTransition / Error(ignored) from the same transition | fact.rs L277 |
 | `rule_hits` | Vec\<TraceHit\> | Per-rule hit attribution (same length as the merged rule list, in execution order) | fact.rs L279 |
 
-**TraceHit structure** (fact.rs L169):
+**TraceHit structure** (fact.rs):
 - `index`: the rule's index in the merged rule list
 - `instr_type`: the rule's top-level instruction type (e.g. "branch", "set"; recorded as "unknown" if missing)
 - `hit`: whether it was a structural hit
+- `domain_attr`: domain-evaluation attribution (optional; only present for branch/enforce after successful evaluation)
+
+**domain_attr structure** (`TraceDomainAttribution`, three-state domain evaluation, spec 20261001):
+- `outcome`: the domain verdict label — `"sat"` / `"unsat"` / `"missing"`
+- `missing_reason`: present only when outcome is `"missing"` (`"path_not_found"` / `"incomparable"` / `"value_literal_ambiguous"`)
+- `on_missing`: the rule text's static `on_missing` declaration (`"error"` / `"unsat"`; omitted when undeclared)
+
+**Orthogonal semantics of the three fields** (required reading for consumers):
+- `hit` = structural hit (whether the selected path exists and is non-empty — branch taken / enforce intercepted)
+- `domain_attr.outcome` = the three-state verdict of the domain condition (eq/lt hitting a state-side missing / incomparable / ambiguous reference yields `missing`, projected to false by default — this field restores the audit answer to "why on_false was taken / why nothing was intercepted")
+- `on_missing` = the rule author's **static declaration** for that scenario ("error" → reject with error; "unsat"/absent → project false and record attribution)
+- The three are independent: `hit` only looks at whether the selected path exists and is non-empty, regardless of the domain value (e.g. branch: `hit=true` with `outcome=unsat` = a non-empty on_false branch was taken; enforce: `hit=false` with `outcome=missing` = missing projected to false, nothing intercepted). R1 discipline: attribution is for audit only and is **never fed back into execution**
+- Serialization: when `domain_attr` is None the whole key is omitted (consistent across JSON / hash / WAL surfaces); legacy facts have no such key, so hash-chain and WAL replay stay backward compatible
 
 **Hit criteria** (transition.rs):
 - Direct instructions (set/push): a hit if execution succeeds

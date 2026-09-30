@@ -665,12 +665,8 @@ impl Reactor {
                             id: trace_id,
                             cause: id,
                             rule_hits: rule_hits
-                                .into_iter()
-                                .map(|h| TraceHit {
-                                    index: h.index as u64,
-                                    instr_type: h.instr_type,
-                                    hit: h.hit,
-                                })
+                                .iter()
+                                .map(TraceHit::from_rule_hit)
                                 .collect(),
                         };
                         Self::emit_fact(&self.facts_log, &event_tx, trace_fact);
@@ -699,12 +695,8 @@ impl Reactor {
                             id: trace_id,
                             cause: id,
                             rule_hits: rule_hits
-                                .into_iter()
-                                .map(|h| TraceHit {
-                                    index: h.index as u64,
-                                    instr_type: h.instr_type,
-                                    hit: h.hit,
-                                })
+                                .iter()
+                                .map(TraceHit::from_rule_hit)
                                 .collect(),
                         };
                         Self::emit_fact(&self.facts_log, &event_tx, trace_fact);

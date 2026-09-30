@@ -14,7 +14,7 @@
 //! `io_request` 是"半元指令"——在执行器中硬编码识别，但行为完全由 JSON 参数驱动。
 //! 它不修改任何状态，仅返回 `MetaInstructionResult::IoRequired` 信号。
 
-use crate::domain::{evaluate_domain_outcome, DomainOutcome};
+use crate::domain::{declared_on_missing, evaluate_domain_outcome, DomainAttribution};
 use crate::error::TcbError;
 use crate::path::{parse_path_segments, resolve_path, resolve_path_mut, PathSegment};
 use crate::value::{JsonValue, ObjectMap};
@@ -116,7 +116,8 @@ pub fn execute_meta_instruction(
 /// # 域判定归因（专项-20261001 方案 2' v4，R1/R2 纪律）
 ///
 /// `domain_attr_out` 在 branch/enforce 的域求值成功后写入三态归因
-/// （`DomainOutcome`，含 Missing 分类）；其余指令类型不写入（保持 `None`）。
+/// （`DomainAttribution`：`DomainOutcome` 含 Missing 分类 + `on_missing`
+/// 声明值）；其余指令类型不写入（保持 `None`）。
 /// - **R1 归因不回灌执行**：branch 走向仅由投影 bool（`Sat → true`，其余
 ///   `→ false`）+ 规则文本 `on_missing` 静态声明决定；归因仅作审计用途。
 /// - **R2 半成品纪律**：`IoRequired`/`Halted` 不携带 `rule_hits`（转换层
@@ -129,7 +130,7 @@ pub(crate) fn execute_meta_instruction_budgeted(
     depth: usize,
     budget: &mut usize,
     hit_out: &mut bool,
-    domain_attr_out: &mut Option<DomainOutcome>,
+    domain_attr_out: &mut Option<DomainAttribution>,
 ) -> Result<MetaInstructionResult, TcbError> {
     // 预算检查：先扣减后执行（失败指令同样计入，防止用错误路径消耗无界资源）
     if let Some(next) = budget.checked_sub(1) {
@@ -696,7 +697,7 @@ fn exec_branch(
     depth: usize,
     budget: &mut usize,
     hit_out: &mut bool,
-    domain_attr_out: &mut Option<DomainOutcome>,
+    domain_attr_out: &mut Option<DomainAttribution>,
 ) -> Result<MetaInstructionResult, TcbError> {
     if depth >= MAX_BRANCH_DEPTH {
         return Err(TcbError::NestingTooDeep {
@@ -713,9 +714,12 @@ fn exec_branch(
     // on_missing=error 声明的 Missing 同样显式报错（MissingRejected，专项-20261001）
     let outcome = evaluate_domain_outcome(&domain, &state)?;
 
-    // R1 归因不回灌执行：走向仅由投影 bool 决定，三态归因仅作审计透传
+    // R1 归因不回灌执行：走向仅由投影 bool 决定，三态归因（含声明值）仅作审计透传
     let branch_key = if outcome.to_bool() { "on_true" } else { "on_false" };
-    *domain_attr_out = Some(outcome);
+    *domain_attr_out = Some(DomainAttribution {
+        outcome,
+        on_missing: declared_on_missing(&domain),
+    });
 
     let branch_instrs = params.get(branch_key).and_then(|v| v.as_array());
 
@@ -772,7 +776,7 @@ fn exec_branch(
 fn exec_enforce(
     instr: &JsonValue,
     state: JsonValue,
-    domain_attr_out: &mut Option<DomainOutcome>,
+    domain_attr_out: &mut Option<DomainAttribution>,
 ) -> Result<MetaInstructionResult, TcbError> {
     let params = instr.get("params").ok_or(TcbError::MissingField {
         field: "params".to_string(),
@@ -783,10 +787,13 @@ fn exec_enforce(
     // on_missing=error 声明的 Missing 同样显式报错（MissingRejected，专项-20261001）
     let outcome = evaluate_domain_outcome(&domain, &state)?;
 
-    // R1 归因不回灌执行：命中与否仅由投影 bool 决定，三态归因仅作审计透传
+    // R1 归因不回灌执行：命中与否仅由投影 bool 决定，三态归因（含声明值）仅作审计透传
     // （Unsat/Missing 不命中也要留归因——「为什么没拦住」的审计答案）
     let domain_satisfied = outcome.to_bool();
-    *domain_attr_out = Some(outcome);
+    *domain_attr_out = Some(DomainAttribution {
+        outcome,
+        on_missing: declared_on_missing(&domain),
+    });
 
     if !domain_satisfied {
         return Ok(MetaInstructionResult::State(state));
@@ -868,6 +875,7 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use super::*;
+    use crate::domain::DomainOutcome;
     use crate::value::{JsonValue, ObjectMap};
     use alloc::string::ToString;
     use alloc::vec;

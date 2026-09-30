@@ -74,6 +74,28 @@ fn tcb_to_serde(value: &JsonValue) -> serde_json::Value {
     }
 }
 
+/// 域归因条目 → 稳定 JSON（None 字段省略，键序由 BTreeMap 固定）
+///
+/// 与 `wal.rs` 的同名私有函数保持同构：哈希链序列化与 WAL 持久化
+/// 必须产出一致形状，否则回放重算哈希将失配。
+fn trace_attr_to_json(attr: &crate::fact::TraceDomainAttribution) -> serde_json::Value {
+    let mut attr_obj = serde_json::Map::new();
+    attr_obj.insert(
+        "outcome".into(),
+        serde_json::Value::String(attr.outcome.clone()),
+    );
+    if let Some(reason) = &attr.missing_reason {
+        attr_obj.insert(
+            "missing_reason".into(),
+            serde_json::Value::String(reason.clone()),
+        );
+    }
+    if let Some(policy) = &attr.on_missing {
+        attr_obj.insert("on_missing".into(), serde_json::Value::String(policy.clone()));
+    }
+    serde_json::Value::Object(attr_obj)
+}
+
 /// 将 Fact 序列化为稳定的 JSON 格式
 ///
 /// 使用显式的 JSON 序列化而非依赖 Debug trait，确保：
@@ -235,11 +257,22 @@ pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> 
             let hits: Vec<serde_json::Value> = rule_hits
                 .iter()
                 .map(|h| {
-                    serde_json::json!({
-                        "index": h.index,
-                        "instr_type": h.instr_type,
-                        "hit": h.hit,
-                    })
+                    // domain_attr 仅在 Some 时插入键（None 省略）：
+                    // 存量无归因事实的哈希不变，增量归因事实纳入哈希链防篡改。
+                    let mut hit_obj = serde_json::Map::new();
+                    hit_obj.insert("index".into(), serde_json::json!(h.index));
+                    hit_obj.insert(
+                        "instr_type".into(),
+                        serde_json::Value::String(h.instr_type.clone()),
+                    );
+                    hit_obj.insert("hit".into(), serde_json::Value::Bool(h.hit));
+                    if let Some(attr) = &h.domain_attr {
+                        hit_obj.insert(
+                            "domain_attr".into(),
+                            trace_attr_to_json(attr),
+                        );
+                    }
+                    serde_json::Value::Object(hit_obj)
                 })
                 .collect();
             obj.insert("rule_hits".into(), serde_json::Value::Array(hits));
@@ -498,7 +531,7 @@ pub fn chain_step(prev_hash: &str, content_hash: &str) -> String {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
     use super::*;
-    use crate::fact::{Fact, FactId, IoType};
+    use crate::fact::{Fact, FactId, IoType, TraceDomainAttribution, TraceHit};
     use evorule_tcb::JsonValue;
 
     #[test]
@@ -522,6 +555,84 @@ mod tests {
         assert_eq!(json_value.get("type").unwrap().as_str().unwrap(), "Command");
         assert_eq!(json_value.get("id").unwrap().as_u64().unwrap(), 1);
         assert!(json_value.get("instruction").is_some());
+    }
+
+    #[test]
+    fn test_transition_trace_hash_without_attr_matches_legacy_shape() {
+        // 存量哈希兼容：domain_attr 为 None 时 stable JSON 命中条目与
+        // 旧实现逐键一致（无 domain_attr 键）→ 存量事实哈希不变
+        let fact = Fact::TransitionTrace {
+            id: FactId(9),
+            cause: FactId(2),
+            rule_hits: vec![TraceHit {
+                index: 0,
+                instr_type: "branch".into(),
+                hit: false,
+                domain_attr: None,
+            }],
+        };
+        let json = fact_to_stable_json(&fact).unwrap();
+        let hits = json.get("rule_hits").unwrap().as_array().unwrap();
+        assert_eq!(hits.len(), 1);
+        let hit = hits.first().unwrap();
+        assert_eq!(
+            hit,
+            &serde_json::json!({"index": 0, "instr_type": "branch", "hit": false}),
+            "无归因条目必须与旧格式逐键一致（None 省略，存量哈希不变）"
+        );
+    }
+
+    #[test]
+    fn test_transition_trace_hash_with_attr_shape_and_distinct() {
+        // 归因落账进哈希链（防篡改覆盖归因事实）：Some 时键出现、
+        // None 省略字段不出现，且与无归因版本哈希不同
+        let fact_with = Fact::TransitionTrace {
+            id: FactId(9),
+            cause: FactId(2),
+            rule_hits: vec![TraceHit {
+                index: 0,
+                instr_type: "branch".into(),
+                hit: false,
+                domain_attr: Some(TraceDomainAttribution {
+                    outcome: "missing".into(),
+                    missing_reason: Some("path_not_found".into()),
+                    on_missing: Some("unsat".into()),
+                }),
+            }],
+        };
+        let fact_without = Fact::TransitionTrace {
+            id: FactId(9),
+            cause: FactId(2),
+            rule_hits: vec![TraceHit {
+                index: 0,
+                instr_type: "branch".into(),
+                hit: false,
+                domain_attr: None,
+            }],
+        };
+        let json = fact_to_stable_json(&fact_with).unwrap();
+        let hit = json
+            .get("rule_hits")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .first()
+            .unwrap();
+        assert_eq!(
+            hit.get("domain_attr").unwrap(),
+            &serde_json::json!({
+                "outcome": "missing",
+                "missing_reason": "path_not_found",
+                "on_missing": "unsat"
+            }),
+            "归因条目形状（None 字段省略）"
+        );
+        let hash_with = fact_hash(&fact_with).unwrap();
+        let hash_without = fact_hash(&fact_without).unwrap();
+        assert_ne!(
+            hash_with, hash_without,
+            "归因事实必须纳入哈希链（有归因 vs 无归因哈希不同）"
+        );
     }
 
     #[test]

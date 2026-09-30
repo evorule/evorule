@@ -161,6 +161,34 @@ impl Default for FactIdGenerator {
     }
 }
 
+/// 域判定归因的 trace 条目（事实层自有类型，不绑定 tcb 类型）
+///
+/// 三态归因落账（专项-20261001 方案 2' v4）：branch/enforce 域求值的
+/// 结果分类与 `on_missing` 静态声明值，以字符串标签承载（标签取值见
+/// TCB `DomainOutcome::label` / `missing_reason` / `OnMissingPolicy::label`）。
+/// R1 纪律：归因仅作审计用途，不回灌执行。
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraceDomainAttribution {
+    /// 域判定结果标签："sat" / "unsat" / "missing"
+    pub outcome: String,
+    /// Missing 分类标签：outcome 为 "missing" 时为 Some（"path_not_found" /
+    /// "incomparable" / "value_literal_ambiguous"），否则 None
+    pub missing_reason: Option<String>,
+    /// 规则文本 `on_missing` 声明值："error" / "unsat"；未声明为 None
+    pub on_missing: Option<String>,
+}
+
+impl TraceDomainAttribution {
+    /// 从 TCB 域归因映射（构造期转换；字段仍为 String 标签，类型不绑定 tcb）
+    pub fn from_tcb(attr: &evorule_tcb::domain::DomainAttribution) -> Self {
+        Self {
+            outcome: attr.outcome.label().into(),
+            missing_reason: attr.outcome.missing_reason().map(str::to_string),
+            on_missing: attr.on_missing.map(str::to_string),
+        }
+    }
+}
+
 /// 单条规则命中归因的 trace 条目
 ///
 /// 事实层自有类型（不绑定 tcb 类型，保持 crate 边界解耦）。
@@ -173,6 +201,23 @@ pub struct TraceHit {
     pub instr_type: String,
     /// 是否结构命中
     pub hit: bool,
+    /// 域判定归因：仅 branch/enforce 指令求值成功时为 Some，其余 None
+    pub domain_attr: Option<TraceDomainAttribution>,
+}
+
+impl TraceHit {
+    /// 从 TCB 规则命中归因构造事实层 trace 条目（归因映射单一出口）
+    pub fn from_rule_hit(hit: &evorule_tcb::transition::RuleHit) -> Self {
+        Self {
+            index: hit.index as u64,
+            instr_type: hit.instr_type.clone(),
+            hit: hit.hit,
+            domain_attr: hit
+                .domain_attr
+                .as_ref()
+                .map(TraceDomainAttribution::from_tcb),
+        }
+    }
 }
 
 /// 事实（Fact）—— 系统的原子通信单元
