@@ -158,7 +158,11 @@ pub struct DomainAttribution {
 /// 精确命中；`meta_workflow.phase` 等合法符号常量字面量零误伤。
 pub const VALUE_LITERAL_AMBIGUOUS_RULE: &str = "root-segment-dot-path.v1";
 
-fn is_root_segment_dot_path(s: &str) -> bool {
+/// value 字符串是否为「TCB exec 根段开头的点分形态」（写作错误判定谓词）
+///
+/// [`VALUE_LITERAL_AMBIGUOUS_RULE`]（root-segment-dot-path.v1）口径的唯一权威
+/// 实现：装载期拒收（server）与运行时归因（本仓）共用本谓词，零镜像复算。
+pub fn is_root_segment_dot_path(s: &str) -> bool {
     let mut parts = s.split('.');
     match parts.next() {
         Some("instruction") | Some("payload") | Some("queue") => {}
