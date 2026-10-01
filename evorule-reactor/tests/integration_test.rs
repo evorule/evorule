@@ -498,7 +498,7 @@ async fn test_facts_log_records_all_facts() {
     assert!(version >= 1, "Version should be >= 1, got {}", version);
 
     // 验证 read_from(0) 返回完整历史
-    let all = facts_log.read_from(0);
+    let all = facts_log.read_from(0).unwrap();
     assert_eq!(all.len(), history.len());
 }
 
@@ -1132,7 +1132,7 @@ async fn test_read_from_for_audit_replay() {
         .expect("Stable not received");
 
     // 审计重放：读取所有事实
-    let all_facts = facts_log.read_from(0);
+    let all_facts = facts_log.read_from(0).unwrap();
     assert!(
         all_facts.len() >= 3,
         "Should have at least 3 facts (Command + StateTransition + Stable), got {}",

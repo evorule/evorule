@@ -41,6 +41,21 @@ pub enum FactsLogError {
     /// 此变体不依赖 persistence feature，因为哈希链在纯内存模式下也需维护
     /// （`last_hash` 字段始终存在）。
     HashError(String),
+    /// 读取起点落在压缩点之前（A-3 `compact()` 后内存前缀已丢弃）
+    ///
+    /// 与"该版本前本就没有事实"严格区分：后者返回**空 Vec**，前者返回本变体。
+    /// 二者此前共用空 Vec，导致"历史被压实丢弃"静默伪装成"历史上什么都没发生"
+    /// （审计校验因此漏检，见 `SharedFactsLog::verify_causal_consistency` 的已知边界）。
+    ///
+    /// 取回压缩点前的完整历史只能基于 WAL 离线重放，内存投影不再持有。
+    CompactedRead {
+        /// 调用方请求读取的起始版本
+        from_version: u64,
+        /// 压缩点版本（= 压缩时的 `last_stable_version`）
+        compacted_version: u64,
+        /// 已因压缩从内存投影丢弃的事实条数
+        compacted_count: usize,
+    },
     #[cfg(feature = "persistence")]
     /// WAL 写入或读取失败（P0-1）
     ///
@@ -54,6 +69,16 @@ impl core::fmt::Display for FactsLogError {
         match self {
             FactsLogError::VersionOverflow => write!(f, "facts log version overflow"),
             FactsLogError::HashError(msg) => write!(f, "facts log hash error: {msg}"),
+            FactsLogError::CompactedRead {
+                from_version,
+                compacted_version,
+                compacted_count,
+            } => write!(
+                f,
+                "facts log read from version {from_version} precedes compaction point \
+                 {compacted_version} ({compacted_count} facts dropped from memory projection; \
+                 replay from WAL for the full prefix)"
+            ),
             #[cfg(feature = "persistence")]
             FactsLogError::WalError(msg) => write!(f, "facts log WAL error: {msg}"),
         }
@@ -853,21 +878,31 @@ impl FactsLog {
     /// 返回所有 `version_before >= from_version` 的事实。
     /// 如果 `from_version` 为 0，返回完整历史。
     ///
-    /// # 压缩点语义（F6，audit-chain 专项 2026-08-28 标注；P1-F4/B3）
+    /// # 压缩点语义（F6；P1-F4/B3 已于 2026-09-30 提升为类型级强制）
     ///
     /// 实例运行期间发生过压缩（compact）时，压缩点之前的历史已从内存投影
-    /// 丢弃：`from_version < compacted.version` 将返回**空 Vec 而非报错**。
-    /// 调用方拿到空结果时，应以 [`Self::compacted_info`] 区分两种语义：
-    /// - `compacted_info() == None` → 真空历史（该版本前无任何事实）；
-    /// - `compacted_info() == Some((version, _))` 且 `from_version < version`
-    ///   → 历史已被压缩，**空结果不代表无历史**。训练/回放工具需要压缩点
-    ///   前的完整前缀历史时，必须基于 WAL 文件离线重放，不能依赖本方法。
-    pub fn read_from(&self, from_version: u64) -> Vec<Fact> {
+    /// 丢弃。此时本方法返回 [`Err(FactsLogError::CompactedRead)`]，
+    /// **绝不返回空 Vec** —— 空 Vec 专用于"该版本前本就没有事实"。
+    ///
+    /// > **变更说明**：此前本方法在压缩点前返回空 Vec，使"被压实丢弃"与
+    /// > "本来就没有"在 API 上不可区分，审计校验因此漏检（见
+    /// > `SharedFactsLog::verify_causal_consistency` 的已知边界）。区分责任
+    /// > 现由类型系统承担，不再依赖调用方主动查 [`Self::compacted_info`]。
+    ///
+    /// 需要压缩点前的完整前缀历史时，必须基于 WAL 文件离线重放。
+    ///
+    /// # 错误
+    /// - [`FactsLogError::CompactedRead`]：`from_version` 早于压缩点版本
+    pub fn read_from(&self, from_version: u64) -> Result<Vec<Fact>, FactsLogError> {
         let inner = self.inner.read();
-        // A-3：压缩点之前的事实已丢弃，返回空 Vec
+        // A-3：压缩点之前的事实已丢弃 —— 显式报错，不再伪装成空历史
         if let Some(ref compacted) = inner.compacted_snapshot {
             if from_version < compacted.version {
-                return Vec::new();
+                return Err(FactsLogError::CompactedRead {
+                    from_version,
+                    compacted_version: compacted.version,
+                    compacted_count: compacted.compacted_count,
+                });
             }
         }
         // A-3：用 version_index 加速定位起始下标（O(log n) 替代 O(n) 遍历）
@@ -877,13 +912,13 @@ impl FactsLog {
             .next()
             .map(|(_, &idx)| idx)
             .unwrap_or(inner.history.len());
-        inner
+        Ok(inner
             .history
             .get(start..)
             .unwrap_or(&[])
             .iter()
             .map(|(_, f)| f.clone())
-            .collect()
+            .collect())
     }
 
     /// 返回当前版本号
@@ -1050,7 +1085,8 @@ impl FactsLog {
     /// - 三个索引同步重建（下标偏移修正）
     /// - WAL 文件保留全量记录（审计链完整性由 WAL 保证，不由内存保证）
     ///
-    /// 压缩后 `read_from(v)` 当 v < 压缩点版本时返回空 Vec。
+    /// 压缩后 `read_from(v)` 当 v < 压缩点版本时返回 `Err(CompactedRead)`
+    /// （2026-09-30 起：不再是空 Vec，避免与"该版本前本无事实"混淆）。
     ///
     /// # 返回值
     /// 压缩率（0.0~1.0），如 0.6 表示 60% 体积缩减。无可压缩事实时返回 0.0。
@@ -1260,11 +1296,11 @@ mod tests {
         .unwrap();
 
         // 全量读取
-        let all = log.read_from(0);
+        let all = log.read_from(0).unwrap();
         assert_eq!(all.len(), 4);
 
         // 从 version 1 开始读（包含 version_before >= 1 的事实）
-        let from_v1 = log.read_from(1);
+        let from_v1 = log.read_from(1).unwrap();
         // version_before 分别是: 0, 0, 1, 1
         // >= 1 的有: IoRequest(version_before=1), IoResponse(version_before=1)
         assert_eq!(from_v1.len(), 2);
@@ -1272,7 +1308,7 @@ mod tests {
         assert_eq!(from_v1[1].id(), FactId(4));
 
         // 从 version 2 开始读
-        let from_v2 = log.read_from(2);
+        let from_v2 = log.read_from(2).unwrap();
         assert!(from_v2.is_empty());
     }
 
@@ -1453,15 +1489,15 @@ mod tests {
         .unwrap();
 
         // read_from(0): 全部 3 条
-        assert_eq!(log.read_from(0).len(), 3);
+        assert_eq!(log.read_from(0).unwrap().len(), 3);
 
         // read_from(1): version_before >= 1，即第二条 StateTransition (version_before=1)
-        let from_v1 = log.read_from(1);
+        let from_v1 = log.read_from(1).unwrap();
         assert_eq!(from_v1.len(), 1);
         assert_eq!(from_v1[0].id(), FactId(3));
 
         // read_from(2): 空
-        assert!(log.read_from(2).is_empty());
+        assert!(log.read_from(2).unwrap().is_empty());
     }
 
     #[test]
@@ -2362,12 +2398,12 @@ mod tests {
         assert_eq!(log.version(), 50);
 
         // read_from(25) 应返回 version_before >= 25 的所有事实
-        let facts = log.read_from(25);
+        let facts = log.read_from(25).unwrap();
         // 版本 25~49 各有 2 条（Command + StateTransition），共 25 版 * 2 条 = 50 条
         assert_eq!(facts.len(), 50);
 
         // read_from(0) 返回全部 100 条
-        let all = log.read_from(0);
+        let all = log.read_from(0).unwrap();
         assert_eq!(all.len(), 100);
     }
 
@@ -2477,7 +2513,7 @@ mod tests {
     }
 
     #[test]
-    fn test_a3_compact_read_from_before_compaction_point_returns_empty() {
+    fn test_a3_compact_read_from_before_compaction_point_returns_explicit_error() {
         let log = FactsLog::new();
 
         // 注入 10 轮（每轮 Command + StateTransition + Stable = 3 条）
@@ -2517,22 +2553,38 @@ mod tests {
         .unwrap(); // version_before=11
 
         // 压缩前 read_from(5) 返回非空
-        assert!(!log.read_from(5).is_empty());
+        assert!(!log.read_from(5).unwrap().is_empty());
 
         // 执行压缩
         log.compact();
 
-        // 压缩后 read_from(5) 返回空（5 < 压缩点版本 10）
-        assert!(
-            log.read_from(5).is_empty(),
-            "压缩后 read_from(5) 应返回空 Vec"
-        );
+        // 压缩后 read_from(5) 必须返回显式错误，而**不是**空 Vec：
+        // 空 Vec 曾使"被压实丢弃"与"本无历史"在 API 上不可分辨（P1-F4/B3）。
+        match log.read_from(5) {
+            Err(FactsLogError::CompactedRead {
+                from_version,
+                compacted_version,
+                compacted_count,
+            }) => {
+                assert_eq!(from_version, 5);
+                assert_eq!(compacted_version, 10, "压缩点版本应为 last_stable_version");
+                assert!(compacted_count > 0, "应报告被压实丢弃的事实条数");
+            }
+            other => panic!("压缩点前读取应返回 CompactedRead，实际得到 {other:?}"),
+        }
 
-        // 压缩后 read_from(11) 返回 1 条（version_before=11 > 压缩点版本 10）
+        // 压缩点之后读取仍然正常
         assert_eq!(
-            log.read_from(11).len(),
+            log.read_from(11).unwrap().len(),
             1,
             "压缩后 read_from(11) 应返回 1 条"
+        );
+
+        // 关键区分：未压缩实例读"尚无事实的版本"仍是空 Vec，而非错误
+        let fresh = FactsLog::new();
+        assert!(
+            fresh.read_from(0).unwrap().is_empty(),
+            "真空历史应返回空 Vec，而非 CompactedRead —— 二者不得再混淆"
         );
     }
 }

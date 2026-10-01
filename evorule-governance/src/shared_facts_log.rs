@@ -245,7 +245,19 @@ impl SharedFactsLog {
         // 会产生"WAL 中有 PayloadUpdate、fact_sources 无映射"的孤立 fact——
         // 该段审计链不可归因。不自动伪造映射（source 无法从 fact 内容恢复，
         // 伪造即撒谎，与 P4-O2 消费关系单向信任原则一致），只检测 + 显式告警。
-        let orphans = detect_orphan_facts(&facts_log, &fact_sources);
+        let orphans = match detect_orphan_facts(&facts_log, &fact_sources) {
+            Ok(v) => v,
+            Err(e) => {
+                // 恢复阶段的 facts_log 未经压实，本不应发生；一旦发生即说明
+                // 集合不完整，此时"未发现孤立"是假结论——必须显式告警而非静默通过。
+                tracing::warn!(
+                    error = %e,
+                    "孤立 fact 检测未完成：事实集合不完整（压实点前历史已从内存投影丢弃），\
+                     无法确认审计链中是否存在不可归因段"
+                );
+                Vec::new()
+            }
+        };
         if !orphans.is_empty() {
             for id in &orphans {
                 tracing::warn!(
@@ -272,7 +284,7 @@ impl SharedFactsLog {
         })
     }
 
-    /// 因果一致性校验：返回孤立 fact_id 列表
+    /// 因果一致性校验：返回孤立 fact_id 列表（压实场景下显式报错）
     ///
     /// 孤立 fact = WAL 历史中存在该 `Fact::PayloadUpdate`，但 `fact_sources`
     /// 无对应映射（崩溃窗口产物，因果映射永久丢失）。
@@ -280,11 +292,13 @@ impl SharedFactsLog {
     /// - [`recover`](Self::recover) 完成时会自动检测并逐条 `warn!`；
     /// - 本方法供运行期健康检查 / 外部审计工具调用。
     ///
-    /// # 已知边界
+    /// # 错误
     /// 若实例运行期间发生过压缩（compact），压缩点前的 fact 已从内存投影
-    /// 丢弃，`read_from(0)` 拿不到完整集合——此时**漏检但不误报**。
+    /// 丢弃，`read_from(0)` 拿不到完整集合——本方法返回
+    /// [`Err(FactsLogError::CompactedRead)`]，**不静默漏检**：一个静默返回
+    /// 空列表的审计方法，会把"没查全"冒充成"查过没问题"。
     /// 精确的全量校验应基于 WAL 离线重放工具。
-    pub fn verify_causal_consistency(&self) -> Vec<u64> {
+    pub fn verify_causal_consistency(&self) -> Result<Vec<u64>, FactsLogError> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         detect_orphan_facts(&inner.facts_log, &inner.fact_sources)
     }
@@ -597,22 +611,28 @@ impl Default for SharedFactsLog {
 /// 孤立 fact 检测：WAL 历史中的 PayloadUpdate 集合 − fact_sources 键集
 ///
 /// 只认 `Fact::PayloadUpdate`（SharedFactsLog.append 的唯一产物形态）。
-/// 若 facts_log 发生过压缩，历史前缀已从内存投影丢弃——漏检但不误报
-/// （见 [`SharedFactsLog::verify_causal_consistency`] 文档）。
-fn detect_orphan_facts(facts_log: &FactsLog, fact_sources: &BTreeMap<FactId, u64>) -> Vec<u64> {
+///
+/// # 错误
+/// 若 facts_log 发生过压缩，压缩点前的历史已从内存投影丢弃，本函数无法
+/// 取得完整集合，返回 [`FactsLogError::CompactedRead`]——**不返回空列表**，
+/// 以免"校验不完整"被误读为"未发现孤立"。
+fn detect_orphan_facts(
+    facts_log: &FactsLog,
+    fact_sources: &BTreeMap<FactId, u64>,
+) -> Result<Vec<u64>, FactsLogError> {
     let wal_fact_ids: BTreeSet<u64> = facts_log
-        .read_from(0)
+        .read_from(0)?
         .iter()
         .filter_map(|f| match f {
             Fact::PayloadUpdate { id, .. } => Some(id.0),
             _ => None,
         })
         .collect();
-    wal_fact_ids
+    Ok(wal_fact_ids
         .iter()
         .filter(|id| !fact_sources.contains_key(&FactId(**id)))
         .copied()
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]
@@ -931,7 +951,7 @@ mod tests {
         std::fs::write(&meta_path, degraded.to_string()).unwrap();
 
         let log2 = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
-        let orphans = log2.verify_causal_consistency();
+        let orphans = log2.verify_causal_consistency().unwrap();
         assert_eq!(
             orphans,
             vec![2],
@@ -955,7 +975,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            log.verify_causal_consistency().is_empty(),
+            log.verify_causal_consistency().unwrap().is_empty(),
             "一致的 WAL+metadata 被误报为孤立：F1 对照测试失败"
         );
     }
