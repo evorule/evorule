@@ -54,6 +54,13 @@
 
 （此后按时间顺序追加，格式：日期 + 事实 / 依据 / 影响 / 修正去向）
 
+### 2026-10-01：快照版本随 0.8.0 发版收口同步（v0.7.0 → v0.8.0）与 domain 三态语义变更验证影响登记
+
+- **事实**：workspace 版本收口 0.8.0（本批 release commit，2026-10-01），STATUS.md 快照同步 v0.7.0 → v0.8.0，MECHANISM.md 头部版本对齐声明同步。随 0.8.0 收口的区间变更（v0.7.0..HEAD 14 commits）：① domain 求值三态语义与 `on_missing` 显式声明（专项-20261001，触及 `evorule-tcb/src/domain.rs`/`transition.rs`/`executor.rs`——所验证生产源码变更）；② evorule-reactor A-3 压实点读取显式化（`read_from`→`Result(CompactedRead)`、`verify_causal_consistency`→`Result`）；③ core_eval 宪法数据 v0.6.0（tool_trace 迁出回归纯计算原则集）；④ pending I/O 超时预算贯通、约束前置门与 L2 形态纪律（2026-09-24 已条目登记）、TCB_SPEC v0.3.3 on_missing 契约与 i18n 双语随动、公开面字样清理。
+- **依据**：domain 三态变更与 A 档 14 个 proof harness（resolve_path 11 + JsonValue 3）作用面零交集（harness 不经过 domain 求值与 transition 消费点，同 2026-09-24 判定模式）；B 档相关 harness（`verify_evaluate_domain_*` / `verify_exec_enforce_*` 等）所验证函数发生语义变更，B 档整体「当前不可运行」判定不变、无既有 PASS 证据受影响；P0-4 语义面由三态重构承载，兼容包装一致性单测（五态→bool 映射逐情形）+ 全量回归绿（2026-10-01 本地 fmt / clippy / test 全 workspace）+ CI push 全绿（kani.yml push:main 触发，生产源码末点 `8a1d708` 全绿；本 release commit 与其代码面零差异、仅版本号与文档）。
+- **影响**：A 档证据基线 `a3d728f` 有效性维持（harness 零交集）；P0-5 确定性语义保持（on_missing 属规则静态定义、outcome 仅观测位不回灌执行——R1/R2 硬纪律单测断言）；S10 版本对齐三方回到一致；无状态行主状态变更。
+- **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行、P0-4/P0-5 备注同步）、`verification/MECHANISM.md`（头部版本对齐声明）。
+
 ### 2026-09-27：快照版本随 0.7.0 发版收口同步（v0.6.1 → v0.7.0）
 
 - **事实**：workspace 版本收口 0.7.0（本批 release commit，2026-09-27），STATUS.md 快照同步 v0.6.1 → v0.7.0，MECHANISM.md 头部版本对齐声明同步。随 0.7.0 收口的 workspace 变更（v0.6.1..HEAD 18 commits）：evorule-eval 评估 crate 入库（publish=false，不在验证面）、L2 形态门禁与 discipline 抽取（影响已由 2026-09-24 条目登记）、tcb 字面量门禁收紧（build.rs 辅助函数化，proof harness 零变更）、wasm-demo 构建身份自报、脚本工具链（密钥扫描/锚点检查/检绿修复）与文档收口。

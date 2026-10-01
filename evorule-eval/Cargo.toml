@@ -8,9 +8,9 @@ publish = false
 description = "论文评估 harness：R1 重放位精确率 / R2 执行开销 / R3 审计复核吞吐 / R4 违规拦截率"
 
 [dependencies]
-evorule-tcb = { path = "../evorule-tcb", version = "0.7.0" }
-evorule-reactor = { path = "../evorule-reactor", version = "0.7.0", features = ["persistence"] }
-evorule-discipline = { path = "../evorule-discipline", version = "0.7.0" }
+evorule-tcb = { path = "../evorule-tcb", version = "0.8.0" }
+evorule-reactor = { path = "../evorule-reactor", version = "0.8.0", features = ["persistence"] }
+evorule-discipline = { path = "../evorule-discipline", version = "0.8.0" }
 blake3 = "1"
 serde_json = "1"
 
