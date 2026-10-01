@@ -1,14 +1,16 @@
-# 发版一键预检（O-217 方案①）：推送前本地拦截 CI 红灯返工源
-# 串跑五项预检，任一 FAIL 即 exit 1（fail-closed，不吞错）：
+# 发版一键预检：推送前本地串跑五项预检，把 CI 红灯返工拦截在推送之前
+# （fail-closed，不吞错）：
 #   1. cargo fmt --check          （Rust 仓自动探测；非 Rust 仓跳过）
-#   2. 公开面矩阵扫描             （CI 同口径 --fail-on A1 --fail-on B，计入 0 项=PASS）
+#   2. 公开面矩阵扫描             （增量零容忍口径：存量命中容忍，
+#                                  仅待推 diff 范围内文件的 A1/B 命中判 FAIL）
 #   3. 推送密钥泄露扫描           （-EnvFile 提供时执行）
 #   4. workspace 成员 req 对齐    （evorule-* registry req 主线与 workspace.version 一致；
 #                                  0.7.0/0.9.0 两次发版踩雷的机器化拦截）
 #   5. CHANGELOG 残留 [Unreleased]（发布定版时点应为 0 残留；WARNING 级）
 # 用法：
-#   pwsh -NoProfile -File D:\evorule\scripts\check-release-ready.ps1 -Repo D:\evorule-server
-#   pwsh -NoProfile -File D:\evorule\scripts\check-release-ready.ps1 -Repo D:\evorule -EnvFile D:\evorule\.env
+#   pwsh -NoProfile -File scripts\check-release-ready.ps1 -Repo <repo 路径>
+#   pwsh -NoProfile -File scripts\check-release-ready.ps1 -Repo <repo> -EnvFile <repo>\.env
+# 依赖：本脚本与 scan_public_face.py / check-push-secret-safety.ps1 同目录（$PSScriptRoot）
 param(
     [Parameter(Mandatory = $true)]
     [string]$Repo,
@@ -45,7 +47,7 @@ if (Test-Path $wsCargo) {
 # ── 2. 公开面矩阵扫描（增量零容忍口径）──────────────────────────
 # 存量容忍（用户裁定）：全仓命中不判死；只有「待推 diff 范围内文件」的 A1/B 命中 = FAIL。
 # 注意：仅 evorule 主仓 CI 有公开面扫描 job；其他仓（如 server）CI 不跑——本地增量口径即终审。
-$scanner = 'D:\evorule\scripts\scan_public_face.py'
+$scanner = Join-Path $PSScriptRoot 'scan_public_face.py'
 if (Test-Path $scanner) {
     $out = & python $scanner --root $Repo --fail-on A1 --fail-on B 2>&1 | Out-String
     $hitFiles = @()
@@ -76,7 +78,7 @@ if (Test-Path $scanner) {
 }
 
 # ── 3. 推送密钥泄露扫描 ──────────────────────────────────────────
-$secretScan = 'D:\evorule\scripts\check-push-secret-safety.ps1'
+$secretScan = Join-Path $PSScriptRoot 'check-push-secret-safety.ps1'
 if (Test-Path $secretScan) {
     if ($EnvFile -and (Test-Path $EnvFile)) {
         & pwsh -NoProfile -File $secretScan -Repo $Repo -EnvFile $EnvFile *> $null
