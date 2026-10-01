@@ -96,8 +96,10 @@ if (Test-Path $secretScan) {
 # ── 4. workspace 成员 req 对齐（Rust workspace 仓）───────────────
 if (Test-Path $wsCargo) {
     $wsVer = $null
+    $wsVerFull = $null
     foreach ($line in Get-Content $wsCargo) {
-        if ($line -match '^\s*version\s*=\s*"(\d+\.\d+)\.\d+"') { $wsVer = $Matches[1]; break }
+        if ($line -match '^\s*version\s*=\s*"(\d+\.\d+)\.\d+"') { $wsVer = $Matches[1] }
+        if ($line -match '^\s*version\s*=\s*"(\d+\.\d+\.\d+)"') { $wsVerFull = $Matches[1]; break }
     }
     if ($wsVer) {
         $bad = @()
@@ -111,10 +113,21 @@ if (Test-Path $wsCargo) {
                 }
             }
         }
+        # README 版本徽章随动（0.7.0/0.8.0 两批发版连漏的机器化根治；双语 README 多 badge 全查）
+        $readme = Join-Path $Repo 'README.md'
+        if (Test-Path $readme) {
+            foreach ($line in Get-Content $readme) {
+                if ($line -match 'img\.shields\.io/badge/version-(\d+\.\d+\.\d+)-') {
+                    if ($Matches[1] -ne $wsVerFull) {
+                        $bad += ("README.md version badge = {0} (expected {1})" -f $Matches[1], $wsVerFull)
+                    }
+                }
+            }
+        }
         if ($bad.Count -eq 0) {
-            Add-Result 'workspace member req alignment' 'PASS' "evorule-* req 主线 = $((($wsVer -split '\.')[0])).x"
+            Add-Result 'workspace member req alignment' 'PASS' "evorule-* req 主线 = $((($wsVer -split '\.')[0])).x; README badge = $wsVerFull"
         } else {
-            Add-Result 'workspace member req alignment' 'FAIL' ("workspace={0} 但 {1} 处 req 漂移: {2}" -f $wsVer, $bad.Count, ($bad -join ' | '))
+            Add-Result 'workspace member req alignment' 'FAIL' ("workspace={0} 但 {1} 处漂移: {2}" -f $wsVer, $bad.Count, ($bad -join ' | '))
         }
     } else {
         Add-Result 'workspace member req alignment' 'SKIP' 'workspace version not found'
