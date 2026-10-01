@@ -176,14 +176,28 @@ domain 用于 branch 指令的条件评估。共 7 种类型（SSOT：`domain.rs
 | 类型 | 说明 | 必填参数 | 代码依据 |
 |------|------|---------|---------|
 | `instruction` | 当前指令类型匹配 | `instruction_type` | domain.rs L217 |
-| `eq` | 路径值 == 目标值 | `path`, `value` | domain.rs L169 |
-| `lt` | 路径值 < 目标值（仅 i64） | `path`, `value` | domain.rs L185 |
+| `eq` | 路径值 == 目标值 | `path`, `value`, `on_missing` | domain.rs L169 |
+| `lt` | 路径值 < 目标值（仅 i64） | `path`, `value`, `on_missing` | domain.rs L185 |
 | `exists` | 路径存在且非 null | `path` | domain.rs L205 |
 | `all` | 所有子域为真（AND） | `inner`（数组） | domain.rs L231 |
 | `not` | 子域为假 | `inner`（单个域） | domain.rs L257 |
 | `has_fields` | 对象包含指定非空字段 | `path`, `fields`（非空数组） | domain.rs L279 |
 
 > 注意：evorule v0.6.0 **没有** `gt`、`gte`、`neq`、`contains` 等操作符。大于比较可用 `not(lt)` 组合实现。
+
+### on_missing 声明（三态域判定，比较域必填）
+
+`eq` / `lt` 为比较域：状态侧缺失时输出**三态** `DomainOutcome`（`sat` 真实成立 / `unsat` 真实不成立 / `missing` 路径不存在、类型不可比或 value 引用歧义），由 `on_missing` 显式声明 missing 的处理策略——**禁止静默**：
+
+| 声明值 | 语义 |
+|--------|------|
+| `"error"` | 求值缺失 → 拒绝执行（显式报错，不走任何分支） |
+| `"unsat"` | 求值缺失 → 投影为假，走 `on_false` 分支，归因（`missing_reason`）随事实面落账审计 |
+
+- **装载期强制**：eq/lt 未声明 `on_missing`、声明值非法、或 `value` 呈缺 `__` 前缀的根段点分形态（像路径引用的字面量写作错误），在规则装载/导入期被拒收（fail-closed），不进入运行期。
+- `all.inner` 内的 eq/lt 同样必须声明（walk 整棵域树）。动态域字符串（`"__exec__.…"` 路径引用）不受此约束。
+- `exists` / `instruction` / `has_fields` 为存在性检查本体（二态，无 missing 语义），无需声明。
+- 归因透传：命中归因事实（TransitionTrace/TraceHit）的 `domain_attr` 记录三态结果、missing 归因与声明值，见 [fact-types.md](fact-types.md) TransitionTrace 节。
 
 ### instruction（指令类型匹配）
 
@@ -196,10 +210,10 @@ domain 用于 branch 指令的条件评估。共 7 种类型（SSOT：`domain.rs
 ### eq（相等）
 
 ```json
-{ "type": "eq", "path": "__exec__.payload.counter", "value": 5 }
+{ "type": "eq", "path": "__exec__.payload.counter", "value": 5, "on_missing": "unsat" }
 ```
 
-`value` 支持 `__` 开头路径引用（跨字段比较）。路径不存在或引用不可解析 → false。
+`value` 支持 `__` 开头路径引用（跨字段比较）。路径不存在或引用不可解析 → `missing`（三态；由 `on_missing` 声明分派——`error` 拒绝执行 / `unsat` 投影为假走 `on_false` 并落归因，见上方 on_missing 声明节）。`value` 为缺 `__` 前缀的根段点分形态视为写作错误，装载期拒收。
 
 ### lt（小于）
 
@@ -207,7 +221,7 @@ domain 用于 branch 指令的条件评估。共 7 种类型（SSOT：`domain.rs
 { "type": "lt", "path": "__exec__.payload.counter", "value": 10 }
 ```
 
-仅支持 i64 整数比较。任一侧非整数或路径不存在 → false。
+仅支持 i64 整数比较。任一侧非整数或路径不存在 → `missing`（三态，分派同 eq，见上方 on_missing 声明节）。
 
 ### exists（存在）
 
@@ -327,7 +341,7 @@ __exec__.__io_results__.<io_type> — I/O 结果（按类型隔离）
           "type": "all",
           "inner": [
             { "type": "instruction", "instruction_type": "increment" },
-            { "type": "eq", "path": "__exec__.payload.counter", "value": 5 }
+            { "type": "eq", "path": "__exec__.payload.counter", "value": 5, "on_missing": "unsat" }
           ]
         },
         "on_true": [
@@ -543,8 +557,8 @@ Domains are used for condition evaluation in branch instructions. There are 7 ty
 | Type | Description | Required parameters | Code basis |
 |------|------|---------|---------|
 | `instruction` | Matches the current instruction type | `instruction_type` | domain.rs L217 |
-| `eq` | Path value == target value | `path`, `value` | domain.rs L169 |
-| `lt` | Path value < target value (i64 only) | `path`, `value` | domain.rs L185 |
+| `eq` | Path value == target value | `path`, `value`, `on_missing` | domain.rs L169 |
+| `lt` | Path value < target value (i64 only) | `path`, `value`, `on_missing` | domain.rs L185 |
 | `exists` | The path exists and is not null | `path` | domain.rs L205 |
 | `all` | All sub-domains are true (AND) | `inner` (array) | domain.rs L231 |
 | `not` | The sub-domain is false | `inner` (single domain) | domain.rs L257 |
@@ -563,18 +577,18 @@ Matches the `type` field of the currently executing instruction. This is the mos
 ### eq (equality)
 
 ```json
-{ "type": "eq", "path": "__exec__.payload.counter", "value": 5 }
+{ "type": "eq", "path": "__exec__.payload.counter", "value": 5, "on_missing": "unsat" }
 ```
 
-`value` supports `__`-prefixed path references (cross-field comparison). A missing path or an unresolvable reference → false.
+`value` supports `__`-prefixed path references (cross-field comparison). A missing path or an unresolvable reference → `missing` (three-state; dispatched by `on_missing` — `error` rejects execution / `unsat` projects to false, takes `on_false`, and records attribution; see the `on_missing` declaration section in the Chinese part above).
 
 ### lt (less than)
 
 ```json
-{ "type": "lt", "path": "__exec__.payload.counter", "value": 10 }
+{ "type": "lt", "path": "__exec__.payload.counter", "value": 10, "on_missing": "unsat" }
 ```
 
-i64 integer comparison only. If either side is not an integer, or the path does not exist → false.
+i64 integer comparison only. If either side is not an integer, or the path does not exist → `missing` (three-state, dispatched like `eq`; see the `on_missing` declaration section above).
 
 ### exists (existence)
 
@@ -694,7 +708,7 @@ Path references in rules reach the context through the `__exec__.` prefix. If th
           "type": "all",
           "inner": [
             { "type": "instruction", "instruction_type": "increment" },
-            { "type": "eq", "path": "__exec__.payload.counter", "value": 5 }
+            { "type": "eq", "path": "__exec__.payload.counter", "value": 5, "on_missing": "unsat" }
           ]
         },
         "on_true": [

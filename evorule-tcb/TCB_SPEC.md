@@ -11,7 +11,7 @@
 > **适用范围**: evorule-tcb (可信计算基)
 > **协议**: AGPL-3.0-or-later
 > **状态**: 权威 (本文档是 `build.rs` 编译时门禁的依据)
-> **版本**: v0.3.2 (审计治理版；路径约定统一 D1a、域错误显式化、M6 执行预算、M8 去持久化、D11 重放契约)
+> **版本**: v0.3.3 (域判定声明化版；三态 DomainOutcome、on_missing 声明分派、MissingReason 归因、D1b；承 v0.3.2 审计治理——D1a、域错误显式化、M6 执行预算、M8 去持久化、D11 重放契约)
 > **跨模块设计**: 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)
 
 ---
@@ -208,11 +208,21 @@
 
 | 使用点                                  | 相对/绝对                       | 数组索引     | 解析失败行为                      |
 | --------------------------------------- | ------------------------------- | ------------ | --------------------------------- |
-| `domain` 的 `path`                      | 相对 `__exec__`（自动补全）     | ✅ 支持      | `Ok(false)`（业务状态缺失）       |
+| `domain` 的 `path`                      | 相对 `__exec__`（自动补全）     | ✅ 支持      | 三态判定 `Missing`（见 D1b）      |
 | `set` 的 `attr`                         | 相对 `__exec__.payload`         | ✅ 支持      | 结构错误显式报错                  |
 | `set`/`io_request` 的 `value` 与参数    | 必须 `__` 开头（路径引用）      | ✅ 支持（读）| `Err(PathResolutionFailed)`       |
 
-**原则**: 规则结构错误显式报错（fail-fast），业务状态缺失静默求值（fail-closed，仅 domain）。纯路径语义字段（`from`/`messages` 等）解析失败**不得**回退字面值——回退会把拼写错误伪装成数据值。
+**原则 (v0.3.3 声明化)**: 规则结构错误显式报错（fail-fast）。比较域（`eq`/`lt`）业务状态缺失**不再静默求值**——三态判定（见 D1b），Missing 的处理由规则文本 `on_missing` 显式声明决定，归因随 `RuleHit.domain_attr` 透传审计。纯路径语义字段（`from`/`messages` 等）解析失败**不得**回退字面值——回退会把拼写错误伪装成数据值。
+
+### D1b: 三态域判定与 `on_missing` 声明（v0.3.3 声明化语义）
+
+**必须**: 比较域（`eq`/`lt`）求值输出三态 `DomainOutcome`，消除「真实比对为假 / 路径不存在 / 类型不可比 / value 引用歧义」在二态输出上不可区分的信息丢失——静默通道从根上铲除。
+
+- **三态本体**: `Sat`（路径存在且比较成立）/ `Unsat`（路径存在且比较不成立，真实为假）/ `Missing(MissingReason)`（状态侧缺失）。
+- **`MissingReason` 归因三类**（标签版本化锁定，审计落账/错误 detail 用）: `path_not_found`（比较路径或 `__` 引用路径不存在）/ `incomparable`（两侧值均存在但类型不可比，如 `lt` 非 i64）/ `value_literal_ambiguous`（value 为根段点分形态字符串——像路径引用但缺 `__` 前缀的写作错误）。
+- **`on_missing` 声明分派**（比较域必须显式声明，装载面 fail-closed）: `error` → `Err(MissingRejected)` 拒绝执行；`unsat` → 由消费点投影 `false` 走 `on_false` 分支 + 归因落账。**缺省（未声明）运行时兼容投影 `false`**（与历史行为一致），装载面（evorule-server schema gate + 导入预判）对未声明的 eq/lt 拒收——声明缺失在装载期显式拦截，不在运行期静默。
+- **R1 归因不回灌执行**: `DomainAttribution` 仅作审计观测位（随 `RuleHit.domain_attr` 交付 FactsLog 落账与消费面透传，含 `on_missing` 声明值），永不参与执行决策；branch 走向 / enforce 命中均由投影 bool + 规则静态声明决定。
+- **入口划分**: `evaluate_domain_outcome` 为三态主入口；`evaluate_domain` 为二态兼容包装（Missing → `false` 投影，供未迁移调用方与回归基准）。`all`/`not` 三值同构短路；`exists`/`instruction`/`has_fields` 为存在性检查本体（二态，无 Missing）。
 
 ### D2: I/O 结果按类型隔离
 
