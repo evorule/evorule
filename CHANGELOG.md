@@ -54,7 +54,7 @@
 
 ## [0.8.0] - 2026-10-01
 
-- 🔄 **domain 求值三态语义与 `on_missing` 显式声明（静默 false 根修，专项-20261001）**：`evorule-tcb` domain eq/lt 求值从「状态侧静默 false」升级为三态 `DomainOutcome { Sat, Unsat, Missing(MissingReason) }`（`MissingReason` = PathNotFound / Incomparable / ValueLiteralAmbiguous）；domain schema 新增可选 `on_missing` 声明——`"error"` = 运行时 Missing 显式报错拒绝执行，`"unsat"` = 显式走 on_false 并归因落账；装载面两道拒收（eq/lt 域缺声明拒绝装载；value 点路径形态缺 `__` 前缀判为写作错误拒绝装载，动态域豁免落运行时防御层）；`RuleHit` 扩 `domain_attr` 归因透传（serde None 省略，IoRequired 变体不携带）；`evaluate_domain` 旧签名降级为兼容包装（行为零变化）。确定性/可回放/审计三红线核查通过：纯函数性质保持、`on_missing` 属规则静态定义随重放一致、静默通道机制性铲除；`ValueLiteralAmbiguous` 判定谓词导出供装载门禁共用，O-211 复现断言入回归
+- 🔄 **domain 求值三态语义与 `on_missing` 显式声明（静默 false 根修）**：`evorule-tcb` domain eq/lt 求值从「状态侧静默 false」升级为三态 `DomainOutcome { Sat, Unsat, Missing(MissingReason) }`（`MissingReason` = PathNotFound / Incomparable / ValueLiteralAmbiguous）；domain schema 新增可选 `on_missing` 声明——`"error"` = 运行时 Missing 显式报错拒绝执行，`"unsat"` = 显式走 on_false 并归因落账；装载面两道拒收（eq/lt 域缺声明拒绝装载；value 点路径形态缺 `__` 前缀判为写作错误拒绝装载，动态域豁免落运行时防御层）；`RuleHit` 扩 `domain_attr` 归因透传（serde None 省略，IoRequired 变体不携带）；`evaluate_domain` 旧签名降级为兼容包装（行为零变化）。确定性/可回放/审计三红线核查通过：纯函数性质保持、`on_missing` 属规则静态定义随重放一致、静默通道机制性铲除；`ValueLiteralAmbiguous` 判定谓词导出供装载门禁共用，历史 eq 静默失效场景复现断言入回归
 - 🔄 **evorule-reactor 压实点读取显式化（A-3）**：`read_from` 返回 `Result<CompactedRead, _>`（空 Vec 伪装成功消除）、`verify_causal_consistency` 主 API 改返回 `Result`（`_ex` 垫片删除）——审计链可归因性对齐「无警告只有报错」口径
 - 🔄 **core_eval 宪法数据 v0.6.0**：迁出 tool_trace 回归纯计算原则集（v0.5.0 引入的 tool_trace 工具轨迹记录规则随迁出退役）；纪律条款 eq/lt 补 `on_missing=unsat` 显式声明（行为零变化）
 - 🐛 **公开面与工具链维护**：公开面内部台账编号字样清理（语义零改动）；跨仓依赖锚点检查器的 secret scan 对配置命名类 env 键豁免（误报类修复）
