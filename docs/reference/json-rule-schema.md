@@ -566,6 +566,20 @@ Domains are used for condition evaluation in branch instructions. There are 7 ty
 
 > Note: evorule v0.6.0 does **not** have operators such as `gt`, `gte`, `neq`, or `contains`. Greater-than comparisons can be expressed via a `not(lt)` combination.
 
+### on_missing declaration (three-state domain verdict, required for comparison domains)
+
+`eq` / `lt` are comparison domains: when the state side is missing they emit a **three-state** `DomainOutcome` (`sat` genuinely holds / `unsat` genuinely fails / `missing` path absent, types incomparable, or ambiguous value reference), and `on_missing` explicitly declares the policy for `missing` — **silence is forbidden**:
+
+| Declaration | Semantics |
+|-------------|-----------|
+| `"error"` | Missing evaluation → reject execution (explicit error; no branch is taken) |
+| `"unsat"` | Missing evaluation → project to false, take the `on_false` branch, and record attribution (`missing_reason`) on the fact surface for audit |
+
+- **Enforced at load time**: eq/lt without an `on_missing` declaration, with an illegal declaration value, or whose `value` is a root-segment dotted literal lacking the `__` prefix (a writing error that looks like a path reference) is rejected at rule load/import (fail-closed) and never reaches runtime.
+- eq/lt inside `all.inner` must declare as well (the whole domain tree is walked). Dynamic domain strings (`"__exec__.…"` path references) are exempt from this constraint.
+- `exists` / `instruction` / `has_fields` are existence checks themselves (two-state, no missing semantics) and need no declaration.
+- Attribution passthrough: the `domain_attr` of the hit-attribution fact (TransitionTrace/TraceHit) records the three-state verdict, the missing attribution, and the declared value; see the TransitionTrace section in [fact-types.md](fact-types.md).
+
 ### instruction (instruction type match)
 
 ```json
@@ -580,7 +594,7 @@ Matches the `type` field of the currently executing instruction. This is the mos
 { "type": "eq", "path": "__exec__.payload.counter", "value": 5, "on_missing": "unsat" }
 ```
 
-`value` supports `__`-prefixed path references (cross-field comparison). A missing path or an unresolvable reference → `missing` (three-state; dispatched by `on_missing` — `error` rejects execution / `unsat` projects to false, takes `on_false`, and records attribution; see the `on_missing` declaration section in the Chinese part above).
+`value` supports `__`-prefixed path references (cross-field comparison). A missing path or an unresolvable reference → `missing` (three-state; dispatched by `on_missing` — `error` rejects execution / `unsat` projects to false, takes `on_false`, and records attribution; see the `on_missing` declaration section above).
 
 ### lt (less than)
 

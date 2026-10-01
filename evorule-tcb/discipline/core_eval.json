@@ -22,7 +22,7 @@
         "type": "all",
         "inner": [
           { "type": "instruction", "instruction_type": "enforce" },
-          { "type": "eq", "path": "instruction._ctx.nested", "value": true }
+          { "type": "eq", "path": "instruction._ctx.nested", "value": true, "on_missing": "unsat" }
         ]
       },
       "reason": "DC-02 enforce 必须顶层声明：嵌入 branch 子指令时受『传播即停』影响，违反条件时不会 Halted（残留风险 R-1）"
@@ -61,7 +61,7 @@
         "type": "all",
         "inner": [
           { "type": "instruction", "instruction_type": "io_request" },
-          { "type": "eq", "path": "instruction._ctx.shadowed", "value": true }
+          { "type": "eq", "path": "instruction._ctx.shadowed", "value": true, "on_missing": "unsat" }
         ]
       },
       "reason": "DC-05 io_request 被前置早退规则遮蔽：更靠前的规则已对同一指令类型返回信号，本规则永不求值（BUG-P0-005 同型）"
@@ -79,8 +79,8 @@
             "inner": {
               "type": "all",
               "inner": [
-                { "type": "eq", "path": "instruction._ctx.has_attr", "value": true },
-                { "type": "eq", "path": "instruction._ctx.has_value", "value": true }
+                { "type": "eq", "path": "instruction._ctx.has_attr", "value": true, "on_missing": "unsat" },
+                { "type": "eq", "path": "instruction._ctx.has_value", "value": true, "on_missing": "unsat" }
               ]
             }
           }
@@ -115,7 +115,8 @@
             "inner": {
               "type": "lt",
               "path": "instruction._ctx.io_in_tree",
-              "value": 2
+              "value": 2,
+              "on_missing": "unsat"
             }
           }
         ]
@@ -130,7 +131,7 @@
         "type": "all",
         "inner": [
           { "type": "instruction", "instruction_type": "io_request" },
-          { "type": "eq", "path": "instruction._ctx.preceded_by_mutating", "value": true }
+          { "type": "eq", "path": "instruction._ctx.preceded_by_mutating", "value": true, "on_missing": "unsat" }
         ]
       },
       "reason": "DC-09 (TCB_SPEC D5) io_request 必须是叶子：其前不得有 set/push 等修改状态的操作，否则部分修改丢弃（IoRequired 纯信号）会破坏重放等价性 D11"
