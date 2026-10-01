@@ -26,7 +26,7 @@ use evorule_tcb::{JsonValue, ObjectMap};
 
 // ===== T1：JsonValue / ObjectMap（对应 D1–D3）=====
 
-/// T1a：`BTreeMap` 后端在乱序插入下迭代序确定（字典序），两次独立构造完全一致。
+/// `BTreeMap` 后端在乱序插入下迭代序确定（字典序），两次独立构造完全一致。
 /// 实证 D1 论证「`ObjectMap` 迭代序与 `BTreeMap` 一致」在生产载体成立。
 #[test]
 fn t1a_objectmap_iter_order_deterministic() {
@@ -56,7 +56,7 @@ fn t1a_objectmap_iter_order_deterministic() {
     );
 }
 
-/// T1b：`JsonValue` object 构造 → 访问往返 no-panic 且值稳定；
+/// `JsonValue` object 构造 → 访问往返 no-panic 且值稳定；
 /// 嵌套对象（含 null）访问正常（对应 D2/D3 的 null 路径）。
 #[test]
 fn t1b_jsonvalue_construct_access_roundtrip() {
@@ -99,7 +99,7 @@ fn eq_x10() -> JsonValue {
     ])
 }
 
-/// T2a：深度 ≤ 64（生产上界）内有界、no-panic、结果正确。
+/// 深度 ≤ 64（生产上界）内有界、no-panic、结果正确。
 /// 直接实证 D4 边界化所要求的「深度 64 下域求值仍成立」。
 #[test]
 fn t2a_domain_eval_bounded_depth64_ok() {
@@ -117,7 +117,7 @@ fn t2a_domain_eval_bounded_depth64_ok() {
     );
 }
 
-/// T2b：深度 > 64 显式拒绝（`NestingTooDeep`），绝不静默求值。
+/// 深度 > 64 显式拒绝（`NestingTooDeep`），绝不静默求值。
 #[test]
 fn t2b_domain_eval_over_limit_explicit_reject() {
     let state = exec_state();

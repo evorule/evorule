@@ -19,7 +19,7 @@ use evorule_tcb::JsonValue;
 
 // ===== T5：哈希与链构造（对应 D11）=====
 
-/// T5a：`content_hash` 确定性（同输入同输出）+ 区分性（不同输入不同输出）。
+/// `content_hash` 确定性（同输入同输出）+ 区分性（不同输入不同输出）。
 /// 区分性是「篡改必破坏链」的结构基础。
 #[test]
 fn t5a_content_hash_deterministic_and_discriminating() {
@@ -40,7 +40,7 @@ fn t5a_content_hash_deterministic_and_discriminating() {
     }
 }
 
-/// T5b：`chain_step` 单射性（前链不同或内容不同 → 链哈希不同）+ 幂等。
+/// `chain_step` 单射性（前链不同或内容不同 → 链哈希不同）+ 幂等。
 /// 实证「链构造单射」结构性质在 blake3 生产载体成立（替身用简化哈希验证过同一命题）。
 #[test]
 fn t5b_chain_step_injective_and_idempotent() {
@@ -81,7 +81,7 @@ fn payload(path: &str, v: i64) -> Fact {
     }
 }
 
-/// T6a：生产载体（真实 `RwLock` + 完整 append：哈希链更新 + 内存状态）下
+/// 生产载体（真实 `RwLock` + 完整 append：哈希链更新 + 内存状态）下
 /// version 单调递增、快照与内存一致（D13 替身跳过的路径在生产成立）。
 #[test]
 fn t6a_append_version_monotonic_and_snapshot_consistent() {
@@ -99,7 +99,7 @@ fn t6a_append_version_monotonic_and_snapshot_consistent() {
     assert_eq!(log.version(), 8);
 }
 
-/// T6b：append-only 历史——同 path 多次 append 保留全部事实（无就地改写）。
+/// append-only 历史——同 path 多次 append 保留全部事实（无就地改写）。
 #[test]
 fn t6b_append_only_history_preserved() {
     let log = FactsLog::new();

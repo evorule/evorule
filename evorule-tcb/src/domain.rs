@@ -154,7 +154,7 @@ pub struct DomainAttribution {
 /// `^(instruction|payload|queue)(\.[A-Za-z0-9_]+)+$` → 写作错误
 /// （像路径引用但缺 `__` 前缀）。根段名单与 `resolve_exec_path`
 /// 相对路径自动补全的根命名空间一致。
-/// 存量实证（T4a 盘点）：历史实测旧形态 `instruction.params.milestone_target`
+/// 存量实证（专项盘点）：历史实测旧形态 `instruction.params.milestone_target`
 /// 精确命中；`meta_workflow.phase` 等合法符号常量字面量零误伤。
 pub const VALUE_LITERAL_AMBIGUOUS_RULE: &str = "root-segment-dot-path.v1";
 
@@ -1735,7 +1735,7 @@ mod tests {
         assert!(eval_ok(&with_ok, &state));
     }
 
-    // ===== 三态域判定测试（专项-20261001 方案 2' v4，DoD G/I/J 素材）=====
+    // ===== 三态域判定测试（设计 v4：包装一致性/声明执行语义/确定性幂等素材）=====
 
     /// 测试辅助：构造带 on_missing 声明的 eq 域
     fn eq_with_missing(path: &str, value: JsonValue, on_missing: Option<&str>) -> JsonValue {
@@ -1781,7 +1781,7 @@ mod tests {
         );
     }
 
-    /// DoD-J（声明执行语义）前半：eq 路径缺失的三种声明走向
+    /// 声明执行语义·前半：eq 路径缺失的三种声明走向
     #[test]
     fn test_outcome_eq_path_missing_on_missing_policies() {
         let state = make_exec_state("noop", make_payload(10));
@@ -1818,7 +1818,7 @@ mod tests {
         ));
     }
 
-    /// DoD-J 后半：lt 类型不可比（Incomparable）两种声明走向
+    /// 声明执行语义·后半：lt 类型不可比（Incomparable）两种声明走向
     #[test]
     fn test_outcome_lt_incomparable_policies() {
         let mut p = ObjectMap::new();
@@ -1848,7 +1848,7 @@ mod tests {
         ));
     }
 
-    /// DoD-A 素材：历史实测复现形态（eq value 无前缀字面量）——
+    /// 实测素材：历史实测复现形态（eq value 无前缀字面量）——
     /// unsat 声明 → 归因 Missing(ValueLiteralAmbiguous)；
     /// error 声明 → Err（ValueLiteralAmbiguous 一律从严）
     #[test]
@@ -1879,7 +1879,7 @@ mod tests {
     }
 
     /// ValueLiteralAmbiguous 判定口径（root-segment-dot-path.v1）正负例锚定：
-    /// 正例=历史实测旧形态（eq value 无前缀）；负例=T4a 盘点 10 处合法字面量（零误伤）
+    /// 正例=历史实测旧形态（eq value 无前缀）；负例=专项盘点 10 处合法字面量（零误伤）
     #[test]
     fn test_value_literal_ambiguous_rule_cases() {
         // 正例：根段点分形态（像路径引用但缺 __ 前缀，写作错误）
@@ -1889,7 +1889,7 @@ mod tests {
         assert!(is_root_segment_dot_path("payload.x"));
         assert!(is_root_segment_dot_path("queue.front"));
 
-        // 负例：T4a 盘点合法符号常量/模型名字面量（零误伤锚定）
+        // 负例：专项盘点合法符号常量/模型名字面量（零误伤锚定）
         assert!(!is_root_segment_dot_path("meta_tool.pending_target_scope"));
         assert!(!is_root_segment_dot_path("meta_workflow.phase"));
         assert!(!is_root_segment_dot_path("meta_tool.pending_tool_intent"));
@@ -1911,7 +1911,7 @@ mod tests {
         assert_eq!(VALUE_LITERAL_AMBIGUOUS_RULE, "root-segment-dot-path.v1");
     }
 
-    /// DoD-I（包装一致性）：无 on_missing 声明输入下，outcome 二态投影
+    /// 包装一致性：无 on_missing 声明输入下，outcome 二态投影
     /// 与改前 bool 实现逐情形一致（Missing → false）
     #[test]
     fn test_wrapper_consistency_missing_projects_false() {
@@ -2003,7 +2003,7 @@ mod tests {
         assert!(!evaluate_domain(&not, &state).unwrap());
     }
 
-    /// DoD-G（确定性幂等）：同输入重复求值 N 次 outcome 逐次全等
+    /// 确定性幂等：同输入重复求值 N 次 outcome 逐次全等
     #[test]
     fn test_outcome_deterministic_idempotent() {
         let state = make_exec_state("noop", make_payload(10));
