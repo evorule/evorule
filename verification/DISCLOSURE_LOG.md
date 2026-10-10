@@ -54,6 +54,13 @@
 
 （此后按时间顺序追加，格式：日期 + 事实 / 依据 / 影响 / 修正去向）
 
+### 2026-10-10：快照版本随 0.8.1 发版收口同步（v0.8.0 → v0.8.1）
+
+- **事实**：workspace 版本收口 0.8.1（本批 release commit，2026-10-10），STATUS.md 快照同步 v0.8.0 → v0.8.1，MECHANISM.md 头部版本对齐声明同步。随 0.8.1 收口的区间变更（v0.8.0..HEAD）：① G-A1 ed25519 审计锚点签名原语（evorule-cli `signing.rs` + `anchor-keygen`/`verify-anchors` 两子命令）；② G-A2 审计锚点链（evorule-governance `anchor` 模块：BLAKE3 事实链之上的 ed25519 签名锚点链，Auditor with_anchor 挂点默认关、SessionManager 穿线）；③ L1 参考文档同步（cli-reference/fact-types 补 Violation 类型节、README、DOCS_INDEX）。全部变更位于治理/CLI 层。
+- **依据**：区间变更与 TCB/reactor Kani harness 作用面零交集（proof 源码 `kani_proofs.rs` 不在变更集；TCB/reactor 生产源码零变更，A 档证据基线 `a3d728f` 有效性维持判定不变）；S10 版本对齐三方（Cargo.toml / STATUS.md / MECHANISM.md）回到一致。
+- **影响**：无状态行主状态变更；C4（审计不可篡改）机制面在 v0.8.1 获得哈希链之上的签名锚点层（达成等级判定不变，证据登记另行推进）。
+- **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行）、`verification/MECHANISM.md`（头部版本对齐声明）。
+
 ### 2026-10-01：快照版本随 0.8.0 发版收口同步（v0.7.0 → v0.8.0）与 domain 三态语义变更验证影响登记
 
 - **事实**：workspace 版本收口 0.8.0（本批 release commit，2026-10-01），STATUS.md 快照同步 v0.7.0 → v0.8.0，MECHANISM.md 头部版本对齐声明同步。随 0.8.0 收口的区间变更（v0.7.0..HEAD 14 commits）：① domain 求值三态语义与 `on_missing` 显式声明（专项-20261001，触及 `evorule-tcb/src/domain.rs`/`transition.rs`/`executor.rs`——所验证生产源码变更）；② evorule-reactor A-3 压实点读取显式化（`read_from`→`Result(CompactedRead)`、`verify_causal_consistency`→`Result`）；③ core_eval 宪法数据 v0.6.0（tool_trace 迁出回归纯计算原则集）；④ pending I/O 超时预算贯通、约束前置门与 L2 形态纪律（2026-09-24 已条目登记）、TCB_SPEC v0.3.3 on_missing 契约与 i18n 双语随动、公开面字样清理。
