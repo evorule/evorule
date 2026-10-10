@@ -107,163 +107,141 @@ fn load_core_eval() -> Vec<JsonValue> {
     transform.iter().cloned().map(serde_to_tcb).collect()
 }
 
-/// 最小 I/O 循环（call_external 应用剧本）规则集——内联构造，不依赖任何资产文件。
+/// E-10 修复（34 号档 B4）：差分测试宪法源=**evo-agent 仓真文件**（不再手抄内联副本）。
 ///
-/// 背景：T8 迁出后核心仓 core_eval.json 为最小评估集，不再含 call_external 规则；
-/// I/O 循环差分用例需要应用剧本形态的完整触发/消费路径，故按消费方自持宪法
-/// （evo-agent agent_constitution.json）内联同构的最小规则链。
-// 测试 fixture(长 JSON 规则字面量)豁免行数门禁
-#[allow(clippy::too_many_lines)]
-fn io_loop_rules() -> Vec<JsonValue> {
-    let rules = serde_json::json!([
-        // ReAct 迭代计数器初始化（首次执行 call_external 时置 0）
-        {
-            "type": "branch",
-            "params": {
-                "domain": {
-                    "type": "all",
-                    "inner": [
-                        { "type": "instruction", "instruction_type": "call_external" },
-                        {
-                            "type": "not",
-                            "inner": {
-                                "type": "exists",
-                                "path": "__exec__.payload.react_iteration"
-                            }
-                        }
-                    ]
-                },
-                "on_true": [
-                    {
-                        "type": "set",
-                        "params": {
-                            "attr": "react_iteration",
-                            "operation": "set",
-                            "value": 0
-                        }
-                    }
-                ],
-                "on_false": []
-            }
-        },
-        // call_external: 无结果 → io_request；有结果 → 消费到 llm_response
-        {
-            "type": "branch",
-            "params": {
-                "domain": {
-                    "type": "instruction",
-                    "instruction_type": "call_external"
-                },
-                "on_true": [
-                    {
-                        "type": "branch",
-                        "params": {
-                            "domain": {
-                                "type": "exists",
-                                "path": "__exec__.payload.__io_results__.call_external"
-                            },
-                            "on_true": [
-                                {
-                                    "type": "set",
-                                    "params": {
-                                        "attr": "llm_response",
-                                        "operation": "set",
-                                        "value":
-                                            "__exec__.payload.__io_results__.call_external"
-                                    }
-                                },
-                                {
-                                    "type": "branch",
-                                    "params": {
-                                        "domain": {
-                                            "type": "exists",
-                                            "path": "__exec__.instruction.params.tools"
-                                        },
-                                        "on_true": [
-                                            {
-                                                "type": "set",
-                                                "params": {
-                                                    "attr": "tools",
-                                                    "operation": "set",
-                                                    "value":
-                                                        "__exec__.instruction.params.tools"
-                                                }
-                                            }
-                                        ],
-                                        "on_false": []
-                                    }
-                                },
-                                {
-                                    "type": "set",
-                                    "params": {
-                                        "attr":
-                                            "__exec__.payload.__io_results__.call_external",
-                                        "operation": "set",
-                                        "value": null
-                                    }
-                                },
-                                {
-                                    "type": "branch",
-                                    "params": {
-                                        "domain": {
-                                            "type": "has_fields",
-                                            "path": "__exec__.payload.llm_response",
-                                            "fields": ["tool_calls"]
-                                        },
-                                        "on_true": [],
-                                        "on_false": [
-                                            {
-                                                "type": "push",
-                                                "params": {
-                                                    "instructions":
-                                                        [{ "type": "noop" }]
-                                                }
-                                            }
-                                        ]
-                                    }
-                                }
-                            ],
-                            "on_false": [
-                                {
-                                    "type": "io_request",
-                                    "params": {
-                                        "io_type": "call_external",
-                                        "messages":
-                                            "__exec__.instruction.params.messages",
-                                        "tools?": "__exec__.instruction.params.tools"
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                ],
-                "on_false": []
-            }
-        },
-        // noop 兜底 + all([]) 兜底（与核心评估集收尾形态一致）
-        {
-            "type": "branch",
-            "params": {
-                "domain": { "type": "instruction", "instruction_type": "noop" },
-                "on_true": []
-            }
-        },
-        {
-            "type": "branch",
-            "params": {
-                "domain": { "type": "all", "inner": [] },
-                "on_true": []
-            }
+/// 背景：生产编排规则唯一实体 = evo-agent/assets/agent_constitution.json；
+/// 历史上 io_loop_rules() 为手抄内联副本，且宪法 v0.5.0（2026-09-14 规则清理）
+/// 移除 ReAct 循环规则后内联副本已静默漂移（E-10 实锤）。本函数直接读真文件
+/// 并 sha256 锁定——宪法任何演进立即反映到差分面，双副本漂移结构性不可能。
+///
+/// 路径解析：同仓 CI 布局 = `evorule/evorule-reactor/…` 与 evo-agent 为兄弟仓
+/// 不可假设；按环境变量 → 相对布局探测链解析，全失败则 panic（fail-fast：
+/// 差分测试找不到宪法=配置断链，宁红勿静默回退内联副本）。
+fn load_agent_constitution() -> Vec<JsonValue> {
+    use std::path::PathBuf;
+
+    // sha256 锁（宪法演进=bump 此值，显式人为动作）
+    const CONSTITUTION_SHA256: &str =
+        "2010b77050c42047482884ec775bedaab1fcb9288aec762ad4a7e91b54694bdd";
+
+    let candidates: Vec<PathBuf> = {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mut v = Vec::new();
+        // ① env 覆盖（CI/异布局注入）
+        if let Ok(p) = std::env::var("AGENT_CONSTITUTION_PATH") {
+            v.push(PathBuf::from(p));
         }
-    ]);
-    rules
-        .as_array()
-        .expect("inline io-loop rules must be an array")
+        // ② 兄弟仓布局（本地 D:\ 布局 / mono-workspace 检出）
+        v.push(manifest_dir.join("../../../evo-agent/assets/agent_constitution.json"));
+        // ③ 本仓根上级（evo-agent 与 evorule 同父的另一常见检出位）
+        v.push(manifest_dir.join("../../../../evo-agent/assets/agent_constitution.json"));
+        v
+    };
+
+    let path = candidates
+        .iter()
+        .find(|p| p.exists())
+        .unwrap_or_else(|| panic!(
+            "agent_constitution.json not found; tried {:?}; set AGENT_CONSTITUTION_PATH",
+            candidates
+        ));
+    let bytes = std::fs::read(path).expect("read agent_constitution.json");
+    let digest = {
+        // sha256（无 sha2 dev-dep 依赖：手写 FIPS 180-4 紧凑实现不引入；
+        // 用环形缓冲逐块——见下方 sha256_of）
+        sha256_of(&bytes)
+    };
+    assert_eq!(
+        digest, CONSTITUTION_SHA256,
+        "agent_constitution.json sha256 漂移：宪法已演进，请核实差分用例是否需同步更新，\
+         然后 bump CONSTITUTION_SHA256（显式人为动作，34 号档 E-10）"
+    );
+    let doc: serde_json::Value =
+        serde_json::from_slice(&bytes).expect("agent_constitution.json is valid JSON");
+    doc.get("transform")
+        .and_then(|t| t.as_array())
+        .expect("agent_constitution.json missing 'transform' array")
         .iter()
         .cloned()
         .map(serde_to_tcb)
         .collect()
 }
+
+/// SHA-256 紧凑实现（仅测试用：避免为一条断言引入 sha2 dev-dep；
+/// FIPS 180-4，无 unsafe）。
+fn sha256_of(data: &[u8]) -> String {
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
+        0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+        0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+        0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
+        0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+        0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+        0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+        0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ];
+    let mut h: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c,
+        0x1f83d9ab, 0x5be0cd19,
+    ];
+    let bitlen = (data.len() as u64).wrapping_mul(8);
+    let mut msg = data.to_vec();
+    msg.push(0x80);
+    while msg.len() % 64 != 56 {
+        msg.push(0);
+    }
+    msg.extend_from_slice(&bitlen.to_be_bytes());
+
+    for chunk in msg.chunks_exact(64) {
+        let mut w = [0u32; 64];
+        for (i, word) in chunk.chunks_exact(4).enumerate() {
+            w[i] = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
+        }
+        for i in 16..64 {
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
+        }
+        let (mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh) =
+            (h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7]);
+        for i in 0..64 {
+            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let ch = (e & f) ^ ((!e) & g);
+            let t1 = hh
+                .wrapping_add(s1)
+                .wrapping_add(ch)
+                .wrapping_add(K[i])
+                .wrapping_add(w[i]);
+            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let maj = (a & b) ^ (a & c) ^ (b & c);
+            let t2 = s0.wrapping_add(maj);
+            hh = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(t1);
+            d = c;
+            c = b;
+            b = a;
+            a = t1.wrapping_add(t2);
+        }
+        h[0] = h[0].wrapping_add(a);
+        h[1] = h[1].wrapping_add(b);
+        h[2] = h[2].wrapping_add(c);
+        h[3] = h[3].wrapping_add(d);
+        h[4] = h[4].wrapping_add(e);
+        h[5] = h[5].wrapping_add(f);
+        h[6] = h[6].wrapping_add(g);
+        h[7] = h[7].wrapping_add(hh);
+    }
+    h.iter().map(|x| format!("{x:08x}")).collect()
+}
+
 
 // =============================================================================
 // 辅助:构造指令
@@ -1080,7 +1058,7 @@ fn diff_reactor_vs_pure_noop() {
 fn diff_reactor_vs_pure_call_external_io_request() {
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async move {
-        let core_eval = io_loop_rules();
+        let core_eval = load_agent_constitution();
         let messages = JsonValue::Array(vec![JsonValue::object_from_pairs(&[
             ("role", JsonValue::string("user")),
             ("content", JsonValue::string("hello from differential test")),
@@ -1147,7 +1125,7 @@ fn diff_reactor_vs_pure_call_external_io_request() {
 fn diff_reactor_vs_pure_call_external_consume() {
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async move {
-        let core_eval = io_loop_rules();
+        let core_eval = load_agent_constitution();
         let messages = JsonValue::Array(vec![JsonValue::object_from_pairs(&[
             ("role", JsonValue::string("user")),
             ("content", JsonValue::string("hello")),
