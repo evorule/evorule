@@ -54,6 +54,13 @@
 
 （此后按时间顺序追加，格式：日期 + 事实 / 依据 / 影响 / 修正去向）
 
+### 2026-10-11：密钥 CLI 收口批随 0.8.3 发版收口同步
+
+- **事实**：workspace 版本收口 0.8.3（commit `ba6c734`，2026-10-11），STATUS.md 快照同步 v0.8.2 → v0.8.3，MECHANISM.md 头部版本对齐声明同步。区间变更（v0.8.2..HEAD，提交 `ec42b6c`+`ba6c734`）：① CLI 新增 `anchor-pubkey` 子命令——seed 确定性派生公钥（验证方分发配套，--seed - stdin 管道形态，实测与 server 部署面同源逐字节一致）；② `verify-anchors` 升 evorule-anchor/2 载荷串接验签（与 governance `signature_payload_v2` 同构；原载荷形态为 anchor.rs 落地前设计稿、现产物不存在，属死代码格式修复）+ seq 连续/区间无缝三查；输入口径改 server `/anchors` 产物；③ `docs/how-to/audit-anchors.md` 增第零步部署导出公钥+字段表/验证内容；④ CHANGELOG Unreleased 段转正 0.8.3。
+- **依据**：变更位于 CLI 层（`evorule-cli/src/`：cli.rs +10 行、新增 anchor_pubkey.rs、verify_anchors.rs 重写）与文档面；TCB/reactor 生产源码零变更，A 档 Kani 证据基线 `a3d728f` 有效性维持判定不变；提交时 cli 62+20 集成绿/governance 182 绿（`ba6c734` 记载）；本批发版实测全量 workspace 测试绿；S10 版本对齐三方（Cargo.toml / STATUS.md / MECHANISM.md）回到一致。
+- **影响**：G-A2（审计不可抵赖）验证通路收口——验证方仅需分发公钥即可离线验签锚链全部防伪造字段（零依赖、零密码学哈希实现负担）；无状态行主状态变更；达成等级判定不变；无格式变更（evorule-anchor/2 延续，向后兼容）。
+- **修正去向**：本条目即披露；STATUS.md 快照行 v0.8.3；MECHANISM.md 版本对齐行 v0.8.3；L1 参考文档（cli-reference/fact-types/README/DOCS_INDEX）版本戳随发版收口同步，其中 cli-reference 出处戳行号勘正 L35-106 → L35-117（`ec42b6c` 向 cli.rs Command 枚举插入新子命令致枚举下移，戳随实测更新）。
+
 ### 2026-10-10：锚点签名格式升版随 0.8.2 发版收口同步（G-A2 验签目标 evorule-anchor/1 → /2）
 
 - **事实**：workspace 版本收口 0.8.2（commit `68a6330`，2026-10-10），STATUS.md 快照同步 v0.8.1 → v0.8.2，MECHANISM.md 头部版本对齐声明同步。区间变更（v0.8.1..HEAD）：① G-A2 锚点签名格式 evorule-anchor/1 → evorule-anchor/2（evorule-governance `anchor.rs`：`ANCHOR_FORMAT` 常量 + `signature_payload_v2`——签名目标从 anchor_hash 的 hex 字节改为载荷字段串接字节，字段序同 compute_anchor_hash、不含 prev_anchor_hash；`verify_one`/`verify_anchor_chain` 验签目标同步 v2；`anchor_hash` blake3 链保留不变）；② `signature_payload_v2`/`ANCHOR_FORMAT` 公开导出（独立验证器 V-2 零依赖验签对齐用，不依赖 blake3 即可验证锚点全部防伪造字段）；③ 治理测试 +2（v2 载荷确定性模板断言 / v1 锚点在 v2 下拒绝+对照组）；④ **向后不兼容面：v1 锚点（0.8.1 产物）在 v2 验证下按失败处理**（混版链诚实拒绝，不静默跨格式验过）——已随 CHANGELOG 0.8.2 节披露。
