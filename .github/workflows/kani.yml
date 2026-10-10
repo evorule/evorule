@@ -41,6 +41,10 @@ on:
       - "evorule-eval/Cargo.toml"
       - "Cargo.toml"
       - ".github/workflows/kani.yml"
+      # M4 release gate 核查「tag commit 上 kani-tcb-a-tier 绿」：验证文档
+      # （verification/**）的收口提交同样必须触发 A 档实跑，否则 verification-only
+      # 的 release commit 永远无 kani run、门禁自锁（2026-10-10 v0.8.1 发版实证）。
+      - "verification/**"
   pull_request:
     paths:
       - "evorule-tcb/src/**"
@@ -52,6 +56,7 @@ on:
       - "evorule-eval/Cargo.toml"
       - "Cargo.toml"
       - ".github/workflows/kani.yml"
+      - "verification/**"
   # 手动触发（a / b / all）
   #   a = A 档 + reactor（PR 闸门，分钟级）
   #   b = B 档 20 个重型 proof（已知 >1h，仅供人工探索，不阻塞）

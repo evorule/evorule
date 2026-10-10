@@ -56,8 +56,8 @@
 
 ### 2026-10-10：快照版本随 0.8.1 发版收口同步（v0.8.0 → v0.8.1）
 
-- **事实**：workspace 版本收口 0.8.1（本批 release commit，2026-10-10），STATUS.md 快照同步 v0.8.0 → v0.8.1，MECHANISM.md 头部版本对齐声明同步。随 0.8.1 收口的区间变更（v0.8.0..HEAD）：① G-A1 ed25519 审计锚点签名原语（evorule-cli `signing.rs` + `anchor-keygen`/`verify-anchors` 两子命令）；② G-A2 审计锚点链（evorule-governance `anchor` 模块：BLAKE3 事实链之上的 ed25519 签名锚点链，Auditor with_anchor 挂点默认关、SessionManager 穿线）；③ L1 参考文档同步（cli-reference/fact-types 补 Violation 类型节、README、DOCS_INDEX）。全部变更位于治理/CLI 层。
-- **依据**：区间变更与 TCB/reactor Kani harness 作用面零交集（proof 源码 `kani_proofs.rs` 不在变更集；TCB/reactor 生产源码零变更，A 档证据基线 `a3d728f` 有效性维持判定不变）；S10 版本对齐三方（Cargo.toml / STATUS.md / MECHANISM.md）回到一致。
+- **事实**：workspace 版本收口 0.8.1（本批 release commit，2026-10-10），STATUS.md 快照同步 v0.8.0 → v0.8.1，MECHANISM.md 头部版本对齐声明同步。随 0.8.1 收口的区间变更（v0.8.0..HEAD）：① G-A1 ed25519 审计锚点签名原语（evorule-cli `signing.rs` + `anchor-keygen`/`verify-anchors` 两子命令）；② G-A2 审计锚点链（evorule-governance `anchor` 模块：BLAKE3 事实链之上的 ed25519 签名锚点链，Auditor with_anchor 挂点默认关、SessionManager 穿线）；③ L1 参考文档同步（cli-reference/fact-types 补 Violation 类型节、README、DOCS_INDEX）。全部变更位于治理/CLI 层。发版过程机制修正两项（同批）：④ kani.yml push/PR paths 过滤纳入 `verification/**`——M4 release gate 核查「tag commit 上 kani-tcb-a-tier 绿」，而 verification-only 的 release commit 不命中原 paths、永远无 kani run，门禁自锁（本批发版实证）；⑤ STATUS.md 快照行代码基线表述改为「= 本 tag 所指 commit」（去 hash 化）——release 门禁修复需重打 tag，快照行写死 commit hash 必随重打漂移失实，tag 本身即基线定义。
+- **依据**：区间变更与 TCB/reactor Kani harness 作用面零交集（proof 源码 `kani_proofs.rs` 不在变更集；TCB/reactor 生产源码零变更，A 档证据基线 `a3d728f` 有效性维持判定不变）；④ 为 CI 触发面机制修正（A 档分钟级代价，验证文档收口提交触发 A 档实跑自洽闭环）；⑤ 为表述口径修正（基线语义不变，避免陈述性 hash 与 tag 实指漂移）；S10 版本对齐三方（Cargo.toml / STATUS.md / MECHANISM.md）回到一致。
 - **影响**：无状态行主状态变更；C4（审计不可篡改）机制面在 v0.8.1 获得哈希链之上的签名锚点层（达成等级判定不变，证据登记另行推进）。
 - **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行）、`verification/MECHANISM.md`（头部版本对齐声明）。
 
