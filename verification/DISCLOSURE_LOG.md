@@ -54,6 +54,13 @@
 
 （此后按时间顺序追加，格式：日期 + 事实 / 依据 / 影响 / 修正去向）
 
+### 2026-10-10：锚点签名格式升版随 0.8.2 发版收口同步（G-A2 验签目标 evorule-anchor/1 → /2）
+
+- **事实**：workspace 版本收口 0.8.2（commit `68a6330`，2026-10-10），STATUS.md 快照同步 v0.8.1 → v0.8.2，MECHANISM.md 头部版本对齐声明同步。区间变更（v0.8.1..HEAD）：① G-A2 锚点签名格式 evorule-anchor/1 → evorule-anchor/2（evorule-governance `anchor.rs`：`ANCHOR_FORMAT` 常量 + `signature_payload_v2`——签名目标从 anchor_hash 的 hex 字节改为载荷字段串接字节，字段序同 compute_anchor_hash、不含 prev_anchor_hash；`verify_one`/`verify_anchor_chain` 验签目标同步 v2；`anchor_hash` blake3 链保留不变）；② `signature_payload_v2`/`ANCHOR_FORMAT` 公开导出（独立验证器 V-2 零依赖验签对齐用，不依赖 blake3 即可验证锚点全部防伪造字段）；③ 治理测试 +2（v2 载荷确定性模板断言 / v1 锚点在 v2 下拒绝+对照组）；④ **向后不兼容面：v1 锚点（0.8.1 产物）在 v2 验证下按失败处理**（混版链诚实拒绝，不静默跨格式验过）——已随 CHANGELOG 0.8.2 节披露。
+- **依据**：变更位于治理层 `anchor.rs` 与版本面/文档，与 TCB/reactor Kani harness 作用面零交集（proof 源码 `kani_proofs.rs` 不在变更集；TCB/reactor 生产源码零变更，A 档证据基线 `a3d728f` 有效性维持判定不变）；本批发版实测全量 workspace 测试绿；S10 版本对齐三方（Cargo.toml / STATUS.md / MECHANISM.md）回到一致。
+- **影响**：C4（审计不可篡改）机制面增强——签名目标从「对哈希签名」扩展为「载荷直接入签」，篡改任何载荷字段直接验签失败且独立验证器零密码学哈希依赖；无状态行主状态变更；达成等级判定不变。
+- **修正去向**：本条目即披露；STATUS.md 快照行 v0.8.2；MECHANISM.md 版本对齐行 v0.8.2；L1 参考文档（cli-reference/fact-types/README/DOCS_INDEX）版本戳随发版收口同步（validate-version L1 扫描全绿为准）。
+
 ### 2026-10-10：快照版本随 0.8.1 发版收口同步（v0.8.0 → v0.8.1）
 
 - **事实**：workspace 版本收口 0.8.1（本批 release commit，2026-10-10），STATUS.md 快照同步 v0.8.0 → v0.8.1，MECHANISM.md 头部版本对齐声明同步。随 0.8.1 收口的区间变更（v0.8.0..HEAD）：① G-A1 ed25519 审计锚点签名原语（evorule-cli `signing.rs` + `anchor-keygen`/`verify-anchors` 两子命令）；② G-A2 审计锚点链（evorule-governance `anchor` 模块：BLAKE3 事实链之上的 ed25519 签名锚点链，Auditor with_anchor 挂点默认关、SessionManager 穿线）；③ L1 参考文档同步（cli-reference/fact-types 补 Violation 类型节、README、DOCS_INDEX）。全部变更位于治理/CLI 层。发版过程机制修正两项（同批）：④ kani.yml push/PR paths 过滤纳入 `verification/**`——M4 release gate 核查「tag commit 上 kani-tcb-a-tier 绿」，而 verification-only 的 release commit 不命中原 paths、永远无 kani run，门禁自锁（本批发版实证）；⑤ STATUS.md 快照行代码基线表述改为「= 本 tag 所指 commit」（去 hash 化）——release 门禁修复需重打 tag，快照行写死 commit hash 必随重打漂移失实，tag 本身即基线定义。
