@@ -4,7 +4,7 @@
 # evorule CLI 参考
 
 > 字典式参考。所有子命令、参数、默认值。
-> 基于 `evorule-cli/src/cli.rs` v0.6.1 实测（Command 枚举 L35-105）。
+> 基于 `evorule-cli/src/cli.rs` v0.8.1 实测（Command 枚举 L35-106）。
 
 ## 总览
 
@@ -16,7 +16,7 @@ evorule <SUBCOMMAND>
 
 ## 子命令
 
-共 7 个子命令（cli.rs L35-105）：
+共 7 个子命令（cli.rs L35-106）：
 
 | 子命令 | 说明 | 代码行 |
 |--------|------|--------|
@@ -25,8 +25,8 @@ evorule <SUBCOMMAND>
 | `replay` | 重放 fact log（pretty-print） | cli.rs L59-62 |
 | `diff` | 对比两个 fact log（按 Fact ID 对齐） | cli.rs L65-70 |
 | `verify-chain` | 验证 fact log 哈希链完整性（BLAKE3） | cli.rs L79-82 |
-| `anchor-keygen` | 生成审计锚点签名密钥对 | cli.rs L88-92 |
-| `verify-anchors` | 离线校验审计锚点真实性（防抵赖） | cli.rs L98-104 |
+| `anchor-keygen` | 生成审计锚点签名密钥对 | cli.rs L89-93 |
+| `verify-anchors` | 离线校验审计锚点真实性（防抵赖） | cli.rs L100-106 |
 
 ---
 
@@ -126,7 +126,7 @@ evorule anchor-keygen [OPTIONS]
 
 | 参数 | 类型 | 默认值 | 说明 | 代码行 |
 |------|------|--------|------|--------|
-| `--output` | PathBuf | stdout | 私钥种子写入文件 | cli.rs L90-91 |
+| `--output` | PathBuf | stdout | 私钥种子写入文件 | cli.rs L91-92 |
 
 **输出**：
 - `signing_key_seed`：32 字节私钥种子（64 位 hex），必须私密保存
@@ -144,8 +144,8 @@ evorule verify-anchors <AUDIT> [OPTIONS]
 
 | 参数 | 类型 | 默认值 | 说明 | 代码行 |
 |------|------|--------|------|--------|
-| `AUDIT` | PathBuf | 必填 | 审计导出 JSON（`Auditor::export()` 产出） | cli.rs L100 |
-| `--pubkey` | String | 导出物内嵌 | 公钥 hex，缺省使用导出物内嵌的 verifying_key | cli.rs L102-103 |
+| `AUDIT` | PathBuf | 必填 | 审计导出 JSON（`Auditor::export()` 产出） | cli.rs L102 |
+| `--pubkey` | String | 导出物内嵌 | 公钥 hex，缺省使用导出物内嵌的 verifying_key | cli.rs L104-105 |
 
 验证内容：链式链接 + 公钥重算载荷验签。
 
@@ -172,7 +172,7 @@ evorule verify-anchors <AUDIT> [OPTIONS]
 # evorule CLI Reference
 
 > Dictionary-style reference. All subcommands, arguments, and default values.
-> Based on hands-on inspection of `evorule-cli/src/cli.rs` v0.6.1 (Command enum, L35-105).
+> Based on hands-on inspection of `evorule-cli/src/cli.rs` v0.8.1 (Command enum, L35-106).
 
 ## Overview
 
@@ -184,7 +184,7 @@ Zero network, zero telemetry, zero system dependencies — suitable for complian
 
 ## Subcommands
 
-7 subcommands in total (cli.rs L35-105):
+7 subcommands in total (cli.rs L35-106):
 
 | Subcommand | Description | Code line |
 |--------|------|--------|
@@ -193,8 +193,8 @@ Zero network, zero telemetry, zero system dependencies — suitable for complian
 | `replay` | Replay a fact log (pretty-print) | cli.rs L59-62 |
 | `diff` | Compare two fact logs (aligned by Fact ID) | cli.rs L65-70 |
 | `verify-chain` | Verify fact log hash chain integrity (BLAKE3) | cli.rs L79-82 |
-| `anchor-keygen` | Generate an audit anchor signing key pair | cli.rs L88-92 |
-| `verify-anchors` | Verify audit anchor authenticity offline (non-repudiation) | cli.rs L98-104 |
+| `anchor-keygen` | Generate an audit anchor signing key pair | cli.rs L89-93 |
+| `verify-anchors` | Verify audit anchor authenticity offline (non-repudiation) | cli.rs L100-106 |
 
 ---
 
@@ -294,7 +294,7 @@ evorule anchor-keygen [OPTIONS]
 
 | Argument | Type | Default | Description | Code line |
 |------|------|--------|------|--------|
-| `--output` | PathBuf | stdout | Write the private key seed to a file | cli.rs L90-91 |
+| `--output` | PathBuf | stdout | Write the private key seed to a file | cli.rs L91-92 |
 
 **Output**:
 - `signing_key_seed`: 32-byte private key seed (64 hex chars), must be kept private
@@ -312,8 +312,8 @@ evorule verify-anchors <AUDIT> [OPTIONS]
 
 | Argument | Type | Default | Description | Code line |
 |------|------|--------|------|--------|
-| `AUDIT` | PathBuf | Required | Audit export JSON (produced by `Auditor::export()`) | cli.rs L100 |
-| `--pubkey` | String | Embedded in the export | Public key hex; defaults to the verifying_key embedded in the export | cli.rs L102-103 |
+| `AUDIT` | PathBuf | Required | Audit export JSON (produced by `Auditor::export()`) | cli.rs L102 |
+| `--pubkey` | String | Embedded in the export | Public key hex; defaults to the verifying_key embedded in the export | cli.rs L104-105 |
 
 What gets verified: chain linking + payload signature recomputation with the public key.
 

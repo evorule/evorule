@@ -8,7 +8,7 @@
 
 # `evorule` CLI
 
-[![版本 v0.6.1](https://img.shields.io/badge/version-v0.6.1-blue)](../Cargo.toml)
+[![版本 v0.8.1](https://img.shields.io/badge/version-v0.8.1-blue)](../Cargo.toml)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-green)](../LICENSE)
 [![文档索引 DOCS_INDEX](https://img.shields.io/badge/docs-DOCS_INDEX-8A2BE2)](../DOCS_INDEX.md)
 
@@ -29,7 +29,7 @@
 - ✅ **零网络** —— 不调用任何外部服务
 - ✅ **零遥测** —— 无任何隐式上报
 - ✅ **零 AI 决策** —— 不调用 LLM
-- ✅ **零系统依赖** —— musl 静态链接,单文件分发(v0.6.1 Linux 产物约 2.3 MB,以实际构建为准)
+- ✅ **零系统依赖** —— musl 静态链接,单文件分发(v0.8.1 Linux 产物约 2.3 MB,以实际构建为准)
 - ✅ **完整审计** —— 每步 fact 落盘(tier1 WAL JSONL 格式,与 evorule-governance 互通)
 - ✅ **哈希链** —— blake3 哈希链 + 结构不变量校验(防篡改)
 - ✅ **FIFO 队列** —— 修复原 LIFO bug,正确执行 push 语义
@@ -45,9 +45,9 @@
 ## 快速开始(圈 2 项目方)
 
 ```bash
-# 1) 下载(按平台选,直达 v0.6.1 release 产物)
-wget https://gitee.com/evorule/evorule/releases/download/v0.6.1/evorule-linux-x86_64   # Linux x86_64
-# Windows x86_64: https://gitee.com/evorule/evorule/releases/download/v0.6.1/evorule-windows-x86_64.exe
+# 1) 下载(按平台选,直达 v0.8.1 release 产物)
+wget https://gitee.com/evorule/evorule/releases/download/v0.8.1/evorule-linux-x86_64   # Linux x86_64
+# Windows x86_64: https://gitee.com/evorule/evorule/releases/download/v0.8.1/evorule-windows-x86_64.exe
 
 # 2) 验证(可选,记录哈希备查)
 sha256sum evorule-linux-x86_64
@@ -466,7 +466,7 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 ```bash
 # Linux x86_64 圈 2 项目方
-wget https://gitee.com/evorule/evorule/releases/download/v0.6.1/evorule-linux-x86_64
+wget https://gitee.com/evorule/evorule/releases/download/v0.8.1/evorule-linux-x86_64
 chmod +x evorule-linux-x86_64
 ./evorule-linux-x86_64 validate /etc/company-rules/
 ./evorule-linux-x86_64 run /etc/company-rules/ -o /var/log/evorule-fact.log
@@ -480,7 +480,7 @@ chmod +x evorule-linux-x86_64
 
 ## 端到端测试
 
-`tests/e2e.sh` 是一个 TAP 格式的 e2e 测试,覆盖 5 个子命令的 28 个用例:
+`tests/e2e.sh` 是一个 TAP 格式的 e2e 测试,覆盖 5 个子命令的 22 个用例:
 
 ```bash
 # 自动检测二进制
@@ -516,12 +516,6 @@ ok 19  - all fact log lines are valid JSON with type+id
 ok 20  - FIFO queue: step1 then step2 (order=second confirms FIFO)
 ok 21  - deterministic loading: 3 files loaded in order, all fields set
 ok 22  - verify-chain on echo log exits 0
-ok 23  - validate hospital example rules
-ok 24  - validate law-firm example rules
-ok 25  - hospital example runs with payload (Stable)
-ok 26  - law-firm example runs with payload (Stable)
-ok 27  - hospital example produces IoRequest + Error (no handler in 0.2.0)
-ok 28  - verify-chain on hospital log (complex facts) exits 0
 ```
 
 **aarch64 验证**:用 `qemu-user-static` 模拟跑(不需要真 ARM 机器):
@@ -553,7 +547,7 @@ bash tests/e2e.sh .build/rust/aarch64-unknown-linux-musl/release/evorule
 
 ---
 
-## 已知限制(v0.6.1 时点)
+## 已知限制(v0.8.1 时点)
 
 - ❌ 无 I/O handler(`io_request` 会产生 IoRequest fact + Error fact,不实际执行 I/O)
 - ❌ 无 HTTP API(本 crate 是本地 CLI，不提供 HTTP 服务；如需 HTTP/SSE 由应用层基于核心仓机制自行构建)
@@ -568,7 +562,7 @@ bash tests/e2e.sh .build/rust/aarch64-unknown-linux-musl/release/evorule
 - ✅ 结构不变量校验(FactId 单调 + cause 引用)✓
 - ✅ FIFO 队列(pop_front,修复原 LIFO bug)✓
 - ✅ 确定性加载(文件名排序,跨平台一致)✓
-- ✅ e2e 测试 28/28 ✓
+- ✅ 测试全绿(cargo test:lib 61 + cli 集成 20 + G8 门禁同步 2 + doctest 3;e2e.sh 22 用例)✓
 - ✅ 可重现构建 ✓
 
 ---
