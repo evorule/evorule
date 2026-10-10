@@ -24,6 +24,21 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
+## [0.8.1] - 2026-10-10
+
+### 新增
+
+- **evorule-governance：审计锚点链（G-A2，抗整链重算/替换/截断/fork 伪造）**
+  - `anchor` 模块：`AuditAnchor`（ed25519 签名锚点，载荷含 seq/session/fact_range/chain_head/key_id/engine_id/logical_time）、`AnchorChainBuilder`（含密钥轮换续链 `new_with_prev`）、`verify_anchor_chain`（结构+签名双层校验）、`verify_binding`（锚点链↔事实链绑定校验）
+  - `Auditor` 挂点：`with_anchor`（**默认关**，未配置行为与旧版逐位一致）/ `seal_anchor_now` / `anchors` / `verify_anchors`；`audit_new` 按间隔自动封条
+  - `SessionManager::with_anchor_config`：部署面注入锚点配置，后续会话自动启用；`Session` 透传 `seal_anchor_now`/`anchors`/`verify_anchors`
+  - `signing`：`hex_encode`/`hex_decode` 升 pub（复用 G-A1 原语）
+  - 威胁模型 A1-A4 全检出（整链重算/整链替换/前缀截断/fork 伪造/引擎替换）；诚实边界：不防密钥持有者从头记假账（T3 领域）
+
+### 变更
+
+- 工作区版本 0.8.0 → 0.8.1；内部依赖 version requirement 同步
+
 ## [0.7.0] - 2026-09-27
 
 ### 新增

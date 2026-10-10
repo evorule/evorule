@@ -168,6 +168,39 @@ impl Session {
         }
     }
 
+    /// 立即封一个审计锚点（G-A2；会话结束封条/手动强制封）
+    ///
+    /// 未启用锚点（SessionManager 未配 anchor_config）时返回 Err。
+    pub fn seal_anchor_now(
+        &self,
+    ) -> Result<crate::anchor::AuditAnchor, crate::anchor::AnchorError> {
+        match self.auditor.lock() {
+            Ok(mut auditor) => auditor.seal_anchor_now(),
+            Err(_) => Err(crate::anchor::AnchorError::Hash(
+                "审计器锁中毒，无法封锚点".to_string(),
+            )),
+        }
+    }
+
+    /// 已封锚点序列快照（G-A2；空切片=未启用或尚未封条）
+    pub fn anchors(&self) -> Vec<crate::anchor::AuditAnchor> {
+        match self.auditor.lock() {
+            Ok(auditor) => auditor.anchors().to_vec(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// 验证锚点链+锚点与事实链绑定（G-A2 验证入口）
+    pub fn verify_anchors(
+        &self,
+        keys: &std::collections::BTreeMap<String, String>,
+    ) -> Result<(), String> {
+        match self.auditor.lock() {
+            Ok(auditor) => auditor.verify_anchors(keys),
+            Err(_) => Err("审计器锁中毒，无法验证锚点".to_string()),
+        }
+    }
+
     /// 获取父会话 ID（用于跨会话因果追溯）
     pub fn parent_session_id(&self) -> Option<SessionId> {
         self.parent_session_id
@@ -365,6 +398,29 @@ pub struct SessionManager {
     count: AtomicU64,
     /// 待回收的 FactsLog 列表（会话关闭后等待反应器退出）
     pending_recycle: Mutex<Vec<FactsLog>>,
+    /// 审计锚点链配置（G-A2；None=锚点关，行为与旧版逐位一致）
+    ///
+    /// 配置后本管理器创建的每个会话审计器都会启用签名锚点链。
+    /// 密钥材料不落审计资产——builder 在此持有 signer（内存态），
+    /// 每会话从配置派生独立 builder（私钥种子注入，不入 WAL）。
+    anchor_config: Option<SessionAnchorConfig>,
+}
+
+/// 会话审计锚点链配置（G-A2）
+///
+/// 由部署面构造（server 启动时注入），`SessionManager` 据此为每个
+/// 新会话启用 [`crate::anchor::AnchorChainBuilder`]。
+/// **默认 None**：不配置则锚点机制完全关闭（兼容判据 J-T6）。
+#[derive(Debug, Clone)]
+pub struct SessionAnchorConfig {
+    /// ed25519 私钥种子（32 字节；由部署面 secret 管理注入，不入审计资产/WAL）
+    pub signer_seed: [u8; 32],
+    /// 密钥标识（轮换支持：验证方按 key_id 选公钥）
+    pub key_id: String,
+    /// 引擎/部署标识（跨引擎链冒充检出，如 "evorule-server/0.9.1"）
+    pub engine_id: String,
+    /// 自动封条间隔（每 N 条新事实封一个锚点；0=仅手动 seal）
+    pub interval: usize,
 }
 
 /// 安全获取 Mutex 锁，处理 PoisonError
@@ -573,6 +629,36 @@ impl SessionManager {
             io_timeout_check_interval: DEFAULT_IO_TIMEOUT_CHECK_INTERVAL,
             count: AtomicU64::new(0),
             pending_recycle: Mutex::new(Vec::new()),
+            anchor_config: None,
+        }
+    }
+
+    /// 启用审计锚点链（G-A2，builder 模式）
+    ///
+    /// 配置后本管理器**后续创建**的每个会话审计器启用签名锚点链；
+    /// 已存在会话不受影响。不调用本方法=锚点关（与旧版行为逐位一致）。
+    pub fn with_anchor_config(mut self, config: SessionAnchorConfig) -> Self {
+        self.anchor_config = Some(config);
+        self
+    }
+
+    /// 从锚点配置派生单会话审计器（私钥种子注入 signer，session_id 入锚点载荷）
+    fn auditor_from_config(&self, facts_log: FactsLog) -> Auditor {
+        let auditor = Auditor::new_with_auto_verify(
+            facts_log,
+            self.auto_verify,
+            self.auto_verify_threshold,
+            self.auto_verify_interval,
+        );
+        match &self.anchor_config {
+            Some(cfg) => auditor.with_anchor(
+                crate::signing::AuditSigner::from_bytes(cfg.signer_seed),
+                cfg.key_id.clone(),
+                cfg.engine_id.clone(),
+                format!("session-{}", self.next_session_id.load(Ordering::Relaxed)),
+                cfg.interval,
+            ),
+            None => auditor,
         }
     }
 
@@ -735,12 +821,9 @@ impl SessionManager {
             "Session created (long-running reactor spawned)"
         );
 
-        let auditor = Arc::new(std::sync::Mutex::new(Auditor::new_with_auto_verify(
-            facts_log.clone(),
-            self.auto_verify,
-            self.auto_verify_threshold,
-            self.auto_verify_interval,
-        )));
+        let auditor = Arc::new(std::sync::Mutex::new(
+            self.auditor_from_config(facts_log.clone()),
+        ));
 
         shard_guard.insert(
             session_id,
@@ -884,12 +967,9 @@ impl SessionManager {
             "Session created from parent (cross-session causality)"
         );
 
-        let auditor = Arc::new(std::sync::Mutex::new(Auditor::new_with_auto_verify(
-            facts_log.clone(),
-            self.auto_verify,
-            self.auto_verify_threshold,
-            self.auto_verify_interval,
-        )));
+        let auditor = Arc::new(std::sync::Mutex::new(
+            self.auditor_from_config(facts_log.clone()),
+        ));
 
         shard_guard.insert(
             session_id,
@@ -2053,6 +2133,47 @@ mod tests {
 
     /// 缺省防漂移：不调用 with_io_timeouts（或全 None）时，预算逐位等于
     /// 引擎缺省（warn 30s / error 60s / 扫描 5s）；部分覆盖只动显式项。
+    // ===== G-A2 锚点穿线端到端 =====
+
+    fn anchor_cfg(interval: usize) -> super::SessionAnchorConfig {
+        super::SessionAnchorConfig {
+            signer_seed: [7u8; 32],
+            key_id: "k1".to_string(),
+            engine_id: "evorule-test/0.8".to_string(),
+            interval,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_session_anchor_end_to_end() {
+        // 穿线：配置锚点的 SessionManager → 新会话审计器自动启锚 → 封条+验证全绿
+        let mgr = super::SessionManager::new(vec![], 10)
+            .with_anchor_config(anchor_cfg(2));
+        let sid = mgr.create_session().map_err(|e| format!("{e:?}")).unwrap();
+        let session = mgr.get_session(sid).unwrap();
+        // 未有事实时手动封一个空区间锚点（封条语义）
+        let anchor = session.seal_anchor_now().map_err(|e| format!("{e:?}")).unwrap();
+        assert_eq!(anchor.seq, 0);
+        assert_eq!(anchor.fact_range.hi, 0);
+        // verify_anchors：结构+签名+绑定全绿
+        let mut keys = std::collections::BTreeMap::new();
+        keys.insert(
+            "k1".to_string(),
+            crate::signing::AuditSigner::from_bytes([7u8; 32]).verifying_hex(),
+        );
+        assert!(session.verify_anchors(&keys).is_ok(), "空链锚点验证必须通过");
+    }
+
+    #[tokio::test]
+    async fn test_session_anchor_default_off() {
+        // 未配 anchor_config：锚点关——seal 返回 Err（对齐 J-T6 兼容判据）
+        let mgr = super::SessionManager::new(vec![], 10);
+        let sid = mgr.create_session().map_err(|e| format!("{e:?}")).unwrap();
+        let session = mgr.get_session(sid).unwrap();
+        assert!(session.seal_anchor_now().is_err(), "未启用锚点时 seal 必须 Err");
+        assert!(session.anchors().is_empty());
+    }
+
     #[test]
     fn test_io_timeouts_defaults_unchanged() {
         assert_eq!(DEFAULT_IO_WARN_TIMEOUT, Duration::from_secs(30));
