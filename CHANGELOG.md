@@ -24,7 +24,7 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
-## [Unreleased]
+## [0.8.3] - 2026-10-10
 
 ### Added（evorule-cli 密钥 CLI 收口）
 

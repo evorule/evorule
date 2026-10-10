@@ -2147,12 +2147,14 @@ mod tests {
     #[tokio::test]
     async fn test_session_anchor_end_to_end() {
         // 穿线：配置锚点的 SessionManager → 新会话审计器自动启锚 → 封条+验证全绿
-        let mgr = super::SessionManager::new(vec![], 10)
-            .with_anchor_config(anchor_cfg(2));
+        let mgr = super::SessionManager::new(vec![], 10).with_anchor_config(anchor_cfg(2));
         let sid = mgr.create_session().map_err(|e| format!("{e:?}")).unwrap();
         let session = mgr.get_session(sid).unwrap();
         // 未有事实时手动封一个空区间锚点（封条语义）
-        let anchor = session.seal_anchor_now().map_err(|e| format!("{e:?}")).unwrap();
+        let anchor = session
+            .seal_anchor_now()
+            .map_err(|e| format!("{e:?}"))
+            .unwrap();
         assert_eq!(anchor.seq, 0);
         assert_eq!(anchor.fact_range.hi, 0);
         // verify_anchors：结构+签名+绑定全绿
@@ -2161,7 +2163,10 @@ mod tests {
             "k1".to_string(),
             crate::signing::AuditSigner::from_bytes([7u8; 32]).verifying_hex(),
         );
-        assert!(session.verify_anchors(&keys).is_ok(), "空链锚点验证必须通过");
+        assert!(
+            session.verify_anchors(&keys).is_ok(),
+            "空链锚点验证必须通过"
+        );
     }
 
     #[tokio::test]
@@ -2170,7 +2175,10 @@ mod tests {
         let mgr = super::SessionManager::new(vec![], 10);
         let sid = mgr.create_session().map_err(|e| format!("{e:?}")).unwrap();
         let session = mgr.get_session(sid).unwrap();
-        assert!(session.seal_anchor_now().is_err(), "未启用锚点时 seal 必须 Err");
+        assert!(
+            session.seal_anchor_now().is_err(),
+            "未启用锚点时 seal 必须 Err"
+        );
         assert!(session.anchors().is_empty());
     }
 

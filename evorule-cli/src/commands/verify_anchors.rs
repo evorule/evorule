@@ -103,7 +103,10 @@ pub fn run(anchors_path: &Path, pubkey_hex: Option<&str>) -> Result<(), CliError
     };
     let pk = parse_pubkey(&pk_hex)?;
 
-    println!("=== Verify Anchors (evorule-anchor/2): {} ===", anchors_path.display());
+    println!(
+        "=== Verify Anchors (evorule-anchor/2): {} ===",
+        anchors_path.display()
+    );
     println!("Algorithm: ed25519 (RFC 8032) over v2 payload concatenation");
     println!("Public key: {pk_hex}");
     println!();
@@ -163,8 +166,7 @@ fn verify_value(parsed: &Value, pk: [u8; 32]) -> Result<usize, CliError> {
             .get("signature")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CliError::other("Anchor missing 'signature'"))?;
-        let sig_bytes = signing::hex_decode(sig_hex)
-            .map_err(|e| CliError::other(e.to_string()))?;
+        let sig_bytes = signing::hex_decode(sig_hex).map_err(|e| CliError::other(e.to_string()))?;
         let mut sig_arr = [0u8; 64];
         if sig_bytes.len() != 64 {
             return Err(CliError::other(format!(

@@ -161,7 +161,10 @@ impl AuditAnchor {
     ///                        ++ engine_id ++ logical_time)`
     ///
     /// 字段以 `|` 分隔拼接（字段值均为 hex/数字/标识，不含 `|`，无歧义碰撞）。
-    pub fn compute_anchor_hash(prev_anchor_hash: &str, proto: &AnchorProto) -> Result<String, AnchorError> {
+    pub fn compute_anchor_hash(
+        prev_anchor_hash: &str,
+        proto: &AnchorProto,
+    ) -> Result<String, AnchorError> {
         let combined = format!(
             "{}|{}|{}|{}|{}|{}|{}|{}|{}",
             prev_anchor_hash,
@@ -202,14 +205,12 @@ impl AuditAnchor {
                 index: self.seq as usize,
                 reason: format!(
                     "载荷哈希不匹配: 期望 {:.16}… 实际 {:.16}…（字段被篡改或 prev 链接错误）",
-                    expect,
-                    self.anchor_hash
+                    expect, self.anchor_hash
                 ),
             });
         }
         // 2. 验签名（真实性/防抵赖）
-        let vk = signing::hex_decode(verifying_key_hex)
-            .map_err(AnchorError::Sign)?;
+        let vk = signing::hex_decode(verifying_key_hex).map_err(AnchorError::Sign)?;
         let mut vk_arr = [0u8; 32];
         if vk.len() != 32 {
             return Err(AnchorError::Sign(SignError::Invalid(format!(
@@ -218,8 +219,7 @@ impl AuditAnchor {
             ))));
         }
         vk_arr.copy_from_slice(&vk);
-        let sig_bytes = signing::hex_decode(&self.signature)
-            .map_err(AnchorError::Sign)?;
+        let sig_bytes = signing::hex_decode(&self.signature).map_err(AnchorError::Sign)?;
         let mut sig_arr = [0u8; 64];
         if sig_bytes.len() != 64 {
             return Err(AnchorError::Sign(SignError::Invalid(format!(
@@ -312,7 +312,9 @@ impl AnchorChainBuilder {
         };
         let anchor_hash = AuditAnchor::compute_anchor_hash(&self.prev_anchor_hash, &proto)?;
         // v2:签名目标=载荷串接字节(零依赖可验);v1 曾签 anchor_hash(见 ANCHOR_FORMAT 注释)
-        let sig = self.signer.signature_bytes(signature_payload_v2(&proto).as_bytes());
+        let sig = self
+            .signer
+            .signature_bytes(signature_payload_v2(&proto).as_bytes());
         let anchor = AuditAnchor {
             seq: proto.seq,
             session_id: proto.session_id,
@@ -435,8 +437,8 @@ pub fn verify_binding(
                     facts.len()
                 ),
             })?;
-        let head = hash::compute_chain_hash(prefix)
-            .map_err(|e| AnchorError::Hash(e.to_string()))?;
+        let head =
+            hash::compute_chain_hash(prefix).map_err(|e| AnchorError::Hash(e.to_string()))?;
         if head != a.chain_head {
             return Err(AnchorError::ChainBroken {
                 index: a.seq as usize,
@@ -478,7 +480,9 @@ mod tests {
         let s = signature_payload_v2(&proto);
         assert_eq!(
             s,
-            "evorule-anchor/2|sess-1|3|5|10|".to_string() + &"ab".repeat(32) + "|k1|evorule-server/0.9.2|7"
+            "evorule-anchor/2|sess-1|3|5|10|".to_string()
+                + &"ab".repeat(32)
+                + "|k1|evorule-server/0.9.2|7"
         );
     }
 
@@ -495,16 +499,25 @@ mod tests {
         let mut keys = std::collections::BTreeMap::new();
         keys.insert("k1".to_string(), s.verifying_hex());
         // v1 签名在 v2 验证器下:验签失败(载荷哈希仍对,但签名对不上)
-        assert!(v1_anchor.verify_one(&crate::anchor::ANCHOR_GENESIS, &keys["k1"]).is_err());
+        assert!(v1_anchor
+            .verify_one(&crate::anchor::ANCHOR_GENESIS, &keys["k1"])
+            .is_err());
         // 同锚点 v2 重封后验过(对照组,证明失败源于格式不匹配非构造错误)
-        assert!(a.verify_one(&crate::anchor::ANCHOR_GENESIS, &keys["k1"]).is_ok());
+        assert!(a
+            .verify_one(&crate::anchor::ANCHOR_GENESIS, &keys["k1"])
+            .is_ok());
     }
 
     #[test]
     fn test_anchor_chain_build_and_verify() {
         let s = signer();
         let pk = s.verifying_hex();
-        let mut b = AnchorChainBuilder::new(s.clone(), "k1".into(), "evorule-test/0.1".into(), "sess-1".into());
+        let mut b = AnchorChainBuilder::new(
+            s.clone(),
+            "k1".into(),
+            "evorule-test/0.1".into(),
+            "sess-1".into(),
+        );
         let mut anchors = vec![];
         // 模拟三条事实链头（哈希值任意但确定性）
         let heads = [

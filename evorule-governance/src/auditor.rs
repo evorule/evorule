@@ -424,11 +424,7 @@ impl Auditor {
                 let head = self.last_hash.clone();
                 match builder.seal(fact_hi, &head) {
                     Ok(anchor) => {
-                        tracing::debug!(
-                            seq = anchor.seq,
-                            fact_hi,
-                            "audit_new: 锚点已封"
-                        );
+                        tracing::debug!(seq = anchor.seq, fact_hi, "audit_new: 锚点已封");
                         self.anchors.push(anchor);
                     }
                     Err(e) => {
@@ -566,20 +562,23 @@ impl Auditor {
     /// 立即封一个锚点（会话结束封条 / 手动强制封）
     ///
     /// 在当前审计进度上追加一个签名锚点。空区间锚点合法（封条语义）。
-    pub fn seal_anchor_now(&mut self) -> Result<crate::anchor::AuditAnchor, crate::anchor::AnchorError> {
+    pub fn seal_anchor_now(
+        &mut self,
+    ) -> Result<crate::anchor::AuditAnchor, crate::anchor::AnchorError> {
         let fact_hi = self.entries.len();
         let head = self.last_hash.clone();
         let builder = self
             .anchor_builder
             .as_mut()
-            .ok_or(crate::anchor::AnchorError::Hash("锚点链未配置（先调用 with_anchor）".to_string()))?;
+            .ok_or(crate::anchor::AnchorError::Hash(
+                "锚点链未配置（先调用 with_anchor）".to_string(),
+            ))?;
         let anchor = builder.seal(fact_hi, &head)?;
         self.anchors.push(anchor);
         // 刚 push 必非空；不用 expect（F11 门禁），失败即编程错误返回 Err
-        self.anchors
-            .last()
-            .cloned()
-            .ok_or_else(|| crate::anchor::AnchorError::Hash("锚点序列异常为空（刚 push 后不可达）".to_string()))
+        self.anchors.last().cloned().ok_or_else(|| {
+            crate::anchor::AnchorError::Hash("锚点序列异常为空（刚 push 后不可达）".to_string())
+        })
     }
 
     /// 已封锚点序列（append-only 视图）
@@ -592,7 +591,10 @@ impl Auditor {
     /// 两步：1) [`crate::anchor::verify_anchor_chain`]（结构+签名）；
     /// 2) 锚点声称的链头与事实链重算比对（[`crate::anchor::verify_binding`]）。
     /// 返回 `Err(reason)` 描述首个失败点。
-    pub fn verify_anchors(&self, keys: &std::collections::BTreeMap<String, String>) -> Result<(), String> {
+    pub fn verify_anchors(
+        &self,
+        keys: &std::collections::BTreeMap<String, String>,
+    ) -> Result<(), String> {
         if let Err(e) = crate::anchor::verify_anchor_chain(&self.anchors, keys) {
             return Err(e.to_string());
         }
@@ -616,7 +618,9 @@ impl Auditor {
             if *expect != a.chain_head {
                 return Err(format!(
                     "锚点[{}] 链头绑定失败: 锚点声称 {}… 重算 {}…（事实链被篡改/替换）",
-                    a.seq, &a.chain_head[..16.min(a.chain_head.len())], &expect[..16.min(expect.len())]
+                    a.seq,
+                    &a.chain_head[..16.min(a.chain_head.len())],
+                    &expect[..16.min(expect.len())]
                 ));
             }
         }
@@ -1315,11 +1319,14 @@ mod tests {
 
     fn append_facts(auditor: &mut Auditor, n: u64, base: u64) {
         for i in base..base + n {
-            auditor.facts_log.append(Fact::PayloadUpdate {
-                id: FactId(i),
-                path: format!("k{i}"),
-                value: JsonValue::string("v"),
-            }).unwrap();
+            auditor
+                .facts_log
+                .append(Fact::PayloadUpdate {
+                    id: FactId(i),
+                    path: format!("k{i}"),
+                    value: JsonValue::string("v"),
+                })
+                .unwrap();
             auditor.audit_new();
         }
     }
@@ -1330,12 +1337,24 @@ mod tests {
         let mut a = anchor_auditor(3);
         append_facts(&mut a, 6, 1);
         assert_eq!(a.anchors().len(), 2, "6 条事实 interval=3 应封 2 锚点");
-        assert_eq!(a.anchors()[0].fact_range, crate::anchor::FactRange { lo: 0, hi: 3 });
-        assert_eq!(a.anchors()[1].fact_range, crate::anchor::FactRange { lo: 3, hi: 6 });
+        assert_eq!(
+            a.anchors()[0].fact_range,
+            crate::anchor::FactRange { lo: 0, hi: 3 }
+        );
+        assert_eq!(
+            a.anchors()[1].fact_range,
+            crate::anchor::FactRange { lo: 3, hi: 6 }
+        );
         // 验证：结构+签名+绑定全绿
         let mut keys = std::collections::BTreeMap::new();
-        keys.insert("k1".to_string(), crate::signing::AuditSigner::from_bytes([7u8; 32]).verifying_hex());
-        assert!(a.verify_anchors(&keys).is_ok(), "正常链 verify_anchors 必须通过");
+        keys.insert(
+            "k1".to_string(),
+            crate::signing::AuditSigner::from_bytes([7u8; 32]).verifying_hex(),
+        );
+        assert!(
+            a.verify_anchors(&keys).is_ok(),
+            "正常链 verify_anchors 必须通过"
+        );
     }
 
     #[test]
@@ -1362,12 +1381,15 @@ mod tests {
         // 通过公钥表验证原锚点：篡改后（entries 被换）绑定必失败——
         // 这里直接验证机制面：篡改 last_hash 等价物（chain_head）→ 失败
         let mut keys = std::collections::BTreeMap::new();
-        keys.insert("k1".to_string(), crate::signing::AuditSigner::from_bytes([7u8; 32]).verifying_hex());
+        keys.insert(
+            "k1".to_string(),
+            crate::signing::AuditSigner::from_bytes([7u8; 32]).verifying_hex(),
+        );
         // 原状态验证通过
         assert!(a.verify_anchors(&keys).is_ok());
         // 篡改锚点声称的链头 → 绑定失败
         let mut anchors_mut = a.anchors().to_vec();
-        anchors_mut[0].chain_head = String::from("f") .repeat(64);
+        anchors_mut[0].chain_head = String::from("f").repeat(64);
         // 直接走 verify_anchor_chain + 手动绑定（篡改后的锚点链结构自洽性先验）
         let _ = anchors_mut;
         // verify_binding 路径：篡改事实哈希（等价事实被改）→ 重算链头 ≠ 锚点声称

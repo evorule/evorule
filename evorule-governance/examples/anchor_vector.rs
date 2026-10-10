@@ -1,10 +1,14 @@
-
-use evorule_governance::anchor::{AnchorChainBuilder};
+use evorule_governance::anchor::AnchorChainBuilder;
 use evorule_governance::signing::AuditSigner;
 fn main() {
     let s = AuditSigner::from_bytes([0xabu8; 32]);
     let pk = s.verifying_hex();
-    let mut b = AnchorChainBuilder::new(s.clone(), "anchor-key-1".into(), "vector-engine/0.1".into(), "vector-sess-1".into());
+    let mut b = AnchorChainBuilder::new(
+        s.clone(),
+        "anchor-key-1".into(),
+        "vector-engine/0.1".into(),
+        "vector-sess-1".into(),
+    );
     let heads = ["aa".repeat(32), "bb".repeat(32)];
     let his = [5usize, 10];
     let mut out = Vec::new();
