@@ -75,6 +75,6 @@ pub use permission::{
 pub use session::{Session, SessionAnchorConfig, SessionError, SessionId, SessionManager};
 // G-A1: 审计锚点签名（真实性/防抵赖）
 pub use signing::{verify_signature, AuditSigner, SignError};
-pub use anchor::{AnchorChainBuilder, AnchorError, AnchorProto, AuditAnchor, FactRange, ANCHOR_GENESIS, verify_anchor_chain, verify_binding};
+pub use anchor::{AnchorChainBuilder, AnchorError, AnchorProto, AuditAnchor, FactRange, ANCHOR_GENESIS, ANCHOR_FORMAT, signature_payload_v2, verify_anchor_chain, verify_binding};
 // ObjectPool 已移除（性能优化，非核心功能）
 pub use shared_facts_log::{SharedFact, SharedFactsLog};

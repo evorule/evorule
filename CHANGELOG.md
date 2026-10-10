@@ -24,6 +24,25 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
+## [0.8.2] - 2026-10-10
+
+### Changed（语义变更：锚点签名格式升版）
+
+- **anchor_format `evorule-anchor/1` → `/2`**（`ANCHOR_FORMAT` 常量）：
+  签名目标从 anchor_hash 的 hex 字节改为**载荷字段串接字节**
+  （`signature_payload_v2`，字段序同 compute_anchor_hash、不含
+  prev_anchor_hash）。目的：独立验证器（V-2 零依赖）不依赖 blake3
+  即可验证锚点全部防伪造字段——篡改任何载荷字段直接验签失败。
+- `AuditAnchor::verify_one` / `verify_anchor_chain` 验签目标同步 v2；
+  **v1 锚点（0.8.1 产物）在 v2 验证下按失败处理**（不静默跨格式验过，
+  混版链诚实拒绝）。
+- `anchor_hash` blake3 链保留不变——A2 截断/fork 检出面不受影响。
+
+### Added
+
+- `signature_payload_v2` / `ANCHOR_FORMAT` 公开导出（独立验证器对齐用）。
+- 治理测试 +2（v2 载荷确定性模板断言 / v1 锚点在 v2 下拒绝+对照组）。
+
 ## [0.8.1] - 2026-10-10
 
 ### 新增

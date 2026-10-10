@@ -79,6 +79,35 @@ impl std::error::Error for AnchorError {}
 /// 锚点链哈希算法的创世值（与事实链 genesis 语义对齐，但独立命名空间）
 pub const ANCHOR_GENESIS: &str = "anchor-genesis";
 
+/// 锚点签名载荷格式版本
+///
+/// - `evorule-anchor/1`（0.8.1）：签名目标 = anchor_hash 的 hex 字节——
+///   独立验证器重算载荷须 blake3（依赖门槛）；
+/// - `evorule-anchor/2`（0.8.2）：签名目标 = 载荷字段串接字节（见
+///   [`signature_payload_v2`]）——零依赖可验（字段串接直接可重构），
+///   anchor_hash 链仍保留（A2 截断/fork 检出走 blake3 面不变）。
+pub const ANCHOR_FORMAT: &str = "evorule-anchor/2";
+
+/// v2 签名载荷：字段以 `|` 串接（与 compute_anchor_hash 同字段序，
+/// 不含 prev_anchor_hash——签名只锚本锚点自身内容，链式关系由
+/// anchor_hash 链承载）
+///
+/// 格式：`{ANCHOR_FORMAT}|{session_id}|{seq}|{lo}|{hi}|{chain_head}|{key_id}|{engine_id}|{logical_time}`
+pub fn signature_payload_v2(proto: &AnchorProto) -> String {
+    format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        ANCHOR_FORMAT,
+        proto.session_id,
+        proto.seq,
+        proto.fact_range.lo,
+        proto.fact_range.hi,
+        proto.chain_head,
+        proto.key_id,
+        proto.engine_id,
+        proto.logical_time,
+    )
+}
+
 /// 逻辑时钟值（锚点记录的逻辑时间，由 auditor 的 LogicalClock 供给）
 pub type LogicalTime = u64;
 
@@ -199,7 +228,10 @@ impl AuditAnchor {
             ))));
         }
         sig_arr.copy_from_slice(&sig_bytes);
-        let ok = verify_signature(vk_arr, self.anchor_hash.as_bytes(), &sig_arr)
+        // v2:验签目标=载荷串接字节(与 seal 同源);v1 锚点(0.8.1 产物)不兼容——
+        // 混版链按失败处理(诚实边界:不静默跨格式验过)
+        let proto_payload = signature_payload_v2(&proto);
+        let ok = verify_signature(vk_arr, proto_payload.as_bytes(), &sig_arr)
             .map_err(AnchorError::Sign)?;
         if !ok {
             return Err(AnchorError::SignatureInvalid {
@@ -279,7 +311,8 @@ impl AnchorChainBuilder {
             logical_time: 0, // 由 auditor 挂点覆盖（见 Auditor::seal_anchor）
         };
         let anchor_hash = AuditAnchor::compute_anchor_hash(&self.prev_anchor_hash, &proto)?;
-        let sig = self.signer.signature_bytes(anchor_hash.as_bytes());
+        // v2:签名目标=载荷串接字节(零依赖可验);v1 曾签 anchor_hash(见 ANCHOR_FORMAT 注释)
+        let sig = self.signer.signature_bytes(signature_payload_v2(&proto).as_bytes());
         let anchor = AuditAnchor {
             seq: proto.seq,
             session_id: proto.session_id,
@@ -428,6 +461,43 @@ mod tests {
 
     fn signer() -> AuditSigner {
         AuditSigner::from_bytes([7u8; 32])
+    }
+
+    #[test]
+    fn test_v2_signature_payload_deterministic() {
+        // v2 载荷:字段序确定,零依赖方可按字符串模板重构
+        let proto = AnchorProto {
+            seq: 3,
+            session_id: "sess-1".into(),
+            fact_range: FactRange { lo: 5, hi: 10 },
+            chain_head: "ab".repeat(32),
+            key_id: "k1".into(),
+            engine_id: "evorule-server/0.9.2".into(),
+            logical_time: 7,
+        };
+        let s = signature_payload_v2(&proto);
+        assert_eq!(
+            s,
+            "evorule-anchor/2|sess-1|3|5|10|".to_string() + &"ab".repeat(32) + "|k1|evorule-server/0.9.2|7"
+        );
+    }
+
+    #[test]
+    fn test_v1_anchor_rejected_under_v2() {
+        // v1 锚点(签 anchor_hash)在 v2 验证下必须失败——不静默跨格式验过
+        let s = signer();
+        let mut b = AnchorChainBuilder::new(s.clone(), "k1".into(), "e".into(), "sess-1".into());
+        let a = b.seal(5, &"cd".repeat(32)).unwrap();
+        // 伪造 v1 形态:对 anchor_hash 签名(v1 语义),塞进 v2 锚点
+        let mut v1_anchor = a.clone();
+        let sig_v1 = s.signature_bytes(a.anchor_hash.as_bytes());
+        v1_anchor.signature = crate::signing::hex_encode(&sig_v1);
+        let mut keys = std::collections::BTreeMap::new();
+        keys.insert("k1".to_string(), s.verifying_hex());
+        // v1 签名在 v2 验证器下:验签失败(载荷哈希仍对,但签名对不上)
+        assert!(v1_anchor.verify_one(&crate::anchor::ANCHOR_GENESIS, &keys["k1"]).is_err());
+        // 同锚点 v2 重封后验过(对照组,证明失败源于格式不匹配非构造错误)
+        assert!(a.verify_one(&crate::anchor::ANCHOR_GENESIS, &keys["k1"]).is_ok());
     }
 
     #[test]
