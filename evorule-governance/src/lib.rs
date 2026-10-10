@@ -38,6 +38,7 @@
 #![deny(missing_docs)]
 
 // H6: api 模块已迁出本 crate（机制-策略分离，核心层不再包含 HTTP API 代码）
+pub mod anchor;
 pub mod auditor;
 pub mod clock;
 pub mod hash;
@@ -74,5 +75,6 @@ pub use permission::{
 pub use session::{Session, SessionError, SessionId, SessionManager};
 // G-A1: 审计锚点签名（真实性/防抵赖）
 pub use signing::{verify_signature, AuditSigner, SignError};
+pub use anchor::{AnchorChainBuilder, AnchorError, AnchorProto, AuditAnchor, FactRange, ANCHOR_GENESIS, verify_anchor_chain, verify_binding};
 // ObjectPool 已移除（性能优化，非核心功能）
 pub use shared_facts_log::{SharedFact, SharedFactsLog};
