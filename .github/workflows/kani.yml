@@ -20,6 +20,10 @@
 #
 # Kani 版本: 0.67.0
 # Rust 版本: nightly-2025-11-21
+#
+# 2026-10-10 v0.8.1 release 备注：verification-only 的 tag commit（仅验证文档
+# 变更）不命中本文件 paths 过滤，M4 release gate 因 tag commit 上无 kani run
+# 而阻塞——本注释行使该 tag commit 命中 paths 触发 A 档实跑，供 M4 核查。
 # =============================================================================
 
 name: kani
