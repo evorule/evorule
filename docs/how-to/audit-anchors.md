@@ -14,6 +14,19 @@
 
 代码依据：`evorule-cli/src/commands/anchor_keygen.rs`、`verify_anchors.rs`。
 
+## 第零步（部署配套）：从种子导出公钥
+
+部署面（evorule-server `EVORULE_ANCHOR_SEED`）只持有种子；验证方只需公钥。
+已有种子时无须重新生成，直接派生导出：
+
+```bash
+evorule anchor-pubkey --seed <64位hex>
+# 或管道形态（种子不进 shell 历史）：
+cat /root/.evorule/audit-sk-seed.txt | evorule anchor-pubkey -
+```
+
+输出一行公钥（64 位 hex），分发给验证方（与 `verify-anchors --pubkey` 配套）。
+
 ## 第一步：生成密钥对
 
 ```bash
@@ -50,16 +63,23 @@ evorule anchor-keygen --output my-private-key.txt
 - `verifying_key`：内嵌公钥（缺省验证用）
 - `anchors`：锚点数组
 
-每个锚点的字段（verify_anchors.rs L52-67, L77-107）：
+输入口径：evorule-server `GET /api/sessions/{id}/anchors` 产物
+（`{session_id, count, anchors: [...]}`，governance ≥0.8.2 / evorule-anchor/2 格式）。
+
+每个锚点的字段（anchor.rs `AuditAnchor`）：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `seq` | u64 | 锚点序号 |
-| `version` | u64 | 会话版本号 |
-| `entry_count` | usize | 锚点覆盖的 Fact 数量 |
-| `last_hash` | String | 锚点覆盖范围的最后一个 Fact 的 chain_hash |
-| `prev_anchor_hash` | String | 上一锚点的自哈希（首锚为 `"genesis"`） |
-| `signature` | String | ed25519 签名（64 字节，128 位 hex） |
+| `anchor_format` | String | 签名载荷格式版本（`evorule-anchor/2`） |
+| `seq` | u64 | 锚点序号（0 起严格 +1） |
+| `session_id` | String | 会话标识 |
+| `fact_range` | {lo, hi} | 覆盖事实区间 [lo, hi)，相邻锚点无缝 |
+| `chain_head` | String | 截至本锚点的事实链链头哈希 |
+| `key_id` | String | 签名密钥标识（轮换支持） |
+| `engine_id` | String | 引擎/部署标识 |
+| `logical_time` | u64 | 逻辑时刻（非墙钟） |
+| `anchor_hash` | String | blake3 载荷哈希（含前锚链接，A2 检出面） |
+| `signature` | String | ed25519 签名（对 v2 载荷串接，64 字节 128 hex） |
 
 ## 第四步：离线验证
 
@@ -76,20 +96,25 @@ evorule verify-anchors audit-export.json --pubkey <pk_hex>
 
 ## 验证内容
 
-`verify-anchors` 逐条校验（verify_anchors.rs L164-205）：
+`verify-anchors` 逐条校验（evorule-anchor/2）：
 
-### 1. 锚点链式链接
+### 1. seq 连续
 
-每个锚点的 `prev_anchor_hash` 必须等于上一锚点的**自哈希**（首锚为 `"genesis"`）。防止中间锚点被截断/丢弃。
+序号 0 起严格 +1——中间锚点被丢弃即断裂。
 
-锚点自哈希 = `blake3(载荷 + 签名)`（verify_anchors.rs L70-74）。
+### 2. 区间无缝
 
-### 2. 签名真实性
+首锚 `lo=0`，相邻锚点 `prev.hi == next.lo`——前缀截断/区间丢失即断裂。
 
-用公钥重算每个锚点的规范化载荷并 ed25519 验签。证明审计链确由私钥持有者生成（非"仅检篡改"，而是"可证来源/防抵赖"）。
+### 3. 签名真实性（v2 载荷串接）
 
-- 算法：ed25519 (RFC 8032) 确定性签名（verify_anchors.rs L150）
-- 规范化载荷：`{seq, version, entry_count, last_hash, prev_anchor_hash}`，经 BTree 字典序序列化（verify_anchors.rs L52-67）
+用公钥重算每个锚点的 v2 载荷串接并 ed25519 验签。证明锚点确由私钥持有者生成（防抵赖），且篡改任何载荷字段即失败。
+
+- 算法：ed25519 (RFC 8032) 确定性签名
+- v2 载荷：`evorule-anchor/2|{session_id}|{seq}|{lo}|{hi}|{chain_head}|{key_id}|{engine_id}|{logical_time}`
+  （与 governance `signature_payload_v2` 同构；`|` 分隔，字段序=结构体声明序）
+- 诚实边界：blake3 `anchor_hash` 链重算（A2 截断/fork 检出）由 evorule
+  verify 端点背书——CLI 零 blake3 依赖即可完成防抵赖验证
 
 ## 输出解读
 

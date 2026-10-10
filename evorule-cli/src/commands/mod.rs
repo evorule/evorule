@@ -13,6 +13,7 @@
 //! - `verify_anchors`：离线校验 G-A1 审计锚点真实性（防抵赖）
 
 pub mod anchor_keygen;
+pub mod anchor_pubkey;
 pub mod diff;
 pub mod discipline_gate;
 pub mod replay;

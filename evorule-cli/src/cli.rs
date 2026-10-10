@@ -92,6 +92,16 @@ pub enum Command {
         output: Option<PathBuf>,
     },
 
+    /// Derive the verification public key from a private seed (deployment companion)
+    ///
+    /// The deployment (evorule-server `EVORULE_ANCHOR_SEED`) holds only the seed;
+    /// verifiers need only the public key. Prints the derived public key for
+    /// secure distribution. Use `--seed -` to read the seed from stdin.
+    AnchorPubkey {
+        /// Private seed (64 hex chars), or `-` to read one line from stdin
+        seed: String,
+    },
+
     /// Verify G-A1 audit anchors offline (anti-repudiation)
     ///
     /// Takes an audit export JSON produced by `evorule-governance` `Auditor::export()`.

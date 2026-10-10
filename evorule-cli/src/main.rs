@@ -58,6 +58,7 @@ fn main() -> ExitCode {
         Command::Validate { rules_dir } => commands::validate::run(&rules_dir),
         Command::VerifyChain { fact_log } => commands::verify_chain::run(&fact_log),
         Command::AnchorKeygen { output } => commands::anchor_keygen::run(output.as_deref()),
+        Command::AnchorPubkey { seed } => commands::anchor_pubkey::run(&seed),
         Command::VerifyAnchors { audit, pubkey } => {
             commands::verify_anchors::run(&audit, pubkey.as_deref())
         }
