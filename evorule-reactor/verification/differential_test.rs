@@ -107,11 +107,11 @@ fn load_core_eval() -> Vec<JsonValue> {
     transform.iter().cloned().map(serde_to_tcb).collect()
 }
 
-/// E-10 修复（34 号档 B4）：差分测试宪法源=**evo-agent 仓真文件**（不再手抄内联副本）。
+/// 差分测试宪法源=**evo-agent 仓真文件**（不再手抄内联副本）。
 ///
 /// 背景：生产编排规则唯一实体 = evo-agent/assets/agent_constitution.json；
 /// 历史上 io_loop_rules() 为手抄内联副本，且宪法 v0.5.0（2026-09-14 规则清理）
-/// 移除 ReAct 循环规则后内联副本已静默漂移（E-10 实锤）。本函数直接读真文件
+/// 移除 ReAct 循环规则后内联副本已静默漂移。本函数直接读真文件
 /// 并 sha256 锁定——宪法任何演进立即反映到差分面，双副本漂移结构性不可能。
 ///
 /// 路径解析：同仓 CI 布局 = `evorule/evorule-reactor/…` 与 evo-agent 为兄弟仓
@@ -154,7 +154,7 @@ fn load_agent_constitution() -> Vec<JsonValue> {
     assert_eq!(
         digest, CONSTITUTION_SHA256,
         "agent_constitution.json sha256 漂移：宪法已演进，请核实差分用例是否需同步更新，\
-         然后 bump CONSTITUTION_SHA256（显式人为动作，34 号档 E-10）"
+         然后 bump CONSTITUTION_SHA256（显式人为动作）"
     );
     let doc: serde_json::Value =
         serde_json::from_slice(&bytes).expect("agent_constitution.json is valid JSON");
