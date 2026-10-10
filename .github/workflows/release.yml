@@ -68,24 +68,32 @@ jobs:
         run: |
           set -e
           SHA="${GITHUB_SHA}"
-          RUN_IDS=$(gh run list --workflow kani.yml --commit "${SHA}" --limit 10 --json databaseId,status,conclusion \
-            | python3 -c 'import json,sys; runs=json.load(sys.stdin); print(" ".join(str(r["databaseId"]) for r in runs if r["status"]=="completed"))')
-          if [ -z "${RUN_IDS}" ]; then
-            echo "ERROR: commit ${SHA} 上无已完成的 kani.yml 运行"
-            echo "（若该提交未触发 kani.yml 的 paths 过滤，请先手动 dispatch kani.yml 跑 A 档，再重新运行本 release 流水线）"
-            exit 1
-          fi
-          OK=""
-          for RID in ${RUN_IDS}; do
-            CONC=$(gh run view "${RID}" --json jobs \
-              | python3 -c 'import json,sys; jobs=json.load(sys.stdin)["jobs"]; a=[j for j in jobs if j["name"].startswith("kani-tcb-a-tier")]; print(a[0]["conclusion"] if a else "missing")')
-            echo "kani.yml run ${RID}: kani-tcb-a-tier = ${CONC}"
-            if [ "${CONC}" = "success" ]; then OK=1; break; fi
+          # 竞态修复（2026-10-10，v0.8.2 发版实证）：kani.yml 与本流水线由同
+          # 一 push 同时入队，本步原先只查"已完成"运行——kani 仍在途即误判
+          # "无已完成运行"而拒绝。改为有界等待（900s）：在途不判负，超时仍
+          # 按缺绿证据拒绝（fail-closed 不变）。
+          DEADLINE=$((SECONDS + 900))
+          while :; do
+            RUN_IDS=$(gh run list --workflow kani.yml --commit "${SHA}" --limit 10 --json databaseId,status,conclusion \
+              | python3 -c 'import json,sys; runs=json.load(sys.stdin); print(" ".join(str(r["databaseId"]) for r in runs if r["status"]=="completed"))')
+            OK=""
+            for RID in ${RUN_IDS}; do
+              CONC=$(gh run view "${RID}" --json jobs \
+                | python3 -c 'import json,sys; jobs=json.load(sys.stdin)["jobs"]; a=[j for j in jobs if j["name"].startswith("kani-tcb-a-tier")]; print(a[0]["conclusion"] if a else "missing")')
+              echo "kani.yml run ${RID}: kani-tcb-a-tier = ${CONC}"
+              if [ "${CONC}" = "success" ]; then OK=1; break; fi
+            done
+            if [ -n "${OK}" ]; then
+              echo "M4: kani-tcb-a-tier 绿证据确认（commit ${SHA}）"
+              break
+            fi
+            if [ ${SECONDS} -ge ${DEADLINE} ]; then
+              echo "ERROR: 有界等待 900s 后 commit ${SHA} 上仍无绿 kani-tcb-a-tier（MECHANISM.md M4）"
+              exit 1
+            fi
+            echo "kani.yml 尚无完成的绿运行，30s 后重查（有界等待中）..."
+            sleep 30
           done
-          if [ -z "${OK}" ]; then
-            echo "ERROR: kani-tcb-a-tier job 在 commit ${SHA} 上未绿（MECHANISM.md M4）"
-            exit 1
-          fi
 
   # ==========================================================================
   # 1. crates.io 发布 (硬约束: 发版必须同步 crates.io)
