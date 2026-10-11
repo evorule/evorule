@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- EvoRule WASM grader — offline receipt verifier (verify.html)
-     License: Apache-2.0 — Contribution Grant GRANT-2026-ALE-001, EvoRule Project.
+<!-- EvoRule WASM grader: offline receipt verifier (verify.html)
+     License: Apache-2.0: Contribution Grant GRANT-2026-ALE-001, EvoRule Project.
      Zero-dependency: single file, no network, no install. Open directly
      via file:// in any modern browser.
 
      What it verifies (J-A2/J-A4):
        1. Receipt well-formedness (ale-wasm-receipt/1 schema)
        2. facts_hash: BLAKE3(facts JSON) recomputed in-browser via the
-          same wasm engine (engine/pkg) — byte-level input binding
+          same wasm engine (engine/pkg): byte-level input binding
        3. audit_chain_head: re-run the grade through the wasm engine with
           the receipt's facts + ruleset → chain head must match
        4. Determinism: two runs → identical chain head
@@ -20,7 +20,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>EvoRule WASM Grader — Receipt Verifier</title>
+<title>EvoRule WASM Grader: Receipt Verifier</title>
 <style>
   :root { color-scheme: light dark; }
   body { font: 14px/1.5 system-ui, sans-serif; max-width: 880px; margin: 2rem auto; padding: 0 1rem; }
@@ -36,7 +36,7 @@
 </style>
 </head>
 <body>
-<h1>EvoRule WASM Grader — Receipt Verifier</h1>
+<h1>EvoRule WASM Grader: Receipt Verifier</h1>
 <p class="dim">Offline &middot; zero-dependency &middot; recompute the decision layer in your browser.</p>
 
 <h2>1. Load engine</h2>
@@ -56,7 +56,7 @@
 <footer>
   Verifies decision-layer recomputability (facts_hash + audit_chain_head via the
   same deterministic wasm engine). Does not claim the graded event itself is
-  reproducible. Engine embeds EvoRule tcb/reactor/governance subsets —
+  reproducible. Engine embeds EvoRule tcb/reactor/governance subsets -
   Apache-2.0, EvoRule Project.
 </footer>
 
@@ -79,7 +79,7 @@ $('btn-load').onclick = async () => {
       + '<span class="dim">' + (mod.engine_version?.() ?? '') + '</span>';
   } catch (e) {
     msg.innerHTML = '<span class="bad">engine load failed: ' + (e.message || e) +
-      '</span> — serve this directory over http (e.g. <code>python -m http.server</code>).';
+      '</span>: serve this directory over http (e.g. <code>python -m http.server</code>).';
   }
 };
 
@@ -152,8 +152,8 @@ $('btn-verify').onclick = async () => {
   out.append(row('facts_hash', r.facts_hash));
   out.hidden = false;
   msg.innerHTML = all
-    ? '<span class="ok">ALL CHECKS PASS — decision layer recomputed &amp; bound to this receipt</span>'
-    : '<span class="bad">MISMATCH — receipt does not recompute under this engine/ruleset</span>';
+    ? '<span class="ok">ALL CHECKS PASS: decision layer recomputed &amp; bound to this receipt</span>'
+    : '<span class="bad">MISMATCH: receipt does not recompute under this engine/ruleset</span>';
 };
 </script>
 </body>

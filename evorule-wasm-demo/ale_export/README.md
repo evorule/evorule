@@ -1,7 +1,7 @@
-# EvoRule WASM Grading Engine — Verifiable Grading for Agent Benchmarks
+# EvoRule WASM Grading Engine: Verifiable Grading for Agent Benchmarks
 
 Deterministic, WASM-based grading with cryptographic receipts that anyone
-can independently recompute — no trust in the grader operator required.
+can independently recompute: no trust in the grader operator required.
 
 ## What this is
 
@@ -13,7 +13,7 @@ three-layer pipeline:
 | Layer | Runs | Does |
 |---|---|---|
 | **Bridge** (Python) | official task env | recompute-heavy checks (float tolerances, numpy re-derivation, structural validation) → atomic check-booleans |
-| **Engine** (Rust → WASM) | anywhere | combine check-booleans with weights & gating — the deterministic scoring SSOT |
+| **Engine** (Rust → WASM) | anywhere | combine check-booleans with weights & gating: the deterministic scoring SSOT |
 | **Receipt** (JSON) | ships with scores | `ale-wasm-receipt/1`: fixed-point score, BLAKE3 facts hash, audit chain head |
 
 Same input facts → same score, bit-for-bit, on Windows/Linux, Node 20/22,
@@ -24,14 +24,14 @@ and in the browser. The audit chain head is byte-identical across all four.
 Open `verify.html` in any browser (static file server, no build, no
 network calls):
 
-1. **Load engine** — fetches the WASM module
+1. **Load engine**: fetches the WASM module
 2. **Paste** a receipt export (`{"receipt": ..., "facts": ...}`,
    see `sample_export.json`)
-3. **Verify** — six checks: score / facts_hash / audit_chain_head match,
+3. **Verify**: six checks: score / facts_hash / audit_chain_head match,
    deterministic double-run, audit chain integrity
 
 A tampered fact (one character) fails verification. This verifies the
-*decision layer* is recomputable — it does not claim the graded agent
+*decision layer* is recomputable: it does not claim the graded agent
 run itself is reproducible.
 
 ## What's inside
@@ -57,7 +57,7 @@ sample_export.json a real receipt export you can verify right now
 1. Read the official scorer **in full** (semantics hide in helper files)
 2. Port official semantics to the bridge, emitting check-booleans
 3. Generate the ruleset with `_gen_weighted_checks.py` (weights must sum
-   to 10000; integers only — no floats cross the bridge/engine boundary)
+   to 10000; integers only: no floats cross the bridge/engine boundary)
 4. Differential-test against an independent re-implementation of the
    official scorer (≥8 variants: perfect / per-class failures /
    tolerance edges / missing artifacts / type traps)
@@ -68,13 +68,13 @@ See `DETERMINISM.md` for scope-of-claims boundaries.
 ## Performance
 
 Single grade (ruleset parse + transition + BLAKE3 chain + receipt):
-**0.10 ms** mean over 100 runs (Node v22, Windows; warm) — three orders
+**0.10 ms** mean over 100 runs (Node v22, Windows; warm): three orders
 of magnitude inside a 100 ms budget.
 
 ## License
 
 Apache-2.0 (code) / CC-BY-4.0 (docs) under community contribution grant
-**GRANT-2026-ALE-001** — see
+**GRANT-2026-ALE-001**: see
 [CONTRIBUTION_GRANT.md](../../CONTRIBUTION_GRANT.md) and the grant record
 [docs/grants/GRANT-2026-ALE-001.md](../../docs/grants/GRANT-2026-ALE-001.md).
 Scope: the files listed in the grant. Everything else in the EvoRule
