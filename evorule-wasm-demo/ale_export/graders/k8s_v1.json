@@ -1,0 +1,101 @@
+[
+ {
+  "type": "branch",
+  "params": {
+   "domain": {
+    "type": "instruction",
+    "instruction_type": "eval_k8s_v1"
+   },
+   "on_true": [
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.gate_valid_json",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.gate_required_keys",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.gate_has_causes",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": "__exec__.payload.facts.comp_primary"
+        }
+       },
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": "__exec__.payload.facts.comp_secondary"
+        }
+       },
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": "__exec__.payload.facts.comp_tertiary"
+        }
+       },
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": "__exec__.payload.facts.comp_resources"
+        }
+       },
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": "__exec__.payload.facts.comp_remediation"
+        }
+       },
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": "__exec__.payload.facts.comp_evidence"
+        }
+       },
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": "__exec__.payload.facts.comp_summary"
+        }
+       }
+      ],
+      "on_false": []
+     }
+    }
+   ],
+   "on_false": []
+  }
+ }
+]

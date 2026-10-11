@@ -1,0 +1,71 @@
+[
+ {
+  "type": "branch",
+  "params": {
+   "domain": {
+    "type": "instruction",
+    "instruction_type": "eval_ising_v1"
+   },
+   "on_true": [
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.gate_required_outputs",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.gate_shapes_finite",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.pass_critical_state",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.pass_post_probs",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.pass_rdm_site1",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.pass_correlators",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 10000
+        }
+       }
+      ],
+      "on_false": []
+     }
+    }
+   ],
+   "on_false": []
+  }
+ }
+]
