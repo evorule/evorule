@@ -1,13 +1,52 @@
 {
- "taskId": "computing_math/branch_bound_atsp_wasm",
- "title": "Branch-and-Bound ATSP with WASM-verified grading",
- "summary": "Identical task surface to computing_math/branch_bound_atsp (tier1/2 exact optima n=8/10, tier3 incumbent n=12, results.json with certified bounds and gaps). Sole difference: evaluate() delegates the decision core to the EvoRule WASM grading engine. Official scorer semantics (tour validity, numpy-recomputed costs, float tolerances) run in the bridge layer as auditable check-booleans; the WASM ruleset is the deterministic scoring SSOT (weights 0.40/0.35/0.25, per-check points, metadata gating). Emits ale-wasm-receipt/1 with BLAKE3-chained audit facts, independently recomputable in any browser.",
- "category": "computing_math",
- "vm": {
-  "snapshot": "cpu-free-ubuntu",
-  "vcpus": 4,
-  "memory_gb": 16,
-  "disk_gb": 200,
-  "timeout_s": 1800
- }
+  "taskId": "computing_math/branch_bound_atsp_wasm",
+  "title": "Branch-and-Bound ATSP Solver (WASM-verified grading)",
+  "summary": "Same task surface as computing_math/branch_bound_atsp: implement a Python branch-and-bound solver for deterministic asymmetric TSP instances and report certified results across three tiers. Sole difference: the evaluator's decision core runs in a deterministic WASM engine, emitting an ale-wasm-receipt/1 (BLAKE3-chained audit facts) that anyone can recompute in a browser.",
+  "category": "computing_math",
+  "software": [
+    "Python",
+    "NumPy",
+    "SciPy"
+  ],
+  "taskPrompt": "You are working on a Linux VM.\n\n## Task Directory\n`base`\n\n## Visible Inputs\n- Task prompt: `base/input/TASK_PROMPT.md`\n- ATSP problem specification: `base/input/problem_spec.md`\n- Runtime manifest: `base/input/runtime_env/pyproject.toml`\n- Python entry point with task dependencies: `base/software/python`\n\n## Your Task\nImplement a branch-and-bound solver for the asymmetric travelling salesman\nproblem described in the problem specification. Solve the 12-city and 20-city\ninstances to proven optimality, solve the 35-city instance to at most 0.5%\noptimality gap, and write the required JSON report to:\n\n`base/output/results.json`\n\nUse only Python, NumPy, and SciPy. Do not use external optimization solvers or\nTSP packages. Do not modify files under `base/input`.\n",
+  "agentMustDo": [
+    "Regenerate the deterministic 3D city coordinates for the 12, 20, and 35 city tiers.",
+    "Implement branch-and-bound and assignment-relaxation based lower bounds without external optimization solvers.",
+    "Write a valid `results.json` containing tours, costs, bounds, gaps, node counts, and runtime metrics."
+  ],
+  "inputFiles": [
+    {
+      "name": "problem_spec.md",
+      "format": "markdown",
+      "path": "input/problem_spec.md",
+      "description": "Authoritative ATSP problem statement and output schema."
+    },
+    {
+      "name": "TASK_PROMPT.md",
+      "format": "markdown",
+      "path": "input/TASK_PROMPT.md",
+      "description": "Normalized solve-time instructions staged for the agent."
+    },
+    {
+      "name": "pyproject.toml",
+      "format": "toml",
+      "path": "input/runtime_env/pyproject.toml",
+      "description": "Solve-time Python dependency manifest for NumPy and SciPy."
+    }
+  ],
+  "referenceFiles": [
+    {
+      "name": "results.json",
+      "format": "json",
+      "path": "output/results.json",
+      "description": "Required agent-produced tier results."
+    }
+  ],
+  "evaluation": "The bridge layer validates tour permutations and recomputes tour costs from the deterministic instance generator (official scorer semantics, emitting auditable check-booleans); the WASM ruleset combines the checks with tier weights 0.40/0.35/0.25 as the scoring SSOT. Tier 1 and Tier 2 are compared to hidden optimal references; Tier 3 must satisfy the 0.5% gap with evaluator-side incumbent-quality acceptance. Emits ale-wasm-receipt/1, independently recomputable via the bundled verify.html.",
+  "vm": {
+    "machineType": "c4-standard-4",
+    "snapshot": "cpu-free-ubuntu",
+    "timeout": 14400
+  },
+  "requiredSystemPackages": []
 }
