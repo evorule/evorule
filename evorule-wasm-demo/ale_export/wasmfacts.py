@@ -72,11 +72,14 @@ def engine_call(
         "const out = e.grade_wasm(process.argv[2], process.argv[3], process.argv[4]);\n"
         "process.stdout.write(out);\n"
     )
+    import shutil
     import subprocess
 
+    node = shutil.which("node")
+    if node is None:
+        raise RuntimeError("node not found on PATH; required for wasm engine")
     proc = subprocess.run(
-        [sys.executable.replace("python", "node"), "-e", script,
-         str(engine_js), ruleset, cmd, facts_s],
+        [node, "-e", script, str(engine_js), ruleset, cmd, facts_s],
         capture_output=True, text=True, timeout=30, check=False,
     )
     if proc.returncode != 0:
