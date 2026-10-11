@@ -1,0 +1,64 @@
+{
+ "taskId": "computing_math/ising_post_measurement_wasm",
+ "title": "Post-measurement Ising State Reconstruction (WASM-verified grading)",
+ "summary": "Same task surface as computing_math/ising_post_measurement_1: reconstruct the post-measurement state of a 1024-site transverse-field Ising model and write .npy/.npz artifacts (critical state, post-measurement probabilities, site-1 RDM, optional correlators). Sole difference: the evaluator's decision core runs in a deterministic WASM engine, emitting an ale-wasm-receipt/1 (BLAKE3-chained audit facts) that anyone can recompute in a browser.",
+ "category": "computing_math",
+ "software": [
+  "Python",
+  "NumPy",
+  "SciPy"
+ ],
+ "taskPrompt": "You are working on a Linux VM.\n\n## Task Directory\n`base`\n\n## Visible Inputs\n- Task prompt: `base/input/TASK_PROMPT.md`\n- Ising post-measurement specification: `base/input/problem_spec.md`\n- Runtime manifest: `base/input/runtime_env/pyproject.toml`\n- Python entry point with task dependencies: `base/software/python`\n\n## Your Task\nReconstruct the post-measurement state of the specified 1024-site transverse-field Ising model. Compute the critical state vector, post-measurement probability distribution, and site-1 reduced density matrix; where the variant requires it, also compute the one-body correlators. Write the required artifacts to:\n\n`base/output/critical_state.npy`\n`base/output/post_probs.npy`\n`base/output/rdm_site1.npy`\n`base/output/correlators.npz` (only when required)\n\nUse only Python, NumPy, and SciPy. Do not use external quantum simulators or tensor-network packages. Do not modify files under `base/input`.\n",
+ "agentMustDo": [
+  "Regenerate the deterministic instance exactly as specified in the problem spec (model parameters, dimension, measurement basis).",
+  "Produce arrays with the exact required shapes and dtypes; all values must be finite.",
+  "Write all required .npy artifacts (and correlators.npz when the variant requires it) under base/output/."
+ ],
+ "inputFiles": [
+  {
+   "name": "problem_spec.md",
+   "format": "markdown",
+   "path": "input/problem_spec.md",
+   "description": "Authoritative Ising post-measurement problem statement, instance parameters, and artifact schema."
+  },
+  {
+   "name": "TASK_PROMPT.md",
+   "format": "markdown",
+   "path": "input/TASK_PROMPT.md",
+   "description": "Normalized solve-time instructions staged for the agent."
+  },
+  {
+   "name": "pyproject.toml",
+   "format": "toml",
+   "path": "input/runtime_env/pyproject.toml",
+   "description": "Solve-time Python dependency manifest for NumPy and SciPy."
+  }
+ ],
+ "referenceFiles": [
+  {
+   "name": "critical_state.npy",
+   "format": "npy",
+   "path": "output/critical_state.npy",
+   "description": "Required agent-produced critical state vector (dim 1024)."
+  },
+  {
+   "name": "post_probs.npy",
+   "format": "npy",
+   "path": "output/post_probs.npy",
+   "description": "Required agent-produced post-measurement probabilities (dim 1024)."
+  },
+  {
+   "name": "rdm_site1.npy",
+   "format": "npy",
+   "path": "output/rdm_site1.npy",
+   "description": "Required agent-produced site-1 reduced density matrix (1024 x 2 x 2)."
+  }
+ ],
+ "evaluation": "The bridge layer loads each artifact, checks shapes and finiteness, and computes state infidelity (tolerance 1e-4) plus elementwise max-abs errors (tolerance 1e-2) against hidden references (official scorer semantics, emitting auditable check-booleans); the WASM ruleset combines the checks as an all-gate into a pass/fail score as the scoring SSOT. Emits ale-wasm-receipt/1, independently recomputable via the bundled verify.html.",
+ "vm": {
+  "machineType": "c4-standard-4",
+  "snapshot": "cpu-free-ubuntu",
+  "timeout": 14400
+ },
+ "requiredSystemPackages": []
+}

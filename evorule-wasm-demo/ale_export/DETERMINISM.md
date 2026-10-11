@@ -77,6 +77,26 @@ no platform APIs); recorded as design-equivalent, listed for completeness.
   directory it lives in (ES module + wasm); it is "zero install, zero
   external network", not a single self-contained .html blob.
 
+## Four scoring shapes covered
+
+The three task families plus demo cover the four canonical scoring shapes:
+
+| shape | ruleset form | example |
+|---|---|---|
+| exact match | single eq query | demo_hello_v1 |
+| weighted recompute | branch + constant adds per check | atsp_v1 (13 checks, 3 tiers) |
+| tolerance gate (pass/fail) | all-gate over 6 checks | ising_v1 |
+| semantic report: hard gates + weighted components | gate and-chain + variable adds | k8s_v1 |
+
+Variable adds use the engine's path-reference `set/add` value form
+(`value: "__exec__.payload.facts.<name>"`): integer component values
+pre-normalized in the bridge (basis points) are summed by the ruleset,
+so the combination layer stays the scoring SSOT even for continuous
+components (set F1, evidence grounding ratios). Floats never cross
+the bridge/engine boundary; official `round(...,6)` semantics differ
+from the integer sum by < 1e-4 (differential-test tolerance 1e-3,
+declared explicitly).
+
 ## 6. Performance (J-A5)
 
 Measured (Node.js v22, Windows, demo ruleset, engine warm): **0.10 ms

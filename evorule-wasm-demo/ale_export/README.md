@@ -42,15 +42,16 @@ graders/           rulesets (JSON) + bridge (Python) per task
   demo_hello_v1.json       demo task: exact-match grading
   atsp_v1.json             branch_bound_atsp: 13 weighted checks, 3 tiers
   atsp_facts.py            official scorer semantics → check-booleans
+  ising_v1.json            ising_post_measurement: 6-check all-gate, pass/fail
+  ising_facts.py           .npy/.npz artifact checks + tolerance recompute
+  k8s_v1.json              k8s_root_cause: 3 hard gates + 7-component sum
+  k8s_facts.py             semantic report scoring → integer components
   _gen_weighted_checks.py  ruleset generator template
 tasks/             AgentHLE-compatible task packages (drop-in)
-  demo_hello_wasm/         demo/hello with WASM-verified evaluate()
+  demo_hello_wasm/         demo task (exact match)
   branch_bound_atsp_wasm/  real task, official scorer semantics ported
-verify.html        zero-dependency receipt verifier
-DETERMINISM.md     claim boundaries + cross-platform matrix + measurements
-wasmfacts.py       bridge library (facts assembly, missing-artifact policy)
-sample_export.json a real receipt export you can verify right now
-```
+  ising_post_measurement_wasm/  binary artifacts + tolerance gates
+  k8s_payment_api_root_cause_wasm/  semantic report: gates + weighted components
 
 ## Porting a task's scorer (summary)
 

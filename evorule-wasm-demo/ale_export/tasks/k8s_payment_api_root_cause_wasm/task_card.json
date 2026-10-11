@@ -1,0 +1,56 @@
+{
+ "taskId": "computing_math/k8s_payment_api_root_cause_wasm",
+ "title": "Kubernetes Payment API Root Cause Analysis (WASM-verified grading)",
+ "summary": "Same task surface as computing_math/k8s_payment_api_root_cause_analysis: diagnose a production payment API outage from Kubernetes incident artifacts and write root_cause_report.json. Sole difference: the evaluator's decision core runs in a deterministic WASM engine, emitting an ale-wasm-receipt/1 (BLAKE3-chained audit facts) that anyone can recompute in a browser.",
+ "category": "computing_math",
+ "software": [
+  "Python"
+ ],
+ "taskPrompt": "You are working on a Linux VM.\n\n## Task Directory\n`base`\n\n## Visible Inputs\n- Task prompt: `base/input/TASK_PROMPT.md`\n- Kubernetes incident artifacts: `base/input/` (cluster state, deployment manifest, failing pod log)\n- Python entry point: `base/software/python`\n\n## Your Task\nDiagnose the root cause of the payment API outage from the incident artifacts. Identify the primary, secondary, and tertiary root causes with evidence, list affected resources, and propose a remediation plan. Write the required report to:\n\n`base/output/root_cause_report.json`\n\nThe report must contain: incident_metadata (with safe_to_rollback), root_causes (type/severity/description/evidence), affected_resources, remediation_plan, and summary.\n",
+ "agentMustDo": [
+  "Ground every root cause in evidence quoted from the provided artifacts.",
+  "Use canonical resource identifiers (kind/name@namespace) matching the incident artifacts.",
+  "Write a valid root_cause_report.json with all five required top-level keys."
+ ],
+ "inputFiles": [
+  {
+   "name": "TASK_PROMPT.md",
+   "format": "markdown",
+   "path": "input/TASK_PROMPT.md",
+   "description": "Normalized solve-time instructions staged for the agent."
+  },
+  {
+   "name": "cluster_state.txt",
+   "format": "text",
+   "path": "input/cluster_state.txt",
+   "description": "Kubernetes cluster state dump at incident time."
+  },
+  {
+   "name": "deployment.yaml",
+   "format": "yaml",
+   "path": "input/deployment.yaml",
+   "description": "Payment API deployment manifest."
+  },
+  {
+   "name": "pod_log.txt",
+   "format": "text",
+   "path": "input/pod_log.txt",
+   "description": "Failing pod log excerpts."
+  }
+ ],
+ "referenceFiles": [
+  {
+   "name": "root_cause_report.json",
+   "format": "json",
+   "path": "output/root_cause_report.json",
+   "description": "Required agent-produced root cause report."
+  }
+ ],
+ "evaluation": "The bridge layer validates the report schema (three hard gates: parseable JSON, required top-level keys, non-empty causes) and scores seven components (primary/secondary/tertiary cause identification, affected-resource set F1, remediation-plan pattern coverage, evidence grounding, summary/rollback), pre-normalized to integer basis points (official scorer semantics, emitting auditable component values); the WASM ruleset sums the seven components behind the hard gates as the scoring SSOT. Emits ale-wasm-receipt/1, independently recomputable via the bundled verify.html.",
+ "vm": {
+  "machineType": "c4-standard-4",
+  "snapshot": "cpu-free-ubuntu",
+  "timeout": 14400
+ },
+ "requiredSystemPackages": []
+}
