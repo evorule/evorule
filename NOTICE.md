@@ -46,6 +46,7 @@
 - 代码（copyleft, AGPL-3.0）：保护 EvoRule 当前实现，阻止大厂"白嫖 fork 后卖闭源 SaaS"
 - 宪法（public domain, CC0-1.0）：鼓励广泛采用，任何人都可以基于宪法实现兼容引擎
 - 这把"标准"和"实现"分开，类似 HTTP 规范（W3C 公共）vs Apache HTTP Server（版权）
+- 社区贡献物可经**通道 D（Contribution Grant, CONTRIBUTION_GRANT.md）**以 Apache-2.0 局部再授权进入开源社区/学术仓；主仓 AGPL 主线不变；签发记录见 docs/grants/
 
 ## 设计原则
 
