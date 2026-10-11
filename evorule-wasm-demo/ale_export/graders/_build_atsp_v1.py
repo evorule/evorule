@@ -53,6 +53,5 @@ ruleset = [{
 }]
 
 out = json.dumps(ruleset, ensure_ascii=False, indent=1) + "\n"
-io.open(r"D:\evorule-m8\evorule-wasm-demo\ale_export\graders\atsp_v1.json", "w",
-        encoding="utf-8", newline="\n").write(out)
+io.open("atsp_v1.json", "w", encoding="utf-8", newline="\n").write(out)
 print("atsp_v1.json check-boolean 版落成：", len(ruleset[0]["params"]["on_true"]), "段打分分支")
