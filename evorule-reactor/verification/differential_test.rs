@@ -135,6 +135,10 @@ fn load_agent_constitution() -> Vec<JsonValue> {
         v.push(manifest_dir.join("../../../evo-agent/assets/agent_constitution.json"));
         // ③ 本仓根上级（evo-agent 与 evorule 同父的另一常见检出位）
         v.push(manifest_dir.join("../../../../evo-agent/assets/agent_constitution.json"));
+        // ④ 本仓根兄弟位（CI 单仓检出布局：evorule 仓根旁检入/克隆 evo-agent，
+        //    GH ci.yml test job 以 path: evo-agent 检出、Gitee Go test stage 以
+        //    git clone 落位同名目录）
+        v.push(manifest_dir.join("../evo-agent/assets/agent_constitution.json"));
         v
     };
 

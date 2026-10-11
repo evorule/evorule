@@ -67,6 +67,9 @@ test:
   image: rust:1.98.1-slim
   script:
     - apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev pkg-config git
+    # 差分测试供源: agent_constitution.json 唯一实体在 evo-agent 仓
+    # (differential_test.rs 候选④ = 仓根兄弟位), 单仓检出缺源必红 (O-410)。
+    - git clone --depth 1 https://gitee.com/evorule/evo-agent.git evo-agent
     - cargo test --workspace --all-targets
   rules:
     - changes:
