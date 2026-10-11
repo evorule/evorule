@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ising_post_measurement bridge —— 官方 scorer 语义原样移植（判据面）。
+"""ising_post_measurement bridge: 官方 scorer 语义原样移植（判据面）。
 
 产出 check-booleans（供 ising_v1.json 规则集组合，pass/fail 门控形态）：
   gate_required_outputs / gate_shapes_finite /

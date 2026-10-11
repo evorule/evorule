@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""k8s_payment_api_root_cause bridge —— 官方 scorer 语义原样移植（判据面）。
+"""k8s_payment_api_root_cause bridge: 官方 scorer 语义原样移植（判据面）。
 
 产出 check-booleans 与整数组件值（供 k8s_v1.json 规则集组合）：
   硬门：gate_valid_json / gate_required_keys / gate_has_causes
@@ -11,7 +11,7 @@
 官方语义来源：tasks/computing_math/k8s_payment_api_root_cause_analysis/
 scripts/score_root_cause_analysis.py（rdi-berkeley/agents-last-exam）。
 正则/集合运算全在本层；wasm 只做硬门+整数加法（score_fixed=Σcomp）。
-浮点边界：官方 round(sum,6) 与万分制整数和的偏差≤7×10⁻⁵——
+浮点边界：官方 round(sum,6) 与万分制整数和的偏差≤7e-5; 
 score_fixed 为整数和（万分位），float 展示=score_fixed/10000（诚实边界：
 与官方 round6 相差<1e-4，不宣称逐位一致；对拍用 1e-3 容差）。
 """
