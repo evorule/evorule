@@ -1,0 +1,13 @@
+{
+  "taskId": "demo/hello_wasm",
+  "title": "Demo: Acme Code Generator (GUI, WASM-verified grading)",
+  "summary": "Identical task surface to demo/hello (GUI flow, same input/software/reference/output layout). Sole difference: evaluate() delegates the decision core to the EvoRule WASM grading engine — same list[float] score, plus a BLAKE3-audited receipt (facts_hash / audit_chain_head) that anyone can independently recompute in a browser or with a zero-dependency CLI.",
+  "category": "demo",
+  "vm": {
+    "snapshot": "cpu-free-ubuntu",
+    "vcpus": 4,
+    "memory_gb": 16,
+    "disk_gb": 200,
+    "timeout_s": 1800
+  }
+}
