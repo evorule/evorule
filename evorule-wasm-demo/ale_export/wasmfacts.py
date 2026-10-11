@@ -53,6 +53,7 @@ def engine_call(
     task_id: str,
     *,
     engine_js: Optional[Path] = None,
+    instruction: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """调 WASM 引擎 grade_wasm(ruleset, command, facts) → receipt dict。
 
@@ -65,7 +66,7 @@ def engine_call(
             f"wasm engine not found at {engine_js}; run wasm-pack build first"
         )
     ruleset = json.dumps(json.loads(Path(ruleset_path).read_text(encoding="utf-8")))
-    cmd = json.dumps({"type": "eval_exact_match", "params": {"task_id": task_id}})
+    cmd = json.dumps(instruction or {"type": "eval_exact_match", "params": {"task_id": task_id}})
     facts_s = json.dumps(facts)
     script = (
         "const e = require(process.argv[1]);\n"

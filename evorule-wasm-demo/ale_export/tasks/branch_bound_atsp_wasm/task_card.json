@@ -1,0 +1,13 @@
+{
+ "taskId": "computing_math/branch_bound_atsp_wasm",
+ "title": "Branch-and-Bound ATSP with WASM-verified grading",
+ "summary": "Identical task surface to computing_math/branch_bound_atsp (tier1/2 exact optima n=8/10, tier3 incumbent n=12, results.json with certified bounds and gaps). Sole difference: evaluate() delegates the decision core to the EvoRule WASM grading engine. Official scorer semantics (tour validity, numpy-recomputed costs, float tolerances) run in the bridge layer as auditable check-booleans; the WASM ruleset is the deterministic scoring SSOT (weights 0.40/0.35/0.25, per-check points, metadata gating). Emits ale-wasm-receipt/1 with BLAKE3-chained audit facts, independently recomputable in any browser.",
+ "category": "computing_math",
+ "vm": {
+  "snapshot": "cpu-free-ubuntu",
+  "vcpus": 4,
+  "memory_gb": 16,
+  "disk_gb": 200,
+  "timeout_s": 1800
+ }
+}

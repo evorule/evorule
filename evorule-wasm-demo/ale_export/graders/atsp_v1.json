@@ -1,0 +1,443 @@
+[
+ {
+  "type": "branch",
+  "params": {
+   "domain": {
+    "type": "instruction",
+    "instruction_type": "eval_atsp_v1"
+   },
+   "on_true": [
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier1_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier1_valid_tour",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 1000
+        }
+       }
+      ],
+      "on_false": []
+     }
+    },
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier1_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier1_cost_matches_tour",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 1000
+        }
+       }
+      ],
+      "on_false": []
+     }
+    },
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier1_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier1_cost_matches_ref",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 1000
+        }
+       }
+      ],
+      "on_false": []
+     }
+    },
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier1_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier1_bound_certifies",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 1000
+        }
+       }
+      ],
+      "on_false": []
+     }
+    },
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier2_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier2_valid_tour",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 875
+        }
+       }
+      ],
+      "on_false": []
+     }
+    },
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier2_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier2_cost_matches_tour",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 875
+        }
+       }
+      ],
+      "on_false": []
+     }
+    },
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier2_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier2_cost_matches_ref",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 875
+        }
+       }
+      ],
+      "on_false": []
+     }
+    },
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier2_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier2_bound_certifies",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 875
+        }
+       }
+      ],
+      "on_false": []
+     }
+    },
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier3_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier3_valid_tour",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 500
+        }
+       }
+      ],
+      "on_false": []
+     }
+    },
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier3_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier3_cost_matches_tour",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 500
+        }
+       }
+      ],
+      "on_false": []
+     }
+    },
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier3_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier3_incumbent_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 500
+        }
+       }
+      ],
+      "on_false": []
+     }
+    },
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier3_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier3_bound_sane",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 500
+        }
+       }
+      ],
+      "on_false": []
+     }
+    },
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier3_metadata_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        },
+        {
+         "type": "eq",
+         "path": "__exec__.payload.facts.tier3_gap_ok",
+         "value": 1,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "on_true": [
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 500
+        }
+       }
+      ],
+      "on_false": []
+     }
+    }
+   ],
+   "on_false": []
+  }
+ }
+]
