@@ -13,6 +13,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.8.3 - 2026-10-10
+
+**密钥 CLI 收口** — 详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.8.3]` 段。
+
+### 🆕 新增
+
+- **`anchor-pubkey` 新子命令**：私钥种子确定性派生验证公钥（部署配套——server `EVORULE_ANCHOR_SEED` 只持种子，验证方只需公钥）；`--seed -` stdin 管道形态（种子不进 shell 历史）
+- docs/how-to/audit-anchors.md 补「第零步」部署导出公钥流程
+
+### 🔄 变更
+
+- **`verify-anchors` 升 evorule-anchor/2 载荷**（原实现为 anchor.rs 落地前设计稿格式，实质不可用）：输入口径改 server `/anchors` 产物；三查=seq 连续/区间无缝/v2 载荷验签；诚实边界=blake3 面归 evorule verify
+
+---
+
 ## v0.6.0 - 2026-09-14
 
 **`validate` 元指令白名单收窄（MINOR，含破坏性）** — 适配 `evorule-tcb` v0.6.0 `META_INSTRUCTION_TYPES` SSOT 常量收窄。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.6.0]` 段。

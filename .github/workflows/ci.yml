@@ -196,6 +196,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # fetch 全量以携带 git tags——CHANGELOG 与最新 tag 对齐检查依赖 tags；
+          # 浅克隆下 tags 为空集，该检查会空转通过（本地门禁红而 CI 绿的盲区成因）
+          fetch-depth: 0
 
       - name: L1 文档安全与引用完整性
         run: python3 scripts/check_doc_safety.py
