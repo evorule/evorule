@@ -30,6 +30,8 @@
 //! **replays** `execute_transition` from the original inputs (D11 contract).
 
 use evorule_governance::Auditor;
+
+pub mod grade;
 use evorule_reactor::{serde_to_tcb, tcb_to_serde, Fact, FactId, FactsLog, TraceHit};
 use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 

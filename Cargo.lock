@@ -539,6 +539,7 @@ dependencies = [
 name = "evorule-wasm-demo"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "evorule-governance",
  "evorule-reactor",
  "evorule-tcb",
