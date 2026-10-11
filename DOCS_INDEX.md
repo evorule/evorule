@@ -56,6 +56,8 @@
 | [LICENSES/core_eval-CC0-1.0.txt](LICENSES/core_eval-CC0-1.0.txt)                  | CC0 文本        | 宪法 core_eval.json 的 CC0-1.0 公共领域全文        |
 | [AUTHORS.md](AUTHORS.md)                                                      | 作者列表        | 核心贡献者名单                                     |
 | [TRADEMARK.md](TRADEMARK.md)                                                  | 商标政策        | "EvoRule"、"元则"、"则灵"商标使用规范              |
+| [CONTRIBUTION_GRANT.md](CONTRIBUTION_GRANT.md)                              | 社区贡献授权    | 通道 D：开源社区/学术项目以宽松协议接纳贡献物      |
+| [docs/grants/](docs/grants/)                                                | 签发记录        | 通道 D 历次签发清单（追加制存档）                  |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)                                      | 行为准则        | 贡献者行为守则（Contributor Covenant 2.1）         |
 | [CONTRIBUTING.md](CONTRIBUTING.md) / [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md) | 贡献指南        | 如何提交 issue / PR / 编译 / 测试 / 提 PR 检查清单 |
 | [SECURITY.md](SECURITY.md)                                                    | 安全报告        | 漏洞披露流程 + 安全联系人                          |
