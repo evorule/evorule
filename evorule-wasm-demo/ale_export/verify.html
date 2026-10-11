@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- EvoRule WASM grader — offline receipt verifier (verify.html)
+     License: Apache-2.0 — Contribution Grant GRANT-2026-ALE-001, EvoRule Project.
+     Zero-dependency: single file, no network, no install. Open directly
+     via file:// in any modern browser.
+
+     What it verifies (J-A2/J-A4):
+       1. Receipt well-formedness (ale-wasm-receipt/1 schema)
+       2. facts_hash: BLAKE3(facts JSON) recomputed in-browser via the
+          same wasm engine (engine/pkg) — byte-level input binding
+       3. audit_chain_head: re-run the grade through the wasm engine with
+          the receipt's facts + ruleset → chain head must match
+       4. Determinism: two runs → identical chain head
+     What it does NOT verify (honest boundary):
+       - It cannot prove the artifacts on disk were what the original
+         grader read. It verifies the DECISION LAYER is recomputable
+         (deterministic, auditable), not that the graded event is
+         reproducible. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EvoRule WASM Grader — Receipt Verifier</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px/1.5 system-ui, sans-serif; max-width: 880px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; } h2 { font-size: 1.05rem; margin-top: 1.6rem; }
+  textarea { width: 100%; box-sizing: border-box; font: 12px/1.45 ui-monospace, monospace; min-height: 90px; }
+  .row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; margin: .6rem 0; }
+  button { padding: .45rem 1rem; font-size: .95rem; cursor: pointer; }
+  table { border-collapse: collapse; margin-top: .4rem; }
+  td, th { border: 1px solid color-mix(in srgb, currentColor 25%, transparent); padding: .3rem .6rem; text-align: left; font: 12px/1.4 ui-monospace, monospace; }
+  .ok { color: #1a7f37; font-weight: 600; } .bad { color: #cf222e; font-weight: 600; } .dim { opacity: .65; }
+  #load-msg { margin-top: .4rem; }
+  footer { margin-top: 2.5rem; font-size: .8rem; opacity: .6; }
+</style>
+</head>
+<body>
+<h1>EvoRule WASM Grader — Receipt Verifier</h1>
+<p class="dim">Offline &middot; zero-dependency &middot; recompute the decision layer in your browser.</p>
+
+<h2>1. Load engine</h2>
+<div class="row">
+  <button id="btn-load">Load engine/pkg (wasm)</button>
+  <label>Ruleset <input type="file" id="f-ruleset" accept=".json"></label>
+</div>
+<div id="load-msg"></div>
+
+<h2>2. Paste receipt</h2>
+<textarea id="receipt" placeholder='{"schema":"ale-wasm-receipt/1", ...}'></textarea>
+<div class="row"><button id="btn-verify">Verify</button><span id="verify-msg"></span></div>
+
+<h2>3. Result</h2>
+<table id="out" hidden><tbody></tbody></table>
+
+<footer>
+  Verifies decision-layer recomputability (facts_hash + audit_chain_head via the
+  same deterministic wasm engine). Does not claim the graded event itself is
+  reproducible. Engine embeds EvoRule tcb/reactor/governance subsets —
+  Apache-2.0, EvoRule Project.
+</footer>
+
+<script type="module">
+// --- engine loading: file:// fetch of sibling pkg/ (same directory tree) ---
+const $ = (id) => document.getElementById(id);
+let ENGINE = null, RULESET = null;
+
+const pkgBase = new URL('engine/pkg_web/evorule_wasm_demo.js', location.href).href;
+
+$('btn-load').onclick = async () => {
+  const msg = $('load-msg');
+  try {
+    const mod = await import(pkgBase);
+    // default(wasmUrl): wasm-bindgen official async init (fetch+instantiate)
+    const wasmUrl = new URL('engine/pkg_web/evorule_wasm_demo_bg.wasm', location.href);
+    await mod.default(wasmUrl);
+    ENGINE = mod;
+    msg.innerHTML = '<span class="ok">engine loaded</span> '
+      + '<span class="dim">' + (mod.engine_version?.() ?? '') + '</span>';
+  } catch (e) {
+    msg.innerHTML = '<span class="bad">engine load failed: ' + (e.message || e) +
+      '</span> — serve this directory over http (e.g. <code>python -m http.server</code>).';
+  }
+};
+
+$('f-ruleset').onchange = async (ev) => {
+  RULESET = await ev.target.files[0].text();
+  $('load-msg').innerHTML += '<br><span class="ok">ruleset loaded</span>';
+};
+
+function row(name, val, cls) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = '<th>' + name + '</th><td class="' + (cls ?? '') + '">' + val + '</td>';
+  return tr;
+}
+
+function extractFacts(receipt) {
+  // The receipt references facts via facts_hash; the facts themselves ship
+  // alongside (grader logs). For verify, we require the facts JSON pasted in
+  // the same textarea under key "facts" (export format), or use the receipt
+  // wrapper convention: {"receipt": {...}, "facts": {...}}
+  if (receipt.facts && receipt.receipt) return { r: receipt.receipt, facts: receipt.facts };
+  if (receipt.schema === 'ale-wasm-receipt/1') return { r: receipt, facts: null };
+  return null;
+}
+
+$('btn-verify').onclick = async () => {
+  const out = $('out'), msg = $('verify-msg');
+  out.hidden = true; out.tBodies[0].replaceChildren();
+  if (!ENGINE) { msg.innerHTML = '<span class="bad">load engine first</span>'; return; }
+  if (!RULESET) {
+    try {
+      RULESET = await (await fetch(new URL('graders/demo_hello_v1.json', location.href))).text();
+    } catch (e) {
+      msg.innerHTML = '<span class="bad">ruleset not loaded (file picker or graders/ fetch failed)</span>';
+      return;
+    }
+  }
+  let parsed;
+  try { parsed = JSON.parse($('receipt').value); }
+  catch (e) { msg.innerHTML = '<span class="bad">invalid JSON: ' + e.message + '</span>'; return; }
+  const got = extractFacts(parsed);
+  if (!got) { msg.innerHTML = '<span class="bad">paste {"receipt": {...}, "facts": {...}} export</span>'; return; }
+  const { r } = got; const facts = got.facts ?? {};
+  if (r.schema !== 'ale-wasm-receipt/1') {
+    msg.innerHTML = '<span class="bad">unknown schema: ' + r.schema + '</span>'; return;
+  }
+  const ruleset = RULESET;
+  const cmd = JSON.stringify({ type: 'eval_exact_match', params: { task_id: r.task_id } });
+  const factsStr = JSON.stringify(facts);
+
+  const run1 = JSON.parse(ENGINE.grade_wasm(ruleset, cmd, factsStr));
+  const run2 = JSON.parse(ENGINE.grade_wasm(ruleset, cmd, factsStr));
+
+  const checks = [
+    ['score matches receipt', run1.score_fixed === r.score_fixed && run1.score === r.score],
+    ['facts_hash matches', run1.facts_hash === r.facts_hash],
+    ['audit_chain_head matches', run1.audit_chain_head === r.audit_chain_head],
+    ['deterministic (2nd run identical)', run1.audit_chain_head === run2.audit_chain_head],
+    ['audit_verified', run1.audit_verified === true],
+    ['missing_reason consistent',
+      (r.missing_reason ?? null) === (run1.missing_reason ?? null)],
+  ];
+  let all = true;
+  out.append(row('engine', run1.engine ?? ''));
+  for (const [name, ok] of checks) {
+    out.append(row(name, ok ? 'PASS' : 'FAIL', ok ? 'ok' : 'bad'));
+    if (!ok) all = false;
+  }
+  out.append(row('score', r.score));
+  out.append(row('audit_chain_head', r.audit_chain_head));
+  out.append(row('facts_hash', r.facts_hash));
+  out.hidden = false;
+  msg.innerHTML = all
+    ? '<span class="ok">ALL CHECKS PASS — decision layer recomputed &amp; bound to this receipt</span>'
+    : '<span class="bad">MISMATCH — receipt does not recompute under this engine/ruleset</span>';
+};
+</script>
+</body>
+</html>

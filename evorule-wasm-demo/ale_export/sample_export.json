@@ -1,0 +1,20 @@
+{
+ "receipt": {
+  "actual_present": true,
+  "audit_chain_head": "5e115666e852d4bf0821c845449947b6208ec79b4679423bd19d7572cd72596b",
+  "audit_count": 4,
+  "audit_verified": true,
+  "engine": "evorule-wasm-demo 0.1.0 / TCB v0.8.3",
+  "expected_present": true,
+  "facts_hash": "25f0bf6344cfb2406a96ccb703153499d14d8a30337b19348542241716e1f7e0",
+  "missing_reason": null,
+  "schema": "ale-wasm-receipt/1",
+  "score": 1,
+  "score_fixed": 10000,
+  "task_id": "demo/hello_wasm"
+ },
+ "facts": {
+  "expected": "CONF-A7X-1234",
+  "actual": "CONF-A7X-1234"
+ }
+}
