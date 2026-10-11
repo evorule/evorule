@@ -120,9 +120,11 @@ fn load_core_eval() -> Vec<JsonValue> {
 fn load_agent_constitution() -> Vec<JsonValue> {
     use std::path::PathBuf;
 
-    // sha256 锁（宪法演进=bump 此值，显式人为动作）
+    // sha256 锁（宪法演进=bump 此值，显式人为动作）。
+    // 锁对象 = git blob 实体的 LF 原样字节；哈希前先做行尾归一化（见下），
+    // 使 Windows autocrlf 检出（CRLF）与 Linux CI 检出（LF）验为同一锁定值。
     const CONSTITUTION_SHA256: &str =
-        "2010b77050c42047482884ec775bedaab1fcb9288aec762ad4a7e91b54694bdd";
+        "2e3a57038802f1940cd6fc113bcf1d1df9fba8a74de5f2340cf90356f24b7cc0";
 
     let candidates: Vec<PathBuf> = {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -150,9 +152,14 @@ fn load_agent_constitution() -> Vec<JsonValue> {
     });
     let bytes = std::fs::read(path).expect("read agent_constitution.json");
     let digest = {
+        // 行尾归一化后再哈希：锁值锚定 git blob 实体（LF），免疫检出平台
+        // 行尾差异（autocrlf 检出为 CRLF 时同一实体不得误判为漂移）。
+        // JSON 规范禁止字符串字面量中出现裸 CR（必须转义），删除全部 \r
+        // 等价于 CRLF→LF 归一化，不触碰任何语义字节。
+        let normalized: Vec<u8> = bytes.iter().copied().filter(|&b| b != b'\r').collect();
         // sha256（无 sha2 dev-dep 依赖：手写 FIPS 180-4 紧凑实现不引入；
         // 用环形缓冲逐块——见下方 sha256_of）
-        sha256_of(&bytes)
+        sha256_of(&normalized)
     };
     assert_eq!(
         digest, CONSTITUTION_SHA256,
