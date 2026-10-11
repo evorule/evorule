@@ -184,7 +184,7 @@ fn verify_value(parsed: &Value, pk: [u8; 32]) -> Result<usize, CliError> {
         }
         println!(
             "[{i}] seq={seq} range=[{lo},{hi}) head={}… signature: OK",
-            &a.get("chain_head")
+            a.get("chain_head")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .chars()

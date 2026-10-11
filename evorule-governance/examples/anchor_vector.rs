@@ -1,3 +1,6 @@
+// 黄金向量生成器（人工运行的示例面产物工具）：确定性输入上的 unwrap 属示例惯用法。
+#![allow(clippy::unwrap_used)]
+
 use evorule_governance::anchor::AnchorChainBuilder;
 use evorule_governance::signing::AuditSigner;
 fn main() {

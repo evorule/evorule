@@ -2131,8 +2131,6 @@ mod tests {
         let _ = mgr.close_session(parent_id);
     }
 
-    /// 缺省防漂移：不调用 with_io_timeouts（或全 None）时，预算逐位等于
-    /// 引擎缺省（warn 30s / error 60s / 扫描 5s）；部分覆盖只动显式项。
     // ===== G-A2 锚点穿线端到端 =====
 
     fn anchor_cfg(interval: usize) -> super::SessionAnchorConfig {

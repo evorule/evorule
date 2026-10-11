@@ -500,11 +500,11 @@ mod tests {
         keys.insert("k1".to_string(), s.verifying_hex());
         // v1 签名在 v2 验证器下:验签失败(载荷哈希仍对,但签名对不上)
         assert!(v1_anchor
-            .verify_one(&crate::anchor::ANCHOR_GENESIS, &keys["k1"])
+            .verify_one(crate::anchor::ANCHOR_GENESIS, &keys["k1"])
             .is_err());
         // 同锚点 v2 重封后验过(对照组,证明失败源于格式不匹配非构造错误)
         assert!(a
-            .verify_one(&crate::anchor::ANCHOR_GENESIS, &keys["k1"])
+            .verify_one(crate::anchor::ANCHOR_GENESIS, &keys["k1"])
             .is_ok());
     }
 
