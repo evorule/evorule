@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       # 差分测试供源: agent_constitution.json 唯一实体在 evo-agent 仓
-      # (differential_test.rs 候选④ = 仓根兄弟位), 单仓检出缺源必红 (O-410)。
+      # (differential_test.rs 候选④ = 仓根兄弟位), 单仓检出缺源必红。
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: evorule/evo-agent
