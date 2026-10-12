@@ -1,0 +1,178 @@
+{
+  "bundle_schema_version": "1",
+  "bundle_id": "eval-task-demo-hello-v1",
+  "dataset": {
+    "dataset_id": "eval-task-demo-hello",
+    "name": "ALE eval task demo/hello_wasm",
+    "tenant_id": "eval",
+    "instance_id": "evorule-ale-grif",
+    "versioning": {
+      "current": "v1",
+      "chain": [
+        "v1"
+      ]
+    }
+  },
+  "entries": [
+    {
+      "entry_id": "eval.demo_hello_wasm.task_card",
+      "entry_kind": "knowledge",
+      "rule_body": {
+        "taskId": "demo/hello_wasm",
+        "title": "Demo: Acme Code Generator (GUI, WASM-verified grading)",
+        "summary": "Identical task surface to demo/hello (GUI flow, same input/software/reference/output layout). Sole difference: evaluate() delegates the decision core to the EvoRule WASM grading engine — same list[float] score, plus a BLAKE3-audited receipt (facts_hash / audit_chain_head) that anyone can independently recompute in a browser or with a zero-dependency CLI.",
+        "category": "demo",
+        "vm": {
+          "snapshot": "cpu-free-ubuntu",
+          "vcpus": 4,
+          "memory_gb": 16,
+          "disk_gb": 200,
+          "timeout_s": 1800
+        },
+        "task_id": "demo/hello_wasm",
+        "evaluation": {
+          "pipeline": "wasm-graded",
+          "receipt_recomputable": "decision-layer",
+          "note": "graded by evorule wasm engine; receipt ale-wasm-receipt/1"
+        }
+      },
+      "schema_ref": "eval.task-card.v1",
+      "provenance": {
+        "source": "rdi-berkeley/agents-last-exam demo/hello_wasm"
+      },
+      "domain": "eval",
+      "tags": [
+        "ale",
+        "grader"
+      ]
+    },
+    {
+      "entry_id": "eval.demo_hello_wasm.grader_ruleset",
+      "entry_kind": "knowledge",
+      "rule_body": {
+        "ruleset": [
+          {
+            "type": "branch",
+            "params": {
+              "domain": {
+                "type": "instruction",
+                "instruction_type": "eval_exact_match"
+              },
+              "on_true": [
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "eq",
+                      "path": "__exec__.payload.facts.actual",
+                      "value": "__exec__.payload.facts.expected",
+                      "on_missing": "error"
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 10000
+                        }
+                      }
+                    ],
+                    "on_false": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 0
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "on_false": []
+            }
+          }
+        ],
+        "scoring_shape": "exact_match",
+        "normalization": "none",
+        "score_max": 10000,
+        "fail_visible": {
+          "missing_reason": "required"
+        }
+      },
+      "schema_ref": "eval.ruleset.v1",
+      "provenance": {
+        "source": "ale_export/graders/demo_hello_v1.json"
+      },
+      "domain": "eval",
+      "tags": [
+        "ale",
+        "grader"
+      ]
+    },
+    {
+      "entry_id": "eval.demo_hello_wasm.grader_test",
+      "entry_kind": "knowledge",
+      "rule_body": {
+        "variants": [
+          {
+            "name": "correct",
+            "facts": {
+              "expected": "hello",
+              "actual": "hello"
+            },
+            "expect": [
+              1.0
+            ]
+          },
+          {
+            "name": "mismatch",
+            "facts": {
+              "expected": "hello",
+              "actual": "world"
+            },
+            "expect": [
+              0.0
+            ]
+          },
+          {
+            "name": "missing_output",
+            "facts": {
+              "expected": "hello",
+              "actual": null
+            },
+            "expect": [
+              0.0
+            ]
+          }
+        ]
+      },
+      "schema_ref": "eval.test.v1",
+      "provenance": {
+        "source": "03-M8 differential test ledger (core variants)"
+      },
+      "domain": "eval",
+      "tags": [
+        "ale",
+        "grader"
+      ]
+    }
+  ],
+  "tests": {
+    "subset": [
+      "correct",
+      "mismatch",
+      "missing_output"
+    ],
+    "verdict": "pass"
+  },
+  "audit": {
+    "exported_at": "2026-10-12T00:00:00Z",
+    "exported_by": "ale2bundle v0.1",
+    "source_version": "v1",
+    "content_hash": "blake3:ac0358677f91bf381e54aa65957bedd4f6fb9759aae160097a3dadc76fc98fc0",
+    "hash_algo": "blake3"
+  }
+}

@@ -1,0 +1,293 @@
+{
+  "bundle_schema_version": "1",
+  "bundle_id": "eval-task-sre-k8s-payment-api-root-cause-v1",
+  "dataset": {
+    "dataset_id": "eval-task-sre-k8s-payment-api-root-cause",
+    "name": "ALE eval task computing_math/k8s_payment_api_root_cause_wasm",
+    "tenant_id": "eval",
+    "instance_id": "evorule-ale-grif",
+    "versioning": {
+      "current": "v1",
+      "chain": [
+        "v1"
+      ]
+    }
+  },
+  "entries": [
+    {
+      "entry_id": "eval.k8s_payment_api_root_cause_wasm.task_card",
+      "entry_kind": "knowledge",
+      "rule_body": {
+        "taskId": "computing_math/k8s_payment_api_root_cause_wasm",
+        "title": "Kubernetes Payment API Root Cause Analysis (WASM-verified grading)",
+        "summary": "Same task surface as computing_math/k8s_payment_api_root_cause_analysis: diagnose a production payment API outage from Kubernetes incident artifacts and write root_cause_report.json. Sole difference: the evaluator's decision core runs in a deterministic WASM engine, emitting an ale-wasm-receipt/1 (BLAKE3-chained audit facts) that anyone can recompute in a browser.",
+        "category": "computing_math",
+        "software": [
+          "Python"
+        ],
+        "taskPrompt": "You are working on a Linux VM.\n\n## Task Directory\n`base`\n\n## Visible Inputs\n- Task prompt: `base/input/TASK_PROMPT.md`\n- Kubernetes incident artifacts: `base/input/` (cluster state, deployment manifest, failing pod log)\n- Python entry point: `base/software/python`\n\n## Your Task\nDiagnose the root cause of the payment API outage from the incident artifacts. Identify the primary, secondary, and tertiary root causes with evidence, list affected resources, and propose a remediation plan. Write the required report to:\n\n`base/output/root_cause_report.json`\n\nThe report must contain: incident_metadata (with safe_to_rollback), root_causes (type/severity/description/evidence), affected_resources, remediation_plan, and summary.\n",
+        "agentMustDo": [
+          "Ground every root cause in evidence quoted from the provided artifacts.",
+          "Use canonical resource identifiers (kind/name@namespace) matching the incident artifacts.",
+          "Write a valid root_cause_report.json with all five required top-level keys."
+        ],
+        "inputFiles": [
+          {
+            "name": "TASK_PROMPT.md",
+            "format": "markdown",
+            "path": "input/TASK_PROMPT.md",
+            "description": "Normalized solve-time instructions staged for the agent."
+          },
+          {
+            "name": "cluster_state.txt",
+            "format": "text",
+            "path": "input/cluster_state.txt",
+            "description": "Kubernetes cluster state dump at incident time."
+          },
+          {
+            "name": "deployment.yaml",
+            "format": "yaml",
+            "path": "input/deployment.yaml",
+            "description": "Payment API deployment manifest."
+          },
+          {
+            "name": "pod_log.txt",
+            "format": "text",
+            "path": "input/pod_log.txt",
+            "description": "Failing pod log excerpts."
+          }
+        ],
+        "referenceFiles": [
+          {
+            "name": "root_cause_report.json",
+            "format": "json",
+            "path": "output/root_cause_report.json",
+            "description": "Required agent-produced root cause report."
+          }
+        ],
+        "evaluation": {
+          "pipeline": "wasm-graded",
+          "receipt_recomputable": "decision-layer",
+          "note": "graded by evorule wasm engine; receipt ale-wasm-receipt/1"
+        },
+        "vm": {
+          "machineType": "c4-standard-4",
+          "snapshot": "cpu-free-ubuntu",
+          "timeout": 14400
+        },
+        "requiredSystemPackages": [],
+        "task_id": "computing_math/k8s_payment_api_root_cause_wasm"
+      },
+      "schema_ref": "eval.task-card.v1",
+      "provenance": {
+        "source": "rdi-berkeley/agents-last-exam computing_math/k8s_payment_api_root_cause_wasm"
+      },
+      "domain": "eval",
+      "tags": [
+        "ale",
+        "grader"
+      ]
+    },
+    {
+      "entry_id": "eval.k8s_payment_api_root_cause_wasm.grader_ruleset",
+      "entry_kind": "knowledge",
+      "rule_body": {
+        "ruleset": [
+          {
+            "type": "branch",
+            "params": {
+              "domain": {
+                "type": "instruction",
+                "instruction_type": "eval_k8s_v1"
+              },
+              "on_true": [
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.gate_valid_json",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.gate_required_keys",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.gate_has_causes",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_primary"
+                        }
+                      },
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_secondary"
+                        }
+                      },
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_tertiary"
+                        }
+                      },
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_resources"
+                        }
+                      },
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_remediation"
+                        }
+                      },
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_evidence"
+                        }
+                      },
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_summary"
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                }
+              ],
+              "on_false": []
+            }
+          }
+        ],
+        "scoring_shape": "gated_components",
+        "normalization": "integer_bps",
+        "score_max": 10000,
+        "fail_visible": {
+          "missing_reason": "required"
+        }
+      },
+      "schema_ref": "eval.ruleset.v1",
+      "provenance": {
+        "source": "ale_export/graders/k8s_v1.json"
+      },
+      "domain": "eval",
+      "tags": [
+        "ale",
+        "grader"
+      ]
+    },
+    {
+      "entry_id": "eval.k8s_payment_api_root_cause_wasm.grader_bridge",
+      "entry_kind": "knowledge",
+      "rule_body": {
+        "language": "python",
+        "source_ref": "ale_export/graders/k8s_facts.py",
+        "source_blake3": "blake3:cb4a92d6fbcf3ba37d99e938aa18e178716d26a75be35faa8d8edafe624143e4",
+        "deps": [
+          "numpy"
+        ],
+        "entry_function": "grade_facts"
+      },
+      "schema_ref": "eval.bridge.v1",
+      "provenance": {
+        "source": "ale_export/graders/k8s_facts.py"
+      },
+      "domain": "eval",
+      "tags": [
+        "ale",
+        "grader"
+      ]
+    },
+    {
+      "entry_id": "eval.k8s_payment_api_root_cause_wasm.grader_test",
+      "entry_kind": "knowledge",
+      "rule_body": {
+        "variants": [
+          {
+            "name": "perfect_report",
+            "expect": [
+              1.0
+            ]
+          },
+          {
+            "name": "missing_required_keys",
+            "expect": [
+              0.0
+            ]
+          },
+          {
+            "name": "empty_causes",
+            "expect": [
+              0.0
+            ]
+          },
+          {
+            "name": "drop_tertiary_cause",
+            "expect": [
+              0.9
+            ]
+          }
+        ]
+      },
+      "schema_ref": "eval.test.v1",
+      "provenance": {
+        "source": "03-M8 differential test ledger (core variants)"
+      },
+      "domain": "eval",
+      "tags": [
+        "ale",
+        "grader"
+      ]
+    }
+  ],
+  "tests": {
+    "subset": [
+      "perfect_report",
+      "missing_required_keys",
+      "empty_causes",
+      "drop_tertiary_cause"
+    ],
+    "verdict": "pass"
+  },
+  "audit": {
+    "exported_at": "2026-10-12T00:00:00Z",
+    "exported_by": "ale2bundle v0.1",
+    "source_version": "v1",
+    "content_hash": "blake3:9e6f4977065d902665e90f2682ce4b6a56cdf10c15c2326b5afa0c96c0e1f67d",
+    "hash_algo": "blake3"
+  }
+}
