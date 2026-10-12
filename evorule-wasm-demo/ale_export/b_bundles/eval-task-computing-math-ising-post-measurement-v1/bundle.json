@@ -1,5 +1,5 @@
 {
-  "bundle_schema_version": "1",
+  "bundle_schema_version": "1.0",
   "bundle_id": "eval-task-computing-math-ising-post-measurement-v1",
   "dataset": {
     "dataset_id": "eval-task-computing-math-ising-post-measurement",
@@ -91,7 +91,7 @@
         "requiredSystemPackages": [],
         "task_id": "computing_math/ising_post_measurement_wasm"
       },
-      "schema_ref": "eval.task-card.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/task-card/v1.json",
       "provenance": {
         "source": "rdi-berkeley/agents-last-exam computing_math/ising_post_measurement_wasm"
       },
@@ -183,7 +183,7 @@
           "missing_reason": "required"
         }
       },
-      "schema_ref": "eval.ruleset.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/ruleset/v1.json",
       "provenance": {
         "source": "ale_export/graders/ising_v1.json"
       },
@@ -205,7 +205,7 @@
         ],
         "entry_function": "grade_facts"
       },
-      "schema_ref": "eval.bridge.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/bridge/v1.json",
       "provenance": {
         "source": "ale_export/graders/ising_facts.py"
       },
@@ -246,7 +246,7 @@
           }
         ]
       },
-      "schema_ref": "eval.test.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/test/v1.json",
       "provenance": {
         "source": "03-M8 differential test ledger (core variants)"
       },
@@ -270,7 +270,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:010fdbad5a70bd41c9cb78fc6c514bc6fde429745b5c09d28dee20c225108d1f",
+    "content_hash": "blake3:8a0b00049ef28505c57c2e436d1e45a1009ac0a08b67c507d064cbef276ac953",
     "hash_algo": "blake3"
   }
 }

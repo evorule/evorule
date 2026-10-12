@@ -1,5 +1,5 @@
 {
-  "bundle_schema_version": "1",
+  "bundle_schema_version": "1.0",
   "bundle_id": "eval-task-demo-hello-v1",
   "dataset": {
     "dataset_id": "eval-task-demo-hello",
@@ -41,7 +41,7 @@
           "note": "graded by evorule wasm engine; receipt ale-wasm-receipt/1"
         }
       },
-      "schema_ref": "eval.task-card.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/task-card/v1.json",
       "provenance": {
         "source": "rdi-berkeley/agents-last-exam demo/hello_wasm"
       },
@@ -107,7 +107,7 @@
           "missing_reason": "required"
         }
       },
-      "schema_ref": "eval.ruleset.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/ruleset/v1.json",
       "provenance": {
         "source": "ale_export/graders/demo_hello_v1.json"
       },
@@ -154,7 +154,7 @@
           }
         ]
       },
-      "schema_ref": "eval.test.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/test/v1.json",
       "provenance": {
         "source": "03-M8 differential test ledger (core variants)"
       },
@@ -177,7 +177,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:52af65fcb2691eb0d0e5d1bfa7a5b310d4d30500c289c06f1dc03ef45c54791f",
+    "content_hash": "blake3:730bfe6e863a44921109da88186eda475561e14225cd32ff02c1cb7aa5d7bb2e",
     "hash_algo": "blake3"
   }
 }

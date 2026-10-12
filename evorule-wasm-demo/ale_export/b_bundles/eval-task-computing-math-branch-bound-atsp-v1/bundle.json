@@ -1,5 +1,5 @@
 {
-  "bundle_schema_version": "1",
+  "bundle_schema_version": "1.0",
   "bundle_id": "eval-task-computing-math-branch-bound-atsp-v1",
   "dataset": {
     "dataset_id": "eval-task-computing-math-branch-bound-atsp",
@@ -79,7 +79,7 @@
         "requiredSystemPackages": [],
         "task_id": "computing_math/branch_bound_atsp_wasm"
       },
-      "schema_ref": "eval.task-card.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/task-card/v1.json",
       "provenance": {
         "source": "rdi-berkeley/agents-last-exam computing_math/branch_bound_atsp_wasm"
       },
@@ -543,7 +543,7 @@
           "missing_reason": "required"
         }
       },
-      "schema_ref": "eval.ruleset.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/ruleset/v1.json",
       "provenance": {
         "source": "ale_export/graders/atsp_v1.json"
       },
@@ -565,7 +565,7 @@
         ],
         "entry_function": "grade_facts"
       },
-      "schema_ref": "eval.bridge.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/bridge/v1.json",
       "provenance": {
         "source": "ale_export/graders/atsp_facts.py"
       },
@@ -606,7 +606,7 @@
           }
         ]
       },
-      "schema_ref": "eval.test.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/test/v1.json",
       "provenance": {
         "source": "03-M8 differential test ledger (core variants)"
       },
@@ -630,7 +630,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:34c3c5ead0b864878ec4d6f21f47b24891a1ae9f66a35ff306ddf7b19820c16f",
+    "content_hash": "blake3:56093cb00bdbc44c4df71436a786fdb127ac76e1828e45eba51973b148d65289",
     "hash_algo": "blake3"
   }
 }

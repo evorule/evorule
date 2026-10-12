@@ -176,24 +176,24 @@ def convert_task(ale_export: Path, task_dir: str, out_root: Path) -> Path:
 
     # ---- entries（声明序对齐 BundleEntry）----
     entries = [
-        entry(task_dir, "task_card", "eval.task-card.v1",
+        entry(task_dir, "task_card", "https://evorule.org/schemas/eval/task-card/v1.json",
               build_task_card_body(task_card, task_id),
               f"rdi-berkeley/agents-last-exam {task_id}"),
     ]
     ruleset = json.loads((graders_p / ruleset_name).read_text(encoding="utf-8"))
     ruleset_key = ruleset_name.removesuffix(".json")
     entries.append(entry(
-        task_dir, "grader_ruleset", "eval.ruleset.v1",
+        task_dir, "grader_ruleset", "https://evorule.org/schemas/eval/ruleset/v1.json",
         build_ruleset_body(ruleset, ruleset_key),
         "ale_export/graders/" + ruleset_name))
     if bridge_name is not None:
         entries.append(entry(
-            task_dir, "grader_bridge", "eval.bridge.v1",
+            task_dir, "grader_bridge", "https://evorule.org/schemas/eval/bridge/v1.json",
             build_bridge_body(graders_p / bridge_name, bridge_name),
             "ale_export/graders/" + bridge_name))
     variants = TASK_VARIANTS[task_dir]
     entries.append(entry(
-        task_dir, "grader_test", "eval.test.v1",
+        task_dir, "grader_test", "https://evorule.org/schemas/eval/test/v1.json",
         build_test_body(variants),
         "03-M8 differential test ledger (core variants)"))
 
@@ -205,7 +205,7 @@ def convert_task(ale_export: Path, task_dir: str, out_root: Path) -> Path:
         "k8s_payment_api_root_cause_wasm": "sre-k8s-payment-api-root-cause",
     }[task_dir]
     bundle = {
-        "bundle_schema_version": "1",
+        "bundle_schema_version": "1.0",
         "bundle_id": f"eval-task-{short}-v1",
         "dataset": {
             "dataset_id": f"eval-task-{short}",

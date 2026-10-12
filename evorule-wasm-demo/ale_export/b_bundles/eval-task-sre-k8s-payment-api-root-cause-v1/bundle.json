@@ -1,5 +1,5 @@
 {
-  "bundle_schema_version": "1",
+  "bundle_schema_version": "1.0",
   "bundle_id": "eval-task-sre-k8s-payment-api-root-cause-v1",
   "dataset": {
     "dataset_id": "eval-task-sre-k8s-payment-api-root-cause",
@@ -83,7 +83,7 @@
         "requiredSystemPackages": [],
         "task_id": "computing_math/k8s_payment_api_root_cause_wasm"
       },
-      "schema_ref": "eval.task-card.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/task-card/v1.json",
       "provenance": {
         "source": "rdi-berkeley/agents-last-exam computing_math/k8s_payment_api_root_cause_wasm"
       },
@@ -205,7 +205,7 @@
           "missing_reason": "required"
         }
       },
-      "schema_ref": "eval.ruleset.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/ruleset/v1.json",
       "provenance": {
         "source": "ale_export/graders/k8s_v1.json"
       },
@@ -227,7 +227,7 @@
         ],
         "entry_function": "grade_facts"
       },
-      "schema_ref": "eval.bridge.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/bridge/v1.json",
       "provenance": {
         "source": "ale_export/graders/k8s_facts.py"
       },
@@ -268,7 +268,7 @@
           }
         ]
       },
-      "schema_ref": "eval.test.v1",
+      "schema_ref": "https://evorule.org/schemas/eval/test/v1.json",
       "provenance": {
         "source": "03-M8 differential test ledger (core variants)"
       },
@@ -292,7 +292,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:37a77eee71b3bf46e7ecd5d7e7eb26190c77ada259c1b9b22f4fbcca324207fa",
+    "content_hash": "blake3:0dcc7269ae479142678fd9136ee56f19570f98019eeacd7ac4c7c6049b376680",
     "hash_algo": "blake3"
   }
 }
