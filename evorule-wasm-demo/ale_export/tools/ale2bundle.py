@@ -213,6 +213,13 @@ def convert_task(ale_export: Path, task_dir: str, out_root: Path) -> Path:
             "tenant_id": "eval",
             "instance_id": "evorule-ale-grif",
             "versioning": {"current": "v1", "chain": ["v1"]},
+            # 供体轨单版本钉死（15-B §1.2 裁定）：pinned 完全锁定（include_patch=false），
+            # 否则 rule 仓导入第 5 步走默认 auto_by_effective_date 分支缺生效基准 → MissingEffectiveBase 拒收
+            "version_selection": {
+                "mode": "pinned",
+                "pinned_version": "v1",
+                "pinned_include_patch": False,
+            },
         },
         "entries": entries,
         "tests": {"subset": [v["name"] for v in variants], "verdict": "pass"},

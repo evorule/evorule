@@ -11,6 +11,11 @@
       "chain": [
         "v1"
       ]
+    },
+    "version_selection": {
+      "mode": "pinned",
+      "pinned_version": "v1",
+      "pinned_include_patch": false
     }
   },
   "entries": [
@@ -625,7 +630,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:e28241736a830478ad22ad324e5d7171e3e0cffb3a7fccc659ee4e28e610d3de",
+    "content_hash": "blake3:34c3c5ead0b864878ec4d6f21f47b24891a1ae9f66a35ff306ddf7b19820c16f",
     "hash_algo": "blake3"
   }
 }
