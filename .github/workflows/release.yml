@@ -111,14 +111,22 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
-      - name: 按依赖序发布四核心 crate
+      - name: 按依赖序发布五核心 crate
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -e
           if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
-            echo "::warning::CARGO_REGISTRY_TOKEN secret 未配置 - crates.io 自动发布跳过(需手工按依赖序发布或补配 secret); 二进制构建与 Release 不受影响"
-            exit 0
+            {
+              echo "### ⚠️ crates.io 发布被阻断 (fail-closed)"
+              echo ""
+              echo "CARGO_REGISTRY_TOKEN secret 未配置，发版硬约束「发版必须同步 crates.io」无法满足。"
+              echo "历史教训（2026-10-13 实证）：secret 缺失时本步曾静默假绿（6 秒 success），"
+              echo "crates.io 实际未发布——v0.8.1 起各版本均由本机手工发布补齐。"
+              echo "修复：repo Settings → Secrets and variables → Actions 配置 CARGO_REGISTRY_TOKEN（crates.io publish token），补配后 rerun-failed-jobs。"
+            } >> "${GITHUB_STEP_SUMMARY}"
+            echo "ERROR: CARGO_REGISTRY_TOKEN secret 未配置 - crates.io 发布阻断(fail-closed, 禁止静默假绿); 补配 secret 后 rerun 本 job"
+            exit 1
           fi
           # 依赖序含 workspace 全部 5 个可发布成员: discipline 是 cli 的
           # registry 依赖(evorule-discipline ^x.y.z), 漏列会使 cli 发布时
