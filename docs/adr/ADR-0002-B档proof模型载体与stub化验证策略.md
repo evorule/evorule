@@ -10,7 +10,7 @@
 
 ## 背景与问题
 
-B 档 23 个 TCB Kani proof（覆盖 P0-1/2/4/5/7/8 六个 P0 属性）实测 600s/3600s 全超时（[STATUS.md](../../verification/STATUS.md) 附录 B，2026-09-11 实测）。CR-20260913-001（KaniMap 存储后端）与 CR-20260913-002（递归深度有界化）消解前两层根因后，第三层根因为 eq 分支内 `==`/`clone` 的符号容器编码爆炸（round 9 三变体探针实测，CR-20260913-003 rounds 记录）。CR-20260913-003 原方案以 impl 级 `cfg(kani)` 双实现承载该模型化：容器变体 `==` 只比长度、`clone` 返回空容器，标量变体保持真实现。载体复核发现 impl 级覆写存在两类结构性缺陷：① **爆炸半径不可控**——覆写影响 kani 构建下全部调用点（含 harness 构造层，如 `object_from_pairs` 内的 `v.clone()`），嵌套复合输入在深度 1 处被清空，proof 实际验证的输入已退化；② **补偿机制失效**——真实 trait impl 从 kani 构建产物中消失，任何以"真实现的独立符号覆盖"为补偿的登记（如 eq 模型挂 A 档 `verify_partial_eq_never_panics` 侧证明）都引用到被覆写的模型本身，形成循环引用。需要决定模型弱化的载体。
+B 档 23 个 TCB Kani proof（覆盖 P0-1/2/4/5/7/8 六个 P0 属性）实测 600s/3600s 全超时（[STATUS.md](../../verification/STATUS.md) 附录 B，2026-09-11 实测）。前期两项攻坚立项（KaniMap 存储后端、递归深度有界化）消解前两层根因后，第三层根因为 eq 分支内 `==`/`clone` 的符号容器编码爆炸（round 9 三变体探针实测，探针 rounds 记录可查）。载体原方案以 impl 级 `cfg(kani)` 双实现承载该模型化：容器变体 `==` 只比长度、`clone` 返回空容器，标量变体保持真实现。载体复核发现 impl 级覆写存在两类结构性缺陷：① **爆炸半径不可控**——覆写影响 kani 构建下全部调用点（含 harness 构造层，如 `object_from_pairs` 内的 `v.clone()`），嵌套复合输入在深度 1 处被清空，proof 实际验证的输入已退化；② **补偿机制失效**——真实 trait impl 从 kani 构建产物中消失，任何以"真实现的独立符号覆盖"为补偿的登记（如 eq 模型挂 A 档 `verify_partial_eq_never_panics` 侧证明）都引用到被覆写的模型本身，形成循环引用。需要决定模型弱化的载体。
 
 ## 决策驱动力
 
@@ -21,7 +21,7 @@ B 档 23 个 TCB Kani proof（覆盖 P0-1/2/4/5/7/8 六个 P0 属性）实测 60
 
 ## 候选方案
 
-1. **方案 A**：impl 级 `cfg(kani)` 双实现（CR-20260913-003 原案）
+1. **方案 A**：impl 级 `cfg(kani)` 双实现（载体修订原案）
 2. **方案 B**：proof 层 `#[kani::stub(...)]`（Kani 原生 stubbing，`-Z stubbing`），value.rs 不留 impl 级覆写
 3. **方案 C**：不做模型化，B 档不可运行属性全部路由 TLA+/类型系统门禁/测试兜底
 
@@ -45,7 +45,7 @@ B 档 23 个 TCB Kani proof（覆盖 P0-1/2/4/5/7/8 六个 P0 属性）实测 60
 
 ### 方案 A
 
-- 优点：不依赖 unstable flag；CR-20260913-003 已有实现草稿
+- 优点：不依赖 unstable flag；原案已有实现草稿
 - 缺点：爆炸半径覆盖全部 kani 构建调用点（含构造层，输入静默退化）；真实 impl 从构建产物消失，补偿循环引用，治理模式不可行；每次改动需重新论证 reactor 侧影响
 
 ### 方案 B
@@ -60,8 +60,8 @@ B 档 23 个 TCB Kani proof（覆盖 P0-1/2/4/5/7/8 六个 P0 属性）实测 60
 
 ## 更多信息
 
-- CR-20260913-003（原案）及 rounds 1-9 探针记录：[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)
-- CR-20260913-004（本决策的实施变更）：同上文件
+- 载体修订原案及 rounds 1-9 探针记录：见项目内部变更档案（不随本仓发布）
+- 本决策的实施变更（stub 化落地）：同上内部变更档案
 - B 档超时实测与分档：[verification/STATUS.md](../../verification/STATUS.md) 附录 B
 - 披露条目：[verification/DISCLOSURE_LOG.md](../../verification/DISCLOSURE_LOG.md) 2026-09-13 条目
 
@@ -78,7 +78,7 @@ B 档 23 个 TCB Kani proof（覆盖 P0-1/2/4/5/7/8 六个 P0 属性）实测 60
 
 ## Background and Problem
 
-The 23 Tier-B TCB Kani proofs (covering P0 properties P0-1/2/4/5/7/8) all timed out at 600s/3600s in practice ([STATUS.md](../../verification/STATUS.md) Appendix B, measured 2026-09-11). After CR-20260913-001 (KaniMap storage backend) and CR-20260913-002 (bounded recursion depth) resolved the first two root-cause layers, the third layer remained: symbolic container encoding explosion of `==`/`clone` inside the eq branch (round-9 three-variant probe, recorded in CR-20260913-003). The original CR-20260913-003 carried this modeling via impl-level `cfg(kani)` dual implementation: container variants compare length only for `==` and clone to empty containers, while scalar variants keep real behavior. Carrier review found two structural defects in the impl-level override: ① **uncontrollable blast radius** — the override affects every call site in kani builds, including harness construction (e.g. `v.clone()` inside `object_from_pairs`), silently collapsing nested composite inputs at depth 1 so proofs verify degraded inputs; ② **broken compensation** — the real trait impl disappears from the kani build artifact, so any compensation registered as "independent symbolic coverage of the real implementation" (e.g. the eq model compensated by the Tier-A `verify_partial_eq_never_panics` side proof) references the overridden model itself, a circular reference. A carrier decision was required.
+The 23 Tier-B TCB Kani proofs (covering P0 properties P0-1/2/4/5/7/8) all timed out at 600s/3600s in practice ([STATUS.md](../../verification/STATUS.md) Appendix B, measured 2026-09-11). After the two earlier remediation efforts (KaniMap storage backend, bounded recursion depth) resolved the first two root-cause layers, the third layer remained: symbolic container encoding explosion of `==`/`clone` inside the eq branch (round-9 three-variant probe, recorded in the probe rounds log). The original carrier plan carried this modeling via impl-level `cfg(kani)` dual implementation: container variants compare length only for `==` and clone to empty containers, while scalar variants keep real behavior. Carrier review found two structural defects in the impl-level override: ① **uncontrollable blast radius** — the override affects every call site in kani builds, including harness construction (e.g. `v.clone()` inside `object_from_pairs`), silently collapsing nested composite inputs at depth 1 so proofs verify degraded inputs; ② **broken compensation** — the real trait impl disappears from the kani build artifact, so any compensation registered as "independent symbolic coverage of the real implementation" (e.g. the eq model compensated by the Tier-A `verify_partial_eq_never_panics` side proof) references the overridden model itself, a circular reference. A carrier decision was required.
 
 ## Decision Drivers
 
@@ -89,7 +89,7 @@ The 23 Tier-B TCB Kani proofs (covering P0 properties P0-1/2/4/5/7/8) all timed 
 
 ## Options Considered
 
-1. **Option A**: impl-level `cfg(kani)` dual implementation (original CR-20260913-003)
+1. **Option A**: impl-level `cfg(kani)` dual implementation (original carrier plan)
 2. **Option B**: proof-level `#[kani::stub(...)]` (native Kani stubbing, `-Z stubbing`), no impl-level override in value.rs
 3. **Option C**: no modeling; route all non-runnable Tier-B properties to TLA+ / type-system gates / test fallbacks
 
@@ -113,7 +113,7 @@ The 23 Tier-B TCB Kani proofs (covering P0 properties P0-1/2/4/5/7/8) all timed 
 
 ### Option A
 
-- Pros: no unstable-flag dependency; implementation draft already existed in CR-20260913-003
+- Pros: no unstable-flag dependency; implementation draft already existed in the original carrier plan
 - Cons: blast radius covers all kani-build call sites (including construction — inputs silently degrade); real impl absent from the build artifact, compensation circular; every change requires re-justifying reactor impact
 
 ### Option B
@@ -128,7 +128,7 @@ The 23 Tier-B TCB Kani proofs (covering P0 properties P0-1/2/4/5/7/8) all timed 
 
 ## More Information
 
-- CR-20260913-003 (original) with rounds 1-9 probe records: [evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)
-- CR-20260913-004 (implementation change for this decision): same file
+- Original carrier plan with rounds 1-9 probe records: see the project's internal change archive (not published in this repository)
+- Implementation change for this decision (stub rollout): see the project's internal change archive (not published in this repository)
 - Tier-B timeout measurements and tiers: [verification/STATUS.md](../../verification/STATUS.md) Appendix B
 - Disclosure entry: [verification/DISCLOSURE_LOG.md](../../verification/DISCLOSURE_LOG.md), 2026-09-13 entry

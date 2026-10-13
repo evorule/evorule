@@ -52,13 +52,13 @@ EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 wa
 阀值仅 `1`/`true` 生效 (`0`/空/其他值 = 门禁照常执行, fail-closed)。跳过必须临时且有书面理由。**永不永久禁用。** 当门控触发时, 正确做法几乎总是:
 将违规字面量移入 `core_eval.json` 并通过元指令层引用, 或重命名它。
 
-### L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)
+### L1b 策略层检测 (v0.3.2 新增; 门禁语义整改)
 
 除上述 L1a 字面量门禁外, `build.rs` 还执行:
 
-- **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块, TCB-2026-28 撤豁免), 禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。检测到违规时构建失败。**无阀常开**——机制-策略分离是设计不变量, 不设旁路环境变量。
+- **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块, 测试豁免已撤), 禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。检测到违规时构建失败。**无阀常开**——机制-策略分离是设计不变量, 不设旁路环境变量。
 - **CR 自查已移出公开仓 (既定裁定)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已从 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。CHANGE_REQUEST.md 登记纪律本身不变。
-- **四仓同步**: `evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli` 的 build.rs 共享函数保持同一份内联副本实现, 任何修改必须四仓同步; 同步纪律已机器化 (`evorule-cli/tests/gate_sync_test.rs`, TCB-2026-30)。
+- **四仓同步**: `evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli` 的 build.rs 共享函数保持同一份内联副本实现, 任何修改必须四仓同步; 同步纪律已机器化 (`evorule-cli/tests/gate_sync_test.rs`)。
 
 ---
 
@@ -130,7 +130,7 @@ governance 不设 T10 `unsafe` 模式 (该仓 `#![deny(unsafe_code)]` 由 rustc 
 - FORBIDDEN 数组: governance 14 模式为 reactor 15 模式去掉 T10 的子集
 - `strip_test_mod` 函数: 实现方式相同
 - `fact.rs` 豁免: **两者都必须包含** (G8/§5.2 模式在 fact.rs 中豁免)
-- **L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**: `detect_strategy_patterns` 函数必须四仓(evorule-tcb / evorule-reactor / evorule-governance / evorule-cli)同步, 防止四个模块的检测标准走偏; 同步已机器化 (`evorule-cli/tests/gate_sync_test.rs` 逐函数比对, TCB-2026-30)。旧 `validate_change_request_gate` 已移出公开仓 (自查本地化), 不再要求同步
+- **L1b 策略层检测 (v0.3.2 新增; 门禁语义整改)**: `detect_strategy_patterns` 函数必须四仓(evorule-tcb / evorule-reactor / evorule-governance / evorule-cli)同步, 防止四个模块的检测标准走偏; 同步已机器化 (`evorule-cli/tests/gate_sync_test.rs` 逐函数比对, 四仓同步整改)。旧 `validate_change_request_gate` 已移出公开仓 (自查本地化), 不再要求同步
 
 ---
 

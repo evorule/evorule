@@ -38,7 +38,7 @@ default = ["std"]
 # std 特性：启用标准库支持（用于测试和错误处理）
 std = []
 
-# lints 统一继承 workspace (TCB-2026-31 整改): 旧本地 [lints.rust]/[lints.clippy]
+# lints 统一继承 workspace (四仓 lint 统一收敛整改): 旧本地 [lints.rust]/[lints.clippy]
 # 与 workspace 定义逐条同值但双份维护, 曾造成「四仓统一继承」文档声明失实。
 # 单一真值源 = 根 Cargo.toml [workspace.lints], 其余三仓同此。
 [lints]

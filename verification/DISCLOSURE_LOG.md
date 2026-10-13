@@ -177,55 +177,55 @@
 - **修正去向**：本条目即修正记录；状态见 STATUS.md（P1-5 行与附录 C）。
 - **归档记录（同日）**：正式 PASS 证据已落盘 `P1-5.command_does_not_decrease_queue_PASS_03643aa_20260912_225328`（evorule-reactor/verification/evidence/kani/，基于修复提交 `03643aa`，`--default-unwind 4` 下 0.86s PASS）；STATUS.md 证据列已补全。
 
-### 2026-09-13：B 档 proof 攻坚立项与 CR-20260913-003 载体修订（ADR-0002）
+### 2026-09-13：B 档 proof 攻坚立项与载体修订立项（ADR-0002）
 
-- **事实**：B 档 23 个超时 proof 攻坚立项（CR-20260913-004，四梯队结构：可行性门 / 零侵入优化 / Kani 机制层 / 属性分流 / 治理登记，总预算 ≤60 次验证运行 × ≤600s，每阶段设停止准则）。CR-20260913-003（eq/clone 模型化）实施载体由 impl 级 `cfg(kani)` 双实现修订为 proof 层 `#[kani::stub(...)]`：value.rs 两处 impl 级覆写（Clone/PartialEq）回退（该 CR 代码尚未提交，无公开仓历史修正需求）。配套新增：B 档 harness 结构自检断言（Phase 1 硬前置）；cfg(kani) 偏差登记簿（K 系）"爆炸半径"列与补偿合规规则（爆炸半径全调用点映射 / 证据-实现绑定 / 补偿不得引用受该模型影响的 proof）；STATUS.md 属性表"模型偏差"列（Phase 1 随批落地）。
-- **依据**：[ADR-0002](../docs/adr/ADR-0002-B档proof模型载体与stub化验证策略.md)（M5.2 建模策略变更情形）：impl 级覆写在 kani 构建下影响全部调用点（含 harness 构造层 `object_from_pairs` 的 `v.clone()`——嵌套复合输入在深度 1 处被清空，proof 实际验证退化输入）；真实 trait impl 从 kani 构建产物中消失，使真实现侧证明补偿不可成立（循环引用）。CR-20260913-001/002/003 rounds 1-12 探针记录（三层根因与乘积爆炸结论）。
+- **事实**：B 档 23 个超时 proof 攻坚立项（四梯队结构：可行性门 / 零侵入优化 / Kani 机制层 / 属性分流 / 治理登记，总预算 ≤60 次验证运行 × ≤600s，每阶段设停止准则）。载体修订立项（eq/clone 模型化）实施载体由 impl 级 `cfg(kani)` 双实现修订为 proof 层 `#[kani::stub(...)]`：value.rs 两处 impl 级覆写（Clone/PartialEq）回退（该立项代码尚未提交，无公开仓历史修正需求）。配套新增：B 档 harness 结构自检断言（Phase 1 硬前置）；cfg(kani) 偏差登记簿（K 系）"爆炸半径"列与补偿合规规则（爆炸半径全调用点映射 / 证据-实现绑定 / 补偿不得引用受该模型影响的 proof）；STATUS.md 属性表"模型偏差"列（Phase 1 随批落地）。
+- **依据**：[ADR-0002](../docs/adr/ADR-0002-B档proof模型载体与stub化验证策略.md)（M5.2 建模策略变更情形）：impl 级覆写在 kani 构建下影响全部调用点（含 harness 构造层 `object_from_pairs` 的 `v.clone()`——嵌套复合输入在深度 1 处被清空，proof 实际验证退化输入）；真实 trait impl 从 kani 构建产物中消失，使真实现侧证明补偿不可成立（循环引用）。三轮攻坚立项 rounds 1-12 探针记录（三层根因与乘积爆炸结论）。
 - **影响**：① A 档 14 个 proof 的归档证据（`bdfb8d4`）因被验证代码（value.rs）变更而 SHA 绑定失效——Batch 1 于 WSL 重跑 14 个补新 SHA 证据（P0-3/P0-6 证据列同批更新）；② reactor 4 个闸门 proof 在 stub 载体下零影响；③ B 档状态不变（❌），攻坚期间对外口径不变（M6）；④ kani.yml B 档 job 配置不变（不加大 timeout）。
-- **修正去向**：本条目即修正记录；CR-20260913-003 修订记录见 [evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)（原文保留，M7）；STATUS.md 维护区登记攻坚计划。
+- **修正去向**：本条目即修正记录；载体修订立项记录见 [evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)（原文保留，M7）；STATUS.md 维护区登记攻坚计划。
 - **归档记录（同日）**：Batch 1 核心提交 `1c6ad84`（value.rs 载体回退 + 编译面配套适配 + 探针迁出 + 四文档）后，于 WSL（Kani 0.67.0 + nightly-2025-11-21）重跑 A 档 14 个：14/14 PASS（单 proof 0.3~4.2s），M3.1 证据对 28 个文件落盘 `P0-3/P0-6.<harness>_PASS_1c6ad84_20260913_*`（evorule-tcb/verification/evidence/kani/）；旧 `bdfb8d4` 14 对证据按 M3.4 `git mv` 至 `_invalidated/`（批次 2，作废判定与替代证据指引见该目录 README）；STATUS.md P0-3/P0-6 证据列、快照注记与维护区登记同批更新。提交前以暂存树（= 提交内容）预演 kani.yml 双 job：TCB A 档 14/14 + reactor 4/4 PASS。
 
 ### 2026-09-13：Phase 0（T0-1~T0-7）可行性验证完成，方案按实测收缩
 
-- **事实**：CR-20260913-004 Phase 0 七项可行性验证全部完成（4 次有效运行 + 3 项代码审计，机时 6/≈7 次预算，机器时间 ≈20 分钟）。结论：① T0-1 求解器选项存在（`--solver`，默认 CaDiCaL），kissat 对 eq proof 单点试跑 600s 超时无改善——Tier 1.2 裁撤；② T0-2 `-Z stubbing` 最小 stub proof 实跑 PASS——Tier 2.1 stub 默认路径确认；③ T0-3 `requires`/`ensures`/`proof_for_contract` 实跑 PASS，`stub_verified` 编译期报错（`Failed to find contract closure`）——组合验证改「stub 自带 contract + `proof_for_contract` 两步独立验证」；④ T0-4 审计确认 set/add/sub 算术路径全 `checked_add`/`checked_sub` + `IntegerOverflow` 传播——P13 可走 checked-ops 门禁卸载；⑤ T0-5 审计确认 evaluate_eq 子树内 eq 结果与 clone 内容仅流入 never-panic 的 `PartialEq` 与分支控制流——clone stub 固定值分支成立（限该子树）；⑥ T0-6 单点对比（`"payload.x"`→`"p.x"`、`unwind(24)`→`unwind(6)`）仍 600s 超时——Tier 1.1 单独无效；⑦ T0-7 复审确认 F1 中毒路径（impl 级 cfg Clone 覆写经 `object_from_pairs` 清空嵌套复合值）已随 CR-20260913-003 修订消除，B 档重跑前置门解除。
+- **事实**：攻坚立项 Phase 0 七项可行性验证全部完成（4 次有效运行 + 3 项代码审计，机时 6/≈7 次预算，机器时间 ≈20 分钟）。结论：① T0-1 求解器选项存在（`--solver`，默认 CaDiCaL），kissat 对 eq proof 单点试跑 600s 超时无改善——Tier 1.2 裁撤；② T0-2 `-Z stubbing` 最小 stub proof 实跑 PASS——Tier 2.1 stub 默认路径确认；③ T0-3 `requires`/`ensures`/`proof_for_contract` 实跑 PASS，`stub_verified` 编译期报错（`Failed to find contract closure`）——组合验证改「stub 自带 contract + `proof_for_contract` 两步独立验证」；④ T0-4 审计确认 set/add/sub 算术路径全 `checked_add`/`checked_sub` + `IntegerOverflow` 传播——P13 可走 checked-ops 门禁卸载；⑤ T0-5 审计确认 evaluate_eq 子树内 eq 结果与 clone 内容仅流入 never-panic 的 `PartialEq` 与分支控制流——clone stub 固定值分支成立（限该子树）；⑥ T0-6 单点对比（`"payload.x"`→`"p.x"`、`unwind(24)`→`unwind(6)`）仍 600s 超时——Tier 1.1 单独无效；⑦ T0-7 复审确认 F1 中毒路径（impl 级 cfg Clone 覆写经 `object_from_pairs` 清空嵌套复合值）已随载体修订立项消除，B 档重跑前置门解除。
 - **依据**：实测运行记录（WSL Kani 0.67.0 + nightly-2025-11-21，与 kani.yml CI 同配置；E1/E4 各 600s 上限超时，E2/E3 亚秒级）与代码审计（executor.rs 算术路径、domain.rs/executor.rs 数据流、value.rs/model.rs 构造面盘点）。实测要点：eq 族 harness 输入完全具体（无符号值）仍 600s 不收敛，证实成本在结构层建模（String/Cow/Vec/分配器），为三层根因模型外的残余因素。
 - **影响**：① 方案收缩：Tier 1.2 裁撤、Tier 1.1 降级为配套动作（eq 族按 kill criteria 以首个数据点提前路由 Phase 2 stub 试点）、Tier 2.3 组合验证两步化；② Tier 2.1/2.2/Tier 3 路线确认可行；③ Phase 1 计划不变（W3-1 结构自检断言先行）；④ B 档 23 个 proof 状态不变（❌，M2/M6——转档待实测证据）。
-- **修正去向**：CR-20260913-004 §3.5 测试计划勾选与 §3.7 结论追记（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；可行性矩阵详细实测记录按信息分级留档于项目内部工作区（M10）；STATUS.md 维护区同批注记。
+- **修正去向**：攻坚立项 §3.5 测试计划勾选与 §3.7 结论追记（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；可行性矩阵详细实测记录按信息分级留档于项目内部工作区（M10）；STATUS.md 维护区同批注记。
 
 ### 2026-09-14：W3-1 结构自检断言落地，A 档证据随 proof 源码变更重置（`1b340e5`）
 
-- **事实**：B 档攻坚 Phase 1 首项 W3-1 完成（CR-20260913-004 §3.8）——`tests/kani/kani_proofs.rs` 新增 7 个结构自检助手并为 23 个 B 档 harness 全部接线（13 处构造根接线修复）。canary 本地验证：正向 3 组原语 PASS（c1 76.9s / c3 32.5s / c2b 0.55s，覆盖 5/7 助手），反向退化构造 13.9s 于预期断言点响亮失败（假通过防线成立）；`shape_full_state`/`shape_concrete_exec_state` 两复合哨兵因构造墙无法独立实跑（c4a 纯构造零断言 120s 不收敛等实证），由已验证原语复合支撑、随 W3-3/W3-4 闭环。提交 `1b340e5` 后于 WSL（Kani 0.67.0 + nightly-2025-11-21）同协议重跑 A 档 14 proof：14/14 PASS。
+- **事实**：B 档攻坚 Phase 1 首项 W3-1 完成（攻坚立项 §3.8）——`tests/kani/kani_proofs.rs` 新增 7 个结构自检助手并为 23 个 B 档 harness 全部接线（13 处构造根接线修复）。canary 本地验证：正向 3 组原语 PASS（c1 76.9s / c3 32.5s / c2b 0.55s，覆盖 5/7 助手），反向退化构造 13.9s 于预期断言点响亮失败（假通过防线成立）；`shape_full_state`/`shape_concrete_exec_state` 两复合哨兵因构造墙无法独立实跑（c4a 纯构造零断言 120s 不收敛等实证），由已验证原语复合支撑、随 W3-3/W3-4 闭环。提交 `1b340e5` 后于 WSL（Kani 0.67.0 + nightly-2025-11-21）同协议重跑 A 档 14 proof：14/14 PASS。
 - **依据**：canary 实测记录（≈17 次运行 ≈60 分钟，两层根因：unwind(8)<memcmp 深度致 unwinding 断言假失败毒化公式 919/920 undetermined；构造墙——全具体构造随复杂度非线性恶化，c2 300s 不收敛 vs c2b 0.55s 最锐对照）；提交前预演（暂存树 14/14 PASS）；新证据 `P0-3/P0-6.<harness>_PASS_1b340e5_20260914_*`（evorule-tcb/verification/evidence/kani/）。
 - **影响**：① 旧 `1c6ad84` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 3；② STATUS.md 快照注记与 P0-3/P0-6 证据列同批更新；③ W3-2 配套要求更新：B 档 harness unwind 必须 > 形状断言最长字符串 memcmp 深度（字节数+2）；④ 构造墙发现移交 W3-3/W3-4：P9/P10（构造 `concrete_exec_state`）Phase 1 直跑将撞同一构造墙，须 W3-3 owned 迁移或 W4-1 stub 路线先解除；⑤ B 档 23 个 proof 状态不变（❌，M2/M6）。
-- **修正去向**：本条目即修正记录；执行详情见 CR-20260913-004 §3.8（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 3；STATUS.md（快照/P0-3/P0-6/维护区）。
+- **修正去向**：本条目即修正记录；执行详情见攻坚立项 §3.8（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 3；STATUS.md（快照/P0-3/P0-6/维护区）。
 
 ### 2026-09-14：W3-2 unwind 静态盘点完成，16 项校准登记为 W3-4 前置配套（零代码变更）
 
-- **事实**：B 档攻坚 W3-2 完成（CR-20260913-004 §3.9）——23 个 B 档 harness memcmp 成功路径深度全量静态审计（3 次脚本迭代，0 次求解器运行）：合规 7 / 不合规 16；16 项 unwind 校准值列表登记为 W3-4 前置配套。A 档 14 个逐个判读为实证豁免（unwind 4 小于 memcmp 路径最长 6，但 4 字节短字符串内经无字面常量路径执行、无字面常量匹配）。STATUS.md 维护区同批登记。
-- **依据**：全量审计脚本产出与逐项判读记录；CR-20260913-004 §3.9 校准表（16 项建议 unwind 值）。
+- **事实**：B 档攻坚 W3-2 完成（攻坚立项 §3.9）——23 个 B 档 harness memcmp 成功路径深度全量静态审计（3 次脚本迭代，0 次求解器运行）：合规 7 / 不合规 16；16 项 unwind 校准值列表登记为 W3-4 前置配套。A 档 14 个逐个判读为实证豁免（unwind 4 小于 memcmp 路径最长 6，但 4 字节短字符串内经无字面常量路径执行、无字面常量匹配）。STATUS.md 维护区同批登记。
+- **依据**：全量审计脚本产出与逐项判读记录；攻坚立项 §3.9 校准表（16 项建议 unwind 值）。
 - **影响**：① B 档 23 个 proof 状态不变（❌）；② W3-4 重跑以 16 项校准值起步、以 unwinding assertions 反馈逐项收敛；③ 无 proof 源码变更，A 档证据 SHA 绑定不受影响。
-- **修正去向**：本条目即修正记录；执行详情见 CR-20260913-004 §3.9。
+- **修正去向**：本条目即修正记录；执行详情见攻坚立项 §3.9。
 
 ### 2026-09-14：W3-3 owned 构造迁移落地，A 档证据随 proof 源码变更再重置（`90b77aa`）
 
-- **事实**：B 档攻坚 W3-3 完成（CR-20260913-004 §3.10，Tier 5.3 先行项，G2 构造层与 Clone 解绑）——`tests/kani/model.rs` obj() 由引用对+内部深克隆改为 `object_from_pairs_owned`（move 语义零深克隆），`tests/kani/kani_proofs.rs` 23 个 B 档 harness 构造调用点适配，旧构造形态零残留（96 处 owned 落位）。提交 `90b77aa` 后于 WSL（Kani 0.67.0 + nightly-2025-11-21）同协议重跑 A 档 14 proof：14/14 PASS。
+- **事实**：B 档攻坚 W3-3 完成（攻坚立项 §3.10，Tier 5.3 先行项，G2 构造层与 Clone 解绑）——`tests/kani/model.rs` obj() 由引用对+内部深克隆改为 `object_from_pairs_owned`（move 语义零深克隆），`tests/kani/kani_proofs.rs` 23 个 B 档 harness 构造调用点适配，旧构造形态零残留（96 处 owned 落位）。提交 `90b77aa` 后于 WSL（Kani 0.67.0 + nightly-2025-11-21）同协议重跑 A 档 14 proof：14/14 PASS。
 - **依据**：grep 实证（`obj(&[` / `object_from_pairs(&[` 0 命中）；编译验收 `verify_partial_eq_never_panics` 迁移后实跑 1.0s PASS（534 断言 0 失败）；新证据 `P0-3/P0-6.<harness>_PASS_90b77aa_20260914_*`（evorule-tcb/verification/evidence/kani/）。
 - **影响**：① 旧 `1b340e5` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 4；② STATUS.md 快照注记与 P0-3/P0-6 证据列同批更新；③ B 档 23 个 proof 状态不变（❌）；④ W3-4 前置就绪：16 项 unwind 校准表（W3-2）+ owned 构造（W3-3）两要素齐备。
-- **修正去向**：本条目即修正记录；执行详情见 CR-20260913-004 §3.10（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 4；STATUS.md（快照/P0-3/P0-6/维护区）。
+- **修正去向**：本条目即修正记录；执行详情见攻坚立项 §3.10（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 4；STATUS.md（快照/P0-3/P0-6/维护区）。
 
 ### 2026-09-14：W3-4 精确 unwind 校准落地，eq 族首数据点超时路由 Phase 2（`627330a`）
 
 - **事实**：W3-2 校准表按"一次改完 proof 源码"纪律落地（instruction 24→32 / all 4→16 / deterministic 补 16 / domain_depth 12→16），同批清理 W3-3 临时 canary c2-clone/c2-owned（"迁移验证后删除，不入库"承诺收口）。eq 族首数据点 `verify_evaluate_domain_eq_never_panics`（unwind 24 合规 + owned 构造）**600s 超时**——kill criteria 触发，eq 族路由 Phase 2 stub 试点。提交 `627330a` 后于 WSL 重跑 A 档 14 proof：14/14 PASS。
 - **依据**：eq 首数据点实测（timeout 600s，`Checking harness...` 后无验证结论输出）；W3-2 §3.9 校准表；新证据 `P0-3/P0-6.<harness>_PASS_627330a_20260914_*`（evorule-tcb/verification/evidence/kani/）。
 - **影响**：① 旧 `90b77aa` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 5；② B 档 23 个 proof 状态不变（❌）；③ eq 族路由结论强化构造墙主因判断（String/KaniMap 建模开销；owned 迁移仅解 clone 分量，未解构造墙）；④ W3-4 机时 +1 次（eq），其余 8 个 P8 系首轮实测合并至历史批次 Step 10 全量重跑（post-69 基线，机时纪律，§3.11）。
-- **修正去向**：本条目即修正记录；执行详情见 CR-20260913-004 §3.11；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 5；STATUS.md（快照/P0-3/P0-6/维护区）。
+- **修正去向**：本条目即修正记录；执行详情见攻坚立项 §3.11；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 5；STATUS.md（快照/P0-3/P0-6/维护区）。
 
 ### 2026-09-14：规则清理（collect/merge 元指令退役），A 档证据重置 + reactor 4 proof 复跑（`25c0cc0`）
 
-- **事实**：规则清理批次实施完成（CR-20260914-001，v0.6.0 破坏性变更）——TCB 删除 `exec_collect`/`exec_merge`/`substitute_template` 及指令分发分支，`META_INSTRUCTION_TYPES` 收窄 5 种；proof P15/P16/P17 删除（总数 37→34，B 档 23→20），`tests/kani/model.rs` any_instruction %6→%4，P12/P19 allowed 集合收窄（提交 `10c743d`；`25c0cc0` 仅差 wasm-demo test.js）。 governance/cli/server/system-rules/console/console-cloud/evo-agent 宪法/reactor 全链同步收窄，跨仓处置随主仓 CR。提交后于 WSL（Kani 0.67.0 + nightly-2025-11-21）重跑：TCB A 档 14/14 PASS（单 proof 0.3~4.0s）+ reactor 4 个 CI proof 4/4 PASS，合计 18/18。
+- **事实**：规则清理批次实施完成（既定整改，v0.6.0 破坏性变更）——TCB 删除 `exec_collect`/`exec_merge`/`substitute_template` 及指令分发分支，`META_INSTRUCTION_TYPES` 收窄 5 种；proof P15/P16/P17 删除（总数 37→34，B 档 23→20），`tests/kani/model.rs` any_instruction %6→%4，P12/P19 allowed 集合收窄（提交 `10c743d`；`25c0cc0` 仅差 wasm-demo test.js）。 governance/cli/server/system-rules/console/console-cloud/evo-agent 宪法/reactor 全链同步收窄，跨仓处置随主仓 CR。提交后于 WSL（Kani 0.67.0 + nightly-2025-11-21）重跑：TCB A 档 14/14 PASS（单 proof 0.3~4.0s）+ reactor 4 个 CI proof 4/4 PASS，合计 18/18。
 - **依据**：新证据 `P0-3/P0-6.<harness>_PASS_25c0cc0_20260914_190211_*`（evorule-tcb/verification/evidence/kani/）与 `P0-11/P1-3/P1-5/P1-6.*.PASS_25c0cc0_20260914_190211_*`（evorule-reactor/verification/evidence/kani/）；CHANGELOG 0.6.0 破坏性变更条目；STATUS.md 附录 A/B 删号与计数更新。
-- **影响**：① 旧 `627330a` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 6；② reactor 旧 4 对（`03643aa`/`bdfb8d4` 锚定，proof 源码未变更但被验证依赖 TCB 生产代码变更，谨慎起见复跑替代）隔离至该仓同级 `_invalidated/`；③ B 档 20 个 proof 状态不变（❌；eq 族已路由 Phase 2 stub 试点，CR-20260913-004 §3.11）；④历史批次 Step 10 Kani 重跑项收口。
-- **修正去向**：本条目即修正记录；执行详情见 CR-20260914-001（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 6；STATUS.md（快照/P0-3/P0-6/附录 A/B/维护区）。
+- **影响**：① 旧 `627330a` 14 对证据按 M3.4 失效，`git mv` 隔离 `_invalidated/` 批次 6；② reactor 旧 4 对（`03643aa`/`bdfb8d4` 锚定，proof 源码未变更但被验证依赖 TCB 生产代码变更，谨慎起见复跑替代）隔离至该仓同级 `_invalidated/`；③ B 档 20 个 proof 状态不变（❌；eq 族已路由 Phase 2 stub 试点，攻坚立项 §3.11）；④历史批次 Step 10 Kani 重跑项收口。
+- **修正去向**：本条目即修正记录；执行详情见既定整改（[evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)）；隔离批次详情见 `evorule-tcb/verification/evidence/kani/_invalidated/README.md` 批次 6；STATUS.md（快照/P0-3/P0-6/附录 A/B/维护区）。
 
 ### 2026-09-15：历史遗留项CI 门禁整改——证据命名修正 + reactor 隔离区 README 补建 + 文档对齐
 
@@ -234,12 +234,12 @@
 - **影响**：S1–S11 全绿；对外数字（45 total / 18 verified / TCB 34 / A 档 14 / B 档 20）与 STATUS.md 附录推导值全对齐；P0-11 最新证据（2026-09-14 PASS）与主状态 ✅ 闭环；reactor 隔离区满足 M3.5。
 - **修正去向**：本条目即修正记录；证据盘面与 STATUS.md / MECHANISM.md / ROADMAP.md / verification/README.md / `evorule-reactor/verification/evidence/kani/_invalidated/README.md`。
 
-### 2026-09-16：CR 构建校验移出公开仓，CR 模板双份清零（TCB-2026-29，既定裁定）
+### 2026-09-16：CR 构建校验移出公开仓，CR 模板双份清零（既定裁定）
 
 - **事实**：L1b 的 CHANGE_REQUEST.md 构建校验经裁定移出公开仓（该检查属提交前自查纪律，非防伪造审查机制），`EVORULE_SKIP_CR_GATE` 环境变量随之删除；策略层反模式检测改为**无阀常开**。首条处置记录② 保留的 `.github/CHANGE_REQUEST_TEMPLATE.md`（267 行）随本次整改删除（`8a8f04c`），根目录版已于 2026-09-12 删除——两个模板至此**全部离线**，CR 自查职责由维护者本地 git pre-commit hook 承接（hook 不随仓库/发布公开）。`CHANGE_REQUEST.md` 登记文件与登记纪律本身不变。
-- **依据**：`8a8f04c` diff（`.github/CHANGE_REQUEST_TEMPLATE.md` −267 行）；四仓 build.rs 实跑输出（旧「变更治理门禁 PASSED」消失，策略层检测无阀常开 PASSED）；`CHANGELOG.md` [Unreleased] TCB-2026-29 条目。
+- **依据**：`8a8f04c` diff（`.github/CHANGE_REQUEST_TEMPLATE.md` −267 行）；四仓 build.rs 实跑输出（旧「变更治理门禁 PASSED」消失，策略层检测无阀常开 PASSED）；`CHANGELOG.md` [Unreleased] 同批整改条目。
 - **影响**：① 首条处置记录② 的「仅保留 `.github/` 版」结论作废，该行已就地附现状注记；② 全仓源码/文档中 `CHANGE_REQUEST_TEMPLATE` 仅剩 `CHANGELOG.md` 0.4.3 历史条目（按「历史条目保留 + 现状注记」原则处理）与本日志两处登记性出现（首条②、本条目）；③ 公开仓不再存在任何 CR 模板载体，「伪门禁」质疑面消除。
-- **修正去向**：本条目即修正记录；`CHANGELOG.md` [Unreleased]（TCB-2026-29）、本日志首条处置记录② 现状注记、`GATE_REFERENCE.md` §一/§二、`GOVERNANCE.md` §二/§五、四仓 SPEC·README。
+- **修正去向**：本条目即修正记录；`CHANGELOG.md` [Unreleased]（同批整改）、本日志首条处置记录② 现状注记、`GATE_REFERENCE.md` §一/§二、`GOVERNANCE.md` §二/§五、四仓 SPEC·README。
 
 ### 2026-09-17：保证声明（ASSURANCE.md）成文，确立「规范 / 状态分离」并新增保证达成状态与偏离登记
 

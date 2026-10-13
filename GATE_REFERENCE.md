@@ -42,10 +42,10 @@
 - L3 挡**语义违规** (e.g. 业务规则 / API 设计 / 跨文件调用图)
 - 四层**独立兜底**: L1a 漏了 L1b 拦, L1b 漏了 L2 拦, L2 漏了 L3 拦
 
-**L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**:
-- **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块——TCB-2026-28 撤豁免: 测试代码同为机制层, 须守同一纪律; 旧「剥离 mod tests 再扫」既留注释伪装/`mod tests_foo` 误吞绕过面, 又给策略层留测试区藏身处),禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。**无阀常开**——机制-策略分离是设计不变量, 不设旁路环境变量
-- **CR 变更自查已移出公开仓 (既定裁定, TCB-2026-29)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制; 为避免公开形态引发「伪门禁」质疑, 已从四仓 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除。自查职责由本地 git pre-commit hook 承接 (hook 不随仓库/发布公开); CHANGE_REQUEST.md 登记文件与登记纪律本身不变
-- **四仓同步 (TCB-2026-30 整改)**: 四仓 build.rs 是**同一骨架的内联副本**——build.rs 必须零依赖, 共享逻辑只能逐份内联, 无法运行期复用。同步纪律已机器化: `evorule-cli/tests/gate_sync_test.rs` 按函数名提取共享函数体, 规范化 (字符串/字符字面量感知剥离注释+去空白) 后以 evorule-tcb 为基准逐函数比对四仓, 任何漂移即 `cargo test` 红。锁定函数: `skip_requested` / `squeeze_ws` / `strip_inline_block_comments` / `bare_word_hit` / `skip_to_mod_tests` / `strip_test_mod` / `char_lit_starts` / `skip_lifetime` / `find_inline_lbrace` / `match_brace` / `detect_strategy_patterns` / `collect_rs_files_for_strategy` (四仓) + `strip_leading_attr` (tcb/reactor)。**新增共享函数必须同批加入测试锁定清单**; 修改任何共享函数必须四仓同批提交
+**L1b 策略层检测 (v0.3.2 新增; 门禁语义整改)**:
+- **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块——撤测试豁免整改: 测试代码同为机制层, 须守同一纪律; 旧「剥离 mod tests 再扫」既留注释伪装/`mod tests_foo` 误吞绕过面, 又给策略层留测试区藏身处),禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。**无阀常开**——机制-策略分离是设计不变量, 不设旁路环境变量
+- **CR 变更自查已移出公开仓 (既定裁定)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制; 为避免公开形态引发「伪门禁」质疑, 已从四仓 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除。自查职责由本地 git pre-commit hook 承接 (hook 不随仓库/发布公开); CHANGE_REQUEST.md 登记文件与登记纪律本身不变
+- **四仓同步 (同步纪律机器化整改)**: 四仓 build.rs 是**同一骨架的内联副本**——build.rs 必须零依赖, 共享逻辑只能逐份内联, 无法运行期复用。同步纪律已机器化: `evorule-cli/tests/gate_sync_test.rs` 按函数名提取共享函数体, 规范化 (字符串/字符字面量感知剥离注释+去空白) 后以 evorule-tcb 为基准逐函数比对四仓, 任何漂移即 `cargo test` 红。锁定函数: `skip_requested` / `squeeze_ws` / `strip_inline_block_comments` / `bare_word_hit` / `skip_to_mod_tests` / `strip_test_mod` / `char_lit_starts` / `skip_lifetime` / `find_inline_lbrace` / `match_brace` / `detect_strategy_patterns` / `collect_rs_files_for_strategy` (四仓) + `strip_leading_attr` (tcb/reactor)。**新增共享函数必须同批加入测试锁定清单**; 修改任何共享函数必须四仓同批提交
 
   **有意差异表** (以下为设计差异, 不参与同步比对, 变更须各自留痕):
 
@@ -61,9 +61,9 @@
 
 ## 二、build.rs 模式索引
 
-> **门禁输出（大声原则，TCB-2026-36）**：四仓 L1 门禁每次构建必须以可见输出收尾——通过时发 `cargo:warning={crate} 字面量门禁 PASSED - 已扫 N 文件 x M 模式, 0 违规`（文件数/模式数动态取自扫描实现，不硬编码）；紧急跳过时发 SKIPPED warning（理由登记，TCB-2026-26）；违规时 stderr 逐条列明并使构建失败。零输出的通过无法与「build.rs 被删/被短路/未执行」区分——门禁存在性本身须每次构建自证。
+> **门禁输出（大声原则）**：四仓 L1 门禁每次构建必须以可见输出收尾——通过时发 `cargo:warning={crate} 字面量门禁 PASSED - 已扫 N 文件 x M 模式, 0 违规`（文件数/模式数动态取自扫描实现，不硬编码）；紧急跳过时发 SKIPPED warning（理由登记）；违规时 stderr 逐条列明并使构建失败。零输出的通过无法与「build.rs 被删/被短路/未执行」区分——门禁存在性本身须每次构建自证。
 >
-> **匹配口径（TCB-2026-24/-25/-32）**：四仓 L1 字面量门禁对每行同时按**原文**与**去空白文本**匹配（`x.unwrap ()`、`Hash Map` 等插空写法同样拦截）；注释行豁免判定仍用原文。属性行对 `unsafe` 模式（tcb/reactor）不再整体豁免——剥离行首 `#![...]`/`#[...]` 语法（方括号深度感知，未闭合保守按原文匹配）后对余下内容匹配（TCB-2026-25）。行内**自闭合块注释**区段先剥离再匹配（含嵌套；字符串感知——常规/字节/原始字符串内的 `/*` 不作注释起点，防伪起点吃真代码构成漏报面；跨行未闭合保守整行，fail-closed）（TCB-2026-32）。`async`/`await` 裸词按**词界**匹配（命中前后须非 ASCII 字母——"asynchronous"/"awaiting" 等英文单词不再误命中；去空白口径的 `asyncfn` 合并词被词界检查自然拒绝，原文口径保证真关键字照常命中）（TCB-2026-32）。字符串字面量内凑巧命中的极小概率误报是设计接受（宁可误报不可漏报）。
+> **匹配口径（既定整改）**：四仓 L1 字面量门禁对每行同时按**原文**与**去空白文本**匹配（`x.unwrap ()`、`Hash Map` 等插空写法同样拦截）；注释行豁免判定仍用原文。属性行对 `unsafe` 模式（tcb/reactor）不再整体豁免——剥离行首 `#![...]`/`#[...]` 语法（方括号深度感知，未闭合保守按原文匹配）后对余下内容匹配。行内**自闭合块注释**区段先剥离再匹配（含嵌套；字符串感知——常规/字节/原始字符串内的 `/*` 不作注释起点，防伪起点吃真代码构成漏报面；跨行未闭合保守整行，fail-closed）。`async`/`await` 裸词按**词界**匹配（命中前后须非 ASCII 字母——"asynchronous"/"awaiting" 等英文单词不再误命中；去空白口径的 `asyncfn` 合并词被词界检查自然拒绝，原文口径保证真关键字照常命中）。字符串字面量内凑巧命中的极小概率误报是设计接受（宁可误报不可漏报）。
 
 ### 2.1 evorule-tcb — 27 模式 (T 编号) + 1 独立检测通道
 
@@ -76,7 +76,7 @@
 | T9-unwrap-call | `.unwrap(`              | G1 panic-prone (T9 别名) |
 | T9-expect-call | `.expect(`              | G1 panic-prone (T9 别名) |
 | T11-debug_assert | `debug_assert!`      | G1 panic-prone (T11 别名) |
-| F11-panic | `panic!(`                    | G1 panic-prone (TCB-2026-35 补齐) |
+| F11-panic | `panic!(`                    | G1 panic-prone (补齐整改) |
 | F11-assert | `assert!(`                  | G1 panic-prone (panic 路径宏收紧；与 T11 子串重叠双报，均为真实违规) |
 | F11-unreachable | `unreachable!(`        | G1 panic-prone (panic 路径宏收紧) |
 | F11-todo   | `todo!(`                    | G1 panic-prone (panic 路径宏收紧) |
@@ -102,10 +102,10 @@
 **T12-float-lit 独立检测通道（2026-09-24 收紧）**：浮点字面量推断（`let x = 1.0;`，无类型注记，默认 `f64`）由独立检测通道拦截——非固定子串，不入 FORBIDDEN 表，对注释剥离+字符串内容掩码后的文本做「数字.数字」手工判定（零依赖）；版本号（`0.6.1`）/元组索引链（`x.0.1`）边界排除；测试模块豁免（与 T8/T9/F11 同口径）；跨行字符串保守跳过（已知诚实边界）。详见 TCB_SPEC.md T12 节。
 
 **豁免机制**:
-- `strip_test_mod()`: 剥离 `#[cfg(test)] mod <ident> { ... }` 测试模块块体 (任意命名——cfg(test) 限定的模块本就不进生产构建; TCB-2026-35 修复: 旧实现按 `"mod tests"` 字面子串定位, `mod executor_ssot_tests` 等非 tests 命名模块漏剥致测试内模式误报, `mod tests_foo` 借前缀误吞; 同批修复一文件多测试模块时第一个模块尾部被整段重复压入输出的存量缺陷), 不扫描测试代码
-- 属性行剥离匹配 (TCB-2026-25): unsafe 模式对 `#[`/`#!` 开头行剥离行首属性语法 (方括号深度感知) 后匹配余下内容——`#[forbid(unsafe_code)]` 剥离后为空不误报; `#[inline] unsafe fn` 借道逃逸被拦截; 属性未闭合保守按原文匹配 (fail-closed)
+- `strip_test_mod()`: 剥离 `#[cfg(test)] mod <ident> { ... }` 测试模块块体 (任意命名——cfg(test) 限定的模块本就不进生产构建; 修复整改: 旧实现按 `"mod tests"` 字面子串定位, `mod executor_ssot_tests` 等非 tests 命名模块漏剥致测试内模式误报, `mod tests_foo` 借前缀误吞; 同批修复一文件多测试模块时第一个模块尾部被整段重复压入输出的存量缺陷), 不扫描测试代码
+- 属性行剥离匹配: unsafe 模式对 `#[`/`#!` 开头行剥离行首属性语法 (方括号深度感知) 后匹配余下内容——`#[forbid(unsafe_code)]` 剥离后为空不误报; `#[inline] unsafe fn` 借道逃逸被拦截; 属性未闭合保守按原文匹配 (fail-closed)
   - **状态机生命周期判别（2026-08-30 修复）**: `char_lit_starts()` 在撇号处判别字符字面量与生命周期——`'` 后跟 `\` 或"单字符+`'`"是字面量（进入字符态），`'ident` 是生命周期（跳过标识符，不进入字符态）。旧实现把 `'static` 误判为字符态开头，吞掉直到下一个 `'` 之间的所有 `{}`，导致 match_brace 永不闭合、tests 模块整体不被剥离、门禁对测试代码全量误报。修复已同步五仓（tcb/reactor/governance/cli/server），每仓 build.rs 内含 3 个单元测试（cargo test 不运行 build script 测试，用探针 crate 以 lib.rs 方式加载真实 build.rs 运行）
-- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁, 编译警告 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
+- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁, 编译警告 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由)
 
 ### 2.2 evorule-reactor — 15 模式 (G8 + F11 + S5.2 + T10)
 
@@ -130,11 +130,11 @@
 | T10-unsafe-keyword | `unsafe`             | G2 unsafe 关键字 (T10) |
 
 **豁免机制**:
-- `strip_test_mod()`: 剥离 `#[cfg(test)] mod <ident>` 任意命名测试模块 (TCB-2026-35)
-- 属性行剥离匹配 (TCB-2026-25): unsafe 模式对 `#[`/`#!` 开头行剥离行首属性语法 (方括号深度感知) 后匹配余下内容——`#![deny(unsafe_code)]` 等纯属性行剥离后为空不误报; `#[inline] unsafe fn` 借道逃逸被拦截; 属性未闭合保守按原文匹配 (fail-closed)
+- `strip_test_mod()`: 剥离 `#[cfg(test)] mod <ident>` 任意命名测试模块 (既定整改)
+- 属性行剥离匹配: unsafe 模式对 `#[`/`#!` 开头行剥离行首属性语法 (方括号深度感知) 后匹配余下内容——`#![deny(unsafe_code)]` 等纯属性行剥离后为空不误报; `#[inline] unsafe fn` 借道逃逸被拦截; 属性未闭合保守按原文匹配 (fail-closed)
 - T10 文件级豁免 (`T10_FILE_EXEMPT`): `ffi.rs` (文件级 `#![allow(unsafe_code)]` + 仅 `feature="ffi"` 编译) / `facts_log.rs` (`unsafe impl Sync` 由 `#[cfg(kani)]` + `#[allow(unsafe_code)]` 单点保护)——其余 src 文件裸 `unsafe` 一律拦截
 - `fact.rs` 豁免: G8/S5.2 模式在 `fact.rs` 豁免 (IoType/ControlFlowType 字符串映射唯一真值来源)
-- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
+- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由)
 
 ### 2.3 evorule-governance — 14 模式 (G8 + F11 + S5.2)
 
@@ -157,16 +157,16 @@
 | F11-panic         | `panic!(`              | G1 panic-prone          |
 
 **豁免**: 无业务字面量豁免 (阶段5 起零豁免——`VALID_TRANSFORM_TYPES` 已删除, 用 tier1 RuleValidator 替代; G8/F11 对 `src/**/*.rs` 非测试代码零容忍)
-- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由, TCB-2026-26)
+- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由)
 
-**注意**: cli 的 FORBIDDEN 清单**实有** `F11-panic` (TCB-2026-39 如实化)——旧版本文档称「binary crate 不需要 F11-panic」与实现矛盾。lib crate 检测 `panic!(` 的理由 (panic 影响调用方) 对 binary 同样成立: CLI 主路径 panic-prone 构造一样破坏 `Result<>` 错误链纪律, 由 `cargo:warning` 门禁在编译期拦截。
+**注意**: cli 的 FORBIDDEN 清单**实有** `F11-panic` (如实化整改)——旧版本文档称「binary crate 不需要 F11-panic」与实现矛盾。lib crate 检测 `panic!(` 的理由 (panic 影响调用方) 对 binary 同样成立: CLI 主路径 panic-prone 构造一样破坏 `Result<>` 错误链纪律, 由 `cargo:warning` 门禁在编译期拦截。
 
 ### 2.5 panic-prone 门控的跨仓一致性
 
 > 跨仓说明:evorule-server 为**独立仓**, panic-prone 门控与本仓一致 (S1 = F11 = G1),
 > 其构建脚本实现与豁免细则见 evorule-server 仓自身文档, 本仓不承载兄弟仓内部细节。
 > 跨仓同步契约（跳过阀 fail-closed 解析器 / PASSED 横幅 / CI 门禁旁路断言的两侧同改清单与同步验证命令）落 evorule-server 仓 `GATE_REFERENCE.md` §十；本仓 CI 侧对应件 = `.github/workflows/release.yml` release-gate job 的 `EVORULE_SKIP_GATE` 存在即 fail 断言（2026-09-24 加）。
-> 历史教训: 跳过阀 fail-closed 化修复（TCB-2026-26）当年只覆盖本仓四 crate 未同步 server 仓，旧版 `is_ok()` fail-open 阀在 server 仓存活——同步靠人记忆不可靠，须按契约清单逐件核对。
+> 历史教训: 跳过阀 fail-closed 化修复当年只覆盖本仓四 crate 未同步 server 仓，旧版 `is_ok()` fail-open 阀在 server 仓存活——同步靠人记忆不可靠，须按契约清单逐件核对。
 
 ---
 
@@ -201,7 +201,7 @@ all = { level = "warn", priority = -1 }
 
 ### 3.2 各 crate 启用
 
-`evorule-tcb/Cargo.toml`, `evorule-reactor/Cargo.toml`, `evorule-governance/Cargo.toml`, `evorule-cli/Cargo.toml` 四仓统一（TCB-2026-31 整改：tcb 旧本地 `[lints.rust]`/`[lints.clippy]` 与 workspace 同值但双份维护，已收敛为继承）：
+`evorule-tcb/Cargo.toml`, `evorule-reactor/Cargo.toml`, `evorule-governance/Cargo.toml`, `evorule-cli/Cargo.toml` 四仓统一（四仓 lint 统一收敛整改：tcb 旧本地 `[lints.rust]`/`[lints.clippy]` 与 workspace 同值但双份维护，已收敛为继承）：
 
 ```toml
 [lints]

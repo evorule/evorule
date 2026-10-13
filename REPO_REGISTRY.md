@@ -16,7 +16,7 @@
 
 | 仓名 | 角色 | Gitee URL | GitHub URL | 可见性 | 默认分支 | License | GitHub CI | Gitee Go | mirror.yml | 备注 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| evorule | 核心引擎（TCB 唯一版本源） | gitee.com/evorule/evorule | github.com/evorule/evorule | 公开 | main | AGPL-3.0-or-later（双许可） | ci,cla,clippy,codeql,differential,fuzz,kani,mirror,mutants,release,scorecard,tla | ✅ | ✅ 参数化 | 生态唯一版本源；工具链 TCB-2026-48（rust 1.97.1） |
+| evorule | 核心引擎（TCB 唯一版本源） | gitee.com/evorule/evorule | github.com/evorule/evorule | 公开 | main | AGPL-3.0-or-later（双许可） | ci,cla,clippy,codeql,differential,fuzz,kani,mirror,mutants,release,scorecard,tla | ✅ | ✅ 参数化 | 生态唯一版本源；工具链既定裁定（rust 1.97.1） |
 | evorule-server | 自托管服务端 | gitee.com/evorule/evorule-server | github.com/evorule/evorule-server | 公开 | main | AGPL-3.0-or-later | ci,cla,mirror,release | ✅ | ✅ | Gitee CI 已对齐 1.97.1-slim（2026-09-16） |
 | evorule-rule | 业务规则集 | gitee.com/evorule/evorule-rule | github.com/evorule/evorule-rule | 公开 | main | AGPL-3.0-or-later | ci,cla,mirror,release | ✅ | ✅ | 跨仓 checkout 已改 Gitee 权威源（2026-09-16） |
 | evorule-system-rules | 系统规则集 | gitee.com/evorule/evorule-system-rules | github.com/evorule/evorule-system-rules | 公开 | main | AGPL-3.0-or-later | cla,mirror | — | ✅ | 无独立构建 CI（cla+mirror） |

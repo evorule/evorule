@@ -129,13 +129,13 @@
 
 **豁免**:
 
-- 任意命名的 `#[cfg(test)] mod <ident> { ... }` 测试模块 — 测试 fixture 可构造这些字符串（TCB-2026-35：按 `mod <ident>` 定位，非固定 `tests` 字面）
+- 任意命名的 `#[cfg(test)] mod <ident> { ... }` 测试模块 — 测试 fixture 可构造这些字符串（既定整改：按 `mod <ident>` 定位，非固定 `tests` 字面）
 - 注释 (`//`, `///`, `//!`, `/* */`) — 文档可自由提及
 - `src/fact.rs` (G8/§5.2 模式) — IoType 内置字符串值 / ControlFlowType 枚举映射的唯一真值来源
 
 **紧急跳过**: `EVORULE_SKIP_GATE=1 cargo build` (阀值仅 `1`/`true` 生效 fail-closed, 须有书面理由 + `EVORULE_SKIP_REASON` 登记, 永不永久禁用)
 
-**L1b 策略层检测 (v0.3.2 新增; TCB-2026-27/-29 整改)**: 除上述 L1a 字面量门禁外, `build.rs` 还执行策略层反模式检测(扫描 src/ **全文件**禁止策略层代码, TCB-2026-28 撤测试豁免; **无阀常开**, 不设旁路环境变量)。旧 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已移出公开仓, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。四仓(evorule-tcb / evorule-reactor / evorule-governance / evorule-cli)build.rs 的共享函数保持同一份内联副本实现, 同步纪律由 `evorule-cli/tests/gate_sync_test.rs` 机器化锁定 (TCB-2026-30: 按函数名提取函数体, 规范化后逐仓比对, 漂移即 `cargo test` 红)。
+**L1b 策略层检测 (v0.3.2 新增; 门禁语义整改)**: 除上述 L1a 字面量门禁外, `build.rs` 还执行策略层反模式检测(扫描 src/ **全文件**禁止策略层代码, 撤测试豁免整改; **无阀常开**, 不设旁路环境变量)。旧 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已移出公开仓, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。四仓(evorule-tcb / evorule-reactor / evorule-governance / evorule-cli)build.rs 的共享函数保持同一份内联副本实现, 同步纪律由 `evorule-cli/tests/gate_sync_test.rs` 机器化锁定 (四仓同步整改: 按函数名提取函数体, 规范化后逐仓比对, 漂移即 `cargo test` 红)。
 
 ---
 

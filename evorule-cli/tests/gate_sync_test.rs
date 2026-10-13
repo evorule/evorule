@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 四仓 build.rs 共享函数同步测试（TCB-2026-30 整改）。
+//! 四仓 build.rs 共享函数同步测试（同步纪律机器化整改）。
 //!
 //! evorule-tcb / evorule-reactor / evorule-governance / evorule-cli 四个 crate
 //! 的 build.rs 是同一骨架的内联副本：字面量门禁核心函数逐份内联、无运行期
@@ -28,14 +28,14 @@ use std::path::{Path, PathBuf};
 
 /// 四仓共同锁定（函数体规范化后必须逐字节一致）。
 const LOCKED_FNS_ALL_FOUR: &[&str] = &[
-    // 跳过阀（fail-closed，TCB-2026-26）
+    // 跳过阀（fail-closed）
     "skip_requested",
-    // 去空白匹配口径（TCB-2026-24）
+    // 去空白匹配口径
     "squeeze_ws",
-    // 同行块注释剥离 + 裸词词界（TCB-2026-32）
+    // 同行块注释剥离 + 裸词词界
     "strip_inline_block_comments",
     "bare_word_hit",
-    // 测试模块剥离（TCB-2026-35 双向修复）
+    // 测试模块剥离（双向修复）
     "skip_to_mod_tests",
     "strip_test_mod",
     // 剥离器支撑件
@@ -109,7 +109,7 @@ fn four_repo_shared_gate_fns_are_in_sync() {
 
     assert!(
         drifts.is_empty(),
-        "四仓 build.rs 共享函数漂移 (TCB-2026-30 整改, 同步声明见 GATE_REFERENCE.md §一):\n{}",
+        "四仓 build.rs 共享函数漂移 (既定整改, 同步声明见 GATE_REFERENCE.md §一):\n{}",
         drifts.join("\n")
     );
 }
