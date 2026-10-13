@@ -24,8 +24,8 @@
 //!
 //! **零豁免原则**：阶段5 已删除 `VALID_TRANSFORM_TYPES`（用 tier1 RuleValidator 替代），
 //! 本门控不再有任何业务字面量豁免。G8/F11 对 `src/**/*.rs`（非测试）零容忍。
-//! 匹配口径：每行同时按原文与去空白文本匹配（`x.unwrap ()` 等插空写法同样拦截，
-//! TCB-2026-24）；注释行判定仍用原文。
+//! 匹配口径：每行同时按原文与去空白文本匹配（`x.unwrap ()` 等插空写法同样拦截）；
+//! 注释行判定仍用原文。
 //!
 //! # 策略层反模式检测
 //!
@@ -45,7 +45,7 @@
 //! 本文件全部门禁是工程质量自查纪律（机制-策略分离、确定性红线），不是
 //! 对抗主动攻击者的安全边界；策略层检测无阀常开。CR 变更自查
 //! （CHANGE_REQUEST.md 字段清单）已移出公开仓，由本地 git pre-commit hook
-//! 承接——它从来不是防伪造审查机制（既定裁定，TCB-2026-29 定性）。
+//! 承接——它从来不是防伪造审查机制（既定裁定）。
 //!
 //! # 与 evorule-reactor/evorule-governance G8 门控的关系
 //! - tier1/tier2 的 G8 门控扫描的是它们**自己的 src/**
@@ -73,7 +73,7 @@ const FORBIDDEN: &[(&str, &str)] = &[
     ("F11-panic", "panic!("),
 ];
 
-/// 跳过类环境变量解析（fail-closed 阀值语义，TCB-2026-26 整改）。
+/// 跳过类环境变量解析（fail-closed 阀值语义）。
 ///
 /// 仅 `1` / `true`（trim 后、大小写不敏感）视为请求跳过；其余任何值
 /// （`0`、空串、乱值）一律不跳过——门禁照常执行，并发出 warning 提示
@@ -106,9 +106,9 @@ fn skip_requested(var: &str) -> bool {
     }
 }
 
-/// 去空白对照文本（TCB-2026-24 整改）：`x.unwrap ()` 等插空写法在纯原文
-/// 子串匹配下漏检，故每行额外生成去全部空白文本参与匹配。注释行判定
-/// 仍用原文。代价：字符串字面量内凑巧去空白命中的极小概率误报——
+/// 去空白对照文本（整改确立）：`x.unwrap ()` 等插空写法在纯原文
+/// 子串匹配下漏检，故每行额外生成去全部空白文本参与匹配。注释/属性行
+/// 判定仍用原文。代价：字符串字面量内凑巧去空白命中的极小概率误报——
 /// 符合门禁「宁可误报不可漏报」哲学。
 fn squeeze_ws(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
@@ -120,7 +120,7 @@ fn squeeze_ws(line: &str) -> String {
     out
 }
 
-/// 同行块注释剥离（TCB-2026-32 整改）。
+/// 同行块注释剥离（整改确立）。
 ///
 /// 假阳性背景：注释判定只认 `//` 开头，行中块注释区段内的示例文字
 /// （如 `/* conditional */`）会让 L1 误报。本函数把同行**自闭合**的
@@ -233,7 +233,7 @@ fn strip_inline_block_comments(line: &str) -> String {
     String::from_utf8(out).unwrap_or_else(|_| line.to_string())
 }
 
-/// 裸词命中判定（TCB-2026-32 整改）。
+/// 裸词命中判定（整改确立）。
 ///
 /// `async` / `await` 作为裸词 needle 在普通子串匹配下会被
 /// "asynchronous" / "awaiting" 等英文单词误命中（假阳性）。命中后检查
@@ -241,8 +241,6 @@ fn strip_inline_block_comments(line: &str) -> String {
 /// 空白/符号/标点（含 `.await` 后缀调用形式）。去空白口径下 `async fn`
 /// 合并为 `asyncfn`，词界检查自然拒绝该合并词——但原文口径已保证
 /// `async fn` 照常命中，两口径协同无漏报。其余 needle 走普通子串匹配。
-/// 本仓 FORBIDDEN 不含裸词模式，函数照常保留以维持四仓共享面一致
-/// （由 gate_sync_test 锁定同步）。
 fn bare_word_hit(hay: &str, needle: &str) -> bool {
     if needle != "async" && needle != "await" {
         return hay.contains(needle);
@@ -268,7 +266,7 @@ fn main() -> ExitCode {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
 
-    // 策略层反模式检测 (无阀常开, TCB-2026-27 整改 + 既定裁定): 机制-策略分离是
+    // 策略层反模式检测 (无阀常开, 既定裁定): 机制-策略分离是
     // 设计不变量, 不设旁路阀。CR 自查 (CHANGE_REQUEST.md 校验) 已移出公开仓
     // build.rs——EVORULE_SKIP_CR_GATE 随之移除, 自查由本地 git pre-commit hook
     // 承接 (hook 源落本地工具区, 不随仓库/发布公开)。
@@ -330,11 +328,11 @@ fn main() -> ExitCode {
                 if trimmed.starts_with("//") {
                     continue;
                 }
-                // 同行块注释剥离 (TCB-2026-32 整改): `/* conditional */` 等
+                // 同行块注释剥离: `/* conditional */` 等
                 // 注释示例文字不再误报; 字符串感知防漏报, 跨行未闭合保守整行。
                 let stripped = strip_inline_block_comments(line);
                 let squeezed = squeeze_ws(&stripped);
-                // 裸词词界判定 (TCB-2026-32 整改): async/await 不再被
+                // 裸词词界判定 (整改): async/await 不再被
                 // "asynchronous"/"awaiting" 等英文单词误命中。
                 if bare_word_hit(&stripped, needle) || bare_word_hit(&squeezed, needle) {
                     violations.push((
@@ -348,7 +346,7 @@ fn main() -> ExitCode {
     }
 
     if violations.is_empty() {
-        // 大声原则 (TCB-2026-36 整改): 通过也要可见——零输出的通过无法与
+        // 大声原则: 通过也要可见——零输出的通过无法与
         // "build.rs 被删/被短路/未执行" 区分。cargo:warning 每次构建常态
         // 可见, 与 SKIPPED 输出及 L1b 策略层检测 PASSED 输出口径一致;
         // 文件数/模式数动态取值, 模式清单变更不产生假数字。
@@ -516,7 +514,7 @@ fn detect_strategy_patterns(crate_name: &str) -> Result<(), String> {
             Err(_) => continue,
         };
 
-        // 全文件扫描 (TCB-2026-28 撤测试豁免): 测试代码同为机制层, 须守同一
+        // 全文件扫描 (测试豁免已撤): 测试代码同为机制层, 须守同一
         // 纪律; 旧「剥离 mod tests 再扫」既留注释伪装/`mod tests_foo` 误吞等
         // 绕过面, 又给策略层留测试区藏身处——自查机制不给自己留豁免。
         for pattern_def in STRATEGY_PATTERNS {
@@ -545,7 +543,7 @@ fn detect_strategy_patterns(crate_name: &str) -> Result<(), String> {
             "==== {} 策略层检测 FAILED ====\n\
              \n\
              检测到 {} 处策略层反模式。evorule 仓是机制层，不允许包含策略层代码。\n\
-             策略层逻辑必须在应用层仓（evorule-server/evorule-application 等）实现。\n\
+             策略层逻辑必须在应用层仓实现。\n\
              \n\
              违规详情:\n\
              {}\n\
@@ -607,8 +605,8 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// 从源码中剥离 `#[cfg(test)] mod tests { ... }` 块体。
 ///
-/// 通过花括号计数（感知字符串/字符/注释），使测试内的 G8/F11 模式
-/// 不触发误报。算法与 evorule-reactor/build.rs 一致，便于跨 crate 审计。
+/// 通过花括号计数 (感知字符串/字符/注释), 使测试内的 G8/G1/§5.2 模式
+/// 不触发误报。
 fn strip_test_mod(src: &str) -> String {
     let bytes = src.as_bytes();
     let mut out = String::with_capacity(src.len());
@@ -622,7 +620,7 @@ fn strip_test_mod(src: &str) -> String {
                 if let Some(rel_brace) = find_inline_lbrace(&src[mod_abs..]) {
                     let open_idx = mod_abs + rel_brace;
                     if let Some(close_idx) = match_brace(src, open_idx) {
-                        // 只补回闭合花括号 (TCB-2026-35 整改暴露的存量缺陷修复):
+                        // 只补回闭合花括号 (整改暴露的存量缺陷修复):
                         // 旧实现把 src[close_idx..] 整段尾部原样压入输出后又从
                         // close_idx+1 重扫一遍——单测试模块时尾部无违规内容故从未
                         // 暴露; 一文件含多个 cfg(test) 模块时 (如 executor.rs 的
@@ -684,7 +682,7 @@ fn skip_to_mod_tests(src: &str) -> Option<usize> {
             }
             continue;
         }
-        // #[cfg(test)] 属性/注释跳过后必须紧跟 `mod <ident>` (TCB-2026-35 整改
+        // #[cfg(test)] 属性/注释跳过后必须紧跟 `mod <ident>` (整改加固
         // 附带加固): 旧实现用 "mod tests" 字面子串定位——`mod executor_ssot_tests`
         // 等非 tests 命名测试模块不被剥 (测试内模式暴露 → 误报), `mod tests_foo`
         // 反而借前缀命中被误吞 (漏报面)。cfg(test) 限定的模块本就不进生产构建,
@@ -748,7 +746,7 @@ fn skip_lifetime(bytes: &[u8], mut i: usize) -> usize {
     i
 }
 
-/// 查找下一个不在注释/字符串内的 `{`，遇到 `;` 返回 None（`mod tests;` 无体）。
+/// 查找下一个不在注释/字符串内的 `{`, 遇到 `;` 返回 None (`mod tests;` 无体)。
 fn find_inline_lbrace(src: &str) -> Option<usize> {
     let bytes = src.as_bytes();
     let mut i = 0;
@@ -833,7 +831,7 @@ fn find_inline_lbrace(src: &str) -> Option<usize> {
     None
 }
 
-/// 为 `{` at `open_idx` 找匹配的 `}`（感知字符串/注释）。
+/// 为 `{` at `open_idx` 找匹配的 `}` (感知字符串/注释)。
 fn match_brace(src: &str, open_idx: usize) -> Option<usize> {
     let bytes = src.as_bytes();
     if bytes[open_idx] != b'{' {
@@ -1054,7 +1052,7 @@ mod tests {
 
     #[test]
     fn test_squeeze_ws_catches_whitespace_bypass() {
-        // 插空写法原文未命中、去空白命中 → 拦截 (TCB-2026-24)
+        // 插空写法原文未命中、去空白命中 → 拦截
         let bypass = "let x = v.unwrap ();";
         assert!(!bypass.contains(".unwrap("));
         assert!(squeeze_ws(bypass).contains(".unwrap("));
@@ -1066,7 +1064,7 @@ mod tests {
 
     #[test]
     fn test_strip_inline_block_comments() {
-        // 同行自闭合块注释 → 剥离, 注释内示例文字不再误报 (TCB-2026-32)
+        // 同行自闭合块注释 → 剥离, 注释内示例文字不再误报
         let s = strip_inline_block_comments("let x = 1; /* conditional */ let y = 2;");
         assert!(!s.contains("conditional"), "got: {}", s);
         assert!(s.contains("let y = 2;"));
@@ -1090,7 +1088,7 @@ mod tests {
 
     #[test]
     fn test_bare_word_hit() {
-        // 裸词词界 (TCB-2026-32); 本仓 FORBIDDEN 无裸词模式, 仍验证语义
+        // 裸词词界; 本仓 FORBIDDEN 无裸词模式, 仍验证语义
         assert!(!bare_word_hit("this is asynchronous work", "async"));
         assert!(bare_word_hit("async fn f() {}", "async"));
         assert!(!bare_word_hit("asyncfn", "async"));
