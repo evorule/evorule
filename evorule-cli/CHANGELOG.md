@@ -13,6 +13,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.8.4 - 2026-10-13
+
+**CI 门禁链修复批（零 API 变更）** — 详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.8.4]` 段。
+
+### 🔄 变更
+
+- cli 子 CHANGELOG 与根 CHANGELOG 版本区块同步纪律固化为发版必查项（本区块即补录；v0.8.4 区间内 cli 本体零代码变更，badge 与下载指引同步升至 v0.8.4）
+
+---
+
 ## v0.8.3 - 2026-10-10
 
 **密钥 CLI 收口** — 详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.8.3]` 段。
