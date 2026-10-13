@@ -144,6 +144,7 @@ jobs:
   # ==========================================================================
   build:
     needs: [release-gate]
+    runs-on: ${{ matrix.os }}
     name: build (${{ matrix.name }})
     strategy:
       fail-fast: false
@@ -183,8 +184,8 @@ jobs:
       - name: 构建 CLI 二进制
         run: cargo build -p evorule-cli --release --target ${{ matrix.target }} --bin evorule
 
-      # 以平台后缀重命名后再上传,使 merge-multiple 汇聚时文件名唯一(四 target 中
-      # 三个 Unix 产物本体同名 evorule,直接上传会互相覆盖)
+      # 以平台后缀重命名后再上传,使 merge-multiple 汇聚时文件名唯一
+      # (双平台产物重命名后互不覆盖)
       - name: 补平台后缀
         shell: bash
         run: |
