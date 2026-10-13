@@ -34,13 +34,13 @@ use alloc::string::ToString;
 ///
 /// # Kani 验证模型（模型重构立项）
 ///
-/// Kani 构建下取 4：`evaluate_domain_outcome_inner` 的 `all`/`not` 分支递归调用
+/// Kani 构建下取 1：`evaluate_domain_outcome_inner` 的 `all`/`not` 分支递归调用
 /// 自身，CBMC 无条件编码整棵递归调用树（每层扇出 2），64 层 = 2^64 节点
 /// 不可收敛（2026-09-13 六轮二分探针定位：同逻辑去递归版 35s PASS，
-/// 真递归版 150s 超时，与运行时输入无关）。4 层 = 2^5 个评估实例，深度
+/// 真递归版 150s 超时，与运行时输入无关）。1 层 = 2^1 = 2 个评估实例，深度
 /// 保护分支（`depth > MAX_DOMAIN_DEPTH` 返回 `Err(NestingTooDeep)`）让
 /// 递归树有界终止，无需 unwind 截断。属性语义：kani 构建验证「深度限制
-/// 为 4 的域评估器」never-panic 的完备性；生产构建保持 64 零改动。
+/// 为 1 的域评估器」never-panic 的完备性；生产构建保持 64 零改动。
 #[cfg(not(kani))]
 pub const MAX_DOMAIN_DEPTH: usize = 64;
 /// Kani 验证模型值：见上方主文档（模型重构立项，递归树有界化）。

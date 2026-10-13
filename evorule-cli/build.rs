@@ -605,7 +605,7 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// 从源码中剥离 `#[cfg(test)] mod tests { ... }` 块体。
 ///
-/// 通过花括号计数 (感知字符串/字符/注释), 使测试内的 G8/G1/§5.2 模式
+/// 通过花括号计数 (感知字符串/字符/注释), 使测试内的字面量门禁模式
 /// 不触发误报。
 fn strip_test_mod(src: &str) -> String {
     let bytes = src.as_bytes();
