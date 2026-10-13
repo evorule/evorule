@@ -54,6 +54,13 @@
 
 （此后按时间顺序追加，格式：日期 + 事实 / 依据 / 影响 / 修正去向）
 
+### 2026-10-13：沙盒编排会话专属规则集 fork API 随 0.8.5 发版收口同步
+
+- **事实**：workspace 版本收口 0.8.5（本批 release commit，2026-10-13），STATUS.md 快照同步 v0.8.4 → v0.8.5，MECHANISM.md 头部版本对齐声明同步。区间变更（v0.8.4..HEAD）：governance 层新增 `create_session_from_parent_at_version_with_core_eval`（会话专属规则集 fork，非破坏 API 新增）；`create_session_from_initial_state` 重构出共享内部落点 `create_session_from_initial_state_inner`（pub 面零变化）；配套单元测试（override 生效 / 全局规则集不变 / 其他会话不受影响）。
+- **依据**：变更仅触及 evorule-governance 会话派生路径与测试面；TCB/reactor 生产源码零变更，A 档 Kani 证据基线 `a3d728f` 有效性维持判定不变；本批发版实测 evorule-governance lib 183 passed / 0 failed，fmt / clippy `-D warnings` 绿。
+- **影响**：无状态行主状态变更；无达成等级判定变更；governance pub 面纯增量，下游按需采纳。
+- **修正去向**：本条目即披露；STATUS.md 快照行 v0.8.5；MECHANISM.md 版本对齐行 v0.8.5；L1 参考文档（cli-reference/fact-types）版本戳随发版收口同步。
+
 ### 2026-10-13：CI 门禁链修复批随 0.8.4 发版收口同步
 
 - **事实**：workspace 版本收口 0.8.4（本批 release commit，2026-10-13），STATUS.md 快照同步 v0.8.3 → v0.8.4，MECHANISM.md 头部版本对齐声明同步。区间变更（v0.8.3..HEAD，9 commits）：① CI 差分测试供源落地（CI 工作流检出宪法真文件跨仓兄弟位，三平台可复现）；② 宪法哈希锁锚定 git blob 实体并做行尾归一化（消除 CRLF/LF 检出形态漂移致 unix 平台恒红——哈希语义免疫：JSON 规范禁止字符串字面量裸 CR）；③ clippy `-D warnings` 全部存量告警清零（工具链演进新 lint 落账）；④ doc-safety job 取全量 tags 检出（消除浅克隆 tag 比对空转）；⑤ 公开面阻断清零 + audit-anchors 中英分节同步 + 错误码 i18n 双字典补齐；⑥ 社区贡献授权文面（CONTRIBUTION_GRANT.md + docs/grants/ 首例 ALE-001，含中英双语，DUAL_LICENSE/NOTICE 配套）；⑦ `scripts/check-pre-push.ps1` 推送前统一门禁（密钥扫/doc-safety/公开面本地等价化）；⑧ `validate-version.ps1` 白名单增补 docs/grants/GRANT-*（授权签发记录法律文面版本锚定=签发时历史 tag，非当前版本声明）。

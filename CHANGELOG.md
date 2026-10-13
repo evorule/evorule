@@ -24,6 +24,19 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
+## [0.8.5] - 2026-10-13
+
+### Added（沙盒编排会话专属规则集 fork）
+
+- `evorule-governance` 新增
+  `SessionManager::create_session_from_parent_at_version_with_core_eval`：
+  在既有 fork 语义（状态快照继承、事实链全新起步、审计链/WAL 建链一致）
+  之上，允许为新会话挂载专属规则集（`core_eval_override`），不修改全局
+  规则集、不影响其他会话——支撑沙盒等「派生会话需要与生产不同规则集」
+  的编排场景。既有 `create_session_from_parent_at_version` /
+  `create_session_from_initial_state` 签名与行为不变（`None` 委托等价），
+  配套单元测试覆盖「override 生效 / 全局规则集不变 / 其他会话不受影响」。
+
 ## [0.8.4] - 2026-10-13
 
 ### Added（社区贡献授权与推送前门禁）

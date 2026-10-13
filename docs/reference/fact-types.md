@@ -4,7 +4,7 @@
 # Fact 类型参考
 
 > 字典式参考。evorule fact log 中所有 Fact 类型的字段说明。
-> 基于 `evorule-reactor/src/fact.rs` v0.8.4 实测（Fact 枚举 L234-350）。
+> 基于 `evorule-reactor/src/fact.rs` v0.8.5 实测（Fact 枚举 L234-350）。
 
 ## 总览
 
@@ -214,7 +214,7 @@ chain_hash   = blake3(prev_chain_hash + content_hash)
 # Fact Type Reference
 
 > Dictionary-style reference. Field documentation for every Fact type in the evorule fact log.
-> Based on hands-on inspection of `evorule-reactor/src/fact.rs` v0.8.4 (Fact enum, L234-350).
+> Based on hands-on inspection of `evorule-reactor/src/fact.rs` v0.8.5 (Fact enum, L234-350).
 
 ## Overview
 
