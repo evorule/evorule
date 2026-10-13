@@ -880,6 +880,33 @@ impl SessionManager {
         parent_id: SessionId,
         version: Option<u64>,
     ) -> Result<SessionId, SessionError> {
+        self.create_session_from_parent_at_version_with_core_eval(parent_id, version, None)
+    }
+
+    /// 基于父会话指定版本创建新会话，并允许挂载会话专属规则集
+    ///
+    /// fork 语义与 [`SessionManager::create_session_from_parent_at_version`]
+    /// 完全一致（状态快照继承、事实链全新起步、审计链/WAL 建链一致），唯一差异：
+    /// `core_eval_override` 为 `Some` 时，新会话 Reactor 挂载给定规则集而非当前
+    /// 全局规则集——用于沙盒编排等「派生会话需要与生产不同规则集」的编排场景；
+    /// 不修改全局规则集，不影响任何其他会话。`None` 与
+    /// [`create_session_from_parent_at_version`] 完全一致。
+    ///
+    /// # 参数
+    ///
+    /// - `parent_id`: 父会话 ID
+    /// - `version`: 可选的历史版本号（0 = 初始空状态）
+    /// - `core_eval_override`: 会话专属规则集（`None` = 当前全局规则集）
+    ///
+    /// # 返回 / 错误
+    ///
+    /// 与 [`SessionManager::create_session_from_parent_at_version`] 相同。
+    pub fn create_session_from_parent_at_version_with_core_eval(
+        &self,
+        parent_id: SessionId,
+        version: Option<u64>,
+        core_eval_override: Option<Vec<JsonValue>>,
+    ) -> Result<SessionId, SessionError> {
         let parent = self
             .get_session(parent_id)
             .ok_or(SessionError::NotFound { id: parent_id })?;
@@ -895,14 +922,43 @@ impl SessionManager {
             }
         };
 
-        self.create_session_from_initial_state(Some(parent_id), initial_payload, initial_version)
+        self.create_session_from_initial_state_inner(
+            Some(parent_id),
+            initial_payload,
+            initial_version,
+            core_eval_override,
+        )
     }
 
-    /// 从给定初始状态创建新会话（fork-from-archive 的统一落点）
+    /// 从给定初始状态创建新会话（fork-from-archive 入口）
     ///
-    /// [`SessionManager::create_session_from_parent_at_version`]（内存父会话，
-    /// 经 `rewind_payload`）与 [`SessionManager::payload_from_wal_records`]（磁盘归档链，
-    /// 经全链哈希校验 + 重放）算出的初始状态都经此落地，保证两条 fork 路径
+    /// 内存父会话（经 `rewind_payload`）与磁盘归档链（经全链哈希校验 + 重放）
+    /// 算出的初始状态都经此入口落地；两条 fork 路径的统一落点为
+    /// [`SessionManager::create_session_from_initial_state_inner`]。
+    /// 需要会话专属规则集的变体走
+    /// [`SessionManager::create_session_from_parent_at_version_with_core_eval`]。
+    ///
+    /// # 参数 / 返回
+    ///
+    /// 与 [`SessionManager::create_session_from_initial_state_inner`] 相同。
+    pub fn create_session_from_initial_state(
+        &self,
+        parent_id: Option<SessionId>,
+        initial_payload: JsonValue,
+        initial_version: u64,
+    ) -> Result<SessionId, SessionError> {
+        self.create_session_from_initial_state_inner(
+            parent_id,
+            initial_payload,
+            initial_version,
+            None,
+        )
+    }
+
+    /// fork-from-archive 与会话专属规则集 fork 的统一落点
+    ///
+    /// [`SessionManager::create_session_from_initial_state`] 与
+    /// [`SessionManager::create_session_from_parent_at_version_with_core_eval`]
     /// 共享同一套建链/注册逻辑：预留名额 → 分配 ID → WAL 版 FactsLog（fail-closed）
     /// → spawn reactor → 注册 shard。
     ///
@@ -911,11 +967,13 @@ impl SessionManager {
     /// - `parent_id`: 因果父会话 ID（None = 不记录因果链接，仅建会话）
     /// - `initial_payload`: 初始 payload
     /// - `initial_version`: 初始版本号（新会话审计链从此续起）
-    pub fn create_session_from_initial_state(
+    /// - `core_eval`: 新会话 Reactor 规则集；`None` = 当前全局规则集 clone
+    fn create_session_from_initial_state_inner(
         &self,
         parent_id: Option<SessionId>,
         initial_payload: JsonValue,
         initial_version: u64,
+        core_eval: Option<Vec<JsonValue>>,
     ) -> Result<SessionId, SessionError> {
         // B4：先原子预留名额，再做慢操作（create_facts_log/spawn）；失败路径必须归还
         self.reserve_session_slot()?;
@@ -939,7 +997,7 @@ impl SessionManager {
         };
         facts_log.set_initial_state(initial_payload, initial_version);
 
-        let reactor = Reactor::builder(self.core_eval.clone())
+        let reactor = Reactor::builder(core_eval.unwrap_or_else(|| self.core_eval.clone()))
             .max_rounds(self.max_rounds)
             .io_warn_timeout(self.io_warn_timeout)
             .io_error_timeout(self.io_error_timeout)
@@ -2041,6 +2099,77 @@ mod tests {
 
         let _ = mgr.close_session(child_id);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 会话专属规则集 fork（沙盒编排消费面）：with_core_eval 只影响 fork 出的
+    /// 会话，全局规则集不被修改，其他会话不受影响
+    #[tokio::test]
+    async fn test_create_session_from_parent_with_core_eval_override() {
+        use evorule_reactor::tcb_to_serde;
+        // 全局规则集为空：override 规则只应进 override 会话
+        let mgr = SessionManager::new(vec![], 100);
+
+        let root = mgr.create_session().unwrap();
+
+        // override 规则集：set x += 5（meta 指令树，任意命令触发）
+        let mut set_params = BTreeMap::new();
+        set_params.insert("attr".to_string(), JsonValue::string("x"));
+        set_params.insert("operation".to_string(), JsonValue::string("add"));
+        set_params.insert("value".to_string(), JsonValue::Integer(5));
+        let mut set_instr = BTreeMap::new();
+        set_instr.insert("type".to_string(), JsonValue::string("set"));
+        set_instr.insert("params".to_string(), JsonValue::Object(set_params));
+        let override_rules = vec![JsonValue::Object(set_instr)];
+
+        let sandbox = mgr
+            .create_session_from_parent_at_version_with_core_eval(root, None, Some(override_rules))
+            .unwrap();
+        // 对照组：常规 fork（无 override）→ 使用全局规则集（空集）
+        let plain = mgr
+            .create_session_from_parent_at_version(root, None)
+            .unwrap();
+
+        let mut instr = BTreeMap::new();
+        instr.insert("type".to_string(), JsonValue::string("tick"));
+        let send_tick = |id: u64| {
+            mgr.get_session(id)
+                .unwrap()
+                .command_tx
+                .send(Fact::Command {
+                    id: evorule_reactor::FactId(1),
+                    instruction: JsonValue::Object(instr.clone()),
+                })
+                .unwrap();
+        };
+        send_tick(sandbox);
+        send_tick(plain);
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+
+        let (sb_snap, _, _) = mgr.get_session(sandbox).unwrap().facts_log.snapshot();
+        assert_eq!(
+            tcb_to_serde(&sb_snap)["x"],
+            serde_json::json!(5),
+            "会话专属规则集生效：set x += 5 仅在 fork 会话执行"
+        );
+        let (pl_snap, _, _) = mgr.get_session(plain).unwrap().facts_log.snapshot();
+        assert!(
+            tcb_to_serde(&pl_snap).get("x").is_none(),
+            "非 override fork 使用全局空规则集，命令不被 override 规则执行"
+        );
+
+        // 全局规则集不被修改：其后新建的常规会话仍不受影响
+        let after = mgr.create_session().unwrap();
+        send_tick(after);
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+        let (af_snap, _, _) = mgr.get_session(after).unwrap().facts_log.snapshot();
+        assert!(
+            tcb_to_serde(&af_snap).get("x").is_none(),
+            "全局规则集不被 override 修改（后续会话仍用空集）"
+        );
+
+        for id in [root, sandbox, plain, after] {
+            let _ = mgr.close_session(id);
+        }
     }
 
     // ===== pending I/O 超时预算贯通 =====
