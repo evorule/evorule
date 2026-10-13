@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 #!/usr/bin/env pwsh
 # validate-release.ps1
 # VERSION_STRATEGY.md 4.5, 10.1
@@ -104,6 +104,57 @@ try {
         Write-Host "[INFO] Stable version, ready for release" -ForegroundColor Cyan
     } else {
         Write-Host "[INFO] Pre-release, do NOT publish to crates.io/npm/PyPI until stable" -ForegroundColor Yellow
+    }
+
+    # 5. GitHub workflow syntax lint (fail-closed)
+    #    2026-10-13 发版实证: release.yml 的 build job 丢 runs-on 后 workflow
+    #    深度解析失败, tag 触发的 Release run 静默缺位(无 run 无 suite), 而
+    #    branch push 仍产 0-job phantom run 掩蔽损坏——仓内无 lint 时该缺陷
+    #    潜伏至发版才显形。此处对全部 workflows 做解析 + 必填字段断言
+    #    (每个 job 必须有 runs-on 且 steps 非空), 防同类手误再入 main。
+    $wfDir = Join-Path $evoruleRoot ".github\workflows"
+    $wfFiles = @()
+    if (Test-Path $wfDir) {
+        $wfFiles = @(Get-ChildItem $wfDir -Filter *.yml) + @(Get-ChildItem $wfDir -Filter *.yaml -ErrorAction SilentlyContinue)
+    }
+    if ($wfFiles.Count -eq 0) {
+        Write-Host "[INFO] No workflow files found under .github/workflows" -ForegroundColor DarkGray
+    } else {
+        $pyCode = @'
+import sys, yaml
+bad = []
+for p in sys.argv[1:]:
+    try:
+        with open(p, encoding="utf-8") as f:
+            d = yaml.safe_load(f)
+    except Exception as e:
+        bad.append("%s: parse error: %s" % (p, e))
+        continue
+    if not isinstance(d, dict) or "jobs" not in d:
+        bad.append("%s: missing jobs mapping" % p)
+        continue
+    for name, job in d["jobs"].items():
+        if not isinstance(job, dict):
+            bad.append("%s: job %s is not a mapping" % (p, name))
+            continue
+        if "runs-on" not in job:
+            bad.append("%s: job %s: missing runs-on" % (p, name))
+        steps = job.get("steps")
+        if not isinstance(steps, list) or len(steps) == 0:
+            bad.append("%s: job %s: missing/empty steps" % (p, name))
+if bad:
+    print("\n".join(bad))
+    sys.exit(1)
+print("all workflows parse OK; every job has runs-on and non-empty steps")
+'@
+        $pyOut = $pyCode | python - @($wfFiles.FullName) 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[FAIL] GitHub workflow lint:" -ForegroundColor Red
+            $pyOut | ForEach-Object { Write-Host "       $_" -ForegroundColor Red }
+            $failed = $true
+        } else {
+            Write-Host "[OK]   $($wfFiles.Count) workflow files lint clean (parse + runs-on + steps)" -ForegroundColor Green
+        }
     }
 } finally {
     Pop-Location
