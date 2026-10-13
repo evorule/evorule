@@ -1114,7 +1114,7 @@ fn detect_strategy_patterns(crate_name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 收集目录下所有 .rs 文件（用于策略检测）
+/// 收集目录下所有 .rs 文件（递归；供 L1a 字面量门禁与策略检测共用）
 fn collect_rs_files_for_strategy(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
