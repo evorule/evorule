@@ -24,6 +24,33 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
+## [0.8.4] - 2026-10-13
+
+### Added（社区贡献授权与推送前门禁）
+
+- **通道 D 社区贡献授权**：新增 [CONTRIBUTION_GRANT.md](CONTRIBUTION_GRANT.md)
+  （社区贡献版权授权文面 v1.0）与 [docs/grants/](docs/grants/README.md)
+  签发记录目录（首例 ALE-001，含中英双语）；`DUAL_LICENSE.md` /
+  `NOTICE.md` 配套说明同步。
+- `scripts/check-pre-push.ps1`：推送前统一门禁脚本——密钥扫描、
+  文档安全（doc-safety）、公开面检查本地等价化，与 CI 同口径，
+  推送前拦截、任一 FAIL 即停。
+
+### Fixed（CI 门禁链）
+
+- **差分测试 CI 供源落地**：CI 工作流检出宪法真文件（跨仓兄弟位），
+  差分测试在 CI 三平台可复现（此前因单仓检出台无供源而结构性红）。
+- **宪法哈希锁锚定修复**：哈希锁值改为锚定 git blob 实体并在哈希前
+  做行尾归一化——消除 Windows（CRLF 检出）与 Unix（LF 检出）工作区
+  字节形态漂移导致的跨平台测试红。
+- **clippy 存量清零**：`cargo clippy --workspace --all-targets -- -D warnings`
+  全部存量告警清零，Clippy 门禁自建立以来首次可绿。
+- **doc-safety 门禁修复**：job 检出改为取全量 tags——消除浅克隆下
+  tag 比对空转、本地门禁红而 CI 绿的盲区；evorule-cli CHANGELOG
+  补 v0.8.3 区块。
+- **公开面阻断清零与 i18n 补齐**：公开面扫描阻断项清零；
+  audit-anchors 文档中英分节同步；错误码 i18n 双字典补齐缺失键。
+
 ## [0.8.3] - 2026-10-10
 
 ### Added（evorule-cli 密钥 CLI 收口）

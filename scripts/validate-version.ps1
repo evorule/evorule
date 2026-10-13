@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 param(
     [switch]$Quiet
 )
@@ -193,7 +193,8 @@ if ($canonicalVersion -and $canonicalVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
         if ($content.Substring(0, $headLen) -match '\[已废弃\]') { continue }
         # 审计/威胁模型文档跳过(版本绑定审计批次)
         # SECURITY.md 含版本支持表(历史边界声明如 < v0.1.0-alpha.1,合法)
-        if ($relName -match 'AUDIT|THREAT_MODEL|^SECURITY\.md$') { continue }
+        # docs/grants/ 授权签发记录跳过(法律文面版本锚定=签发时的历史 tag,非当前版本声明)
+        if ($relName -match 'AUDIT|THREAT_MODEL|^SECURITY\.md$|^docs[/\\]grants[/\\]GRANT-') { continue }
         # === v0.2.2 新增:迁移指南/发布流程文档 → 整文件跳过 ===
         # MIGRATION_v0.2.0.md 讲 v0.1.x → v0.2.0 迁移, RELEASE_PROCESS_v0.1.1.md 讲 v0.2.0 发布流程示例
         if ($relName -match 'MIGRATION_v\d+\.\d+\.\d+\.md$|RELEASE_PROCESS_v\d+\.\d+\.\d+\.md$|CHANGE_REQUEST\.md$|DETERMINISM_REPORT\.md$|PERFORMANCE_BASELINE_[Vv]\d+\.\d+\.\d+\.md$') { continue }
