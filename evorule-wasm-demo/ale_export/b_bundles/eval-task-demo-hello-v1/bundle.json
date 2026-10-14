@@ -69,8 +69,8 @@
                   "params": {
                     "domain": {
                       "type": "eq",
-                      "path": "__exec__.payload.facts.actual",
-                      "value": "__exec__.payload.facts.expected",
+                      "path": "__exec__.instruction.facts.actual",
+                      "value": "__exec__.instruction.facts.expected",
                       "on_missing": "error"
                     },
                     "on_true": [
@@ -91,8 +91,8 @@
                             "type": "not",
                             "inner": {
                               "type": "eq",
-                              "path": "__exec__.payload.facts.actual",
-                              "value": "__exec__.payload.facts.expected",
+                              "path": "__exec__.instruction.facts.actual",
+                              "value": "__exec__.instruction.facts.expected",
                               "on_missing": "error"
                             }
                           },
@@ -184,7 +184,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:0eddf8db91cef9a93e35d5fc4bc183d9823e96a2ba587e0722833271e0c7b690",
+    "content_hash": "blake3:94fcacdbc3702468e799196dfb6fbbf8d3659b19abe0b90abceb8b94ea74f6f7",
     "hash_algo": "blake3"
   }
 }

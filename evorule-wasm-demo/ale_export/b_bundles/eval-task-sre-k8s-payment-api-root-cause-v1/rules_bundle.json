@@ -40,19 +40,19 @@
                       "inner": [
                         {
                           "type": "eq",
-                          "path": "__exec__.payload.facts.gate_valid_json",
+                          "path": "__exec__.instruction.facts.gate_valid_json",
                           "value": 1,
                           "on_missing": "unsat"
                         },
                         {
                           "type": "eq",
-                          "path": "__exec__.payload.facts.gate_required_keys",
+                          "path": "__exec__.instruction.facts.gate_required_keys",
                           "value": 1,
                           "on_missing": "unsat"
                         },
                         {
                           "type": "eq",
-                          "path": "__exec__.payload.facts.gate_has_causes",
+                          "path": "__exec__.instruction.facts.gate_has_causes",
                           "value": 1,
                           "on_missing": "unsat"
                         }
@@ -64,7 +64,7 @@
                         "params": {
                           "attr": "__exec__.payload.grade.score",
                           "operation": "add",
-                          "value": "__exec__.payload.facts.comp_primary"
+                          "value": "__exec__.instruction.facts.comp_primary"
                         }
                       },
                       {
@@ -72,7 +72,7 @@
                         "params": {
                           "attr": "__exec__.payload.grade.score",
                           "operation": "add",
-                          "value": "__exec__.payload.facts.comp_secondary"
+                          "value": "__exec__.instruction.facts.comp_secondary"
                         }
                       },
                       {
@@ -80,7 +80,7 @@
                         "params": {
                           "attr": "__exec__.payload.grade.score",
                           "operation": "add",
-                          "value": "__exec__.payload.facts.comp_tertiary"
+                          "value": "__exec__.instruction.facts.comp_tertiary"
                         }
                       },
                       {
@@ -88,7 +88,7 @@
                         "params": {
                           "attr": "__exec__.payload.grade.score",
                           "operation": "add",
-                          "value": "__exec__.payload.facts.comp_resources"
+                          "value": "__exec__.instruction.facts.comp_resources"
                         }
                       },
                       {
@@ -96,7 +96,7 @@
                         "params": {
                           "attr": "__exec__.payload.grade.score",
                           "operation": "add",
-                          "value": "__exec__.payload.facts.comp_remediation"
+                          "value": "__exec__.instruction.facts.comp_remediation"
                         }
                       },
                       {
@@ -104,7 +104,7 @@
                         "params": {
                           "attr": "__exec__.payload.grade.score",
                           "operation": "add",
-                          "value": "__exec__.payload.facts.comp_evidence"
+                          "value": "__exec__.instruction.facts.comp_evidence"
                         }
                       },
                       {
@@ -112,7 +112,7 @@
                         "params": {
                           "attr": "__exec__.payload.grade.score",
                           "operation": "add",
-                          "value": "__exec__.payload.facts.comp_summary"
+                          "value": "__exec__.instruction.facts.comp_summary"
                         }
                       }
                     ],
@@ -166,7 +166,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.2",
     "source_version": "v1",
-    "content_hash": "blake3:ce1fcff2d443e94b04b26dd0292a37c9e83f28a7a869e9324574e60771dac2de",
+    "content_hash": "blake3:34c0f827be6b4239588abe40db32164e71f4c9dcac88ec476328f0ed4ec99de7",
     "hash_algo": "blake3"
   }
 }

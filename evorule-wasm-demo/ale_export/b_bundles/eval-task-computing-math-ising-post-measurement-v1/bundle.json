@@ -122,37 +122,37 @@
                       "inner": [
                         {
                           "type": "eq",
-                          "path": "__exec__.payload.facts.gate_required_outputs",
+                          "path": "__exec__.instruction.facts.gate_required_outputs",
                           "value": 1,
                           "on_missing": "unsat"
                         },
                         {
                           "type": "eq",
-                          "path": "__exec__.payload.facts.gate_shapes_finite",
+                          "path": "__exec__.instruction.facts.gate_shapes_finite",
                           "value": 1,
                           "on_missing": "unsat"
                         },
                         {
                           "type": "eq",
-                          "path": "__exec__.payload.facts.pass_critical_state",
+                          "path": "__exec__.instruction.facts.pass_critical_state",
                           "value": 1,
                           "on_missing": "unsat"
                         },
                         {
                           "type": "eq",
-                          "path": "__exec__.payload.facts.pass_post_probs",
+                          "path": "__exec__.instruction.facts.pass_post_probs",
                           "value": 1,
                           "on_missing": "unsat"
                         },
                         {
                           "type": "eq",
-                          "path": "__exec__.payload.facts.pass_rdm_site1",
+                          "path": "__exec__.instruction.facts.pass_rdm_site1",
                           "value": 1,
                           "on_missing": "unsat"
                         },
                         {
                           "type": "eq",
-                          "path": "__exec__.payload.facts.pass_correlators",
+                          "path": "__exec__.instruction.facts.pass_correlators",
                           "value": 1,
                           "on_missing": "unsat"
                         }
@@ -287,7 +287,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:685c19b458da82059ccbd560971ed9c8a85359c0d5754633d9f47876580d50d8",
+    "content_hash": "blake3:a65578e1530136e0eb267407f29415ee0c044fd9a8866730cd3eea64a92d52de",
     "hash_algo": "blake3"
   }
 }

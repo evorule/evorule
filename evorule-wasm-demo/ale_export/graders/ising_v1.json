@@ -15,37 +15,37 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.gate_required_outputs",
+         "path": "__exec__.instruction.facts.gate_required_outputs",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.gate_shapes_finite",
+         "path": "__exec__.instruction.facts.gate_shapes_finite",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.pass_critical_state",
+         "path": "__exec__.instruction.facts.pass_critical_state",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.pass_post_probs",
+         "path": "__exec__.instruction.facts.pass_post_probs",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.pass_rdm_site1",
+         "path": "__exec__.instruction.facts.pass_rdm_site1",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.pass_correlators",
+         "path": "__exec__.instruction.facts.pass_correlators",
          "value": 1,
          "on_missing": "unsat"
         }

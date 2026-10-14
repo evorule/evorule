@@ -15,13 +15,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier1_metadata_ok",
+         "path": "__exec__.instruction.facts.tier1_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier1_valid_tour",
+         "path": "__exec__.instruction.facts.tier1_valid_tour",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -48,13 +48,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier1_metadata_ok",
+         "path": "__exec__.instruction.facts.tier1_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier1_cost_matches_tour",
+         "path": "__exec__.instruction.facts.tier1_cost_matches_tour",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -81,13 +81,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier1_metadata_ok",
+         "path": "__exec__.instruction.facts.tier1_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier1_cost_matches_ref",
+         "path": "__exec__.instruction.facts.tier1_cost_matches_ref",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -114,13 +114,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier1_metadata_ok",
+         "path": "__exec__.instruction.facts.tier1_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier1_bound_certifies",
+         "path": "__exec__.instruction.facts.tier1_bound_certifies",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -147,13 +147,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier2_metadata_ok",
+         "path": "__exec__.instruction.facts.tier2_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier2_valid_tour",
+         "path": "__exec__.instruction.facts.tier2_valid_tour",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -180,13 +180,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier2_metadata_ok",
+         "path": "__exec__.instruction.facts.tier2_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier2_cost_matches_tour",
+         "path": "__exec__.instruction.facts.tier2_cost_matches_tour",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -213,13 +213,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier2_metadata_ok",
+         "path": "__exec__.instruction.facts.tier2_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier2_cost_matches_ref",
+         "path": "__exec__.instruction.facts.tier2_cost_matches_ref",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -246,13 +246,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier2_metadata_ok",
+         "path": "__exec__.instruction.facts.tier2_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier2_bound_certifies",
+         "path": "__exec__.instruction.facts.tier2_bound_certifies",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -279,13 +279,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier3_metadata_ok",
+         "path": "__exec__.instruction.facts.tier3_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier3_valid_tour",
+         "path": "__exec__.instruction.facts.tier3_valid_tour",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -312,13 +312,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier3_metadata_ok",
+         "path": "__exec__.instruction.facts.tier3_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier3_cost_matches_tour",
+         "path": "__exec__.instruction.facts.tier3_cost_matches_tour",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -345,13 +345,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier3_metadata_ok",
+         "path": "__exec__.instruction.facts.tier3_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier3_incumbent_ok",
+         "path": "__exec__.instruction.facts.tier3_incumbent_ok",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -378,13 +378,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier3_metadata_ok",
+         "path": "__exec__.instruction.facts.tier3_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier3_bound_sane",
+         "path": "__exec__.instruction.facts.tier3_bound_sane",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -411,13 +411,13 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier3_metadata_ok",
+         "path": "__exec__.instruction.facts.tier3_metadata_ok",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.tier3_gap_ok",
+         "path": "__exec__.instruction.facts.tier3_gap_ok",
          "value": 1,
          "on_missing": "unsat"
         }

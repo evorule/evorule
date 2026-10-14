@@ -15,19 +15,19 @@
        "inner": [
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.gate_valid_json",
+         "path": "__exec__.instruction.facts.gate_valid_json",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.gate_required_keys",
+         "path": "__exec__.instruction.facts.gate_required_keys",
          "value": 1,
          "on_missing": "unsat"
         },
         {
          "type": "eq",
-         "path": "__exec__.payload.facts.gate_has_causes",
+         "path": "__exec__.instruction.facts.gate_has_causes",
          "value": 1,
          "on_missing": "unsat"
         }
@@ -39,7 +39,7 @@
         "params": {
          "attr": "__exec__.payload.grade.score",
          "operation": "add",
-         "value": "__exec__.payload.facts.comp_primary"
+         "value": "__exec__.instruction.facts.comp_primary"
         }
        },
        {
@@ -47,7 +47,7 @@
         "params": {
          "attr": "__exec__.payload.grade.score",
          "operation": "add",
-         "value": "__exec__.payload.facts.comp_secondary"
+         "value": "__exec__.instruction.facts.comp_secondary"
         }
        },
        {
@@ -55,7 +55,7 @@
         "params": {
          "attr": "__exec__.payload.grade.score",
          "operation": "add",
-         "value": "__exec__.payload.facts.comp_tertiary"
+         "value": "__exec__.instruction.facts.comp_tertiary"
         }
        },
        {
@@ -63,7 +63,7 @@
         "params": {
          "attr": "__exec__.payload.grade.score",
          "operation": "add",
-         "value": "__exec__.payload.facts.comp_resources"
+         "value": "__exec__.instruction.facts.comp_resources"
         }
        },
        {
@@ -71,7 +71,7 @@
         "params": {
          "attr": "__exec__.payload.grade.score",
          "operation": "add",
-         "value": "__exec__.payload.facts.comp_remediation"
+         "value": "__exec__.instruction.facts.comp_remediation"
         }
        },
        {
@@ -79,7 +79,7 @@
         "params": {
          "attr": "__exec__.payload.grade.score",
          "operation": "add",
-         "value": "__exec__.payload.facts.comp_evidence"
+         "value": "__exec__.instruction.facts.comp_evidence"
         }
        },
        {
@@ -87,7 +87,7 @@
         "params": {
          "attr": "__exec__.payload.grade.score",
          "operation": "add",
-         "value": "__exec__.payload.facts.comp_summary"
+         "value": "__exec__.instruction.facts.comp_summary"
         }
        }
       ],
