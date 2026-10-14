@@ -76,6 +76,26 @@ SCORING_SHAPE = {
 }
 
 
+def rule_entry(task: str, ruleset: list, source: str) -> dict:
+    """Rule 条目（BundleEntry 同构，B-3 判卷轨）：rule_body=transform 指令集。
+
+    15-B §1.1 双轨裁定：同质性校验禁 Rule/Knowledge 混装 → 判卷规则集
+    须独立 Rule 包（entry_kind=rule）。rule_body=引擎原生 {transform:[...]}
+    （server 侧 validate_rule_input 认 {transform:[]} 或裸数组；装载后进
+    reactor，branch 匹配 instruction_type=eval_* → eq 比对 facts → set 万分制）。
+    无 io 服务依赖 → 符号三方一致零要求；bundle 恒 L3 禁 enforce（ruleset 无
+    enforce 指令，天然满足）。
+    """
+    return {
+        "entry_id": f"eval.{task}.grader_rules",
+        "entry_kind": "rule",
+        "rule_body": {"transform": ruleset},
+        "provenance": {"source": source},
+        "domain": "eval",
+        "tags": ["ale", "grader", "judging"],
+    }
+
+
 def entry(task: str, kind_body: str, schema_ref: str, body: dict,
           source: str) -> dict:
     """eval.* entry（BundleEntry 同构：Knowledge 条目形态）。"""
@@ -222,7 +242,7 @@ def convert_task(ale_export: Path, task_dir: str, out_root: Path) -> Path:
             },
         },
         "entries": entries,
-        "tests": {"subset": [v["name"] for v in variants], "verdict": "pass"},
+        "tests": {"subset": [v["name"] for v in variants], "verdict": "fail"},
         "audit": {
             "exported_at": "2026-10-12T00:00:00Z",
             "exported_by": "ale2bundle v0.1",
@@ -237,7 +257,38 @@ def convert_task(ale_export: Path, task_dir: str, out_root: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / "bundle.json"
     out.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # ---- B-3 判卷轨：Rule 双导出（独立 Rule 包，同质性校验禁混装）----
+    # dataset 元数据复用 Knowledge 包（同 dataset_id 声明治理谱系），bundle_id
+    # 加 -rules 后缀区分；entries=单 Rule 条目（ruleset 原样 transform）。
+    rule_bundle = {
+        "bundle_schema_version": "1.0",
+        "bundle_id": f"eval-task-{short}-v1-rules",
+        "dataset": dict(bundle["dataset"]),
+        "entries": [rule_entry(task_dir, ruleset, "ale_export/graders/" + ruleset_name)],
+        "tests": {"subset": [evidence_tag(v["name"]) for v in variants], "verdict": "fail"},
+        "audit": {
+            "exported_at": "2026-10-12T00:00:00Z",
+            "exported_by": "ale2bundle v0.2",
+            "source_version": "v1",
+            "content_hash": "",
+            "hash_algo": "blake3",
+        },
+    }
+    rule_bundle["audit"]["content_hash"] = dataset_bundle_hash(rule_bundle)
+    rule_out = out_dir / "rules_bundle.json"
+    rule_out.write_text(json.dumps(rule_bundle, ensure_ascii=False, indent=2), encoding="utf-8")
     return out
+
+
+def evidence_tag(variant_name: str) -> str:
+    """tests.subset 背书标记（server ①.5 测试证据校验）：O-431 后闸面收紧——
+    verdict=pass 导入须 sandbox:<数字ID> 机器背书（human: 全链下线）。
+    B-1/B-2 对拍账（03-M8 差测核心变体）发生在闸收紧前，本批按 unverified
+    形态重生成（verdict=fail 起步，19 号档立法）；沙盒化验证（C1 面上线后
+    补 sandbox 背书）登记为 B-4 验证面后续项。变体名存 subset 保可追溯。
+    """
+    return f"sandbox-pending/ale-porting/03-M8-diff-ledger/{variant_name}"
 
 
 def main() -> int:
@@ -247,15 +298,20 @@ def main() -> int:
     for task_dir in ["demo_hello_wasm", "branch_bound_atsp_wasm",
                      "ising_post_measurement_wasm", "k8s_payment_api_root_cause_wasm"]:
         out = convert_task(ale_export, task_dir, out_root)
-        # 自验：重新装载 + 哈希重算
+        # 自验：重新装载 + 哈希重算（两包各验）
         b = json.loads(out.read_text(encoding="utf-8"))
         recorded = b["audit"]["content_hash"]
         recomputed = dataset_bundle_hash(b)
-        status = "OK " if recorded == recomputed else "FAIL"
-        if recorded == recomputed:
+        rb = json.loads((out.parent / "rules_bundle.json").read_text(encoding="utf-8"))
+        r_recorded = rb["audit"]["content_hash"]
+        r_recomputed = dataset_bundle_hash(rb)
+        ok_k = recorded == recomputed
+        ok_r = r_recorded == r_recomputed
+        if ok_k and ok_r:
             ok += 1
-        print(f"{status} {out.parent.name}  blake3={recorded[7:23]}…")
-    print(f"\n{ok}/4 bundles, hash self-verify {'PASS' if ok == 4 else 'FAIL'}")
+        print(f"{'OK ' if ok_k else 'FAIL'} {out.parent.name}  blake3={recorded[7:23]}…")
+        print(f"{'OK ' if ok_r else 'FAIL'} {out.parent.name}-rules  blake3={r_recorded[7:23]}…")
+    print(f"\n{ok}/4 task dirs, dual-bundle hash self-verify {'PASS' if ok == 4 else 'FAIL'}")
     return 0 if ok == 4 else 1
 
 

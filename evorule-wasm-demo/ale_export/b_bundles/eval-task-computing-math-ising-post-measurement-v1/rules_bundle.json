@@ -1,0 +1,142 @@
+{
+  "bundle_schema_version": "1.0",
+  "bundle_id": "eval-task-computing-math-ising-post-measurement-v1-rules",
+  "dataset": {
+    "dataset_id": "eval-task-computing-math-ising-post-measurement",
+    "name": "ALE eval task computing_math/ising_post_measurement_wasm",
+    "tenant_id": "eval",
+    "instance_id": "evorule-ale-grif",
+    "versioning": {
+      "current": "v1",
+      "chain": [
+        "v1"
+      ]
+    },
+    "version_selection": {
+      "mode": "pinned",
+      "pinned_version": "v1",
+      "pinned_include_patch": false
+    }
+  },
+  "entries": [
+    {
+      "entry_id": "eval.ising_post_measurement_wasm.grader_rules",
+      "entry_kind": "rule",
+      "rule_body": {
+        "transform": [
+          {
+            "type": "branch",
+            "params": {
+              "domain": {
+                "type": "instruction",
+                "instruction_type": "eval_ising_v1"
+              },
+              "on_true": [
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.gate_required_outputs",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.gate_shapes_finite",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.pass_critical_state",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.pass_post_probs",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.pass_rdm_site1",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.pass_correlators",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 10000
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "enforce",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.grade.score",
+                          "value": 0,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "reason": "grade_zero_score[ising_v1]: no tier passed"
+                  }
+                }
+              ],
+              "on_false": []
+            }
+          }
+        ]
+      },
+      "provenance": {
+        "source": "ale_export/graders/ising_v1.json"
+      },
+      "domain": "eval",
+      "tags": [
+        "ale",
+        "grader",
+        "judging"
+      ]
+    }
+  ],
+  "tests": {
+    "subset": [
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/all_correct",
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/missing_output",
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/tolerance_edge_inside",
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/tolerance_edge_outside"
+    ],
+    "verdict": "fail"
+  },
+  "audit": {
+    "exported_at": "2026-10-12T00:00:00Z",
+    "exported_by": "ale2bundle v0.2",
+    "source_version": "v1",
+    "content_hash": "blake3:1d7a4ae6a92a168f53022f87bb18d155129179b5bb8809fa37e9eab6f04ee1d8",
+    "hash_algo": "blake3"
+  }
+}

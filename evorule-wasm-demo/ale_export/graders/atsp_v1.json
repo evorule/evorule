@@ -435,6 +435,23 @@
       ],
       "on_false": []
      }
+    },
+    {
+     "type": "enforce",
+     "params": {
+      "domain": {
+       "type": "all",
+       "inner": [
+        {
+         "type": "eq",
+         "path": "__exec__.payload.grade.score",
+         "value": 0,
+         "on_missing": "unsat"
+        }
+       ]
+      },
+      "reason": "grade_zero_score[atsp_v1]: no tier passed"
+     }
     }
    ],
    "on_false": []

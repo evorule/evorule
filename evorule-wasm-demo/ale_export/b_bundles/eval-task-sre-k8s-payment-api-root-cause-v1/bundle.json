@@ -192,6 +192,23 @@
                     ],
                     "on_false": []
                   }
+                },
+                {
+                  "type": "enforce",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.grade.score",
+                          "value": 0,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "reason": "grade_zero_score[k8s_v1]: no tier passed"
+                  }
                 }
               ],
               "on_false": []
@@ -286,13 +303,13 @@
       "empty_causes",
       "drop_tertiary_cause"
     ],
-    "verdict": "pass"
+    "verdict": "fail"
   },
   "audit": {
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:0dcc7269ae479142678fd9136ee56f19570f98019eeacd7ac4c7c6049b376680",
+    "content_hash": "blake3:9a19753a13b2a675e7b4cb86db11a3345e2a430918253a3def027977ff8744df",
     "hash_algo": "blake3"
   }
 }

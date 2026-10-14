@@ -1,0 +1,105 @@
+{
+  "bundle_schema_version": "1.0",
+  "bundle_id": "eval-task-demo-hello-v1-rules",
+  "dataset": {
+    "dataset_id": "eval-task-demo-hello",
+    "name": "ALE eval task demo/hello_wasm",
+    "tenant_id": "eval",
+    "instance_id": "evorule-ale-grif",
+    "versioning": {
+      "current": "v1",
+      "chain": [
+        "v1"
+      ]
+    },
+    "version_selection": {
+      "mode": "pinned",
+      "pinned_version": "v1",
+      "pinned_include_patch": false
+    }
+  },
+  "entries": [
+    {
+      "entry_id": "eval.demo_hello_wasm.grader_rules",
+      "entry_kind": "rule",
+      "rule_body": {
+        "transform": [
+          {
+            "type": "branch",
+            "params": {
+              "domain": {
+                "type": "instruction",
+                "instruction_type": "eval_exact_match"
+              },
+              "on_true": [
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "eq",
+                      "path": "__exec__.payload.facts.actual",
+                      "value": "__exec__.payload.facts.expected",
+                      "on_missing": "error"
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 10000
+                        }
+                      }
+                    ],
+                    "on_false": [
+                      {
+                        "type": "enforce",
+                        "params": {
+                          "domain": {
+                            "type": "not",
+                            "inner": {
+                              "type": "eq",
+                              "path": "__exec__.payload.facts.actual",
+                              "value": "__exec__.payload.facts.expected",
+                              "on_missing": "error"
+                            }
+                          },
+                          "reason": "grade_mismatch[graders\\demo_hello_v1]: answer incorrect"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "on_false": []
+            }
+          }
+        ]
+      },
+      "provenance": {
+        "source": "ale_export/graders/demo_hello_v1.json"
+      },
+      "domain": "eval",
+      "tags": [
+        "ale",
+        "grader",
+        "judging"
+      ]
+    }
+  ],
+  "tests": {
+    "subset": [
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/correct",
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/mismatch",
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/missing_output"
+    ],
+    "verdict": "fail"
+  },
+  "audit": {
+    "exported_at": "2026-10-12T00:00:00Z",
+    "exported_by": "ale2bundle v0.2",
+    "source_version": "v1",
+    "content_hash": "blake3:34e28832a23a44a1aa131d9847df2cdf9c052e32dd6d94001f275f5fea54634f",
+    "hash_algo": "blake3"
+  }
+}

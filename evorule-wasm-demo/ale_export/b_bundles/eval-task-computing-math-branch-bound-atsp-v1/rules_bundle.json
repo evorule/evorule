@@ -1,0 +1,514 @@
+{
+  "bundle_schema_version": "1.0",
+  "bundle_id": "eval-task-computing-math-branch-bound-atsp-v1-rules",
+  "dataset": {
+    "dataset_id": "eval-task-computing-math-branch-bound-atsp",
+    "name": "ALE eval task computing_math/branch_bound_atsp_wasm",
+    "tenant_id": "eval",
+    "instance_id": "evorule-ale-grif",
+    "versioning": {
+      "current": "v1",
+      "chain": [
+        "v1"
+      ]
+    },
+    "version_selection": {
+      "mode": "pinned",
+      "pinned_version": "v1",
+      "pinned_include_patch": false
+    }
+  },
+  "entries": [
+    {
+      "entry_id": "eval.branch_bound_atsp_wasm.grader_rules",
+      "entry_kind": "rule",
+      "rule_body": {
+        "transform": [
+          {
+            "type": "branch",
+            "params": {
+              "domain": {
+                "type": "instruction",
+                "instruction_type": "eval_atsp_v1"
+              },
+              "on_true": [
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier1_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier1_valid_tour",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 1000
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier1_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier1_cost_matches_tour",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 1000
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier1_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier1_cost_matches_ref",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 1000
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier1_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier1_bound_certifies",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 1000
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier2_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier2_valid_tour",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 875
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier2_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier2_cost_matches_tour",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 875
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier2_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier2_cost_matches_ref",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 875
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier2_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier2_bound_certifies",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 875
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier3_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier3_valid_tour",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 500
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier3_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier3_cost_matches_tour",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 500
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier3_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier3_incumbent_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 500
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier3_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier3_bound_sane",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 500
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier3_metadata_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.tier3_gap_ok",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": 500
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "enforce",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.grade.score",
+                          "value": 0,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "reason": "grade_zero_score[atsp_v1]: no tier passed"
+                  }
+                }
+              ],
+              "on_false": []
+            }
+          }
+        ]
+      },
+      "provenance": {
+        "source": "ale_export/graders/atsp_v1.json"
+      },
+      "domain": "eval",
+      "tags": [
+        "ale",
+        "grader",
+        "judging"
+      ]
+    }
+  ],
+  "tests": {
+    "subset": [
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/perfect",
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/tier1_cost_error",
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/tier2_metadata_missing",
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/tier3_gap_exceeded"
+    ],
+    "verdict": "fail"
+  },
+  "audit": {
+    "exported_at": "2026-10-12T00:00:00Z",
+    "exported_by": "ale2bundle v0.2",
+    "source_version": "v1",
+    "content_hash": "blake3:4bc5a594d4b5c16008b1a4a0ca971d2d9dc3bb83ef716a1b6205a42f2000804a",
+    "hash_algo": "blake3"
+  }
+}

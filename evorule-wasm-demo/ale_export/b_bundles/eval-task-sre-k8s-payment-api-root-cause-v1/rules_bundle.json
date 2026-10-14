@@ -1,0 +1,172 @@
+{
+  "bundle_schema_version": "1.0",
+  "bundle_id": "eval-task-sre-k8s-payment-api-root-cause-v1-rules",
+  "dataset": {
+    "dataset_id": "eval-task-sre-k8s-payment-api-root-cause",
+    "name": "ALE eval task computing_math/k8s_payment_api_root_cause_wasm",
+    "tenant_id": "eval",
+    "instance_id": "evorule-ale-grif",
+    "versioning": {
+      "current": "v1",
+      "chain": [
+        "v1"
+      ]
+    },
+    "version_selection": {
+      "mode": "pinned",
+      "pinned_version": "v1",
+      "pinned_include_patch": false
+    }
+  },
+  "entries": [
+    {
+      "entry_id": "eval.k8s_payment_api_root_cause_wasm.grader_rules",
+      "entry_kind": "rule",
+      "rule_body": {
+        "transform": [
+          {
+            "type": "branch",
+            "params": {
+              "domain": {
+                "type": "instruction",
+                "instruction_type": "eval_k8s_v1"
+              },
+              "on_true": [
+                {
+                  "type": "branch",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.gate_valid_json",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.gate_required_keys",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        },
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.facts.gate_has_causes",
+                          "value": 1,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "on_true": [
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_primary"
+                        }
+                      },
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_secondary"
+                        }
+                      },
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_tertiary"
+                        }
+                      },
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_resources"
+                        }
+                      },
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_remediation"
+                        }
+                      },
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_evidence"
+                        }
+                      },
+                      {
+                        "type": "set",
+                        "params": {
+                          "attr": "__exec__.payload.grade.score",
+                          "operation": "add",
+                          "value": "__exec__.payload.facts.comp_summary"
+                        }
+                      }
+                    ],
+                    "on_false": []
+                  }
+                },
+                {
+                  "type": "enforce",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.grade.score",
+                          "value": 0,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "reason": "grade_zero_score[k8s_v1]: no tier passed"
+                  }
+                }
+              ],
+              "on_false": []
+            }
+          }
+        ]
+      },
+      "provenance": {
+        "source": "ale_export/graders/k8s_v1.json"
+      },
+      "domain": "eval",
+      "tags": [
+        "ale",
+        "grader",
+        "judging"
+      ]
+    }
+  ],
+  "tests": {
+    "subset": [
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/perfect_report",
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/missing_required_keys",
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/empty_causes",
+      "sandbox-pending/ale-porting/03-M8-diff-ledger/drop_tertiary_cause"
+    ],
+    "verdict": "fail"
+  },
+  "audit": {
+    "exported_at": "2026-10-12T00:00:00Z",
+    "exported_by": "ale2bundle v0.2",
+    "source_version": "v1",
+    "content_hash": "blake3:ce1fcff2d443e94b04b26dd0292a37c9e83f28a7a869e9324574e60771dac2de",
+    "hash_algo": "blake3"
+  }
+}

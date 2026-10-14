@@ -1,42 +1,52 @@
 [
-  {
-    "type": "branch",
-    "params": {
-      "domain": {"type": "instruction", "instruction_type": "eval_exact_match"},
+ {
+  "type": "branch",
+  "params": {
+   "domain": {
+    "type": "instruction",
+    "instruction_type": "eval_exact_match"
+   },
+   "on_true": [
+    {
+     "type": "branch",
+     "params": {
+      "domain": {
+       "type": "eq",
+       "path": "__exec__.payload.facts.actual",
+       "value": "__exec__.payload.facts.expected",
+       "on_missing": "error"
+      },
       "on_true": [
-        {
-          "type": "branch",
-          "params": {
-            "domain": {
-              "type": "eq",
-              "path": "__exec__.payload.facts.actual",
-              "value": "__exec__.payload.facts.expected",
-              "on_missing": "error"
-            },
-            "on_true": [
-              {
-                "type": "set",
-                "params": {
-                  "attr": "__exec__.payload.grade.score",
-                  "operation": "add",
-                  "value": 10000
-                }
-              }
-            ],
-            "on_false": [
-              {
-                "type": "set",
-                "params": {
-                  "attr": "__exec__.payload.grade.score",
-                  "operation": "add",
-                  "value": 0
-                }
-              }
-            ]
-          }
+       {
+        "type": "set",
+        "params": {
+         "attr": "__exec__.payload.grade.score",
+         "operation": "add",
+         "value": 10000
         }
+       }
       ],
-      "on_false": []
+      "on_false": [
+       {
+        "type": "enforce",
+        "params": {
+         "domain": {
+          "type": "not",
+          "inner": {
+           "type": "eq",
+           "path": "__exec__.payload.facts.actual",
+           "value": "__exec__.payload.facts.expected",
+           "on_missing": "error"
+          }
+         },
+         "reason": "grade_mismatch[graders\\demo_hello_v1]: answer incorrect"
+        }
+       }
+      ]
+     }
     }
+   ],
+   "on_false": []
   }
+ }
 ]

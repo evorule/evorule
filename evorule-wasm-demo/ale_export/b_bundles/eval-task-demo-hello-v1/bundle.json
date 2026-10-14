@@ -85,11 +85,18 @@
                     ],
                     "on_false": [
                       {
-                        "type": "set",
+                        "type": "enforce",
                         "params": {
-                          "attr": "__exec__.payload.grade.score",
-                          "operation": "add",
-                          "value": 0
+                          "domain": {
+                            "type": "not",
+                            "inner": {
+                              "type": "eq",
+                              "path": "__exec__.payload.facts.actual",
+                              "value": "__exec__.payload.facts.expected",
+                              "on_missing": "error"
+                            }
+                          },
+                          "reason": "grade_mismatch[graders\\demo_hello_v1]: answer incorrect"
                         }
                       }
                     ]
@@ -171,13 +178,13 @@
       "mismatch",
       "missing_output"
     ],
-    "verdict": "pass"
+    "verdict": "fail"
   },
   "audit": {
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:730bfe6e863a44921109da88186eda475561e14225cd32ff02c1cb7aa5d7bb2e",
+    "content_hash": "blake3:0eddf8db91cef9a93e35d5fc4bc183d9823e96a2ba587e0722833271e0c7b690",
     "hash_algo": "blake3"
   }
 }

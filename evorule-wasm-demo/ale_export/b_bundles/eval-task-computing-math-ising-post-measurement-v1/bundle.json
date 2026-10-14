@@ -170,6 +170,23 @@
                     ],
                     "on_false": []
                   }
+                },
+                {
+                  "type": "enforce",
+                  "params": {
+                    "domain": {
+                      "type": "all",
+                      "inner": [
+                        {
+                          "type": "eq",
+                          "path": "__exec__.payload.grade.score",
+                          "value": 0,
+                          "on_missing": "unsat"
+                        }
+                      ]
+                    },
+                    "reason": "grade_zero_score[ising_v1]: no tier passed"
+                  }
                 }
               ],
               "on_false": []
@@ -264,13 +281,13 @@
       "tolerance_edge_inside",
       "tolerance_edge_outside"
     ],
-    "verdict": "pass"
+    "verdict": "fail"
   },
   "audit": {
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:8a0b00049ef28505c57c2e436d1e45a1009ac0a08b67c507d064cbef276ac953",
+    "content_hash": "blake3:685c19b458da82059ccbd560971ed9c8a85359c0d5754633d9f47876580d50d8",
     "hash_algo": "blake3"
   }
 }
