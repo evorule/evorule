@@ -23,6 +23,7 @@
 pub mod condition;
 pub mod entry;
 pub mod gate;
+pub mod route_policy;
 pub mod table;
 
 pub use condition::ConditionEvaluator;
@@ -31,6 +32,7 @@ pub use entry::{
     Subject, SubjectType,
 };
 pub use gate::PermissionGate;
+pub use route_policy::{AskFallback, PerRoleDefault, RouteDecision, RoutePolicy, RouteRule};
 pub use table::{DefaultPolicy, PermissionTable, Verdict};
 
 use evorule_tcb::JsonValue;

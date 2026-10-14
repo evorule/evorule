@@ -328,20 +328,27 @@ impl IoSubscriber {
         // Deny/Candidate → 不 dispatch，回写错误 IoResponse 让反应器恢复
         // （IoRequest 不会悬空）；Candidate 需审批人裁决，自动路径按拒绝处理
         // （fail-closed）。
+        // SG-2：check_routed 额外给出静态路由语义，拼入 error 串（确定性构造，
+        // 无时间戳/路径分隔符），使 deny / ask-fallback 与 default deny 可区分。
         if let Some(gate) = &self.gate {
             let mut ctx = IoCallContext::new(cause, 0, None);
-            let verdict = gate.check(&mut ctx, io_type.as_str(), Some(&params));
+            let (verdict, route) = gate.check_routed(&mut ctx, io_type.as_str(), Some(&params));
             if verdict != Verdict::Allow {
                 let reason = match verdict {
                     Verdict::Deny => "denied by permission gate",
                     Verdict::Candidate => "pending permission approval (fail-closed)",
                     Verdict::Allow => unreachable!(),
                 };
+                let route_seg = match route {
+                    Some(r) => format!(" (route={r})"),
+                    None => String::new(),
+                };
                 tracing::warn!(
                     request_id = %request_id,
                     io_type = %io_type.as_str(),
                     caller_role = ?ctx.caller_role,
                     verdict = ?verdict,
+                    route = ?route,
                     "IoRequest 权限判定未通过，回写错误 IoResponse"
                 );
                 self.metrics.inc_io_errors(io_type.as_str());
@@ -350,7 +357,8 @@ impl IoSubscriber {
                     request_id,
                     result: JsonValue::Null,
                     error: Some(format!(
-                        "permission denied: io_type={} {}, resource={}{}",
+                        "permission denied{}: io_type={} {}, resource={}{}",
+                        route_seg,
                         io_type.as_str(),
                         reason,
                         "io:",
@@ -740,6 +748,101 @@ mod tests {
                 );
             }
             other => panic!("Allow 应照常 dispatch 并回写，实际: {other:?}"),
+        }
+    }
+
+    /// SG-2 负向实测①（J-SG2）：llm 命中静态 deny → 错误 IoResponse 含 route=deny，
+    /// 与 default deny（无 route 段）可区分；每决策一 Fact（错误 IoResponse 落链）
+    #[tokio::test]
+    async fn test_sg2_route_deny_negative_case() {
+        use crate::permission::{PermissionGate, RoutePolicy};
+        use evorule_reactor::CallerRole;
+        use std::sync::Arc as StdArc;
+
+        const POLICY: &str = r#"{
+            "version": 1,
+            "rules": [
+                { "caller_role": "llm", "io_type": "http_get", "target": "api.internal:*", "decision": "deny" }
+            ]
+        }"#;
+        let policy = RoutePolicy::from_json_str(POLICY).unwrap();
+        let gate = PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()))
+            .with_caller_role_resolver(StdArc::new(|_| CallerRole::Llm))
+            .with_route_policy(policy);
+        let mut subscriber =
+            IoSubscriber::new(IoDispatcher::builder().build()).with_permission_gate(gate);
+
+        let params =
+            JsonValue::object_from_pairs(&[("target", JsonValue::string("api.internal:8080/x"))]);
+        let fact = Fact::IoRequest {
+            id: FactId(20),
+            cause: FactId(1),
+            io_type: IoType::http_get(),
+            params,
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        subscriber.handle_fact(fact, &tx).await.unwrap();
+
+        match rx.try_recv() {
+            Ok(Fact::IoResponse {
+                request_id, error, ..
+            }) => {
+                assert_eq!(request_id, FactId(20));
+                let err = error.expect("静态 deny 必须回写错误 IoResponse");
+                assert!(
+                    err.contains("permission denied"),
+                    "权限拒绝语义保留，实际: {err}"
+                );
+                assert!(
+                    err.contains("route=deny"),
+                    "J-SG2：静态 deny 必须携带 route 语义与 default deny 可区分，实际: {err}"
+                );
+            }
+            other => panic!("静态 deny 应回写错误 IoResponse，实际: {other:?}"),
+        }
+    }
+
+    /// SG-2 负向实测②（J-SG2）：llm 命中 ask（无人值守）→ 按资产 ask_fallback
+    /// 回退 deny，error 含 route=ask-fallback（SG-5 挂账的 ask 语义收口）
+    #[tokio::test]
+    async fn test_sg2_ask_fallback_negative_case() {
+        use crate::permission::{PermissionGate, RoutePolicy};
+        use evorule_reactor::CallerRole;
+        use std::sync::Arc as StdArc;
+
+        const POLICY: &str = r#"{
+            "version": 1,
+            "ask_fallback": { "unattended": "deny" },
+            "rules": [
+                { "caller_role": "*", "io_type": "call_external", "target": "*", "decision": "ask" }
+            ]
+        }"#;
+        let policy = RoutePolicy::from_json_str(POLICY).unwrap();
+        let gate = PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()))
+            .with_caller_role_resolver(StdArc::new(|_| CallerRole::Llm))
+            .with_route_policy(policy);
+        let mut subscriber =
+            IoSubscriber::new(IoDispatcher::builder().build()).with_permission_gate(gate);
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        subscriber
+            .handle_fact(service_call_request(21), &tx)
+            .await
+            .unwrap();
+
+        match rx.try_recv() {
+            Ok(Fact::IoResponse {
+                request_id, error, ..
+            }) => {
+                assert_eq!(request_id, FactId(21));
+                let err = error.expect("ask 无人值守回退必须回写错误 IoResponse");
+                assert!(
+                    err.contains("route=ask-fallback"),
+                    "J-SG2：ask 回退必须携带 ask-fallback 语义，实际: {err}"
+                );
+            }
+            other => panic!("ask 回退应回写错误 IoResponse，实际: {other:?}"),
         }
     }
 

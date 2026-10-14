@@ -19,9 +19,10 @@
 
 use std::sync::Arc;
 
-use evorule_reactor::{CallerRoleResolver, IoCallContext};
+use evorule_reactor::{CallerRole, CallerRoleResolver, IoCallContext};
 use evorule_tcb::JsonValue;
 
+use super::route_policy::{RouteDecision, RoutePolicy};
 use super::table::{PermissionTable, Verdict};
 use crate::shared_facts_log::SharedFactsLog;
 
@@ -37,6 +38,8 @@ pub struct PermissionGate {
     resource_prefix: Arc<str>,
     /// caller_role 解析器接缝（B-3，可选）。`None` = 沿用 `ctx.caller_role`（默认 Unknown）
     caller_role_resolver: Option<CallerRoleResolver>,
+    /// 静态路由策略（SG-2，可选收紧层）。`None` = 未装配，直接落动态表（现行为）
+    route_policy: Option<RoutePolicy>,
 }
 
 impl PermissionGate {
@@ -46,6 +49,7 @@ impl PermissionGate {
             shared_log,
             resource_prefix: Arc::from("io:"),
             caller_role_resolver: None,
+            route_policy: None,
         }
     }
 
@@ -55,6 +59,20 @@ impl PermissionGate {
     /// 则沿用 `ctx.caller_role`（默认 `Unknown` → 默认策略 fail-closed）。
     pub fn with_caller_role_resolver(mut self, resolver: CallerRoleResolver) -> Self {
         self.caller_role_resolver = Some(resolver);
+        self
+    }
+
+    /// 注入静态路由策略（SG-2，可选收紧层）
+    ///
+    /// 装配后判定先经静态路由表（`caller_role × io_type × target` 三元）：
+    /// - deny → 终局 Deny（收紧闸门）；
+    /// - ask + llm/unknown → 无人值守回退 Deny（`route=ask-fallback`）；
+    /// - ask + human / allow / 未命中 → 落动态表（审批流权威，静态层无放行权）。
+    ///
+    /// 未装配 = 现行为不变（直接落动态表）。装配端对资产解析失败应显式告警
+    /// 且不装配本层（禁止静默通过）。
+    pub fn with_route_policy(mut self, policy: RoutePolicy) -> Self {
+        self.route_policy = Some(policy);
         self
     }
 
@@ -78,6 +96,29 @@ impl PermissionGate {
         io_type: &str,
         payload: Option<&JsonValue>,
     ) -> Verdict {
+        self.check_routed(ctx, io_type, payload).0
+    }
+
+    /// 判定一次 I/O 调用并给出静态路由语义（SG-2）
+    ///
+    /// 返回 `(verdict, route)`，`route` 语义：
+    /// - `None`：未装配路由层 / 静态层未收紧（allow 或 ask+human）→ 落动态表；
+    /// - `Some("deny")`：静态路由表命中 deny，终局拒绝（未经动态表）；
+    /// - `Some("ask-fallback")`：静态命中 ask 且 caller_role 为 llm/unknown
+    ///   （无人值守），按资产 `ask_fallback.unattended`（唯一合法值 deny）回退拒绝。
+    ///
+    /// `route` 语义由回写端（IoSubscriber）拼入错误 IoResponse 的 error 串
+    /// （确定性构造），实现 J-SG2 的 deny/ask 负向实测与 default deny 可区分。
+    ///
+    /// # 裁决序（v2，审批流权威不变）
+    /// 静态层只握收紧权（deny）与升级权（ask），无放行权——allow 不产生
+    /// 额外放行，放行权唯一来源 = 动态 [`PermissionTable`]。
+    pub fn check_routed(
+        &self,
+        ctx: &mut IoCallContext,
+        io_type: &str,
+        payload: Option<&JsonValue>,
+    ) -> (Verdict, Option<&'static str>) {
         // B-3 接缝：注入 resolver 则以结果为权威覆盖 caller_role；否则沿用 ctx 自带值
         if let Some(resolver) = &self.caller_role_resolver {
             ctx.caller_role = resolver(ctx);
@@ -86,12 +127,29 @@ impl PermissionGate {
         // D8：冻结触发版本（只影响本调用，不改动 ctx 其余字段所有权语义）
         ctx.v_trigger = self.shared_log.version();
 
+        // SG-2：静态路由预门（可选装配）——deny/ask(无人值守) 在此收紧，其余落动态表
+        if let Some(policy) = &self.route_policy {
+            let target = payload
+                .and_then(|p| p.get("target"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+            let decision = policy.decide(ctx.caller_role.as_str(), io_type, target);
+            match decision {
+                RouteDecision::Deny => return (Verdict::Deny, Some("deny")),
+                // ask 无人值守（llm/unknown）→ 回退 deny；human 保留审批通路落动态表
+                RouteDecision::Ask if !matches!(ctx.caller_role, CallerRole::Human) => {
+                    return (Verdict::Deny, Some("ask-fallback"));
+                }
+                RouteDecision::Allow | RouteDecision::Ask => {}
+            }
+        }
+
         // 快照不可重建 → fail-closed
         let Ok(table) = PermissionTable::snapshot_at(&self.shared_log, ctx.v_trigger) else {
-            return Verdict::Deny;
+            return (Verdict::Deny, None);
         };
         let resource = format!("{}{}", self.resource_prefix, io_type);
-        table.evaluate(ctx, &resource, "io", payload)
+        (table.evaluate(ctx, &resource, "io", payload), None)
     }
 
     /// 当前共享日志版本号（调试 / 审计用）
@@ -249,6 +307,146 @@ mod tests {
                         "Llm/Unknown 无匹配条目必须 fail-closed Deny，但 {role:?}/{io} 得到 {first:?}"
                     ),
                 }
+            }
+        }
+    }
+
+    // —— SG-2：静态路由预门（裁决序 v2，审批流权威不变）——
+    //
+    // 策略：llm+http_get+api.internal:* → deny；human+query_db:* → deny（跨层收紧
+    // 验证）；*+call_external:* → ask。default 段缺省（全 allow = 不收紧）。
+    const SG2_POLICY: &str = r#"{
+        "version": 1,
+        "rules": [
+            { "caller_role": "llm", "io_type": "http_get", "target": "api.internal:*", "decision": "deny" },
+            { "caller_role": "human", "io_type": "query_db", "target": "*", "decision": "deny" },
+            { "caller_role": "*", "io_type": "call_external", "target": "*", "decision": "ask" }
+        ]
+    }"#;
+
+    /// 构造装配路由策略的门（动态表种子 = human 对 io:* Allow，镜像 server 启动种子）
+    fn sg2_gate() -> super::PermissionGate {
+        use super::super::route_policy::RoutePolicy;
+        use crate::permission::{
+            Effect, PermissionEntry, PermissionState, Resource, ResourceType, Subject, SubjectType,
+        };
+
+        let log = Arc::new(SharedFactsLog::new());
+        let mut seed = PermissionEntry::new(
+            "default-human-allow-io",
+            Subject {
+                subject_type: SubjectType::User,
+                id: "human".to_string(),
+            },
+            Resource {
+                resource_type: ResourceType::IoAction,
+                path: "io:*".to_string(),
+            },
+            Effect::Allow,
+        );
+        seed.state = PermissionState::Active;
+        PermissionTable::store_entry(&log, &seed, 0).expect("seed store");
+        let policy = RoutePolicy::from_json_str(SG2_POLICY).expect("policy json");
+        PermissionGate::new(log).with_route_policy(policy)
+    }
+
+    /// 构造带 target 的 params（TCB JsonValue）
+    fn params_with_target(target: &str) -> JsonValue {
+        JsonValue::object_from_pairs(&[("target", JsonValue::string(target))])
+    }
+
+    /// 裁决序 1：静态 deny 终局拒绝——动态表 Active Allow（human io:* 种子）也收紧
+    #[test]
+    fn sg2_static_deny_overrides_dynamic_active_allow() {
+        let gate = sg2_gate();
+        let mut ctx = IoCallContext::new(FactId(1), 0, None);
+        ctx.caller_role = CallerRole::Human;
+        // human + query_db：动态表种子 Allow，静态 deny 收紧 → 终局 Deny
+        let (verdict, route) = gate.check_routed(&mut ctx, "query_db", None);
+        assert_eq!(verdict, Verdict::Deny);
+        assert_eq!(route, Some("deny"), "静态 deny 必须给出 route 语义");
+    }
+
+    /// 裁决序 2：ask + llm（无人值守）→ 回退 Deny + ask-fallback 语义
+    #[test]
+    fn sg2_ask_llm_unattended_falls_back_to_deny() {
+        let gate = sg2_gate();
+        let mut ctx = IoCallContext::new(FactId(1), 0, None);
+        ctx.caller_role = CallerRole::Llm;
+        let (verdict, route) = gate.check_routed(&mut ctx, "call_external", None);
+        assert_eq!(verdict, Verdict::Deny);
+        assert_eq!(route, Some("ask-fallback"), "ask 无人值守回退必须给出 ask-fallback 语义");
+
+        // unknown 同属无人值守
+        let mut ctx = IoCallContext::new(FactId(1), 0, None);
+        ctx.caller_role = CallerRole::Unknown;
+        let (verdict, route) = gate.check_routed(&mut ctx, "call_external", None);
+        assert_eq!((verdict, route), (Verdict::Deny, Some("ask-fallback")));
+    }
+
+    /// 裁决序 3：ask + human → 落动态表保留审批通路（种子 Allow 放行，route=None）
+    #[test]
+    fn sg2_ask_human_goes_to_dynamic_table() {
+        let gate = sg2_gate();
+        let mut ctx = IoCallContext::new(FactId(1), 0, None);
+        ctx.caller_role = CallerRole::Human;
+        let (verdict, route) = gate.check_routed(&mut ctx, "call_external", None);
+        assert_eq!(verdict, Verdict::Allow, "ask+human 必须落动态表（种子 Allow 放行）");
+        assert_eq!(route, None, "落动态表的决策不携带静态 route 语义");
+    }
+
+    /// 裁决序 4：静态 allow 不产生放行权——llm 未命中收紧规则落动态表，仍按动态表 Deny
+    #[test]
+    fn sg2_static_allow_grants_no_permission() {
+        let gate = sg2_gate();
+        let mut ctx = IoCallContext::new(FactId(1), 0, None);
+        ctx.caller_role = CallerRole::Llm;
+        // llm + http_get + target 不匹配 deny 规则 → 静态 allow → 落动态表 → llm 无条目 Deny
+        let (verdict, route) =
+            gate.check_routed(&mut ctx, "http_get", Some(&params_with_target("other.example")));
+        assert_eq!(verdict, Verdict::Deny, "静态 allow 绝不产生放行权（审批流权威）");
+        assert_eq!(route, None, "落动态表的 Deny 不携带静态 route 语义（区别于静态 deny）");
+
+        // llm + http_get + target 命中 deny 规则 → 静态终局 deny
+        let mut ctx = IoCallContext::new(FactId(1), 0, None);
+        ctx.caller_role = CallerRole::Llm;
+        let (verdict, route) = gate
+            .check_routed(&mut ctx, "http_get", Some(&params_with_target("api.internal:8080/x")));
+        assert_eq!((verdict, route), (Verdict::Deny, Some("deny")));
+    }
+
+    /// 未装配路由层 = 现行为不变（无 route 语义）
+    #[test]
+    fn sg2_no_route_policy_keeps_existing_behavior() {
+        let log = Arc::new(SharedFactsLog::new());
+        let gate = PermissionGate::new(log);
+        let mut ctx = IoCallContext::new(FactId(1), 0, None);
+        ctx.caller_role = CallerRole::Llm;
+        let (verdict, route) = gate.check_routed(&mut ctx, "call_external", None);
+        assert_eq!((verdict, route), (Verdict::Deny, None));
+    }
+
+    /// J-SG2 重放确定性：check_routed 同输入重复调用输出一致
+    #[test]
+    fn sg2_check_routed_is_deterministic() {
+        let gate = sg2_gate();
+        let cases: [(CallerRole, &str, Option<&str>); 5] = [
+            (CallerRole::Human, "query_db", None),
+            (CallerRole::Llm, "call_external", None),
+            (CallerRole::Human, "call_external", None),
+            (CallerRole::Llm, "http_get", Some("api.internal:8080/x")),
+            (CallerRole::Unknown, "call_external", None),
+        ];
+        for &(role, io, target) in &cases {
+            let run = || {
+                let mut ctx = IoCallContext::new(FactId(1), 0, None);
+                ctx.caller_role = role;
+                let payload = target.map(params_with_target);
+                gate.check_routed(&mut ctx, io, payload.as_ref())
+            };
+            let first = run();
+            for _ in 0..3 {
+                assert_eq!(run(), first, "check_routed 必须确定性：{role:?}/{io}/{target:?}");
             }
         }
     }
