@@ -25,21 +25,25 @@ use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 ///
 /// `ruleset_json`: 判卷规则集（JSON 数组，含 eval_exact_match 定义）。
 /// `grade_command_json`: 判卷指令对象 `{type:"eval_exact_match",
-///   params:{task_id, ...}}`（TCB 指令形态：`type` 字段）；facts 由规则集从 payload 读——本入口把
-///   `facts_json`（`{expected, actual, artifacts_meta}`）注入初始 payload。
+///   params:{task_id, ...}}`（TCB 指令形态：`type` 字段）；facts 合并进指令
+///   根部随 instruction 层携带（对齐宪法 exec_context 契约：判卷规则集读
+///   `__exec__.instruction.facts.*`，禁读 payload.facts.*）——
+///   `facts_json`（`{expected, actual, artifacts_meta}`）由本入口合并。
 pub fn grade_core(ruleset_json: &str, grade_command_json: &str, facts_json: &str) -> String {
     // --- 1. Load grader ruleset ---
     let rules: Vec<serde_json::Value> = serde_json::from_str(ruleset_json)
         .expect("parse grader ruleset_json");
     let core_eval: Vec<JsonValue> = rules.iter().map(serde_to_tcb).collect();
 
-    // --- 2. Grade instruction + facts into initial payload ---
-    let cmd: serde_json::Value =
+    // --- 2. Grade instruction + facts（facts 挂指令根部 "facts" 键，instruction 层携带）---
+    let mut cmd: serde_json::Value =
         serde_json::from_str(grade_command_json).expect("parse grade_command_json");
     let facts: serde_json::Value = serde_json::from_str(facts_json).expect("parse facts_json");
+    if let Some(obj) = cmd.as_object_mut() {
+        obj.insert("facts".to_string(), facts.clone());
+    }
     let instruction = serde_to_tcb(&cmd);
     let mut payload_root = std::collections::BTreeMap::new();
-    payload_root.insert("facts".to_string(), facts.clone());
     payload_root.insert("grade".to_string(), serde_json::json!({
         "task_id": cmd.get("params").and_then(|p| p.get("task_id")).cloned()
             .unwrap_or(serde_json::json!("unknown")),
@@ -60,8 +64,53 @@ pub fn grade_core(ruleset_json: &str, grade_command_json: &str, facts_json: &str
             new_queue,
             rule_hits,
         } => (new_payload, new_queue, rule_hits),
-        other => panic!("expected TransitionResult::State, got {:?}", other),
+        // enforce 命中（Halted 纯信号）：违规指令被拒，此前状态修改按 TCB
+        // 半成品纪律全部丢弃——不 panic，产出合法 receipt（score 0 + 归因，
+        // 无审计链可建，如实 genesis/false）。
+        TransitionResult::Halted { reason, .. } => {
+            return receipt_json(
+                &facts,
+                &cmd,
+                0,
+                "genesis",
+                false,
+                0,
+                None,
+                Some(&format!("violation: {reason}")),
+            )
+            .to_string();
+        }
+        // 判卷规则集不应产生 I/O 请求；契约完备性收口：任何非 State 结果
+        // 一律合法 receipt 归因，判卷引擎对畸形规则集不 panic。
+        other => {
+            return receipt_json(
+                &facts,
+                &cmd,
+                0,
+                "genesis",
+                false,
+                0,
+                None,
+                Some(&format!("unexpected transition: {other:?}")),
+            )
+            .to_string();
+        }
     };
+
+    // --- 3.5 mismatch 归因：queue 中 eval_assert_failed 信号（X-004 候选 B）---
+    // 判卷规则集 on_false 用 push eval_assert_failed 表达断言失败（与 server
+    // 沙盒判卷链同形态）；本层从新队列检出该信号并回填 receipt 归因。
+    let violation = new_queue.iter().find_map(|q| {
+        let v = tcb_to_serde(q);
+        if v.get("type").and_then(|t| t.as_str()) == Some("eval_assert_failed") {
+            v.get("params")
+                .and_then(|p| p.get("reason"))
+                .and_then(|r| r.as_str())
+                .map(String::from)
+        } else {
+            None
+        }
+    });
 
     // --- 4. FactsLog（Command→StateTransition→TransitionTrace→Stable）---
     let facts_log = FactsLog::new();
@@ -114,6 +163,7 @@ pub fn grade_core(ruleset_json: &str, grade_command_json: &str, facts_json: &str
         audit_verified,
         audit_count,
         None,
+        violation.as_deref(),
     )
     .to_string()
 }
@@ -124,7 +174,7 @@ fn grade_receipt_missing(
     cmd: &serde_json::Value,
     tcb_err: &evorule_tcb::TcbError,
 ) -> String {
-    receipt_json(facts, cmd, 0, "genesis", false, 0, Some(&format!("{tcb_err}"))).to_string()
+    receipt_json(facts, cmd, 0, "genesis", false, 0, Some(&format!("{tcb_err}")), None).to_string()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -136,6 +186,7 @@ fn receipt_json(
     audit_verified: bool,
     audit_count: usize,
     missing_reason: Option<&str>,
+    violation: Option<&str>,
 ) -> serde_json::Value {
     let expected = facts.get("expected").cloned().unwrap_or(serde_json::json!(null));
     let actual = facts.get("actual").cloned().unwrap_or(serde_json::json!(null));
@@ -153,6 +204,7 @@ fn receipt_json(
         "audit_count": audit_count,
         "facts_hash": facts_hash,
         "missing_reason": missing_reason,      // None=正常判定；Some=缺产物归因
+        "violation": violation,                // None=无违规；Some=mismatch 归因/enforce reason
         "expected_present": !expected.is_null(),
         "actual_present": !actual.is_null(),
         "engine": crate::engine_version(),
@@ -171,8 +223,9 @@ mod grade_tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
 
-    /// demo 级判卷规则集：eval_exact_match（规则集定义的应用级指令，
-    /// 与 rules_merged 的 finance_/medical_ 应用级指令同构）
+    /// demo 级判卷规则集：eval_exact_match（规则集定义的应用级指令）。
+    /// 形态对齐线上 graders（X-004 候选 B）：eq 读 instruction.facts，
+    /// on_false=push eval_assert_failed 断言错误形态（非 enforce 非 set 0）。
     fn demo_ruleset() -> String {
         serde_json::json!([
             {
@@ -181,15 +234,47 @@ mod grade_tests {
                     "domain": {"type": "instruction", "instruction_type": "eval_exact_match"},
                     "on_true": [
                         {"type": "branch", "params": {
-                            "domain": {"type": "eq", "path": "__exec__.payload.facts.actual",
-                                       "value": "__exec__.payload.facts.expected",
+                            "domain": {"type": "eq", "path": "__exec__.instruction.facts.actual",
+                                       "value": "__exec__.instruction.facts.expected",
                                        "on_missing": "error"},
                             "on_true": [{"type": "set", "params": {
                                 "attr": "__exec__.payload.grade.score", "operation": "add",
                                 "value": 10000}}],
-                            "on_false": [{"type": "set", "params": {
+                            "on_false": [{"type": "push", "params": {"instructions": [
+                                {"type": "eval_assert_failed", "params": {
+                                    "reason": "grade_mismatch: answer incorrect"}}]}}]
+                        }}
+                    ],
+                    "on_false": []
+                }
+            }
+        ])
+        .to_string()
+    }
+
+    /// enforce 形态规则集（历史形态，O-457 回归探针）：mismatch 时 enforce
+    /// 谓词为真 → TransitionResult::Halted——grade_core 必须产出合法 receipt。
+    fn enforce_ruleset() -> String {
+        serde_json::json!([
+            {
+                "type": "branch",
+                "params": {
+                    "domain": {"type": "instruction", "instruction_type": "eval_exact_match"},
+                    "on_true": [
+                        {"type": "branch", "params": {
+                            "domain": {"type": "eq", "path": "__exec__.instruction.facts.actual",
+                                       "value": "__exec__.instruction.facts.expected",
+                                       "on_missing": "error"},
+                            "on_true": [{"type": "set", "params": {
                                 "attr": "__exec__.payload.grade.score", "operation": "add",
-                                "value": 0}}]
+                                "value": 10000}}],
+                            "on_false": [{"type": "enforce", "params": {
+                                "domain": {"type": "not", "inner": {
+                                    "type": "eq",
+                                    "path": "__exec__.instruction.facts.actual",
+                                    "value": "__exec__.instruction.facts.expected",
+                                    "on_missing": "error"}},
+                                "reason": "grade_mismatch[graders/demo_hello_v1]: answer incorrect"}}]
                         }}
                     ],
                     "on_false": []
@@ -222,6 +307,7 @@ mod grade_tests {
         assert_eq!(r["score_fixed"], 10000);
         assert_eq!(r["score"], 1.0);
         assert_eq!(r["missing_reason"], serde_json::json!(null));
+        assert_eq!(r["violation"], serde_json::json!(null));
         assert!(r["audit_verified"].as_bool().unwrap());
     }
 
@@ -236,6 +322,32 @@ mod grade_tests {
         assert_eq!(r["score_fixed"], 0);
         assert_eq!(r["score"], 0.0);
         assert_eq!(r["missing_reason"], serde_json::json!(null));
+        // mismatch 归因：queue 中 eval_assert_failed 信号回填 receipt
+        assert_eq!(
+            r["violation"],
+            serde_json::json!("grade_mismatch: answer incorrect")
+        );
+    }
+
+    #[test]
+    fn grade_halted_violation_receipt_no_panic() {
+        // O-457 回归探针：enforce 形态规则集 mismatch → Halted——
+        // 必须产出合法 receipt（score 0 + violation 归因），不得 panic。
+        let out = grade_core(
+            &enforce_ruleset(),
+            &grade_cmd(),
+            r#"{"expected":"CONF-1234","actual":"CONF-9999"}"#,
+        );
+        let r = parse(&out);
+        assert_eq!(r["score_fixed"], 0);
+        assert_eq!(r["score"], 0.0);
+        assert!(r["violation"]
+            .as_str()
+            .unwrap()
+            .starts_with("violation: grade_mismatch[graders/demo_hello_v1]"));
+        // Halted 半成品纪律：无审计链可建，如实 genesis/false
+        assert_eq!(r["audit_chain_head"], serde_json::json!("genesis"));
+        assert_eq!(r["audit_verified"], serde_json::json!(false));
     }
 
     #[test]
@@ -248,6 +360,7 @@ mod grade_tests {
         let r = parse(&out);
         assert_eq!(r["score_fixed"], 0);
         assert!(r["missing_reason"].as_str().is_some());
+        assert_eq!(r["violation"], serde_json::json!(null));
         assert!(!r["actual_present"].as_bool().unwrap());
     }
 

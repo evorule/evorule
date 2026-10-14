@@ -532,7 +532,7 @@
                   }
                 },
                 {
-                  "type": "enforce",
+                  "type": "branch",
                   "params": {
                     "domain": {
                       "type": "all",
@@ -545,7 +545,22 @@
                         }
                       ]
                     },
-                    "reason": "grade_zero_score[atsp_v1]: no tier passed"
+                    "on_true": [
+                      {
+                        "type": "push",
+                        "params": {
+                          "instructions": [
+                            {
+                              "type": "eval_assert_failed",
+                              "params": {
+                                "reason": "grade_zero_score[atsp_v1]: no tier passed"
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "on_false": []
                   }
                 }
               ],
@@ -621,7 +636,13 @@
               0.95
             ]
           }
-        ]
+        ],
+        "grade_command": {
+          "type": "eval_atsp_v1",
+          "params": {
+            "task_id": "computing_math/branch_bound_atsp_wasm"
+          }
+        }
       },
       "schema_ref": "https://evorule.org/schemas/eval/test/v1.json",
       "provenance": {
@@ -647,7 +668,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:d0de400b7bfdbba84c8b72f56a6e356eb486221dc2490b2e3e0d0300949ee395",
+    "content_hash": "blake3:8ac79731d1f7758b0be5b60f40576e7044d1cf0bf0746fdfde224953c31109e9",
     "hash_algo": "blake3"
   }
 }

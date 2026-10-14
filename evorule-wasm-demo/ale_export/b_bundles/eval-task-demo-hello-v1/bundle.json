@@ -85,18 +85,16 @@
                     ],
                     "on_false": [
                       {
-                        "type": "enforce",
+                        "type": "push",
                         "params": {
-                          "domain": {
-                            "type": "not",
-                            "inner": {
-                              "type": "eq",
-                              "path": "__exec__.instruction.facts.actual",
-                              "value": "__exec__.instruction.facts.expected",
-                              "on_missing": "error"
+                          "instructions": [
+                            {
+                              "type": "eval_assert_failed",
+                              "params": {
+                                "reason": "grade_mismatch: answer incorrect"
+                              }
                             }
-                          },
-                          "reason": "grade_mismatch[graders\\demo_hello_v1]: answer incorrect"
+                          ]
                         }
                       }
                     ]
@@ -159,7 +157,13 @@
               0.0
             ]
           }
-        ]
+        ],
+        "grade_command": {
+          "type": "eval_exact_match",
+          "params": {
+            "task_id": "demo/hello_wasm"
+          }
+        }
       },
       "schema_ref": "https://evorule.org/schemas/eval/test/v1.json",
       "provenance": {
@@ -184,7 +188,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:94fcacdbc3702468e799196dfb6fbbf8d3659b19abe0b90abceb8b94ea74f6f7",
+    "content_hash": "blake3:e3827ae70e1a3bd83920d7a01e8c3939f89f27494342b2b2454f70a8451aa48c",
     "hash_algo": "blake3"
   }
 }

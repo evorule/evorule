@@ -28,18 +28,16 @@
       ],
       "on_false": [
        {
-        "type": "enforce",
+        "type": "push",
         "params": {
-         "domain": {
-          "type": "not",
-          "inner": {
-           "type": "eq",
-           "path": "__exec__.instruction.facts.actual",
-           "value": "__exec__.instruction.facts.expected",
-           "on_missing": "error"
+         "instructions": [
+          {
+           "type": "eval_assert_failed",
+           "params": {
+            "reason": "grade_mismatch: answer incorrect"
+           }
           }
-         },
-         "reason": "grade_mismatch[graders\\demo_hello_v1]: answer incorrect"
+         ]
         }
        }
       ]

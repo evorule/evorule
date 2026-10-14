@@ -194,7 +194,7 @@
                   }
                 },
                 {
-                  "type": "enforce",
+                  "type": "branch",
                   "params": {
                     "domain": {
                       "type": "all",
@@ -207,7 +207,22 @@
                         }
                       ]
                     },
-                    "reason": "grade_zero_score[k8s_v1]: no tier passed"
+                    "on_true": [
+                      {
+                        "type": "push",
+                        "params": {
+                          "instructions": [
+                            {
+                              "type": "eval_assert_failed",
+                              "params": {
+                                "reason": "grade_zero_score[k8s_v1]: no tier passed"
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "on_false": []
                   }
                 }
               ],
@@ -283,7 +298,13 @@
               0.9
             ]
           }
-        ]
+        ],
+        "grade_command": {
+          "type": "eval_k8s_v1",
+          "params": {
+            "task_id": "computing_math/k8s_payment_api_root_cause_wasm"
+          }
+        }
       },
       "schema_ref": "https://evorule.org/schemas/eval/test/v1.json",
       "provenance": {
@@ -309,7 +330,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:c9eb7df40ebbdd666785ce4360a30ba5d74e90a528d53e2ade59e6601b9d82d0",
+    "content_hash": "blake3:58763ef350f8740ab3540d905a9fed22db779296ae14f025b5992bb73f451354",
     "hash_algo": "blake3"
   }
 }

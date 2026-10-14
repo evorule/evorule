@@ -95,7 +95,7 @@
      }
     },
     {
-     "type": "enforce",
+     "type": "branch",
      "params": {
       "domain": {
        "type": "all",
@@ -108,7 +108,22 @@
         }
        ]
       },
-      "reason": "grade_zero_score[k8s_v1]: no tier passed"
+      "on_true": [
+       {
+        "type": "push",
+        "params": {
+         "instructions": [
+          {
+           "type": "eval_assert_failed",
+           "params": {
+            "reason": "grade_zero_score[k8s_v1]: no tier passed"
+           }
+          }
+         ]
+        }
+       }
+      ],
+      "on_false": []
      }
     }
    ],

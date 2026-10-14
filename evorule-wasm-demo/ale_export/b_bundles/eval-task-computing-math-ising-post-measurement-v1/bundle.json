@@ -172,7 +172,7 @@
                   }
                 },
                 {
-                  "type": "enforce",
+                  "type": "branch",
                   "params": {
                     "domain": {
                       "type": "all",
@@ -185,7 +185,22 @@
                         }
                       ]
                     },
-                    "reason": "grade_zero_score[ising_v1]: no tier passed"
+                    "on_true": [
+                      {
+                        "type": "push",
+                        "params": {
+                          "instructions": [
+                            {
+                              "type": "eval_assert_failed",
+                              "params": {
+                                "reason": "grade_zero_score[ising_v1]: no tier passed"
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "on_false": []
                   }
                 }
               ],
@@ -261,7 +276,13 @@
               0.0
             ]
           }
-        ]
+        ],
+        "grade_command": {
+          "type": "eval_ising_v1",
+          "params": {
+            "task_id": "computing_math/ising_post_measurement_wasm"
+          }
+        }
       },
       "schema_ref": "https://evorule.org/schemas/eval/test/v1.json",
       "provenance": {
@@ -287,7 +308,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:a65578e1530136e0eb267407f29415ee0c044fd9a8866730cd3eea64a92d52de",
+    "content_hash": "blake3:a84e759b0ddc84c52ce0677355e0d9bd6d82a891c20f4f29d56d081d000df18c",
     "hash_algo": "blake3"
   }
 }

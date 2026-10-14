@@ -120,7 +120,7 @@
                   }
                 },
                 {
-                  "type": "enforce",
+                  "type": "branch",
                   "params": {
                     "domain": {
                       "type": "all",
@@ -133,7 +133,22 @@
                         }
                       ]
                     },
-                    "reason": "grade_zero_score[k8s_v1]: no tier passed"
+                    "on_true": [
+                      {
+                        "type": "push",
+                        "params": {
+                          "instructions": [
+                            {
+                              "type": "eval_assert_failed",
+                              "params": {
+                                "reason": "grade_zero_score[k8s_v1]: no tier passed"
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "on_false": []
                   }
                 }
               ],
@@ -166,7 +181,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.2",
     "source_version": "v1",
-    "content_hash": "blake3:34c0f827be6b4239588abe40db32164e71f4c9dcac88ec476328f0ed4ec99de7",
+    "content_hash": "blake3:b6330e01a5e987981a3fdeb4ff6db4881cc55dd9d888380490f5a77b4aeba5df",
     "hash_algo": "blake3"
   }
 }

@@ -53,18 +53,16 @@
                     ],
                     "on_false": [
                       {
-                        "type": "enforce",
+                        "type": "push",
                         "params": {
-                          "domain": {
-                            "type": "not",
-                            "inner": {
-                              "type": "eq",
-                              "path": "__exec__.instruction.facts.actual",
-                              "value": "__exec__.instruction.facts.expected",
-                              "on_missing": "error"
+                          "instructions": [
+                            {
+                              "type": "eval_assert_failed",
+                              "params": {
+                                "reason": "grade_mismatch: answer incorrect"
+                              }
                             }
-                          },
-                          "reason": "grade_mismatch[graders\\demo_hello_v1]: answer incorrect"
+                          ]
                         }
                       }
                     ]
@@ -99,7 +97,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.2",
     "source_version": "v1",
-    "content_hash": "blake3:d9bcc5c96cd86e501014aea4ab43a2df80f615546257648c1b7825a4d14599c5",
+    "content_hash": "blake3:b24ba218fe55f3ad9e499395b45c587b391019f9c4827feab9a77c6bed5260f4",
     "hash_algo": "blake3"
   }
 }

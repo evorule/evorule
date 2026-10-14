@@ -82,9 +82,11 @@ def rule_entry(task: str, ruleset: list, source: str) -> dict:
     15-B §1.1 双轨裁定：同质性校验禁 Rule/Knowledge 混装 → 判卷规则集
     须独立 Rule 包（entry_kind=rule）。rule_body=引擎原生 {transform:[...]}
     （server 侧 validate_rule_input 认 {transform:[]} 或裸数组；装载后进
-    reactor，branch 匹配 instruction_type=eval_* → eq 比对 facts → set 万分制）。
-    无 io 服务依赖 → 符号三方一致零要求；bundle 恒 L3 禁 enforce（ruleset 无
-    enforce 指令，天然满足）。
+    reactor，branch 匹配 instruction_type=eval_* → eq 比对 instruction.facts
+    → set 万分制；mismatch/零分=push eval_assert_failed 断言错误形态——
+    X-004 候选 B 定调（25 号档 v1.0.4），M8-F1 对齐：无 enforce 指令，
+    天然满足 L3 禁 enforce 与沙盒 tier 门）。
+    无 io 服务依赖 → 符号三方一致零要求。
     """
     return {
         "entry_id": f"eval.{task}.grader_rules",
@@ -142,8 +144,20 @@ def build_bridge_body(bridge_src: Path, bridge_name: str) -> dict:
     }
 
 
-def build_test_body(variants: list) -> dict:
-    return {"variants": variants}
+def build_test_body(variants: list, instruction_type: str, task_id: str) -> dict:
+    """grader_test 条目：variants（facts+expect）+ grade_command 重放模板。
+
+    独立重放三元组 = ruleset + grade_command + facts（M8-F1 补 cmd 侧，
+    O-458b 收口）：grade_command 为判卷指令模板（instruction_type 取自
+    ruleset 首规则；facts 键由 grade_core 入口注入指令根部——与其契约
+    一致）。variants 缺 facts 向量的任务（atsp/ising/k8s）其 facts 由
+    bridge（graders/<bridge>.py）构造，变体行仅摘录期望值（v1 差测摘录
+    形态，15-B §1.2），全量 facts 重放经 bridge 走。
+    """
+    return {
+        "variants": variants,
+        "grade_command": {"type": instruction_type, "params": {"task_id": task_id}},
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -212,9 +226,11 @@ def convert_task(ale_export: Path, task_dir: str, out_root: Path) -> Path:
             build_bridge_body(graders_p / bridge_name, bridge_name),
             "ale_export/graders/" + bridge_name))
     variants = TASK_VARIANTS[task_dir]
+    # 判分指令类型从 ruleset 首规则提取（eval_exact_match/eval_atsp_v1/...）
+    ruleset_instruction_type = ruleset[0]["params"]["domain"]["instruction_type"]
     entries.append(entry(
         task_dir, "grader_test", "https://evorule.org/schemas/eval/test/v1.json",
-        build_test_body(variants),
+        build_test_body(variants, ruleset_instruction_type, task_id),
         "03-M8 differential test ledger (core variants)"))
 
     # ---- DatasetBundle（字段序=struct 声明序）----
