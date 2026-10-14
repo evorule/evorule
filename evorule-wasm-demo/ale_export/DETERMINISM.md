@@ -22,7 +22,8 @@ no tokio, no filesystem at evaluation time) that:
    **BLAKE3 audit chain** over it,
 4. emits a **receipt** (`ale-wasm-receipt/1`): `score_fixed` (0/10000),
    `facts_hash` (BLAKE3 of the facts JSON), `audit_chain_head`,
-   `missing_reason` (missing-artifact attribution), engine build id.
+   `missing_reason` (missing-artifact attribution),
+   `violation` (mismatch/violation attribution, null when none), engine build id.
 
 The score returned to the ALE framework is `list[float]`: the official
 contract is unchanged end-to-end.
@@ -89,7 +90,7 @@ The three task families plus demo cover the four canonical scoring shapes:
 | semantic report: hard gates + weighted components | gate and-chain + variable adds | k8s_v1 |
 
 Variable adds use the engine's path-reference `set/add` value form
-(`value: "__exec__.payload.facts.<name>"`): integer component values
+(`value: "__exec__.instruction.facts.<name>"`): integer component values
 pre-normalized in the bridge (basis points) are summed by the ruleset,
 so the combination layer stays the scoring SSOT even for continuous
 components (set F1, evidence grounding ratios). Floats never cross
