@@ -221,6 +221,26 @@ jobs:
         run: python3 scripts/scan_public_face.py --fail-on A1 --fail-on B
 
   # ==========================================================================
+  # 5e. 宪法联动门禁 ([CON-R-003] 固化义务, 纯文本扫描)
+  #     语义路径 (evorule-tcb / evorule-discipline) 变更 → PR 描述须含
+  #     「宪法联动：」标记行, 缺失即红。Gitee Go 侧守护见 .gitee-ci/validate.yml
+  # ==========================================================================
+  constitution-linkage:
+    name: constitution linkage (CON-R-003)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # 三点 diff 需合并基, 全量历史保证 merge-base 可得
+          fetch-depth: 0
+
+      - name: 语义路径变更 → PR 描述须含「宪法联动」标记
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 scripts/check_constitution_linkage.py --base "origin/${{ github.base_ref }}"
+
+  # ==========================================================================
   # 6. 依赖门禁 (cargo-deny, A2 供应链三件套)
   #    许可合规 (deny.toml [licenses]) + RUSTSEC 漏洞 ([advisories])
   #    + 重复依赖/通配符 ([bans]) + 来源白名单 ([sources])
