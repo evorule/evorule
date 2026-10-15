@@ -116,7 +116,7 @@ def sandbox_grade(server_base, stamp, ruleset, variants, grade_type):
     rid, vid = rule["id"], rule.get("current_version_id")
     assert vid, f"no current_version_id: {rule}"
 
-    reports, sandboxes = [], []
+    reports, sandboxes, anchor_blocks = [], [], []
     for v in variants:
         st, ds = http_json("POST", f"{SB}/api/workspaces/{wid}/test-datasets", {
             "name": f"b3-case-{stamp}-{v['name']}",
@@ -152,11 +152,30 @@ def sandbox_grade(server_base, stamp, ruleset, variants, grade_type):
                     break
             time.sleep(1)
         assert report, f"report unavailable for {v['name']} (last status {last_st})"
+
+        # ---- 锚点封条+导出（B-4：G-A2 evorule-anchor/2）----
+        # 手动 seal（判卷 session 事实数少，INTERVAL 自动封不触发）；
+        # 409=锚点链未启用（EVORULE_ANCHOR_SEED 未配置）——显式失败不静默
+        # 降级（run-record 无锚点则 J-B4 验签面空转）。
+        tcb_sid = sb.get("tcb_session_id")
+        st_a, sealed = http_json(
+            "POST", f"{SB}/api/sessions/{tcb_sid}/anchors/seal", {})
+        if st_a != 200:
+            raise SystemExit(
+                f"[b4] anchor seal fail {st_a}: {sealed}——server 须以 "
+                f"EVORULE_ANCHOR_SEED 启动（锚点链启用）")
+        st_a, exp = http_json("GET", f"{SB}/api/sessions/{tcb_sid}/anchors")
+        assert st_a == 200 and exp.get("count", 0) >= 1, \
+            f"anchors export fail {st_a}: {exp}"
+
         reports.append((v["name"], report))
         sandboxes.append({
             "variant": v["name"], "dataset_id": did, "sandbox_id": sid,
-            "tcb_session_id": sb.get("tcb_session_id"),
+            "tcb_session_id": tcb_sid,
             "draft_ruleset_hash": sb.get("draft_ruleset_hash")})
+        anchor_blocks.append({
+            "variant": v["name"], "tcb_session_id": tcb_sid,
+            "count": exp.get("count"), "anchors": exp.get("anchors", [])})
 
     evidence = {
         "server_base": SB,
@@ -174,6 +193,7 @@ def sandbox_grade(server_base, stamp, ruleset, variants, grade_type):
                                               "error_message")}
                        for c in r.get("cases", [])]}
             for n, r in reports],
+        "anchors": anchor_blocks,
     }
     return reports, evidence
 
@@ -307,7 +327,9 @@ def main():
         "task_bundle_ref": bundle_id,
         "content_hash": content_hash,
         "agent_ref": args.agent_ref,
+        "score_max": score_max,
         "scores": scores,
+        "anchors": ev.get("anchors", []),
         "evidence": {
             "server": ev,
             "governance": governance,
@@ -320,7 +342,7 @@ def main():
                    + ("" if args.skip_import or governance else "（未导入）")
                    + ("+IMPORTED" if governance else ""),
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "generator": "grade_via_server v0.2 (ALE B-3)",
+        "generator": "grade_via_server v0.3 (ALE B-3/B-4)",
     }
 
     ok = all_match and (args.skip_import or governance is not None)
