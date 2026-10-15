@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""grade_via_server —— B-3 收尾交付物（ALE B 线底稿批次表 B-3）
+"""grade_via_server —— B-3 收尾交付物（ALE B 线批次表 B-3）
 
 调用侧判卷 harness，流序对齐导入闸门一立法语义（「测试工作台跑完直接带入」）：
 
@@ -21,7 +21,7 @@
 判分口径（诚实边界）：
   server report 按组态判分：passed→score_max（万分制 10000）；
   failed→0；与官方 expect 对照 |bps/10000 - expect| ≤ 1e-3
-  （万分制定点 vs 官方 round6 浮点，底稿继承纪律，显式声明容差）。
+  （万分制定点 vs 官方 round6 浮点，判分口径继承纪律，显式声明容差）。
 
 用法：
   python grade_via_server.py --bundle ../b_bundles/eval-task-demo-hello-v1 \
@@ -44,7 +44,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ale2bundle import dataset_bundle_hash  # noqa: E402
 
-TOLERANCE = 1e-3  # 万分制 vs 官方浮点对照容差（底稿继承纪律，显式声明）
+TOLERANCE = 1e-3  # 万分制 vs 官方浮点对照容差（判分口径继承纪律，显式声明）
 
 
 def http_json(method, url, body=None, token=None, timeout=20):
@@ -217,18 +217,8 @@ def main():
 
     password = args.password or os.environ.get("RULE_ADMIN_PASSWORD")
     tenant_id = args.tenant_id or os.environ.get("RULE_TENANT_ID", "default")
-    if not password:
-        cred = os.path.join("D:", os.sep, "evorule-rule", "data",
-                            "admin-credentials.local.txt")
-        if os.path.exists(cred):
-            kv = {}
-            with open(cred, encoding="utf-8") as f:
-                for line in f:
-                    if "=" in line:
-                        k, v = line.strip().split("=", 1)
-                        kv[k] = v
-            password = kv.get("password")
-            tenant_id = kv.get("tenant_id", tenant_id)
+    # 凭据归边：本 harness 不内置任何凭证文件路径——凭据只经
+    # --password / RULE_ADMIN_PASSWORD 传入（调用方自行负责提供）。
     assert password, "admin password 未提供（--password 或 RULE_ADMIN_PASSWORD）"
 
     stamp = args.keep_prefix or datetime.datetime.now().strftime("%H%M%S")
@@ -336,7 +326,7 @@ def main():
             "scoring_rule": (
                 f"passed→{score_max} bps；failed→0；"
                 f"|bps/{score_max}-expect|≤{TOLERANCE}（万分制定点 vs 官方浮点，"
-                "底稿继承纪律容差显式声明）"),
+                "判分口径继承纪律容差显式声明）"),
         },
         "verdict": ("ALL_MATCH_OFFICIAL" if all_match else "MISMATCH")
                    + ("" if args.skip_import or governance else "（未导入）")

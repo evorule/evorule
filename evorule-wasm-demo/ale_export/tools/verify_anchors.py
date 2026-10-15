@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """verify_anchors: ALE run-record 独立验签 CLI（B-4，J-B4 验证闭合）。
 
-接口（15-B 底稿 §1.5）：
+接口（B-4 批次定义）：
     verify_anchors.py <run_record.json> [--pubkey <pk_hex>]
 
 验证两项：
