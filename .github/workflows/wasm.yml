@@ -40,6 +40,13 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      # 关键: rust-toolchain.toml 锁定 1.98.1, rustup shim 会随文件自动装 1.98.1
+      # (minimal profile, 不含任何 target)——首跑 8f9e2cc 失败根因即 CI 上 1.98.1
+      # 无 wasm32 std。此步对"生效工具链"(=文件锁定的 1.98.1)补装 wasm32 目标,
+      # 与本地环境对齐; 首跑教训: targets 挂在 dtolnay@stable 上装不对工具链。
+      - name: 对生效工具链补装 wasm32 目标
+        run: rustup target add wasm32-unknown-unknown
+
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: . -> target
