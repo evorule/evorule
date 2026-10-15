@@ -512,10 +512,10 @@
   ],
   "tests": {
     "subset": [
-      "sandbox-pending/ale-porting/03-M8-diff-ledger/perfect",
-      "sandbox-pending/ale-porting/03-M8-diff-ledger/tier1_cost_error",
-      "sandbox-pending/ale-porting/03-M8-diff-ledger/tier2_metadata_missing",
-      "sandbox-pending/ale-porting/03-M8-diff-ledger/tier3_gap_exceeded"
+      "sandbox-pending/ale-porting/b1-diff-ledger/perfect",
+      "sandbox-pending/ale-porting/b1-diff-ledger/tier1_cost_error",
+      "sandbox-pending/ale-porting/b1-diff-ledger/tier2_metadata_missing",
+      "sandbox-pending/ale-porting/b1-diff-ledger/tier3_gap_exceeded"
     ],
     "verdict": "fail"
   },
@@ -523,7 +523,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.2",
     "source_version": "v1",
-    "content_hash": "blake3:2dae7ca7b7bd5e9c68724537c0917954479aecb34079e5c640472d30cd342fca",
+    "content_hash": "blake3:f98545c8722d35847399f20923ce928b0286a4a883d09d9da2209c52b17ca231",
     "hash_algo": "blake3"
   }
 }

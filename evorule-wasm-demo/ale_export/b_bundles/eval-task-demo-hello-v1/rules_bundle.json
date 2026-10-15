@@ -87,9 +87,9 @@
   ],
   "tests": {
     "subset": [
-      "sandbox-pending/ale-porting/03-M8-diff-ledger/correct",
-      "sandbox-pending/ale-porting/03-M8-diff-ledger/mismatch",
-      "sandbox-pending/ale-porting/03-M8-diff-ledger/missing_output"
+      "sandbox-pending/ale-porting/b1-diff-ledger/correct",
+      "sandbox-pending/ale-porting/b1-diff-ledger/mismatch",
+      "sandbox-pending/ale-porting/b1-diff-ledger/missing_output"
     ],
     "verdict": "fail"
   },
@@ -97,7 +97,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.2",
     "source_version": "v1",
-    "content_hash": "blake3:b24ba218fe55f3ad9e499395b45c587b391019f9c4827feab9a77c6bed5260f4",
+    "content_hash": "blake3:54d2f91c9507d8b943a86a1462a6336fa53e5c3103594799c748c819c949735f",
     "hash_algo": "blake3"
   }
 }

@@ -646,7 +646,7 @@
       },
       "schema_ref": "https://evorule.org/schemas/domain/ale/eval-test/v1.json",
       "provenance": {
-        "source": "03-M8 differential test ledger (core variants)"
+        "source": "b1 differential test ledger (core variants)"
       },
       "domain": "eval",
       "tags": [
@@ -668,7 +668,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:62a37659f352dc8b30b4a02b136716b942031d3f92febe73dfb424d39cbcffb5",
+    "content_hash": "blake3:8854edc61b0ecb3d71c206de206a3dae59ea0108579b8a0b6624f87db31141fa",
     "hash_algo": "blake3"
   }
 }

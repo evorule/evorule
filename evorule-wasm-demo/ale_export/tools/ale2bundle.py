@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """ale2bundle: ALE 任务包 → eval.task.v1 治理 bundle 转换器（B-1）。
 
-供体轨机械映射（15-B 底稿 §1.2 契约）：
+供体轨机械映射（B-1 契约）：
   输入: ale_export/tasks/<task>/（main.py + task_card.json）
         ale_export/graders/<ruleset>.json + <bridge>.py
   输出: eval-task-<domain>-<name>-v1/ 目录
@@ -10,7 +10,7 @@
         - grader_bridge.json    (entry_kind=Knowledge, schema_ref=eval.bridge.v1)
         - grader_test.json      (entry_kind=Knowledge, schema_ref=eval.test.v1)
 
-物理格式 = evorule-bundle 0.5.2 DatasetBundle 单文件 JSON（15-B §1.1 裁定：
+物理格式 = evorule-bundle 0.5.2 DatasetBundle 单文件 JSON（B-1 裁定：
 物理格式跟 evorule-bundle crate SSOT，entry 内联而非 entry_files 分立——
 与 server 仓 bundle-ds-scenario-* 目录形态的差别：那是 rule 仓导出物的
 落盘形态；DatasetBundle JSON 本身是 crate 的交换格式，content_hash 覆盖
@@ -65,7 +65,7 @@ def _sorted_value(v):
 
 
 # ---------------------------------------------------------------------------
-# eval.* entry 构造（15-B §1.1 字段级定稿）
+# eval.* entry 构造（B-1 字段级定稿）
 # ---------------------------------------------------------------------------
 
 SCORING_SHAPE = {
@@ -79,12 +79,12 @@ SCORING_SHAPE = {
 def rule_entry(task: str, ruleset: list, source: str) -> dict:
     """Rule 条目（BundleEntry 同构，B-3 判卷轨）：rule_body=transform 指令集。
 
-    15-B §1.1 双轨裁定：同质性校验禁 Rule/Knowledge 混装 → 判卷规则集
+    B-1 双轨裁定：同质性校验禁 Rule/Knowledge 混装 → 判卷规则集
     须独立 Rule 包（entry_kind=rule）。rule_body=引擎原生 {transform:[...]}
     （server 侧 validate_rule_input 认 {transform:[]} 或裸数组；装载后进
     reactor，branch 匹配 instruction_type=eval_* → eq 比对 instruction.facts
     → set 万分制；mismatch/零分=push eval_assert_failed 断言错误形态——
-    X-004 候选 B 定调（25 号档 v1.0.4），M8-F1 对齐：无 enforce 指令，
+    断言错误形态定调（M8-F1 对齐）：无 enforce 指令，
     天然满足 L3 禁 enforce 与沙盒 tier 门）。
     无 io 服务依赖 → 符号三方一致零要求。
     """
@@ -147,12 +147,12 @@ def build_bridge_body(bridge_src: Path, bridge_name: str) -> dict:
 def build_test_body(variants: list, instruction_type: str, task_id: str) -> dict:
     """grader_test 条目：variants（facts+expect）+ grade_command 重放模板。
 
-    独立重放三元组 = ruleset + grade_command + facts（M8-F1 补 cmd 侧，
-    O-458b 收口）：grade_command 为判卷指令模板（instruction_type 取自
+    独立重放三元组 = ruleset + grade_command + facts（判卷指令模板补 cmd 侧）：
+    grade_command 为判卷指令模板（instruction_type 取自
     ruleset 首规则；facts 键由 grade_core 入口注入指令根部——与其契约
     一致）。variants 缺 facts 向量的任务（atsp/ising/k8s）其 facts 由
     bridge（graders/<bridge>.py）构造，变体行仅摘录期望值（v1 差测摘录
-    形态，15-B §1.2），全量 facts 重放经 bridge 走。
+    形态，B-1 差测摘录约定），全量 facts 重放经 bridge 走。
     """
     return {
         "variants": variants,
@@ -164,7 +164,7 @@ def build_test_body(variants: list, instruction_type: str, task_id: str) -> dict
 # 供体轨主流程
 # ---------------------------------------------------------------------------
 
-# 每任务的差测核心变体摘录（v1 手工摘录，15-B §1.2；来源=03 底稿对拍账）
+# 每任务的差测核心变体摘录（v1 手工摘录；来源=B-1 对拍账）
 TASK_VARIANTS = {
     "demo_hello_wasm": [
         {"name": "correct", "facts": {"expected": "hello", "actual": "hello"}, "expect": [1.0]},
@@ -234,7 +234,7 @@ def convert_task(ale_export: Path, task_dir: str, out_root: Path) -> Path:
     entries.append(entry(
         task_dir, "grader_test", f"{DOMAIN_ALE}/eval-test/v1.json",
         build_test_body(variants, ruleset_instruction_type, task_id),
-        "03-M8 differential test ledger (core variants)"))
+        "b1 differential test ledger (core variants)"))
 
     # ---- DatasetBundle（字段序=struct 声明序）----
     short = {
@@ -252,7 +252,7 @@ def convert_task(ale_export: Path, task_dir: str, out_root: Path) -> Path:
             "tenant_id": "eval",
             "instance_id": "evorule-ale-grif",
             "versioning": {"current": "v1", "chain": ["v1"]},
-            # 供体轨单版本钉死（15-B §1.2 裁定）：pinned 完全锁定（include_patch=false），
+            # 供体轨单版本钉死（B-1 裁定）：pinned 完全锁定（include_patch=false），
             # 否则 rule 仓导入第 5 步走默认 auto_by_effective_date 分支缺生效基准 → MissingEffectiveBase 拒收
             "version_selection": {
                 "mode": "pinned",
@@ -301,13 +301,13 @@ def convert_task(ale_export: Path, task_dir: str, out_root: Path) -> Path:
 
 
 def evidence_tag(variant_name: str) -> str:
-    """tests.subset 背书标记（server ①.5 测试证据校验）：O-431 后闸面收紧——
+    """tests.subset 背书标记（server ①.5 测试证据校验）：闸面收紧后——
     verdict=pass 导入须 sandbox:<数字ID> 机器背书（human: 全链下线）。
-    B-1/B-2 对拍账（03-M8 差测核心变体）发生在闸收紧前，本批按 unverified
-    形态重生成（verdict=fail 起步，19 号档立法）；沙盒化验证（C1 面上线后
+    B-1/B-2 对拍账（差测核心变体）发生在闸收紧前，本批按 unverified
+    形态重生成（verdict=fail 起步）；沙盒化验证（C1 面上线后
     补 sandbox 背书）登记为 B-4 验证面后续项。变体名存 subset 保可追溯。
     """
-    return f"sandbox-pending/ale-porting/03-M8-diff-ledger/{variant_name}"
+    return f"sandbox-pending/ale-porting/b1-diff-ledger/{variant_name}"
 
 
 def main() -> int:

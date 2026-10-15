@@ -3,7 +3,7 @@
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! ALE 可验证判卷入口（grade_core）——wasm-demo 判卷扩展。
 //!
-//! 设计依据（内部）：ALE 专项 01-A v1.3 三层架构；通道 D 授权物 GRANT-2026-ALE-001。
+//! 设计依据：ALE 专项三层架构（wasm 判卷面）；通道 D 授权物 GRANT-2026-ALE-001。
 //!
 //! `grade_core` 与 `run_core` 同构（同一 TCB 纯函数路径 + 同一 BLAKE3 审计链），
 //! 差异仅在入口语义：
@@ -97,7 +97,7 @@ pub fn grade_core(ruleset_json: &str, grade_command_json: &str, facts_json: &str
         }
     };
 
-    // --- 3.5 mismatch 归因：queue 中 eval_assert_failed 信号（X-004 候选 B）---
+    // --- 3.5 mismatch 归因：queue 中 eval_assert_failed 信号（断言错误形态）---
     // 判卷规则集 on_false 用 push eval_assert_failed 表达断言失败（与 server
     // 沙盒判卷链同形态）；本层从新队列检出该信号并回填 receipt 归因。
     let violation = new_queue.iter().find_map(|q| {
@@ -224,7 +224,7 @@ mod grade_tests {
     use super::*;
 
     /// demo 级判卷规则集：eval_exact_match（规则集定义的应用级指令）。
-    /// 形态对齐线上 graders（X-004 候选 B）：eq 读 instruction.facts，
+    /// 形态对齐线上 graders（断言错误形态）：eq 读 instruction.facts，
     /// on_false=push eval_assert_failed 断言错误形态（非 enforce 非 set 0）。
     fn demo_ruleset() -> String {
         serde_json::json!([
@@ -252,7 +252,7 @@ mod grade_tests {
         .to_string()
     }
 
-    /// enforce 形态规则集（历史形态，O-457 回归探针）：mismatch 时 enforce
+    /// enforce 形态规则集（历史形态，回归探针）：mismatch 时 enforce
     /// 谓词为真 → TransitionResult::Halted——grade_core 必须产出合法 receipt。
     fn enforce_ruleset() -> String {
         serde_json::json!([
@@ -331,7 +331,7 @@ mod grade_tests {
 
     #[test]
     fn grade_halted_violation_receipt_no_panic() {
-        // O-457 回归探针：enforce 形态规则集 mismatch → Halted——
+        // 回归探针：enforce 形态规则集 mismatch → Halted——
         // 必须产出合法 receipt（score 0 + violation 归因），不得 panic。
         let out = grade_core(
             &enforce_ruleset(),

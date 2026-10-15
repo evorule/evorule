@@ -8,7 +8,7 @@
            variants → workspace→rule→test-datasets→sandbox→report；
            逐变体与官方 expect 对照（J-B1「同官方分」核心判据）。
   Phase B  机器背书组装：沙盒通过后 tests.verdict=pass +
-           subset=["sandbox:<sandbox_id>", ...]（O-431 五闸 sandbox:-only 形态；
+           subset=["sandbox:<sandbox_id>", ...]（闸门一 sandbox:-only 形态；
            rule 侧验形状，执行域深度校验 sandbox 存在性），content_hash 重算
            （复用 ale2bundle.dataset_bundle_hash 的 serde 双轨实现）。
   Phase C  治理导入（rule serve）：login→dry-run→import（201）。
