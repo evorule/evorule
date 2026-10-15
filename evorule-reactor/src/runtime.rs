@@ -154,9 +154,9 @@ mod tests {
         let base = Instant::now();
         let handle = ClockHandle::new(Arc::new(FixedClock::new(base)));
         assert_eq!(handle.now(), base);
-        assert_eq!(
+        assert!(
             ClockHandle::system().now() <= Instant::now() + Duration::from_secs(1),
-            true
+            "SystemClock 必须返回不晚于当前时刻的时间戳"
         );
     }
 }
