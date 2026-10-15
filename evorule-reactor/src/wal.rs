@@ -43,7 +43,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use evorule_tcb::JsonValue;
@@ -966,12 +966,19 @@ impl WalWriter {
     }
 }
 
-fn read_wal_file_with_hash<P: AsRef<Path>>(
-    path: P,
+/// 从字节流解析 WAL 记录行（存储读缝的解析原语）
+///
+/// 行格式与错误语义与路径版逐字一致（字节等价铁律）：空行跳过；JSON 解析
+/// 失败 / 字段缺失 → [`WalError::InvalidFact`]（错误串含 1 起始行号前缀，
+/// 行号 = `base_line_no + 行偏移`）。
+///
+/// 路径版 [`read_wal_file_with_hash`] 是它的一层文件系统薄壳——非 fs 宿主
+/// （嵌入式同步执行器等）经此原语直供字节流即可复用全部解析语义，与
+/// 写侧 [`FactWalStore`] trait 对偶，存储缝读写两侧自此闭合。
+pub fn parse_wal_records<R: std::io::BufRead>(
+    reader: R,
     base_line_no: usize,
 ) -> Result<Vec<WalRecord>, WalError> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
     let mut records = Vec::new();
     for (line_idx, line) in reader.lines().enumerate() {
         let line_no = base_line_no + line_idx;
@@ -1029,6 +1036,15 @@ fn read_wal_file_with_hash<P: AsRef<Path>>(
         });
     }
     Ok(records)
+}
+
+fn read_wal_file_with_hash<P: AsRef<Path>>(
+    path: P,
+    base_line_no: usize,
+) -> Result<Vec<WalRecord>, WalError> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+    parse_wal_records(reader, base_line_no)
 }
 
 fn read_wal_file<P: AsRef<Path>>(
@@ -1703,5 +1719,73 @@ mod tests {
 
         let e = WalError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "missing"));
         assert!(format!("{e}").contains("missing"));
+    }
+
+    // === parse_wal_records（存储读缝解析原语）===
+
+    /// 字节流原语与路径壳结果逐条等价（含哈希字段的新格式）
+    #[test]
+    fn parse_wal_records_matches_path_wrapper_byte_equivalent() {
+        let path = temp_wal_path("parse_primitive_equiv");
+        let mut w = WalWriter::create(&path).unwrap();
+        for id in 1..=3u64 {
+            w.append_record_with_hash(
+                0,
+                &Fact::Command {
+                    id: FactId(id),
+                    instruction: JsonValue::empty_object(),
+                },
+                "content-hash-x",
+                "prev-hash-x",
+                "chain-hash-x",
+            )
+            .unwrap();
+        }
+        drop(w);
+
+        let via_path = read_wal_with_hash(&path).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let via_cursor = parse_wal_records(std::io::Cursor::new(bytes), 0).unwrap();
+
+        assert_eq!(via_path.len(), 3);
+        assert_eq!(via_cursor.len(), via_path.len());
+        for (a, b) in via_path.iter().zip(via_cursor.iter()) {
+            assert_eq!(a.version_before, b.version_before);
+            assert_eq!(a.fact, b.fact);
+            assert_eq!(a.content_hash, b.content_hash);
+            assert_eq!(a.prev_hash, b.prev_hash);
+            assert_eq!(a.chain_hash, b.chain_hash);
+        }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 基准行号偏移与错误语义：坏行报错行号 = base + 实际偏移
+    #[test]
+    fn parse_wal_records_line_no_offset_and_corrupt_error() {
+        // 经 WalWriter 产出一条合法 WAL 行（避免手工拼 Fact JSON）
+        let path = temp_wal_path("parse_line_offset");
+        let mut w = WalWriter::create(&path).unwrap();
+        w.append_record(
+            0,
+            &Fact::Command {
+                id: FactId(1),
+                instruction: JsonValue::empty_object(),
+            },
+        )
+        .unwrap();
+        drop(w);
+        let good_line = std::fs::read_to_string(&path)
+            .unwrap()
+            .trim_end()
+            .to_string();
+        let _ = std::fs::remove_file(&path);
+
+        // 输入布局：空行(idx0) + 合法行(idx1) + 坏行(idx2)
+        let input = format!("\n{good_line}\nnot-json\n");
+        let err = parse_wal_records(std::io::Cursor::new(input.clone()), 0).unwrap_err();
+        assert!(err.to_string().contains("line 2"), "got: {err}");
+        let err = parse_wal_records(std::io::Cursor::new(input), 100).unwrap_err();
+        assert!(err.to_string().contains("line 102"), "got: {err}");
     }
 }

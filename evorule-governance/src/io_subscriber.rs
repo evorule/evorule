@@ -20,9 +20,11 @@
 //! - `SendError`：command 通道关闭（反应器已退出），返回 `IoSubscriberError::CommandClosed`
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use evorule_reactor::{EventReceiver, Fact, FactId, FactSender, IoCallContext, IoType};
+use evorule_reactor::{
+    ClockHandle, EventReceiver, Fact, FactId, FactSender, IoCallContext, IoType, RuntimeClock,
+};
 use evorule_tcb::JsonValue;
 
 use crate::circuit_breaker::{CircuitState, CIRCUIT_BREAKER_ATTR};
@@ -128,6 +130,10 @@ pub struct IoSubscriber {
     /// 窗口计数，达阈值跳闸：熔断信号指令提交会话（规则层 enforce 拒链入链）
     /// + 跳闸持续期内 egress 全量拒绝，窗口过期自动复位。
     circuit: Option<CircuitState>,
+    /// 时钟句柄（Runtime trait 抽象，复用 reactor 侧定义零重复）。
+    /// 默认 [`ClockHandle::system()`]（native 行为与直接 `Instant::now()`
+    /// 逐字一致）；注入 FixedClock 后熔断窗口判定可确定性测试。
+    clock: ClockHandle,
 }
 
 impl IoSubscriber {
@@ -143,6 +149,7 @@ impl IoSubscriber {
             skip: None,
             gate: None,
             circuit: None,
+            clock: ClockHandle::system(),
         }
     }
 
@@ -198,6 +205,16 @@ impl IoSubscriber {
     /// [`crate::circuit_breaker`] 模块文档。
     pub fn with_circuit_breaker(mut self, state: CircuitState) -> Self {
         self.circuit = Some(state);
+        self
+    }
+
+    /// 注入时钟句柄（builder 模式，Runtime trait 抽象）
+    ///
+    /// 默认 [`ClockHandle::system()`]（native 行为与直接 `Instant::now()`
+    /// 逐字一致——字节等价铁律）；注入 FixedClock 后熔断窗口语义可
+    /// 确定性测试（无 sleep、无竞态）。
+    pub fn with_clock(mut self, clock: ClockHandle) -> Self {
+        self.clock = clock;
         self
     }
 
@@ -357,7 +374,7 @@ impl IoSubscriber {
         // SG-3：熔断闸位先于权限门——跳闸持续期内 egress 全量拒绝（静态层
         // deny 连发熔断的持续语义；窗口过期自动复位）。
         if let Some(circuit) = &mut self.circuit {
-            if circuit.is_tripped(Instant::now()) {
+            if circuit.is_tripped(self.clock.now()) {
                 self.metrics.inc_io_errors(io_type.as_str());
                 tracing::warn!(
                     request_id = %request_id,
@@ -406,7 +423,7 @@ impl IoSubscriber {
                 // 信号指令提交会话（规则层 enforce 拒链 = 跳闸证据确定性入链）。
                 if route.is_some() {
                     if let Some(circuit) = &mut self.circuit {
-                        if let Some(signal) = circuit.record_deny(Instant::now()) {
+                        if let Some(signal) = circuit.record_deny(self.clock.now()) {
                             let instruction = JsonValue::object_from_pairs(&[
                                 ("type", JsonValue::from("set")),
                                 (
@@ -460,7 +477,7 @@ impl IoSubscriber {
 
         // 记录整体 I/O 耗时（包含重试）。通过 trait object 分发，
         // 默认 NoOpMetrics 空转，应用层注入的 PrometheusMetrics 会实际记录。
-        let overall_start = std::time::Instant::now();
+        let overall_start = self.clock.now();
         let io_type_str: &str = io_type.as_str();
         let mut had_error = false;
 
@@ -961,5 +978,92 @@ mod tests {
             rx.try_recv().is_err(),
             "skip 命中时权限门不得抢答（审计回路依赖外部执行者应答）"
         );
+    }
+
+    // ===== 时钟贯通（Runtime trait 抽象）=====
+
+    /// FixedClock 驱动的熔断确定性测试：跳闸判定与窗口语义不再依赖真实时间——
+    /// 同一固定时刻下，第 1 次 deny 记数+回写，第 2 次必为 `circuit=tripped`
+    /// 全量拒绝（此前该路径隐式依赖 `Instant::now()`，测试原则上存在时间竞态）。
+    #[tokio::test]
+    async fn test_circuit_tripped_is_deterministic_over_injected_time() {
+        use crate::circuit_breaker::{CircuitConfig, CircuitState};
+        use crate::permission::{PermissionGate, RoutePolicy};
+        use evorule_reactor::{CallerRole, FixedClock};
+        use std::sync::Arc as StdArc;
+        use std::time::{Duration, Instant};
+
+        const POLICY: &str = r#"{
+            "version": 1,
+            "rules": [
+                { "caller_role": "llm", "io_type": "http_get", "target": "api.internal:*", "decision": "deny" }
+            ]
+        }"#;
+        let clock = ClockHandle::new(StdArc::new(FixedClock::new(Instant::now())));
+        let policy = RoutePolicy::from_json_str(POLICY).unwrap();
+        let gate = PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()))
+            .with_caller_role_resolver(StdArc::new(|_| CallerRole::Llm))
+            .with_route_policy(policy);
+        let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build())
+            .with_permission_gate(gate)
+            .with_circuit_breaker(CircuitState::new(CircuitConfig {
+                threshold: 1,
+                window: Duration::from_secs(300),
+            }))
+            .with_clock(clock);
+
+        let make_request = |id: u64| Fact::IoRequest {
+            id: FactId(id),
+            cause: FactId(1),
+            io_type: IoType::http_get(),
+            params: JsonValue::object_from_pairs(&[(
+                "target",
+                JsonValue::string("api.internal:8080/x"),
+            )]),
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        // 第 1 次：deny 记数达阈值 → 熔断信号指令 + deny IoResponse 各一条
+        subscriber.handle_fact(make_request(30), &tx).await.unwrap();
+        match rx.try_recv() {
+            Ok(Fact::Command { instruction, .. }) => {
+                let s = instruction.to_string();
+                assert!(
+                    s.contains("meta_security.circuit_breaker"),
+                    "阈值 1：首 deny 即跳闸并提交熔断信号，实际: {s}"
+                );
+            }
+            other => panic!("首个产出必须是熔断信号 Command，实际: {other:?}"),
+        }
+        match rx.try_recv() {
+            Ok(Fact::IoResponse { error, .. }) => {
+                let err = error.expect("静态 deny 必须回写错误 IoResponse");
+                assert!(
+                    err.contains("route=deny") && !err.contains("circuit=tripped"),
+                    "首 deny 尚未处于跳闸态，实际: {err}"
+                );
+            }
+            other => panic!("次产出必须是 deny IoResponse，实际: {other:?}"),
+        }
+        assert!(rx.try_recv().is_err(), "第 1 次请求只应产出上述两条 Fact");
+
+        // 第 2 次（同一固定时刻，窗口 300s 未过期）：is_tripped 必为真 →
+        // 全量拒绝回写，不含 route 段（跳闸分支先于权限门）
+        subscriber.handle_fact(make_request(31), &tx).await.unwrap();
+        match rx.try_recv() {
+            Ok(Fact::IoResponse {
+                request_id, error, ..
+            }) => {
+                assert_eq!(request_id, FactId(31));
+                let err = error.expect("跳闸期必须回写错误 IoResponse");
+                assert!(
+                    err.contains("circuit=tripped"),
+                    "FixedClock 下窗口未过期，必须确定性跳闸拒绝，实际: {err}"
+                );
+            }
+            other => panic!("第 2 次请求必须被跳闸闸位拒绝，实际: {other:?}"),
+        }
+        assert!(rx.try_recv().is_err());
     }
 }

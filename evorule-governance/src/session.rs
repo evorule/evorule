@@ -707,8 +707,11 @@ impl SessionManager {
     ///
     /// 仅匹配 `session_{n}.wal` 精确命名；轮换分片 `session_{n}.wal.{seq}`
     /// 与共享事实 `shared_facts.wal` 均不会被误判。
+    ///
+    /// 目录列举与序号解析已分离：解析核心 [`Self::max_session_id_from_names`]
+    /// 是纯函数（确定性可测），本方法只是它的一层文件系统薄壳——非 fs 宿主
+    /// （嵌入式同步执行器）直供文件名序列即可复用全部恢复语义。
     fn scan_max_session_id(wal_dir: &std::path::Path) -> u64 {
-        let mut max = 0u64;
         let Ok(entries) = std::fs::read_dir(wal_dir) else {
             tracing::warn!(
                 dir = %wal_dir.display(),
@@ -716,21 +719,36 @@ impl SessionManager {
             );
             return 0;
         };
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let Some(name) = name.to_str() else {
-                continue;
-            };
+        let names = entries
+            .flatten()
+            .filter_map(|entry| entry.file_name().into_string().ok());
+        let max = Self::max_session_id_from_names(names);
+        if max > 0 {
+            tracing::info!(max_session_wal_id = max, "已从 WAL 目录恢复会话 ID 计数器");
+        }
+        max
+    }
+
+    /// 从文件名序列解析既有会话 WAL 的最大序号（纯函数，确定性可测）
+    ///
+    /// 仅匹配 `session_{n}.wal` 精确命名；轮换分片 `session_{n}.wal.{seq}`
+    /// 与共享事实 `shared_facts.wal` 均不会被误判。行为与原
+    /// `read_dir` 内联实现逐字一致（字节等价铁律）。
+    fn max_session_id_from_names<I, S>(names: I) -> u64
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut max = 0u64;
+        for name in names {
             if let Some(num) = name
+                .as_ref()
                 .strip_prefix("session_")
                 .and_then(|s| s.strip_suffix(".wal"))
                 .and_then(|s| s.parse::<u64>().ok())
             {
                 max = max.max(num);
             }
-        }
-        if max > 0 {
-            tracing::info!(max_session_wal_id = max, "已从 WAL 目录恢复会话 ID 计数器");
         }
         max
     }
@@ -1614,6 +1632,44 @@ mod tests {
         // 清扫后计数与表同步
         assert_eq!(mgr.len(), 0);
         let _ = id;
+    }
+
+    // ===== 存储读路径：会话序号恢复解析核心（纯函数）=====
+
+    /// 序号解析确定性：精确命名命中、轮换分片与共享事实不误判、乱序取最大
+    #[test]
+    fn max_session_id_from_names_is_deterministic() {
+        // 典型恢复场景：乱序 + 轮换分片 + 共享事实 + 非会话文件混合
+        let names = [
+            "shared_facts.wal",
+            "session_3.wal",
+            "session_3.wal.7", // 轮换分片：不得误判为 7
+            "session_12.wal",
+            "session_foo.wal", // 非数字：跳过
+            "other.txt",       // 无关文件：跳过
+            "session_5.wal",
+        ];
+        assert_eq!(
+            SessionManager::max_session_id_from_names(names.into_iter()),
+            12,
+            "恢复计数器必须取精确命名的最大序号"
+        );
+        // 空目录 / 全不匹配 → 0（计数器从 1 起）
+        assert_eq!(
+            SessionManager::max_session_id_from_names(std::iter::empty::<String>()),
+            0
+        );
+        assert_eq!(
+            SessionManager::max_session_id_from_names(["shared_facts.wal"].into_iter()),
+            0
+        );
+        // 前缀边界：`session_` 前缀缺一不可（`_session_1.wal` / `session_1.wal.bak` 不命中）
+        assert_eq!(
+            SessionManager::max_session_id_from_names(
+                ["_session_1.wal", "session_1.wal.bak", "session_2.wal.old"].into_iter()
+            ),
+            0
+        );
     }
 
     /// B4 回归（）：max_sessions 限额在高并发下不可突破。

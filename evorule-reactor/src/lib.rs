@@ -78,6 +78,7 @@
 #![deny(clippy::panic)]
 
 mod channel;
+mod channel_local;
 mod error;
 mod fact;
 mod facts_log;
@@ -103,6 +104,9 @@ mod state;
 mod wal;
 
 pub use channel::{ChannelPair, EventReceiver, EventSender, FactReceiver, FactSender};
+pub use channel_local::{
+    local_broadcaster, local_pair, LocalEventReceiver, LocalEventSender, LocalReceiver, LocalSender,
+};
 pub use error::ReactorError;
 pub use fact::{ControlFlowType, Fact, FactId, FactIdGenerator, IoType, TraceHit};
 // H5: IoHandler/IoResult 从 evorule-governance 下沉,供应用层 crate 使用
@@ -120,6 +124,6 @@ pub use runtime::{ClockHandle, FixedClock, RuntimeClock, SystemClock};
 pub use stable_detector::StableDetector;
 #[cfg(feature = "persistence")]
 pub use wal::{
-    fact_from_json, fact_to_json, read_wal, read_wal_with_hash, serde_to_tcb, tcb_to_serde,
-    FactWalStore, MemoryWalStore, WalError, WalRecord, WalWriter,
+    fact_from_json, fact_to_json, parse_wal_records, read_wal, read_wal_with_hash, serde_to_tcb,
+    tcb_to_serde, FactWalStore, MemoryWalStore, WalError, WalRecord, WalWriter,
 };
