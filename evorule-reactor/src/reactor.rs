@@ -15,6 +15,7 @@ use crate::error::ReactorError;
 use crate::fact::{Fact, FactId, FactIdGenerator, IoType, TraceHit};
 use crate::facts_log::FactsLog;
 use crate::phase::ReactorPhase;
+use crate::runtime::{ClockHandle, RuntimeClock};
 use crate::stable_detector::StableDetector;
 use crate::state::ReactorState;
 use crate::{EventReceiver, EventSender, FactReceiver, FactSender};
@@ -116,6 +117,8 @@ pub struct ReactorBuilder {
     fact_id_start: Option<u64>,
     /// v0.2.0 能力4：已知 io_type 集合（快速失败校验，None=不校验透传）
     known_io_types: Option<Arc<HashSet<String>>>,
+    /// 运行时时钟（时钟缝，默认 [`SystemClock`]；测试可注入 [`FixedClock`]）
+    clock: ClockHandle,
 }
 
 impl ReactorBuilder {
@@ -132,6 +135,7 @@ impl ReactorBuilder {
             interrupt_flag: Arc::new(AtomicBool::new(false)),
             fact_id_start: None,
             known_io_types: None,
+            clock: ClockHandle::system(),
         }
     }
 
@@ -220,6 +224,16 @@ impl ReactorBuilder {
         self
     }
 
+    /// 注入运行时时钟（时钟缝）
+    ///
+    /// 默认 [`SystemClock`]（native 行为与直接 `Instant::now()` 一致）。
+    /// 测试与嵌入式形态可注入 [`FixedClock`] 等确定性实现，
+    /// 使超时扫描等时间相关行为可确定性复现。
+    pub fn clock<C: RuntimeClock + 'static>(mut self, clock: C) -> Self {
+        self.clock = ClockHandle::new(Arc::new(clock));
+        self
+    }
+
     /// 构建反应器
     pub fn build(self) -> Reactor {
         Reactor {
@@ -233,6 +247,7 @@ impl ReactorBuilder {
             interrupt_flag: self.interrupt_flag,
             fact_id_start: self.fact_id_start,
             known_io_types: self.known_io_types,
+            clock: self.clock,
         }
     }
 }
@@ -256,6 +271,8 @@ pub struct Reactor {
     fact_id_start: Option<u64>,
     /// v0.2.0 能力4：已知 io_type 集合（快速失败校验，None=不校验透传）
     known_io_types: Option<Arc<HashSet<String>>>,
+    /// 运行时时钟（时钟缝，经 Builder 注入，默认 SystemClock）
+    clock: ClockHandle,
 }
 
 impl Reactor {
@@ -494,9 +511,10 @@ impl Reactor {
                         return Ok(());
                     }
                     Err(_) => {
-                        // P3-11: 超时，扫描 pending I/O 超时
+                        // P3-11: 超时，扫描 pending I/O 超时（时钟缝：now 由注入时钟提供）
                         Self::check_io_timeouts(
                             &mut state,
+                            self.clock.now(),
                             &self.facts_log,
                             &event_tx,
                             &mut id_gen,
@@ -871,6 +889,7 @@ impl Reactor {
     /// 确保长时间未响应的 I/O 不会永久阻塞反应器。
     fn check_io_timeouts(
         state: &mut ReactorState,
+        now: Instant,
         facts_log: &FactsLog,
         event_tx: &EventSender,
         id_gen: &mut FactIdGenerator,
@@ -881,7 +900,6 @@ impl Reactor {
             return;
         }
 
-        let now = Instant::now();
         let mut warn_ids = Vec::new();
         let mut error_ids = Vec::new();
 

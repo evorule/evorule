@@ -33,6 +33,7 @@
 //! - `hash` — BLAKE3 哈希链算法（单一真相源）
 //! - `wal` — WAL 读写（JSONL 格式，含哈希字段）
 //! - `pure` — 纯逻辑模块，Kani 形式化验证准备
+//! - `runtime` — 运行时抽象（时钟缝：宿主能力隔离到 trait 之后）
 //! - `ffi` — C FFI 接口（feature = "ffi"）
 //! - `error` — 错误类型定义
 //! - `phase` — 反应器阶段定义
@@ -95,6 +96,7 @@ mod phase;
 #[allow(dead_code)]
 mod pure;
 mod reactor;
+mod runtime;
 mod stable_detector;
 mod state;
 #[cfg(feature = "persistence")]
@@ -114,6 +116,7 @@ pub use io_dispatcher::{IoDispatcher, IoDispatcherBuilder};
 pub use io_handler::{IoHandler, IoResult};
 pub use phase::{PhaseContext, ReactorPhase};
 pub use reactor::{PendingIoEntry, Reactor, ReactorBuilder, ReactorHandle, ReactorStateSnapshot};
+pub use runtime::{ClockHandle, FixedClock, RuntimeClock, SystemClock};
 pub use stable_detector::StableDetector;
 #[cfg(feature = "persistence")]
 pub use wal::{
