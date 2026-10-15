@@ -91,7 +91,7 @@
         "requiredSystemPackages": [],
         "task_id": "computing_math/ising_post_measurement_wasm"
       },
-      "schema_ref": "https://evorule.org/schemas/eval/task-card/v1.json",
+      "schema_ref": "https://evorule.org/schemas/domain/ale/eval-task-card/v1.json",
       "provenance": {
         "source": "rdi-berkeley/agents-last-exam computing_math/ising_post_measurement_wasm"
       },
@@ -215,7 +215,7 @@
           "missing_reason": "required"
         }
       },
-      "schema_ref": "https://evorule.org/schemas/eval/ruleset/v1.json",
+      "schema_ref": "https://evorule.org/schemas/domain/ale/eval-ruleset/v1.json",
       "provenance": {
         "source": "ale_export/graders/ising_v1.json"
       },
@@ -237,7 +237,7 @@
         ],
         "entry_function": "grade_facts"
       },
-      "schema_ref": "https://evorule.org/schemas/eval/bridge/v1.json",
+      "schema_ref": "https://evorule.org/schemas/domain/ale/eval-bridge/v1.json",
       "provenance": {
         "source": "ale_export/graders/ising_facts.py"
       },
@@ -284,7 +284,7 @@
           }
         }
       },
-      "schema_ref": "https://evorule.org/schemas/eval/test/v1.json",
+      "schema_ref": "https://evorule.org/schemas/domain/ale/eval-test/v1.json",
       "provenance": {
         "source": "03-M8 differential test ledger (core variants)"
       },
@@ -308,7 +308,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:a84e759b0ddc84c52ce0677355e0d9bd6d82a891c20f4f29d56d081d000df18c",
+    "content_hash": "blake3:16bdc15e2ba2ea41cb9608a82e10d855730c5f4edfa33dd2a6e4eccd026dde4c",
     "hash_algo": "blake3"
   }
 }

@@ -83,7 +83,7 @@
         "requiredSystemPackages": [],
         "task_id": "computing_math/k8s_payment_api_root_cause_wasm"
       },
-      "schema_ref": "https://evorule.org/schemas/eval/task-card/v1.json",
+      "schema_ref": "https://evorule.org/schemas/domain/ale/eval-task-card/v1.json",
       "provenance": {
         "source": "rdi-berkeley/agents-last-exam computing_math/k8s_payment_api_root_cause_wasm"
       },
@@ -237,7 +237,7 @@
           "missing_reason": "required"
         }
       },
-      "schema_ref": "https://evorule.org/schemas/eval/ruleset/v1.json",
+      "schema_ref": "https://evorule.org/schemas/domain/ale/eval-ruleset/v1.json",
       "provenance": {
         "source": "ale_export/graders/k8s_v1.json"
       },
@@ -259,7 +259,7 @@
         ],
         "entry_function": "grade_facts"
       },
-      "schema_ref": "https://evorule.org/schemas/eval/bridge/v1.json",
+      "schema_ref": "https://evorule.org/schemas/domain/ale/eval-bridge/v1.json",
       "provenance": {
         "source": "ale_export/graders/k8s_facts.py"
       },
@@ -306,7 +306,7 @@
           }
         }
       },
-      "schema_ref": "https://evorule.org/schemas/eval/test/v1.json",
+      "schema_ref": "https://evorule.org/schemas/domain/ale/eval-test/v1.json",
       "provenance": {
         "source": "03-M8 differential test ledger (core variants)"
       },
@@ -330,7 +330,7 @@
     "exported_at": "2026-10-12T00:00:00Z",
     "exported_by": "ale2bundle v0.1",
     "source_version": "v1",
-    "content_hash": "blake3:58763ef350f8740ab3540d905a9fed22db779296ae14f025b5992bb73f451354",
+    "content_hash": "blake3:31a6a516cf601478d9ec610bb6f360752f2396ba6c9ccf596294866177842ddd",
     "hash_algo": "blake3"
   }
 }

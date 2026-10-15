@@ -209,27 +209,30 @@ def convert_task(ale_export: Path, task_dir: str, out_root: Path) -> Path:
     ruleset_name, bridge_name = BRIDGE_OF[task_dir]
 
     # ---- entries（声明序对齐 BundleEntry）----
+    # schema_ref 对齐 domain 命名域（SR-17 B2：四 eval schema $id 已迁
+    # https://evorule.org/schemas/domain/ale/<name>/v1.json——旧 /schemas/eval/ URI 已失效）
+    DOMAIN_ALE = "https://evorule.org/schemas/domain/ale"
     entries = [
-        entry(task_dir, "task_card", "https://evorule.org/schemas/eval/task-card/v1.json",
+        entry(task_dir, "task_card", f"{DOMAIN_ALE}/eval-task-card/v1.json",
               build_task_card_body(task_card, task_id),
               f"rdi-berkeley/agents-last-exam {task_id}"),
     ]
     ruleset = json.loads((graders_p / ruleset_name).read_text(encoding="utf-8"))
     ruleset_key = ruleset_name.removesuffix(".json")
     entries.append(entry(
-        task_dir, "grader_ruleset", "https://evorule.org/schemas/eval/ruleset/v1.json",
+        task_dir, "grader_ruleset", f"{DOMAIN_ALE}/eval-ruleset/v1.json",
         build_ruleset_body(ruleset, ruleset_key),
         "ale_export/graders/" + ruleset_name))
     if bridge_name is not None:
         entries.append(entry(
-            task_dir, "grader_bridge", "https://evorule.org/schemas/eval/bridge/v1.json",
+            task_dir, "grader_bridge", f"{DOMAIN_ALE}/eval-bridge/v1.json",
             build_bridge_body(graders_p / bridge_name, bridge_name),
             "ale_export/graders/" + bridge_name))
     variants = TASK_VARIANTS[task_dir]
     # 判分指令类型从 ruleset 首规则提取（eval_exact_match/eval_atsp_v1/...）
     ruleset_instruction_type = ruleset[0]["params"]["domain"]["instruction_type"]
     entries.append(entry(
-        task_dir, "grader_test", "https://evorule.org/schemas/eval/test/v1.json",
+        task_dir, "grader_test", f"{DOMAIN_ALE}/eval-test/v1.json",
         build_test_body(variants, ruleset_instruction_type, task_id),
         "03-M8 differential test ledger (core variants)"))
 
