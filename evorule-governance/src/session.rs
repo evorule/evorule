@@ -26,8 +26,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use evorule_reactor::{
-    fact_hash, EventSender, Fact, FactId, FactSender, FactsLog, FactsLogError, Reactor,
-    ReactorHandle, WalRecord,
+    fact_hash, ClockHandle, EventSender, Fact, FactId, FactSender, FactsLog, FactsLogError,
+    Reactor, ReactorHandle, RuntimeClock, WalRecord,
 };
 use evorule_tcb::JsonValue;
 
@@ -109,6 +109,9 @@ pub struct Session {
     pub content_hash_scheme: ContentHashScheme,
     created_at: Arc<Instant>,
     last_activity_ms: Arc<AtomicU64>,
+    /// 运行时时钟（时钟缝，经 manager 注入；默认 SystemClock 与直接
+    /// Instant::now() 行为逐字一致——复用 reactor 侧 RuntimeClock 抽象）
+    clock: ClockHandle,
 }
 
 impl Session {
@@ -227,7 +230,7 @@ impl Session {
 
     /// 更新最后活动时间
     pub fn touch(&self) {
-        let now = Instant::now();
+        let now = self.clock.now();
         let ms = (now - *self.created_at).as_millis() as u64;
         self.last_activity_ms.store(ms, Ordering::Relaxed);
     }
@@ -404,6 +407,9 @@ pub struct SessionManager {
     /// 密钥材料不落审计资产——builder 在此持有 signer（内存态），
     /// 每会话从配置派生独立 builder（私钥种子注入，不入 WAL）。
     anchor_config: Option<SessionAnchorConfig>,
+    /// 运行时时钟（时钟缝，经 [`Self::with_clock`] 注入；默认 SystemClock，
+    /// 行为与直接 `Instant::now()` 逐字一致——复用 reactor 侧 RuntimeClock 抽象）
+    clock: ClockHandle,
 }
 
 /// 会话审计锚点链配置（G-A2）
@@ -630,6 +636,7 @@ impl SessionManager {
             count: AtomicU64::new(0),
             pending_recycle: Mutex::new(Vec::new()),
             anchor_config: None,
+            clock: ClockHandle::system(),
         }
     }
 
@@ -639,6 +646,17 @@ impl SessionManager {
     /// 已存在会话不受影响。不调用本方法=锚点关（与旧版行为逐位一致）。
     pub fn with_anchor_config(mut self, config: SessionAnchorConfig) -> Self {
         self.anchor_config = Some(config);
+        self
+    }
+
+    /// 注入运行时时钟（时钟缝，builder 模式）
+    ///
+    /// 默认 [`ClockHandle::system()`]（native 行为与直接 `Instant::now()`
+    /// 逐字一致）；注入 `FixedClock` 后会话创建时间戳、touch 活动时长、
+    /// TTL 过期清扫全部确定性可测（无 sleep、无竞态）。
+    /// 不调用本方法 = 与旧版行为逐位一致。
+    pub fn with_clock(mut self, clock: ClockHandle) -> Self {
+        self.clock = clock;
         self
     }
 
@@ -836,8 +854,9 @@ impl SessionManager {
                 parent_session_id: None,
                 initial_content_hash: None,
                 content_hash_scheme: ContentHashScheme::default(),
-                created_at: Arc::new(Instant::now()),
+                created_at: Arc::new(self.clock.now()),
                 last_activity_ms: Arc::new(AtomicU64::new(0)),
+                clock: self.clock.clone(),
             },
         );
 
@@ -1040,8 +1059,9 @@ impl SessionManager {
                 parent_session_id: parent_id,
                 initial_content_hash: Some(initial_content_hash),
                 content_hash_scheme,
-                created_at: Arc::new(Instant::now()),
+                created_at: Arc::new(self.clock.now()),
                 last_activity_ms: Arc::new(AtomicU64::new(0)),
+                clock: self.clock.clone(),
             },
         );
 
@@ -1197,7 +1217,13 @@ impl SessionManager {
     /// 移除所有 `last_activity` 距今超过 `session_ttl` 的会话。
     /// 返回被清理的会话数量。
     pub fn reap_expired(&self) -> usize {
-        let now = Instant::now();
+        self.reap_expired_at(self.clock.now())
+    }
+
+    /// [`Self::reap_expired`] 的时间注入变体（时钟缝 `_at` 纪律，对齐 reactor 侧）
+    ///
+    /// 时间以参数进入，TTL 清扫逻辑确定性可测（无 sleep、无竞态）。
+    pub fn reap_expired_at(&self, now: Instant) -> usize {
         let mut reaped = 0;
         for shard in &self.shards {
             let mut shard_guard = match lock_mutex(shard) {
@@ -1549,6 +1575,45 @@ mod tests {
         instr.insert("type".to_string(), JsonValue::string("increment"));
         instr.insert("params".to_string(), JsonValue::Object(params));
         vec![JsonValue::Object(instr)]
+    }
+
+    // ---- 时钟缝确定性测试（RuntimeClock 注入，对齐 reactor 侧 runtime 纪律）----
+
+    // 固定时钟注入：created_at 取自注入时钟（而非宿主时钟），确定性可断言
+    #[tokio::test]
+    async fn fixed_clock_drives_created_at_and_touch() {
+        use evorule_reactor::{ClockHandle, FixedClock};
+        let t0 = std::time::Instant::now();
+        let mgr = SessionManager::with_limits(make_core_eval(), 100, 8, Duration::from_secs(60))
+            .with_clock(ClockHandle::new(std::sync::Arc::new(FixedClock::new(t0))));
+        let id = mgr.create_session().unwrap();
+
+        // touch 于同一固定时刻：last_activity_ms = now - created_at = 0
+        let shard = &mgr.shards[mgr.get_shard_idx(id)];
+        let guard = shard.lock().unwrap_or_else(|e| e.into_inner());
+        let session = guard.get(&id).unwrap();
+        session.touch();
+        assert_eq!(
+            session.last_activity_ms.load(Ordering::Relaxed),
+            0,
+            "固定时钟下 touch 的活动时长必须为 0（时钟注入生效的直接证据）"
+        );
+    }
+
+    // reap_expired_at 时间参数化：TTL 过期清扫确定性可测（无 sleep、无竞态）
+    #[tokio::test]
+    async fn reap_expired_at_is_deterministic_over_injected_time() {
+        let mgr = SessionManager::with_limits(make_core_eval(), 100, 8, Duration::from_secs(60));
+        let id = mgr.create_session().unwrap();
+
+        // TTL 内：不清扫
+        assert_eq!(mgr.reap_expired_at(std::time::Instant::now()), 0);
+        // TTL 外（60s + 1s）：确定性清扫恰好 1 个
+        let future = std::time::Instant::now() + Duration::from_secs(61);
+        assert_eq!(mgr.reap_expired_at(future), 1);
+        // 清扫后计数与表同步
+        assert_eq!(mgr.len(), 0);
+        let _ = id;
     }
 
     /// B4 回归（）：max_sessions 限额在高并发下不可突破。

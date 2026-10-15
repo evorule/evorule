@@ -69,6 +69,15 @@ impl AuditSigner {
     ///
     /// 返回 `(sk_seed_hex, pk_hex)`：`sk_seed_hex` 为 32 字节私钥种子的十六进制（需私密保存），
     /// `pk_hex` 为 32 字节压缩公钥（可公开分发供验证）。
+    ///
+    /// # 运行时缝声明（诚实边界）
+    ///
+    /// 本函数是 governance 侧唯一的 OS 熵源消费点。签名种子**必须保持
+    /// 非确定**——此缝不参与确定性回放（与 reactor 时钟缝的可重放目标
+    /// 性质相反）。确定性测试/派生构造走 [`Self::from_bytes`] /
+    /// [`Self::from_hex`]（固定种子入口已覆盖可测试性需求），
+    /// 因此不设 RuntimeEntropy trait（YAGNI；嵌入式 P6 若需要真实
+    /// 熵源注入再立项）。
     pub fn generate_keys() -> Result<(String, String), SignError> {
         let mut seed = [0u8; 32];
         getrandom::getrandom(&mut seed).map_err(|_| SignError::Randomness("OS 熵源不可用"))?;
