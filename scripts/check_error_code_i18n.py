@@ -26,8 +26,10 @@ import sys
 from pathlib import Path
 from typing import Set
 
-DEFAULT_SERVER_RS = Path(r"D:\evorule-server\evorule-server\src\api\server.rs")
-DEFAULT_CONSOLE_DIR = Path(r"D:\evorule-console-cloud\src\lib\locale")
+# 默认按生态工作区兄弟目录约定解析（本仓根的兄弟目录）；CI/异构布局用参数覆盖。
+_WS_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_SERVER_RS = _WS_ROOT / "evorule-server" / "evorule-server" / "src" / "api" / "server.rs"
+DEFAULT_CONSOLE_DIR = _WS_ROOT / "evorule-console-cloud" / "src" / "lib" / "locale"
 
 RE_SERVER_CODE = re.compile(r'code:\s*Some\("([A-Z0-9_]+)"')
 RE_SOME_CODE = re.compile(r'Some\("([A-Z0-9_]+)"\)')

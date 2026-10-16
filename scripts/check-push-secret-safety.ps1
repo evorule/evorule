@@ -5,7 +5,7 @@
 # printed - findings report key name / pattern class + file:line only.
 #
 # Usage:
-#   powershell -File check-push-secret-safety.ps1 -Repo D:\evo-agent -EnvFile D:\evo-agent\.env
+#   powershell -File check-push-secret-safety.ps1 -Repo <repo-path> -EnvFile <repo-path>\.env
 #   powershell -File check-push-secret-safety.ps1 -Repo <repo> -Range origin/main..HEAD -EnvFile <env1>,<env2>
 #
 # Exit codes: 0 = PASS, 1 = potential leak (PUSH BLOCKED), 3 = config/usage error.

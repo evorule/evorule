@@ -142,3 +142,6 @@ reactive_researcher_memory/
 # mdBook build output(自动生成,不进版本)
 **/docs/book/
 **/book/
+
+# 本机部署私有配置（钩子同步目标清单等, 不公开发布）
+scripts/sync-msg-hook.targets.local.json

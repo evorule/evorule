@@ -17,20 +17,11 @@ $srcHash = (Get-FileHash $src -Algorithm SHA256).Hash
 Write-Host "源: $src"
 Write-Host "SHA256: $srcHash"
 
-$repos = @(
-    'D:\evorule',
-    'D:\evo-agent',
-    'D:\evorule-server',
-    'D:\evorule-rule',
-    'D:\evorule-system-rules',
-    'D:\evorule-console-cloud',
-    'D:\evorule-console',
-    'D:\evorule-hash',
-    'D:\evorule-bundle',
-    'D:\evorule-sdk',
-    'D:\evorule-dsh-skill',
-    'D:\evorule-experience-pack'
-)
+$targetsFile = Join-Path $PSScriptRoot 'sync-msg-hook.targets.local.json'
+if (-not (Test-Path $targetsFile)) {
+    Write-Error "目标清单不存在: $targetsFile (本机部署布局属私有配置不入仓; 请创建该文件, 格式为 JSON 字符串数组, 每项为一个公开仓本地 clone 的根路径)"
+}
+$repos = @(Get-Content $targetsFile -Raw | ConvertFrom-Json)
 
 $fail = 0
 foreach ($repo in $repos) {

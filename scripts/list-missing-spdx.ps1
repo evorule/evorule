@@ -1,6 +1,10 @@
 ﻿# List all .rs files missing SPDX header
-$evoruleRoot = "D:\evorule"
-$evoAgentRoot = "D:\evo-agent"
+param(
+    # 缺省: 本仓根
+    [string]$EvoruleRoot = (Split-Path $PSScriptRoot -Parent),
+    # 缺省: 按生态工作区兄弟目录约定解析（本仓根的兄弟目录）
+    [string]$EvoAgentRoot = (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'evo-agent')
+)
 
 $rsDirs = @(
     "$evoruleRoot\evorule-tcb\src",
