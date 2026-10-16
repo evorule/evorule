@@ -102,7 +102,7 @@
 ### 1.4 验证边界与不在范围
 
 **核心原则**：形式化验证仅覆盖**机制层**（evorule-tcb / evorule-reactor / evorule-governance），
-**不覆盖应用层**（evorule-application / evorule-server / evorule-io-handlers）。
+**不覆盖应用层**（应用层仓 / evorule-server / evorule-io-handlers）。
 
 | 层                            | 范围        | 说明                                                       |
 | ----------------------------- | ----------- | ---------------------------------------------------------- |

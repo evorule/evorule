@@ -11,16 +11,16 @@
 > 【重要】evorule 核心仓是 **纯机制层**（framework），不内置业务场景的规则模板。
 >
 > 所有面向行业的开箱即用规则集（医院 HIPAA 合规、律所利益冲突、金融反洗钱等）已按
-> evorule 边界规范（见仓根 `AGENTS.md` 边界判断表：`evorule-cli 加规则模板 = 业务内容，
-> 不是机制，放 evorule-application ❌`）**迁移至兄弟仓 evorule-application**。
+> evorule 机制层/业务层边界规范（`evorule-cli 加规则模板 = 业务内容，不是机制`）
+> **迁移至兄弟应用层仓（私有，未随本生态公开发布）**。
 
 ## 本目录内容（机制层最小化样例）
 
 本目录保留的示例仅用于 **演示 evorule 核心机制的语法**，不涉及任何行业业务规则。
-如需业务级开箱即用模板，请移步 `evorule-application` 仓：
+如需业务级开箱即用模板，请移步应用层仓（私有）：
 
-- 仓库相对位置：与 evorule 仓为同级兄弟仓（兄弟目录）
-- 路径（建议克隆后访问）：`evorule-application/examples/evorule-cli/`
+- 仓库相对位置：应用层仓为本生态独立仓（私有，未随本生态公开发布）
+- 模板位置（持有访问权限时）：应用层仓 `examples/evorule-cli/`
 - 典型模板目录：
   - `hospital/` — 医院信息科 HIPAA / 等保 2.0 / PIPL 规则集
   - `law-firm/` — 律所合规部 利益冲突 / 客户保密 / GDPR Art.30 规则集
@@ -57,7 +57,7 @@ evorule diff /tmp/facts.jsonl /tmp/facts.jsonl   # 相同 → 空 diff
 2. **按语法写**：规则结构参考 `evorule-governance/src/rule_validation.rs` 的静态校验规则
 3. **本地验证**：`evorule validate ./my-rules/`
 4. **接到生产**：把 `io_request` 的 `io_type` 接入你方 I/O handler（实现放在
-   `evo-agent` 仓或 `evorule-application` 仓，**不能写进 evorule 核心仓**）
+   `evo-agent` 仓或应用层仓，**不能写进 evorule 核心仓**）
 
 ---
 
