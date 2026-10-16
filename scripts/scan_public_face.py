@@ -208,6 +208,13 @@ ALLOWLIST_KIND_RES = {
         re.compile('^TC' + r'B-\d{4}-\d+$'),
         re.compile('^CR-' + r'\d{8}-\d{3}$'),
     ],
+    # C 类：历史验证/运行证据存档中的本机编译输出路径留痕（证据原文保真不改写，
+    # 经项目方裁定按文件豁免）；匹配值为模式命中的仓根前缀字面量
+    'evidence-local-path': [
+        re.compile('D:' + r'\\evorule$'),
+        re.compile('D:' + r'\\knowledge$'),
+        re.compile('D:' + r'\\evo-agent$'),
+    ],
 }
 ALLOWLIST_DEFAULT_REL = 'scripts/scan_public_face_allowlist.txt'
 
