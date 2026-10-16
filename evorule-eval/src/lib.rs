@@ -22,14 +22,35 @@ use std::time::Duration;
 use evorule_reactor::{Fact, FactId, FactIdGenerator, IoType};
 use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 
-/// 真实素材根（evorule 主仓）
-pub const REPO_ROOT: &str = r"D:\evorule";
-/// 真实素材根（server 仓，现役 bundle）
-pub const SERVER_ROOT: &str = r"D:\evorule-server";
-/// R-B1 修复前 bundle 提取目录（git 历史 df6a16d^）
-pub const SAMPLES_ROOT: &str = r"D:\knowledge\论文\04-实验\samples";
-/// 评估结果输出根
-pub const RESULTS_ROOT: &str = r"D:\knowledge\论文\04-实验\results";
+/// 本机素材根注入（公开面不落本机路径）：环境变量优先，缺省当前目录。
+/// 本机部署运行前经下列变量注入真实素材位置（素材缺失时按各调用点语义
+/// 报错或跳过）：
+/// `EVORULE_EVAL_REPO_ROOT` / `EVORULE_EVAL_SERVER_ROOT` / `EVORULE_EVAL_SAMPLES_ROOT`
+/// / `EVORULE_EVAL_RESULTS_ROOT` / `EVORULE_EVAL_CONSOLE_ROOT`
+fn env_root(var: &str) -> PathBuf {
+    PathBuf::from(std::env::var(var).unwrap_or_else(|_| ".".into()))
+}
+
+/// 真实素材根（evorule 主仓；环境变量 `EVORULE_EVAL_REPO_ROOT`）
+pub fn repo_root() -> PathBuf {
+    env_root("EVORULE_EVAL_REPO_ROOT")
+}
+/// 真实素材根（server 仓，现役 bundle；环境变量 `EVORULE_EVAL_SERVER_ROOT`）
+pub fn server_root() -> PathBuf {
+    env_root("EVORULE_EVAL_SERVER_ROOT")
+}
+/// R-B1 修复前 bundle 提取目录（git 历史 df6a16d^；环境变量 `EVORULE_EVAL_SAMPLES_ROOT`）
+pub fn samples_root() -> PathBuf {
+    env_root("EVORULE_EVAL_SAMPLES_ROOT")
+}
+/// 评估结果输出根（环境变量 `EVORULE_EVAL_RESULTS_ROOT`）
+pub fn results_root() -> PathBuf {
+    env_root("EVORULE_EVAL_RESULTS_ROOT")
+}
+/// console-cloud 素材根（环境变量 `EVORULE_EVAL_CONSOLE_ROOT`）
+pub fn console_root() -> PathBuf {
+    env_root("EVORULE_EVAL_CONSOLE_ROOT")
+}
 
 /// 默认步数上界（与 CLI DEFAULT_MAX_STEPS 一致量级）
 pub const MAX_STEPS: usize = 10_000;
@@ -113,9 +134,7 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
     let mut out = Vec::new();
 
     // 1. 宪法（解释器语义层）
-    let p = Path::new(REPO_ROOT)
-        .join("evorule-tcb")
-        .join("core_eval.json");
+    let p = repo_root().join("evorule-tcb").join("core_eval.json");
     out.push(Workload {
         name: "constitution",
         rules: load_rules_file(&p)?,
@@ -124,7 +143,7 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
     });
 
     // 2. L2 纪律规则集
-    let p = Path::new(REPO_ROOT)
+    let p = repo_root()
         .join("evorule-tcb")
         .join("discipline")
         .join("core_eval.json");
@@ -136,7 +155,7 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
     });
 
     // 3. wasm-demo 合并规则集（含 io 规则）
-    let p = Path::new(REPO_ROOT)
+    let p = repo_root()
         .join("evorule-wasm-demo")
         .join("rules_merged.json");
     out.push(Workload {
@@ -147,7 +166,7 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
     });
 
     // 4-8. server 现役 bundle（每个 bundle 一个工作负载，manifest 不参与执行）
-    let bundles_dir = Path::new(SERVER_ROOT).join("rules").join("bundles");
+    let bundles_dir = server_root().join("rules").join("bundles");
     if let Ok(entries) = std::fs::read_dir(&bundles_dir) {
         let mut dirs: Vec<PathBuf> = entries
             .flatten()
@@ -185,9 +204,7 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
     }
 
     // 9-12. console-cloud 五件套中的业务规则集（真实种子可命中的独立规则集）
-    let cc_rules = Path::new(r"D:\evorule-console-cloud")
-        .join("static")
-        .join("rules");
+    let cc_rules = console_root().join("static").join("rules");
     for f in [
         "20_finance_rules.json",
         "21_medical_rules.json",
@@ -215,9 +232,7 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
 ///
 /// 这些种子是 determinism_run.js 已验证可命中的真实业务指令。
 pub fn load_plan_seeds() -> Result<Vec<(String, JsonValue)>, String> {
-    let plan_path = Path::new(REPO_ROOT)
-        .join("evorule-wasm-demo")
-        .join("plan.json");
+    let plan_path = repo_root().join("evorule-wasm-demo").join("plan.json");
     let text = read_to_string(&plan_path)?;
     let plan = parse_json(&text)?;
     let mut seeds = Vec::new();
@@ -661,7 +676,7 @@ pub fn payload_hash(payload: &JsonValue) -> Result<String, String> {
 pub fn out_dir(bin: &str) -> PathBuf {
     let root = std::env::var("EVORULE_EVAL_OUT")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(RESULTS_ROOT));
+        .unwrap_or_else(|_| results_root());
     let dir = root.join(bin);
     let _ = std::fs::create_dir_all(&dir);
     dir

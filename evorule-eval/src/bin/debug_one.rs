@@ -4,9 +4,12 @@
 use evorule_tcb::{execute_transition, JsonValue};
 
 fn main() {
-    let rules = evorule_eval::load_rules_file(std::path::Path::new(
-        r"D:\evorule-console-cloud\static\rules\20_finance_rules.json",
-    ))
+    let rules = evorule_eval::load_rules_file(
+        &evorule_eval::console_root()
+            .join("static")
+            .join("rules")
+            .join("20_finance_rules.json"),
+    )
     .unwrap_or_else(|e| {
         eprintln!("load error: {e}");
         std::process::exit(1);
