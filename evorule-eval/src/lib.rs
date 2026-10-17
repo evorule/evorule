@@ -135,9 +135,10 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
         has_io_rules: false,
     });
 
-    // 3. wasm-demo 合并规则集（含 io 规则）
+    // 3. 合并规则集（含 io 规则；固件收编自原 wasm-demo 目录，见 fixtures/README）
     let p = Path::new(REPO_ROOT)
-        .join("evorule-wasm-demo")
+        .join("evorule-eval")
+        .join("fixtures")
         .join("rules_merged.json");
     out.push(Workload {
         name: "wasm_merged",
@@ -211,12 +212,14 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
     Ok(out)
 }
 
-/// 从 wasm-demo plan.json 装载真实种子指令（16 规则 × pass/fail + 3 序列）
+/// 从 plan.json 装载真实种子指令（16 规则 × pass/fail + 3 序列）
 ///
-/// 这些种子是 determinism_run.js 已验证可命中的真实业务指令。
+/// 这些种子是 determinism_run.js 已验证可命中的真实业务指令；
+/// 固件收编自原 wasm-demo 目录（随该目录移出内核仓，fixtures/ 落库）。
 pub fn load_plan_seeds() -> Result<Vec<(String, JsonValue)>, String> {
     let plan_path = Path::new(REPO_ROOT)
-        .join("evorule-wasm-demo")
+        .join("evorule-eval")
+        .join("fixtures")
         .join("plan.json");
     let text = read_to_string(&plan_path)?;
     let plan = parse_json(&text)?;

@@ -671,7 +671,7 @@ mod tests {
         assert_eq!(codes(&v), vec!["DC-01"], "缺 type 字段应命中 DC-01");
     }
 
-    /// 真实误报复盘：wasm-demo 用 `set value: null` 清空 I/O 结果。
+    /// 真实误报复盘：早期 wasm 侧演示曾用 `set value: null` 清空 I/O 结果。
     /// domain 的 `exists` 语义是「null = 已清除」，第一版 DC-06 因此误报；
     /// 本测试锁死「字段存在即可，值可为 null」的正确判据。
     #[test]

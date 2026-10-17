@@ -4,7 +4,7 @@
 //! R1 —— 重放位精确率（replay bit-precision）
 //!
 //! 方法：真实工作负载 × 真实种子指令 × K 次独立运行，比对以下三项。
-//! 种子指令来自 wasm-demo plan.json（16 规则 × pass/fail + 3 序列，determinism_run.js 已验证可命中）；
+//! 种子指令来自 eval fixtures plan.json（16 规则 × pass/fail + 3 序列，原 wasm-demo determinism_run.js 已验证可命中）；
 //! 每次运行使用全新 FactIdGenerator、队列与状态。
 //!
 //! 比对项：

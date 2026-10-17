@@ -121,7 +121,8 @@ fn main() -> Result<(), String> {
     );
     neg_files.push(
         Path::new(REPO_ROOT)
-            .join("evorule-wasm-demo")
+            .join("evorule-eval")
+            .join("fixtures")
             .join("rules_merged.json"),
     );
 
