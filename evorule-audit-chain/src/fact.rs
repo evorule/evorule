@@ -512,7 +512,7 @@ mod tests {
     #![allow(clippy::panic, clippy::expect_used)]
     use super::*;
     // no_std crate 测试构建链接 std：测试宏显式导入
-    use std::{format, println, vec};
+    use std::{format, vec};
 
     #[test]
     fn test_fact_id_generator() {

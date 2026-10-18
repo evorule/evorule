@@ -421,7 +421,7 @@ mod tests {
     use crate::fact::{Fact, FactId, IoType, TraceDomainAttribution, TraceHit};
     use evorule_tcb::JsonValue;
     // no_std crate 测试构建链接 std：测试宏显式导入
-    use std::{format, println, vec};
+    use std::{println, vec};
 
     #[test]
     fn test_fact_to_stable_json_format() {

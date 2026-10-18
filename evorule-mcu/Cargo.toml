@@ -1,0 +1,30 @@
+[package]
+name = "evorule-mcu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version = "1.81" # core::error::Error 最低 1.81（与 evorule-audit-chain 同口径）
+description = "EvoRule MCU no_std 内核——紧凑规则包 + RAM WAL + tick 时钟 + 同步执行器"
+readme = "README.md"
+documentation.workspace = true
+keywords = ["no-std", "embedded", "rule-engine", "audit-chain", "deterministic"]
+categories = ["no-std", "embedded", "data-structures"]
+
+[dependencies]
+# no_std 内核：tcb / audit-chain 均关 std default（std 门只留给 std 宿主侧开启）
+evorule-tcb = { path = "../evorule-tcb", version = "0.8.3", default-features = false }
+evorule-audit-chain = { path = "../evorule-audit-chain", version = "0.8.5" }
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+# 同输入与 native 输出一致的对拍测试（仅 host 测试构建，不进嵌入式目标）；
+# persistence 开启 MemoryWalStore / WalRecord / fact_to_json 的 re-export
+evorule-reactor = { path = "../evorule-reactor", version = "0.8.5", features = ["persistence"] }
+
+[lints]
+workspace = true
