@@ -3,15 +3,14 @@
 # 覆盖:
 # - wasm32-unknown-unknown 编译门禁: 核心四 crate (tcb / reactor /
 #   governance / mcu) 必须持续可通过 wasm32 编译——第 2 编译目标正式化,
-#   防 WASM 适配面腐化 (mcu 为 SC3-a no_std 内核, 纯可移植, 随批扩入)
-# - WASM 适配行数守卫: 《多目标能力演进总体规划》§5.2 触发条件的 CI 化——
-#   适配行数 > 50 即红, 红即触发 Runtime trait 抽象重构 (该文档第九节方案 B)
-#   的启动条件
+#   防 WASM 适配面腐化 (mcu 为 no_std 内核, 纯可移植, 随批扩入)
+# - WASM 适配行数守卫: 适配面腐化触发条件的 CI 化——
+#   适配行数 > 50 即红, 红即触发 Runtime trait 抽象重构的启动条件
 #
 # 设计说明:
 # - cargo check 而非 build: 门禁目标是"类型/依赖可移植性", 产物链接属 wasm-bindgen
-#   集成层 (多目标规划阶段 1), 不在本门禁范围
-# - 运行时逐位一致性 (WASM vs native 双跑) 属 SC1+ 范围, 需 wasm-bindgen-test
+#   集成层, 不在本门禁范围
+# - 运行时逐位一致性 (WASM vs native 双跑) 需 wasm-bindgen-test
 #   测试 harness, 不在本文件
 # - Gitee Go 侧 (.gitee-ci/) 无 wasm32 门禁, 由 mirror 同步后 GitHub Actions 承担
 name: WASM Gate
@@ -58,11 +57,11 @@ jobs:
         run: cargo check --target wasm32-unknown-unknown -p evorule-tcb -p evorule-reactor -p evorule-governance -p evorule-mcu
 
   # ==========================================================================
-  # 2. WASM 适配行数守卫 (《多目标能力演进总体规划》§5.2 触发条件 CI 化)
+  # 2. WASM 适配行数守卫 (适配面腐化触发条件 CI 化)
   #    计数口径: 核心四 crate src 中 target_arch="wasm32" cfg 与
   #    wasm-bindgen 引用行。基线 = 2 (reactor/ffi.rs; mcu 纯可移植
   #    no_std 贡献 0 行)。
-  #    阈值 = 50: 超阈值即红, 红即该文档 §5.2 触发 Runtime trait 抽象
+  #    阈值 = 50: 超阈值即红, 红即触发 Runtime trait 抽象
   #    重构的启动条件——本 job 把该触发从"人工记忆"固化为"机器执法"。
   # ==========================================================================
   wasm-adaptation-guard:
@@ -78,6 +77,6 @@ jobs:
             --include='*.rs' | wc -l)
           echo "WASM 适配行数: ${COUNT} (阈值 50, 基线 2)"
           if [ "${COUNT}" -gt 50 ]; then
-            echo "::error::WASM 适配行数 ${COUNT} > 50——触发《多目标能力演进总体规划》§5.2 Runtime trait 抽象重构启动条件, 须先立项 trait 重构再扩适配面"
+            echo "::error::WASM 适配行数 ${COUNT} > 50——触发 Runtime trait 抽象重构启动条件, 须先立项 trait 重构再扩适配面"
             exit 1
           fi

@@ -1,13 +1,12 @@
-# 嵌入式编译门禁 (SC3-a, 依据《多目标能力演进总体规划》)
+# 嵌入式编译门禁 (no_std 双目标: Cortex-M4F / RISC-V 中断态)
 #
 # 覆盖:
 # - 嵌入式双目标编译门禁: 核心两 crate (audit-chain / mcu) 必须持续可通过
 #   thumbv7em-none-eabihf (ARM Cortex-M4F) 与 riscv32imac-unknown-none-elf
 #   (RISC-V 中断态) 编译——第 3/4 编译目标正式化, 防嵌入式适配面腐化
-# - 嵌入式适配行数守卫: 《多目标能力演进总体规划》§5.2 触发条件的 CI 化——
-#   适配行数 > 50 即红, 红即触发 Runtime trait 抽象重构 (该文档第九节方案 B)
-#   的启动条件
-# - 板级依赖图扫描门 (SC3-b): 板级专属依赖 (stm32f4xx / ch32-metapac /
+# - 嵌入式适配行数守卫: 适配面腐化触发条件的 CI 化——
+#   适配行数 > 50 即红, 红即触发 Runtime trait 抽象重构的启动条件
+# - 板级依赖图扫描门: 板级专属依赖 (stm32f4xx / ch32-metapac /
 #   ch32-hal / riscv-rt / embedded-hal) 只允许出现在 boards/ 独立构建目录,
 #   主 workspace 任一成员 Cargo.toml 出现即红——hal 依赖零进主依赖图
 #
@@ -71,12 +70,12 @@ jobs:
         run: cargo check --target ${{ matrix.target }} -p evorule-mcu --features tlsf-alloc
 
   # ==========================================================================
-  # 2. 嵌入式适配行数守卫 (《多目标能力演进总体规划》§5.2 触发条件 CI 化)
+  # 2. 嵌入式适配行数守卫 (适配面腐化触发条件 CI 化)
   #    计数口径: 核心两 crate src 中嵌入式目标 cfg (target_arch="arm"/
   #    "riscv32"/target_os="none") 与 cortex-m / embedded-hal 等嵌入式
   #    专属引用行。基线 = 0 (核心 crate 纯可移植 no_std, 门控落
   #    Cargo.toml dev-deps 与固件 example, 不进 src)。
-  #    阈值 = 50: 超阈值即红, 红即该文档 §5.2 触发 Runtime trait 抽象
+  #    阈值 = 50: 超阈值即红, 红即触发 Runtime trait 抽象
   #    重构的启动条件——本 job 把该触发从"人工记忆"固化为"机器执法"。
   # ==========================================================================
   embedded-adaptation-guard:
@@ -92,12 +91,12 @@ jobs:
             --include='*.rs' | wc -l)
           echo "嵌入式适配行数: ${COUNT} (阈值 50, 基线 0)"
           if [ "${COUNT}" -gt 50 ]; then
-            echo "::error::嵌入式适配行数 ${COUNT} > 50——触发《多目标能力演进总体规划》§5.2 Runtime trait 抽象重构启动条件, 须先立项 trait 重构再扩适配面"
+            echo "::error::嵌入式适配行数 ${COUNT} > 50——触发 Runtime trait 抽象重构启动条件, 须先立项 trait 重构再扩适配面"
             exit 1
           fi
 
   # ==========================================================================
-  # 3. 板级依赖图扫描门 (SC3-b: hal 依赖零进主依赖图)
+  # 3. 板级依赖图扫描门 (hal 依赖零进主依赖图)
   #    boards/ 为独立构建目录（父 Cargo.toml exclude，各含 .cargo 配置与
   #    memory.x），板级专属依赖只允许出现在该目录；主 workspace 任一成员
   #    的 Cargo.toml 出现即红。名单含 ch32-hal（git-only 方案，已否决，
