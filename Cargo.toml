@@ -6,6 +6,7 @@ resolver = "2"
 # 2026-09-14：v0.6.0（破坏性变更：collect/merge 原语退役；版本策略见 VERSION_STRATEGY.md）。
 members = [
     "evorule-tcb",
+    "evorule-audit-chain",
     "evorule-reactor",
     "evorule-governance",
     "evorule-discipline",

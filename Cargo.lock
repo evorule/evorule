@@ -456,6 +456,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "evorule-audit-chain"
+version = "0.8.5"
+dependencies = [
+ "blake3",
+ "evorule-tcb",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "evorule-cli"
 version = "0.8.5"
 dependencies = [
@@ -520,6 +530,7 @@ dependencies = [
  "async-trait",
  "blake3",
  "criterion",
+ "evorule-audit-chain",
  "evorule-tcb",
  "proptest",
  "serde_json",

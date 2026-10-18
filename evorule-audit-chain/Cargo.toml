@@ -1,0 +1,24 @@
+[package]
+name = "evorule-audit-chain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version = "1.81" # core::error::Error 最低 1.81（workspace 统一 1.74 不覆盖 no_std 内核 crate）
+description = "EvoRule 审计链 no_std 内核——Fact 数据形态 + 稳定 JSON 序列化 + BLAKE3 链哈希单一真相源"
+readme = "README.md"
+documentation.workspace = true
+keywords = ["audit-chain", "blake3", "no-std", "deterministic"]
+categories = ["no-std", "data-structures"]
+
+[dependencies]
+# no_std 内核：tcb 关 default features（std 门只留给 std 宿主侧开启）
+evorule-tcb = { path = "../evorule-tcb", version = "0.8.3", default-features = false }
+blake3 = { version = "1", default-features = false }
+serde = { version = "1", default-features = false, features = ["alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+
+[lints]
+workspace = true
