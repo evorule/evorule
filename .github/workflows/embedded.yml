@@ -1,0 +1,93 @@
+# 嵌入式编译门禁 (SC3-a, 依据《多目标能力演进总体规划》)
+#
+# 覆盖:
+# - 嵌入式双目标编译门禁: 核心两 crate (audit-chain / mcu) 必须持续可通过
+#   thumbv7em-none-eabihf (ARM Cortex-M4F) 与 riscv32imac-unknown-none-elf
+#   (RISC-V 中断态) 编译——第 3/4 编译目标正式化, 防嵌入式适配面腐化
+# - 嵌入式适配行数守卫: 《多目标能力演进总体规划》§5.2 触发条件的 CI 化——
+#   适配行数 > 50 即红, 红即触发 Runtime trait 抽象重构 (该文档第九节方案 B)
+#   的启动条件
+#
+# 设计说明:
+# - cargo check 而非 build: 门禁目标是"类型/依赖可移植性"; 固件链接
+#   (cortex-m-rt + memory.x + link.x) 属确定性对拍范围, 由本机脚本
+#   scripts/qemu_parity.ps1 承担 (QEMU mps2-an386 仿真对拍, 已实证
+#   native 与 qemu 链尾哈希逐字节一致), CI 化留嵌入式实机批
+# - no_std 本体代码零适配行: 核心 crate 为纯可移植 no_std, 双目标编译
+#   与 host 编译路径同源; 适配行守卫防未来腐化 (基线 = 0)
+# - 运行时逐位一致性 (QEMU vs native 双跑) 已由对拍脚本实证, CI 化随
+#   嵌入式实机批立项
+name: Embedded Gate
+
+on:
+  push:
+    branches: [main, master, "release/**"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions: read-all
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ==========================================================================
+  # 1. 嵌入式双目标编译门禁 (核心两 crate)
+  # ==========================================================================
+  embedded-check:
+    name: ${{ matrix.target }} check (audit-chain + mcu)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - thumbv7em-none-eabihf
+          - riscv32imac-unknown-none-elf
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # 关键: rust-toolchain.toml 锁定 1.98.1, rustup shim 会随文件自动装 1.98.1
+      # (minimal profile, 不含任何 target)——此步对"生效工具链"(=文件锁定的
+      # 1.98.1)补装嵌入式目标, 与本地环境对齐; 同 wasm-check 首跑教训:
+      # targets 挂在 dtolnay@stable 上装不对工具链。
+      - name: 对生效工具链补装 ${{ matrix.target }}
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: . -> target
+          key: embedded-${{ matrix.target }}
+
+      - name: ${{ matrix.target }} 编译检查 (核心两 crate)
+        run: cargo check --target ${{ matrix.target }} -p evorule-audit-chain -p evorule-mcu
+
+  # ==========================================================================
+  # 2. 嵌入式适配行数守卫 (《多目标能力演进总体规划》§5.2 触发条件 CI 化)
+  #    计数口径: 核心两 crate src 中嵌入式目标 cfg (target_arch="arm"/
+  #    "riscv32"/target_os="none") 与 cortex-m / embedded-hal 等嵌入式
+  #    专属引用行。基线 = 0 (核心 crate 纯可移植 no_std, 门控落
+  #    Cargo.toml dev-deps 与固件 example, 不进 src)。
+  #    阈值 = 50: 超阈值即红, 红即该文档 §5.2 触发 Runtime trait 抽象
+  #    重构的启动条件——本 job 把该触发从"人工记忆"固化为"机器执法"。
+  # ==========================================================================
+  embedded-adaptation-guard:
+    name: embedded adaptation lines (threshold 50)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: 适配行数统计与阈值判定
+        run: |
+          COUNT=$(grep -rnE 'target_arch *= *"(arm|riscv32)"|target_os *= *"none"|cortex_m|cortex-m|embedded_hal|embedded-hal|thumbv|no_main' \
+            evorule-audit-chain/src evorule-mcu/src \
+            --include='*.rs' | wc -l)
+          echo "嵌入式适配行数: ${COUNT} (阈值 50, 基线 0)"
+          if [ "${COUNT}" -gt 50 ]; then
+            echo "::error::嵌入式适配行数 ${COUNT} > 50——触发《多目标能力演进总体规划》§5.2 Runtime trait 抽象重构启动条件, 须先立项 trait 重构再扩适配面"
+            exit 1
+          fi

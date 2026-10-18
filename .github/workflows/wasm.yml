@@ -1,8 +1,9 @@
 # WASM 编译门禁 (SC0, 依据《evorule 科学计算平台总体规划》)
 #
 # 覆盖:
-# - wasm32-unknown-unknown 编译门禁: 核心三 crate (tcb / reactor / governance)
-#   必须持续可通过 wasm32 编译——第 2 编译目标正式化, 防 WASM 适配面腐化
+# - wasm32-unknown-unknown 编译门禁: 核心四 crate (tcb / reactor /
+#   governance / mcu) 必须持续可通过 wasm32 编译——第 2 编译目标正式化,
+#   防 WASM 适配面腐化 (mcu 为 SC3-a no_std 内核, 纯可移植, 随批扩入)
 # - WASM 适配行数守卫: 《多目标能力演进总体规划》§5.2 触发条件的 CI 化——
 #   适配行数 > 50 即红, 红即触发 Runtime trait 抽象重构 (该文档第九节方案 B)
 #   的启动条件
@@ -29,10 +30,10 @@ env:
 
 jobs:
   # ==========================================================================
-  # 1. wasm32 编译门禁 (核心三 crate)
+  # 1. wasm32 编译门禁 (核心四 crate)
   # ==========================================================================
   wasm-check:
-    name: wasm32 check (tcb + reactor + governance)
+    name: wasm32 check (tcb + reactor + governance + mcu)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -53,13 +54,14 @@ jobs:
           workspaces: . -> target
           key: wasm32
 
-      - name: wasm32 编译检查 (核心三 crate)
-        run: cargo check --target wasm32-unknown-unknown -p evorule-tcb -p evorule-reactor -p evorule-governance
+      - name: wasm32 编译检查 (核心四 crate)
+        run: cargo check --target wasm32-unknown-unknown -p evorule-tcb -p evorule-reactor -p evorule-governance -p evorule-mcu
 
   # ==========================================================================
   # 2. WASM 适配行数守卫 (《多目标能力演进总体规划》§5.2 触发条件 CI 化)
-  #    计数口径: 核心三 crate src 中 target_arch="wasm32" cfg 与
-  #    wasm-bindgen 引用行。基线 = 2 (reactor/ffi.rs)。
+  #    计数口径: 核心四 crate src 中 target_arch="wasm32" cfg 与
+  #    wasm-bindgen 引用行。基线 = 2 (reactor/ffi.rs; mcu 纯可移植
+  #    no_std 贡献 0 行)。
   #    阈值 = 50: 超阈值即红, 红即该文档 §5.2 触发 Runtime trait 抽象
   #    重构的启动条件——本 job 把该触发从"人工记忆"固化为"机器执法"。
   # ==========================================================================
@@ -72,7 +74,7 @@ jobs:
       - name: 适配行数统计与阈值判定
         run: |
           COUNT=$(grep -rnE 'target_arch *= *"wasm32"|wasm_bindgen|wasm-bindgen' \
-            evorule-tcb/src evorule-reactor/src evorule-governance/src \
+            evorule-tcb/src evorule-reactor/src evorule-governance/src evorule-mcu/src \
             --include='*.rs' | wc -l)
           echo "WASM 适配行数: ${COUNT} (阈值 50, 基线 2)"
           if [ "${COUNT}" -gt 50 ]; then
