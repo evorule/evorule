@@ -12,14 +12,11 @@
 #   主 workspace 任一成员 Cargo.toml 出现即红——hal 依赖零进主依赖图
 #
 # 设计说明:
-# - cargo check 而非 build: 门禁目标是"类型/依赖可移植性"; 固件链接
-#   (cortex-m-rt + memory.x + link.x) 属确定性对拍范围, 由本机脚本
-#   scripts/qemu_parity.ps1 承担 (QEMU mps2-an386 仿真对拍, 已实证
-#   native 与 qemu 链尾哈希逐字节一致), CI 化留嵌入式实机批
+# - cargo check 而非 build: 双目标门禁的目标是"类型/依赖可移植性"; 固件
+#   链接与跨目标运行时对拍由 job 4 (qemu-parity) 承担——QEMU mps2-an386
+#   仿真跑同场景, 与 native 基准链尾哈希逐字节比对断言, CI 即执法
 # - no_std 本体代码零适配行: 核心 crate 为纯可移植 no_std, 双目标编译
 #   与 host 编译路径同源; 适配行守卫防未来腐化 (基线 = 0)
-# - 运行时逐位一致性 (QEMU vs native 双跑) 已由对拍脚本实证, CI 化随
-#   嵌入式实机批立项
 name: Embedded Gate
 
 on:
@@ -122,3 +119,80 @@ jobs:
             exit 1
           fi
           echo "扫描通过: 主 workspace 成员无板级专属依赖 (stm32f4xx / ch32-metapac / ch32-hal / riscv-rt / embedded-hal)"
+
+  # ==========================================================================
+  # 4. QEMU 仿真对拍门禁 (跨目标运行时逐位一致性)
+  #    同一规则包 + 同一指令序列 + 同一固定应答, 在 host (native 参照) 与
+  #    mps2-an386 固件 (thumbv7em-none-eabihf) 双端执行, 链尾哈希逐字节
+  #    比对断言相等:
+  #    - parity 场景 (parity_rules.evopack): increment/noop 三指令全链
+  #    - io_resume 场景 (io_resume_rules.evopack): call_external 暂停-
+  #      恢复全协议 (IoRequest 入链暂停 → IoBridge 执行 → IoResponse
+  #      注入 → 指令重推消费 → __io_results__ 容器清除)
+  #    执法意义: 任何使 no_std 内核与 std 宿主审计链分叉的改动 (哈希链
+  #    SSOT / 事实发射语义 / I/O 恢复协议 / TLSF 分配器) 在 CI 即红,
+  #    不再依赖本机手跑对拍。
+  # ==========================================================================
+  qemu-parity:
+    name: qemu parity (mps2-an386 vs native)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - name: 对生效工具链补装 thumbv7em-none-eabihf
+        run: rustup target add thumbv7em-none-eabihf
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: . -> target
+          key: qemu-parity
+
+      - name: 安装 QEMU (arm 系统仿真)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-arm
+          qemu-system-arm --version
+
+      - name: native 基准链尾 (host 双场景)
+        run: |
+          set -o pipefail
+          cargo run --release -p evorule-mcu --example native_parity_tail | tee /tmp/native_parity.out
+          cargo run --release -p evorule-mcu --example native_io_resume_tail | tee /tmp/native_io_resume.out
+          grep -oE 'CHAIN_TAIL=[0-9a-f]{64}' /tmp/native_parity.out | cut -d= -f2 > /tmp/native_parity.tail
+          grep -oE 'IO_CHAIN_TAIL=[0-9a-f]{64}' /tmp/native_io_resume.out | cut -d= -f2 > /tmp/native_io_resume.tail
+          echo "native parity: $(cat /tmp/native_parity.tail)"
+          echo "native io    : $(cat /tmp/native_io_resume.tail)"
+
+      - name: 交叉编译 QEMU 固件
+        run: |
+          cargo build --release --target thumbv7em-none-eabihf \
+            -p evorule-mcu --features qemu,tlsf-alloc \
+            --example qemu_parity --example qemu_io_resume
+
+      - name: QEMU 仿真 parity 场景
+        run: |
+          set -o pipefail
+          timeout 120 qemu-system-arm -machine mps2-an386 -nographic \
+            -semihosting-config enable=on,target=native \
+            -kernel target/thumbv7em-none-eabihf/release/examples/qemu_parity \
+            | tee /tmp/qemu_parity.out
+          grep -oE 'CHAIN_TAIL=[0-9a-f]{64}' /tmp/qemu_parity.out | cut -d= -f2 > /tmp/qemu_parity.tail
+          echo "qemu parity  : $(cat /tmp/qemu_parity.tail)"
+
+      - name: QEMU 仿真 io_resume 场景
+        run: |
+          set -o pipefail
+          timeout 120 qemu-system-arm -machine mps2-an386 -nographic \
+            -semihosting-config enable=on,target=native \
+            -kernel target/thumbv7em-none-eabihf/release/examples/qemu_io_resume \
+            | tee /tmp/qemu_io_resume.out
+          grep -oE 'IO_CHAIN_TAIL=[0-9a-f]{64}' /tmp/qemu_io_resume.out | cut -d= -f2 > /tmp/qemu_io_resume.tail
+          echo "qemu io      : $(cat /tmp/qemu_io_resume.tail)"
+
+      - name: 链尾逐字节比对断言 (native == qemu)
+        run: |
+          diff /tmp/native_parity.tail /tmp/qemu_parity.tail
+          diff /tmp/native_io_resume.tail /tmp/qemu_io_resume.tail
+          echo "对拍通过: parity 与 io_resume 双场景链尾哈希 native 与 qemu 逐字节一致"
