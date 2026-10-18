@@ -34,7 +34,7 @@ use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 use crate::clock::TickClock;
 use crate::error::McuError;
 use crate::pack::RulePack;
-use crate::wal::RamWalStore;
+use crate::wal::{McuWalStore, RamWalStore};
 
 /// 队列长度缺省硬限（与 reactor 防线同形的嵌入式档位；0 = 不限制）
 pub const DEFAULT_MAX_QUEUE_LEN: usize = 1024;
@@ -56,19 +56,23 @@ pub struct RunReport {
 }
 
 /// MCU 同步执行器（单线程，无异步、无 I/O 暂停）
-pub struct McuExecutor {
+///
+/// WAL 后端经 [`McuWalStore`] 注入：缺省 [`RamWalStore`]（类型参数缺省
+/// 保持既有 API 不变）；板级 Flash 后端（`wal_flash::FlashWalStore`）经
+/// [`McuExecutor::with_wal_store`] 注入，执行路径与后端无关。
+pub struct McuExecutor<S: McuWalStore = RamWalStore> {
     pack: RulePack,
     payload: JsonValue,
     queue: VecDeque<(JsonValue, FactId)>,
     version: u64,
     next_fact_id: u64,
-    wal: RamWalStore,
+    wal: S,
     clock: TickClock,
     max_queue_len: usize,
     max_steps_per_run: u64,
 }
 
-impl McuExecutor {
+impl McuExecutor<RamWalStore> {
     /// 以空初始状态创建（队列硬限/步数上限取缺省值）
     pub fn new(pack: RulePack) -> Self {
         Self::with_options(
@@ -79,7 +83,7 @@ impl McuExecutor {
         )
     }
 
-    /// 全量选项构造
+    /// 全量选项构造（RAM WAL 后端）
     ///
     /// - `initial_payload`：初始业务状态（种子化语义，同 reactor fork 场景）
     /// - `max_queue_len`：队列硬限（0 = 不限制）；溢出 → Error + 清空 + Stable
@@ -91,13 +95,30 @@ impl McuExecutor {
         max_queue_len: usize,
         max_steps_per_run: u64,
     ) -> Self {
+        let wal = RamWalStore::new();
+        Self::with_wal_store(pack, initial_payload, max_queue_len, max_steps_per_run, wal)
+    }
+}
+
+impl<S: McuWalStore> McuExecutor<S> {
+    /// 全量选项构造 + 显式 WAL 后端注入
+    ///
+    /// - `wal`：WAL 后端（RAM / Flash 同面）；执行器持有，write-ahead
+    ///   契约由后端实现承担（`append_record` 返回 `Ok` 即承诺已落）
+    pub fn with_wal_store(
+        pack: RulePack,
+        initial_payload: JsonValue,
+        max_queue_len: usize,
+        max_steps_per_run: u64,
+        wal: S,
+    ) -> Self {
         Self {
             pack,
             payload: initial_payload,
             queue: VecDeque::new(),
             version: 0,
             next_fact_id: 0,
-            wal: RamWalStore::new(),
+            wal,
             clock: TickClock::new(),
             max_queue_len,
             max_steps_per_run,
@@ -114,8 +135,8 @@ impl McuExecutor {
         self.version
     }
 
-    /// RAM WAL（含全部审计记录与链尾哈希）
-    pub fn wal(&self) -> &RamWalStore {
+    /// WAL 后端（含全部审计记录与链尾哈希；RAM / Flash 同面）
+    pub fn wal(&self) -> &S {
         &self.wal
     }
 
@@ -322,7 +343,7 @@ impl McuExecutor {
             &content_hash,
             &prev_hash,
             &chain_hash,
-        );
+        )?; // 后端错误直接透传（环满/编程违例等 fail-visible）
         Ok(())
     }
 
@@ -842,5 +863,136 @@ mod tests {
         );
         mcu.run(increment_instruction("x", 5)).unwrap();
         assert_eq!(mcu.payload().get("x").and_then(|v| v.as_i64()), Some(105));
+    }
+
+    // ===== RAM / Flash 双后端对拍（同序列 → 链尾一致 + 行流逐字节一致）=====
+
+    /// 同指令序列双后端对拍：RAM 缺省执行器 vs Flash 后端执行器
+    #[test]
+    fn test_mcu_parity_ram_vs_flash_backend() {
+        use crate::wal_flash::{FlashMedium as _, FlashWalStore, RamFlashMedium};
+
+        let rules = parity_rules_tcb();
+        let commands = [
+            increment_instruction("x", 5),
+            noop_instruction(),
+            increment_instruction("x", -2),
+            noop_instruction(),
+        ];
+
+        // RAM 后端（缺省）
+        let mut ram = McuExecutor::new(RulePack::from_rules(rules.clone()).unwrap());
+        // Flash 后端（RAM 模拟介质：页 512B × 16；真实行含三哈希字段 ~305B，
+        // 每页 ~1.7 行天然练换页，8KB 环容不触环满）
+        let medium = RamFlashMedium::new(512, 16);
+        let flash_store = FlashWalStore::open(medium).unwrap();
+        let mut flash = McuExecutor::with_wal_store(
+            RulePack::from_rules(rules).unwrap(),
+            JsonValue::empty_object(),
+            DEFAULT_MAX_QUEUE_LEN,
+            DEFAULT_MAX_STEPS_PER_RUN,
+            flash_store,
+        );
+
+        for cmd in &commands {
+            ram.run(cmd.clone()).unwrap();
+            flash.run(cmd.clone()).unwrap();
+        }
+
+        // 业务状态 / 版本 / 链尾一致
+        assert_eq!(ram.payload(), flash.payload());
+        assert_eq!(ram.version(), flash.version());
+        assert_eq!(ram.wal().chain_tail_hash(), flash.wal().chain_tail_hash());
+
+        // 逐行 line_json 逐字节一致
+        assert_eq!(ram.wal().len(), flash.wal().len());
+        for i in 0..ram.wal().len() {
+            assert_eq!(
+                ram.wal().line_json(i).unwrap(),
+                flash.wal().line_json(i).unwrap(),
+                "line {i} bytes"
+            );
+        }
+
+        // Flash 介质上的行流（含 \n）与 RAM 行流拼接逐字节一致
+        let mut flash_stream = Vec::new();
+        for i in 0..flash.wal().len() {
+            flash_stream.extend_from_slice(flash.wal().line_json(i).unwrap().as_bytes());
+            flash_stream.push(b'\n');
+        }
+        let mut medium_probe = alloc::vec![0u8; 512 * 16];
+        flash.wal().medium().read(0, &mut medium_probe).unwrap();
+        let mut media_bytes = Vec::new();
+        for b in medium_probe {
+            if b != 0xFF {
+                media_bytes.push(b);
+            }
+        }
+        assert_eq!(flash_stream, media_bytes, "介质行流与行账本逐字节一致");
+    }
+
+    /// native `WalWriter` 直读对拍：native JSONL 文件字节流 vs Flash 后端
+    /// 介质行流逐字节一致（方案口径：JSONL 行 + native 直读复用）
+    #[test]
+    fn test_flash_wal_stream_matches_native_walwriter_bytes() {
+        use crate::wal_flash::{FlashWalStore, RamFlashMedium};
+        use evorule_reactor::{MemoryWalStore, WalWriter};
+        use std::fs;
+
+        let rules = parity_rules_tcb();
+        let commands = [increment_instruction("x", 5), noop_instruction()];
+
+        // Flash 后端跑同序列（页 512B × 16，容真实行 ~305B/行）
+        let medium = RamFlashMedium::new(512, 16);
+        let flash_store = FlashWalStore::open(medium).unwrap();
+        let mut flash = McuExecutor::with_wal_store(
+            RulePack::from_rules(rules).unwrap(),
+            JsonValue::empty_object(),
+            DEFAULT_MAX_QUEUE_LEN,
+            DEFAULT_MAX_STEPS_PER_RUN,
+            flash_store,
+        );
+        for cmd in &commands {
+            flash.run(cmd.clone()).unwrap();
+        }
+
+        // native 侧：镜像主循环重放同序列产生 native 记录
+        let native_store = MemoryWalStore::new();
+        let mut mirror = NativeMirror::new(native_store.clone());
+        for cmd in &commands {
+            mirror.run_command(&parity_rules_tcb(), cmd.clone());
+        }
+
+        // native WalWriter 直写 .jsonl（hash 字段原样保存）
+        let path = std::env::temp_dir().join(format!(
+            "evorule_mcu_flash_parity_{}.jsonl",
+            std::process::id()
+        ));
+        let mut writer = WalWriter::create(&path).unwrap();
+        for rec in native_store.records() {
+            writer
+                .append_record_with_hash(
+                    rec.version_before,
+                    &rec.fact,
+                    rec.content_hash.as_deref().unwrap(),
+                    rec.prev_hash.as_deref().unwrap(),
+                    rec.chain_hash.as_deref().unwrap(),
+                )
+                .unwrap();
+        }
+        drop(writer);
+
+        // 逐字节：native .jsonl 文件 vs Flash 介质行流
+        let native_bytes = fs::read(&path).unwrap();
+        let mut flash_stream = Vec::new();
+        for i in 0..flash.wal().len() {
+            flash_stream.extend_from_slice(flash.wal().line_json(i).unwrap().as_bytes());
+            flash_stream.push(b'\n');
+        }
+        assert_eq!(
+            native_bytes, flash_stream,
+            "native WalWriter .jsonl 与 Flash 介质行流必须逐字节一致"
+        );
+        let _ = fs::remove_file(&path);
     }
 }

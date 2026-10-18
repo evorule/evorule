@@ -8,14 +8,17 @@
 //! - **哈希链字段原样保存**：content_hash / prev_hash / chain_hash 不重算、
 //!   不丢弃（回放/审计一致性依赖"写入即所见"）
 //! - **write-ahead**：`append` 返回即承诺记录已落（先于内存状态更新）
-//! - **行格式逐字节一致**：[`RamWalStore::line_json`] 产出与 native
+//! - **行格式逐字节一致**：[`wal_line_json`] 产出与 native
 //!   `WalWriter::append_record_with_hash` 相同的 JSONL 行——serde_json Map
 //!   基于 BTreeMap 字母序（alloc 模式与 std 模式一致），Fact JSON 经
-//!   SSOT `fact_to_stable_json`（与 WAL 侧 `fact_to_json` 同形状）
+//!   SSOT `fact_to_stable_json`（与 WAL 侧 `fact_to_json` 同形状）。
+//!   RAM 后端与 Flash 后端（[`crate::wal_flash`]）共用同一构造源，行流
+//!   逐字节一致是对拍门禁的锚点
 //!
-//! # RAM 形态
-//! 记录保存在进程内存（`Vec`），进程退出即失——与 reactor `MemoryWalStore`
-//! 同语义，适用于无文件系统的 MCU 会话。容量策略（环形/Flash 落盘）随实机批立项。
+//! # 后端抽象
+//! [`McuWalStore`] 是执行器可见的 WAL 后端接口；RAM 后端（本模块）与
+//! Flash 后端（`wal_flash`）同面。容量策略：RAM 形态进程退出即失
+//! （与 reactor `MemoryWalStore` 同语义）；断电持久随 Flash 后端承担。
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -42,6 +45,80 @@ pub struct McuWalRecord {
     pub chain_hash: String,
 }
 
+/// WAL 行构造单一来源（RAM / Flash 后端共用，与 native `WalWriter` 逐字节一致）
+///
+/// 行键序由 BTreeMap 字母序固定：chain_hash, content_hash, fact,
+/// prev_hash, version_before。
+pub(crate) fn wal_line_json(
+    version_before: u64,
+    fact: &Fact,
+    content_hash: &str,
+    prev_hash: &str,
+    chain_hash: &str,
+) -> Result<String, McuError> {
+    let fact_json = fact_to_stable_json(fact).map_err(|e| McuError::Hash(e.to_string()))?;
+    let mut obj = serde_json::Map::new();
+    obj.insert(
+        String::from("version_before"),
+        serde_json::Value::Number(version_before.into()),
+    );
+    obj.insert(String::from("fact"), fact_json);
+    obj.insert(
+        String::from("content_hash"),
+        serde_json::Value::String(String::from(content_hash)),
+    );
+    obj.insert(
+        String::from("prev_hash"),
+        serde_json::Value::String(String::from(prev_hash)),
+    );
+    obj.insert(
+        String::from("chain_hash"),
+        serde_json::Value::String(String::from(chain_hash)),
+    );
+    serde_json::to_string(&serde_json::Value::Object(obj))
+        .map_err(|e| McuError::Serde(format!("WAL line serialize failed: {e}")))
+}
+
+/// WAL 后端接口（执行器可见面）
+///
+/// RAM 后端（[`RamWalStore`]）与 Flash 后端（[`crate::wal_flash::FlashWalStore`]）
+/// 同面实现；执行器经此 trait 接线（write-ahead 契约：`append_record`
+/// 返回 `Ok` 即承诺记录已落）。
+pub trait McuWalStore {
+    /// 追加一条带哈希链的记录（write-ahead；hash 字段原样保存不重算）
+    ///
+    /// 同构 `FactWalStore::append_record_with_hash`。
+    ///
+    /// # Errors
+    /// 后端落账失败时 fail-visible（Flash 后端：环满/编程违例/行超页）；
+    /// RAM 后端分配失败即 abort，恒返回 `Ok`。
+    fn append_record(
+        &mut self,
+        version_before: u64,
+        fact: &Fact,
+        content_hash: &str,
+        prev_hash: &str,
+        chain_hash: &str,
+    ) -> Result<(), McuError>;
+
+    /// 当前链尾哈希（空链为 `"genesis"`）
+    fn chain_tail_hash(&self) -> &str;
+
+    /// 已落账的记录数
+    fn len(&self) -> usize;
+
+    /// 是否为空
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// 第 `index` 条记录的 JSONL 行（与 native `WalWriter` 输出逐字节一致）
+    ///
+    /// # Errors
+    /// 下标越界返回 [`McuError::RecordIndex`]。
+    fn line_json(&self, index: usize) -> Result<String, McuError>;
+}
+
 /// 纯内存事实 WAL 后端（嵌入式/无文件系统场景）
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RamWalStore {
@@ -56,40 +133,25 @@ impl RamWalStore {
         }
     }
 
-    /// 已追加的记录数
-    pub fn len(&self) -> usize {
-        self.records.len()
-    }
-
-    /// 是否为空
-    pub fn is_empty(&self) -> bool {
-        self.records.is_empty()
-    }
-
     /// 全部记录（顺序 = 追加顺序）
     pub fn records(&self) -> &[McuWalRecord] {
         &self.records
     }
+}
 
-    /// 当前链尾哈希（空链为 `"genesis"`）
-    pub fn chain_tail_hash(&self) -> &str {
-        self.records
-            .last()
-            .map_or("genesis", |r| r.chain_hash.as_str())
-    }
-
+impl McuWalStore for RamWalStore {
     /// 追加一条带哈希链的记录（write-ahead；hash 字段原样保存）
     ///
     /// 同构 `FactWalStore::append_record_with_hash`；RAM 后端无失败路径
-    /// （分配失败即 abort，不返回 Result）。
-    pub fn append_record(
+    /// （分配失败即 abort，不返回 Err）。
+    fn append_record(
         &mut self,
         version_before: u64,
         fact: &Fact,
         content_hash: &str,
         prev_hash: &str,
         chain_hash: &str,
-    ) {
+    ) -> Result<(), McuError> {
         self.records.push(McuWalRecord {
             version_before,
             fact: fact.clone(),
@@ -97,39 +159,34 @@ impl RamWalStore {
             prev_hash: String::from(prev_hash),
             chain_hash: String::from(chain_hash),
         });
+        Ok(())
+    }
+
+    /// 当前链尾哈希（空链为 `"genesis"`）
+    fn chain_tail_hash(&self) -> &str {
+        self.records
+            .last()
+            .map_or("genesis", |r| r.chain_hash.as_str())
+    }
+
+    /// 已追加的记录数
+    fn len(&self) -> usize {
+        self.records.len()
     }
 
     /// 第 `index` 条记录的 JSONL 行（与 native `WalWriter` 输出逐字节一致）
-    ///
-    /// 行键序由 BTreeMap 字母序固定：chain_hash, content_hash, fact,
-    /// prev_hash, version_before。
-    pub fn line_json(&self, index: usize) -> Result<String, McuError> {
+    fn line_json(&self, index: usize) -> Result<String, McuError> {
         let record = self.records.get(index).ok_or(McuError::RecordIndex {
             index,
             len: self.records.len(),
         })?;
-        let fact_json =
-            fact_to_stable_json(&record.fact).map_err(|e| McuError::Hash(e.to_string()))?;
-        let mut obj = serde_json::Map::new();
-        obj.insert(
-            String::from("version_before"),
-            serde_json::Value::Number(record.version_before.into()),
-        );
-        obj.insert(String::from("fact"), fact_json);
-        obj.insert(
-            String::from("content_hash"),
-            serde_json::Value::String(record.content_hash.clone()),
-        );
-        obj.insert(
-            String::from("prev_hash"),
-            serde_json::Value::String(record.prev_hash.clone()),
-        );
-        obj.insert(
-            String::from("chain_hash"),
-            serde_json::Value::String(record.chain_hash.clone()),
-        );
-        serde_json::to_string(&serde_json::Value::Object(obj))
-            .map_err(|e| McuError::Serde(format!("WAL line serialize failed: {e}")))
+        wal_line_json(
+            record.version_before,
+            &record.fact,
+            &record.content_hash,
+            &record.prev_hash,
+            &record.chain_hash,
+        )
     }
 }
 
@@ -155,7 +212,9 @@ mod tests {
         let mut store = RamWalStore::new();
         let fact = command_fact(1, JsonValue::empty_object());
         let content = evorule_audit_chain::hash::fact_hash(&fact).unwrap();
-        store.append_record(0, &fact, &content, "genesis", "chain-a");
+        store
+            .append_record(0, &fact, &content, "genesis", "chain-a")
+            .unwrap();
         assert_eq!(store.len(), 1);
         assert_eq!(store.chain_tail_hash(), "chain-a");
 
@@ -180,7 +239,7 @@ mod tests {
     fn test_record_fields_preserved_verbatim() {
         let mut store = RamWalStore::new();
         let fact = command_fact(7, JsonValue::empty_object());
-        store.append_record(3, &fact, "c", "p", "h");
+        store.append_record(3, &fact, "c", "p", "h").unwrap();
         let record = store.records().first().unwrap();
         assert_eq!(record.version_before, 3);
         assert_eq!(record.content_hash, "c");

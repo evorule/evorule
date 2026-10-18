@@ -19,7 +19,7 @@
 
 use std::process::ExitCode;
 
-use evorule_mcu::{McuExecutor, RulePack};
+use evorule_mcu::{McuExecutor, McuWalStore, RulePack};
 use evorule_tcb::JsonValue;
 
 /// 对拍 fixture（host 编译器产物，与 QEMU 固件 include 的同一文件）

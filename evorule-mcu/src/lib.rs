@@ -13,8 +13,10 @@
 //!
 //! # 模块
 //! - [`pack`]：紧凑规则包（postcard 编码的 core_eval 规则数组）加载
-//! - [`wal`]：RAM WAL（`FactWalStore` 同构语义：append-only、哈希字段原样
-//!   保存、write-ahead 先于状态更新）
+//! - [`wal`]：WAL 后端接口（[`McuWalStore`]）与 RAM 后端（`FactWalStore`
+//!   同构语义：append-only、哈希字段原样保存、write-ahead 先于状态更新）
+//! - [`wal_flash`]：Flash WAL 纯逻辑层（介质抽象 + 环形页布局 + 断电
+//!   截断恢复；真板介质随实机批实现同一 [`wal_flash::FlashMedium`] trait）
 //! - [`clock`]：tick 时钟（确定性单调计数，替代 `Instant`）
 //! - [`exec`]：同步执行器 facade（事件 → `execute_transition` → 审计 → WAL）
 //! - [`alloc_tlsf`]（feature `tlsf-alloc`）：TLSF 全局分配器包装——板级
@@ -36,9 +38,10 @@ pub mod error;
 pub mod exec;
 pub mod pack;
 pub mod wal;
+pub mod wal_flash;
 
 pub use clock::TickClock;
 pub use error::McuError;
 pub use exec::{McuExecutor, RunReport, DEFAULT_MAX_QUEUE_LEN, DEFAULT_MAX_STEPS_PER_RUN};
 pub use pack::RulePack;
-pub use wal::{McuWalRecord, RamWalStore};
+pub use wal::{McuWalRecord, McuWalStore, RamWalStore};
