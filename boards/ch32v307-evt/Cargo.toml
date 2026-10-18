@@ -4,11 +4,11 @@
 # - bring-up 骨架：TLSF 全局分配器 + RTT 日志（probe-rs + defmt-rtt 通道）；
 #   panic-probe 仅支持 Cortex-M，RISC-V 侧 main.rs 自带最小 panic handler（打印 + 停机）
 # - Flash WAL 环区段占位：尾部 8 页 × 4KB = 32KB（0x08038000..0x08040000），
-#   代码 REGION 合计 224KB，WAL 区不经链接器分配，T0.4 Flash 后端以固定地址访问
+#   代码 REGION 合计 224KB，WAL 区不经链接器分配，Flash WAL 后端以固定地址访问
 # - 依赖形态：ch32-metapac（PAC 级，crates.io 可 pin）——GPIO/UART 手写寄存器位段；
 #   ch32-hal（完整 HAL）git-only 不采用（版本漂移 + 国内网络风险）
 #
-# 构建（板到货后 T3 使用，本批仅编译门禁）:
+# 构建（板到货后实机扩展使用，当前仅编译门禁）:
 #   cargo build --release --target riscv32imac-unknown-none-elf
 #   probe-rs run --chip CH32V307VCT6 target/riscv32imac-unknown-none-elf/release/evorule-board-ch32v307-evt
 #

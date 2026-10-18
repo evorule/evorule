@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! CH32V307VCT6 EVT 板级二进制——bring-up 骨架（T3 实机批扩展）
+//! CH32V307VCT6 EVT 板级二进制——bring-up 骨架（实机批扩展）
 //!
 //! # 布局约定（memory.x 同步）
 //! - Flash：256KB @ `0x0800_0000`；尾部 8 页 × 4KB = 32KB（
@@ -25,11 +25,11 @@ use riscv_rt::entry;
 static HEAP: TlsfGlobal<8192> = TlsfGlobal::new();
 
 /// Flash WAL 环区段（尾部 8 页 × 4KB = 32KB）：write-ahead 事实账本落点。
-/// 编程只 1→0，整区段擦除粒度 = 4KB 页（T0.4 Flash 后端消费；环形布局
+/// 编程只 1→0，整区段擦除粒度 = 4KB 页（Flash WAL 后端消费；环形布局
 /// 尾部页环 8 页起步，参数化见 evorule-mcu wal 后端约定）。
 const WAL_REGION: core::ops::Range<usize> = 0x0803_8000..0x0804_0000;
 
-// 无时基期固定 0（T3 接 tick 时钟后替换）；defmt 1.x 起为模块级函数式宏
+// 无时基期固定 0（实机批接 tick 时钟后替换）；defmt 1.x 起为模块级函数式宏
 defmt::timestamp!("{=u64}", 0);
 
 /// panic 处理：defmt 报错（含位置）后 wfi 停机。

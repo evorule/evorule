@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! STM32F407G-DISC1 板级二进制——bring-up 骨架（T1 实机批扩展）
+//! STM32F407G-DISC1 板级二进制——bring-up 骨架（实机批扩展）
 //!
 //! # 布局约定（memory.x 同步）
 //! - Flash WAL 区段：sector0-3 = 4×16KB = 64KB @ `0x0800_0000..0x0801_0000`，
@@ -26,10 +26,10 @@ use stm32f4xx_hal::{pac, prelude::*, rcc};
 static HEAP: TlsfGlobal<8192> = TlsfGlobal::new();
 
 /// Flash WAL 区段（sector0-3，64KB）：write-ahead 事实账本落点。
-/// 编程只 1→0，整区段擦除粒度 = 16KB 扇区（T0.4 Flash 后端消费）。
+/// 编程只 1→0，整区段擦除粒度 = 16KB 扇区（Flash WAL 后端消费）。
 const WAL_REGION: core::ops::Range<usize> = 0x0800_0000..0x0801_0000;
 
-// 无时基期固定 0（T1 接 DWT/tick 时钟后替换）；defmt 1.x 起为模块级函数式宏
+// 无时基期固定 0（实机批接 DWT/tick 时钟后替换）；defmt 1.x 起为模块级函数式宏
 defmt::timestamp!("{=u64}", 0);
 
 #[entry]

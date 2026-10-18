@@ -3,9 +3,9 @@
 # 覆盖:
 # - bring-up 骨架：TLSF 全局分配器 + RTT 日志 + HSE 8MHz freeze（probe-rs + defmt-rtt 通道）
 # - Flash WAL 区段占位：sector0-3（4×16KB=64KB @ 0x08000000），代码 REGION 从 sector4 起
-#   （memory.x），WAL 区不经链接器分配，T0.4 Flash 后端以固定地址访问
+#   （memory.x），WAL 区不经链接器分配，Flash WAL 后端以固定地址访问
 #
-# 构建（板到货后 T1 使用，本批仅编译门禁）:
+# 构建（板到货后实机扩展使用，当前仅编译门禁）:
 #   cargo build --release --target thumbv7em-none-eabihf
 #   probe-rs run --chip STM32F407VGTx target/thumbv7em-none-eabihf/release/evorule-board-stm32f407-disc1
 #

@@ -4,7 +4,7 @@
 //! native 参照：I/O 暂停-恢复场景 host 编译的链尾哈希（仿真对拍基准值）
 //!
 //! # 判据链（I/O 恢复跨目标对拍）
-//! 1. T0.5 对拍单测（`exec::tests`）已证：I/O 暂停-恢复全链事实序列
+//! 1. 对拍单测（`exec::tests`）已证：I/O 暂停-恢复全链事实序列
 //!    （Command / IoRequest / IoResponse / StateTransition / TransitionTrace /
 //!    Stable）与 reactor v0.3.1 handle_fact IoResponse 分支逐行同构
 //! 2. 本例执行同场景（io_resume fixture 规则包 + call_external 指令 +
