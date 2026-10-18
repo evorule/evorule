@@ -17,6 +17,8 @@
 //!   保存、write-ahead 先于状态更新）
 //! - [`clock`]：tick 时钟（确定性单调计数，替代 `Instant`）
 //! - [`exec`]：同步执行器 facade（事件 → `execute_transition` → 审计 → WAL）
+//! - [`alloc_tlsf`]（feature `tlsf-alloc`）：TLSF 全局分配器包装——板级
+//!   二进制的 `#[global_allocator]` 供给
 //!
 //! # 已知边界（无硬件批）
 //! `io_request` 元指令 fail-visible：IoRequest 事实入链留痕后返回
@@ -27,6 +29,8 @@ extern crate alloc;
 #[cfg(any(test, kani))]
 extern crate std;
 
+#[cfg(feature = "tlsf-alloc")]
+pub mod alloc_tlsf;
 pub mod clock;
 pub mod error;
 pub mod exec;

@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 EvoRule Project
 # This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 # 仿真确定性对拍编排：native 参照 vs QEMU mps2-an386 固件链尾哈希逐字节一致
@@ -30,7 +30,7 @@ $NativeTail = ($NativeOut | Select-String -Pattern "^CHAIN_TAIL=(?<h>[0-9a-f]{64
 Write-Host "native  CHAIN_TAIL = $NativeTail"
 
 Write-Host "=== [2/3] QEMU 固件构建（$Target）===" -ForegroundColor Cyan
-cargo build --release --target $Target -p evorule-mcu --features qemu --example qemu_parity
+cargo build --release --target $Target -p evorule-mcu --features qemu,tlsf-alloc --example qemu_parity
 if ($LASTEXITCODE -ne 0) { throw "firmware build failed" }
 
 Write-Host "=== [3/3] QEMU mps2-an386 仿真 ===" -ForegroundColor Cyan

@@ -23,20 +23,17 @@
 
 use cortex_m_rt::entry;
 use cortex_m_semihosting::{debug, hprintln};
+use evorule_mcu::alloc_tlsf::TlsfGlobal;
 use evorule_mcu::{McuExecutor, RulePack};
 use evorule_tcb::JsonValue;
-use linked_list_allocator::LockedHeap;
 use panic_semihosting as _;
 
 /// 对拍 fixture（host 编译器 `compile-evopack` 产物，与 native 参照同一文件）
 const EVOPACK: &[u8] = include_bytes!("../tests/fixtures/parity_rules.evopack");
 
-/// 内核堆（静态数组后备，32 KiB 足够对拍场景）
-const HEAP_SIZE: usize = 32 * 1024;
-static mut HEAP_MEM: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
-
+/// 内核堆（TLSF 静态池，8192 字 = 32 KiB，与对拍场景原容量一致）
 #[global_allocator]
-static HEAP: LockedHeap = LockedHeap::empty();
+static HEAP: TlsfGlobal<8192> = TlsfGlobal::new();
 
 fn increment_instruction(attr: &str, delta: i64) -> JsonValue {
     JsonValue::object_from_pairs(&[
@@ -66,11 +63,10 @@ fn fail(msg: &str) -> ! {
 
 #[entry]
 fn main() -> ! {
-    // SAFETY: HEAP_MEM 为静态独占后备存储，初始化恰好在 main 入口执行一次
+    // SAFETY: HEAP 为静态独占分配器，初始化恰好在 main 入口执行一次
     // （entry 单入口语义），且中断在 core 启动后、init 前不会触碰堆
     unsafe {
-        let heap = &mut *core::ptr::addr_of_mut!(HEAP_MEM);
-        HEAP.lock().init(heap.as_mut_ptr(), HEAP_SIZE);
+        HEAP.init();
     }
 
     let pack = match RulePack::from_evopack(EVOPACK) {

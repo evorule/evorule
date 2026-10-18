@@ -66,6 +66,10 @@ jobs:
       - name: ${{ matrix.target }} 编译检查 (核心两 crate)
         run: cargo check --target ${{ matrix.target }} -p evorule-audit-chain -p evorule-mcu
 
+      # tlsf-alloc 门控面（板级分配器包装）单独过双目标门禁
+      - name: ${{ matrix.target }} 编译检查 (mcu tlsf-alloc feature)
+        run: cargo check --target ${{ matrix.target }} -p evorule-mcu --features tlsf-alloc
+
   # ==========================================================================
   # 2. 嵌入式适配行数守卫 (《多目标能力演进总体规划》§5.2 触发条件 CI 化)
   #    计数口径: 核心两 crate src 中嵌入式目标 cfg (target_arch="arm"/

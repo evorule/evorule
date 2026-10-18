@@ -647,11 +647,11 @@ dependencies = [
  "evorule-audit-chain",
  "evorule-reactor",
  "evorule-tcb",
- "linked_list_allocator",
  "panic-semihosting",
  "postcard",
  "serde",
  "serde_json",
+ "tlsf",
 ]
 
 [[package]]
@@ -859,15 +859,6 @@ name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
-
-[[package]]
-name = "linked_list_allocator"
-version = "0.10.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b23ac50abb8261cb38c6e2a7192d3302e0836dac1628f6a93b82b4fad185897"
-dependencies = [
- "spinning_top",
-]
 
 [[package]]
 name = "linux-raw-sys"
@@ -1437,15 +1428,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spinning_top"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b9eb1a2f4c41445a3a0ff9abc5221c5fcd28e1f13cd7c0397706f9ac938ddb0"
-dependencies = [
- "lock_api",
-]
-
-[[package]]
 name = "spki"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1454,6 +1436,12 @@ dependencies = [
  "base64ct",
  "der",
 ]
+
+[[package]]
+name = "sptr"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b9b39299b249ad65f3b7e96443bad61c02ca5cd3589f46cb6d610a0fd6c0d6a"
 
 [[package]]
 name = "strsim"
@@ -1539,6 +1527,15 @@ checksum = "be4d6b5f19ff7664e8c98d03e2139cb510db9b0a60b55f8e8709b689d939b6bc"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "tlsf"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4071a23c5e616f03541d30e3bfb673ad32f5c29b86800c294d5ae9d7e63b9c9"
+dependencies = [
+ "sptr",
 ]
 
 [[package]]
