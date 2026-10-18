@@ -1,0 +1,198 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# EvoRule 生态依赖地图（SSOT）—— 依赖随动机制声明面
+#
+# 定位：生态内「谁发布什么、谁消费什么、以何种方式耦合」的唯一登记处。
+#       本文件是受校验的 SSOT，不是文档——漂移即 CI 红（校验器见
+#       scripts/check_ecosystem_deps.py）。
+# 随动语义（follow 字段）：
+#   lockstep   = 上游发版批次必须同批跟随（机制层 workspace 内组天然满足）
+#   registered = 上游发版生成随动登记（兼容性验证结果 + BREAKING 影响面），
+#                下游按巡检节奏跟随，不阻断上游独立发版
+# 耦合方式（mode 字段）：
+#   version       crates.io semver 依赖（caret 区间；0.x 阶段不跨 minor 自动跟随）
+#   git-rev       git 依赖 rev 锁定
+#   patch         vendored patch（patches/ 目录，lockstep 强耦合）
+#   sibling-path  兄弟检出目录相对路径依赖（clone 即断，收敛目标：退化为 git-rev/version）
+#   build-fixture 构建期固化资产（schemas 等，跨仓一致性脚本守护）
+#   runtime       运行时接口消费（HTTP API / CLI 协议），非编译依赖
+#
+# 校验：python scripts/check_ecosystem_deps.py（R1-R3 本地一致性；--check-latest 加
+#       R4 发布面落后巡检，需网络）
+
+[meta]
+schema = 1
+
+# ---------------------------------------------------------------------------
+# 发布面（publish）：生态内独立发版单元
+# ---------------------------------------------------------------------------
+
+[publish.evorule-core]
+repos = ["evorule"]
+channel = "crates.io"
+crates = [
+    "evorule-tcb",
+    "evorule-reactor",
+    "evorule-governance",
+    "evorule-discipline",
+    "evorule-cli",
+    "evorule-eval",
+]
+version_ssot = "Cargo.toml [workspace.package].version"
+follow_policy = "lockstep"
+
+[publish.evorule-bundle]
+repos = ["evorule-bundle"]
+channel = "crates.io"
+crates = ["evorule-bundle"]
+follow_policy = "registered"
+
+[publish.evorule-hash]
+repos = ["evorule-hash"]
+channel = "crates.io"
+crates = ["evorule-hash"]
+follow_policy = "registered"
+note = "审计链规范哈希 SSOT（镜像 evorule-reactor::hash 字节语义）；消费方禁自写 blake3"
+
+[publish.evorule-rule]
+repos = ["evorule-rule"]
+channel = "crates.io"
+crates = ["evorule-rule"]
+follow_policy = "registered"
+
+[publish.evorule-system-rules]
+repos = ["evorule-system-rules"]
+channel = "repo"
+crates = ["evorule-constitution"]
+follow_policy = "registered"
+note = "基础约束仓：constitution crate（git-rev 受控消费）+ schemas/ 固化 Schema + migrations/signatures/acceptance"
+
+# ---------------------------------------------------------------------------
+# 仓内 path 包登记（sibling-path 消费方引用的包清单，供 R2 反向完整性豁免）
+# ---------------------------------------------------------------------------
+
+[intra.evorule-server]
+base = "evorule-server"
+crates = [
+    "evorule-auth",
+    "evorule-debug-control",
+    "evorule-hot-reload",
+    "evorule-io-handlers",
+    "evorule-metrics",
+    "evorule-plugin-kit",
+    "evorule-rule-loader",
+    "evorule-rule-schema",
+    "evorule-rule-tools",
+    "evorule-semantic-invariants",
+    "evorule-time-machine",
+    "evorule-workspace",
+    "evorule-demo-services",
+    "evorule-physics-services",
+    "evorule-indicator-services",
+    "evorule-template-services",
+    "evorule-browser-services",
+    "evorule-inference-services",
+    "evorule-geometry-services",
+    "evorule-numeric-services",
+    "evorule-setup",
+]
+
+# ---------------------------------------------------------------------------
+# 消费面（consume）：谁依赖生态包、什么方式、锁定什么
+# ---------------------------------------------------------------------------
+
+[consume.evorule-server]
+repo = "evorule-server"
+manifests = ["evorule-server/Cargo.toml"]
+
+[[consume.evorule-server.deps]]
+package = "evorule-tcb"
+mode = "patch"
+pinned = "0.8"
+follow = "lockstep"
+
+[[consume.evorule-server.deps]]
+package = "evorule-reactor"
+mode = "patch"
+pinned = "0.8"
+follow = "lockstep"
+features = ["persistence"]
+
+[[consume.evorule-server.deps]]
+package = "evorule-governance"
+mode = "patch"
+pinned = "0.8"
+follow = "lockstep"
+features = ["persistence"]
+
+[[consume.evorule-server.deps]]
+package = "evorule-discipline"
+mode = "version"
+pinned = "0.8"
+follow = "registered"
+
+[[consume.evorule-server.deps]]
+package = "evorule-bundle"
+mode = "version"
+pinned = "0.5.2"
+follow = "registered"
+
+[[consume.evorule-server.deps]]
+package = "evorule-hash"
+mode = "version"
+pinned = "0.1.3"
+follow = "registered"
+
+[[consume.evorule-server.deps]]
+package = "evorule-rule"
+mode = "git-rev"
+pinned = "9f85314"
+follow = "registered"
+
+[[consume.evorule-server.deps]]
+package = "evorule-system-rules"
+mode = "build-fixture"
+pinned = "v1.0"
+follow = "registered"
+note = "rule_schema 构建期固化 schemas/ 三文件；跨仓一致性 scripts/check_schema_sync.py 守护"
+
+[consume.evo-agent]
+repo = "evo-agent"
+manifests = ["Cargo.toml"]
+
+[[consume.evo-agent.deps]]
+package = "evorule-constitution"
+mode = "git-rev"
+pinned = "92a009a"
+follow = "registered"
+note = "宪法 schema 编译期内嵌（0.2.0 起）；演进 SOP=先推 system-rules 再随动升级 rev"
+
+[[consume.evo-agent.deps]]
+package = "evorule-bundle"
+mode = "version"
+pinned = "0.5.2"
+follow = "registered"
+note = "与 evorule-server 消费面同源对齐，升级时两仓同批（哈希字节兼容依赖同版本序列化形态）"
+
+[[consume.evo-agent.deps]]
+package = "evorule-hash"
+mode = "version"
+pinned = "0.1.4"
+follow = "registered"
+note = "B 族纪律：skill 注册账本钉哈希；与 evorule-bundle 传递依赖同源"
+
+# 运行时消费（非编译依赖，随动=接口契约变更须通知）
+[runtime.evo-agent]
+repo = "evo-agent"
+consumes = "evorule-server HTTP API（agent 编排层，非编译依赖）"
+
+[runtime.evorule-console-cloud]
+repo = "evorule-console-cloud"
+consumes = "evorule-server HTTP API"
+
+[runtime.evorule-anchor]
+repo = "evorule-anchor"
+consumes = "evorule-server anchor 部署面（/anchors 导出与 verify-anchors 同源）"
+
+[runtime.evorule-integration-tests]
+repo = "evorule-integration-tests"
+consumes = "生态跨仓集成验证（server / rule / console-cloud 拉起链路）"
