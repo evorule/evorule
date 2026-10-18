@@ -1,0 +1,3 @@
+[target.riscv32imac-unknown-none-elf]
+# memory.x 由 riscv-rt 的 link.x 内部 INCLUDE（memory feature），不得再加 -Tmemory.x（重复定义）
+rustflags = ["-C", "link-arg=-Tlink.x"]

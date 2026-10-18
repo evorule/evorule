@@ -16,7 +16,9 @@ members = [
 ]
 # fuzz/ 为独立 libFuzzer 工作区（cargo-fuzz 专用，A1 供应链三件套），
 # 不参与主 workspace 版本/发布/门禁。
-exclude = ["fuzz"]
+# boards/ 为板级二进制目录（嵌入式实机面），独立构建（各含 .cargo 配置与
+# memory.x），不进主 workspace——hal 依赖零进主依赖图（CI 依赖图扫描门执法）。
+exclude = ["fuzz", "boards"]
 
 [workspace.package]
 version = "0.8.5"

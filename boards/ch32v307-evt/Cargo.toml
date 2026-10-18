@@ -1,0 +1,32 @@
+# EvoRule 板级二进制（独立于主 workspace，由父 Cargo.toml exclude）——CH32V307VCT6 EVT
+#
+# 覆盖:
+# - bring-up 骨架：TLSF 全局分配器 + RTT 日志（probe-rs + defmt-rtt 通道）；
+#   panic-probe 仅支持 Cortex-M，RISC-V 侧 main.rs 自带最小 panic handler（打印 + 停机）
+# - Flash WAL 环区段占位：尾部 8 页 × 4KB = 32KB（0x08038000..0x08040000），
+#   代码 REGION 合计 224KB，WAL 区不经链接器分配，T0.4 Flash 后端以固定地址访问
+# - 依赖形态：ch32-metapac（PAC 级，crates.io 可 pin）——GPIO/UART 手写寄存器位段；
+#   ch32-hal（完整 HAL）git-only 不采用（版本漂移 + 国内网络风险）
+#
+# 构建（板到货后 T3 使用，本批仅编译门禁）:
+#   cargo build --release --target riscv32imac-unknown-none-elf
+#   probe-rs run --chip CH32V307VCT6 target/riscv32imac-unknown-none-elf/release/evorule-board-ch32v307-evt
+#
+# 注意: 板级 crate 不进主 workspace（hal 依赖零进主依赖图，CI 依赖图扫描门执法）。
+
+[package]
+name = "evorule-board-ch32v307-evt"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+authors = ["EvoRule Project"]
+publish = false
+
+[dependencies]
+# no_std 内核（tlsf-alloc 门控拉入分配器包装）
+evorule-mcu = { path = "../../evorule-mcu", features = ["tlsf-alloc"] }
+ch32-metapac = { version = "=0.1.2", features = ["ch32v307vct6", "pac"] }
+riscv-rt = { version = "=0.18", features = ["memory"] }
+riscv = "0.16"
+defmt = "0.3"
+defmt-rtt = "0.4"

@@ -7,6 +7,9 @@
 # - 嵌入式适配行数守卫: 《多目标能力演进总体规划》§5.2 触发条件的 CI 化——
 #   适配行数 > 50 即红, 红即触发 Runtime trait 抽象重构 (该文档第九节方案 B)
 #   的启动条件
+# - 板级依赖图扫描门 (SC3-b): 板级专属依赖 (stm32f4xx / ch32-metapac /
+#   ch32-hal / riscv-rt / embedded-hal) 只允许出现在 boards/ 独立构建目录,
+#   主 workspace 任一成员 Cargo.toml 出现即红——hal 依赖零进主依赖图
 #
 # 设计说明:
 # - cargo check 而非 build: 门禁目标是"类型/依赖可移植性"; 固件链接
@@ -95,3 +98,27 @@ jobs:
             echo "::error::嵌入式适配行数 ${COUNT} > 50——触发《多目标能力演进总体规划》§5.2 Runtime trait 抽象重构启动条件, 须先立项 trait 重构再扩适配面"
             exit 1
           fi
+
+  # ==========================================================================
+  # 3. 板级依赖图扫描门 (SC3-b: hal 依赖零进主依赖图)
+  #    boards/ 为独立构建目录（父 Cargo.toml exclude，各含 .cargo 配置与
+  #    memory.x），板级专属依赖只允许出现在该目录；主 workspace 任一成员
+  #    的 Cargo.toml 出现即红。名单含 ch32-hal（git-only 方案，已否决，
+  #    防 git 依赖绕道混入）。
+  # ==========================================================================
+  board-dep-scan:
+    name: board deps stay out of main workspace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: 主 workspace 成员 Cargo.toml 扫描板级专属依赖
+        run: |
+          HITS=$(grep -rnE 'stm32f4xx|ch32-metapac|ch32-hal|riscv-rt|embedded-hal' \
+            evorule-*/Cargo.toml || true)
+          if [ -n "${HITS}" ]; then
+            echo "::error::板级专属依赖混入主 workspace 成员——hal 依赖零进主依赖图（板级面仅限 boards/ 独立构建目录）"
+            echo "${HITS}"
+            exit 1
+          fi
+          echo "扫描通过: 主 workspace 成员无板级专属依赖 (stm32f4xx / ch32-metapac / ch32-hal / riscv-rt / embedded-hal)"
