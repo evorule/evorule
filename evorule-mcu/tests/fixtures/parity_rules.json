@@ -1,0 +1,29 @@
+[
+  {
+    "type": "branch",
+    "params": {
+      "domain": {
+        "type": "instruction",
+        "instruction_type": "increment"
+      },
+      "on_true": [
+        {
+          "type": "set",
+          "params": {
+            "attr": "x",
+            "operation": "add",
+            "value": "__exec__.instruction.params.delta"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "type": "set",
+    "params": {
+      "attr": "y",
+      "operation": "set",
+      "value": 7
+    }
+  }
+]

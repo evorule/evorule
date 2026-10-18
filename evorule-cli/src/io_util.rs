@@ -98,6 +98,26 @@ pub fn load_rules(rules_dir: &Path) -> Result<Vec<JsonValue>, CliError> {
         .collect())
 }
 
+/// 加载单个规则文件（compile-evopack host 编译器用）
+///
+/// 与 [`load_rules`] 单文件侧同构：支持三种格式
+/// （`{"transform": [...]}` / `{"transforms": [...]}` / 顶层数组 / 单对象），
+/// 复用 [`extract_transforms`] 提取 + `serde_to_tcb` 转换，保证与规则目录
+/// 加载路径序列化语义一致。
+///
+/// # 错误
+/// - `Io`：读取文件失败
+/// - `Other`：JSON 解析失败（含文件路径上下文）
+pub fn load_rules_file(rules_file: &Path) -> Result<Vec<JsonValue>, CliError> {
+    let content = fs::read_to_string(rules_file)?;
+    let json: SerdeValue = serde_json::from_str(&content)
+        .map_err(|e| CliError::Other(format!("Invalid JSON in {}: {}", rules_file.display(), e)))?;
+    Ok(extract_transforms(json)
+        .iter()
+        .map(evorule_reactor::serde_to_tcb)
+        .collect())
+}
+
 /// 从单个 JSON 文件提取 transform 列表
 ///
 /// 支持三格式：`{transform: [...]}` / `{transforms: [...]}` / 顶层数组 / 单对象
@@ -276,6 +296,47 @@ mod tests {
         let result = load_rules(&dir);
         assert!(matches!(result, Err(CliError::NoRulesFound(_))));
         cleanup(&dir);
+    }
+
+    #[test]
+    fn test_load_rules_file_formats() {
+        // 与 load_rules 同构：单文件支持 transform/transforms/顶层数组/单对象四形态
+        let dir = make_temp_dir("single-file");
+        let write_and_load = |name: &str, content: &str| {
+            let path = dir.join(name);
+            fs::write(&path, content).unwrap();
+            load_rules_file(&path).unwrap()
+        };
+
+        let t = write_and_load("a.json", r#"{"transform":[{"type":"noop"}]}"#);
+        assert_eq!(t.len(), 1);
+        let t = write_and_load("b.json", r#"{"transforms":[{"type":"noop"}]}"#);
+        assert_eq!(t.len(), 1);
+        let t = write_and_load("c.json", r#"[{"type":"noop"},{"type":"noop"}]"#);
+        assert_eq!(t.len(), 2);
+        let t = write_and_load("d.json", r#"{"type":"noop"}"#);
+        assert_eq!(t.len(), 1);
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_load_rules_file_invalid_json() {
+        let dir = make_temp_dir("single-file-bad");
+        let path = dir.join("bad.json");
+        fs::write(&path, "not json").unwrap();
+        let result = load_rules_file(&path);
+        assert!(
+            matches!(&result, Err(CliError::Other(msg)) if msg.contains("Invalid JSON")),
+            "got: {result:?}"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_load_rules_file_not_found() {
+        let result = load_rules_file(std::path::Path::new("/nonexistent/xyz.json"));
+        assert!(matches!(result, Err(CliError::Io(_))));
     }
 
     #[test]

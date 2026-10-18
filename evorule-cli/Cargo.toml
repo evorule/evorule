@@ -52,6 +52,9 @@ evorule-reactor = { path = "../evorule-reactor", version = "0.8.3", features = [
 ] }
 # L2 纪律门禁判定引擎（2026-09-24 接线：机制自 cli 抽出，与 server 共享 SSOT）
 evorule-discipline = { path = "../evorule-discipline", version = "0.8.3" }
+# host 编译器（compile-evopack）：复用 evorule-mcu 正典编码路径（线格式 + postcard，
+# 纯 Rust，可 musl 静态链接），与 MCU no_std 内核加载侧互为对偶
+evorule-mcu = { path = "../evorule-mcu", version = "0.8.5" }
 
 # CLI essentials (all pure Rust)
 serde = { version = "1", features = ["derive"] }

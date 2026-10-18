@@ -9,6 +9,7 @@
 //! - `diff`：对比两个 fact log（按 FactId 对齐）
 //! - `validate`：校验 JSON 规则文件（用 tier1 RuleValidator）
 //! - `verify-chain`：验证 fact log 哈希链完整性
+//! - `compile-evopack`：JSON 规则 → 紧凑 .evopack 二进制包（host 编译器）
 //! - `anchor-keygen`：生成 G-A1 审计锚点签名密钥对（一次性运维）
 //! - `verify-anchors`：离线校验 G-A1 审计锚点真实性（防抵赖）
 
@@ -79,6 +80,21 @@ pub enum Command {
     VerifyChain {
         /// Fact log file
         fact_log: PathBuf,
+    },
+
+    /// Compile JSON rules into a compact .evopack binary package (host compiler for the embedded no_std kernel)
+    ///
+    /// Deterministic: the same input rules always produce the same bytes (postcard canonical
+    /// encoding, BTreeMap key order), the artifact can be burned into MCU firmware or used for
+    /// QEMU cross-validation against the no_std kernel. Rule count exceeding the TCB upper limit
+    /// (MAX_TRANSFORM_RULES) is rejected at compile time (fail-fast).
+    CompileEvopack {
+        /// Rules file (JSON: {"transform": [...]}, {"transforms": [...]}, top-level array, or single object)
+        rules_file: PathBuf,
+
+        /// Output .evopack binary file
+        #[arg(short = 'o')]
+        output: PathBuf,
     },
 
     /// Generate a G-A1 audit anchor signing keypair (one-time ops)

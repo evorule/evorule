@@ -191,4 +191,35 @@ mod tests {
         let err = RulePack::from_rules(rules).unwrap_err();
         assert!(err.to_string().contains("exceeds transform limit"));
     }
+
+    #[test]
+    fn test_parity_fixture_matches_canonical_encoder() {
+        // 对拍 fixture 守卫：tests/fixtures/parity_rules.evopack 由 host 编译器
+        // （evorule-cli compile-evopack）生成，必须与本正典编码器逐字节一致——
+        // fixture 漂移即 host 编译器与内核编码路径失配，fail-fast。
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let json_path = manifest.join("tests/fixtures/parity_rules.json");
+        let pack_path = manifest.join("tests/fixtures/parity_rules.evopack");
+
+        let json = std::fs::read_to_string(&json_path).unwrap();
+        let serde_val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let rules = evorule_reactor::serde_to_tcb(&serde_val);
+        let JsonValue::Array(rules) = rules else {
+            panic!("fixture json must be a top-level rules array");
+        };
+
+        // fixture 规则集必须与 parity_rules_tcb 同构（同为对拍基准）
+        assert_eq!(
+            rules,
+            crate::exec::parity_fixtures::parity_rules_tcb(),
+            "fixture json must mirror parity_rules_tcb"
+        );
+
+        let bytes = RulePack::from_rules(rules).unwrap().to_evopack().unwrap();
+        let committed = std::fs::read(&pack_path).unwrap();
+        assert_eq!(
+            bytes, committed,
+            "committed fixture must match canonical encoder output"
+        );
+    }
 }

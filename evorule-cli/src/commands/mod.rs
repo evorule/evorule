@@ -9,11 +9,13 @@
 //! - `replay`：pretty-print fact log
 //! - `diff`：按 FactId 对齐对比两个 fact log
 //! - `verify_chain`：验证 fact log 哈希链完整性
+//! - `compile_evopack`：host 编译器——JSON 规则 → 紧凑 .evopack 二进制包
 //! - `anchor_keygen`：生成 G-A1 审计锚点签名密钥对（一次性运维）
 //! - `verify_anchors`：离线校验 G-A1 审计锚点真实性（防抵赖）
 
 pub mod anchor_keygen;
 pub mod anchor_pubkey;
+pub mod compile_evopack;
 pub mod diff;
 pub mod discipline_gate;
 pub mod replay;
