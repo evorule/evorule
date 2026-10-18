@@ -13,6 +13,11 @@ documentation.workspace = true
 keywords = ["no-std", "embedded", "rule-engine", "audit-chain", "deterministic"]
 categories = ["no-std", "embedded", "data-structures"]
 
+[features]
+# QEMU 仿真对拍样例（examples/qemu_parity）构建开关：required-features 门，
+# host 侧默认关闭——clippy/test --all-targets 不触固件代码
+qemu = []
+
 [dependencies]
 # no_std 内核：tcb / audit-chain 均关 std default（std 门只留给 std 宿主侧开启）
 evorule-tcb = { path = "../evorule-tcb", version = "0.8.3", default-features = false }
@@ -21,10 +26,28 @@ postcard = { version = "1", default-features = false, features = ["alloc"] }
 serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 
-[dev-dependencies]
 # 同输入与 native 输出一致的对拍测试（仅 host 测试构建，不进嵌入式目标）；
-# persistence 开启 MemoryWalStore / WalRecord / fact_to_json 的 re-export
-evorule-reactor = { path = "../evorule-reactor", version = "0.8.5", features = ["persistence"] }
+# persistence 开启 MemoryWalStore / WalRecord / fact_to_json 的 re-export。
+# 按 none 目标反向门控：嵌入式 example 构建不得拉入 std 侧依赖
+[target.'cfg(not(target_os = "none"))'.dev-dependencies]
+evorule-reactor = { path = "../evorule-reactor", version = "0.8.5", features = [
+    "persistence",
+] }
+
+# QEMU 仿真固件依赖（仅 none 目标激活，host 构建零影响）
+[target.'cfg(target_os = "none")'.dev-dependencies]
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+cortex-m-semihosting = "0.5"
+panic-semihosting = "0.6"
+linked_list_allocator = "0.10"
+
+[[example]]
+name = "qemu_parity"
+required-features = ["qemu"]
+
+[[example]]
+name = "native_parity_tail"
 
 [lints]
 workspace = true
