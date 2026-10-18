@@ -21,8 +21,9 @@ pub enum McuError {
         /// 实际记录数
         len: usize,
     },
-    /// `io_request` 元指令在本批不受支持（fail-visible；IoRequest 事实已入链）
-    IoUnsupported {
+    /// 规则触发 `io_request`，IoRequest 事实已入链，run 暂停返回；
+    /// 板侧经 [`crate::io::IoBridge`] 执行后调 `resume_io` 继续
+    IoPaused {
         /// 已入链的 IoRequest 事实 id
         request_id: u64,
         /// 请求的 io_type
@@ -64,14 +65,14 @@ impl core::fmt::Display for McuError {
             McuError::RecordIndex { index, len } => {
                 write!(f, "WAL record index {index} out of range (len {len})")
             }
-            McuError::IoUnsupported {
+            McuError::IoPaused {
                 request_id,
                 io_type,
             } => {
                 write!(
                     f,
-                    "io_request unsupported in MCU kernel (request_id={request_id}, io_type={io_type}); \
-                     IoRequest fact is on the chain, I/O resume lands with the hardware batch"
+                    "io paused: IoRequest {request_id} (io_type={io_type}) is on the audit chain; \
+                     perform the I/O (IoBridge) and call resume_io to continue"
                 )
             }
             McuError::VersionOverflow => write!(f, "state version overflow"),

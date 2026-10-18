@@ -50,7 +50,14 @@ name = "qemu_parity"
 required-features = ["qemu", "tlsf-alloc"]
 
 [[example]]
+name = "qemu_io_resume"
+required-features = ["qemu", "tlsf-alloc"]
+
+[[example]]
 name = "native_parity_tail"
+
+[[example]]
+name = "native_io_resume_tail"
 
 [lints]
 workspace = true

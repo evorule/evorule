@@ -222,4 +222,35 @@ mod tests {
             "committed fixture must match canonical encoder output"
         );
     }
+
+    #[test]
+    fn test_io_resume_fixture_matches_canonical_encoder() {
+        // I/O 对拍 fixture 守卫（与 parity fixture 同口径）：tests/fixtures/
+        // io_resume_rules.evopack 由 host 编译器（evorule-cli compile-evopack）
+        // 生成，必须与本正典编码器逐字节一致；json 与 io_resume_rules_tcb
+        // 同构（对拍基准双锚定）——fixture 漂移即 fail-fast。
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let json_path = manifest.join("tests/fixtures/io_resume_rules.json");
+        let pack_path = manifest.join("tests/fixtures/io_resume_rules.evopack");
+
+        let json = std::fs::read_to_string(&json_path).unwrap();
+        let serde_val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let rules = evorule_reactor::serde_to_tcb(&serde_val);
+        let JsonValue::Array(rules) = rules else {
+            panic!("fixture json must be a top-level rules array");
+        };
+
+        assert_eq!(
+            rules,
+            crate::exec::parity_fixtures::io_resume_rules_tcb(),
+            "fixture json must mirror io_resume_rules_tcb"
+        );
+
+        let bytes = RulePack::from_rules(rules).unwrap().to_evopack().unwrap();
+        let committed = std::fs::read(&pack_path).unwrap();
+        assert_eq!(
+            bytes, committed,
+            "committed fixture must match canonical encoder output"
+        );
+    }
 }

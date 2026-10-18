@@ -18,14 +18,11 @@
 //! - [`wal_flash`]：Flash WAL 纯逻辑层（介质抽象 + 环形页布局 + 断电
 //!   截断恢复；真板介质随实机批实现同一 [`wal_flash::FlashMedium`] trait）
 //! - [`clock`]：tick 时钟（确定性单调计数，替代 `Instant`）
-//! - [`exec`]：同步执行器 facade（事件 → `execute_transition` → 审计 → WAL）
+//! - [`exec`]：同步执行器 facade（事件 → `execute_transition` → 审计 → WAL；
+//!   I/O 暂停-恢复：IoRequest 入链后 `run` 返回 `IoPaused`，板侧经
+//!   [`io::IoBridge`] 执行后 `resume_io` 继续，镜像 reactor v0.3.1 语义）
 //! - [`alloc_tlsf`]（feature `tlsf-alloc`）：TLSF 全局分配器包装——板级
 //!   二进制的 `#[global_allocator]` 供给
-//!
-//! # 已知边界（无硬件批）
-//! `io_request` 元指令 fail-visible：IoRequest 事实入链留痕后返回
-//! [`McuError::IoUnsupported`]；I/O 恢复执行（`__io_results__` 注入 + 指令
-//! 重推）随实机批另行立项。
 #![no_std]
 extern crate alloc;
 #[cfg(any(test, kani))]
@@ -36,12 +33,16 @@ pub mod alloc_tlsf;
 pub mod clock;
 pub mod error;
 pub mod exec;
+pub mod io;
 pub mod pack;
 pub mod wal;
 pub mod wal_flash;
 
 pub use clock::TickClock;
 pub use error::McuError;
-pub use exec::{McuExecutor, RunReport, DEFAULT_MAX_QUEUE_LEN, DEFAULT_MAX_STEPS_PER_RUN};
+pub use exec::{
+    McuExecutor, PendingIo, RunReport, DEFAULT_MAX_QUEUE_LEN, DEFAULT_MAX_STEPS_PER_RUN,
+};
+pub use io::IoBridge;
 pub use pack::RulePack;
 pub use wal::{McuWalRecord, McuWalStore, RamWalStore};

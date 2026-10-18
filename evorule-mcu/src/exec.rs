@@ -16,8 +16,11 @@
 //! - Halted（enforce）：Violation（cause 指向触发来源），版本不变
 //! - TCB Err：Error（消息含步数与指令 Debug 形态），版本不变
 //! - 队列空且已执行过：Stable（版本不 bump）
-//! - IoRequired：IoRequest 入链留痕后 fail-visible（`McuError::IoUnsupported`）；
-//!   I/O 恢复执行（`__io_results__` 注入 + 指令重推）随实机批立项
+//! - IoRequired：IoRequest 入链留痕后暂停（[`McuError::IoPaused`]），板侧经
+//!   [`crate::io::IoBridge`] 执行 I/O 后调 [`McuExecutor::resume_io`] 继续——
+//!   IoResponse 入链 → 结果注入 `payload.__io_results__.{io_type}` →
+//!   原指令重推队首（cause 不变）→ 排空；恢复步 StateTransition 入链前
+//!   整体移除 `__io_results__` 容器（镜像 reactor v0.3.1 I/O 恢复语义）
 //!
 //! # FactId
 //! 从 1 起顺序分配（同 `FactIdGenerator::new()` 语义），与 reactor 缺省一致。
@@ -55,7 +58,35 @@ pub struct RunReport {
     pub chain_tail_hash: String,
 }
 
-/// MCU 同步执行器（单线程，无异步、无 I/O 暂停）
+/// 挂起中的 I/O 请求（对外视图）
+///
+/// run 返回 [`McuError::IoPaused`] 后经 [`McuExecutor::pending_io`] 查询；
+/// `request_id` / `io_type` / `params` 与链上 IoRequest 事实逐字段一致，
+/// 板侧据此执行 I/O（[`crate::io::IoBridge`]）后调 [`McuExecutor::resume_io`]。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingIo {
+    /// 链上 IoRequest 事实 id（resume_io 配对键）
+    pub request_id: u64,
+    /// I/O 类型
+    pub io_type: String,
+    /// 请求参数（io_request 规则的 params 路径解析结果）
+    pub params: JsonValue,
+}
+
+/// 挂起 I/O 内部登记（含恢复重推所需的缓存指令与 cause；不对外暴露）
+struct PendingIoState {
+    request_id: FactId,
+    io_type: String,
+    #[allow(dead_code)] // 介质视图字段：链上 IoRequest 事实已含 params，
+    // 此处仅镜像 reactor register_io_request 的完整登记面，供调试检查
+    params: JsonValue,
+    /// 缓存的原指令（IoResponse 到达后重推队首）
+    instruction: JsonValue,
+    /// 原指令的 cause（恢复执行时审计链 cause 连续）
+    cause: FactId,
+}
+
+/// MCU 同步执行器（单线程；I/O 走暂停-恢复，见 [`McuExecutor::resume_io`]）
 ///
 /// WAL 后端经 [`McuWalStore`] 注入：缺省 [`RamWalStore`]（类型参数缺省
 /// 保持既有 API 不变）；板级 Flash 后端（`wal_flash::FlashWalStore`）经
@@ -70,6 +101,11 @@ pub struct McuExecutor<S: McuWalStore = RamWalStore> {
     clock: TickClock,
     max_queue_len: usize,
     max_steps_per_run: u64,
+    /// 挂起的 I/O 请求登记表（可多请求并存，镜像 reactor 登记表语义；
+    /// IoResponse 按 request_id 配对，杜绝新 I/O 静默顶掉旧挂起）
+    pendings: Vec<PendingIoState>,
+    /// I/O 恢复执行标志：恢复步 StateTransition 入链前清除 `__io_results__`
+    io_recovery: bool,
 }
 
 impl McuExecutor<RamWalStore> {
@@ -122,6 +158,8 @@ impl<S: McuWalStore> McuExecutor<S> {
             clock: TickClock::new(),
             max_queue_len,
             max_steps_per_run,
+            pendings: Vec::new(),
+            io_recovery: false,
         }
     }
 
@@ -151,13 +189,11 @@ impl<S: McuWalStore> McuExecutor<S> {
     /// `execute_transition` → 事实入链 → 队列空且已执行过则 Stable。
     ///
     /// # Errors
-    /// - [`McuError::IoUnsupported`]：规则触发 `io_request`（IoRequest 事实已
-    ///   入链留痕；I/O 恢复执行随实机批立项）
+    /// - [`McuError::IoPaused`]：规则触发 `io_request`（IoRequest 事实已入链；
+    ///   经 [`pending_io`](Self::pending_io) 查询 + [`IoBridge`](crate::io::IoBridge)
+    ///   执行后调 [`resume_io`](Self::resume_io) 继续）
     /// - [`McuError::VersionOverflow`] / [`McuError::FactIdOverflow`]：计数溢出
     /// - [`McuError::Hash`]：哈希计算失败（理论不可达）
-    // 主循环多变体 match + cause 对齐 + 溢出处置单函数原子语义，与 reactor
-    // 主循环同构对账（同款豁免理由）
-    #[allow(clippy::too_many_lines)]
     pub fn run(&mut self, instruction: JsonValue) -> Result<RunReport, McuError> {
         // 1. Command 事实先入链（审计先行），指令以 cmd id 为 cause 入队
         let cmd_id = self.next_id()?;
@@ -168,9 +204,122 @@ impl<S: McuWalStore> McuExecutor<S> {
         })?;
         self.queue.push_back((queue_instruction, cmd_id));
 
-        let mut steps: u64 = 0;
-        let mut executed: u64 = 0;
+        self.drain(0, 0)
+    }
 
+    /// I/O 恢复执行：提交 IoResponse 并排空队列
+    ///
+    /// 镜像 reactor `handle_fact` IoResponse 分支（v0.3.1）：
+    /// 1. IoResponse 事实先入链（外部声明先留痕，emit-then-handle 同构）
+    /// 2. unknown/stale request_id → Error 事实留痕（A1），继续排空
+    /// 3. error / null 结果 → 丢弃缓存指令（防 exists 死循环），版本 bump
+    /// 4. 正常结果 → 注入 `__io_results__.{io_type}` → 原指令重推队首
+    ///    （cause 不变）→ 恢复步 StateTransition 入链前整体移除容器
+    ///
+    /// `outcome`：`Ok(result)` 为成功应答；`Err(msg)` 为失败应答（对应链上
+    /// IoResponse 的 `error` 字段，result 字段记 null）。
+    ///
+    /// # Errors
+    /// 同 [`run`](Self::run)（恢复排空中触发新 I/O 亦返回 `IoPaused`）
+    pub fn resume_io(
+        &mut self,
+        request_id: u64,
+        outcome: Result<JsonValue, String>,
+    ) -> Result<RunReport, McuError> {
+        let response_id = self.next_id()?;
+        let (result, error) = match outcome {
+            Ok(v) => (v, None),
+            Err(msg) => (JsonValue::Null, Some(msg)),
+        };
+        self.append_fact(Fact::IoResponse {
+            id: response_id,
+            request_id: FactId(request_id),
+            result: result.clone(),
+            error: error.clone(),
+        })?;
+
+        let known = self
+            .pendings
+            .iter()
+            .position(|p| p.request_id.0 == request_id)
+            .map(|pos| self.pendings.remove(pos));
+        match known {
+            None => {
+                // A1：unknown/stale IoResponse 不静默忽略——Error 事实入链，
+                // 审计重放可逐条对账"响应事实 + 异常标记"（与 reactor 同构）
+                let err_id = self.next_id()?;
+                self.append_fact(Fact::Error {
+                    id: err_id,
+                    message: format!(
+                        "IoResponse for unknown/stale request_id {request_id} ignored \
+                         (duplicate, late-after-timeout, or forged)"
+                    ),
+                })?;
+            }
+            Some(p) => {
+                if result.is_null() || error.is_some() {
+                    // null 结果与错误响应没有可消费的结果：exists 域将 null 视为
+                    // 不存在，若注入后再重推原指令会无限重发 io_request；
+                    // 处置：丢弃缓存指令，版本 bump 留痕（与 reactor 同构）
+                    self.version = self
+                        .version
+                        .checked_add(1)
+                        .ok_or(McuError::VersionOverflow)?;
+                } else {
+                    Self::inject_io_result(&mut self.payload, &p.io_type, result);
+                    self.queue.push_front((p.instruction, p.cause));
+                    self.io_recovery = true;
+                    self.version = self
+                        .version
+                        .checked_add(1)
+                        .ok_or(McuError::VersionOverflow)?;
+                }
+            }
+        }
+
+        self.drain(0, 0)
+    }
+
+    /// 当前挂起的 I/O 请求（run 返回 [`McuError::IoPaused`] 后可查询）
+    ///
+    /// 快照按挂起顺序排列；`request_id` / `io_type` / `params` 与链上
+    /// IoRequest 事实逐字段一致。板侧任取其一执行 I/O 后调
+    /// [`resume_io`](Self::resume_io) 按 request_id 配对。
+    pub fn pending_ios(&self) -> Vec<PendingIo> {
+        self.pendings
+            .iter()
+            .map(|p| PendingIo {
+                request_id: p.request_id.0,
+                io_type: String::from(&p.io_type[..]),
+                params: p.params.clone(),
+            })
+            .collect()
+    }
+
+    /// 向 payload 注入 `__io_results__.{io_type}`（嵌套路径自动创建，与
+    /// reactor `inject_io_result` / eval 同构——恢复双路径规则的消费源）
+    fn inject_io_result(payload: &mut JsonValue, io_type: &str, result: JsonValue) {
+        if payload.as_object_mut().is_none() {
+            *payload = JsonValue::empty_object();
+        }
+        let obj = match payload.as_object_mut() {
+            Some(o) => o,
+            None => return,
+        };
+        if obj.get_mut("__io_results__").is_none() {
+            let _ = obj.insert("__io_results__".to_string(), JsonValue::empty_object());
+        }
+        if let Some(container) = obj.get_mut("__io_results__") {
+            if let Some(c) = container.as_object_mut() {
+                let _ = c.insert(io_type.to_string(), result);
+            }
+        }
+    }
+
+    // 主循环多变体 match + cause 对齐 + 溢出处置单函数原子语义，与 reactor
+    // 主循环同构对账（同款豁免理由）
+    #[allow(clippy::too_many_lines)]
+    fn drain(&mut self, mut steps: u64, mut executed: u64) -> Result<RunReport, McuError> {
         while let Some((instr, cause)) = self.queue.pop_front() {
             // 步数上限（同 reactor：检查在出队/执行之前）
             if self.max_steps_per_run > 0 && steps >= self.max_steps_per_run {
@@ -238,6 +387,16 @@ impl<S: McuWalStore> McuExecutor<S> {
                         return Ok(self.report(executed));
                     }
 
+                    // I/O 恢复步：StateTransition 入链前整体移除 __io_results__
+                    // 容器（镜像 reactor clear_io_recovery 时机——恢复步 ST 记录
+                    // 清除后 payload，容器不进审计快照，杜绝残留影响后续 I/O）
+                    if self.io_recovery {
+                        if let Some(obj) = self.payload.as_object_mut() {
+                            let _ = obj.remove("__io_results__");
+                        }
+                        self.io_recovery = false;
+                    }
+
                     let st_id = self.next_id()?;
                     let new_queue_json: Vec<JsonValue> =
                         self.queue.iter().map(|(i, _)| i.clone()).collect();
@@ -293,15 +452,26 @@ impl<S: McuWalStore> McuExecutor<S> {
                     })?;
                 }
                 Ok(TransitionResult::IoRequired { io_type, params }) => {
-                    // IoRequest 入链留痕后 fail-visible（I/O 恢复执行随实机批立项）
+                    // I/O 暂停（镜像 reactor 主循环 IoRequired 分支）：缓存原
+                    // 指令与 cause（恢复执行重推队首、审计 cause 连续），先
+                    // 入链 IoRequest（write-ahead），登记挂起后返回 IoPaused；
+                    // v0.2.0 口径：io_type 透传不校验，未知类型由板侧
+                    // IoBridge 处置（处理不了走 Err 应答 → Error 路径）
                     let id = self.next_id()?;
                     self.append_fact(Fact::IoRequest {
                         id,
                         cause,
                         io_type: IoType::new(&io_type),
-                        params,
+                        params: params.clone(),
                     })?;
-                    return Err(McuError::IoUnsupported {
+                    self.pendings.push(PendingIoState {
+                        request_id: id,
+                        io_type: io_type.clone(),
+                        params,
+                        instruction: instr.clone(),
+                        cause,
+                    });
+                    return Err(McuError::IoPaused {
                         request_id: id.0,
                         io_type,
                     });
@@ -483,6 +653,131 @@ pub mod parity_fixtures {
                 ]),
             ),
         ])]
+    }
+
+    /// I/O 双路径循环规则（与 reactor 差分验证 v0.3.1 call_external 场景同构）：
+    /// call_external 无 `__io_results__.call_external` → io_request（首次）；
+    /// 有 → set 消费到 `llm_response`（恢复执行）
+    pub fn io_resume_rules_tcb() -> Vec<JsonValue> {
+        vec![JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("branch")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    (
+                        "domain",
+                        JsonValue::object_from_pairs(&[
+                            ("type", JsonValue::string("instruction")),
+                            ("instruction_type", JsonValue::string("call_external")),
+                        ]),
+                    ),
+                    (
+                        "on_true",
+                        JsonValue::array(vec![JsonValue::object_from_pairs(&[
+                            ("type", JsonValue::string("branch")),
+                            (
+                                "params",
+                                JsonValue::object_from_pairs(&[
+                                    (
+                                        "domain",
+                                        JsonValue::object_from_pairs(&[
+                                            ("type", JsonValue::string("not")),
+                                            (
+                                                "inner",
+                                                JsonValue::object_from_pairs(&[
+                                                    ("type", JsonValue::string("exists")),
+                                                    (
+                                                        "path",
+                                                        JsonValue::string(
+                                                            "__exec__.payload.__io_results__.call_external",
+                                                        ),
+                                                    ),
+                                                ]),
+                                            ),
+                                        ]),
+                                    ),
+                                    (
+                                        "on_true",
+                                        JsonValue::array(vec![JsonValue::object_from_pairs(&[
+                                            ("type", JsonValue::string("io_request")),
+                                            (
+                                                "params",
+                                                JsonValue::object_from_pairs(&[
+                                                    (
+                                                        "io_type",
+                                                        JsonValue::string("call_external"),
+                                                    ),
+                                                    (
+                                                        "messages",
+                                                        JsonValue::string(
+                                                            "__exec__.instruction.params.messages",
+                                                        ),
+                                                    ),
+                                                ]),
+                                            ),
+                                        ])]),
+                                    ),
+                                    (
+                                        "on_false",
+                                        JsonValue::array(vec![JsonValue::object_from_pairs(&[
+                                            ("type", JsonValue::string("set")),
+                                            (
+                                                "params",
+                                                JsonValue::object_from_pairs(&[
+                                                    (
+                                                        "attr",
+                                                        JsonValue::string("llm_response"),
+                                                    ),
+                                                    (
+                                                        "operation",
+                                                        JsonValue::string("set"),
+                                                    ),
+                                                    (
+                                                        "value",
+                                                        JsonValue::string(
+                                                            "__exec__.payload.__io_results__.call_external",
+                                                        ),
+                                                    ),
+                                                ]),
+                                            ),
+                                        ])]),
+                                    ),
+                                ]),
+                            ),
+                        ])]),
+                    ),
+                    ("on_false", JsonValue::array(vec![])),
+                ]),
+            ),
+        ])]
+    }
+
+    /// call_external 指令（messages 数组 + tools 空表，与 reactor 差分场景同构）
+    pub fn call_external_instruction(content: &str) -> JsonValue {
+        JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("call_external")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    (
+                        "messages",
+                        JsonValue::array(vec![JsonValue::object_from_pairs(&[
+                            ("role", JsonValue::string("user")),
+                            ("content", JsonValue::string(content)),
+                        ])]),
+                    ),
+                    ("tools", JsonValue::array(vec![])),
+                ]),
+            ),
+        ])
+    }
+
+    /// 固定 LLM 应答（确定性 canned 值，对拍两侧同值；纯文本无 tool_calls）
+    pub fn canned_llm_result() -> JsonValue {
+        JsonValue::object_from_pairs(&[
+            ("role", JsonValue::string("assistant")),
+            ("content", JsonValue::string("no tools needed")),
+        ])
     }
 }
 
@@ -811,7 +1106,7 @@ mod tests {
         assert!(
             matches!(
                 &err,
-                McuError::IoUnsupported {
+                McuError::IoPaused {
                     request_id: 2,
                     io_type
                 } if io_type == "sensor_read"
@@ -994,5 +1289,253 @@ mod tests {
             "native WalWriter .jsonl 与 Flash 介质行流必须逐字节一致"
         );
         let _ = fs::remove_file(&path);
+    }
+
+    // ===== I/O 暂停-恢复（镜像 reactor v0.3.1 handle_fact IoResponse 分支）=====
+
+    use crate::exec::parity_fixtures::{
+        call_external_instruction, canned_llm_result, io_resume_rules_tcb,
+    };
+
+    fn io_executor() -> McuExecutor<RamWalStore> {
+        McuExecutor::new(RulePack::from_rules(io_resume_rules_tcb()).unwrap())
+    }
+
+    fn fact_kinds(mcu: &McuExecutor<RamWalStore>) -> Vec<&'static str> {
+        mcu.wal()
+            .records()
+            .iter()
+            .map(|r| r.fact.type_name())
+            .collect()
+    }
+
+    /// 正常路径：IoRequest 入链 → 暂停 → 挂起查询与链上一致 → resume →
+    /// 注入消费 → 容器清除 → Stable；全链事实序列与 IoResponse 字段核对
+    #[test]
+    fn test_io_pause_resume_happy_path() {
+        let mut mcu = io_executor();
+        let err = mcu.run(call_external_instruction("hello")).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                McuError::IoPaused {
+                    request_id: 2,
+                    io_type
+                } if io_type == "call_external"
+            ),
+            "got: {err}"
+        );
+        // 挂起视图与链上 IoRequest 一致（messages 透传）
+        let pending = mcu.pending_ios();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].request_id, 2);
+        assert_eq!(pending[0].io_type, "call_external");
+        assert_eq!(
+            pending[0]
+                .params
+                .get("messages")
+                .and_then(|v| v.as_array())
+                .map(<[JsonValue]>::len),
+            Some(1)
+        );
+        // 链上事实：Command + IoRequest
+        assert_eq!(fact_kinds(&mcu), ["Command", "IoRequest"]);
+
+        // resume：IoResponse 入链 → 注入 → 原指令重推消费 → 容器清除 → Stable
+        let canned = canned_llm_result();
+        let report = mcu.resume_io(2, Ok(canned.clone())).unwrap();
+        assert_eq!(report.steps_executed, 1, "恢复排空只执行重推的原指令");
+        assert_eq!(mcu.version(), 2, "IoResponse 消费 bump + 恢复步 ST bump");
+        assert_eq!(
+            mcu.payload()
+                .get("llm_response")
+                .and_then(|v| v.get("content"))
+                .and_then(|v| v.as_str()),
+            Some("no tools needed")
+        );
+        assert!(
+            mcu.payload().get("__io_results__").is_none(),
+            "__io_results__ 容器必须在恢复步整体移除"
+        );
+        assert_eq!(
+            fact_kinds(&mcu),
+            [
+                "Command",
+                "IoRequest",
+                "IoResponse",
+                "StateTransition",
+                "TransitionTrace",
+                "Stable"
+            ]
+        );
+        match &mcu.wal().records()[2].fact {
+            Fact::IoResponse {
+                id,
+                request_id,
+                result,
+                error,
+            } => {
+                assert_eq!(id.0, 3);
+                assert_eq!(request_id.0, 2);
+                assert_eq!(result, &canned);
+                assert!(error.is_none());
+            }
+            other => panic!("expected IoResponse, got {other:?}"),
+        }
+    }
+
+    /// A1：unknown/stale request_id → IoResponse + Error 双事实入链，
+    /// 不静默忽略；挂起不消费可继续正确应答
+    #[test]
+    fn test_io_resume_unknown_request_id_records_error() {
+        let mut mcu = io_executor();
+        let err = mcu.run(call_external_instruction("hello")).unwrap_err();
+        let real_id = match &err {
+            McuError::IoPaused { request_id, .. } => *request_id,
+            other => panic!("expected IoPaused, got {other:?}"),
+        };
+
+        let report = mcu
+            .resume_io(real_id + 999, Ok(canned_llm_result()))
+            .unwrap();
+        assert_eq!(
+            fact_kinds(&mcu),
+            ["Command", "IoRequest", "IoResponse", "Error"]
+        );
+        assert_eq!(report.steps_executed, 0);
+        assert!(mcu.payload().get("llm_response").is_none());
+        assert_eq!(mcu.version(), 0, "unknown 路径不 bump 版本");
+        // 挂起未被消费：仍可按真实 request_id 应答
+        assert_eq!(mcu.pending_ios()[0].request_id, real_id);
+        mcu.resume_io(real_id, Ok(canned_llm_result())).unwrap();
+        assert_eq!(
+            mcu.payload()
+                .get("llm_response")
+                .and_then(|v| v.get("content"))
+                .and_then(|v| v.as_str()),
+            Some("no tools needed")
+        );
+    }
+
+    /// 错误应答（error=Some）：缓存指令被丢弃（防 exists 死循环），版本 bump
+    #[test]
+    fn test_io_resume_error_drops_instruction() {
+        let mut mcu = io_executor();
+        let err = mcu.run(call_external_instruction("hello")).unwrap_err();
+        let request_id = match &err {
+            McuError::IoPaused { request_id, .. } => *request_id,
+            other => panic!("expected IoPaused, got {other:?}"),
+        };
+
+        let report = mcu
+            .resume_io(request_id, Err("device gone".to_string()))
+            .unwrap();
+        assert_eq!(fact_kinds(&mcu), ["Command", "IoRequest", "IoResponse"]);
+        assert_eq!(report.steps_executed, 0, "无重推执行");
+        assert_eq!(mcu.version(), 1, "丢弃指令路径仅 IoResponse 消费 bump");
+        assert!(mcu.payload().get("llm_response").is_none());
+        assert!(mcu.pending_ios().is_empty(), "挂起已消费");
+        // 链上 IoResponse 携带 error 与 null result
+        match &mcu.wal().records()[2].fact {
+            Fact::IoResponse { result, error, .. } => {
+                assert!(result.is_null());
+                assert_eq!(error.as_deref(), Some("device gone"));
+            }
+            other => panic!("expected IoResponse, got {other:?}"),
+        }
+    }
+
+    /// null 结果应答：与错误应答同处置（无可消费结果，丢弃缓存指令）
+    #[test]
+    fn test_io_resume_null_result_drops_instruction() {
+        let mut mcu = io_executor();
+        let err = mcu.run(call_external_instruction("hello")).unwrap_err();
+        let request_id = match &err {
+            McuError::IoPaused { request_id, .. } => *request_id,
+            other => panic!("expected IoPaused, got {other:?}"),
+        };
+
+        mcu.resume_io(request_id, Ok(JsonValue::Null)).unwrap();
+        assert_eq!(fact_kinds(&mcu), ["Command", "IoRequest", "IoResponse"]);
+        assert!(mcu.payload().get("llm_response").is_none());
+        assert_eq!(mcu.version(), 1);
+    }
+
+    /// 跨暂停队列连续：run(io) 暂停后 run(increment) 完整执行（挂起不受扰），
+    /// resume 后 io 指令重推队首消费——恢复步同时清除容器
+    #[test]
+    fn test_io_resume_then_queued_increment_executes() {
+        let mut rules = parity_rules_tcb();
+        rules.extend(io_resume_rules_tcb());
+        let mut mcu = McuExecutor::new(RulePack::from_rules(rules).unwrap());
+
+        let err = mcu.run(call_external_instruction("hello")).unwrap_err();
+        let request_id = match &err {
+            McuError::IoPaused { request_id, .. } => *request_id,
+            other => panic!("expected IoPaused, got {other:?}"),
+        };
+        // 第二指令独立完整执行（暂停不阻塞新 run）
+        let r2 = mcu.run(increment_instruction("x", 5)).unwrap();
+        assert_eq!(r2.steps_executed, 1);
+        assert_eq!(mcu.payload().get("x").and_then(|v| v.as_i64()), Some(5));
+
+        let r3 = mcu.resume_io(request_id, Ok(canned_llm_result())).unwrap();
+        assert_eq!(r3.steps_executed, 1);
+        assert_eq!(
+            mcu.payload()
+                .get("llm_response")
+                .and_then(|v| v.get("content"))
+                .and_then(|v| v.as_str()),
+            Some("no tools needed")
+        );
+        assert_eq!(mcu.payload().get("x").and_then(|v| v.as_i64()), Some(5));
+        assert!(mcu.payload().get("__io_results__").is_none());
+    }
+
+    /// 多挂起并存 + 顺序恢复：两次 I/O 相继暂停（登记表不顶掉），按
+    /// request_id 顺序应答各消费一轮（v0.3.1 残留根治场景的回归面）
+    #[test]
+    fn test_io_resume_multiple_pending_sequential_cycles() {
+        let mut mcu = io_executor();
+        let e1 = mcu.run(call_external_instruction("q1")).unwrap_err();
+        let e2 = mcu.run(call_external_instruction("q2")).unwrap_err();
+        let id1 = match &e1 {
+            McuError::IoPaused { request_id, .. } => *request_id,
+            other => panic!("expected IoPaused, got {other:?}"),
+        };
+        let id2 = match &e2 {
+            McuError::IoPaused { request_id, .. } => *request_id,
+            other => panic!("expected IoPaused, got {other:?}"),
+        };
+        assert_eq!(id2, id1 + 2, "两轮 Command+IoRequest");
+        assert_eq!(mcu.pending_ios().len(), 2, "多挂起并存不互相顶掉");
+
+        let canned_a = canned_llm_result();
+        let canned_b = JsonValue::object_from_pairs(&[
+            ("role", JsonValue::string("assistant")),
+            ("content", JsonValue::string("second reply")),
+        ]);
+        mcu.resume_io(id1, Ok(canned_a.clone())).unwrap();
+        assert_eq!(
+            mcu.payload()
+                .get("llm_response")
+                .and_then(|v| v.get("content"))
+                .and_then(|v| v.as_str()),
+            Some("no tools needed")
+        );
+        assert_eq!(mcu.pending_ios().len(), 1);
+        mcu.resume_io(id2, Ok(canned_b)).unwrap();
+        // 第二轮消费覆盖第一轮（容器已在恢复步清除，无残留串扰）
+        assert_eq!(
+            mcu.payload()
+                .get("llm_response")
+                .and_then(|v| v.get("content"))
+                .and_then(|v| v.as_str()),
+            Some("second reply")
+        );
+        assert!(mcu.payload().get("__io_results__").is_none());
+        assert!(mcu.pending_ios().is_empty());
+        // 4 次版本 bump（2 × IoResponse 消费 + 2 × 恢复步 ST）
+        assert_eq!(mcu.version(), 4);
     }
 }
