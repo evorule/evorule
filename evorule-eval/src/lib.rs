@@ -26,10 +26,20 @@ use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 pub const REPO_ROOT: &str = r"D:\evorule";
 /// 真实素材根（server 仓，现役 bundle）
 pub const SERVER_ROOT: &str = r"D:\evorule-server";
-/// R-B1 修复前 bundle 提取目录（git 历史 df6a16d^）
-pub const SAMPLES_ROOT: &str = r"D:\knowledge\论文\04-实验\samples";
-/// 评估结果输出根
-pub const RESULTS_ROOT: &str = r"D:\knowledge\论文\04-实验\results";
+
+/// 评估素材根（默认相对当前目录；可用 env `EVORULE_EVAL_SAMPLES` 覆盖）
+pub fn samples_root() -> PathBuf {
+    std::env::var("EVORULE_EVAL_SAMPLES")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("eval-samples"))
+}
+
+/// 评估结果输出根（默认相对当前目录；可用 env `EVORULE_EVAL_OUT` 覆盖）
+pub fn results_root() -> PathBuf {
+    std::env::var("EVORULE_EVAL_OUT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("eval-results"))
+}
 
 /// 默认步数上界（与 CLI DEFAULT_MAX_STEPS 一致量级）
 pub const MAX_STEPS: usize = 10_000;
@@ -657,12 +667,9 @@ pub fn payload_hash(payload: &JsonValue) -> Result<String, String> {
     Ok(blake3::hash(line.as_bytes()).to_hex().to_string())
 }
 
-/// 输出目录（可用 env `EVORULE_EVAL_OUT` 覆盖）
+/// 输出目录（可用 env `EVORULE_EVAL_OUT` 覆盖，默认 `results_root()/bin`）
 pub fn out_dir(bin: &str) -> PathBuf {
-    let root = std::env::var("EVORULE_EVAL_OUT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(RESULTS_ROOT));
-    let dir = root.join(bin);
+    let dir = results_root().join(bin);
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
