@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 
-use evorule_eval::{load_rules_file, out_dir, write_json, REPO_ROOT, SAMPLES_ROOT, SERVER_ROOT};
+use evorule_eval::{load_rules_file, out_dir, samples_root, write_json, REPO_ROOT, SERVER_ROOT};
 
 /// R-B1 历史真阳性数：修复提交 `df6a16d` 实际改动 7 个规则文件
 /// （每处 1 条 DC-09/D5 违规；bundle_manifest.json 仅哈希同步，非违规）
@@ -69,7 +69,7 @@ fn main() -> Result<(), String> {
     let mut false_positives = 0usize;
 
     // ---- 阳性：R-B1 修复前 bundle ----
-    let prefix_dir = Path::new(SAMPLES_ROOT).join("prefix-bundle-ds-yuanze-01-v3");
+    let prefix_dir = samples_root().join("prefix-bundle-ds-yuanze-01-v3");
     for f in scan_dir_files(&prefix_dir, true) {
         let (scanned, vios) = scan_file(&f)?;
         let name = f
