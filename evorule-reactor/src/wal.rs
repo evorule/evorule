@@ -985,9 +985,7 @@ fn parse_wal_line(line: &str, line_no: usize) -> Result<WalRecord, WalError> {
     let version_before = obj
         .get("version_before")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| {
-            WalError::InvalidFact(format!("line {line_no}: missing version_before"))
-        })?;
+        .ok_or_else(|| WalError::InvalidFact(format!("line {line_no}: missing version_before")))?;
     let fact_value = obj
         .get("fact")
         .ok_or_else(|| WalError::InvalidFact(format!("line {line_no}: missing fact")))?;
@@ -995,12 +993,10 @@ fn parse_wal_line(line: &str, line_no: usize) -> Result<WalRecord, WalError> {
     // 旧格式容错():≤0.3.x 的 Stable 无 version 字段,
     // 以外层 version_before 兜底(状态重建不读此字段,仅供审计/展示)
     let fact = match fact {
-        Fact::Stable { id, version: 0 } if fact_value.get("version").is_none() => {
-            Fact::Stable {
-                id,
-                version: version_before,
-            }
-        }
+        Fact::Stable { id, version: 0 } if fact_value.get("version").is_none() => Fact::Stable {
+            id,
+            version: version_before,
+        },
         f => f,
     };
 

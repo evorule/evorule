@@ -190,9 +190,7 @@ fn apply_fact_to_state(inner: &mut FactsLogInner, fact: &Fact) -> Result<(), Fac
     #[cfg(kani)]
     {
         match fact {
-            Fact::StateTransition { .. }
-            | Fact::IoResponse { .. }
-            | Fact::PayloadUpdate { .. } => {
+            Fact::StateTransition { .. } | Fact::IoResponse { .. } | Fact::PayloadUpdate { .. } => {
                 inner.version = inner
                     .version
                     .checked_add(1)
@@ -372,9 +370,8 @@ pub fn replay_wal_records(records: &[crate::wal::WalRecord]) -> Result<FactsLog,
                     inner.last_hash = chain_hash.clone();
                 } else {
                     let facts: Vec<Fact> = records.iter().map(|r| r.fact.clone()).collect();
-                    inner.last_hash = crate::hash::compute_chain_hash(&facts).map_err(|e| {
-                        FactsLogError::WalError(format!("hash recover error: {e}"))
-                    })?;
+                    inner.last_hash = crate::hash::compute_chain_hash(&facts)
+                        .map_err(|e| FactsLogError::WalError(format!("hash recover error: {e}")))?;
                 }
             }
         } else {

@@ -475,8 +475,8 @@ proptest! {
 
         let store = MemoryWalStore::new();
         let log_a = FactsLog::with_wal_store(Box::new(store.clone()));
-        let mut next_id = 1u64;
-        for &(kind, seed_val) in &specs {
+        for (i, &(kind, seed_val)) in specs.iter().enumerate() {
+            let next_id = i as u64 + 1;
             let fact = match kind % 5 {
                 0 => Fact::PayloadUpdate {
                     id: FactId(next_id),
@@ -506,7 +506,6 @@ proptest! {
                 },
             };
             log_a.append(fact).expect("append failed");
-            next_id += 1;
         }
 
         let (snap_a, queue_a, ver_a) = log_a.snapshot();

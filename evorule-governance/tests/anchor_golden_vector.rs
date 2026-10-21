@@ -76,13 +76,34 @@ fn golden_vector_byte_stable() {
         let g = &golden[i];
         assert_eq!(anchor.seq, g["seq"].as_u64().unwrap(), "seq [{}]", i);
         assert_eq!(anchor.session_id, g["session_id"].as_str().unwrap());
-        assert_eq!(anchor.fact_range.lo, g["fact_range"]["lo"].as_u64().unwrap() as usize);
-        assert_eq!(anchor.fact_range.hi, g["fact_range"]["hi"].as_u64().unwrap() as usize);
-        assert_eq!(anchor.chain_head, g["chain_head"].as_str().unwrap(), "chain_head [{}]", i);
+        assert_eq!(
+            anchor.fact_range.lo,
+            g["fact_range"]["lo"].as_u64().unwrap() as usize
+        );
+        assert_eq!(
+            anchor.fact_range.hi,
+            g["fact_range"]["hi"].as_u64().unwrap() as usize
+        );
+        assert_eq!(
+            anchor.chain_head,
+            g["chain_head"].as_str().unwrap(),
+            "chain_head [{}]",
+            i
+        );
         assert_eq!(anchor.key_id, g["key_id"].as_str().unwrap());
         assert_eq!(anchor.engine_id, g["engine_id"].as_str().unwrap());
-        assert_eq!(anchor.anchor_hash, g["anchor_hash"].as_str().unwrap(), "anchor_hash [{}] —— 锚点哈希输入漂移即红", i);
-        assert_eq!(anchor.signature, g["signature"].as_str().unwrap(), "signature [{}] —— 签名载荷/实现漂移即红", i);
+        assert_eq!(
+            anchor.anchor_hash,
+            g["anchor_hash"].as_str().unwrap(),
+            "anchor_hash [{}] —— 锚点哈希输入漂移即红",
+            i
+        );
+        assert_eq!(
+            anchor.signature,
+            g["signature"].as_str().unwrap(),
+            "signature [{}] —— 签名载荷/实现漂移即红",
+            i
+        );
     }
 }
 
@@ -117,8 +138,7 @@ fn payload_reconstructible_from_vector_alone() {
         let pk_bytes = evorule_governance::signing::hex_decode(GOLDEN_PK).expect("pk hex");
         let pk_arr: [u8; 32] = pk_bytes.try_into().expect("pk 32 bytes");
         assert!(
-            verify_signature(pk_arr, reconstructed.as_bytes(), &sig_arr)
-                .unwrap_or(false),
+            verify_signature(pk_arr, reconstructed.as_bytes(), &sig_arr).unwrap_or(false),
             "重构载荷上的签名必须可验"
         );
     }
