@@ -28,6 +28,23 @@
 
 ### Added
 
+- 审计链哨兵 `evorule scan-wal-dir`：定时扫描 WAL 目录的运维守护——每次运行先做
+  黄金向量自检（验证器忠实性），再逐文件全链三查，并与上轮基线做前缀锚定比对
+  （纯追加 vs 历史被改后整链重算精确区分）。退出码协议：0 全绿/2 自检失败/
+  3 链破坏（含整链重算检出）/4 文件消失/5 半行拒收。shared_facts 账本（暂无
+  哈希链）以结构摘要入基线，如实标注 unhashed-ledger。
+- `evorule truncate-partial-line`：半行拒收场景的受控恢复工具（前缀链验证报告
+  + .partial.bak 备份 + --confirm 门）。
+- `Auditor::import_compressed` 解压上限（256MB，防压缩炸弹 OOM）。
+- CLI `SentinelExit` 结构化退出码（thiserror 变体）。
+
+### Changed
+
+- 哨兵自检黄金向量（7 事实哈希快照+锚点验签）与内核 SSOT 同源锁定
+  （`builtin_snapshot_matches_kernel_file` 测试直读内核快照文件双保险）。
+
+### Added
+
 - 审计链专项 fuzz 三目标（`fuzz_stable_json_hash` 稳定序列化规范形幂等/确定性、
   `fuzz_wal_parse_roundtrip` WAL 解析与 Fact 持久化 roundtrip、`fuzz_chain_invariants`
   链分解与单条敏感性）；fuzz 工作区无副作用纪律精确化（禁写路径清单化，仅纯函数面）。

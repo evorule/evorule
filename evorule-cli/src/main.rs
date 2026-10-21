@@ -59,6 +59,20 @@ fn main() -> ExitCode {
         Command::Diff { a, b } => commands::diff::run(&a, &b),
         Command::Validate { rules_dir } => commands::validate::run(&rules_dir),
         Command::VerifyChain { fact_log } => commands::verify_chain::run(&fact_log),
+        Command::ScanWalDir {
+            wal_dir,
+            baseline,
+            sentinel_log,
+            json,
+        } => commands::scan_wal_dir::run(&commands::scan_wal_dir::ScanWalDir {
+            wal_dir,
+            baseline,
+            sentinel_log,
+            json,
+        }),
+        Command::TruncatePartialLine { wal_file, confirm } => commands::truncate_partial_line::run(
+            &commands::truncate_partial_line::TruncatePartialLine { wal_file, confirm },
+        ),
         Command::CompileEvopack { rules_file, output } => {
             commands::compile_evopack::run(&rules_file, &output)
         }

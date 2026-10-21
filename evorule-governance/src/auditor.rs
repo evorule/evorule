@@ -1241,11 +1241,21 @@ impl Auditor {
         use flate2::read::GzDecoder;
         use std::io::Read;
 
-        let mut decoder = GzDecoder::new(compressed);
+        // 解压限额：gzip 压缩比可达 1000:1+，无界读入会 OOM（压缩炸弹）；
+        // 审计链导出物的合理规模远低于此上限
+        const MAX_DECOMPRESSED_BYTES: u64 = 256 * 1024 * 1024;
+
+        let decoder = GzDecoder::new(compressed);
         let mut decompressed = String::new();
-        decoder
+        let read = decoder
+            .take(MAX_DECOMPRESSED_BYTES + 1)
             .read_to_string(&mut decompressed)
             .map_err(|e| format!("Decompression error: {}", e))?;
+        if read as u64 > MAX_DECOMPRESSED_BYTES {
+            return Err(format!(
+                "Decompressed audit export exceeds {MAX_DECOMPRESSED_BYTES} bytes limit (possible compressed bomb)"
+            ));
+        }
 
         self.import(&decompressed)
     }

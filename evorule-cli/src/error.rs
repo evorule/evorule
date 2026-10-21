@@ -17,6 +17,9 @@ use thiserror::Error;
 /// - Display 输出人类可读的中文/英文混合消息（与现有 CLI 风格一致）
 #[derive(Debug, Error)]
 pub enum CliError {
+    /// 审计链哨兵结构化退出码（2=自检失败 3=链破坏 4=文件消失 5=损坏拒收）
+    #[error("audit chain sentinel exit code {0}")]
+    SentinelExit(u8),
     /// 文件系统 I/O 错误
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
@@ -120,6 +123,7 @@ impl CliError {
     /// ```
     pub fn exit_code(&self) -> i32 {
         match self {
+            CliError::SentinelExit(c) => *c as i32,
             CliError::RulesDirNotFound(_) | CliError::NoRulesFound(_) => 2,
             CliError::ExecutionHadErrors { .. } => 3,
             _ => 1,
