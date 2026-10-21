@@ -26,6 +26,7 @@
 # =============================================================================
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -324,6 +325,12 @@ def main() -> int:
                         help='仅对命中类别以 PREFIX 开头的阻断类计入退出码（可多次传；'
                              '缺省=全部阻断类计入。用于分类别收紧门禁，如 C 类存量未裁定前'
                              ' CI 传 --fail-on A1 --fail-on B）')
+    parser.add_argument('--dump-baseline', default=None, metavar='FILE',
+                        help='把当前阻断类命中以 ratchet 键（类别|相对路径|行内容 md5）写出'
+                             '基线文件后退出（存量冻结用；键随文本不随行号，行锚不漂移）')
+    parser.add_argument('--ratchet', default=None, metavar='FILE',
+                        help='棘轮模式：基线内命中视为冻结存量（info），新增命中才 FAIL；'
+                             '基线中已不存在的条目提示可收缩。与 --fail-on 口径叠加')
     args = parser.parse_args()
 
     root = Path(args.root).resolve() if args.root else \
@@ -339,6 +346,35 @@ def main() -> int:
         print(f'ERROR: git ls-files 失败: {err}', file=sys.stderr)
         return 2
 
+    # ---- ratchet 基线（dump / 比对共用键：类别|相对路径|行内容 md5）----
+    def _ratchet_key(f):
+        line_text = f.get('text') or ''
+        return f"{f['category']}|{f['file']}|{hashlib.md5(line_text.encode('utf-8')).hexdigest()}"
+
+    def _enforced(f):
+        return f['blocking'] and (not args.fail_on
+                                  or any(f['category'].startswith(p) for p in args.fail_on))
+
+    if args.dump_baseline:
+        lines = []
+        for f in findings:
+            if f['blocking'] and _enforced(f):
+                lines.append(_ratchet_key(f))
+        Path(args.dump_baseline).write_text('\n'.join(sorted(lines)) + '\n',
+                                            encoding='utf-8')
+        print(f'ratchet baseline dumped: {args.dump_baseline}（{len(lines)} 条）')
+        return 0
+
+    baseline_keys = set()
+    if args.ratchet:
+        bp = Path(args.ratchet)
+        if not bp.exists():
+            print(f'ERROR: ratchet 基线不存在: {bp}', file=sys.stderr)
+            return 2
+        baseline_keys = {ln.strip() for ln in
+                         bp.read_text(encoding='utf-8').splitlines()
+                         if ln.strip() and not ln.startswith('#')}
+
     if args.json:
         print(json.dumps({
             'root': str(root),
@@ -349,32 +385,35 @@ def main() -> int:
         print(f'扫描仓: {root}')
         if allowlist_path is not None:
             print(f'白名单: {allowlist_path}（{len(allowlist)} 文件）')
+        if args.ratchet:
+            print(f'ratchet 基线: {args.ratchet}（{len(baseline_keys)} 条冻结存量）')
         blocking = [f for f in findings if f['blocking']]
         advisory = [f for f in findings if not f['blocking']]
         for title, group, mark in (('阻断类', blocking, '[阻断]'),
                                    ('复核类', advisory, '[复核]')):
             print(f'\n== {title}（{len(group)} 项） ==')
             for f in group:
-                print(f"  {f['file']}:{f['line']} {mark} "
+                frozen = args.ratchet and _ratchet_key(f) in baseline_keys
+                suffix = '（冻结存量）' if frozen else ''
+                print(f"  {f['file']}:{f['line']} {mark}{suffix} "
                       f"({f['category']}) 命中「{f['match']}」")
                 print(f"      {f['text']}")
         if skipped:
             print(f'\n（跳过 {len(skipped)} 个文件：二进制/超限/不可解码，'
                   f'明细见 --json）')
         enforce = [f for f in blocking
-                   if not args.fail_on
-                   or any(f['category'].startswith(p) for p in args.fail_on)]
+                   if _enforced(f)
+                   and not (args.ratchet and _ratchet_key(f) in baseline_keys)]
         if args.fail_on:
-            print(f'\n（阻断计入口径: 前缀 {args.fail_on} → 计入 {len(enforce)} 项）')
+            print(f'\n（阻断计入口径: 前缀 {args.fail_on}；当前非冻结命中 {len(enforce)} 项）')
         verdict = 'FAIL' if enforce else 'PASS'
-        print(f'\n{verdict}: 阻断类 {len(blocking)} 项 / 复核类 '
-              f'{len(advisory)} 项')
+        print(f'\n{verdict}: 阻断类 {len(blocking)} 项（冻结 {len(blocking) - len(enforce)}）'
+              f' / 复核类 {len(advisory)} 项')
 
     blocking_count = sum(
         1 for f in findings
-        if f['blocking']
-        and (not args.fail_on
-             or any(f['category'].startswith(p) for p in args.fail_on)))
+        if _enforced(f)
+        and not (args.ratchet and _ratchet_key(f) in baseline_keys))
     return 1 if blocking_count else 0
 
 

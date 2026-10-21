@@ -209,7 +209,7 @@ jobs:
   #     词表五类: AI 身份 / 厂商名 / 内部批次编号 / 私有路径仓名 / 治理语境。
   #     本 job 对 A1(AI 身份) 与 B(内部编号) 计入退出码即红;
   #     C/D 类当前为复核项不阻断, 待存量处置后逐类收紧。
-  #     豁免清单: 无 (零豁免姿态, 阻断类全按词表计入)。
+  #     豁免清单: ratchet 基线 (scripts/public-face-matrix-baseline.txt，存量冻结+增量零容忍；键=类别|路径|行内容md5 不随行号漂移)。
   # ==========================================================================
   public-face-scan:
     name: public face scan (A1/B blocking)
@@ -218,7 +218,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: 公开面矩阵扫描 (AI 身份 + 内部编号阻断)
-        run: python3 scripts/scan_public_face.py --fail-on A1 --fail-on B
+        run: python3 scripts/scan_public_face.py --fail-on A1 --fail-on B --ratchet scripts/public-face-matrix-baseline.txt
 
   # ==========================================================================
   # 5e. 宪法联动门禁 ([CON-R-003] 固化义务, 纯文本扫描)
