@@ -131,8 +131,7 @@ fn self_test() -> Result<(), CliError> {
             return Err(CliError::other(format!(
                 "self-test FAILED: golden fact hash #{}/7 mismatch (verifier drifted from kernel SSOT)",
                 i + 1
-            ))
-            .into());
+            )));
         }
     }
 
@@ -140,7 +139,7 @@ fn self_test() -> Result<(), CliError> {
     // compute_chain_hash(&[]) == "genesis" 由内核测试守护；此处验证 chain_step 起点
     let first = chain_step("genesis", KERNEL_HASH_SNAPSHOT[0]);
     if first.len() != 64 || !first.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(CliError::other("self-test FAILED: chain_step output shape").into());
+        return Err(CliError::other("self-test FAILED: chain_step output shape"));
     }
 
     // ③ 锚点黄金向量（固定 seed 黄金锚点）：v2 载荷从锚点字段独立重构 + 本地
@@ -284,6 +283,156 @@ fn digest_group(paths: &[PathBuf]) -> std::result::Result<(String, u64, u64), St
     Ok((hasher.finalize().to_hex().to_string(), lines, bytes))
 }
 
+fn bump(code: u8, worst: &mut u8) {
+    // 严重度序：3 > 4 > 5 > 2 > 0（自检已在 run 前短路，此处不会有 2）
+    let rank = |c: u8| match c {
+        EXIT_CHAIN_BROKEN => 4,
+        EXIT_FILE_GONE => 3,
+        EXIT_CORRUPT_REJECT => 2,
+        _ => 0,
+    };
+    if rank(code) > rank(*worst) {
+        *worst = code;
+    }
+}
+
+/// 基线前滚 + JSON 报告 + 人读摘要与处置指引
+fn finalize_and_report(
+    cmd: &ScanWalDir,
+    now: &Baseline,
+    worst: &mut u8,
+    report_lines: &[String],
+    first_run: bool,
+    baseline_path: &Path,
+) {
+    // 写新基线（仅在无破坏时前滚；有破坏保留旧基线供取证比对；写出失败降级为
+    // 告警——输出面故障不得改变扫描结论的退出码语义）
+    if *worst == EXIT_OK {
+        match serde_json::to_string_pretty(&now) {
+            Ok(out) => {
+                if let Err(e) = std::fs::write(baseline_path, out) {
+                    eprintln!("[SENTINEL] baseline write failed: {e}");
+                }
+            }
+            Err(e) => eprintln!("[SENTINEL] baseline serialize failed: {e}"),
+        }
+    }
+
+    if let Some(json_path) = &cmd.json {
+        let report = serde_json::json!({
+            "wal_dir": cmd.wal_dir.display().to_string(),
+            "first_run": first_run,
+            "exit_code": worst,
+            "files": now.files,
+            "lines": report_lines,
+        });
+        match serde_json::to_string_pretty(&report)
+            .map_err(|e| e.to_string())
+            .and_then(|j| std::fs::write(json_path, j).map_err(|e| e.to_string()))
+        {
+            Ok(()) => {}
+            Err(e) => eprintln!("[SENTINEL] json report write failed: {e}"),
+        }
+    }
+
+    println!(
+        "[SENTINEL] scan {} files/groups, exit={worst}",
+        now.files.len()
+    );
+    for l in report_lines {
+        println!("  {l}");
+    }
+    if *worst == EXIT_CORRUPT_REJECT {
+        println!("  处置指引：半行/损坏可用 `evorule truncate-partial-line <file> --confirm` 受控恢复（前缀链验证+备份）");
+    }
+}
+
+/// 哨兵日志（append-only）：`ts | key | records | tail | verdict | delta`
+fn append_sentinel_log(
+    path: &Option<PathBuf>,
+    key: &str,
+    obs: &FileObs,
+    verdict_label: &str,
+    comparison: &str,
+) {
+    let Some(sl) = path else { return };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Some(parent) = sl.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(sl)
+    {
+        let _ = writeln!(
+            f,
+            "{ts} | {key} | {} | {} | {} | {comparison}",
+            obs.records, obs.tail, verdict_label
+        );
+    }
+}
+
+/// 基线比对（前缀锚定）：obs=本轮观测，prev=上轮基线条目（None=新文件）
+fn compare_with_baseline(
+    obs: &FileObs,
+    prev: Option<&FileObs>,
+    unhashed: bool,
+    paths: &[PathBuf],
+    worst: &mut u8,
+) -> String {
+    match prev {
+        None => "new-file".to_string(),
+        Some(prev_obs) => {
+            if unhashed {
+                if prev_obs.tail == obs.tail {
+                    "unchanged".to_string()
+                } else {
+                    // 无哈希账本：内容变化如实报（追加与篡改不可分——账本无链可锚）
+                    bump(EXIT_CHAIN_BROKEN, worst);
+                    "UNHASHED-CHANGED（内容变化：正常追加或篡改不可分，人工确认）".to_string()
+                }
+            } else if obs.records < prev_obs.records {
+                bump(EXIT_CHAIN_BROKEN, worst);
+                format!(
+                    "REGRESSED（记录回退：上轮 {} → 本轮 {}）",
+                    prev_obs.records, obs.records
+                )
+            } else if obs.records == prev_obs.records {
+                if obs.tail == prev_obs.tail {
+                    "unchanged".to_string()
+                } else {
+                    bump(EXIT_CHAIN_BROKEN, worst);
+                    "TAIL-CHANGED-SAME-LENGTH（同位链尾变化=篡改）".to_string()
+                }
+            } else {
+                // 记录增加：前缀锚定——重放至上轮记录数处链尾必须==上轮 tail
+                match verify_group(paths) {
+                    Ok((chain, _, _)) => {
+                        let anchor_idx = (prev_obs.records as usize).saturating_sub(1);
+                        match chain.get(anchor_idx) {
+                            Some(h) if h == &prev_obs.tail => {
+                                "appended（前缀锚定通过）".to_string()
+                            }
+                            _ => {
+                                bump(EXIT_CHAIN_BROKEN, worst);
+                                "PREFIX-ANCHOR-MISMATCH（历史被改后重算/分片错位）".to_string()
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        bump(EXIT_CHAIN_BROKEN, worst);
+                        format!("RECHECK-FAILED: {e}")
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
     // ===== 层 A：尺子自检（失败=码 2，不产出数据结论）=====
     if let Err(e) = self_test() {
@@ -307,19 +456,6 @@ pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
     let mut worst: u8 = EXIT_OK;
     let mut report_lines: Vec<String> = Vec::new();
 
-    fn bump(code: u8, worst: &mut u8) {
-        // 严重度序：3 > 4 > 5 > 2 > 0（自检已在前面短路，此处不会有 2）
-        let rank = |c: u8| match c {
-            EXIT_CHAIN_BROKEN => 4,
-            EXIT_FILE_GONE => 3,
-            EXIT_CORRUPT_REJECT => 2,
-            _ => 0,
-        };
-        if rank(code) > rank(*worst) {
-            *worst = code;
-        }
-    }
-
     for (key, paths) in &groups {
         let unhashed = key == "shared_facts";
         let obs_result = if unhashed {
@@ -342,87 +478,15 @@ pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
             Ok(obs) => {
                 let verdict_label = obs.verdict.clone();
                 // ===== 层 B：基线比对（前缀锚定）=====
-                let comparison = if first_run {
-                    "baseline-created".to_string()
-                } else {
-                    match old.files.get(key) {
-                        None => "new-file".to_string(),
-                        Some(prev_obs) => {
-                            if unhashed {
-                                if prev_obs.tail == obs.tail {
-                                    "unchanged".to_string()
-                                } else {
-                                    // 无哈希账本：内容变化如实报（追加与篡改不可分——账本无链可锚）
-                                    bump(EXIT_CHAIN_BROKEN, &mut worst);
-                                    "UNHASHED-CHANGED（内容变化：正常追加或篡改不可分，人工确认）"
-                                        .to_string()
-                                }
-                            } else if obs.records < prev_obs.records {
-                                bump(EXIT_CHAIN_BROKEN, &mut worst);
-                                format!(
-                                    "REGRESSED（记录回退：上轮 {} → 本轮 {}）",
-                                    prev_obs.records, obs.records
-                                )
-                            } else if obs.records == prev_obs.records {
-                                if obs.tail == prev_obs.tail {
-                                    "unchanged".to_string()
-                                } else {
-                                    bump(EXIT_CHAIN_BROKEN, &mut worst);
-                                    "TAIL-CHANGED-SAME-LENGTH（同位链尾变化=篡改）".to_string()
-                                }
-                            } else {
-                                // 记录增加：前缀锚定——重放至上轮记录数处链尾必须==上轮 tail
-                                match verify_group(paths) {
-                                    Ok((chain, _, _)) => {
-                                        let anchor_idx =
-                                            (prev_obs.records as usize).saturating_sub(1);
-                                        match chain.get(anchor_idx) {
-                                            Some(h) if h == &prev_obs.tail => {
-                                                "appended（前缀锚定通过）".to_string()
-                                            }
-                                            _ => {
-                                                bump(EXIT_CHAIN_BROKEN, &mut worst);
-                                                "PREFIX-ANCHOR-MISMATCH（历史被改后重算/分片错位）"
-                                                    .to_string()
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        bump(EXIT_CHAIN_BROKEN, &mut worst);
-                                        format!("RECHECK-FAILED: {e}")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                };
+                let comparison =
+                    compare_with_baseline(&obs, old.files.get(key), unhashed, paths, &mut worst);
                 report_lines.push(format!(
                     "{key}: {} records, tail {}..{}, verdict={verdict_label}, delta={comparison}",
                     obs.records,
                     &obs.tail[..8.min(obs.tail.len())],
-                    &obs.tail[obs.tail.len().saturating_sub(8)..].to_string()
+                    &obs.tail[obs.tail.len().saturating_sub(8)..]
                 ));
-                // 哨兵日志（append-only）
-                if let Some(sl) = &cmd.sentinel_log {
-                    let ts = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
-                    if let Some(parent) = sl.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    if let Ok(mut f) = std::fs::OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(sl)
-                    {
-                        let _ = writeln!(
-                            f,
-                            "{ts} | {key} | {} | {} | {} | {comparison}",
-                            obs.records, obs.tail, verdict_label
-                        );
-                    }
-                }
+                append_sentinel_log(&cmd.sentinel_log, key, &obs, &verdict_label, &comparison);
                 now.files.insert(key.clone(), obs);
             }
             Err(e) => {
@@ -463,38 +527,14 @@ pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
         }
     }
 
-    // 写新基线（仅在无破坏时前滚；有破坏保留旧基线供取证比对）
-    if worst == EXIT_OK {
-        let out = serde_json::to_string_pretty(&now)
-            .map_err(|e| crate::error::CliError::other(format!("baseline serialize: {e}")))?;
-        std::fs::write(&baseline_path, out)
-            .map_err(|e| crate::error::CliError::other(format!("baseline write: {e}")))?;
-    }
-
-    if let Some(json_path) = &cmd.json {
-        let report = serde_json::json!({
-            "wal_dir": cmd.wal_dir.display().to_string(),
-            "first_run": first_run,
-            "exit_code": worst,
-            "files": now.files,
-            "lines": report_lines,
-        });
-        let report_json = serde_json::to_string_pretty(&report)
-            .map_err(|e| CliError::other(format!("json report serialize: {e}")))?;
-        std::fs::write(json_path, report_json)
-            .map_err(|e| CliError::other(format!("json report write: {e}")))?;
-    }
-
-    println!(
-        "[SENTINEL] scan {} files/groups, exit={worst}",
-        now.files.len()
+    finalize_and_report(
+        cmd,
+        &now,
+        &mut worst,
+        &report_lines,
+        first_run,
+        &baseline_path,
     );
-    for l in &report_lines {
-        println!("  {l}");
-    }
-    if worst == EXIT_CORRUPT_REJECT {
-        println!("  处置指引：半行/损坏可用 `evorule truncate-partial-line <file> --confirm` 受控恢复（前缀链验证+备份）");
-    }
     if worst == EXIT_OK {
         Ok(())
     } else {
@@ -504,7 +544,7 @@ pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
     /// 自检必须通过（黄金向量=尺子校准的本体测试）
