@@ -1245,7 +1245,7 @@ impl Auditor {
         // 审计链导出物的合理规模远低于此上限
         const MAX_DECOMPRESSED_BYTES: u64 = 256 * 1024 * 1024;
 
-        let mut decoder = GzDecoder::new(compressed);
+        let decoder = GzDecoder::new(compressed);
         let mut decompressed = String::new();
         let read = decoder
             .take(MAX_DECOMPRESSED_BYTES + 1)
