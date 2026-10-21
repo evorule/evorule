@@ -589,8 +589,10 @@ impl SharedFactsLog {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         let anchors = &inner.anchors;
         let mut prev = SHARED_LEDGER_ANCHOR_GENESIS.to_string();
-        let mut report = SharedAnchorReport::default();
-        report.anchor_count = anchors.len();
+        let mut report = SharedAnchorReport {
+            anchor_count: anchors.len(),
+            ..Default::default()
+        };
         for (i, a) in anchors.iter().enumerate() {
             if a.seq != i as u64 {
                 return Err(FactsLogError::WalError(format!(
