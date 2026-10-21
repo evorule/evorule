@@ -20,6 +20,8 @@ pub mod diff;
 pub mod discipline_gate;
 pub mod replay;
 pub mod run;
+pub mod scan_wal_dir;
+pub mod truncate_partial_line;
 pub mod validate;
 pub mod verify_anchors;
 pub mod verify_chain;

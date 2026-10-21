@@ -82,6 +82,38 @@ pub enum Command {
         fact_log: PathBuf,
     },
 
+    /// Audit chain sentinel: scan a WAL directory, verify every chain end-to-end,
+    /// and compare against the previous scan baseline (prefix-anchored: pure
+    /// appends vs. history-rewritten recalculation are distinguished precisely).
+    /// Exit codes: 0 ok / 2 self-test failed / 3 chain broken / 4 file gone / 5 partial line.
+    ScanWalDir {
+        /// WAL directory (session_*.wal*, shared_facts.wal, governance_single_reactor.wal)
+        wal_dir: PathBuf,
+
+        /// Baseline file for cross-scan comparison (first run creates it)
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+
+        /// Append-only sentinel log (one line per file per scan; keep in a separate dir)
+        #[arg(long)]
+        sentinel_log: Option<PathBuf>,
+
+        /// Machine-readable JSON report output file
+        #[arg(long)]
+        json: Option<PathBuf>,
+    },
+
+    /// Controlled recovery: truncate a WAL file to its last complete line, with
+    /// prefix chain verification report and .partial.bak backup (dry-run unless --confirm)
+    TruncatePartialLine {
+        /// WAL file (with a partial trailing line)
+        wal_file: PathBuf,
+
+        /// Confirm on-disk truncation (default: dry-run)
+        #[arg(long)]
+        confirm: bool,
+    },
+
     /// Compile JSON rules into a compact .evopack binary package (host compiler for the embedded no_std kernel)
     ///
     /// Deterministic: the same input rules always produce the same bytes (postcard canonical
