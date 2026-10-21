@@ -269,7 +269,8 @@ fn verify_group(paths: &[PathBuf]) -> std::result::Result<(Vec<String>, u64, u64
     Ok((chain_hashes, count, bytes))
 }
 
-/// 无哈希账本（shared_facts）：结构完整性摘要
+/// 无哈希账本：结构完整性摘要（当前无在役调用者；保留供未来无链账本）
+#[allow(dead_code)]
 fn digest_group(paths: &[PathBuf]) -> std::result::Result<(String, u64, u64), String> {
     let mut bytes = 0u64;
     let mut lines = 0u64;
@@ -457,7 +458,10 @@ pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
     let mut report_lines: Vec<String> = Vec::new();
 
     for (key, paths) in &groups {
-        let unhashed = key == "shared_facts";
+        // shared_facts.wal 自内核 WAL v2 起经 FactsLog::append 链化（实证带
+        // 三元组）——走链三查+前缀锚定路径；unhashed-ledger 口径仅保留给
+        // 确无哈希链的账本（当前无）
+        let unhashed = false;
         let obs_result = if unhashed {
             digest_group(paths).map(|(digest, lines, bytes)| FileObs {
                 records: lines,
