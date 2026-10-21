@@ -39,12 +39,10 @@ fuzz_target!(|data: &[u8]| {
         let roundtrip = fact_from_json(&json).expect("fact_to_json 产物必须可反序列化");
         assert_eq!(rec.fact, roundtrip, "Fact 持久化 roundtrip 必须等值");
 
-        // 不变量 3b：哈希字段 Option 原样保留（字符串语义，非重算）
-        if let Some(h) = &rec.content_hash {
-            assert_eq!(h.len(), 64, "content_hash 若存在必须为 64 hex");
-        }
-        if let Some(h) = &rec.chain_hash {
-            assert_eq!(h.len(), 64, "chain_hash 若存在必须为 64 hex");
-        }
+        // 不变量 3b：哈希字段 Option 原样保留（字符串语义，非重算）。
+        // 注意：WAL 是不可信输入面——字段值可以任意（协议外形状由验证器
+        // 检出，解析器只负责解析），故不断言 64 hex 长度（协议形状不属于
+        // 解析器不变量；教训：过强断言把协议假设当不变量，fuzz 一发命中）。
+        debug_assert!(rec.content_hash.is_none() || rec.content_hash.as_deref() != Some(""));
     }
 });

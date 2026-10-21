@@ -24,7 +24,7 @@
 use cortex_m_rt::entry;
 use cortex_m_semihosting::{debug, hprintln};
 use evorule_mcu::alloc_tlsf::TlsfGlobal;
-use evorule_mcu::{McuExecutor, RulePack};
+use evorule_mcu::{McuExecutor, McuWalStore, RulePack};
 use evorule_tcb::JsonValue;
 use panic_semihosting as _;
 
