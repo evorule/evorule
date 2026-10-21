@@ -14,6 +14,8 @@
 #     $env:PATH = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\<ver>\bin\Hostx64\x64;' + $env:PATH
 # CI: .github/workflows/fuzz.yml（每目标 60s smoke）
 #
+# corpus 约定: corpus/ 目录默认 ignore（libFuzzer 自学习语料不入库防膨胀）；
+# seed_* 前缀文件为刻意维护的结构种子（覆盖协议关键形态），以 git add -f 入库。
 # 无副作用纪律（最高原则）: 仅调用只读纯函数 API。审计链三 target 依赖
 # evorule-audit-chain（no_std 纯算法 crate）与 evorule-reactor 的纯解析/序列化
 # 函数（parse_wal_records 经 BufRead 输入，fuzz 侧以 Cursor 包裹，零文件系统）。

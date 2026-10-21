@@ -1,0 +1,2 @@
+{"version_before":0,"fact":{"type":"Command","id":1,"instruction":{}}}
+{"version_before":1,"fact":{"type":"Stable","id":2,"version":1},"content_hash":"aa","prev_hash":"genesis","chain_hash":"bb"}

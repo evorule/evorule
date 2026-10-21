@@ -1,0 +1,1 @@
+{"version_before":0,"fact":{"type":"TransitionTrace","id":4,"cause":2,"rule_hits":[{"index":0,"instr_type":"branch","hit":false},{"index":1,"instr_type":"set","hit":true,"domain_attr":{"outcome":"missing","missing_reason":"path_not_found","on_missing":"unsat"}}]}}
