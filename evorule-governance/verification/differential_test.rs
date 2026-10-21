@@ -25,6 +25,13 @@
 //! 验证时间机器(纯函数重建)与 FactsLog(命令式追加)产生相同的历史快照。
 //! 两条独立路径达到同一版本,互为交叉验证。
 //!
+//! ## P0-15: `diff_recover_vs_append`
+//!
+//! `FactsLog 逐条 append（内存 WAL 后端）的终态 == replay_wal_records(WAL 记录) 的终态`
+//!
+//! 验证进程内追加路径与 WAL 重放路径（recover 的纯核心）产生相同的
+//! 快照/队列/版本/链尾哈希——审计链重放确定性。
+//!
 //! # 语义等价规约(差分测试的形式化契约)
 //!
 //! - **P0-9**: 对任意指令序列 `Cmds` 与初始 payload `S`:
@@ -33,6 +40,9 @@
 //! - **P0-10**: 对任意事实序列 `Facts` 与目标版本 `N`:
 //!   `rewind(Facts, N).snapshot == FactsLog 重放前 N 个事实后的 snapshot`
 //!   (两条独立重建路径产生的版本号与 payload 均须结构全等)。
+//! - **P0-15**: 对任意事实序列 `Facts`:
+//!   `append 链终态 == replay_wal_records(append 产生的 WAL 记录) 终态`
+//!   (快照/队列/版本/链尾哈希四元组全等)。
 //!
 //! # 跑法
 //!
@@ -437,6 +447,89 @@ proptest! {
             &rs.payload, &b_payload_serde,
             "payload mismatch (mixed) at version {}",
             target_version,
+        );
+    }
+}
+
+// =============================================================================
+// P0-15: append 路径 vs WAL 重放路径 一致性(diff_recover_vs_append)
+// =============================================================================
+
+proptest! {
+    #![proptest_config(proptest_config())]
+
+    /// P0-15: FactsLog 逐条 append(内存 WAL 后端)与 replay_wal_records 纯重放全等
+    ///
+    /// 差分对:
+    /// - A: FactsLog + MemoryWalStore 后端逐条 append(进程内追加路径)
+    /// - B: replay_wal_records(A 产生的 WAL 记录)(WAL 重放路径,recover 的纯核心)
+    ///
+    /// 断言: 快照 / 队列 / 版本 / 链尾哈希四元组全等,另含历史长度与
+    /// last_stable_version。事实应用语义由 reactor 侧 apply_fact_to_state
+    /// 单点保证——本差分测试是该单点契约的 CI 常驻执行面。
+    #[test]
+    fn diff_recover_vs_append(
+        specs in prop::collection::vec((0u8..5, -1000i64..1000), 0..12),
+    ) {
+        use evorule_reactor::{MemoryWalStore, replay_wal_records};
+
+        let store = MemoryWalStore::new();
+        let log_a = FactsLog::with_wal_store(Box::new(store.clone()));
+        let mut next_id = 1u64;
+        for &(kind, seed_val) in &specs {
+            let fact = match kind % 5 {
+                0 => Fact::PayloadUpdate {
+                    id: FactId(next_id),
+                    path: format!("p{}", next_id % 3),
+                    value: JsonValue::Integer(seed_val + next_id as i64),
+                },
+                1 => Fact::StateTransition {
+                    id: FactId(next_id),
+                    cause: FactId(next_id.saturating_sub(1)),
+                    new_payload: JsonValue::object_from_pairs(&[
+                        ("x", JsonValue::Integer(seed_val + next_id as i64)),
+                        ("y", JsonValue::Integer(next_id as i64)),
+                    ]),
+                    new_queue: vec![],
+                },
+                2 => Fact::Command {
+                    id: FactId(next_id),
+                    instruction: JsonValue::empty_object(),
+                },
+                3 => Fact::Error {
+                    id: FactId(next_id),
+                    message: format!("e{}", next_id),
+                },
+                _ => Fact::Stable {
+                    id: FactId(next_id),
+                    version: 0,
+                },
+            };
+            log_a.append(fact).expect("append failed");
+            next_id += 1;
+        }
+
+        let (snap_a, queue_a, ver_a) = log_a.snapshot();
+        let hash_a = log_a.last_hash();
+
+        let records = store.records();
+        let log_b = replay_wal_records(&records).expect("replay failed");
+        let (snap_b, queue_b, ver_b) = log_b.snapshot();
+
+        prop_assert_eq!(ver_a, ver_b, "版本分叉: append={} vs replay={}", ver_a, ver_b);
+        prop_assert!(
+            snap_a == snap_b,
+            "快照分叉: append={} vs replay={}",
+            tcb_to_serde(&snap_a), tcb_to_serde(&snap_b),
+        );
+        prop_assert!(queue_a == queue_b, "队列分叉");
+        let hash_b = log_b.last_hash();
+        // 消息保持静态: prop_assert_eq 展开中 left/right 被 move,失败输出自动含两值
+        prop_assert_eq!(hash_a, hash_b, "链尾哈希分叉: append vs replay");
+        prop_assert_eq!(log_a.history_len(), log_b.history_len(), "历史长度分叉");
+        prop_assert_eq!(
+            log_a.last_stable_version(), log_b.last_stable_version(),
+            "last_stable_version 分叉",
         );
     }
 }

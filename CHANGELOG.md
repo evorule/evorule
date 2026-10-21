@@ -24,6 +24,31 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
+## [Unreleased]
+
+### Added
+
+- 审计链专项 fuzz 三目标（`fuzz_stable_json_hash` 稳定序列化规范形幂等/确定性、
+  `fuzz_wal_parse_roundtrip` WAL 解析与 Fact 持久化 roundtrip、`fuzz_chain_invariants`
+  链分解与单条敏感性）；fuzz 工作区无副作用纪律精确化（禁写路径清单化，仅纯函数面）。
+- `FactsLog` WAL 重放纯函数入口 `replay_wal_records`（无文件系统、无写句柄挂载），
+  供离线重放/验证与差分测试复用。
+- 差分测试 `diff_recover_vs_append`（P0-15 审计链重放确定，differential.yml CI 常驻）：
+  append 路径与 WAL 重放路径四元组全等（快照/队列/版本/链尾哈希）。
+- Kani proof `proof_hash_chain_back_link`（P0-14 审计链哈希完整）入 kani-reactor
+  PR 闸门（单独段、默认 unwind；实测 unwind 4 下 unwinding 失败，见 verification/
+  STATUS.md 与 DISCLOSURE_LOG.md 2026-10-21 条目）。
+
+### Changed
+
+- `FactsLog::append` 与 WAL 重放的事实应用收敛为单点 `apply_fact_to_state`
+  （快照/版本/last_stable 更新语义由构造保证一致，消除双份实现漂移隐患）；
+  `recover_with_options` 薄壳化为 读→纯重放→挂载 三段；GATE_REFERENCE 对应
+  豁免条目摘除（重构后不再超限）。
+- WAL 轮换读取消除每文件二次通读计行（行计数并入解析核心，`parse_wal_line`）。
+- 历史会话档案面（server 侧）与本仓 `Auditor::load_from_tier1_wal` 的验证口径
+  差异（尽力全报 vs fast-fail）双侧文档化互引。
+
 ## [0.8.5] - 2026-10-13
 
 ### Added（沙盒编排会话专属规则集 fork）

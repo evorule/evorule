@@ -13,7 +13,7 @@
 
 ## 📋 Proof 清单
 
-### CI 子集（4 个，kani.yml `kani-reactor` job，单 proof 300s；version_monotonic / max_rounds_termination / command_does_not_decrease_queue 带 `--default-unwind 4`，P0-11 不带——该配置实测对 P0-11 无效）
+### CI 子集（5 个，kani.yml `kani-reactor` job，单 proof 300s；version_monotonic / max_rounds_termination / command_does_not_decrease_queue 带 `--default-unwind 4`，P0-11 与 P0-14 不带——该配置实测对 P0-11 无效、对 P0-14 unwind 不足（2026-10-21 实测 unwinding 失败，已入 DISCLOSURE_LOG））
 
 | #   | Proof                         | 验证目标                                         | 状态 |
 | --- | ----------------------------- | ------------------------------------------------ | ---- |
@@ -24,7 +24,7 @@
 
 > 状态一律见 [verification/STATUS.md](../../verification/STATUS.md)（唯一权威）。
 
-### 完整验证（7 个，未入 CI）
+### 完整验证（6 个，未入 CI）
 
 | #   | Proof                                               | 验证目标                              | 状态 |
 | --- | --------------------------------------------------- | ------------------------------------- | ---- |
@@ -200,7 +200,7 @@ Kani 验证由 [`.github/workflows/kani.yml`](../../.github/workflows/kani.yml) 
 - push 到 main 或 PR，且修改 `evorule-tcb/**`、`evorule-reactor/src/**`、`evorule-reactor/verification/**` 等 Kani 相关路径
 - 手动触发 (`workflow_dispatch`，可选 a / b / all 档位)
 
-`kani-reactor` job：30 min 超时，单 proof 300s 上限，**4 个 CI proof**（P0-11 `invariant_cause_queue_sync` 2026-09-12 修复超时根因后重入，单独跑且不带 `--default-unwind`——该配置实测对 P0-11 无效；P1-5 `command_does_not_decrease_queue` 同日同根因修复入闸，与 version_monotonic / max_rounds_termination 同组带 `--default-unwind 4`；不可加 `--tests`，proof 经 `src/pure.rs` `#[path]` 引入 lib）。
+`kani-reactor` job：30 min 超时，单 proof 300s 上限，**5 个 CI proof**（P0-11 `invariant_cause_queue_sync` 2026-09-12 修复超时根因后重入，单独跑且不带 `--default-unwind`——该配置实测对 P0-11 无效；P1-5 `command_does_not_decrease_queue` 同日同根因修复入闸，与 version_monotonic / max_rounds_termination 同组带 `--default-unwind 4`；P0-14 `proof_hash_chain_back_link` 2026-10-21 入闸，与 P0-11 同模式单独跑不带 unwind（unwind 4 下实测 unwinding 失败）；不可加 `--tests`，proof 经 `src/pure.rs` `#[path]` 引入 lib）。
 
 > reactor 其余 7 个 proof 未入 CI（涉及堆分配数据结构或实测超时，跨 Kani 版本稳定性未知），状态一律见 [verification/STATUS.md](../../verification/STATUS.md)。同文件另含 TCB A/B 档两个 job（见 [tcb KANI 指南](../../evorule-tcb/docs/KANI.md)）。
 

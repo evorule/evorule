@@ -546,7 +546,7 @@ P0-5（execute_transition 确定性）采用 Coq 数学证明 + Kani 代码证�
 | P1-5  | -             | -       | ✅      | -        | -       | 📊 |
 | P1-6  | -             | -       | ✅      | -        | -       | 📊 |
 
-Reactor 的 Kani 证明（11 个 proof，源码 `evorule-reactor/verification/kani_proofs.rs`）为直接验证生产代码 + 结构化符号输入，其中 4 个入 kani.yml PR 闸门（P0-11 `invariant_cause_queue_sync` 与 P1-5 `command_does_not_decrease_queue` 超时根因修复后于 2026-09-12 重入/入闸）。各 proof 当前状态一律见 [STATUS.md](../STATUS.md)；本表原历史实测口径（2026-08-05 冻结）已剥离，历史记录见 [DISCLOSURE_LOG.md](../DISCLOSURE_LOG.md)。
+Reactor 的 Kani 证明（11 个 proof，源码 `evorule-reactor/verification/kani_proofs.rs`）为直接验证生产代码 + 结构化符号输入，其中 5 个入 kani.yml PR 闸门（P0-11 与 P1-5 超时根因修复后于 2026-09-12 重入/入闸；P0-14 `proof_hash_chain_back_link` 2026-10-21 入闸）。各 proof 当前状态一律见 [STATUS.md](../STATUS.md)；本表原历史实测口径（2026-08-05 冻结）已剥离，历史记录见 [DISCLOSURE_LOG.md](../DISCLOSURE_LOG.md)。
 
 ### 4.3 evorule-governance：验证计划
 

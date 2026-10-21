@@ -140,7 +140,6 @@ path = "verification/differential_test.rs"
 #   - invariant_io_recovery_iff_result       (PASS 45s,  涉及 Vec 操作)
 #   - command_does_not_decrease_queue        (PASS 23s,  涉及 VecDeque)
 #   - proof_fact_log_append_monotonic        (PASS 56s,  涉及 Vec + 哈希链)
-#   - proof_hash_chain_back_link             (PASS 115s, 涉及哈希链)
 #   - proof_reactor_invariants_preserved_after_pure_ops (PASS 16s, 组合操作)
 #   - proof_phase_state_machine_cannot_jump  (PASS 7s,   Phase 状态机)
 #
@@ -150,4 +149,5 @@ proofs = [
     "command_does_not_decrease_queue", # apply_command 队列不减 (P1-5, 2026-09-12 修复入闸)
     "invariant_version_monotonic", # version 单调递增 (简单计数器)
     "max_rounds_termination",      # max_rounds 终止条件 (简单有界循环)
+    "proof_hash_chain_back_link",  # 审计链哈希完整 (P0-14, 2026-10-21 入闸; 单独段不带 unwind 4)
 ]

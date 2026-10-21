@@ -1,14 +1,18 @@
 # Fuzz workflow for EvoRule (A1 供应链三件套)
 #
 # 覆盖:
-# - fuzz_resolve_path:  TCB path.rs 路径解析（resolve_path / resolve_path_mut）
-# - fuzz_json_display:  JsonValue 边界构造 → Display 序列化
+# - fuzz_resolve_path:         TCB path.rs 路径解析（resolve_path / resolve_path_mut）
+# - fuzz_json_display:         JsonValue 边界构造 → Display 序列化
+# - fuzz_stable_json_hash:     审计链稳定序列化 + 事实哈希（纯函数面）
+# - fuzz_wal_parse_roundtrip:  WAL 解析 + Fact 持久化 roundtrip（Cursor 零文件 IO）
+# - fuzz_chain_invariants:     审计链链式性质（链分解/单条敏感性/genesis）
 #
 # 策略:
 # - push/PR 触碰 evorule-tcb/** 或 fuzz/** 时执行构建 + 每目标 60s smoke
 # - libFuzzer smoke 仅作冒烟（发现 panic 即红）；长期蓄水池运行可后续加 cron 长跑 job
 # - fuzz/ 为独立 workspace（父 Cargo.toml exclude），使用 nightly 工具链
-# - 不触碰哈希链与审计面（最高原则）：目标仅调用只读/无副作用 API
+# - 无副作用最高原则：目标仅调用只读/无副作用 API（审计链三 target 走纯函数面：
+#   evorule-audit-chain 纯算法 + reactor 纯解析，禁 WalWriter/recover 等写路径）
 
 name: Fuzz
 
@@ -17,12 +21,20 @@ on:
     branches: [main, master, "release/**"]
     paths:
       - "evorule-tcb/**"
+      - "evorule-audit-chain/**"
+      - "evorule-reactor/src/wal.rs"
+      - "evorule-reactor/src/fact.rs"
+      - "evorule-reactor/src/facts_log.rs"
       - "fuzz/**"
       - ".github/workflows/fuzz.yml"
   pull_request:
     branches: [main, master]
     paths:
       - "evorule-tcb/**"
+      - "evorule-audit-chain/**"
+      - "evorule-reactor/src/wal.rs"
+      - "evorule-reactor/src/fact.rs"
+      - "evorule-reactor/src/facts_log.rs"
       - "fuzz/**"
       - ".github/workflows/fuzz.yml"
   workflow_dispatch:
@@ -65,3 +77,6 @@ jobs:
           # 与 sanitizer 不兼容且 nightly 镜像缺 musl std (run 34732535959 二次失败根因)
           cargo fuzz run fuzz-resolve-path --target x86_64-unknown-linux-gnu -- -max_total_time=60 -rss_limit_mb=4096
           cargo fuzz run fuzz-json-display --target x86_64-unknown-linux-gnu -- -max_total_time=60 -rss_limit_mb=4096
+          cargo fuzz run fuzz-stable-json-hash --target x86_64-unknown-linux-gnu -- -max_total_time=60 -rss_limit_mb=4096
+          cargo fuzz run fuzz-wal-parse-roundtrip --target x86_64-unknown-linux-gnu -- -max_total_time=60 -rss_limit_mb=4096
+          cargo fuzz run fuzz-chain-invariants --target x86_64-unknown-linux-gnu -- -max_total_time=60 -rss_limit_mb=4096

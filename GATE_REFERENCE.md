@@ -350,8 +350,6 @@ src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allo
 | `evorule-reactor/src/reactor.rs:385` | `async fn run` | 119/25, 285/100 | 反应器主循环, 拆函数影响接口 |
 | `evorule-reactor/src/reactor.rs:999` | `fn handle_fact` | 47/25 | 7 种 Fact 变体 match |
 | `evorule-reactor/src/wal.rs:232` | `pub fn fact_from_json` | 124/100 | 7 种 Fact 变体扁平 match |
-| `evorule-reactor/src/facts_log.rs:386` | `pub fn recover_with_options` | 109/100 (v0.3.1 新增) | WAL 重放 + mount + 哈希链恢复必须单函数原子语义 |
-| `evorule-reactor/src/facts_log.rs:538` | `pub fn append` | 115/100 (v0.3.1 新增) | Kani 简化路径 + 非 Kani 完整路径必须单函数 |
 | `evorule-governance/src/auditor.rs:210` | `pub fn audit_new` | 41/25 | 审计遍历 + 哈希 + append |
 | `evorule-governance/src/auditor.rs:644` | `pub fn load_from_tier1_wal` | 106/100 (v0.3.1 新增) | tier1 WAL 加载 + 链式哈希验证必须单函数 |
 | `evorule-governance/src/hash.rs:101` | `pub fn fact_to_stable_json` | 65/25, 136/100 | 7 种 Fact 变体 + 嵌套 |

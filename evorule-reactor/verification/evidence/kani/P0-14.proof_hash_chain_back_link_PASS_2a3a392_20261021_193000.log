@@ -1,0 +1,17 @@
+Verification evidence: P0-14.proof_hash_chain_back_link
+Status: PASS (exit code 0)
+# Evidence metadata
+- commit SHA: 2a3a392 (working tree of this batch; committed as-is in same commit)
+- kani: cargo-kani 0.67.0
+- rustc: rustc 1.98.1 (48a229cea 2026-09-01)
+- timestamp: 2026-10-21 19:07:41 +0800
+- platform: WSL Linux 6.18.33.2-microsoft-standard-WSL2 x86_64
+- command: cargo kani -p evorule-reactor --harness proof_hash_chain_back_link --output-format=terse (default unwind=10; NO --default-unwind 4 - measured unwinding failure under unwind 4, see DISCLOSURE_LOG 2026-10-21)
+- per-proof timeout: none (local forensic run; gate uses 300s in kani.yml)
+- log: P0-14.proof_hash_chain_back_link_PASS_2a3a392_20261021_193000.stdout.txt
+--- result summary (tail) ---
+VERIFICATION:- SUCCESSFUL
+Verification Time: 15.474173s
+
+Manual Harness Summary:
+Complete - 1 successfully verified harnesses, 0 failures, 1 total.

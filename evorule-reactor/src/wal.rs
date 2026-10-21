@@ -975,87 +975,111 @@ impl WalWriter {
 /// 路径版 [`read_wal_file_with_hash`] 是它的一层文件系统薄壳——非 fs 宿主
 /// （嵌入式同步执行器等）经此原语直供字节流即可复用全部解析语义，与
 /// 写侧 [`FactWalStore`] trait 对偶，存储缝读写两侧自此闭合。
+/// 单行解析（计数核心与公开入口共用；`line_no` 用于错误定位）
+fn parse_wal_line(line: &str, line_no: usize) -> Result<WalRecord, WalError> {
+    let value: serde_json::Value = serde_json::from_str(line)
+        .map_err(|e| WalError::InvalidFact(format!("line {line_no}: JSON parse error: {e}")))?;
+    let obj = value
+        .as_object()
+        .ok_or_else(|| WalError::InvalidFact(format!("line {line_no}: not an object")))?;
+    let version_before = obj
+        .get("version_before")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| {
+            WalError::InvalidFact(format!("line {line_no}: missing version_before"))
+        })?;
+    let fact_value = obj
+        .get("fact")
+        .ok_or_else(|| WalError::InvalidFact(format!("line {line_no}: missing fact")))?;
+    let fact = fact_from_json(fact_value)?;
+    // 旧格式容错():≤0.3.x 的 Stable 无 version 字段,
+    // 以外层 version_before 兜底(状态重建不读此字段,仅供审计/展示)
+    let fact = match fact {
+        Fact::Stable { id, version: 0 } if fact_value.get("version").is_none() => {
+            Fact::Stable {
+                id,
+                version: version_before,
+            }
+        }
+        f => f,
+    };
+
+    // 可选哈希字段（新格式有，旧格式无）
+    let content_hash = obj
+        .get("content_hash")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let prev_hash = obj
+        .get("prev_hash")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let chain_hash = obj
+        .get("chain_hash")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    Ok(WalRecord {
+        version_before,
+        fact,
+        content_hash,
+        prev_hash,
+        chain_hash,
+    })
+}
+
+/// 从任意 `BufRead` 流解析 WAL 记录（JSONL，每行一条，空行跳过）
+///
+/// 行号语义：`base_line_no + 当前行序`，供多文件轮换读取跨文件连续定位。
+/// 返回不含行数计数；需要行数的读方（轮换合并）用内部计数核心。
 pub fn parse_wal_records<R: std::io::BufRead>(
     reader: R,
     base_line_no: usize,
 ) -> Result<Vec<WalRecord>, WalError> {
+    parse_wal_records_counted(reader, base_line_no).map(|(records, _)| records)
+}
+
+/// 计数核心：解析并返回 (记录, 消费总行数)
+///
+/// 行数供多文件轮换读取累计 `base_line_no`（错误定位行号跨文件连续），
+/// 读方不再为计数二次通读文件。
+fn parse_wal_records_counted<R: std::io::BufRead>(
+    reader: R,
+    base_line_no: usize,
+) -> Result<(Vec<WalRecord>, usize), WalError> {
     let mut records = Vec::new();
-    for (line_idx, line) in reader.lines().enumerate() {
-        let line_no = base_line_no + line_idx;
+    let mut total_lines = 0usize;
+    for (idx, line) in reader.lines().enumerate() {
+        total_lines = idx + 1;
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
-        let value: serde_json::Value = serde_json::from_str(&line)
-            .map_err(|e| WalError::InvalidFact(format!("line {line_no}: JSON parse error: {e}")))?;
-        let obj = value
-            .as_object()
-            .ok_or_else(|| WalError::InvalidFact(format!("line {line_no}: not an object")))?;
-        let version_before = obj
-            .get("version_before")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| {
-                WalError::InvalidFact(format!("line {line_no}: missing version_before"))
-            })?;
-        let fact_value = obj
-            .get("fact")
-            .ok_or_else(|| WalError::InvalidFact(format!("line {line_no}: missing fact")))?;
-        let fact = fact_from_json(fact_value)?;
-        // 旧格式容错():≤0.3.x 的 Stable 无 version 字段,
-        // 以外层 version_before 兜底(状态重建不读此字段,仅供审计/展示)
-        let fact = match fact {
-            Fact::Stable { id, version: 0 } if fact_value.get("version").is_none() => {
-                Fact::Stable {
-                    id,
-                    version: version_before,
-                }
-            }
-            f => f,
-        };
-
-        // 可选哈希字段（新格式有，旧格式无）
-        let content_hash = obj
-            .get("content_hash")
-            .and_then(|v| v.as_str())
-            .map(String::from);
-        let prev_hash = obj
-            .get("prev_hash")
-            .and_then(|v| v.as_str())
-            .map(String::from);
-        let chain_hash = obj
-            .get("chain_hash")
-            .and_then(|v| v.as_str())
-            .map(String::from);
-
-        records.push(WalRecord {
-            version_before,
-            fact,
-            content_hash,
-            prev_hash,
-            chain_hash,
-        });
+        records.push(parse_wal_line(&line, base_line_no + idx)?);
     }
-    Ok(records)
+    Ok((records, total_lines))
 }
 
 fn read_wal_file_with_hash<P: AsRef<Path>>(
     path: P,
     base_line_no: usize,
-) -> Result<Vec<WalRecord>, WalError> {
+) -> Result<(Vec<WalRecord>, usize), WalError> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
-    parse_wal_records(reader, base_line_no)
+    parse_wal_records_counted(reader, base_line_no)
 }
 
 fn read_wal_file<P: AsRef<Path>>(
     path: P,
     base_line_no: usize,
-) -> Result<Vec<(u64, Fact)>, WalError> {
-    let records = read_wal_file_with_hash(path, base_line_no)?;
-    Ok(records
-        .into_iter()
-        .map(|r| (r.version_before, r.fact))
-        .collect())
+) -> Result<(Vec<(u64, Fact)>, usize), WalError> {
+    let (records, lines) = read_wal_file_with_hash(path, base_line_no)?;
+    Ok((
+        records
+            .into_iter()
+            .map(|r| (r.version_before, r.fact))
+            .collect(),
+        lines,
+    ))
 }
 
 /// 读取 WAL 文件，返回所有 (version_before, Fact) 记录
@@ -1084,10 +1108,9 @@ pub fn read_wal<P: AsRef<Path>>(path: P) -> Result<Vec<(u64, Fact)>, WalError> {
     let mut found_any_file = false;
 
     if path_buf.exists() {
-        records.extend(read_wal_file(&path_buf, line_no)?);
-        line_no += std::fs::read_to_string(&path_buf)
-            .map(|s| s.lines().count())
-            .unwrap_or(0);
+        let (recs, lines) = read_wal_file(&path_buf, line_no)?;
+        records.extend(recs);
+        line_no += lines;
         found_any_file = true;
     }
 
@@ -1115,10 +1138,9 @@ pub fn read_wal<P: AsRef<Path>>(path: P) -> Result<Vec<(u64, Fact)>, WalError> {
             break;
         }
 
-        records.extend(read_wal_file(&rotated_path, line_no)?);
-        line_no += std::fs::read_to_string(&rotated_path)
-            .map(|s| s.lines().count())
-            .unwrap_or(0);
+        let (recs, lines) = read_wal_file(&rotated_path, line_no)?;
+        records.extend(recs);
+        line_no += lines;
         found_any_file = true;
         sequence += 1;
     }
@@ -1155,10 +1177,9 @@ pub fn read_wal_with_hash<P: AsRef<Path>>(path: P) -> Result<Vec<WalRecord>, Wal
     let mut found_any_file = false;
 
     if path_buf.exists() {
-        records.extend(read_wal_file_with_hash(&path_buf, line_no)?);
-        line_no += std::fs::read_to_string(&path_buf)
-            .map(|s| s.lines().count())
-            .unwrap_or(0);
+        let (recs, lines) = read_wal_file_with_hash(&path_buf, line_no)?;
+        records.extend(recs);
+        line_no += lines;
         found_any_file = true;
     }
 
@@ -1186,10 +1207,9 @@ pub fn read_wal_with_hash<P: AsRef<Path>>(path: P) -> Result<Vec<WalRecord>, Wal
             break;
         }
 
-        records.extend(read_wal_file_with_hash(&rotated_path, line_no)?);
-        line_no += std::fs::read_to_string(&rotated_path)
-            .map(|s| s.lines().count())
-            .unwrap_or(0);
+        let (recs, lines) = read_wal_file_with_hash(&rotated_path, line_no)?;
+        records.extend(recs);
+        line_no += lines;
         found_any_file = true;
         sequence += 1;
     }

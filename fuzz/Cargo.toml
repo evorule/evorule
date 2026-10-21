@@ -1,8 +1,11 @@
 # EvoRule Fuzz 工作区（独立于主 workspace，由父 Cargo.toml exclude）
 #
 # 覆盖:
-# - fuzz_resolve_path:   path.rs 路径字符串解析（resolve_path / resolve_path_mut）— 攻击面主目标
-# - fuzz_json_display:   JsonValue 边界构造 → Display 序列化（panic / 深度递归猎场）
+# - fuzz_resolve_path:        path.rs 路径字符串解析（resolve_path / resolve_path_mut）— 攻击面主目标
+# - fuzz_json_display:        JsonValue 边界构造 → Display 序列化（panic / 深度递归猎场）
+# - fuzz_stable_json_hash:    审计链稳定序列化 + 事实哈希（规范形幂等/确定性，纯函数面）
+# - fuzz_wal_parse_roundtrip: WAL 记录解析 + Fact 持久化 roundtrip（Cursor 输入零文件 IO）
+# - fuzz_chain_invariants:    审计链链式性质（链分解/单条敏感性/genesis，纯函数面）
 #
 # 运行（本地 smoke）:
 #   Linux/macOS:  RUSTUP_TOOLCHAIN=nightly-2025-11-21 cargo fuzz run fuzz-resolve-path --target x86_64-unknown-linux-gnu -- -max_total_time=30
@@ -11,7 +14,10 @@
 #     $env:PATH = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\<ver>\bin\Hostx64\x64;' + $env:PATH
 # CI: .github/workflows/fuzz.yml（每目标 60s smoke）
 #
-# 注意: 本 crate 仅依赖 evorule-tcb 的只读/无副作用 API，不触碰哈希链与审计面（最高原则）。
+# 无副作用纪律（最高原则）: 仅调用只读纯函数 API。审计链三 target 依赖
+# evorule-audit-chain（no_std 纯算法 crate）与 evorule-reactor 的纯解析/序列化
+# 函数（parse_wal_records 经 BufRead 输入，fuzz 侧以 Cursor 包裹，零文件系统）。
+# 禁止清单: WalWriter / FactsLog::recover* / with_wal* 等一切写路径与状态挂载。
 
 [package]
 name = "evorule-fuzz"
@@ -25,6 +31,9 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 evorule-tcb = { path = "../evorule-tcb" }
+evorule-audit-chain = { path = "../evorule-audit-chain" }
+evorule-reactor = { path = "../evorule-reactor", features = ["persistence"] }
+serde_json = "1"
 
 [[bin]]
 name = "fuzz-resolve-path"
@@ -36,6 +45,27 @@ bench = false
 [[bin]]
 name = "fuzz-json-display"
 path = "fuzz_targets/fuzz_json_display.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz-stable-json-hash"
+path = "fuzz_targets/fuzz_stable_json_hash.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz-wal-parse-roundtrip"
+path = "fuzz_targets/fuzz_wal_parse_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz-chain-invariants"
+path = "fuzz_targets/fuzz_chain_invariants.rs"
 test = false
 doc = false
 bench = false

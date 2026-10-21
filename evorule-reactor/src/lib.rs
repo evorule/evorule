@@ -111,6 +111,8 @@ pub use error::ReactorError;
 pub use fact::{ControlFlowType, Fact, FactId, FactIdGenerator, IoType, TraceHit};
 // H5: IoHandler/IoResult 从 evorule-governance 下沉,供应用层 crate 使用
 pub use facts_log::{FactsLog, FactsLogError};
+#[cfg(feature = "persistence")]
+pub use facts_log::replay_wal_records;
 pub use hash::{
     chain_step, compute_chain_hash, content_hash, fact_hash, fact_to_stable_json, HashError,
 };

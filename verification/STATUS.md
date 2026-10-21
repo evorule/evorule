@@ -31,8 +31,8 @@
 | P0-11 | cause 队列同步 | tier1 | ✅ | — | `invariant_cause_queue_sync`（reactor CI proof） | P0-11.invariant_cause_queue_sync_PASS_a3d728f_20260918_110527（evorule-reactor/verification/evidence/kani/；旧 `03643aa`/`25c0cc0`/`34c841d` 版已隔离 _invalidated/ 批次 1/2/3） | 2026-09-12 修复超时根因：CBMC 对 VecDeque 堆缓冲区中 JsonValue 按任意变体建模，任何触发 JsonValue Drop 的路径（pop 返回值 / clear 的 drop_in_place / state 整体 Drop）均展开 Object(BTreeMap) 红黑树析构的无界 unwind；修复 = proof 侧 forget(popped)/(state) + clear_queue 的 #[cfg(kani)] take+forget 分支（state.rs）。重入 kani.yml reactor job（不带 --default-unwind，该配置实测对本 proof 无效）；随历史批次 TCB 生产代码变更于 `25c0cc0` 复跑 PASS（2026-09-14，WSL Kani 0.67.0）→ lint 清零批（`35b6182`）后于 `34c841d` 复跑 PASS（2026-09-15，WSL Kani 0.67.0）→ 仓库历史整理后于 `a3d728f` 复跑 PASS（2026-09-18，WSL Kani 0.67.0） | 修复前 3 份超时 FAIL 记录保留于 evorule-reactor/verification/evidence/kani/（过程证据）；🟡 历史 PASS（2026-07-27）由本修复取代 |
 | P0-12 | pure vs reactor 等价 | tier1 | 🔵 | — | 差分测试 `diff_reactor_vs_pure`（evorule-reactor） | `evorule-reactor/verification/evidence/differential/P0-12_PASS_bdfb8d4_20260912_145640`（PROPTEST_CASES=1000，4 用例全 PASS） | CI（differential.yml）常驻 | 2026-09-12 重跑更新；旧证据（8b2932e）已隔离至 differential/_invalidated/ |
 | P0-13 | Fact match 完备性 | 全层 | ⏳ | — | —（编译时 T15 门控，未实现） | — | 计划中 | |
-| P0-14 | 审计链哈希完整 | tier2 | ⏳ | — | `proof_hash_chain_back_link`（reactor，未入 CI） | — | 计划中 | reactor proof 已存在，重跑入 CI 待计划 |
-| P0-15 | 审计链重放确定 | tier2 | ⏳ | — | — | — | 计划中 | |
+| P0-14 | 审计链哈希完整 | tier2 | ✅ | — | `proof_hash_chain_back_link`（reactor CI proof，2026-10-21 入闸门） | 实测 WSL Kani 0.67.0 Verification 14.9s SUCCESSFUL（evidence 归档本批） | 入 kani-reactor 闸门（单独跑不带 --default-unwind——实测 unwind 4 下 unwinding 失败，默认 unwind 10 内 SUCCESSFUL；界=unwind 10 的 N<=3 链 back-link 归纳）；Kani 哈希为 cfg(kani) 简化替身——证明对象为链步结构性质，blake3 抗碰撞不在证明范围（诚实边界，见 DISCLOSURE_LOG 2026-10-21 条目） | |
+| P0-15 | 审计链重放确定 | tier2 | 🔵 | — | 差分测试 `diff_recover_vs_append`（evorule-governance，2026-10-21 新增） | CI（differential.yml）常驻 + 本地 PASS（2026-10-21，256 cases） | 事实应用单点化（reactor apply_fact_to_state，append 与 WAL 重放共用）后，append 路径 vs replay_wal_records 路径四元组全等（快照/队列/版本/链尾哈希）；Kani 版按既有红线未强推（P1-4 同 proof 载体 300s/600s 均未收口，见 DISCLOSURE_LOG 2026-10-21 条目 3） | |
 
 ## 二、P1 属性状态
 
@@ -77,7 +77,7 @@
 | C1 执行确定性 | AL4 | **AL1** | P0-5 ❌+🔵（proptest / 差分兜底）；P0-12 🔵（差分 CI 常驻）；无界内穷尽级的当前有效证据 | DEV-1 |
 | C2 无未定义失败 | AL4（核心）/ AL3（全量） | **AL2**（**受 R1 封顶**；覆盖范围仅限路径解析与 JsonValue 构造/访问子集） | P0-3 ✅（A 档 11）、P0-6 ✅（A 档 3）为界内穷尽级证据，但载体存在行为级分叉（→ R1 封顶 AL2）；P0-4 / P0-5 ❌（B 档不可运行）；域求值与转换层无覆盖 | DEV-1、DEV-2 |
 | C3 执行有界 | AL3（参数化）/ AL2（具体配置） | **AL0** | P0-7 / P0-8 ❌+🟡；TLA+ 为降级模型（N_MAX=2，1/6 模型）且为 🟡 历史 PASS（M2），不构成当前 AL2 证据；上界未参数化 | DEV-3 |
-| C4 审计不可篡改 | AL3 + AL1 | **AL0** | P0-14 / P0-15 ⏳（证据未产出）；P1-4 🟡（历史 PASS，非当前）；链构造单射性的演绎证明未产出 | DEV-6 |
+| C4 审计不可篡改 | AL3 + AL1 | **AL2（部分）+ AL1** | P0-14 ✅（kani-reactor 闸门 2026-10-21，界=默认 unwind 10 的 back-link 归纳 → AL2）；篡改检测测试面（端到端三查+锚点防伪矩阵）→ AL1；P0-15 🔵（differential.yml 常驻 2026-10-21）；P1-4 🟡（历史 PASS，非当前）；AL3 演绎证明未产出（目标级缺口仍在） | DEV-6 |
 | C5 重放忠实 | AL3 + AL1 | **AL1** | P0-10 🔵（差分 CI 常驻，重放状态重建一致）；由 C1+C4 的 AL3 推导因 C1/C4 未达 AL3 而不成立 | — |
 | C6 守卫强制 | AL4 | **AL2（部分）** | 判定正确性（C6.1）+ 默认拒绝方向（C6.3）穷尽决策表本地实跑 PASS（2026-09-17，CI 常驻；有限域枚举，按 R1 封顶 AL2）；装配可观测（C6.4，AL1）编译级验证 + e2e 运行时断言实测双成立（2026-09-17，真实起进程两轮 `guard_assembled==true`）；权限表经账本（C6.5，AL1）链路测试本地实跑 PASS（2026-09-17）；`pub` 写路径穷尽（C6.2，AL2）静态可达性分析已产出（40 方法枚举 + 可复跑脚本，`IoDispatcher::dispatch` raw 旁路登记为集成方责任 H6.2/NC-12）；AL4 载体同一性待 DEV-6 | DEV-6 |
 | C7 规则静态安全性 | AL2 + AL1 | **AL0** | §一/§二 属性表中**无规则静态安全性对应条目**；判定逻辑的界内穷尽验证未产出 | — |
@@ -151,8 +151,8 @@
 
 | CI 状态 | proof（函数名） |
 | ------- | --------------- |
-| 入 kani.yml PR 闸门（4 个） | `invariant_cause_queue_sync`（P0-11，2026-09-12 修复超时根因后重入）、`command_does_not_decrease_queue`（P1-5，2026-09-12 修复后入闸）、`invariant_version_monotonic`（P1-3）、`max_rounds_termination`（P1-6） |
-| 未入 CI（7 个） | `invariant_io_count_register_complete`（P1-1）、`invariant_io_count_force_remove`（P1-1）、`invariant_io_recovery_iff_result`（P1-2）、`proof_fact_log_append_monotonic`（P1-4）、`proof_hash_chain_back_link`（P0-14）、`proof_reactor_invariants_preserved_after_pure_ops`（P0-12 相关）、`proof_phase_state_machine_cannot_jump`（状态机不变式，属性归属待定） |
+| 入 kani.yml PR 闸门（5 个） | `invariant_cause_queue_sync`（P0-11，2026-09-12 修复超时根因后重入）、`command_does_not_decrease_queue`（P1-5，2026-09-12 修复后入闸）、`invariant_version_monotonic`（P1-3）、`max_rounds_termination`（P1-6）、`proof_hash_chain_back_link`（P0-14，2026-10-21 入闸；单独段不带 --default-unwind，见 P0-14 行状态依据） |
+| 未入 CI（6 个） | `invariant_io_count_register_complete`（P1-1）、`invariant_io_count_force_remove`（P1-1）、`invariant_io_recovery_iff_result`（P1-2）、`proof_fact_log_append_monotonic`（P1-4，300s 界内未收口、2026-10-21 复测仍超时）、`proof_reactor_invariants_preserved_after_pure_ops`（P0-12 相关）、`proof_phase_state_machine_cannot_jump`（状态机不变式，属性归属待定）；P0-14 的 proof 已于 2026-10-21 入闸移出本名单（见上行） |
 
 ## 维护
 

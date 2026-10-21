@@ -192,6 +192,17 @@ jobs:
           echo "==> invariant_cause_queue_sync"
           timeout -k 30 300 cargo kani -p evorule-reactor \
             --harness invariant_cause_queue_sync --output-format=terse
+
+          # P0-14 2026-10-21 入闸门：实测 WSL Kani 0.67.0 Verification 14.9s
+          # SUCCESSFUL（默认 unwind=10）。⚠️ 必须单独跑且不带 --default-unwind：
+          # 实测该配置下 unwind 不足导致 unwinding assertion 失败（2026-10-21，
+          # rc=1 one or more unwinding failures）——与 P0-11 同模式。
+          # 界声明（AL2/R2）：默认 unwind 10 内的链 back-link 归纳（N<=3 步骤）；
+          # Kani 哈希为 cfg(kani) 简化替身——证明对象为链步结构性质，blake3
+          # 抗碰撞不在证明范围（诚实边界，见 verification/DISCLOSURE_LOG.md）
+          echo "==> proof_hash_chain_back_link"
+          timeout -k 30 300 cargo kani -p evorule-reactor \
+            --harness proof_hash_chain_back_link --output-format=terse
           for h in \
             command_does_not_decrease_queue \
             invariant_version_monotonic \

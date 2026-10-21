@@ -12,6 +12,14 @@
 > **记录规范**：只记事实——什么变了、客观依据、影响、修正去向（M10）。
 > **条目格式**：事实 / 依据 / 影响 / 修正去向。
 
+## 2026-10-21：P0-14（审计链哈希完整）proof 收口入 CI 与证明边界披露
+
+| # | 事实 | 依据 | 影响 | 修正去向 |
+| - | ---- | ---- | ---- | -------- |
+| 1 | `proof_hash_chain_back_link`（P0-14）自存在起未入 CI；2026-10-21 实测（WSL，Kani 0.67.0，与 kani.yml 分档环境一致）Verification 14.9s SUCCESSFUL，入 kani-reactor PR 闸门（单独段、默认 unwind=10：同日实测 --default-unwind 4 下该 proof unwinding assertion 失败 rc=1，故不入 unwind-4 组——与 P0-11 同模式） | 本日实测输出（evidence 归档） | P0-14 状态 ⏳→✅；C4 主题 AL0→AL2（部分）+AL1 | STATUS.md P0-14 行/未入 CI 名单/§四 C4 行 |
+| 2 | 该 proof 的哈希函数在 `#[cfg(kani)]` 下为确定性简化替身（blake3 位操作导致 CBMC 状态爆炸，见 hash.rs cfg 分支与 ADR-0002 stub 化策略）——**证明对象是链步 back-link 结构性质（归纳），不含 blake3 抗碰撞性** | hash.rs cfg(kani) 分支；ADR-0002 | 防"CI 绿=哈希密码学性质已证"的过度解读 | kani.yml 闸门注释与本条目双处披露；ASSURANCE.md 假设条款不变（H3.1 库正确性仍为假设） |
+| 3 | 同批对 `proof_fact_log_append_monotonic`（P1-4）复测：300s 两次未收口，另以 600s 本地取证（仅取证，非 CI 配置）仍未收口（rc=124 超时被杀，未产出验证结果）；其状态维持"未入 CI"，不入闸门不加大 CI 超时（既有红线；该 proof 编译通过、进入验证阶段，非重构引入的回归——重构后其余 4 个 reactor 闸门 proof 全部重验 PASS） | 本日 WSL 运行：2×300s + 1×600s | P1-4 无新证据；C4 中 P1-4 维持 🟡 | STATUS.md 未入 CI 名单备注 |
+
 ## 首条（2026-09-12）：验证机制建立与历史状态补记
 
 验证机制（MECHANISM.md M1–M11）与验证状态单一真相源（STATUS.md）于 2026-09-12 建立。建立时对公开仓验证文档与实际验证状态做了一次全局核对，以下 12 项为核对发现的不符/漂移及修正去向（一次性补记）。
