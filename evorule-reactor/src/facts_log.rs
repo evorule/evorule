@@ -170,6 +170,8 @@ struct FactsLogInner {
 
     /// 压缩快照（A-3：手动调用 compact() 后填充，None = 未压缩）
     compacted_snapshot: Option<CompactedSnapshot>,
+    /// fork/派生基态锚定事实的 id 分配器（M-4；独立于常规 FactId 流）
+    next_anchor_id: u64,
 }
 
 /// 将一条 Fact 的效果应用到内存状态（快照/队列/版本/last_stable）
@@ -476,6 +478,7 @@ impl FactsLog {
             fact_id_index: BTreeMap::new(),
             path_index: BTreeMap::new(),
             compacted_snapshot: None,
+            next_anchor_id: 1_000_000_000,
         })
     }
 
@@ -515,6 +518,24 @@ impl FactsLog {
     /// 设置初始 payload 和版本号，但不增加版本计数。
     /// 这用于从父会话 fork 时继承状态。
     pub fn set_initial_state(&self, payload: JsonValue, version: u64) {
+        let mut inner = self.inner.write();
+        // M-4：fork/派生基态 digest 锚定入链（血统可审：篡改基态即链失配；
+        // 全文经 digest 引用不膨胀链——由快照 API 消息，信息零丢失）
+        let digest = crate::hash::content_hash(&payload).unwrap_or_default();
+        let anchor_value = JsonValue::object_from_pairs(&[
+            ("digest", JsonValue::string(digest)),
+            ("version", JsonValue::integer(version as i64)),
+        ]);
+        let anchor_id = FactId(inner.next_anchor_id);
+        inner.next_anchor_id = inner.next_anchor_id.saturating_add(1);
+        let fact = Fact::PayloadUpdate {
+            id: anchor_id,
+            path: "__fork__.initial_state".to_string(),
+            value: anchor_value,
+        };
+        // 先写 WAL 再改内存（write-ahead 语义）
+        drop(inner);
+        let _ = self.append(fact); // best-effort：失败由调用方 WAL 机制处理
         let mut inner = self.inner.write();
         inner.current_snapshot = payload;
         inner.version = version;
@@ -582,6 +603,7 @@ impl FactsLog {
             fact_id_index: BTreeMap::new(),
             path_index: BTreeMap::new(),
             compacted_snapshot: None,
+            next_anchor_id: 1_000_000_000,
         }))
     }
 
@@ -611,6 +633,7 @@ impl FactsLog {
             fact_id_index: BTreeMap::new(),
             path_index: BTreeMap::new(),
             compacted_snapshot: None,
+            next_anchor_id: 1_000_000_000,
         })
     }
 

@@ -1032,7 +1032,7 @@ impl SessionManager {
                 return Err(SessionError::WalUnavailable { session_id, source });
             }
         };
-        facts_log.set_initial_state(initial_payload, initial_version);
+        facts_log.set_initial_state(initial_payload.clone(), initial_version);
 
         let reactor = Reactor::builder(core_eval.unwrap_or_else(|| self.core_eval.clone()))
             .max_rounds(self.max_rounds)

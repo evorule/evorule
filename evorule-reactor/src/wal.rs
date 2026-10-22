@@ -85,6 +85,56 @@ impl From<serde_json::Error> for WalError {
     }
 }
 
+/// WAL 文件头格式版本戳（防全链降级：M-1）
+///
+/// 新建 WAL 首行写入此标记——"曾用 v2（带哈希链）"这一事实本身被锚定。
+/// 全链降级攻击（删除所有哈希字段退回 v1 语义）会使头行变成记录行
+/// 解析失败或缺失——读取时 fail-visible 拒绝。
+pub const WAL_FORMAT_HEADER: &str = "{\"format\":\"evorule-wal/2\"}";
+
+fn is_format_header(line: &str) -> bool {
+    line.trim() == WAL_FORMAT_HEADER
+}
+
+fn write_format_header(file: &mut File) -> Result<(), WalError> {
+    use std::io::Write;
+    writeln!(file, "{}", WAL_FORMAT_HEADER)?;
+    file.flush()?;
+    Ok(())
+}
+
+/// M-1 全链降级检测：主文件首行是格式头但全文件无任何哈希字段记录
+///
+/// 场景：攻击者曾用 v2（有头）后删除所有哈希字段退回 v1 语义——头行仍在
+/// 但无哈希可验。头存在+零哈希=降级攻击或严重损坏，fail-visible。
+fn detect_format_downgrade(path: &Path) -> Result<(), WalError> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut first_line = String::new();
+    {
+        use std::io::BufRead;
+        let mut r = reader;
+        r.read_line(&mut first_line)?;
+    }
+    if !is_format_header(&first_line.trim_end()) {
+        return Ok(()); // 无头=旧文件，兼容
+    }
+    // 有头：检查文件内是否至少有一条哈希记录（文件有其他记录时）
+    let content = std::fs::read_to_string(path)?;
+    for line in content.lines().skip(1) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if !line.contains("chain_hash") {
+            return Err(WalError::InvalidFact(format!(
+                "WAL format downgrade detected: header present but record lacks hash fields at line: {:.60}...",
+                line
+            )));
+        }
+    }
+    Ok(()) // 仅头行=空新文件，合法
+}
+
 /// WAL 记录（带可选哈希字段）
 ///
 /// 两套 WAL 合并后的统一记录格式。
@@ -785,15 +835,17 @@ impl WalWriter {
     /// - `fsync`: 是否在每次 flush 后执行 fsync
     pub fn create_with_options<P: AsRef<Path>>(
         path: P,
-        max_size_bytes: u64,
+        max_wal_size_bytes: u64,
         fsync: bool,
     ) -> Result<Self, WalError> {
         let path_buf = path.as_ref().to_path_buf();
         let (file, _) = Self::open_file(&path_buf, 0, true)?;
+        // M-1：新建文件写格式版本戳——锚定"曾用 v2"这一事实
+        write_format_header(&mut { file.try_clone()? })?;
         Ok(Self {
             writer: BufWriter::new(file),
             path: path_buf,
-            max_size_bytes,
+            max_size_bytes: max_wal_size_bytes,
             current_size_bytes: 0,
             fsync_on_flush: fsync,
             file_sequence: 0,
@@ -1044,10 +1096,16 @@ fn parse_wal_records_counted<R: std::io::BufRead>(
 ) -> Result<(Vec<WalRecord>, usize), WalError> {
     let mut records = Vec::new();
     let mut total_lines = 0usize;
+    let mut saw_header = false;
     for (idx, line) in reader.lines().enumerate() {
         total_lines = idx + 1;
         let line = line?;
         if line.trim().is_empty() {
+            continue;
+        }
+        // M-1：首行若是格式头则跳过（不产生记录，后续记录行号不受影响——
+        // 头行占位使后续行的实际偏移 = base_line_no + idx 已含头行占位，语义不变）
+        if idx == 0 && is_format_header(&line) {
             continue;
         }
         records.push(parse_wal_line(&line, base_line_no + idx)?);
@@ -1173,6 +1231,8 @@ pub fn read_wal_with_hash<P: AsRef<Path>>(path: P) -> Result<Vec<WalRecord>, Wal
     let mut found_any_file = false;
 
     if path_buf.exists() {
+        // M-1 降级检测：主文件首行是格式头但全文件无任何哈希字段 → 降级/损坏
+        detect_format_downgrade(&path_buf)?;
         let (recs, lines) = read_wal_file_with_hash(&path_buf, line_no)?;
         records.extend(recs);
         line_no += lines;
@@ -1791,9 +1851,13 @@ mod tests {
         )
         .unwrap();
         drop(w);
+        // 文件=[格式头, 记录行]——取末行作为合法行（M-1 头行不参与 parse 测试）
         let good_line = std::fs::read_to_string(&path)
             .unwrap()
-            .trim_end()
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !is_format_header(l))
+            .last()
+            .unwrap()
             .to_string();
         let _ = std::fs::remove_file(&path);
 
