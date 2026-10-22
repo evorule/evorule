@@ -1278,7 +1278,14 @@ mod tests {
         drop(writer);
 
         // 逐字节：native .jsonl 文件 vs Flash 介质行流
-        let native_bytes = fs::read(&path).unwrap();
+        // （M-1 格式头行是 native WAL 文件级元数据，非记录——对拍比较
+        //  记录字节，头行滤除）
+        let native_bytes = {
+            let raw = fs::read(&path).unwrap();
+            let header = b"{\"format\":\"evorule-wal/2\"}
+";
+            if raw.starts_with(header) { raw[header.len()..].to_vec() } else { raw }
+        };
         let mut flash_stream = Vec::new();
         for i in 0..flash.wal().len() {
             flash_stream.extend_from_slice(flash.wal().line_json(i).unwrap().as_bytes());
