@@ -100,7 +100,9 @@ fn read_wal_lines(path: &PathBuf) -> Vec<String> {
     let content = fs::read_to_string(path).expect("WAL file should be readable");
     content
         .lines()
-        .filter(|l| !l.trim().is_empty())
+        // M-1 格式头行（{"format":"evorule-wal/2"}）不是记录——篡改测试的
+        // 行下标均相对记录行，头行滤除使既有下标语义不变
+        .filter(|l| !l.trim().is_empty() && !l.contains("\"format\":\"evorule-wal"))
         .map(|l| l.to_string())
         .collect()
 }
