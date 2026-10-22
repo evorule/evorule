@@ -221,6 +221,25 @@ jobs:
         run: python3 scripts/scan_public_face.py --fail-on A1 --fail-on B --ratchet scripts/public-face-matrix-baseline.txt
 
   # ==========================================================================
+  # 5f. 跨语言哈希对拍（G5/P1-4：Python 参考实现 vs 内核 SSOT 黄金向量）
+  #     v4 教训的收口：两侧各自自洽不算兼容，必须有对拍测试（CI 强制）。
+  #     向量集 11 组（7 标准事实 + domain_attr 两态 + 中文换行 + i64 边界），
+  #     由内核 SSOT 实算导出（scripts/g5_golden_vectors.json）。
+  # ==========================================================================
+  cross-lang-parity:
+    name: cross-lang parity (python vs rust ssot)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 安装 blake3
+        run: pip install blake3
+      - name: 黄金向量对拍（Python 独立实现 vs Rust SSOT 导出）
+        run: python3 scripts/cross_lang_verifier.py scripts/g5_golden_vectors.json
+
+  # ==========================================================================
   # 5e. 宪法联动门禁 ([CON-R-003] 固化义务, 纯文本扫描)
   #     语义路径 (evorule-tcb / evorule-discipline) 变更 → PR 描述须含
   #     「宪法联动：」标记行, 缺失即红。Gitee Go 侧守护见 .gitee-ci/validate.yml
