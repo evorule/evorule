@@ -471,14 +471,31 @@ impl Fact {
                 cause,
                 rule_hits,
             } => {
+                // P1-1（G3 修复）：domain_attr 进导出面——与 hash.rs
+                // trace_attr_to_json 逐键同构（outcome 必有；missing_reason/
+                // on_missing None 省略）。此前导出物缺该键导致离线重算哈希
+                // ≠ 链上哈希（域归因存在的记录）。键序不参与哈希（哈希输入
+                // 是 stable_json 的 BTreeMap 序），此处仅要求信息完备。
                 let hits: Vec<J> = rule_hits
                     .iter()
                     .map(|h| {
-                        J::object_from_pairs(&[
+                        let mut hit = vec![
                             ("index", J::integer(h.index as i64)),
                             ("instr_type", J::string(h.instr_type.clone())),
                             ("hit", J::Bool(h.hit)),
-                        ])
+                        ];
+                        if let Some(attr) = &h.domain_attr {
+                            let mut attr_pairs: Vec<(&str, J)> =
+                                vec![("outcome", J::string(attr.outcome.clone()))];
+                            if let Some(reason) = &attr.missing_reason {
+                                attr_pairs.push(("missing_reason", J::string(reason.clone())));
+                            }
+                            if let Some(policy) = &attr.on_missing {
+                                attr_pairs.push(("on_missing", J::string(policy.clone())));
+                            }
+                            hit.push(("domain_attr", J::object_from_pairs(&attr_pairs)));
+                        }
+                        J::object_from_pairs(&hit)
                     })
                     .collect();
                 J::object_from_pairs(&[
@@ -511,6 +528,63 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     #![allow(clippy::panic, clippy::expect_used)]
     use super::*;
+
+    /// P1-1（G3 回归）：to_json 导出面与 fact_to_stable_json 哈希面信息完备一致——
+    /// TransitionTrace 含 domain_attr（Some）时，导出物必须携带该键且逐键同构。
+    /// 修复前导出物丢 domain_attr → 第三方按导出物离线重算哈希 ≠ 链上哈希。
+    #[test]
+    fn to_json_includes_domain_attr_matching_stable_json() {
+        let attr = TraceDomainAttribution {
+            outcome: "missing".into(),
+            missing_reason: Some("path_not_found".into()),
+            on_missing: Some("unsat".into()),
+        };
+        let fact = Fact::TransitionTrace {
+            id: FactId(9),
+            cause: FactId(2),
+            rule_hits: vec![TraceHit {
+                index: 0,
+                instr_type: "branch".into(),
+                hit: false,
+                domain_attr: Some(attr),
+            }],
+        };
+
+        // 导出面：domain_attr 必须出现且三键齐备
+        let exported = fact.to_json();
+        let exported_str = format!("{:?}", exported.get("rule_hits"));
+        assert!(
+            exported_str.contains("domain_attr"),
+            "导出物缺 domain_attr: {exported_str}"
+        );
+        assert!(
+            exported_str.contains("path_not_found"),
+            "导出物缺 missing_reason"
+        );
+        assert!(exported_str.contains("unsat"), "导出物缺 on_missing");
+
+        // 哈希面：同 fact 的 stable_json 也含 domain_attr——两形态信息集一致
+        let stable = crate::hash::fact_to_stable_json(&fact).unwrap();
+        let stable_str = format!("{:?}", stable.get("rule_hits"));
+        assert!(stable_str.contains("domain_attr"));
+
+        // None 时两形态都省略（既有 legacy-shape 语义不破坏）
+        let fact_none = Fact::TransitionTrace {
+            id: FactId(9),
+            cause: FactId(2),
+            rule_hits: vec![TraceHit {
+                index: 0,
+                instr_type: "branch".into(),
+                hit: false,
+                domain_attr: None,
+            }],
+        };
+        let exported_none = format!("{:?}", fact_none.to_json().get("rule_hits"));
+        assert!(
+            !exported_none.contains("domain_attr"),
+            "None 时导出面也必须省略"
+        );
+    }
     // no_std crate 测试构建链接 std：测试宏显式导入
     use std::{format, vec};
 

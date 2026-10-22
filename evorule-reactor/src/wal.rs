@@ -1854,8 +1854,8 @@ mod tests {
         let good_line = std::fs::read_to_string(&path)
             .unwrap()
             .lines()
-            .filter(|l| !l.trim().is_empty() && !is_format_header(l))
-            .last()
+            .rev()
+            .find(|l| !l.trim().is_empty() && !is_format_header(l))
             .unwrap()
             .to_string();
         let _ = std::fs::remove_file(&path);
