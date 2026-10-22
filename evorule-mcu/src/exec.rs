@@ -1284,7 +1284,11 @@ mod tests {
             let raw = fs::read(&path).unwrap();
             let header = b"{\"format\":\"evorule-wal/2\"}
 ";
-            if raw.starts_with(header) { raw[header.len()..].to_vec() } else { raw }
+            if raw.starts_with(header) {
+                raw[header.len()..].to_vec()
+            } else {
+                raw
+            }
         };
         let mut flash_stream = Vec::new();
         for i in 0..flash.wal().len() {
