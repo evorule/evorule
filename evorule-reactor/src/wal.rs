@@ -116,7 +116,7 @@ fn detect_format_downgrade(path: &Path) -> Result<(), WalError> {
         let mut r = reader;
         r.read_line(&mut first_line)?;
     }
-    if !is_format_header(&first_line.trim_end()) {
+    if !is_format_header(first_line.trim_end()) {
         return Ok(()); // 无头=旧文件，兼容
     }
     // 有头：检查文件内是否至少有一条哈希记录（文件有其他记录时）
@@ -1096,7 +1096,6 @@ fn parse_wal_records_counted<R: std::io::BufRead>(
 ) -> Result<(Vec<WalRecord>, usize), WalError> {
     let mut records = Vec::new();
     let mut total_lines = 0usize;
-    let mut saw_header = false;
     for (idx, line) in reader.lines().enumerate() {
         total_lines = idx + 1;
         let line = line?;
