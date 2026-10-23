@@ -3,8 +3,10 @@
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 //! evorule-cli 集成测试 —— 与 e2e.sh 互补（Rust 原生，cargo test 可执行）
 //!
-//! 测试所有 5 个子命令（validate / run / replay / diff / verify-chain）
-//! 及其边界条件。使用二进制子进程调用，不依赖外部 shell。
+//! 覆盖 5 个核心子命令（validate / run / replay / diff / verify-chain）
+//! 及其边界条件。CLI 共 11 个子命令（另有 anchor-keygen / anchor-pubkey /
+//! compile-evopack / scan-wal-dir / truncate-partial-line / verify-anchors
+//! 未纳入本套件）。使用二进制子进程调用，不依赖外部 shell。
 //!
 //! # 运行方式
 //! ```bash

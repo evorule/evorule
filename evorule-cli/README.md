@@ -144,6 +144,11 @@ REM 产物: .build\rust\release\evorule.exe
 
 ## 子命令
 
+> CLI 共 **11** 个子命令。本节展开文档 7 个(validate / run / replay / diff /
+> verify-chain / anchor-keygen / verify-anchors);其余 4 个(compile-evopack /
+> scan-wal-dir / truncate-partial-line / anchor-pubkey)以 `--help` 输出为准,
+> 暂未展开文档。
+
 ### 1. `evorule validate <rules-dir>`
 
 校验 JSON 规则文件的**形态纪律**(L2 discipline)——判定条款在 `evorule-tcb/discipline/core_eval.json`(DC-01..DC-NN), 机制在 `commands/discipline_gate.rs`: 遍历含 branch 内嵌子指令的全部节点, 把内核看不见的列表级事实标注进 `instruction._ctx`, 交 `execute_transition` 求值; 命中即拒载。作用域超出旧版「顶层 type 白名单」——BUG 不住在顶层(BUG-P0-005: 每条规则 type 都合法、整个规则集仍可能让守卫永不求值)。
