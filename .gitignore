@@ -142,3 +142,6 @@ reactive_researcher_memory/
 # mdBook build output(自动生成,不进版本)
 **/docs/book/
 **/book/
+
+# 运营登记册（本地私有面，不上库）
+plan/
