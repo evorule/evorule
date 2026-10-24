@@ -570,7 +570,7 @@ dependencies = [
 
 [[package]]
 name = "evorule-audit-chain"
-version = "0.8.5"
+version = "0.9.0"
 dependencies = [
  "blake3",
  "evorule-tcb",
@@ -580,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "evorule-cli"
-version = "0.8.5"
+version = "0.9.0"
 dependencies = [
  "blake3",
  "clap",
@@ -599,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "evorule-discipline"
-version = "0.8.5"
+version = "0.9.0"
 dependencies = [
  "evorule-reactor",
  "evorule-tcb",
@@ -608,7 +608,7 @@ dependencies = [
 
 [[package]]
 name = "evorule-eval"
-version = "0.8.5"
+version = "0.9.0"
 dependencies = [
  "blake3",
  "evorule-discipline",
@@ -619,7 +619,7 @@ dependencies = [
 
 [[package]]
 name = "evorule-governance"
-version = "0.8.5"
+version = "0.9.0"
 dependencies = [
  "blake3",
  "criterion",
@@ -639,7 +639,7 @@ dependencies = [
 
 [[package]]
 name = "evorule-mcu"
-version = "0.8.5"
+version = "0.9.0"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
@@ -656,7 +656,7 @@ dependencies = [
 
 [[package]]
 name = "evorule-reactor"
-version = "0.8.5"
+version = "0.9.0"
 dependencies = [
  "async-trait",
  "blake3",
@@ -671,7 +671,7 @@ dependencies = [
 
 [[package]]
 name = "evorule-tcb"
-version = "0.8.5"
+version = "0.9.0"
 dependencies = [
  "criterion",
  "proptest",

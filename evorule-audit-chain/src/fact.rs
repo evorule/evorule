@@ -395,13 +395,14 @@ impl Fact {
     /// 返回的 JSON 对象包含 `type` 字段和各变体的所有字段，
     /// 可通过 `tcb_to_serde` 转为 `serde_json::Value` 用于 HTTP 响应。
     ///
-    /// # 诚实边界（高位 FactId 回绕）
+    /// # u64 全域无损（v0.9.0）
     ///
-    /// `evorule_tcb::JsonValue::Integer` 为 i64——u64 高位 FactId（如
-    /// 规则集锚定事实的 `u64::MAX-1` 哨兵 id）在本函数输出中回绕为负数。
-    /// 本函数**禁止用于写侧落链或哈希输入**：权威序列化 =
-    /// [`crate::hash::fact_to_stable_json`]（serde Number，u64 全域无损）。
-    /// 展示面消费方须对高位 id 做二次校正或改走权威序列化。
+    /// FactId 与各 u64 字段经 `JsonValue::U64`（u64 全域通道）承载，
+    /// 高位值（如规则集锚定事实的 `u64::MAX-1` 哨兵 id）不再回绕。
+    /// 历史注记：v0.8.x 时代本函数以 `as i64` 承载高位 FactId 会回绕为负，
+    /// 当时的诚实边界标注（禁止用于写侧落链或哈希输入）随根治批移除——
+    /// 该纪律仍然成立：**权威序列化 = [`crate::hash::fact_to_stable_json`]**
+    /// （哈希输入唯一来源，BTreeMap 键序稳定）；本函数仅服务展示面。
     //
     // 注：match 全部 Fact 变体的序列化分支，有意保持单一函数便于对账字段映射。
     #[allow(clippy::too_many_lines)]
@@ -410,12 +411,12 @@ impl Fact {
         match self {
             Fact::Command { id, instruction } => J::object_from_pairs(&[
                 ("type", J::string("Command")),
-                ("id", J::integer(id.0 as i64)),
+                ("id", J::u64(id.0)),
                 ("instruction", instruction.clone()),
             ]),
             Fact::PayloadUpdate { id, path, value } => J::object_from_pairs(&[
                 ("type", J::string("PayloadUpdate")),
-                ("id", J::integer(id.0 as i64)),
+                ("id", J::u64(id.0)),
                 ("path", J::string(path.clone())),
                 ("value", value.clone()),
             ]),
@@ -426,8 +427,8 @@ impl Fact {
                 new_queue,
             } => J::object_from_pairs(&[
                 ("type", J::string("StateTransition")),
-                ("id", J::integer(id.0 as i64)),
-                ("cause", J::integer(cause.0 as i64)),
+                ("id", J::u64(id.0)),
+                ("cause", J::u64(cause.0)),
                 ("new_payload", new_payload.clone()),
                 ("new_queue", J::array(new_queue.clone())),
             ]),
@@ -438,8 +439,8 @@ impl Fact {
                 params,
             } => J::object_from_pairs(&[
                 ("type", J::string("IoRequest")),
-                ("id", J::integer(id.0 as i64)),
-                ("cause", J::integer(cause.0 as i64)),
+                ("id", J::u64(id.0)),
+                ("cause", J::u64(cause.0)),
                 ("io_type", J::string(io_type.as_str())),
                 ("params", params.clone()),
             ]),
@@ -451,8 +452,8 @@ impl Fact {
             } => {
                 let pairs: Vec<(&str, J)> = vec![
                     ("type", J::string("IoResponse")),
-                    ("id", J::integer(id.0 as i64)),
-                    ("request_id", J::integer(request_id.0 as i64)),
+                    ("id", J::u64(id.0)),
+                    ("request_id", J::u64(request_id.0)),
                     ("result", result.clone()),
                     (
                         "error",
@@ -466,12 +467,12 @@ impl Fact {
             }
             Fact::Stable { id, version } => J::object_from_pairs(&[
                 ("type", J::string("Stable")),
-                ("id", J::integer(id.0 as i64)),
-                ("version", J::integer(*version as i64)),
+                ("id", J::u64(id.0)),
+                ("version", J::u64(*version)),
             ]),
             Fact::Error { id, message } => J::object_from_pairs(&[
                 ("type", J::string("Error")),
-                ("id", J::integer(id.0 as i64)),
+                ("id", J::u64(id.0)),
                 ("message", J::string(message.clone())),
             ]),
             Fact::TransitionTrace {
@@ -488,7 +489,7 @@ impl Fact {
                     .iter()
                     .map(|h| {
                         let mut hit = vec![
-                            ("index", J::integer(h.index as i64)),
+                            ("index", J::u64(h.index)),
                             ("instr_type", J::string(h.instr_type.clone())),
                             ("hit", J::Bool(h.hit)),
                         ];
@@ -508,8 +509,8 @@ impl Fact {
                     .collect();
                 J::object_from_pairs(&[
                     ("type", J::string("TransitionTrace")),
-                    ("id", J::integer(id.0 as i64)),
-                    ("cause", J::integer(cause.0 as i64)),
+                    ("id", J::u64(id.0)),
+                    ("cause", J::u64(cause.0)),
                     ("rule_hits", J::array(hits)),
                 ])
             }
@@ -521,9 +522,9 @@ impl Fact {
                 instruction,
             } => J::object_from_pairs(&[
                 ("type", J::string("Violation")),
-                ("id", J::integer(id.0 as i64)),
-                ("cause", J::integer(cause.0 as i64)),
-                ("rule_index", J::integer(*rule_index as i64)),
+                ("id", J::u64(id.0)),
+                ("cause", J::u64(cause.0)),
+                ("rule_index", J::u64(*rule_index)),
                 ("reason", J::string(reason.clone())),
                 ("instruction", instruction.clone()),
             ]),
@@ -750,9 +751,10 @@ mod tests {
 
         let json = fact.to_json();
         assert_eq!(json.get("type"), Some(&JsonValue::string("Violation")));
-        assert_eq!(json.get("id"), Some(&JsonValue::Integer(9)));
-        assert_eq!(json.get("cause"), Some(&JsonValue::Integer(3)));
-        assert_eq!(json.get("rule_index"), Some(&JsonValue::Integer(2)));
+        // v0.9.0 起 u64 字段走 U64 全域通道（根治 as i64 回绕）
+        assert_eq!(json.get("id"), Some(&JsonValue::U64(9)));
+        assert_eq!(json.get("cause"), Some(&JsonValue::U64(3)));
+        assert_eq!(json.get("rule_index"), Some(&JsonValue::U64(2)));
         assert_eq!(
             json.get("reason"),
             Some(&JsonValue::string("违规：禁删数据集"))
@@ -761,6 +763,25 @@ mod tests {
             json.get("instruction").and_then(|v| v.get("type")),
             Some(&JsonValue::string("delete_all"))
         );
+    }
+
+    /// u64 回绕根治回归（v0.9.0）：高位 FactId 经 to_json 无损承载——
+    /// 规则集锚定事实的 u64::MAX-1 哨兵 id 不再回绕为负。
+    #[test]
+    fn test_to_json_sentinel_fact_id_lossless() {
+        let sentinel = u64::MAX - 1;
+        let fact = Fact::PayloadUpdate {
+            id: FactId(sentinel),
+            path: "__ruleset__.version".into(),
+            value: JsonValue::u64(7),
+        };
+        let json = fact.to_json();
+        assert_eq!(json.get("id").and_then(|v| v.as_u64()), Some(sentinel));
+        // 旧通道形态校验：id 是 U64 不是 Integer（i64 回绕通道已退役）
+        assert!(json.get("id").is_some_and(|v| v.is_u64()));
+        // 往返：哈希面（serde Number u64 无损）与展示面对同一哨兵同值
+        let stable = crate::hash::fact_to_stable_json(&fact).unwrap();
+        assert_eq!(stable.get("id").and_then(|v| v.as_u64()), Some(sentinel));
     }
 
     #[test]

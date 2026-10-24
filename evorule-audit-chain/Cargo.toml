@@ -15,7 +15,7 @@ categories = ["no-std", "data-structures"]
 
 [dependencies]
 # no_std 内核：tcb 关 default features（std 门只留给 std 宿主侧开启）
-evorule-tcb = { path = "../evorule-tcb", version = "0.8.3", default-features = false }
+evorule-tcb = { path = "../evorule-tcb", version = "0.9.0", default-features = false }
 blake3 = { version = "1", default-features = false }
 serde = { version = "1", default-features = false, features = ["alloc"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }

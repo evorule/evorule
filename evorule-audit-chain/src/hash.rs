@@ -68,6 +68,9 @@ fn tcb_to_serde(value: &JsonValue) -> serde_json::Value {
         JsonValue::Null => serde_json::Value::Null,
         JsonValue::Bool(b) => serde_json::Value::Bool(*b),
         JsonValue::Integer(i) => serde_json::Value::Number(serde_json::Number::from(*i)),
+        // u64 全域通道：serde Number 原生无损承载（与 fact_to_stable_json 的
+        // FactId 序列化同口径），不经 i64 cast
+        JsonValue::U64(v) => serde_json::Value::Number(serde_json::Number::from(*v)),
         JsonValue::String(s) => serde_json::Value::String(s.to_string()),
         JsonValue::Array(arr) => serde_json::Value::Array(arr.iter().map(tcb_to_serde).collect()),
         JsonValue::Object(obj) => {
@@ -444,6 +447,23 @@ mod tests {
         assert_eq!(json_value.get("type").unwrap().as_str().unwrap(), "Command");
         assert_eq!(json_value.get("id").unwrap().as_u64().unwrap(), 1);
         assert!(json_value.get("instruction").is_some());
+    }
+
+    /// u64 无损回归（v0.9.0）：tcb_to_serde 对 `JsonValue::U64` 走
+    /// serde Number u64 无损通道（高位值不经 i64 cast）。
+    #[test]
+    fn test_tcb_to_serde_u64_lossless() {
+        let sentinel = u64::MAX - 1;
+        let v = JsonValue::u64(sentinel);
+        let serde_v = tcb_to_serde(&v);
+        assert_eq!(serde_v.as_u64(), Some(sentinel));
+        // 嵌套面（对象内 U64 值）同口径
+        let obj = JsonValue::object_from_pairs(&[("version", JsonValue::u64(sentinel))]);
+        let serde_obj = tcb_to_serde(&obj);
+        assert_eq!(
+            serde_obj.get("version").and_then(|x| x.as_u64()),
+            Some(sentinel)
+        );
     }
 
     #[test]
