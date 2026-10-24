@@ -13,6 +13,12 @@
 //! - **tier1 WAL 旧格式**（含 `version_before`/`fact`，无哈希字段）：仅结构校验
 //! - **CLI 原始格式**（每行一个 Fact JSON，无 `version_before` 包装）：仅结构校验
 //!
+//! # 读侧失败行为
+//! tier1 WAL 读取失败时按文件形态判形：仅当首条非空行顶层带字符串 `type`
+//! 判别字段（裸 Fact 格式）才降级到逐行解析；否则如实上报原始错因并终止，
+//! 不再盲降级——裸 Fact 解析对 tier1 形态行的二次误报（"missing 'type' field"）
+//! 会掩盖真实错因。
+//!
 //! # 为什么需要结构校验
 //! 哈希链验证检测 Fact 内容篡改和链断裂。
 //! 结构校验补充检测 fact log 内部的结构篡改（如改 id、改 cause），
@@ -58,8 +64,15 @@ pub fn run(fact_log_path: &Path) -> Result<(), CliError> {
             // 结构不变量验证
             verify_and_report_structural(&facts)
         }
-        Err(_) => {
-            // tier1 WAL 格式读取失败，尝试 CLI 原始格式（每行一个 Fact JSON）
+        Err(original) => {
+            // 读侧失败：仅当文件形态确属 CLI 裸 Fact 格式（顶层 `type` 判别字段）
+            // 时才降级到逐行解析；否则如实上报原始错因并终止。
+            // tier1 WAL 解析失败若盲降级，裸 Fact 解析的二次误报（如
+            // "missing 'type' field"）会掩盖真实错因（如缺字段/高位 id），
+            // 误导排障方向。
+            if !looks_like_raw_fact_log(fact_log_path) {
+                return Err(CliError::from(original));
+            }
             let facts = fact_log::read_facts(fact_log_path)?;
             println!("Facts: {} (CLI raw Fact JSON format)", facts.len());
             println!("[WARN] Raw Fact JSON format (no hash fields), only structural verification");
@@ -67,6 +80,31 @@ pub fn run(fact_log_path: &Path) -> Result<(), CliError> {
             verify_and_report_structural(&facts)
         }
     }
+}
+
+/// 判定文件是否为 CLI 裸 Fact 格式（顶层 `type` 判别字段）
+///
+/// 读侧失败后的降级判形依据：tier1 WAL 行以 `version_before`/`fact` 包裹
+/// （顶层无 `type`），裸 Fact 行顶层必有 `type`——两形态结构互斥。
+/// 按首条非空行判形：fact log 行形态同质，首行可代表全文件。
+///
+/// 返回 `false` 的情形（文件不可读、首行非 JSON、非对象、无字符串 `type`）
+/// 一律按 tier1 形态或损坏文件处理，如实上报读侧原始错因。
+fn looks_like_raw_fact_log(path: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+            return false;
+        };
+        return v.get("type").is_some_and(|t| t.is_string());
+    }
+    false
 }
 
 /// 验证存储的哈希链完整性（新格式 WAL）
@@ -339,6 +377,83 @@ mod tests {
         let result = verify_hash_chain_with_stored(&[tampered_record]);
         assert!(result.is_err(), "内容篡改应被检测到");
         assert!(format!("{}", result.unwrap_err()).contains("content_hash mismatch"));
+    }
+
+    /// 读侧失败保真回归：tier1 WAL 形态文件解析失败时，verify-chain 必须
+    /// 如实上报原始错因，不得盲降级到裸 Fact 解析产生「missing 'type' field」
+    /// 二次误报掩盖真实错因。
+    #[test]
+    fn test_tier1_read_failure_reports_original_error() {
+        // tier1 WAL 形态行（fact 包裹在 "fact" 字段内，缺 instruction）
+        // → 读侧原始错因 "Command missing 'instruction'"；
+        //   若盲降级，裸 Fact 解析顶层无 type → 误报 "missing 'type' field"
+        let path = std::env::temp_dir().join(format!(
+            "evorule-cli-verify-t1fail-{}.wal",
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            "{\"version_before\":0,\"fact\":{\"type\":\"Command\",\"id\":1}}\n",
+        )
+        .unwrap();
+        assert!(
+            evorule_reactor::read_wal_with_hash(&path).is_err(),
+            "前置：tier1 读侧应失败（错因存在）"
+        );
+
+        let err = run(&path).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("Command missing 'instruction'"),
+            "original read-side cause must surface, got: {}",
+            msg
+        );
+        assert!(
+            !msg.contains("missing 'type'"),
+            "secondary false-positive must not mask the original cause, got: {}",
+            msg
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 合法裸 Fact 格式降级路径不破坏：顶层带 `type` 的裸 Fact 文件
+    /// 读侧失败后仍降级为结构校验并验证通过。
+    #[test]
+    fn test_raw_fact_log_fallback_still_works() {
+        let path = std::env::temp_dir().join(format!(
+            "evorule-cli-verify-rawok-{}.jsonl",
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            "{\"type\":\"Stable\",\"id\":1,\"version\":1}\n{\"type\":\"Stable\",\"id\":2,\"version\":2}\n",
+        )
+        .unwrap();
+        assert!(
+            evorule_reactor::read_wal_with_hash(&path).is_err(),
+            "前置：裸 Fact 行缺 version_before，tier1 读侧应失败"
+        );
+        assert!(looks_like_raw_fact_log(&path));
+        assert!(run(&path).is_ok(), "valid raw fact log should verify OK");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 判形单测：tier1 形态行（顶层无 `type`）与垃圾行均不判为裸 Fact 格式。
+    #[test]
+    fn test_raw_sniff_discriminates_tier1_and_garbage() {
+        let dir = std::env::temp_dir();
+        let t1 = dir.join(format!("evorule-cli-sniff-t1-{}.wal", std::process::id()));
+        std::fs::write(
+            &t1,
+            "{\"version_before\":0,\"fact\":{\"type\":\"Stable\",\"id\":1}}\n",
+        )
+        .unwrap();
+        assert!(!looks_like_raw_fact_log(&t1));
+        let garbage = dir.join(format!("evorule-cli-sniff-gb-{}.wal", std::process::id()));
+        std::fs::write(&garbage, "not json at all\n").unwrap();
+        assert!(!looks_like_raw_fact_log(&garbage));
+        let _ = std::fs::remove_file(&t1);
+        let _ = std::fs::remove_file(&garbage);
     }
 
     /// 验证新格式 WAL 的哈希链验证能检测链断裂
