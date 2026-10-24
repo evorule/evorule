@@ -21,8 +21,11 @@ $reposMap = Get-Content "$evoruleRoot\scripts\license-audit\repos.json" -Raw | C
 # Distribution-channel classification per repo (2026-10-24 ecosystem license audit).
 #   binary : ships archives/installers  -> full 5-piece notice set required in release.yml
 #   crate  : crates.io publish only     -> LICENSE piece in release.yml (package auto-includes)
-#   npm    : npm/JS distribution        -> part 3 file checks (release.yml not required)
+#   npm    : npm/JS distribution        -> CI publish workflow (sdk-nodejs-release.yml
+#                                            must run `npm publish`) + part 3 file checks
 #   none   : no external distribution artifacts -> informational only
+#   evo-agent-desktop override: the installer is packaged in the evo-agent repo
+#   (desktop-release.yml + desktop\build-installer.ps1), so the scan surface moves there.
 $distClass = @{
     "evorule"                  = "binary"
     "evorule-server"           = "binary"
@@ -79,16 +82,42 @@ foreach ($prop in $reposMap.PSObject.Properties) {
         }
         continue
     }
-    if (-not (Test-Path $rel)) {
-        if ($class -eq "npm") {
-            Write-Host "[INFO] $name : no release.yml — npm publishing is manual, file-level checks in part 3" -ForegroundColor DarkGray
+    if ($class -eq "npm") {
+        # npm publish channel: CI workflow must exist and actually run `npm publish`
+        $npmYml = Join-Path $repoPath ".github\workflows\sdk-nodejs-release.yml"
+        if ((Test-Path $npmYml) -and ((Get-Content $npmYml -Raw) -match "npm publish")) {
+            Write-Host "[OK]   $name : npm publish CI-tracked (sdk-nodejs-release.yml) — file checks in part 3" -ForegroundColor Green
+        } elseif (Test-Path $npmYml) {
+            Write-Host "[GAP]  $name : sdk-nodejs-release.yml present but does not run npm publish" -ForegroundColor Red
+            $gapTotal++
         } else {
-            Write-Host "[GAP]  $name : distribution channel ($class) has no release.yml — packaging not CI-tracked" -ForegroundColor Red
+            Write-Host "[GAP]  $name : no sdk-nodejs-release.yml — npm publishing not CI-tracked" -ForegroundColor Red
             $gapTotal++
         }
         continue
     }
-    $yml = Get-Content $rel -Raw
+    # binary channels: scan release.yml; evo-agent-desktop packaging lives in the
+    # evo-agent repo (build workflow + installer script carry the 5-piece set).
+    $scanPaths = @()
+    if (Test-Path $rel) { $scanPaths += $rel }
+    if ($name -eq "evo-agent-desktop") {
+        $dYml = Join-Path $reposMap.'evo-agent' ".github\workflows\desktop-release.yml"
+        $dPs1 = Join-Path $reposMap.'evo-agent' "desktop\build-installer.ps1"
+        if (Test-Path $dYml) { $scanPaths += $dYml } else {
+            Write-Host "[GAP]  $name : desktop-release.yml missing in evo-agent repo — packaging not CI-tracked" -ForegroundColor Red
+            $gapTotal++
+        }
+        if (Test-Path $dPs1) { $scanPaths += $dPs1 } else {
+            Write-Host "[GAP]  $name : desktop\build-installer.ps1 missing in evo-agent repo" -ForegroundColor Red
+            $gapTotal++
+        }
+    }
+    if ($scanPaths.Count -eq 0) {
+        Write-Host "[GAP]  $name : distribution channel ($class) has no release.yml — packaging not CI-tracked" -ForegroundColor Red
+        $gapTotal++
+        continue
+    }
+    $yml = ($scanPaths | ForEach-Object { Get-Content $_ -Raw }) -join "`n"
     $missing = @()
     foreach ($piece in $piecesFull.Keys) {
         if ($yml -notmatch $piecesFull[$piece]) { $missing += $piece }
