@@ -394,6 +394,14 @@ impl Fact {
     ///
     /// 返回的 JSON 对象包含 `type` 字段和各变体的所有字段，
     /// 可通过 `tcb_to_serde` 转为 `serde_json::Value` 用于 HTTP 响应。
+    ///
+    /// # 诚实边界（高位 FactId 回绕）
+    ///
+    /// `evorule_tcb::JsonValue::Integer` 为 i64——u64 高位 FactId（如
+    /// 规则集锚定事实的 `u64::MAX-1` 哨兵 id）在本函数输出中回绕为负数。
+    /// 本函数**禁止用于写侧落链或哈希输入**：权威序列化 =
+    /// [`crate::hash::fact_to_stable_json`]（serde Number，u64 全域无损）。
+    /// 展示面消费方须对高位 id 做二次校正或改走权威序列化。
     //
     // 注：match 全部 Fact 变体的序列化分支，有意保持单一函数便于对账字段映射。
     #[allow(clippy::too_many_lines)]

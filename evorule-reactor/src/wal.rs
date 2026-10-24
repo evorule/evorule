@@ -527,11 +527,14 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
         .get("type")
         .and_then(|t| t.as_str())
         .ok_or_else(|| WalError::InvalidFact("missing 'type' field".into()))?;
+    // FactId 为 u64 全域：规则集锚定事实用 u64::MAX-1 哨兵 id（__ruleset__.version
+    // 落链），as_i64 对 u64 高位返回 None 会误报 missing/invalid 'id'——必须按
+    // 无符号解析。
     let id_raw = obj
         .get("id")
-        .and_then(|i| i.as_i64())
+        .and_then(|i| i.as_u64())
         .ok_or_else(|| WalError::InvalidFact("missing/invalid 'id' field".into()))?;
-    let id = FactId(id_raw as u64);
+    let id = FactId(id_raw);
 
     match type_str {
         "Command" => {
@@ -560,7 +563,7 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
         "StateTransition" => {
             let cause_raw = obj
                 .get("cause")
-                .and_then(|c| c.as_i64())
+                .and_then(|c| c.as_u64())
                 .ok_or_else(|| WalError::InvalidFact("StateTransition missing 'cause'".into()))?;
             let new_payload = obj.get("new_payload").ok_or_else(|| {
                 WalError::InvalidFact("StateTransition missing 'new_payload'".into())
@@ -574,7 +577,7 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
             let new_queue: Vec<JsonValue> = new_queue_arr.iter().map(serde_to_tcb).collect();
             Ok(Fact::StateTransition {
                 id,
-                cause: FactId(cause_raw as u64),
+                cause: FactId(cause_raw),
                 new_payload: serde_to_tcb(new_payload),
                 new_queue,
             })
@@ -582,7 +585,7 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
         "IoRequest" => {
             let cause_raw = obj
                 .get("cause")
-                .and_then(|c| c.as_i64())
+                .and_then(|c| c.as_u64())
                 .ok_or_else(|| WalError::InvalidFact("IoRequest missing 'cause'".into()))?;
             let io_type_str = obj
                 .get("io_type")
@@ -595,7 +598,7 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
                 .ok_or_else(|| WalError::InvalidFact("IoRequest missing 'params'".into()))?;
             Ok(Fact::IoRequest {
                 id,
-                cause: FactId(cause_raw as u64),
+                cause: FactId(cause_raw),
                 io_type,
                 params: serde_to_tcb(params),
             })
@@ -603,7 +606,7 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
         "IoResponse" => {
             let request_id_raw = obj
                 .get("request_id")
-                .and_then(|r| r.as_i64())
+                .and_then(|r| r.as_u64())
                 .ok_or_else(|| WalError::InvalidFact("IoResponse missing 'request_id'".into()))?;
             let result = obj
                 .get("result")
@@ -619,7 +622,7 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
             };
             Ok(Fact::IoResponse {
                 id,
-                request_id: FactId(request_id_raw as u64),
+                request_id: FactId(request_id_raw),
                 result: serde_to_tcb(result),
                 error,
             })
@@ -646,7 +649,7 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
         "TransitionTrace" => {
             let cause_raw = obj
                 .get("cause")
-                .and_then(|c| c.as_i64())
+                .and_then(|c| c.as_u64())
                 .ok_or_else(|| WalError::InvalidFact("TransitionTrace missing 'cause'".into()))?;
             let hits_raw = obj
                 .get("rule_hits")
@@ -719,14 +722,14 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
             }
             Ok(Fact::TransitionTrace {
                 id,
-                cause: FactId(cause_raw as u64),
+                cause: FactId(cause_raw),
                 rule_hits,
             })
         }
         "Violation" => {
             let cause_raw = obj
                 .get("cause")
-                .and_then(|c| c.as_i64())
+                .and_then(|c| c.as_u64())
                 .ok_or_else(|| WalError::InvalidFact("Violation missing 'cause'".into()))?;
             let rule_index = obj
                 .get("rule_index")
@@ -741,7 +744,7 @@ pub fn fact_from_json(v: &serde_json::Value) -> Result<Fact, WalError> {
                 .ok_or_else(|| WalError::InvalidFact("Violation missing 'instruction'".into()))?;
             Ok(Fact::Violation {
                 id,
-                cause: FactId(cause_raw as u64),
+                cause: FactId(cause_raw),
                 rule_index,
                 reason: reason.into(),
                 instruction: serde_to_tcb(instruction),
@@ -1280,6 +1283,7 @@ pub fn read_wal_with_hash<P: AsRef<Path>>(path: P) -> Result<Vec<WalRecord>, Wal
 mod tests {
     #![allow(clippy::unwrap_used)]
     #![allow(clippy::panic, clippy::expect_used)]
+    #![allow(clippy::indexing_slicing)]
     use super::*;
     use crate::fact::{Fact, FactId, IoType};
     use evorule_tcb::JsonValue;
@@ -1592,6 +1596,135 @@ mod tests {
         let json = serde_json::json!({"id": 1});
         let result = fact_from_json(&json);
         assert!(matches!(result, Err(WalError::InvalidFact(_))));
+    }
+
+    // === u64 全域 FactId 哨兵解析专项（规则集锚定事实回归）===
+
+    /// 规则集锚定事实以 u64::MAX-1 哨兵 id 落链（`__ruleset__.version`）。
+    /// 此前 as_i64 解析对 u64 高位返回 None，WAL 回读报「missing/invalid
+    /// 'id' field」并连锁拒绝复活——u64 全域 id/cause/request_id 必须可往返。
+    #[test]
+    fn test_fact_sentinel_id_roundtrip() {
+        let fact = Fact::PayloadUpdate {
+            id: FactId(u64::MAX - 1),
+            path: "__ruleset__.version".into(),
+            value: JsonValue::String("c7b6fab66f0ea645".into()),
+        };
+        assert_fact_roundtrip(&fact);
+    }
+
+    #[test]
+    fn test_read_wal_sentinel_id_end_to_end() {
+        // 规则集锚定 WAL 形态：单条哨兵 id PayloadUpdate 记录
+        let path = temp_wal_path("sentinel_id");
+        let mut w = WalWriter::create(&path).unwrap();
+        w.append_record(
+            0,
+            &Fact::PayloadUpdate {
+                id: FactId(u64::MAX - 1),
+                path: "__ruleset__.version".into(),
+                value: JsonValue::String("c7b6fab66f0ea645".into()),
+            },
+        )
+        .unwrap();
+        drop(w);
+
+        let records = read_wal(&path).expect("哨兵 id WAL 必须可读（不得报 InvalidFact）");
+        assert_eq!(records.len(), 1);
+        match &records[0].1 {
+            Fact::PayloadUpdate { id, .. } => assert_eq!(id.0, u64::MAX - 1),
+            other => panic!("expected PayloadUpdate, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // === Fact JSON 契约 parity 锚（WAL 读写面 ↔ SSOT 稳定序列化）===
+
+    /// 全变体契约等价锚：WAL 写侧 `fact_to_json` 与 SSOT
+    /// `fact_to_stable_json`（哈希口径输入）对同一样本必须产出逐字段
+    /// 相同的 JSON，且 `fact_from_json` 可无损往返。漂移即红——读侧
+    /// 工具（哨兵/verify-chain）与哈希口径共享此契约，双侧任一独立
+    /// 演化都会造成审计链口径分叉。
+    #[test]
+    fn test_fact_json_contract_parity_with_ssot() {
+        use crate::hash::fact_to_stable_json;
+
+        let samples: Vec<Fact> = vec![
+            Fact::Command {
+                id: FactId(1),
+                instruction: JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))]),
+            },
+            // 哨兵 id：u64 高位必须全链路无损（含哈希序列化面）
+            Fact::PayloadUpdate {
+                id: FactId(u64::MAX - 1),
+                path: "__ruleset__.version".into(),
+                value: JsonValue::String("c7b6fab66f0ea645".into()),
+            },
+            Fact::StateTransition {
+                id: FactId(u64::MAX - 2),
+                cause: FactId(1),
+                new_payload: JsonValue::empty_object(),
+                new_queue: vec![],
+            },
+            Fact::IoRequest {
+                id: FactId(4),
+                cause: FactId(1),
+                io_type: IoType::call_external(),
+                params: JsonValue::empty_object(),
+            },
+            Fact::IoResponse {
+                id: FactId(5),
+                request_id: FactId(4),
+                result: JsonValue::empty_object(),
+                error: None,
+            },
+            Fact::IoResponse {
+                id: FactId(6),
+                request_id: FactId(4),
+                result: JsonValue::empty_object(),
+                error: Some("io failed".into()),
+            },
+            Fact::Stable {
+                id: FactId(7),
+                version: 3,
+            },
+            Fact::Error {
+                id: FactId(8),
+                message: "timeout".into(),
+            },
+            Fact::TransitionTrace {
+                id: FactId(9),
+                cause: FactId(u64::MAX - 2),
+                rule_hits: vec![],
+            },
+            Fact::Violation {
+                id: FactId(10),
+                cause: FactId(1),
+                rule_index: 2,
+                reason: "enforced".into(),
+                instruction: JsonValue::empty_object(),
+            },
+        ];
+
+        for fact in &samples {
+            let wal_json = fact_to_json(fact);
+            let stable_json = fact_to_stable_json(fact).expect("SSOT 稳定序列化不得失败");
+            assert_eq!(
+                wal_json,
+                stable_json,
+                "Fact JSON 契约漂移（{}）：WAL 写侧与 SSOT 稳定序列化输出不一致",
+                fact.type_name()
+            );
+            let round = fact_from_json(&wal_json)
+                .unwrap_or_else(|e| panic!("契约样本回读失败（{}）: {e}", fact.type_name()));
+            assert_eq!(
+                &round,
+                fact,
+                "Fact JSON 契约漂移（{}）：往返不等值",
+                fact.type_name()
+            );
+        }
     }
 
     // === 旧格式 WAL(≤0.3.x 含 final_snapshot)兼容专项 ===
