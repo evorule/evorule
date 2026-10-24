@@ -44,6 +44,11 @@ $projects['evorule-tcb']        = (Join-Path $evoruleRoot "evorule-tcb\Cargo.tom
 $projects['evorule-reactor']    = (Join-Path $evoruleRoot "evorule-reactor\Cargo.toml")
 $projects['evorule-governance'] = (Join-Path $evoruleRoot "evorule-governance\Cargo.toml")
 $projects['evorule-cli']        = (Join-Path $evoruleRoot "evorule-cli\Cargo.toml")
+# ANCH-D-04 收口：覆盖名单补齐 workspace 全部成员（四件均为 version.workspace=true 继承）
+$projects['evorule-audit-chain'] = (Join-Path $evoruleRoot "evorule-audit-chain\Cargo.toml")
+$projects['evorule-mcu']         = (Join-Path $evoruleRoot "evorule-mcu\Cargo.toml")
+$projects['evorule-discipline']  = (Join-Path $evoruleRoot "evorule-discipline\Cargo.toml")
+$projects['evorule-eval']        = (Join-Path $evoruleRoot "evorule-eval\Cargo.toml")
 # 注:SDK 已物理分离到独立仓(evorule-sdk),本仓不再校验 sdk-typescript / sdk-python 版本
 
 $versions = [ordered]@{}

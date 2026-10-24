@@ -39,6 +39,7 @@
 
 ## Experience & Navigation
 
+- **Desktop app (Windows, two-step install)**: download `..._x64-setup.exe` from [evo-agent-desktop Releases](https://github.com/evorule/evo-agent-desktop/releases/latest) (mirror: [Gitee](https://gitee.com/evorule/evo-agent-desktop/releases)); paste your own MiniMax API key in the first-run wizard — full guide in that repo's README
 - **Online console (no install)**: [evorule-console-cloud live demo](https://evorule.github.io/evorule-console-cloud/)（GitHub Pages，海外入口；国内推荐 Cloudflare Pages 镜像，部署后补充链接）
 - **evorule-server** — exposes HTTP API / SSE / debug control / I/O Handler (application layer): [Gitee](https://gitee.com/evorule/evorule-server) ｜ [GitHub](https://github.com/evorule/evorule-server)
 - **evorule-console-cloud** — governance & audit console (web frontend): [Gitee](https://gitee.com/evorule/evorule-console-cloud) ｜ [GitHub](https://github.com/evorule/evorule-console-cloud)
