@@ -28,6 +28,17 @@
 
 ### Added
 
+- **v0.9.0：`JsonValue::U64(u64)` u64 全域通道**（tcb `value.rs`）——`Integer(i64)`
+  无法无损承载 u64 高位值，凡值域可能超出 `i64` 的来源一律走 `U64`。配套
+  `JsonValue::u64()` 构造、`From<u64>`、`as_u64`/`is_u64`；形态严格语义：
+  `U64` 与 `Integer` 不做跨形态相等（与 `Ord` 类型分组一致，组序
+  Null < Bool < Integer < U64 < String < Array < Object）。
+- 审计链展示面 u64 无损化：`audit-chain` `Fact::to_json` 全部 17 处
+  `as i64` cast 改走 `J::u64(...)`，高位 FactId（规则集锚定事实
+  `u64::MAX-1` 哨兵）不再回绕为负；`tcb_to_serde`（audit-chain / reactor /
+  governance 三处）与 mcu 线格式 `WireValue::Uint`（尾部追加，postcard
+  变体索引对存量 `.evopack` 双向兼容）同步补 U64 承载。哈希口径零扰动
+  （`fact_to_stable_json` 不经 tcb JsonValue，黄金向量不变）。
 - 审计链哨兵 `evorule scan-wal-dir`：定时扫描 WAL 目录的运维守护——每次运行先做
   黄金向量自检（验证器忠实性），再逐文件全链三查，并与上轮基线做前缀锚定比对
   （纯追加 vs 历史被改后整链重算精确区分）。退出码协议：0 全绿/2 自检失败/

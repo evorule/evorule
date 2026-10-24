@@ -12,6 +12,13 @@
 > **记录规范**：只记事实——什么变了、客观依据、影响、修正去向（M10）。
 > **条目格式**：事实 / 依据 / 影响 / 修正去向。
 
+## 2026-10-24：JsonValue 新增 U64 变体（u64 全域通道）——P0-6 证据基线失效登记
+
+| # | 事实 | 依据 | 影响 | 修正去向 |
+| - | ---- | ---- | ---- | -------- |
+| 1 | evorule-tcb `JsonValue` 尾部新增 `U64(u64)` 变体（v0.9.0，形态严格语义：与 `Integer` 跨形态有意不相等，Ord 组序 `Integer < U64`）+ `PartialEq`/`Ord`/`Display` 手动实现补分支 + `u64()`/`From<u64>`/`is_u64`/`as_u64`；`executor.rs` `json_type_name` 补 `"u64"`；审计链展示面 `to_json` 17 处 `as i64` cast 根治为 `JsonValue::u64`（高位 FactId 不再回绕为负） | v0.9.0 提交（value.rs / executor.rs / audit-chain fact.rs / hash.rs / reactor wal.rs / governance 桥接 / mcu pack.rs） | P0-6（JsonValue 构造/访问一致）A 档 3 份证据（`a3d728f`）按 M3.4 **失效待复跑**——harness 作用面为 `JsonValue` 本体；P0-3/P0-4/P0-5/P0-7/P0-8 等其余行作用面零交集（U64 不改变既有变体语义与 transition/resolve 路径） | P0-6 状态依据已注记过渡口径：本地内存硬约束不跑 Kani（CBMC 11GB OOM 实录），以编译+全测（tcb 263 绿 / audit-chain 29 绿）+静态复核（U64 分支均为无 panic 纯比较/拷贝路径）代偿；推送后 CI kani.yml 实跑 PASS 即复登记证据基线 |
+| 2 | 哈希口径零扰动：`fact_to_stable_json`（哈希输入唯一来源）不经 tcb `JsonValue`（`serde_json::Number` 直出），本批未改任何哈希输入字节；展示面 `to_json` 与哈希面职责分离注记同步改写 | audit-chain fact.rs/hash.rs 序列化路径比对；WAL 写侧 `fact_to_json` 本就 `Number(id.0.into())` 无损 | 审计链内容哈希与跨仓黄金断言哈希值不变（P0-14 / 黄金向量不受影响） | 无 |
+
 ## 2026-10-21：P0-14（审计链哈希完整）proof 收口入 CI 与证明边界披露
 
 | # | 事实 | 依据 | 影响 | 修正去向 |

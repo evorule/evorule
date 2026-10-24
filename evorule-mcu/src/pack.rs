@@ -9,7 +9,8 @@
 //! （确定性）。
 //! - postcard 为非自描述格式，无法反序列化 `serde_json::Value` 任意形态，
 //!   故以 `WireValue` / `WireRules` serde derive 模型按 tier0 [`JsonValue`]
-//!   类型域一一同构建模（tier0 无 Float，`Int` 覆盖全部数值域，编码无损）
+//!   类型域一一同构建模（tier0 无 Float，`Int` 覆盖 i64 数值域，v0.9.0 起
+//!   `Uint` 尾部追加承载 u64 全域，编码无损）
 //! - `Object` 以键值对序列保序编码——上游由 BTreeMap 迭代产出，键序
 //!   字母序确定，跨目标一致
 //!
@@ -32,8 +33,11 @@ use crate::error::McuError;
 ///
 /// postcard 为非自描述格式，无法反序列化 `serde_json::Value` 的任意形态；
 /// 本模型按 tier0 [`JsonValue`] 的类型域一一同构建模（tier0 无 Float，
-/// `Int` 覆盖全部数值域，编码无损）。`Object` 以键值对序列保序编码——
-/// 上游由 BTreeMap 迭代产出，键序字母序确定（同输入同字节）。
+/// `Int` 覆盖 i64 数值域；v0.9.0 起 tier0 增加 `U64` u64 全域通道，对应
+/// 尾部新增 `Uint`——postcard 按声明序编变体索引，尾部追加对存量包字节
+/// 双向兼容：旧固件解码含 `Uint` 的新包将报非法变体（fail-fast 拒载，
+/// 固件需升级），新固件解码旧包不受影响）。`Object` 以键值对序列保序编
+/// 码——上游由 BTreeMap 迭代产出，键序字母序确定（同输入同字节）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum WireValue {
     Null,
@@ -42,6 +46,8 @@ pub(crate) enum WireValue {
     Str(String),
     Array(Vec<WireValue>),
     Object(Vec<(String, WireValue)>),
+    /// u64 全域通道（v0.9.0，尾部追加保兼容——勿移动位置或插中间）
+    Uint(u64),
 }
 
 /// 紧凑线格式包体
@@ -56,6 +62,7 @@ pub(crate) fn tcb_to_wire(v: &JsonValue) -> WireValue {
         JsonValue::Null => WireValue::Null,
         JsonValue::Bool(b) => WireValue::Bool(*b),
         JsonValue::Integer(i) => WireValue::Int(*i),
+        JsonValue::U64(u) => WireValue::Uint(*u),
         JsonValue::String(s) => WireValue::Str(String::from(s.as_ref())),
         JsonValue::Array(arr) => WireValue::Array(arr.iter().map(tcb_to_wire).collect()),
         JsonValue::Object(obj) => WireValue::Object(
@@ -72,6 +79,7 @@ fn wire_to_tcb(v: &WireValue) -> JsonValue {
         WireValue::Null => JsonValue::Null,
         WireValue::Bool(b) => JsonValue::Bool(*b),
         WireValue::Int(i) => JsonValue::Integer(*i),
+        WireValue::Uint(u) => JsonValue::U64(*u),
         WireValue::Str(s) => JsonValue::string(s),
         WireValue::Array(arr) => JsonValue::Array(arr.iter().map(wire_to_tcb).collect()),
         WireValue::Object(pairs) => {

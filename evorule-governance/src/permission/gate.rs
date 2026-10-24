@@ -213,8 +213,8 @@ mod tests {
         entry.state = PermissionState::Active;
         PermissionTable::store_entry(&log, &entry, 0).expect("store entry");
 
-        let gate = PermissionGate::new(log)
-            .with_caller_role_resolver(Arc::new(|_| CallerRole::Human));
+        let gate =
+            PermissionGate::new(log).with_caller_role_resolver(Arc::new(|_| CallerRole::Human));
         let mut ctx = IoCallContext::new(FactId(1), 0, None);
         assert_eq!(gate.check(&mut ctx, "fake_call", None), Verdict::Allow);
     }
