@@ -288,11 +288,84 @@ jobs:
           path: sbom/*.cdx.json
 
   # ==========================================================================
+  # 3.6 合规随附包 (五件套) + 源码 tarball (AGPL §4/§13)
+  #     二进制为裸附件直附 Release: 许可正文/第三方声明/源码入口以独立合规
+  #     归档 evorule-<ver>-compliance.zip 随 Release 附加 (纯链接不满足随附
+  #     义务)。SOURCE.md 按本次发布动态生成 (遵守 SOURCE.md 自身规定: 打包
+  #     流程以本次发布对应的值覆盖后随包分发, 禁止携带过期指纹表)。
+  # ==========================================================================
+  compliance:
+    name: compliance bundle + source tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: 生成 SOURCE.md、源码 tarball 与五件套合规归档
+        run: |
+          set -e
+          VER="${GITHUB_REF_NAME#v}"
+          SRC_TGZ="evorule-${VER}-source.tar.gz"
+          git archive --format=tar.gz --prefix="evorule-${VER}/" -o "${SRC_TGZ}" HEAD
+          SRC_SHA=$(sha256sum "${SRC_TGZ}" | cut -d' ' -f1)
+          cat > SOURCE.md <<'EOF'
+          <!--
+            Copyright 2026 EvoRule Project
+
+            SPDX-License-Identifier: AGPL-3.0-or-later
+          -->
+
+          # EvoRule — 源码提供入口（AGPL-3.0 §13）
+
+          本合规归档随 EvoRule v@@VER@@ 的发布物（二进制 / crates.io 包）一同分发，
+          以 AGPL-3.0-or-later 授权。本文件按本次发布动态生成（指纹表填实值），
+          用于定位并校验与该发布物对应的完整源码（AGPL-3.0 第 13 条）。
+
+          | 字段 | 值 |
+          |---|---|
+          | 发布 tag | v@@VER@@ |
+          | 源码仓库（权威源） | <https://gitee.com/evorule/evorule> |
+          | 源码仓库（GitHub 镜像） | <https://github.com/evorule/evorule> |
+          | 源码 tarball | `evorule-@@VER@@-source.tar.gz`（随本 Release 附件分发） |
+          | 源码 tarball SHA256 | `@@SHA@@` |
+
+          ## 获取与校验方式
+
+          1. `git clone` 上表任一仓库，`git checkout v@@VER@@`
+          2. 复现归档：`git archive --format=tar.gz --prefix=evorule-@@VER@@/ -o evorule-@@VER@@-source.tar.gz HEAD`
+          3. 计算 SHA256 并与上表值比对（同一记录亦在随 Release 发布的 `sha256-checks.txt` 中）
+
+          ## 第三方组件
+
+          许可正文与归属声明见本归档内 `THIRD-PARTY-NOTICES.md` 与 `LICENSES/third-party/`。
+
+          ## 分发通道
+
+          - 二进制（GitHub / Gitee Release 附件）随本合规归档一同发布
+          - crates.io 包由 cargo publish 自动随附仓根 `LICENSE`
+          EOF
+          sed -i "s/@@VER@@/${VER}/g; s/@@SHA@@/${SRC_SHA}/g" SOURCE.md
+          DIR="evorule-${VER}-compliance"
+          mkdir -p "${DIR}/LICENSES"
+          cp LICENSE NOTICE.md THIRD-PARTY-NOTICES.md SOURCE.md "${DIR}/"
+          cp -r LICENSES/third-party "${DIR}/LICENSES/third-party"
+          zip -qr "${DIR}.zip" "${DIR}"
+          ls -la "${DIR}.zip" "${SRC_TGZ}"
+
+      - name: 上传合规产物
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: evorule-compliance
+          path: |
+            evorule-*-compliance.zip
+            evorule-*-source.tar.gz
+          if-no-files-found: error
+
+  # ==========================================================================
   # 4. 汇总发布 (GitHub Release)
   # ==========================================================================
   release:
     name: release
-    needs: [build, sign, sbom]
+    needs: [build, sign, sbom, compliance]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -325,6 +398,20 @@ jobs:
           name: evorule-sbom
           path: sbom
 
+      - name: 下载合规产物
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: evorule-compliance
+          path: compliance
+
+      # SOURCE.md 向下载方承诺: 源码 tarball SHA256 记录在随 Release 发布的
+      # sha256-checks.txt —— 本步生成该承诺文件 (含二进制与合规归档)
+      - name: 生成 sha256-checks.txt
+        run: |
+          set -e
+          sha256sum artifacts/evorule-linux-x86_64 artifacts/evorule-windows-x86_64.exe compliance/evorule-*-compliance.zip compliance/evorule-*-source.tar.gz > sha256-checks.txt
+          cat sha256-checks.txt
+
       - name: 创建 Release 并附加二进制与 SBOM
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
@@ -334,6 +421,9 @@ jobs:
             sigs/evorule-linux-x86_64.sig
             sigs/evorule-windows-x86_64.exe.sig
             sbom/*.cdx.json
+            compliance/evorule-*-compliance.zip
+            compliance/evorule-*-source.tar.gz
+            sha256-checks.txt
           generate_release_notes: true
 
   # ==========================================================================
@@ -347,7 +437,7 @@ jobs:
   # ==========================================================================
   attach-gitee:
     name: attach-all-to-gitee
-    needs: [build, sign, sbom]
+    needs: [build, sign, sbom, compliance]
     runs-on: ubuntu-latest
     steps:
       - name: 下载 Linux 构建产物
@@ -374,14 +464,21 @@ jobs:
           name: evorule-sbom
           path: gitee-assets/sbom
 
+      - name: 下载合规产物
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: evorule-compliance
+          path: gitee-assets/compliance
+
       - name: 汇集产物并计算 sha256
         run: |
           mv gitee-assets/linux/evorule-linux-x86_64 gitee-assets/evorule-linux-x86_64
           mv gitee-assets/windows/evorule-windows-x86_64.exe gitee-assets/evorule-windows-x86_64.exe
           cp gitee-assets/sigs/*.sig gitee-assets/
           cp gitee-assets/sbom/*.cdx.json gitee-assets/
+          cp gitee-assets/compliance/evorule-*-compliance.zip gitee-assets/compliance/evorule-*-source.tar.gz gitee-assets/
           cd gitee-assets
-          sha256sum evorule-linux-x86_64 evorule-windows-x86_64.exe > sha256-checks.txt
+          sha256sum evorule-linux-x86_64 evorule-windows-x86_64.exe evorule-*-compliance.zip evorule-*-source.tar.gz > sha256-checks.txt
           sha256sum evorule-linux-x86_64 > evorule-linux-x86_64.sha256
           sha256sum evorule-windows-x86_64.exe > evorule-windows-x86_64.exe.sha256
           cat sha256-checks.txt
@@ -430,6 +527,15 @@ jobs:
           # SBOM (CycloneDX, A3)
           for f in *.cdx.json; do
             echo "上传 SBOM ${f} ..."
+            curl --max-time 300 --retry 3 --retry-delay 5 --retry-connrefused -fsS -X POST \
+              "https://gitee.com/api/v5/repos/${REPO}/releases/${RELEASE_ID}/attach_files" \
+              -H "Authorization: token ${GITEE_TOKEN}" \
+              -F "file=@${f}"
+            echo ""
+          done
+          # 合规随附包 + 源码 tarball (AGPL §4/§13)
+          for f in evorule-*-compliance.zip evorule-*-source.tar.gz; do
+            echo "上传 ${f} ..."
             curl --max-time 300 --retry 3 --retry-delay 5 --retry-connrefused -fsS -X POST \
               "https://gitee.com/api/v5/repos/${REPO}/releases/${RELEASE_ID}/attach_files" \
               -H "Authorization: token ${GITEE_TOKEN}" \
