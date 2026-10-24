@@ -1,0 +1,15 @@
+{
+ "evorule": "D:\\evorule",
+ "evorule-server": "D:\\evorule-server",
+ "evorule-rule": "D:\\evorule-rule",
+ "evorule-system-rules": "D:\\evorule-system-rules",
+ "evorule-bundle": "D:\\evorule-bundle",
+ "evorule-hash": "D:\\evorule-hash",
+ "evorule-console-cloud": "D:\\evorule-console-cloud",
+ "evorule-integration-tests": "D:\\evorule-integration-tests",
+ "evorule-context-inspector": "D:\\evorule-context-inspector",
+ "evorule-wasm-demo": "D:\\evorule-wasm-demo",
+ "evo-agent": "D:\\evo-agent",
+ "evo-agent-desktop": "D:\\evo-agent-desktop-release-seed",
+ "sync-sentinel": "D:\\evorule-sync-sentinel"
+}
