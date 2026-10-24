@@ -1,0 +1,16 @@
+# cargo-mutants 配置（ mutants.yml CI 与本地扫描共用）
+#
+# 排除项是「测试面不可达」的突变，非测试盲区：
+#
+# 1. cfg(kani) 门控代码（KaniMap / JsonValue no-op Drop / null_ref）：
+#    普通 cargo test 构建不含 cfg(kani) 代码，突变体同样不参与编译，
+#    与 baseline 行为逐字节一致——cargo-mutants 将其误报为 MISSED。
+#    这些代码的「测试」是 Kani 形式化验证（CBMC 属性断言），不归本门。
+#
+# 2. null_ref：cfg(kani) 分支实现（非 kani 分支为 rvalue promotion 直引
+#    常量），同 1。
+exclude_re = [
+  "KaniMap",
+  "<impl Drop for JsonValue>",
+  "null_ref",
+]

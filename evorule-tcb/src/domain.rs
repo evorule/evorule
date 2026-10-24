@@ -2033,4 +2033,109 @@ mod tests {
             Err(TcbError::InvalidType { context, .. }) if context == "on_missing"
         ));
     }
+
+    // ===== 三态标签版本化锁定（审计落账口径，防标签漂移）=====
+
+    #[test]
+    fn test_domain_outcome_labels_locked() {
+        assert_eq!(DomainOutcome::Sat.label(), "sat");
+        assert_eq!(DomainOutcome::Unsat.label(), "unsat");
+        assert_eq!(
+            DomainOutcome::Missing(MissingReason::PathNotFound).label(),
+            "missing"
+        );
+    }
+
+    #[test]
+    fn test_missing_reason_labels_locked() {
+        assert_eq!(MissingReason::PathNotFound.label(), "path_not_found");
+        assert_eq!(MissingReason::Incomparable.label(), "incomparable");
+        assert_eq!(
+            MissingReason::ValueLiteralAmbiguous.label(),
+            "value_literal_ambiguous"
+        );
+    }
+
+    #[test]
+    fn test_missing_reason_none_for_binary_outcomes() {
+        // 二态结果无归因；Missing 透出对应归因标签
+        assert_eq!(DomainOutcome::Sat.missing_reason(), None);
+        assert_eq!(DomainOutcome::Unsat.missing_reason(), None);
+        assert_eq!(
+            DomainOutcome::Missing(MissingReason::Incomparable).missing_reason(),
+            Some("incomparable")
+        );
+    }
+
+    // ===== evaluate_eq 二态包装直调（pub 旧签名，供外部消费方回归基准）=====
+
+    #[test]
+    fn test_evaluate_eq_binary_wrapper() {
+        let state = make_exec_state("noop", make_payload(10));
+
+        // 相等 → true
+        let sat = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("eq")),
+            ("path", JsonValue::string("__exec__.payload.x")),
+            ("value", JsonValue::Integer(10)),
+        ]);
+        assert!(evaluate_eq(&sat, &state).unwrap());
+
+        // 不等 → false
+        let unsat = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("eq")),
+            ("path", JsonValue::string("__exec__.payload.x")),
+            ("value", JsonValue::Integer(20)),
+        ]);
+        assert!(!evaluate_eq(&unsat, &state).unwrap());
+
+        // Missing（缺省 on_missing = unsat）→ 投影 false，非 Err
+        let missing = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("eq")),
+            ("path", JsonValue::string("__exec__.payload.nosuch")),
+            ("value", JsonValue::Integer(10)),
+        ]);
+        assert!(!evaluate_eq(&missing, &state).unwrap());
+    }
+
+    #[test]
+    fn test_evaluate_eq_on_missing_error_rejects() {
+        let state = make_exec_state("noop", make_payload(10));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("eq")),
+            ("path", JsonValue::string("__exec__.payload.nosuch")),
+            ("value", JsonValue::Integer(10)),
+            ("on_missing", JsonValue::string("error")),
+        ]);
+        assert!(matches!(
+            evaluate_eq(&domain, &state),
+            Err(TcbError::MissingRejected { .. })
+        ));
+    }
+
+    // ===== all 嵌套深度防线（深度沿 all 链逐层传递，超限显式报错）=====
+
+    #[test]
+    fn test_all_nesting_depth_limit() {
+        let state = make_exec_state("noop", make_payload(10));
+
+        // 65 层 all 嵌套（超过 MAX_DOMAIN_DEPTH = 64）：深度计数必须逐层递增，
+        // 否则超深 all 链静默求值（终止性防线失效）
+        let mut domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("eq")),
+            ("path", JsonValue::string("__exec__.payload.x")),
+            ("value", JsonValue::Integer(10)),
+        ]);
+        for _ in 0..65 {
+            domain = JsonValue::object_from_pairs(&[
+                ("type", JsonValue::string("all")),
+                ("inner", JsonValue::array(vec![domain])),
+            ]);
+        }
+
+        assert!(matches!(
+            evaluate_domain(&domain, &state),
+            Err(TcbError::NestingTooDeep { limit: 64 })
+        ));
+    }
 }

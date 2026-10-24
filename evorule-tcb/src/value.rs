@@ -1230,4 +1230,26 @@ mod tests {
         let v: JsonValue = vec![JsonValue::Integer(1), JsonValue::Integer(2)].into();
         assert_eq!(v.len(), Some(2));
     }
+
+    // ===== JSON 字符串转义边界（Display 面输出合法性）=====
+
+    /// 控制字符（< 0x20 且非专用转义字符）必须走 \u00XX 通道，
+    /// 原样输出会产生非法 JSON（消费方解析即崩）
+    #[test]
+    fn test_display_escapes_control_chars() {
+        let v = JsonValue::string("a\u{1}b");
+        assert_eq!(v.to_string(), "\"a\\u0001b\"");
+
+        // \x1f 是 < 0x20 边界的最后一个非专用控制字符
+        let v = JsonValue::string("\u{1f}");
+        assert_eq!(v.to_string(), "\"\\u001f\"");
+    }
+
+    /// 空格（0x20）是可打印字符，不属于转义区间——
+    /// 转义上界写成 <= 会把空格错误转义为 \u0020
+    #[test]
+    fn test_display_space_verbatim() {
+        let v = JsonValue::string("a b");
+        assert_eq!(v.to_string(), "\"a b\"");
+    }
 }
