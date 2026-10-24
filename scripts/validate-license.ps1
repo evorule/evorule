@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 #!/usr/bin/env pwsh
 # validate-license.ps1
 # Check: LICENSE file + AGPL/CC0 identifier + .rs SPDX header + SDK license field
@@ -103,6 +103,23 @@ if (Test-Path $coreEval) {
         Write-Host "[OK]   core_eval.json : CC0-1.0 metadata present" -ForegroundColor Green
     } else {
         Write-Host "[FAIL] core_eval.json : CC0-1.0 metadata missing" -ForegroundColor Red
+        $failed = $true
+    }
+}
+
+# 6. Published crate directories must contain a LICENSE file
+#    (crates.io 9-published-crate audit 2026-10-24: discipline / eval shipped without it;
+#     embedded targets audit-chain / mcu are not published and are excluded)
+$publishedCrates = @(
+    "evorule-tcb", "evorule-reactor", "evorule-governance", "evorule-cli",
+    "evorule-discipline", "evorule-eval"
+)
+foreach ($crate in $publishedCrates) {
+    $crateLicense = Join-Path $evoruleRoot "$crate\LICENSE"
+    if (Test-Path $crateLicense) {
+        Write-Host "[OK]   crate $crate : LICENSE present" -ForegroundColor Green
+    } else {
+        Write-Host "[FAIL] crate $crate : LICENSE missing (published package ships without license text)" -ForegroundColor Red
         $failed = $true
     }
 }
