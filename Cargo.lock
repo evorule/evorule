@@ -569,6 +569,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "evid-verify-core"
+version = "0.9.0"
+dependencies = [
+ "blake3",
+ "ed25519-dalek",
+ "evorule-audit-chain",
+ "evorule-tcb",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "evorule-audit-chain"
 version = "0.9.0"
 dependencies = [

@@ -1,0 +1,26 @@
+[package]
+name = "evid-verify-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = "EVID 移动端审计链独立验证内核：导出/WAL 双面判定 + 锚点封条 v2 验签（no_std）"
+rust-version = "1.81"
+
+# 哈希公式纪律：fact_hash / chain_step / fact_to_stable_json 全部走
+# evorule-audit-chain SSOT，本 crate 不私写事实链哈希路径；blake3 直连
+# 仅用于锚点载荷哈希（公式与 server 侧 anchor.rs 逐字段对齐，g5/锚点
+# 向量闸守护）。详见 evorule-hash 反绕行棘轮的仓域豁免口径。
+[dependencies]
+evorule-audit-chain = { path = "../evorule-audit-chain", version = "0.9.0", default-features = false }
+evorule-tcb = { path = "../evorule-tcb", version = "0.9.0", default-features = false }
+serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+blake3 = { version = "1", default-features = false }
+ed25519-dalek = { version = "2.2", default-features = false }
+
+[lints]
+workspace = true

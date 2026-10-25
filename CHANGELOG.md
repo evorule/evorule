@@ -28,6 +28,7 @@
 
 ### Added
 
+- **EVID 移动端验证内核 `evid-verify-core`（S2 批）**：no_std 独立 crate——审计链导出（v1.0）四步判定 / WAL 行三步判定 / 锚点封条 v2 验签（ed25519，公钥注入式）；哈希公式全走 `evorule-audit-chain` SSOT（fact_hash/chain_step/fact_to_stable_json），解析层 fail-closed（未知变体/浮点/缺字段拒收，数字通道 i64 全域→Integer、u64 高位→U64）；g5 黄金向量 11 组 self-test 内嵌。供 wasm 绑定与三方复用。
 - **v0.9.0：`JsonValue::U64(u64)` u64 全域通道**（tcb `value.rs`）——`Integer(i64)`
   无法无损承载 u64 高位值，凡值域可能超出 `i64` 的来源一律走 `U64`。配套
   `JsonValue::u64()` 构造、`From<u64>`、`as_u64`/`is_u64`；形态严格语义：
