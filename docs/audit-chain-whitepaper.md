@@ -240,7 +240,7 @@ python scripts/evid_verify.py evidence.json        # 验链；--pubkey <hex> 可
 
 | 文件 | 说明 |
 |---|---|
-| `docs/audit-chain.md` | 本文档 |
+| `docs/audit-chain-whitepaper.md` | 本文档 |
 | `src/agent/journal.rs` | journal 链哈希实现 |
 | `src/agent/journal_anchor.rs` | journal 链 → 引擎链锚定 |
 | `src/agent/memory_event/store.rs` | 事件防篡改对账（verify_cause_binding） |
@@ -251,3 +251,268 @@ python scripts/evid_verify.py evidence.json        # 验链；--pubkey <hex> 可
 | `scripts/evid_verify.py` | 单文件零依赖验证器（链/签名/篡改六分类） |
 | `scripts/evid_golden_vectors.json` | EVID 跨语言黄金向量 |
 | `scripts/evid_injection_test.py` | 七连破坏注入验收（CI 常驻） |
+
+---
+
+<a id="english"></a>
+
+# evo-agent Audit Chain: A Trustworthiness Whitepaper with Independent Verifiability
+
+> **In one sentence**: every step your AI assistant takes is recorded on a tamper-evident cryptographic chain. You don't need to trust us — you can verify it yourself.
+
+---
+
+## Layer 1 · The 30-second read (for every user)
+
+When you complete a task with evo-agent — asking a question, executing an operation, generating a document — what happens behind the scenes?
+
+Every model invocation, every response, every rule hit, and every state change is appended to a cryptographic chain that is **append-only**. Each link carries the hash fingerprint of its predecessor; tamper with any single link and every subsequent fingerprint mismatches — **tampering turns the chain red**.
+
+But "we say it's secure" means nothing. What actually matters: **you can verify it yourself**.
+
+One command — no need to install our software; Python works, and so do twenty lines of code in any language — recompute the hashes of the audit records in your hand and compare against the chain-tail value. Match: trustworthy. Mismatch: it has been tampered with.
+
+Going further: the entire audit chain can be exported as a **standardized evidence document (EVID)** — a JSON file you hand to any third party, who can verify it fully offline with a single-file Python script and one blake3 library. No software from us, no access to our servers.
+
+This is not a promise. It is math.
+
+---
+
+## Layer 2 · The 5-minute read (for engineers and technical decision-makers)
+
+### What it is
+
+evo-agent ships with a three-layer audit system plus a public projection, recording **all facts** of the AI agent's execution:
+
+| Layer | Problem solved | In one sentence |
+|---|---|---|
+| **Fact hash chain** | What if records get modified | Every fact carries a BLAKE3 hash + a link to its predecessor; modifying any single record breaks the chain |
+| **Signature anchor chain** | What if the whole chain gets rewritten | Periodic Ed25519 signatures over the chain tail (seals) — a fully recomputed chain still fails the binding verification |
+| **Runtime sentinel** | What if nobody is watching | Scheduled scans + cross-scan baseline comparison — pure appends and rewritten history are precisely distinguishable |
+| **EVID public projection** | How can external third parties verify | One-click export of the audit chain into a standardized evidence document; a single-file verifier checks the chain + signatures offline (keyless by design — the projection must be used together with signature anchors) |
+
+### What actually gets recorded
+
+Take a real session as an example — a user asks the AI "what is 1+1?", and the audit chain automatically records **20 facts**:
+
+| Fact on chain | What it records |
+|---|---|
+| Command | The user's original instruction (verbatim on chain) |
+| IoRequest → IoResponse | The exact message set sent to the model + the model's actual response (verbatim on chain) |
+| StateTransition | A full snapshot of every state change |
+| TransitionTrace | The hit/miss decision of every rule (with domain attribution) |
+| Stable | Convergence marker |
+| Session summary & preference sedimentation | Automatically captured user preferences (protected-domain write) |
+| journal anchor | Chain-tail fingerprint of the local operation log (bound to the engine chain) |
+
+**No sampling, no log-level filtering** — all facts, every single one on chain.
+
+### Tamper detection, measured
+
+We ran four attack tests against this real chain:
+
+| Attack | Difficulty | Result |
+|---|---|---|
+| Modify one response's content ("2" → "3", without recomputing hashes) | Low | ✅ **Detected**: chain hash mismatch |
+| Delete trailing records | Medium | ✅ **Detected**: sentinel baseline "record rollback" |
+| Modify content + **recompute all hashes** (making the chain self-consistent) | High | ✅ **Detected**: signature anchor binding failure — the anchor's claimed chain head ≠ the recomputed chain head |
+| Forge a signature anchor | Very high | Requires the signing private key; the key never touches audit assets |
+
+**The key point**: the third attack (full-chain recomputation) is a natural blind spot of hash chains — after modifying content, the attacker recomputes every hash and the chain becomes fully self-consistent. The signature anchor chain exists precisely to close this gap: anchors are signed off-chain, and without the private key an attacker cannot forge an anchor that passes binding verification.
+
+**The evidence-document surface is likewise tested**: seven consecutive corruption injections against an EVID document (field modification / middle-record deletion / record insertion / tail truncation / full recomputation + old signature / same key, different chain / verifier self-test) are all detected (8/8), enforced as a permanent CI acceptance gate.
+
+### How to verify
+
+**Option 1: CLI verification (recommended)**
+
+```bash
+# Export the audit chain from the server
+curl http://your-server:port/api/sessions/{id}/audit?include_content=true > audit.json
+
+# Verify the hash chain + signature anchors
+evorule verify-chain audit.json
+evorule verify-anchors audit.json --pubkey <your-public-key>
+```
+
+**Option 2: any language, twenty lines of code**
+
+The audit chain's hash algorithms are public: `fact_hash = blake3(stable_json_utf8)` and `chain_step = blake3(prev + content)`. You don't need to install evo-agent — recompute them in Python, Go, JavaScript, any language. We publish 11 cross-language golden vectors (including CJK text and boundary values) so you can validate your implementation.
+
+**Option 3: HTTP endpoints**
+
+```
+GET /api/sessions/{id}/audit/verify     → chain integrity
+GET /api/sessions/{id}/anchors          → signature anchor list
+POST /api/sessions/{id}/anchors/verify  → three-layer verification (structure + signature + binding)
+```
+
+**Option 4: EVID evidence document (for external third parties — zero barrier)**
+
+```bash
+# Exporter: export a standardized evidence document from a journal (evid_export is a standalone CLI tool)
+evid_export --journal data/sessions/{id}.jsonl -o evidence.json
+
+# Verifier: single-file verifier (Python + blake3 only, no installation of this software)
+python evid_verify.py evidence.json                  # chain integrity (tampering located in six categories)
+python evid_verify.py evidence.json --pubkey <hex>   # + Ed25519 signature verification (length anti-transplant)
+python evid_verify.py --self-test                    # verifier self-test 4/4
+```
+
+The six tamper categories: `field_modified` / `record_deleted` / `record_inserted` / `tail_truncated` / `signature_invalid` / `chain_substituted` — it doesn't just turn red; it tells you what was touched.
+
+### Deployer configuration
+
+The audit chain works out of the box (the hash chain is enabled by default). Signature anchors require key injection:
+
+```bash
+# One-time key pair generation
+evorule anchor-keygen --output /secure/path/anchor.seed
+evorule anchor-pubkey /secure/path/anchor.seed  # distribute to verifiers
+
+# Inject at server startup (the key lives only in memory, never in audit assets)
+export EVORULE_ANCHOR_SEED=<64-hex-seed>
+export EVORULE_ANCHOR_INTERVAL=64  # auto-seal an anchor every 64 facts
+```
+
+---
+
+## Layer 3 · Going deeper (for security researchers and audit experts)
+
+### Threat model
+
+| Attack vector | Detection mechanism | Layer |
+|---|---|---|
+| A1 Modify record content | content_hash recomputation mismatch | Hash chain |
+| A2 Insert/delete records | prev_hash link breakage | Hash chain |
+| A3 Prefix truncation | Anchor fact_range gapless-verification failure | Anchor chain |
+| A4 Full-chain recomputation | Anchor chain_head binding failure against the recomputed head | Anchor chain |
+| A5 Whole-chain substitution | The forged chain has no valid signature | Anchor chain |
+| A6 Engine substitution | engine_id included in the anchor payload | Anchor chain |
+| A7 Anchor prefix truncation | Anchor-chain prev link breakage + seq continuity | Anchor chain |
+| A8 Format downgrade | Missing WAL file-header format stamp | File header |
+| A9 Tail truncation | Sentinel baseline record rollback / anchor fact_range overrun | Sentinel/anchors |
+| A10 Key holder writes a false ledger from scratch | **Not defended** — see Honest boundaries | — |
+| A11 Tamper with an EVID evidence document | evid_hash recomputation mismatch — six-category localization (modify/delete/insert/truncate tail) | EVID projection |
+| A12 Forge an EVID projection chain | The projection is keyless and a self-consistent chain can be constructed — signature binding detects it: chain_substituted / signature_invalid | EVID+anchors |
+
+### Hash contract
+
+**Input canonicalization**: every Fact is serialized to stable JSON via explicit field construction —
+- Fixed key order (BTreeMap alphabetical order, matching Python `json.dumps(sort_keys=True)`)
+- `None` fields omitted (Option::None behaves like Python None)
+- UTF-8 encoding, no escaping divergence
+
+**Hash computation**:
+```
+content_hash = BLAKE3( stable_json_utf8 )
+chain_hash   = BLAKE3( prev_chain_hash_hex ++ content_hash_hex )
+```
+
+**Cross-language guarantee**: 11 golden vectors (covering both domain_attr states / CJK line breaks / i64 boundaries) are exported from real Rust computations, and an independent Python implementation cross-checks them 11/11 identical. CI runs the cross-check mandatorily — compatibility is not merely claimed in comments.
+
+**Signature payload** (Ed25519 deterministic nonce, RFC 8032):
+```
+signature_payload = "evorule-anchor/2|{session_id}|{seq}|{lo}|{hi}|{chain_head}|{key_id}|{engine_id}|{logical_time}"
+```
+Fields are joined with `|` — a third-party verifier needs only an Ed25519 library to verify signatures, zero extra dependencies.
+
+**EVID projection hash** (per record in the evidence document; the 7-field causal tuple is fully stringified / explicitly null — eliminating numeric-encoding splits):
+```
+evid_hash = BLAKE3( canonical_json([ str(seq), step_id, fact_type,
+                                      cause|null, previous_evid,
+                                      fact_hash, domain_check|null ]) )
+```
+The 5 vectors + genesis root are **independently derived** in Python and **asserted value-by-value** in Rust tests (two-way locking; a drift in either implementation turns red); CI runs `evid-parity` permanently (verifier self-test + vector cross-check + seven-injection acceptance).
+
+### Formal semantics
+
+The core property of audit-chain hash integrity — **induction over chain-step back-links** — has been verified by bounded model checking (Kani 0.67.0, unwind=10, SUCCESSFUL):
+
+> For any chain `L`, `compute_chain_hash(L)` equals folding `chain_step` over the records up to the tail.
+
+Differential testing (proptest) runs permanently in CI: the in-process append path and the WAL replay path produce fully equal quadruples (snapshot/queue/version/chain-tail hash).
+
+### Honest boundaries
+
+| What is not defended | Why | Mitigation |
+|---|---|---|
+| The key holder writes a false ledger from scratch | The key holder can construct a self-consistent chain + valid signatures — the common boundary of all signature systems | Multi-party signatures / external witnessing / HSM (deployment level) |
+| Key leakage of the audit chain itself | Key leakage → signatures become forgeable | HSM / key rotation (key_id already supported) |
+| Hash collisions | BLAKE3 collision resistance is a cryptographic assumption, not proven by this system | Ongoing cryptographic community audit |
+| Audit-chain node unavailability | Availability is out of the integrity scope | Deployment-level redundancy |
+| Forged EVID evidence projection | The projection **intentionally contains no keys** — anyone can construct a self-consistent projection chain; this is the price of "publicly verifiable" | A projection chain alone must not serve as evidence that "execution actually happened"; it must be used together with signature anchors (chain_root binding + length anti-transplant signature) |
+
+### Architecture layers
+
+```
+┌─────────────────────────────────────────────┐
+│ Signature anchor chain (non-repudiation)    │
+│ Ed25519 · chain-head binding · gapless      │
+│ ranges · key rotation                       │
+├─────────────────────────────────────────────┤
+│ Fact hash chain (tamper evidence)           │
+│ BLAKE3 · per-record links · write-ahead ·   │
+│ crash recovery                              │
+│ ┌─────────────────────────────────────────┐ │
+│ │ EVID public projection (externally      │ │
+│ │ verifiable, keyless)                    │ │
+│ │ standard evidence document · single-    │ │
+│ │ file verifier · chain_root ← anchor     │ │
+│ │ binding (combined use)                  │ │
+│ └─────────────────────────────────────────┘ │
+├─────────────────────────────────────────────┤
+│ Runtime sentinel (anti-neglect)             │
+│ baseline comparison · prefix anchoring ·    │
+│ cross-scan continuity                       │
+├─────────────────────────────────────────────┤
+│ Cross-language verification (no single      │
+│ point of trust)                             │
+│ golden vectors · independent impls · CI     │
+│ enforced cross-checks                       │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+## Appendix: quick start
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/evorule/evo-agent.git
+
+# 2. EVID evidence projection: cross-language vector cross-check (verifiable right after cloning, no runtime needed)
+pip install blake3
+python scripts/evid_verify.py --vectors scripts/evid_golden_vectors.json
+python scripts/evid_verify.py --self-test
+# Expected output: vectors: 6/6 and self-test 4/4 PASS
+
+# 3. Fact-chain cross-language golden vectors (kernel repository)
+git clone https://github.com/evorule/evorule.git
+python evorule/scripts/cross_lang_verifier.py evorule/scripts/g5_golden_vectors.json
+# Expected output: PASS: 11 vectors / 0 mismatches
+
+# 4. Export the audit chain from a running server and verify it
+curl http://localhost:18099/api/sessions/1/audit?include_content=true > audit.json
+evorule verify-chain audit.json
+
+# 5. With a journal file: export the evidence document and verify it offline with the single-file verifier
+cargo run --bin evid_export -- --journal data/sessions/{id}.jsonl -o evidence.json
+python scripts/evid_verify.py evidence.json        # verify the chain; add --pubkey <hex> to verify signatures
+```
+
+## Appendix: file index
+
+| File | Description |
+|---|---|
+| `docs/audit-chain-whitepaper.md` | This document |
+| `src/agent/journal.rs` | journal chain-hash implementation |
+| `src/agent/journal_anchor.rs` | journal chain → engine-chain anchoring |
+| `src/agent/memory_event/store.rs` | Event tamper-evidence reconciliation (verify_cause_binding) |
+| `src/agent/atif.rs` | Audit-trail export (carrying the engine chain tail) |
+| `src/bin/journal_verify.rs` | Standalone journal-chain verification tool |
+| `src/agent/evid.rs` | EVID evidence projection (causal tuple + hash contract + journal projector) |
+| `src/bin/evid_export.rs` | journal → standardized evidence document export |
+| `scripts/evid_verify.py` | Single-file zero-dependency verifier (chain/signature/six tamper categories) |
+| `scripts/evid_golden_vectors.json` | EVID cross-language golden vectors |
+| `scripts/evid_injection_test.py` | Seven-injection corruption acceptance (permanent in CI) |
