@@ -24,7 +24,7 @@ from pathlib import Path
 
 HOME = Path(os.path.expanduser("~"))
 REG_SRC = HOME / ".cargo" / "registry" / "src"
-UA = "mavis-license-audit/1.0 (third-party licence archive)"
+UA = "evorule-license-audit/1.0 (third-party licence archive)"
 ROOT = Path(r"D:\evorule")
 OUT_LIC = ROOT / "LICENSES" / "third-party"
 

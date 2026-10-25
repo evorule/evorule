@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from extract_licenses import (registry_license, crates_io_licenses, classify,
                               ALLOW, WEAK)
 
-UA = "mavis-license-audit/1.0 (compliance inventory)"
+UA = "evorule-license-audit/1.0 (compliance inventory)"
 PYPI = "https://pypi.org/pypi/{}/json"
 
 

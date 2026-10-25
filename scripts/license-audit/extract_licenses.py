@@ -16,7 +16,7 @@ from pathlib import Path
 
 HOME = Path(os.path.expanduser("~"))
 REG_SRC = HOME / ".cargo" / "registry" / "src"
-UA = "mavis-license-audit/1.0 (compliance inventory)"
+UA = "evorule-license-audit/1.0 (compliance inventory)"
 
 ALLOW = {
     "AGPL-3.0-or-later", "AGPL-3.0", "Apache-2.0", "Apache-2.0 WITH LLVM-exception",

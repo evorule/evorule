@@ -6,7 +6,7 @@ import re
 import urllib.request
 from pathlib import Path
 
-UA = {"User-Agent": "mavis-license-audit/1.0 (compliance inventory)"}
+UA = {"User-Agent": "evorule-license-audit/1.0 (compliance inventory)"}
 OUT = Path(r"D:\evorule\LICENSES\third-party")
 
 
