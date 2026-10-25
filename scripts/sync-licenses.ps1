@@ -16,12 +16,25 @@ param(
 $ErrorActionPreference = 'Stop'
 $mainRoot = Split-Path -Parent $PSScriptRoot
 $files = @('CLA-corporate.md','CLA-individual.md','COMMERCIAL_LICENSE.md','DUAL_LICENSE.md','FREE_COMMERCIAL_LICENSE.md','LICENSE','NOTICE.md')
-# 仓根目录名（与本仓同级）→ 是否套用内容对比
-$repos = @(
-  'evo-agent','evorule-rule','evorule-server','evorule-system-rules',
-  'evorule-console-cloud','evorule-console','evorule-hash','evorule-bundle',
-  'evorule-sdk','evorule-dsh-skill','evorule-experience-pack'
-)
+# 仓 token（NOTICE 仓名注入/归一化用）→ 本地目录名（与本仓同级；二者不同者在此映射）
+$repos = [ordered]@{
+  'evo-agent'                 = 'evo-agent'
+  'evorule-rule'              = 'evorule-rule'
+  'evorule-server'            = 'evorule-server'
+  'evorule-system-rules'      = 'evorule-system-rules'
+  'evorule-console-cloud'     = 'evorule-console-cloud'
+  'evorule-console'           = 'evorule-console'
+  'evorule-hash'              = 'evorule-hash'
+  'evorule-bundle'            = 'evorule-bundle'
+  'evorule-sdk'               = 'evorule-sdk'
+  'evorule-dsh-skill'         = 'evorule-dsh-skill'
+  'evorule-experience-pack'   = 'evorule-experience-pack'
+  'evorule-integration-tests' = 'evorule-integration-tests'
+  'evorule-context-inspector' = 'evorule-context-inspector'
+  'evorule-wasm-demo'         = 'evorule-wasm-demo'
+  'evo-agent-desktop'         = 'evo-agent-desktop-release-seed'
+  'sync-sentinel'             = 'evorule-sync-sentinel'
+}
 # Apache 自治仓：仅核验存在性（sdk 按设计维持 Apache-2.0）
 $apacheRepos = @('evorule-sdk')
 # Apache 自治仓裁定不补的五件（存在性也不核验）
@@ -35,8 +48,8 @@ foreach ($f in $files) {
 }
 
 $fail = 0; $synced = 0
-foreach ($repo in $repos) {
-  $repoRoot = Join-Path (Split-Path -Parent $mainRoot) $repo
+foreach ($repo in $repos.Keys) {
+  $repoRoot = Join-Path (Split-Path -Parent $mainRoot) $repos[$repo]
   if (-not (Test-Path $repoRoot)) { Write-Output "FAIL 仓不存在 $repoRoot"; $fail++; continue }
   $isApache = $apacheRepos -contains $repo
   foreach ($f in $files) {
@@ -48,9 +61,17 @@ foreach ($repo in $repos) {
       continue
     }
     if (-not (Test-Path $dst)) {
-      if ($isApache -and $filesSkipApache -contains $f) { Write-Output "SKIP $repo/$f (Apache 自治仓，裁定不适用)"; continue }
       Write-Output "MISS $repo/$f 缺失"
-      if ($Sync) { Copy-Item (Join-Path $mainRoot $f) $dst -Force; Write-Output "SYNC $repo/$f <- 主仓覆盖"; $synced++ } else { $fail++ }
+      if ($Sync) {
+        if ($f -eq 'NOTICE.md') {
+          $new = $mainText[$f].Replace('gitee.com/evorule/evorule', "gitee.com/evorule/$repo")
+          [IO.File]::WriteAllText($dst, $new)
+        } else {
+          Copy-Item (Join-Path $mainRoot $f) $dst -Force
+        }
+        Write-Output "SYNC $repo/$f <- 已分发（NOTICE=模板+仓名注入，其余=主仓原文）"
+        $synced++
+      } else { $fail++ }
       continue
     }
     if ($isApache -and $filesSkipApache -contains $f) { Write-Output "SKIP $repo/$f (Apache 自治仓，裁定不适用)"; continue }
@@ -80,4 +101,4 @@ foreach ($repo in $repos) {
 Write-Output ('----')
 if ($Sync) { Write-Output "SYNC 完成：重写 $synced 件；复验请再跑 -Check" }
 if ($fail -gt 0) { Write-Output "CHECK-FAIL: $fail 项不一致"; exit 1 }
-Write-Output 'CHECK-PASS: 十一仓许可文件全部合规'
+Write-Output 'CHECK-PASS: 十六仓许可文件全部合规'

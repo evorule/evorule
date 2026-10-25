@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Render D:\\evorule\\THIRD-PARTY-NOTICES.md from the audit inventory."""
+import argparse
 import json
+import re
 from collections import Counter, defaultdict
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(r"D:\evorule")
 OUT = ROOT / "THIRD-PARTY-NOTICES.md"
+INV_DEFAULT = r"D:\minimax-agent\.audit\inv_final.json"
 
 REPO_META = {
     "evorule": ("核心引擎 / TCB 唯一版本源（8 crate）",
@@ -83,75 +87,179 @@ SPECIAL = [
 ]
 
 DIST_MATRIX = [
-    ("evorule", "crates.io 包（6 个 crate）",
-     "✅ 已随包（LICENSE + NOTICE.md）",
-     "⚠️ evorule-discipline / evorule-eval 两包**缺 LICENSE 正文**"),
+    ("evorule", "crates.io 包（6 个 crate）+ CLI 双平台二进制",
+     "✅ 6 crate LICENSE 全部在位（cargo publish 自动附带）；CLI 合规归档随 Release（五件套 + SBOM）",
+     "dist-gate 已接线"),
     ("evorule-server", "零依赖分发包 win64.zip / linux64.tar.gz",
-     "❌ 包内无 LICENSE、无 NOTICE、无第三方声明、无源码提供入口",
-     "必须补：LICENSE + NOTICE + THIRD-PARTY-NOTICES + 源码提供链接（AGPL §6/§13）"),
+     "✅ 包内五件套（LICENSE + NOTICE + THIRD-PARTY-NOTICES + LICENSES/ + SOURCE.md）+ 源码 tarball",
+     "dist-gate 已接线（@a3aa299）"),
     ("evorule-rule", "双平台双 bin",
-     "❌ 包内无 LICENSE", "必须补：LICENSE + NOTICE + THIRD-PARTY-NOTICES"),
-    ("evorule-bundle", "crates.io 包", "✅ 已随包（LICENSE + 双许可文件 + NOTICE）", "—"),
-    ("evorule-hash", "crates.io 包", "✅ 已随包（LICENSE + 双许可文件 + NOTICE）", "—"),
+     "✅ 独立合规归档 zip 随 Release（五件套）+ 源码 tarball",
+     "dist-gate 已接线（@a3aa299）"),
+    ("evorule-bundle", "crates.io 包", "✅ 已随包（LICENSE + 双许可文件 + NOTICE）", "crate 闸：LICENSE 在位"),
+    ("evorule-hash", "crates.io 包", "✅ 已随包（LICENSE + 双许可文件 + NOTICE）", "crate 闸：LICENSE 在位"),
     ("evorule-console-cloud", "静态站点 zip + GitHub Pages",
-     "❌ 包内无 LICENSE / NOTICE", "必须补（前端 npm 依赖归属）+ §13 源码提供"),
+     "✅ web 包内五件套 + 源码 tarball（GitHub Pages 在线 demo 同源构建）",
+     "dist-gate 已接线（@a3aa299）"),
     ("evorule-wasm-demo", "npm 包 evorule-wasm-demo",
-     "✅ npm 包内含 LICENSE", "npm 依赖的第三方声明未随包"),
-    ("evo-agent", "npm 包 evo-agent-node / 桌面端",
-     "❌ sdk/nodejs 目录**无 LICENSE**（npm 发布包将不含 AGPL 正文）",
-     "必须补：LICENSE + THIRD-PARTY-NOTICES 进 npm 包"),
+     "⚠️ npm 发布无 CI 发布链（合规扫描器归类 none）；2026-10-24 实测包内含 LICENSE",
+     "发布链 CI 化与第三方声明随包待后续批次"),
+    ("evo-agent", "npm 包 evo-agent-node",
+     "✅ sdk/nodejs LICENSE + license 字段在位；npm publish 已 CI 化（sdk-nodejs-release.yml）",
+     "dist-gate 已接线（@a3aa299）"),
     ("evo-agent-desktop", "桌面安装包",
-     "❌ 无 LICENSE / 第三方声明", "必须补（Tauri 打包需携带）"),
+     "✅ 打包面（desktop-release.yml + desktop/build-installer.ps1）携带五件套",
+     "dist-gate 已接线（@a3aa299）"),
     ("evorule-system-rules", "仓库资产", "✅ 仓根有 LICENSE", "—"),
-    ("evorule-context-inspector", "crates.io 包", "✅ 已随包", "—"),
+    ("evorule-context-inspector", "crates.io 包", "✅ 已随包（LICENSE 在位）",
+     "发布为手工操作，无 CI 发布链（合规扫描器归类 none）"),
     ("evorule-integration-tests", "不分发", "—", "—"),
     ("sync-sentinel", "不分发", "—", "—"),
 ]
 
 
-def main():
-    inv = json.loads(Path(r"D:\minimax-agent\.audit\inv_final.json").read_text(encoding="utf-8"))
-    man = json.loads((ROOT / "LICENSES" / "third-party" / "manifest.json").read_text(encoding="utf-8"))
-
-    per_repo = {}
+def count_repo(r):
+    """Per-repo dependency counts + license-expression tallies (shared by both modes)."""
+    c = npm = py = 0
     totals = Counter()
     lic_crates = defaultdict(set)
-    for repo, r in inv.items():
-        c = npm = py = 0
-        for x in r["crates"]:
-            if x["license"] in ("(local path/workspace)", "(git dependency)"):
-                continue
-            c += 1
-            totals[x["license"]] += 1
-            lic_crates[x["license"]].add(x["name"])
-        for n in r["npm"]:
-            npm += 1
-            totals[n["license"]] += 1
-            lic_crates[n["license"]].add(n["name"])
-        for p in r["python"]:
-            py += 1
-            totals[p["license"] or p.get("classifier", "")] += 1
-        per_repo[repo] = (c, npm, py)
+    for x in r["crates"]:
+        if x["license"] in ("(local path/workspace)", "(git dependency)"):
+            continue
+        c += 1
+        totals[x["license"]] += 1
+        lic_crates[x["license"]].add(x["name"])
+    for n in r["npm"]:
+        npm += 1
+        totals[n["license"]] += 1
+        lic_crates[n["license"]].add(n["name"])
+    for p in r["python"]:
+        py += 1
+        totals[p["license"] or p.get("classifier", "")] += 1
+    return c, npm, py, totals, lic_crates
 
-    total_deps = sum(totals.values())
 
-    # licence-id aggregation (composite expressions -> their ids)
-    def ids(expr):
-        known = list(OBLIG.keys()) + ["Apache-2.0 WITH LLVM-exception",
-                                      "BSD-1-Clause", "PostgreSQL", "X11",
-                                      "CC-BY-4.0", "LGPL-2.1", "EPL-2.0"]
-        import re
-        out = []
-        for k in sorted(known, key=len, reverse=True):
-            if re.search(r"(?<![\w.+-])" + re.escape(k) + r"(?![\w.+-])", expr or ""):
-                out.append(k)
-        return out
+def ids(expr):
+    """Split a license expression into its known SPDX ids (longest first)."""
+    known = list(OBLIG.keys()) + ["Apache-2.0 WITH LLVM-exception",
+                                  "BSD-1-Clause", "PostgreSQL", "X11",
+                                  "CC-BY-4.0", "LGPL-2.1", "EPL-2.0"]
+    out = []
+    for k in sorted(known, key=len, reverse=True):
+        if re.search(r"(?<![\w.+-])" + re.escape(k) + r"(?![\w.+-])", expr or ""):
+            out.append(k)
+    return out
 
+
+def aggregate_licenses(totals, lic_crates):
+    """Aggregate license expressions into per-id counts/components."""
     lic_agg = defaultdict(lambda: {"count": 0, "crates": set()})
     for expr, n in totals.items():
         for i in ids(expr) or [expr]:
             lic_agg[i]["count"] += n
             lic_agg[i]["crates"] |= lic_crates.get(expr, set())
+    return lic_agg
+
+
+def render_repo_notice(repo, inv, man, out_path):
+    """Render a per-repo subset notice (third-party section for one repo only)."""
+    if repo not in inv:
+        raise SystemExit("repo not found in audit inventory: %s" % repo)
+    _, _, _, totals, lic_crates = count_repo(inv[repo])
+    lic_agg = aggregate_licenses(totals, lic_crates)
+    n_deps = sum(totals.values())
+
+    L = []
+    A = L.append
+    A("# THIRD-PARTY-NOTICES — %s 第三方组件使用声明" % repo)
+    A("")
+    A("> 本文件为 `%s` 分发物的第三方组件使用声明（**单仓子集**），由根仓"
+      " `scripts/license-audit/gen_notice.py --repo %s` 从生态级审计清单取子集生成。"
+      % (repo, repo))
+    A("> 义务边界与归档口径的完整说明见根仓生态级总纲 `THIRD-PARTY-NOTICES.md`。")
+    A("> 生成日期：%s · 本仓依赖记录 %d 条" % (date.today().isoformat(), n_deps))
+    A("")
+    A("## 一、第三方许可总览（本仓）")
+    A("")
+    A("复合表达式（如 `MIT OR Apache-2.0`）按其可选分支拆分统计，同一依赖可能计入多行。")
+    A("")
+    A("| 许可证 | 依赖记录数 | 涉及组件 | 义务 | 正文归档 |")
+    A("|---|---|---|---|---|")
+    for lic, info in sorted(lic_agg.items(), key=lambda kv: -kv[1]["count"]):
+        if lic in ("NO-LICENSE-FIELD", "UNLICENSED/UNDECLARED", "NOT-FOUND",
+                   "UNRESOLVED", ""):
+            continue
+        comps = ", ".join("`%s`" % s for s in sorted(info["crates"])[:6]) or "—"
+        more = " 等" if len(info["crates"]) > 6 else ""
+        obl = OBLIG.get(lic, "保留版权声明与许可正文。")
+        arch = "✅" if lic in man.get("licenses", {}) and \
+            man["licenses"][lic].get("file") else "⚠️ 需人工补"
+        A("| `%s` | %d | %s%s | %s | %s |" % (lic, info["count"], comps, more, obl, arch))
+    A("")
+    A("## 二、需特别标注的组件（本仓相关）")
+    A("")
+    hits = [(lic, who, why) for lic, who, why in SPECIAL
+            if re.search(r"(?<![\w-])" + re.escape(repo) + r"(?![\w-])", who)]
+    if hits:
+        for lic, who, why in hits:
+            A("### `%s` — %s" % (lic, who))
+            A("")
+            A(why)
+            A("")
+    else:
+        A("（无）")
+    A("")
+    A("## 三、本仓分发义务")
+    A("")
+    rows = [m for m in DIST_MATRIX if m[0] == repo]
+    if rows:
+        A("| 仓 | 分发物 | 现状 | 结论 |")
+        A("|---|---|---|---|")
+        for _repo, artifact, status, verdict in rows:
+            A("| `%s` | %s | %s | %s |" % (repo, artifact, status, verdict))
+    else:
+        A("本仓无对外分发物（合规扫描器归类 none）。")
+    A("")
+    text = "\n".join(L) + "\n"
+    out_path.write_bytes(text.replace("\r\n", "\n").encode("utf-8"))
+    print("wrote", out_path, len(text.encode("utf-8")), "bytes")
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Render the ecosystem THIRD-PARTY-NOTICES.md (default) "
+                    "or a per-repo subset notice (--repo).")
+    ap.add_argument("--repo", default="",
+                    help="render a subset notice for this repo only "
+                         "(output defaults to THIRD-PARTY-NOTICES-<repo>.md)")
+    ap.add_argument("--inv", default=INV_DEFAULT,
+                    help="audit inventory JSON path (default: %(default)s)")
+    ap.add_argument("--out", default="",
+                    help="output path (default: THIRD-PARTY-NOTICES.md, "
+                         "or THIRD-PARTY-NOTICES-<repo>.md with --repo)")
+    args = ap.parse_args()
+
+    inv = json.loads(Path(args.inv).read_text(encoding="utf-8"))
+    man = json.loads((ROOT / "LICENSES" / "third-party" / "manifest.json").read_text(encoding="utf-8"))
+
+    if args.repo:
+        out = Path(args.out) if args.out else ROOT / ("THIRD-PARTY-NOTICES-%s.md" % args.repo)
+        render_repo_notice(args.repo, inv, man, out)
+        return
+
+    per_repo = {}
+    totals = Counter()
+    lic_crates = defaultdict(set)
+    for repo, r in inv.items():
+        c, npm, py, t, lc = count_repo(r)
+        totals.update(t)
+        for k, v in lc.items():
+            lic_crates[k] |= v
+        per_repo[repo] = (c, npm, py)
+
+    total_deps = sum(totals.values())
+
+    lic_agg = aggregate_licenses(totals, lic_crates)
 
     L = []
     A = L.append
@@ -159,15 +267,16 @@ def main():
     A("")
     A("> **本文件是 EvoRule 生态 13 个在役仓库的第三方组件使用声明（使用声明文件）。**")
     A("> 适用范围、义务边界、归档位置与复现方法见下文。")
-    A("> 首次生成：2026-10-24 · 审计基线：13 在役仓 · 依赖记录 %d 条" % total_deps)
+    A("> 首次生成：2026-10-24 · 本版：2026-10-25（Wave 2 分发合规收口）· 审计基线：13 在役仓 · 依赖记录 %d 条" % total_deps)
     A("")
     A("---")
     A("")
     A("## 〇、一句话结论")
     A("")
     A("**依赖许可证面无禁止级风险（GPL-2.0-only / SSPL / BUSL / 非商用限制 = 0 项）；"
-      "但分发义务未履行——各仓发行产物未随附许可证正文、第三方声明与 AGPL 源码提供入口，"
-      "这是当前最实际的法律风险点。**")
+      "分发义务已于 2026-10-25（Wave 2）收口——有分发链的仓全部随附五件套"
+      "（LICENSE + NOTICE + THIRD-PARTY-NOTICES + LICENSES/ + SOURCE.md），"
+      "缺件发布由 dist-gate 阻断。**")
     A("")
     A("| 维度 | 结论 |")
     A("|---|---|")
@@ -176,10 +285,10 @@ def main():
       "BSL-1.0 / BlueOak-1.0.0 / NCSA / OFL-1.1 / BSD-1-Clause）— "
       "**已于 2026-10-24 全部登记入 `deny.toml`**，复验 0 红项 |")
     A("| 需特别标注的 copyleft 依赖 | 1 类（MPL-2.0，dompurify，可选 Apache-2.0 分支） |")
-    A("| 已发布 crate 缺许可证正文 | **2 / 9**（evorule-discipline、evorule-eval） |")
-    A("| 发行分发包缺 LICENSE/NOTICE/声明 | **6 / 13** 仓 |")
-    A("| 依赖许可 CI 门禁覆盖 | **1 / 13** 仓（仅根仓有 cargo-deny） |")
-    A("| 自有许可七件套一致性 | **红**：17 项不一致（10 仓），详见第二节 |")
+    A("| 已发布 crate 缺许可证正文 | **0 / 9**（evorule-discipline、evorule-eval 已于 Wave 2 补齐） |")
+    A("| 发行分发包缺 LICENSE/NOTICE/声明 | **0**（Wave 2 后有分发链的仓全部五件套随附 + dist-gate 阻断，详见第五节） |")
+    A("| 依赖许可 CI 门禁覆盖 | **全生态**：license-gate（防漂移比对 + cargo-deny 四闸）+ dist-gate（发布阻断）自根仓 reusable workflow 钉 SHA 复用，10 仓 `deny.toml` 统一 |")
+    A("| 自有许可七件套一致性 | **绿**（Wave 2 重写 17 件漂移件；核验覆盖面扩容至 16 仓进行中，详见第二节） |")
     A("")
     A("---")
     A("")
@@ -226,15 +335,12 @@ def main():
       "它是生态级（跨 13 仓）的汇总声明。若需单仓声明，可从 "
       "`LICENSES/third-party/manifest.json` 的 `dependencies[].repo` 字段按仓筛选取子集生成。")
     A("")
-    A("**七件套的两个现存缺口**（2026-10-24 实测 `sync-licenses.ps1 -Check`）：")
+    A("**七件套状态**（2026-10-25 更新）：")
     A("")
-    A("1. **门禁当前为红**：17 项不一致（`NOTICE.md` × 10 仓、`DUAL_LICENSE.md` × 7 仓）。"
-      "副本仓停在 2026-09-08「通道 D 贡献授权」条款加入之前的旧版，属真实内容漂移，"
-      "不是仓名归一化能吸收的差异。修复：`powershell -File scripts/sync-licenses.ps1 -Sync`。")
-    A("2. **覆盖不全**：七件套核验的 11 仓里，4 仓（`evorule-console` / `evorule-dsh-skill` / "
-      "`evorule-experience-pack` / `evorule-sdk`）已不在 13 在役公开仓内（均为私有仓），"
-      "而 5 个在役仓（`evorule-integration-tests` / `evorule-context-inspector` / "
-      "`evorule-wasm-demo` / `evo-agent-desktop` / `sync-sentinel`）**未被纳入核验**。")
+    A("1. **内容一致性：已收口**——2026-10-24 实测的 17 项不一致（`NOTICE.md` × 10 仓、"
+      "`DUAL_LICENSE.md` × 7 仓）已于 Wave 2 全部重写对齐；`sync-licenses.ps1 -Check` 复验通过。")
+    A("2. **覆盖面：扩容中**——原核验 11 仓含 4 个已退役私有仓；扩容批次将核验面调整为"
+      " 13 在役仓 + 3 退役私有仓 = 16 仓（`sync-licenses.ps1` 仓名/目录映射同步重构）。")
     A("")
     A("---")
     A("")
@@ -272,7 +378,7 @@ def main():
         A("")
     A("---")
     A("")
-    A("## 五、分发义务矩阵（这是当前的主要缺口）")
+    A("## 五、分发义务矩阵（Wave 2 后已收口）")
     A("")
     A("AGPL-3.0 的分发义务：§4（随附许可证副本 + 保留声明 + 修改版加「Appropriate Legal "
       "Notices」）、§6（分发对象代码须附 §4 要求的通知）、§13（网络服务须提供对应源码）。"
@@ -283,8 +389,9 @@ def main():
     for repo, artifact, status, verdict in DIST_MATRIX:
         A("| `%s` | %s | %s | %s |" % (repo, artifact, status, verdict))
     A("")
-    A("> 上表「现状」为 2026-10-24 对各仓 `release.yml` / `ci.yml` 打包步骤的逐行核验，"
-      "并对 crates.io 上 9 个已发布 crate 的 `.crate` 包内容做了下载实测。")
+    A("> 上表「现状」为 2026-10-25 对 Wave 2 门禁接线后各仓 release 链的复核"
+      "（`check-dist-compliance.ps1` + `release.yml` 逐行核验）；2026-10-24 首轮审计的"
+      " 6/13 分发缺口已全部收口。首轮对 crates.io 9 个 `.crate` 包的下载实测结论仍有效。")
     A("")
     A("---")
     A("")
@@ -325,8 +432,11 @@ def main():
     A("python fetch_missing_licenses.py   # NCSA / LGPL-2.1：上游 crate 未分发正文")
     A("python finalize_manifest.py")
     A("")
-    A("# 4. 生成本文件")
+    A("# 4. 生成本文件（生态级总纲；--inv/--out 可改清单与输出路径）")
     A("python gen_notice.py")
+    A("")
+    A("# 4b. 单仓子集声明（供分发包精简附带；缺省输出 THIRD-PARTY-NOTICES-<repo>.md）")
+    A("python gen_notice.py --repo evorule-server")
     A("```")
     A("")
     A("**更新 SOP**：新增依赖后重跑上述流程；若引入新许可标识，需同时")
@@ -335,21 +445,25 @@ def main():
     A("")
     A("---")
     A("")
-    A("## 八、待人工确认项")
+    A("## 八、遗留与已收口事项")
     A("")
-    A("1. **`evo-agent-node`（npm）发布包缺 LICENSE** — `sdk/nodejs/` 目录内无 LICENSE 文件，"
-      "npm 打包时不会自动附带，发布出去的 AGPL 包将不含许可证正文。")
-    A("2. **`evorule-discipline` / `evorule-eval`（crates.io）发布包缺 LICENSE** — "
-      "实测 `.crate` 包内仅 5 个文件，无 LICENSE、无 NOTICE。")
-    A("3. **两个 npm 工作区包未声明 license 字段** — `evo-agent-desktop`、"
-      "`evorule-codegraph-bridge`（均为 private，不发布），但建议补 `AGPL-3.0-or-later` 以保持一致。")
-    A("4. **`@colbymchenry/codegraph` 为 `file:` 仓外本地依赖** — 指向 `evorule-project/codegraph`"
-      "（MIT，非 git 仓），不可复现、不可溯源，建议改为 version/git-rev 依赖。")
-    A("5. **依赖许可 CI 门禁仅覆盖 1/13 仓** — 建议将其余 12 仓接入 cargo-deny 门禁。")
-    A("6. **七件套一致性门禁当前为红**（17 项不一致，10 仓）— 见第二节；"
-      "5 个在役仓尚未纳入七件套核验范围。")
-    A("7. **`evorule-law-packs` 不在在役仓清单内** — 4 个判据包基于官方原文自行编写、"
-      "未使用第三方译文（见各包 MAPPING.md 声明），法律风险低；但若未来随产品分发，"
+    A("以下为 2026-10-24 首轮审计的待确认项及其 2026-10-25 状态：")
+    A("")
+    A("1. **[已收口] `evo-agent-node`（npm）发布包缺 LICENSE** — `sdk/nodejs/` 的 LICENSE 文件与"
+      " package.json `license` 字段已在位；npm publish 已 CI 化（`sdk-nodejs-release.yml`）并接 dist-gate。")
+    A("2. **[已收口] `evorule-discipline` / `evorule-eval`（crates.io）发布包缺 LICENSE** — "
+      "两 crate 根目录 LICENSE 已于 Wave 2 补齐，cargo publish 自动附带。")
+    A("3. **[已收口] 两个 npm 工作区包未声明 license 字段** — `evo-agent-desktop`、"
+      "`evorule-codegraph-bridge`（均为 private，不发布）均已补 `AGPL-3.0-or-later`。")
+    A("4. **[已收口] `@colbymchenry/codegraph` 为 `file:` 仓外本地依赖** — 已以 vendoring 消除："
+      "构建产物 dist 入仓（`evorule-server/plugins/codegraph-bridge/vendor/`，MIT 正文随附），"
+      "上游版本同版钉 0.9.4，可复现可溯源。")
+    A("5. **[已收口] 依赖许可 CI 门禁覆盖** — Wave 2 已全生态接线：license-gate（防漂移比对 + "
+      "cargo-deny 四闸）+ dist-gate（发布阻断）自根仓 reusable workflow 钉 SHA 复用，10 仓 deny.toml 统一。")
+    A("6. **[已收口] 七件套一致性门禁红（17 项不一致）** — Wave 2 已重写对齐（见第二节）；"
+      "核验覆盖面扩容至 16 仓进行中。")
+    A("7. **[维持观察] `evorule-law-packs` 不在在役仓清单内** — 4 个判据包基于官方原文自行编写、"
+      "未使用第三方译文（见各包 MAPPING.md 声明），法律风险低；维持条件触发：若未来随产品分发，"
       "需补其自身的许可声明（当前无 git 仓、无 LICENSE）。")
     A("")
     A("---")

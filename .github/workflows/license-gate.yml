@@ -15,6 +15,12 @@ name: license-gate
 
 on:
   workflow_call:
+    inputs:
+      extra-checkouts:
+        description: "Space-separated 'repo@sha' tokens shallow-pinned from evorule/<repo> as siblings of the caller workspace (resolves cross-repo path dependencies for cargo-deny)."
+        required: false
+        type: string
+        default: ''
   workflow_dispatch:
 
 permissions:
@@ -27,6 +33,18 @@ jobs:
     steps:
       - name: Checkout caller repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Checkout extra sibling repositories (cross-repo path deps)
+        if: inputs.extra-checkouts != ''
+        run: |
+          for tok in ${{ inputs.extra-checkouts }}; do
+            repo="${tok%%@*}"; sha="${tok##*@}"
+            echo "shallow-pinning evorule/${repo} @ ${sha} -> ${GITHUB_WORKSPACE}/../${repo}"
+            git init "${GITHUB_WORKSPACE}/../${repo}"
+            git -C "${GITHUB_WORKSPACE}/../${repo}" remote add origin "https://github.com/evorule/${repo}.git"
+            git -C "${GITHUB_WORKSPACE}/../${repo}" fetch --depth 1 origin "${sha}"
+            git -C "${GITHUB_WORKSPACE}/../${repo}" checkout --detach FETCH_HEAD
+          done
 
       - name: Checkout root baseline (deny.toml SSOT)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
