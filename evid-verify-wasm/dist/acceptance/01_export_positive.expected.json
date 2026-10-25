@@ -1,0 +1,26 @@
+{
+  "last_hash_matches": true,
+  "ok": true,
+  "stopped_at": null,
+  "tail_hash": "c64578671418b36f8055526ce47aab0a5b84c76f9f71749a9b7cf81745c6f696",
+  "verdicts": [
+    {
+      "index": 0,
+      "ok": true,
+      "reason": null,
+      "step": null
+    },
+    {
+      "index": 1,
+      "ok": true,
+      "reason": null,
+      "step": null
+    },
+    {
+      "index": 2,
+      "ok": true,
+      "reason": null,
+      "step": null
+    }
+  ]
+}

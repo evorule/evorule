@@ -1,0 +1,52 @@
+{
+  "entries": [
+    {
+      "cause": null,
+      "content_hash": "902f22869450a78851d5bf1396b64d4bc7be0666468a39d2dac53b7d176f8047",
+      "fact": {
+        "id": 2,
+        "path": "test.path",
+        "type": "PayloadUpdate",
+        "value": "test_value"
+      },
+      "fact_id": 2,
+      "fact_json_stable": "{\"id\":2,\"path\":\"test.path\",\"type\":\"PayloadUpdate\",\"value\":\"test_value\"}",
+      "fact_type": "PayloadUpdate",
+      "logical_time": 1,
+      "prev_hash": "a7d4cc10fdba7231ad28495030262821b92eb72b5f7e29ba3aa3497dfff7bfa4"
+    },
+    {
+      "cause": null,
+      "content_hash": "56de9ce95d41896edf081f452b4ea5d3ad6508de3a0781a36fa5fbd13c586aa1",
+      "fact": {
+        "id": 1,
+        "instruction": {},
+        "type": "Command"
+      },
+      "fact_id": 1,
+      "fact_json_stable": "{\"id\":1,\"instruction\":{},\"type\":\"Command\"}",
+      "fact_type": "Command",
+      "logical_time": 1,
+      "prev_hash": "genesis"
+    },
+    {
+      "cause": null,
+      "content_hash": "6c4a12ee89a692181a07ede80b0864f0774286427fce67156944f6f33290ddf7",
+      "fact": {
+        "cause": 1,
+        "id": 3,
+        "new_payload": {},
+        "new_queue": [],
+        "type": "StateTransition"
+      },
+      "fact_id": 3,
+      "fact_json_stable": "{\"cause\":1,\"id\":3,\"new_payload\":{},\"new_queue\":[],\"type\":\"StateTransition\"}",
+      "fact_type": "StateTransition",
+      "logical_time": 1,
+      "prev_hash": "513b620435d70994b25fd8c864b1b6c75fe1434af2f185a1c2499fddd631f3a0"
+    }
+  ],
+  "entry_count": 3,
+  "last_hash": "c64578671418b36f8055526ce47aab0a5b84c76f9f71749a9b7cf81745c6f696",
+  "version": "1.0"
+}

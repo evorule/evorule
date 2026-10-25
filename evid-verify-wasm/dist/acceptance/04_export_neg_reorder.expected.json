@@ -1,0 +1,14 @@
+{
+  "last_hash_matches": false,
+  "ok": false,
+  "stopped_at": 0,
+  "tail_hash": "genesis",
+  "verdicts": [
+    {
+      "index": 0,
+      "ok": false,
+      "reason": "prev_hash=a7d4cc10fdba7231… 与折叠链头=genesis 不符（链接断裂）",
+      "step": "link"
+    }
+  ]
+}

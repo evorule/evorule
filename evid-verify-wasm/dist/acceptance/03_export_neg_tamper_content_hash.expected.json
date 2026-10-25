@@ -1,0 +1,20 @@
+{
+  "last_hash_matches": false,
+  "ok": false,
+  "stopped_at": 1,
+  "tail_hash": "a7d4cc10fdba7231ad28495030262821b92eb72b5f7e29ba3aa3497dfff7bfa4",
+  "verdicts": [
+    {
+      "index": 0,
+      "ok": true,
+      "reason": null,
+      "step": null
+    },
+    {
+      "index": 1,
+      "ok": false,
+      "reason": "content_hash 失配: 声明=ffffffffffffffff… 重算=902f22869450a788…",
+      "step": "content"
+    }
+  ]
+}
