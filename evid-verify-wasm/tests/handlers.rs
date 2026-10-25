@@ -242,6 +242,8 @@ fn dump_browser_fixtures() {
     };
     write("export_valid", &export_doc_json(3, None));
     write("export_tampered", &export_doc_json(3, Some(1)));
+    // 微型自检向量（1 条目，内嵌 HTML 自检模式用：一键自证内核未被裁剪）
+    write("self_check", &export_doc_json(1, None));
     write("wal_valid", &wal_lines_json(3, None));
     write("wal_tampered", &wal_lines_json(3, Some(2)));
     write("seals_valid", &seals_input(false));

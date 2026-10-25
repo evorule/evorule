@@ -86,6 +86,8 @@ footer{margin-top:18px;color:var(--dim);font-size:12px}
 <header>
   <h1>EVID 审计链独立验证器</h1>
   <span id="kernel-status" class="badge">内核加载中…</span>
+  <button id="self-check" class="clear">内核自检</button>
+  <span id="self-check-status" class="hint"></span>
 </header>
 <p class="sub">离线 · 零信任 · 判定全部在本机 wasm 内核完成（哈希公式重算，不信任任何随附结论；页面零网络请求）</p>
 
@@ -162,6 +164,9 @@ footer{margin-top:18px;color:var(--dim);font-size:12px}
 <script>
 "use strict";
 const WASM_B64 = "__WASM_BASE64__";
+/* 内核自检向量（构建时注入，1 条目微型导出文档）：一键自证核心判定
+   能力未被裁剪——判定结果非全绿即页面被篡改/内核残缺 */
+const SELF_CHECK = __SELF_CHECK_VECTOR__;
 const ENTRY = {
   export: "verify_export_wasm",
   wal: "verify_wal_wasm",
@@ -351,6 +356,23 @@ document.querySelectorAll("[data-clear]").forEach(b => b.addEventListener("click
 ["export", "wal", "seals"].forEach(bindFile);
 document.getElementById("keys-input").addEventListener("input", renderKeys);
 renderKeys();
+
+/* 内核自检：内嵌微型向量过导出面判定，非全绿即标红 */
+document.getElementById("self-check").addEventListener("click", () => {
+  const status = document.getElementById("self-check-status");
+  if (!wasm) { status.textContent = "内核尚未加载"; return; }
+  try {
+    const r = callAbi("verify_export_wasm", JSON.stringify(SELF_CHECK));
+    const ok = r.ok === true && r.last_hash_matches === true &&
+      Array.isArray(r.verdicts) && r.verdicts.length === 1 && r.verdicts[0].ok === true;
+    status.textContent = ok ? "自检通过（内嵌向量全绿）" : "自检失败：" + (r.error || "判定非全绿");
+    status.className = ok ? "t-ok" : "t-bad";
+  } catch (e) {
+    status.textContent = "自检异常: " + e.message;
+    status.className = "t-bad";
+  }
+});
+
 loadKernel();
 </script>
 </body>

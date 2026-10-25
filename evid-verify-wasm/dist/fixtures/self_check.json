@@ -1,0 +1,21 @@
+{
+  "entries": [
+    {
+      "cause": null,
+      "content_hash": "56de9ce95d41896edf081f452b4ea5d3ad6508de3a0781a36fa5fbd13c586aa1",
+      "fact": {
+        "id": 1,
+        "instruction": {},
+        "type": "Command"
+      },
+      "fact_id": 1,
+      "fact_json_stable": "{\"id\":1,\"instruction\":{},\"type\":\"Command\"}",
+      "fact_type": "Command",
+      "logical_time": 1,
+      "prev_hash": "genesis"
+    }
+  ],
+  "entry_count": 1,
+  "last_hash": "a7d4cc10fdba7231ad28495030262821b92eb72b5f7e29ba3aa3497dfff7bfa4",
+  "version": "1.0"
+}
