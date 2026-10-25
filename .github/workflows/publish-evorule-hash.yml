@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 EvoRule Project
+#
+# evorule-hash 的 crates.io 发布通道。
+# CARGO_REGISTRY_TOKEN secret 的作用域在本仓（2026-10-13 起），故发布工作流
+# 置于本仓：远程检出 evorule-hash 目标提交后以 token 发布。
+name: Publish evorule-hash
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: evorule/evorule-hash
+          ref: main
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo publish
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
