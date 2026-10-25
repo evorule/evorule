@@ -581,6 +581,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "evid-verify-wasm"
+version = "0.9.0"
+dependencies = [
+ "ed25519-dalek",
+ "evid-verify-core",
+ "evorule-audit-chain",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "evorule-audit-chain"
 version = "0.9.0"
 dependencies = [

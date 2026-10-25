@@ -1,0 +1,35 @@
+[package]
+name = "evid-verify-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = "EVID 移动端验证器 wasm 绑定：extern \"C\" 字节 ABI（免安装主产物）+ wasm-bindgen 绑定面（feature bindgen）"
+rust-version = "1.81"
+
+# 双路线：cdylib（extern "C" 字节 ABI，零 import 零 JS 胶水，单文件 HTML
+# 验证器主产物）+ rlib（宿主侧 handler 测试）；bindgen feature 才编译
+# wasm-bindgen 绑定面——route A 产物保持零 import，WebAssembly.instantiate
+# 即用（wasm-bindgen 会在模块里挂宿主 import，污染免安装实例化）。
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+bindgen = ["dep:wasm-bindgen"]
+
+[dependencies]
+evid-verify-core = { path = "../evid-verify-core", version = "0.9.0" }
+serde_json = "1"
+wasm-bindgen = { version = "0.2", optional = true }
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+ed25519-dalek = "2.2"
+evorule-audit-chain = { path = "../evorule-audit-chain", version = "0.9.0" }
+
+[lints]
+workspace = true

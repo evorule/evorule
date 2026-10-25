@@ -28,6 +28,15 @@
 
 ### Added
 
+- **EVID 移动端验证器 wasm 绑定 `evid-verify-wasm`（S3 批）**：双路线共享
+  `handlers` 判定层——route A 为 extern "C" 字节 ABI cdylib（`wasm_alloc`/
+  `wasm_free` + `verify_export_wasm`/`verify_wal_wasm`/`verify_seals_wasm`
+  三入口，入参 JSON 字节、出参 `[u32 LE 长度][JSON]` 包，零 import 零 JS
+  胶水）；route B 为 `--features bindgen` 的 wasm-bindgen 字符串接口
+  （wasm-pack/npm 生态）。单文件 HTML 验证器（`evid-verify-wasm/dist/
+  index.html`，`build-dist.ps1` 生成，wasm base64 内嵌，文件/粘贴双通道，
+  公钥按 key_id 手动粘贴建表零硬编码信任根，三面判定 UI，零网络请求）；
+  浏览器实测 fixture 六件套随仓（`dist/fixtures/`）。
 - **EVID 移动端验证内核 `evid-verify-core`（S2 批）**：no_std 独立 crate——审计链导出（v1.0）四步判定 / WAL 行三步判定 / 锚点封条 v2 验签（ed25519，公钥注入式）；哈希公式全走 `evorule-audit-chain` SSOT（fact_hash/chain_step/fact_to_stable_json），解析层 fail-closed（未知变体/浮点/缺字段拒收，数字通道 i64 全域→Integer、u64 高位→U64）；g5 黄金向量 11 组 self-test 内嵌。供 wasm 绑定与三方复用。
 - **v0.9.0：`JsonValue::U64(u64)` u64 全域通道**（tcb `value.rs`）——`Integer(i64)`
   无法无损承载 u64 高位值，凡值域可能超出 `i64` 的来源一律走 `U64`。配套

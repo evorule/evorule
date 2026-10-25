@@ -1,0 +1,357 @@
+<!doctype html>
+<!--
+  Copyright 2026 EvoRule Project
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  单文件审计链独立验证器（构建产物经 build-dist.ps1 注入 wasm base64）。
+  数据与公钥均由使用方提供，页面零网络请求、零硬编码信任根。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EVID 审计链独立验证器</title>
+<style>
+:root{
+  --bg:#0d1117; --panel:#161b22; --border:#30363d; --fg:#e6edf3;
+  --dim:#8b949e; --ok:#3fb950; --bad:#f85149; --accent:#58a6ff;
+}
+*{box-sizing:border-box}
+body{margin:0 auto;padding:24px 16px 48px;max-width:960px;background:var(--bg);
+  color:var(--fg);font:14px/1.65 "Segoe UI",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+h1{font-size:20px;margin:0}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.sub{color:var(--dim);margin:6px 0 18px;font-size:13px}
+.badge{display:inline-block;padding:2px 10px;border-radius:12px;border:1px solid var(--border);
+  font-size:12px;color:var(--dim)}
+.badge.ok{color:var(--ok);border-color:var(--ok)}
+.badge.bad{color:var(--bad);border-color:var(--bad)}
+#tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);
+  padding:8px 14px;font-size:14px;cursor:pointer}
+.tab.active{color:var(--fg);border-bottom-color:var(--accent)}
+.panel{display:none}
+.panel.active{display:block}
+.io-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.hint{color:var(--dim);font-size:12px}
+.file-label{border:1px solid var(--border);border-radius:6px;padding:5px 12px;cursor:pointer}
+.file-label:hover{border-color:var(--accent)}
+.file-label input{display:none}
+textarea{width:100%;background:var(--panel);color:var(--fg);border:1px solid var(--border);
+  border-radius:6px;padding:10px;font:12px/1.5 Consolas,"Courier New",monospace;resize:vertical}
+textarea:focus{outline:none;border-color:var(--accent)}
+.act-row{margin:10px 0 6px;display:flex;gap:8px}
+button.judge{background:var(--accent);color:#0d1117;border:none;border-radius:6px;
+  padding:7px 22px;font-size:14px;font-weight:600;cursor:pointer}
+button.judge:hover{filter:brightness(1.1)}
+button.clear{background:none;border:1px solid var(--border);color:var(--dim);
+  border-radius:6px;padding:7px 14px;cursor:pointer}
+.keys-block{margin-top:14px;border-top:1px dashed var(--border);padding-top:12px}
+.keys-head{font-size:13px;margin-bottom:6px}
+#keys-view table{margin-top:6px}
+table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}
+th,td{border:1px solid var(--border);padding:5px 8px;text-align:left;vertical-align:top}
+th{color:var(--dim);font-weight:600;background:var(--panel)}
+code{font-family:Consolas,"Courier New",monospace;font-size:11px;word-break:break-all}
+.banner{border-radius:6px;padding:10px 14px;font-weight:600;margin:10px 0 8px}
+.banner.b-ok{background:rgba(63,185,80,.12);border:1px solid var(--ok);color:var(--ok)}
+.banner.b-bad{background:rgba(248,81,73,.12);border:1px solid var(--bad);color:var(--bad)}
+.meta{color:var(--dim);font-size:13px;margin-bottom:4px}
+.t-ok{color:var(--ok)} .t-bad{color:var(--bad)}
+.err{border:1px solid var(--bad);border-radius:6px;padding:8px 12px;margin:8px 0;
+  color:var(--bad);font-size:13px}
+.warn{border:1px solid #d29922;border-radius:6px;padding:8px 12px;margin:8px 0;
+  color:#d29922;font-size:13px}
+details.notes{margin-top:26px;border:1px solid var(--border);border-radius:6px;
+  padding:10px 14px;color:var(--dim);font-size:13px}
+details.notes summary{cursor:pointer;color:var(--fg)}
+footer{margin-top:18px;color:var(--dim);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>EVID 审计链独立验证器</h1>
+  <span id="kernel-status" class="badge">内核加载中…</span>
+</header>
+<p class="sub">离线 · 零信任 · 判定全部在本机 wasm 内核完成（哈希公式重算，不信任任何随附结论；页面零网络请求）</p>
+
+<nav id="tabs">
+  <button class="tab active" data-face="export">导出面</button>
+  <button class="tab" data-face="wal">WAL 面</button>
+  <button class="tab" data-face="seals">锚点面</button>
+</nav>
+
+<main>
+  <section id="panel-export" class="panel active">
+    <div class="io-row">
+      <label class="file-label">载入文件<input type="file" id="export-file" accept=".json,application/json"></label>
+      <span class="hint">或粘贴导出文档 JSON（裸形态或 {"export":…} 包装，仅认 v1.0）</span>
+    </div>
+    <textarea id="export-input" rows="10" spellcheck="false"
+      placeholder='{"version":"1.0","entry_count":0,"last_hash":"…","entries":[…]}'></textarea>
+    <div class="act-row">
+      <button class="judge" data-face="export">判定</button>
+      <button class="clear" data-clear="export">清空</button>
+    </div>
+    <div id="export-result" class="result"></div>
+  </section>
+
+  <section id="panel-wal" class="panel">
+    <div class="io-row">
+      <label class="file-label">载入文件<input type="file" id="wal-file" accept=".json,.jsonl,application/json"></label>
+      <span class="hint">或粘贴 WAL 行序列（{"lines":[…]} 或裸数组）</span>
+    </div>
+    <textarea id="wal-input" rows="10" spellcheck="false"
+      placeholder='{"lines":[{"content_hash":"…","chain_hash":"…","prev_hash":"…","fact":{…}},…]}'></textarea>
+    <div class="act-row">
+      <button class="judge" data-face="wal">判定</button>
+      <button class="clear" data-clear="wal">清空</button>
+    </div>
+    <div id="wal-result" class="result"></div>
+  </section>
+
+  <section id="panel-seals" class="panel">
+    <div class="io-row">
+      <label class="file-label">载入文件<input type="file" id="seals-file" accept=".json,application/json"></label>
+      <span class="hint">或粘贴封条数据（{"seals":[…]} 或封条数组）</span>
+    </div>
+    <textarea id="seals-input" rows="10" spellcheck="false"
+      placeholder='{"seals":[{"seq":0,"session_id":"…","fact_range":{"lo":0,"hi":3},…},…]}'></textarea>
+    <div class="keys-block">
+      <div class="keys-head">公钥表（key_id → ed25519 公钥 hex；由使用方手动粘贴建立，零硬编码信任根）</div>
+      <textarea id="keys-input" rows="3" spellcheck="false"
+        placeholder='{"test-key-1":"64 字符 hex 公钥…"}'></textarea>
+      <div id="keys-view"></div>
+    </div>
+    <div class="act-row">
+      <button class="judge" data-face="seals">判定</button>
+      <button class="clear" data-clear="seals">清空</button>
+    </div>
+    <div id="seals-result" class="result"></div>
+  </section>
+</main>
+
+<details class="notes">
+  <summary>使用说明与诚实边界</summary>
+  <ul>
+    <li><b>导出面</b>四步/条：prev 链接 → fact_hash 公式重算 → stable 深比（fact_json_stable 原文对账 + 条目投影一致性）→ 链折叠，链尾对账 last_hash。</li>
+    <li><b>WAL 面</b>三步/行：prev 链接 → content_hash 重算 → chain_hash 链折叠。</li>
+    <li><b>锚点面</b>四规则：seq 连续（0 起严格 +1）→ 区间无缝 → anchor_hash 链 → ed25519 验签（evorule-anchor/2 v2 载荷语义；0.8.1 的 v1 锚点不兼容）。</li>
+    <li>判定采用首红即停：断链后折叠链头失去锚，后续条目标记未判定。</li>
+    <li>本页不发起任何网络请求；数据可经文件或粘贴载入，公钥由使用方自行粘贴建立——验证器判「链未被篡改」，不判「链首记的是真事」（真实性由签名锚点与门限签名体系承载）。</li>
+    <li>导出版本仅认 1.0；未知 Fact 变体 / 缺字段 / 类型不符 / 浮点数字段一律 fail-closed 拒收。</li>
+  </ul>
+</details>
+
+<footer>判定内核：evid-verify-core（wasm，单文件内嵌）· 数据不出本机</footer>
+
+<script>
+"use strict";
+const WASM_B64 = "__WASM_BASE64__";
+const ENTRY = {
+  export: "verify_export_wasm",
+  wal: "verify_wal_wasm",
+  seals: "verify_seals_wasm",
+};
+let wasm = null;
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function loadKernel() {
+  const badge = document.getElementById("kernel-status");
+  try {
+    const bytes = b64ToBytes(WASM_B64);
+    const { instance } = await WebAssembly.instantiate(bytes, {});
+    wasm = instance.exports;
+    if (!wasm.wasm_alloc || !wasm.wasm_free || !wasm.verify_export_wasm) {
+      throw new Error("导出符号不全");
+    }
+    badge.textContent = "内核已加载";
+    badge.className = "badge ok";
+  } catch (e) {
+    badge.textContent = "内核加载失败: " + e.message;
+    badge.className = "badge bad";
+  }
+}
+
+/* route A 字节 ABI：入参 wasm_alloc 缓冲，出参 [u32 LE 长度][JSON 字节] */
+function callAbi(entry, jsonStr) {
+  const input = new TextEncoder().encode(jsonStr);
+  const inPtr = wasm.wasm_alloc(input.length);
+  if (!inPtr) throw new Error("wasm_alloc 失败");
+  new Uint8Array(wasm.memory.buffer).set(input, inPtr);
+  const outPtr = wasm[entry](inPtr, input.length);
+  wasm.wasm_free(inPtr, input.length);
+  if (!outPtr) throw new Error("判定入口返回空指针");
+  const dv = new DataView(wasm.memory.buffer);
+  const outLen = dv.getUint32(outPtr, true);
+  const text = new TextDecoder("utf-8")
+    .decode(new Uint8Array(wasm.memory.buffer, outPtr + 4, outLen));
+  wasm.wasm_free(outPtr, 4 + outLen);
+  return JSON.parse(text);
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+function short(h) { return h && h.length > 20 ? h.slice(0, 20) + "…" : (h || ""); }
+
+function warnBox(text) { return '<div class="warn">' + esc(text) + "</div>"; }
+
+function banner(ok, text) {
+  return '<div class="banner ' + (ok ? "b-ok" : "b-bad") + '">' +
+    (ok ? "全绿 · " : "红判 · ") + esc(text) + "</div>";
+}
+
+function verdictTable(vs) {
+  if (!vs || !vs.length) return "";
+  const rows = vs.map(v =>
+    "<tr><td>#" + v.index + "</td>" +
+    '<td><span class="badge ' + (v.ok ? "ok" : "bad") + '">' + (v.ok ? "绿" : "红") + "</span></td>" +
+    "<td>" + esc(v.step == null ? "-" : v.step) + "</td>" +
+    '<td class="reason">' + esc(v.reason == null ? "" : v.reason) + "</td></tr>"
+  ).join("");
+  return "<table><thead><tr><th>条目</th><th>判定</th><th>步骤</th><th>说明</th></tr></thead>" +
+    "<tbody>" + rows + "</tbody></table>";
+}
+
+function renderExport(d, out) {
+  let html = d.error
+    ? banner(false, "解析拒收（fail-closed）") + '<div class="err">' + esc(d.error) + "</div>"
+    : banner(d.ok, d.ok
+        ? "导出链完整：全部条目判定通过，链尾对账一致"
+        : "导出链判定未通过");
+  if (!d.error) {
+    html += '<div class="meta">链尾 <code>' + esc(d.tail_hash) + "</code> · 链尾对账 " +
+      '<span class="' + (d.last_hash_matches ? "t-ok" : "t-bad") + '">' +
+      (d.last_hash_matches ? "一致" : "不一致") + "</span>" +
+      (d.stopped_at != null ? " · 首红条目 <b>#" + d.stopped_at + "</b>" : "") + "</div>";
+    html += verdictTable(d.verdicts);
+  }
+  out.innerHTML = html;
+}
+
+function renderWal(d, out) {
+  let html = d.error
+    ? banner(false, "解析拒收（fail-closed）") + '<div class="err">' + esc(d.error) + "</div>"
+    : banner(d.ok, d.ok ? "WAL 链完整：全部行判定通过" : "WAL 链判定未通过");
+  if (!d.error) {
+    html += '<div class="meta">链尾 <code>' + esc(d.tail_hash) + "</code>" +
+      (d.stopped_at != null ? " · 首红行 <b>#" + d.stopped_at + "</b>" : "") + "</div>";
+    html += verdictTable(d.verdicts);
+  }
+  out.innerHTML = html;
+}
+
+function renderSeals(d, out) {
+  let html = banner(d.ok, d.ok
+    ? "锚点链完整：" + d.seal_count + " 枚封条全部通过（seq 连续 / 区间无缝 / 哈希链 / 验签）"
+    : "锚点链判定未通过");
+  if (d.error) html += '<div class="err">' + esc(d.error) + "</div>";
+  out.innerHTML = html;
+}
+
+function buildSealsPayload(text, keysRaw) {
+  const doc = JSON.parse(text);
+  let seals;
+  if (Array.isArray(doc)) seals = doc;
+  else if (doc && typeof doc === "object" && Array.isArray(doc.seals)) seals = doc.seals;
+  else throw new Error('锚点数据应为 {"seals":[…]} 或封条数组');
+  const keys = JSON.parse(keysRaw);
+  if (!keys || typeof keys !== "object" || Array.isArray(keys)) {
+    throw new Error('公钥表应为对象 {"key_id":"hex"}');
+  }
+  return JSON.stringify({ seals: seals, keys: keys });
+}
+
+function judge(face) {
+  const out = document.getElementById(face + "-result");
+  const text = document.getElementById(face + "-input").value.trim();
+  if (!text) { out.innerHTML = warnBox("请先经文件或粘贴载入数据"); return; }
+  if (!wasm) { out.innerHTML = warnBox("内核尚未加载完成"); return; }
+  let payload = text;
+  if (face === "seals") {
+    const keysRaw = document.getElementById("keys-input").value.trim();
+    if (!keysRaw) { out.innerHTML = warnBox("锚点面需先在下方粘贴公钥表（key_id → 公钥 hex）"); return; }
+    try { payload = buildSealsPayload(text, keysRaw); }
+    catch (e) { out.innerHTML = warnBox("输入解析失败: " + e.message); return; }
+  }
+  let data;
+  try { data = callAbi(ENTRY[face], payload); }
+  catch (e) { out.innerHTML = warnBox("内核调用失败: " + e.message); return; }
+  if (face === "export") renderExport(data, out);
+  else if (face === "wal") renderWal(data, out);
+  else renderSeals(data, out);
+}
+
+function renderKeys() {
+  const raw = document.getElementById("keys-input").value.trim();
+  const view = document.getElementById("keys-view");
+  if (!raw) { view.innerHTML = '<span class="hint">尚未建立公钥表</span>'; return; }
+  try {
+    const keys = JSON.parse(raw);
+    if (!keys || typeof keys !== "object" || Array.isArray(keys)) throw new Error("应为对象");
+    const rows = Object.keys(keys).map(k =>
+      "<tr><td>" + esc(k) + "</td><td><code>" + esc(String(keys[k])) + "</code></td></tr>"
+    ).join("");
+    view.innerHTML = "<table><thead><tr><th>key_id</th><th>公钥 hex</th></tr></thead>" +
+      "<tbody>" + rows + "</tbody></table>";
+  } catch (e) {
+    view.innerHTML = '<span class="t-bad">公钥表非法: ' + esc(e.message) + "</span>";
+  }
+}
+
+function bindFile(face) {
+  const input = document.getElementById(face + "-file");
+  input.addEventListener("change", () => {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => { document.getElementById(face + "-input").value = reader.result; };
+    reader.readAsText(f);
+  });
+}
+
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === t));
+  document.querySelectorAll(".panel").forEach(p =>
+    p.classList.toggle("active", p.id === "panel-" + t.dataset.face));
+}));
+
+document.querySelectorAll(".judge").forEach(b =>
+  b.addEventListener("click", () => judge(b.dataset.face)));
+
+document.querySelectorAll("[data-clear]").forEach(b => b.addEventListener("click", () => {
+  document.getElementById(b.dataset.clear + "-input").value = "";
+  document.getElementById(b.dataset.clear + "-result").innerHTML = "";
+}));
+
+["export", "wal", "seals"].forEach(bindFile);
+document.getElementById("keys-input").addEventListener("input", renderKeys);
+renderKeys();
+loadKernel();
+</script>
+</body>
+</html>

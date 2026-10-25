@@ -15,6 +15,7 @@ members = [
     "evorule-cli",
     "evorule-eval",
     "evid-verify-core",
+    "evid-verify-wasm",
 ]
 # fuzz/ 为独立 libFuzzer 工作区（cargo-fuzz 专用，A1 供应链三件套），
 # 不参与主 workspace 版本/发布/门禁。

@@ -139,6 +139,9 @@ examples/**/reactive_researcher_memory/
 **/reactive_researcher_memory/
 reactive_researcher_memory/
 
+# wasm-pack 生成物（npm 生态 pkg, 可再生: wasm-pack build --target web -d dist/bindgen -- --features bindgen）
+evid-verify-wasm/dist/bindgen/
+
 # mdBook build output(自动生成,不进版本)
 **/docs/book/
 **/book/
