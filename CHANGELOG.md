@@ -28,6 +28,12 @@
 
 ### Added
 
+- **EVID 移动端黄金向量闸（S4 批）**：CI `wasm.yml` 新增 `evid-wasm-gate`
+  job——wasm32 release cdylib 以零 import 裸实例化（该契约每跑必证）对
+  `dist/fixtures` 七件冻结向量跑三入口，输出与宿主 handlers（core 同源
+  正本）逐字节比对，不等即红 fail-closed；另校验 dist 单文件内嵌 wasm 与
+  现构建一致（防 dist 漂移）。wasm32 编译门禁同步扩入
+  `evid-verify-core`/`evid-verify-wasm`。
 - **EVID 移动端验证器 wasm 绑定 `evid-verify-wasm`（S3 批）**：双路线共享
   `handlers` 判定层——route A 为 extern "C" 字节 ABI cdylib（`wasm_alloc`/
   `wasm_free` + `verify_export_wasm`/`verify_wal_wasm`/`verify_seals_wasm`

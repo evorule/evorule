@@ -32,7 +32,7 @@ jobs:
   # 1. wasm32 编译门禁 (核心四 crate)
   # ==========================================================================
   wasm-check:
-    name: wasm32 check (tcb + reactor + governance + mcu)
+    name: wasm32 check (tcb + reactor + governance + mcu + evid core/wasm)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -53,11 +53,47 @@ jobs:
           workspaces: . -> target
           key: wasm32
 
-      - name: wasm32 编译检查 (核心四 crate)
-        run: cargo check --target wasm32-unknown-unknown -p evorule-tcb -p evorule-reactor -p evorule-governance -p evorule-mcu
+      - name: wasm32 编译检查 (核心四 crate + evid 验证内核/绑定)
+        run: cargo check --target wasm32-unknown-unknown -p evorule-tcb -p evorule-reactor -p evorule-governance -p evorule-mcu -p evid-verify-core -p evid-verify-wasm
 
   # ==========================================================================
-  # 2. WASM 适配行数守卫 (适配面腐化触发条件 CI 化)
+  # 2. EVID 移动端黄金向量闸 (EVID 验证器设计稿 §5 第三端门: 移动端门)
+  #    真 wasm32 产物行为对拍: cdylib(零 import)裸实例化跑 dist/fixtures
+  #    冻结向量, 输出与宿主 handlers(core 同源正本)逐字节比对, 不等即红
+  #    fail-closed; 裸实例化同时每跑必证零 import 契约(污染即抛错即红);
+  #    另校验 dist/index.html 内嵌 wasm 与本次构建一致(防 dist 漂移)。
+  # ==========================================================================
+  evid-wasm-gate:
+    name: evid wasm gate (mobile golden vectors)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: 对生效工具链补装 wasm32 目标
+        run: rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: . -> target
+          key: wasm32
+
+      - name: 构建 wasm32 release cdylib
+        run: cargo build -p evid-verify-wasm --target wasm32-unknown-unknown --release
+
+      - name: 宿主正本输出落盘 (handlers 判定层 = core 同源)
+        env:
+          EVID_WASM_HOST_OUT_DIR: ${{ github.workspace }}/target/evid-host-out
+        run: cargo test -p evid-verify-wasm --test wasm_output_dump
+
+      - name: wasm 产物逐字节对拍 + dist 内嵌一致性
+        run: node scripts/evid_wasm_gate.mjs target/wasm32-unknown-unknown/release/evid_verify_wasm.wasm evid-verify-wasm/dist/fixtures target/evid-host-out evid-verify-wasm/dist/index.html
+
+  # ==========================================================================
+  # 3. WASM 适配行数守卫 (适配面腐化触发条件 CI 化)
   #    计数口径: 核心四 crate src 中 target_arch="wasm32" cfg 与
   #    wasm-bindgen 引用行。基线 = 2 (reactor/ffi.rs; mcu 纯可移植
   #    no_std 贡献 0 行)。
