@@ -10,13 +10,21 @@
 #   npm channels:                                LICENSE file + license field (part 3)
 # Repo table SSOT: scripts/license-audit/repos.json
 # Default: report-only (always exit 0). Pass -Strict to exit 1 on any gap (CI blocking mode).
+# Single-repo CI mode: -Repo <name> -RepoPath <caller checkout>. Scans only that repo's
+# channel(s) against the caller's working tree (repos.json absolute paths are a local
+# convenience and are overridden in this mode). Part 2 runs for -Repo evorule, part 3
+# for -Repo evo-agent only; the full-ecosystem pass stays a local release discipline.
 
 [CmdletBinding()]
-param([switch]$Strict)
+param(
+    [switch]$Strict,
+    [string]$Repo = "",
+    [string]$RepoPath = "."
+)
 
 $ErrorActionPreference = "Stop"
 $evoruleRoot = Split-Path -Parent $PSScriptRoot
-$reposMap = Get-Content "$evoruleRoot\scripts\license-audit\repos.json" -Raw | ConvertFrom-Json
+$reposMap = Get-Content "$evoruleRoot/scripts/license-audit/repos.json" -Raw | ConvertFrom-Json
 
 # Distribution-channel classification per repo (2026-10-24 ecosystem license audit).
 #   binary : ships archives/installers  -> full 5-piece notice set required in release.yml
@@ -61,16 +69,28 @@ $publishedCrates = @(
 $gapTotal = 0
 Write-Host "`n=== Distribution Compliance Check ===" -ForegroundColor Cyan
 
+# --- Single-repo CI mode: override the repo table to the caller checkout ------
+if ($Repo -ne "") {
+    if (-not $distClass.ContainsKey($Repo)) { Write-Error "unknown repo: $Repo"; exit 2 }
+    if ($Repo -in @("evo-agent", "evo-agent-desktop")) {
+        # both names resolve to the evo-agent repo checkout (desktop packaging lives there)
+        $reposMap = [pscustomobject]@{ "evo-agent" = $RepoPath; "evo-agent-desktop" = $RepoPath }
+    } else {
+        $reposMap = [pscustomobject]@{ $Repo = $RepoPath }
+    }
+}
+
 # --- Part 1: distribution channels -------------------------------------------
 foreach ($prop in $reposMap.PSObject.Properties) {
     $name = $prop.Name
+    if ($Repo -ne "" -and $name -ne $Repo) { continue }
     $repoPath = $prop.Value
     $class = $distClass[$name]
     if ($class -eq "none") {
         Write-Host "[INFO] $name : no external distribution channel — skipped" -ForegroundColor DarkGray
         continue
     }
-    $rel = Join-Path $repoPath ".github\workflows\release.yml"
+    $rel = Join-Path $repoPath ".github/workflows/release.yml"
     if ($class -eq "crate") {
         # crates.io publish: cargo auto-includes LICENSE/NOTICE from the crate dir,
         # so the file-level predicate is LICENSE presence at the crate root.
@@ -101,8 +121,8 @@ foreach ($prop in $reposMap.PSObject.Properties) {
     $scanPaths = @()
     if (Test-Path $rel) { $scanPaths += $rel }
     if ($name -eq "evo-agent-desktop") {
-        $dYml = Join-Path $reposMap.'evo-agent' ".github\workflows\desktop-release.yml"
-        $dPs1 = Join-Path $reposMap.'evo-agent' "desktop\build-installer.ps1"
+        $dYml = Join-Path $reposMap.'evo-agent' ".github/workflows/desktop-release.yml"
+        $dPs1 = Join-Path $reposMap.'evo-agent' "desktop/build-installer.ps1"
         if (Test-Path $dYml) { $scanPaths += $dYml } else {
             Write-Host "[GAP]  $name : desktop-release.yml missing in evo-agent repo — packaging not CI-tracked" -ForegroundColor Red
             $gapTotal++
@@ -132,6 +152,7 @@ foreach ($prop in $reposMap.PSObject.Properties) {
 
 # --- Part 2: published crate directories (this repo) --------------------------
 Write-Host ""
+if ($Repo -eq "" -or $Repo -eq "evorule") {
 foreach ($crate in $publishedCrates) {
     $crateDir = Join-Path $evoruleRoot $crate
     if (-not (Test-Path $crateDir)) {
@@ -146,12 +167,14 @@ foreach ($crate in $publishedCrates) {
         $gapTotal++
     }
 }
+}
 
 # --- Part 3: npm / workspace packages ------------------------------------------
 Write-Host ""
+if ($Repo -eq "" -or $Repo -eq "evo-agent") {
 $npmChecks = @(
-    @{ Name = "evo-agent sdk/nodejs (npm evo-agent-node)"; Dir = "$($reposMap.'evo-agent')\sdk\nodejs" },
-    @{ Name = "evo-agent desktop workspace (npm evo-agent-desktop)"; Dir = "$($reposMap.'evo-agent')\desktop" }
+    @{ Name = "evo-agent sdk/nodejs (npm evo-agent-node)"; Dir = "$($reposMap.'evo-agent')/sdk/nodejs" },
+    @{ Name = "evo-agent desktop workspace (npm evo-agent-desktop)"; Dir = "$($reposMap.'evo-agent')/desktop" }
 )
 foreach ($c in $npmChecks) {
     $pkg = Join-Path $c.Dir "package.json"
@@ -170,6 +193,7 @@ foreach ($c in $npmChecks) {
         Write-Host "[GAP] npm $($c.Name) : $($problems -join '; ')" -ForegroundColor Red
         $gapTotal += $problems.Count
     }
+}
 }
 
 # --- Summary --------------------------------------------------------------------

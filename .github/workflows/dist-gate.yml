@@ -1,0 +1,54 @@
+# dist-gate.yml — reusable distribution-compliance gate (blocking, strict).
+# Call from a repo's release workflow with the repo to scan:
+#   jobs:
+#     dist-gate:
+#       uses: evorule/evorule/.github/workflows/dist-gate.yml@<commit-sha>
+#       with:
+#         repo: evorule-server
+# Scans the caller's own checkout in single-repo mode (-Repo <repo> -RepoPath .
+# -Strict): release channel must carry the 5-piece notice set (binary channels),
+# crate/npm channels their respective pieces. Exit 1 on any gap.
+
+name: dist-gate
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: "Repo name to scan (must exist in the checker's dist class table)"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Repo name to scan"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  dist-gate:
+    name: dist compliance (strict)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Checkout root tooling (checker script)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: evorule/evorule
+          ref: main
+          sparse-checkout: |
+            scripts/check-dist-compliance.ps1
+            scripts/license-audit/repos.json
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          path: compliance-baseline
+
+      - name: Distribution compliance check (-Repo single-repo, -Strict)
+        run: >
+          pwsh compliance-baseline/scripts/check-dist-compliance.ps1
+          -Repo "${{ inputs.repo }}" -RepoPath . -Strict
