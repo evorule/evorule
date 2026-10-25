@@ -1,0 +1,68 @@
+# license-gate.yml — reusable dependency-license gate for ecosystem repos.
+#
+# Call from another repository with a pinned commit SHA (never @main):
+#   uses: evorule/evorule/.github/workflows/license-gate.yml@<commit-sha>
+#
+# Checks:
+#   1. The caller has a deny.toml whose [licenses] allow list is a superset
+#      of the root-repo baseline (no silent narrowing; additions are allowed
+#      and reported for upstreaming into the baseline).
+#   2. cargo deny check (licenses + advisories + bans + sources) — same
+#      profile as this repo's own ci.yml deny job; skipped for non-Cargo
+#      repositories (npm-only / config-only repos still get check 1).
+
+name: license-gate
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  license-gate:
+    name: license gate (baseline drift + cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Checkout root baseline (deny.toml SSOT)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: evorule/evorule
+          ref: main
+          sparse-checkout: deny.toml
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          path: license-baseline
+
+      - name: Baseline drift check (licenses allow superset)
+        run: |
+          test -f deny.toml || { echo "FAIL: deny.toml missing in caller repo"; exit 1; }
+          python3 - <<'EOF'
+          import sys, tomllib
+
+          with open("license-baseline/deny.toml", "rb") as f:
+              base = set(tomllib.load(f)["licenses"]["allow"])
+          with open("deny.toml", "rb") as f:
+              cur = set(tomllib.load(f)["licenses"]["allow"])
+
+          missing = sorted(base - cur)
+          added = sorted(cur - base)
+          if missing:
+              print("FAIL: [licenses] allow narrowed vs baseline; missing entries:")
+              for m in missing:
+                  print("  - " + m)
+              sys.exit(1)
+          if added:
+              print("NOTE: entries beyond baseline (register for upstreaming):")
+              for a in added:
+                  print("  + " + a)
+          print(f"OK: [licenses] allow ({len(cur)} entries) is a superset of baseline ({len(base)} entries)")
+          EOF
+
+      - name: cargo deny check (licenses + advisories + bans + sources)
+        if: hashFiles('Cargo.toml') != ''
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
