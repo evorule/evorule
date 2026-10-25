@@ -33,6 +33,8 @@ fn flip_hex(sig: &str) -> String {
 }
 
 #[test]
+// 样例派生为逐样例线性叙事（构造+落盘+断言一体），拆函数反而伤可读性——超行豁免
+#[allow(clippy::too_many_lines)]
 fn derive_acceptance_samples() {
     let Some(dir) = std::env::var_os("EVID_WASM_ACCEPTANCE_DIR") else {
         return; // 默认无操作（CI 常态），置位才落样例包

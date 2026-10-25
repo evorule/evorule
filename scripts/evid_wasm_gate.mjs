@@ -1,7 +1,8 @@
 // S4 移动端黄金向量闸（wasm32 产物侧）：Node 裸实例化 cdylib（零 import），
 // 对 dist/fixtures 冻结向量跑三入口，输出与宿主 handlers（core 同源正本，
 // 由 tests/wasm_output_dump.rs 落盘）逐字节比对，不等即红 fail-closed。
-// 另校验单文件 HTML 内嵌 wasm 与本次构建产物一致（防 dist 漂移）。
+// 另对单文件 HTML 内嵌 wasm 做行为对拍（防 dist 漂移；因 wasm 内嵌 panic
+// 定位路径含构建机 OS 形态，跨 OS 字节恒不等，故不做字节比对——o25）。
 //
 // 用法：
 //   node scripts/evid_wasm_gate.mjs <wasm路径> <fixtures目录> <宿主输出目录> [dist/index.html]
@@ -92,17 +93,37 @@ for (const [name, face] of Object.entries(FACES)) {
   checked += 1;
 }
 
-// ---- 3. dist 单文件内嵌 wasm 与本次构建产物一致（防 dist 漂移）----
+// ---- 3. dist 单文件内嵌 wasm 行为对拍（防 dist 漂移，fail-closed）----
+// o25：嵌入 wasm 编有 panic 定位路径（构建机 OS 形态：Windows 反斜杠/本机绝对
+// 路径 vs Linux 正斜杠//home/runner），跨 OS 字节恒不等，故不做字节比对——
+// 改为抽嵌入 wasm 裸实例化（零 import 契约同证）跑同批冻结向量，输出与宿主
+// 正本逐字节比；陈旧/被篡改的 dist 行为不等即红，行为等价的重建产物放行
+// （黄金向量判定哲学本就接受该粒度）。
 if (distHtmlPath) {
   const html = readFileSync(distHtmlPath, "utf8");
   // wasm base64 约 440K 字符，仓库内无更长同形串；阈值取 2000 避开十六进制串等噪声
   const m = html.match(/[A-Za-z0-9+/]{2000,}={0,2}/);
   if (!m) fail(`${basename(distHtmlPath)} 未找到内嵌 wasm base64`);
   const embedded = Buffer.from(m[0], "base64");
-  if (Buffer.compare(embedded, wasmBytes) !== 0) {
-    fail("dist 单文件内嵌 wasm 与本次构建产物不一致（dist 漂移，须重跑 build-dist.ps1）");
+  let distInstance;
+  try {
+    distInstance = new WebAssembly.Instance(new WebAssembly.Module(embedded), {});
+  } catch (e) {
+    fail(`dist 内嵌 wasm 裸实例化失败（零 import 契约被破坏或产物损坏）: ${e}`);
   }
-  console.log(`dist embedded wasm == fresh build (${embedded.length} bytes)`);
+  let distChecked = 0;
+  for (const [name, face] of Object.entries(FACES)) {
+    const inputBytes = readFileSync(`${fixturesDir}/${name}.json`);
+    const distOut = callEntry(distInstance, ENTRY[face], inputBytes);
+    const expected = readFileSync(`${hostOutDir}/${name}.out.json`);
+    if (Buffer.compare(distOut, expected) !== 0) {
+      fail(
+        `dist 内嵌 wasm 输出与宿主正本不一致（dist 漂移，须重跑 build-dist.ps1）\n  ${name} dist: ${Buffer.from(distOut).toString("utf8")}\n  ${name} host: ${expected.toString("utf8")}`,
+      );
+    }
+    distChecked += 1;
+  }
+  console.log(`dist embedded wasm 行为对拍一致 (${distChecked} 向量, ${embedded.length} bytes)`);
 }
 
 console.log(`GATE GREEN: ${checked} 个冻结向量，wasm32 产物与宿主正本输出逐字节一致`);

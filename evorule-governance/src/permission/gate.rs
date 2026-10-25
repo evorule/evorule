@@ -197,8 +197,7 @@ mod tests {
         // 正向对照：显式播种 human Allow 条目后，human 判定放行（种子语义不受
         // 缺省策略收紧影响）
         use crate::permission::{
-            DefaultPolicy, Effect, PermissionEntry, PermissionState, Resource, ResourceType,
-            Subject,
+            Effect, PermissionEntry, PermissionState, Resource, ResourceType, Subject,
         };
         let log = Arc::new(SharedFactsLog::new());
         let mut entry = PermissionEntry::new(
