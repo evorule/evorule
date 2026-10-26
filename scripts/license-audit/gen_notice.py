@@ -161,25 +161,54 @@ def aggregate_licenses(totals, lic_crates):
     return lic_agg
 
 
-def render_repo_notice(repo, inv, man, out_path):
-    """Render a per-repo subset notice (third-party section for one repo only)."""
-    if repo not in inv:
-        raise SystemExit("repo not found in audit inventory: %s" % repo)
-    _, _, _, totals, lic_crates = count_repo(inv[repo])
+def render_subset_notice(repos, inv, man, out_path, label=""):
+    """Render a subset notice for one repo (--repo) or a repo-set union
+    surface (--repos, e.g. a distribution surface spanning the components
+    embedded in one distribution artifact)."""
+    for repo in repos:
+        if repo not in inv:
+            raise SystemExit("repo not found in audit inventory: %s" % repo)
+    totals = Counter()
+    lic_crates = defaultdict(set)
+    for repo in repos:
+        _, _, _, t, lc = count_repo(inv[repo])
+        totals.update(t)
+        for k, v in lc.items():
+            lic_crates[k] |= v
     lic_agg = aggregate_licenses(totals, lic_crates)
     n_deps = sum(totals.values())
 
+    surface = len(repos) > 1
+    scope = label or repos[0]
+    if surface:
+        title = "# THIRD-PARTY-NOTICES — %s 分发面第三方组件使用声明" % scope
+        provenance = ("> 本文件为 `%s` 分发面的第三方组件使用声明（**仓集子集**，覆盖仓：%s），"
+                      "由根仓 `scripts/license-audit/gen_notice.py --repos %s` "
+                      "从生态级审计清单取并集生成。"
+                      % (scope, "、".join("`%s`" % r for r in repos), ",".join(repos)))
+        s1 = "## 一、第三方许可总览（本分发面）"
+        s2 = "## 二、需特别标注的组件（本分发面相关）"
+        s3 = "## 三、本分发面分发义务"
+        count_word = "本分发面依赖记录"
+    else:
+        title = "# THIRD-PARTY-NOTICES — %s 第三方组件使用声明" % scope
+        provenance = ("> 本文件为 `%s` 分发物的第三方组件使用声明（**单仓子集**），由根仓"
+                      " `scripts/license-audit/gen_notice.py --repo %s` 从生态级审计清单取子集生成。"
+                      % (scope, scope))
+        s1 = "## 一、第三方许可总览（本仓）"
+        s2 = "## 二、需特别标注的组件（本仓相关）"
+        s3 = "## 三、本仓分发义务"
+        count_word = "本仓依赖记录"
+
     L = []
     A = L.append
-    A("# THIRD-PARTY-NOTICES — %s 第三方组件使用声明" % repo)
+    A(title)
     A("")
-    A("> 本文件为 `%s` 分发物的第三方组件使用声明（**单仓子集**），由根仓"
-      " `scripts/license-audit/gen_notice.py --repo %s` 从生态级审计清单取子集生成。"
-      % (repo, repo))
+    A(provenance)
     A("> 义务边界与归档口径的完整说明见根仓生态级总纲 `THIRD-PARTY-NOTICES.md`。")
-    A("> 生成日期：%s · 本仓依赖记录 %d 条" % (date.today().isoformat(), n_deps))
+    A("> 生成日期：%s · %s %d 条" % (date.today().isoformat(), count_word, n_deps))
     A("")
-    A("## 一、第三方许可总览（本仓）")
+    A(s1)
     A("")
     A("复合表达式（如 `MIT OR Apache-2.0`）按其可选分支拆分统计，同一依赖可能计入多行。")
     A("")
@@ -196,10 +225,11 @@ def render_repo_notice(repo, inv, man, out_path):
             man["licenses"][lic].get("file") else "⚠️ 需人工补"
         A("| `%s` | %d | %s%s | %s | %s |" % (lic, info["count"], comps, more, obl, arch))
     A("")
-    A("## 二、需特别标注的组件（本仓相关）")
+    A(s2)
     A("")
     hits = [(lic, who, why) for lic, who, why in SPECIAL
-            if re.search(r"(?<![\w-])" + re.escape(repo) + r"(?![\w-])", who)]
+            if any(re.search(r"(?<![\w-])" + re.escape(r) + r"(?![\w-])", who)
+                   for r in repos)]
     if hits:
         for lic, who, why in hits:
             A("### `%s` — %s" % (lic, who))
@@ -209,16 +239,16 @@ def render_repo_notice(repo, inv, man, out_path):
     else:
         A("（无）")
     A("")
-    A("## 三、本仓分发义务")
+    A(s3)
     A("")
-    rows = [m for m in DIST_MATRIX if m[0] == repo]
+    rows = [m for m in DIST_MATRIX if m[0] in repos or (label and m[0] == label)]
     if rows:
         A("| 仓 | 分发物 | 现状 | 结论 |")
         A("|---|---|---|---|")
         for _repo, artifact, status, verdict in rows:
-            A("| `%s` | %s | %s | %s |" % (repo, artifact, status, verdict))
+            A("| `%s` | %s | %s | %s |" % (_repo, artifact, status, verdict))
     else:
-        A("本仓无对外分发物（合规扫描器归类 none）。")
+        A("本分发面无对外分发物（合规扫描器归类 none）。")
     A("")
     text = "\n".join(L) + "\n"
     out_path.write_bytes(text.replace("\r\n", "\n").encode("utf-8"))
@@ -228,10 +258,18 @@ def render_repo_notice(repo, inv, man, out_path):
 def main():
     ap = argparse.ArgumentParser(
         description="Render the ecosystem THIRD-PARTY-NOTICES.md (default) "
-                    "or a per-repo subset notice (--repo).")
+                    "or subset notices (--repo single / --repos union surface).")
     ap.add_argument("--repo", default="",
                     help="render a subset notice for this repo only "
                          "(output defaults to THIRD-PARTY-NOTICES-<repo>.md)")
+    ap.add_argument("--repos", default="",
+                    help="render a union-surface subset notice for a "
+                         "comma-separated repo set (e.g. a distribution surface "
+                         "spanning the components embedded in one artifact; "
+                         "output defaults to THIRD-PARTY-NOTICES-<first>-surface.md)")
+    ap.add_argument("--label", default="",
+                    help="surface title label for --repos (e.g. evo-agent-desktop; "
+                         "also pulls its DIST_MATRIX row into the义务 table)")
     ap.add_argument("--inv", default=INV_DEFAULT,
                     help="audit inventory JSON path (default: %(default)s)")
     ap.add_argument("--out", default="",
@@ -242,9 +280,17 @@ def main():
     inv = json.loads(Path(args.inv).read_text(encoding="utf-8"))
     man = json.loads((ROOT / "LICENSES" / "third-party" / "manifest.json").read_text(encoding="utf-8"))
 
+    if args.repos:
+        repos = [r.strip() for r in args.repos.split(",") if r.strip()]
+        default_name = ("THIRD-PARTY-NOTICES-%s.md" % repos[0] if len(repos) == 1
+                        else "THIRD-PARTY-NOTICES-%s-surface.md" % repos[0])
+        out = Path(args.out) if args.out else ROOT / default_name
+        render_subset_notice(repos, inv, man, out, label=args.label)
+        return
+
     if args.repo:
         out = Path(args.out) if args.out else ROOT / ("THIRD-PARTY-NOTICES-%s.md" % args.repo)
-        render_repo_notice(args.repo, inv, man, out)
+        render_subset_notice([args.repo], inv, man, out)
         return
 
     per_repo = {}
