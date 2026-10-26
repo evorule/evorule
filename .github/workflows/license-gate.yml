@@ -17,7 +17,7 @@ on:
   workflow_call:
     inputs:
       extra-checkouts:
-        description: "Space-separated 'repo@sha' tokens shallow-pinned from evorule/<repo> as siblings of the caller workspace (resolves cross-repo path dependencies for cargo-deny)."
+        description: "Space-separated 'repo@ref' tokens shallow-checked-out from evorule/<repo> as siblings of the caller workspace (resolves cross-repo path dependencies for cargo-deny). ref = commit SHA (pinned) or 'main' (floats with the sibling default branch)."
         required: false
         type: string
         default: ''
@@ -38,11 +38,12 @@ jobs:
         if: inputs.extra-checkouts != ''
         run: |
           for tok in ${{ inputs.extra-checkouts }}; do
-            repo="${tok%%@*}"; sha="${tok##*@}"
-            echo "shallow-pinning evorule/${repo} @ ${sha} -> ${GITHUB_WORKSPACE}/../${repo}"
+            repo="${tok%%@*}"; ref="${tok##*@}"
+            if [ -z "$ref" ]; then ref="main"; fi
+            echo "shallow-checking-out evorule/${repo} @ ${ref} -> ${GITHUB_WORKSPACE}/../${repo}"
             git init "${GITHUB_WORKSPACE}/../${repo}"
             git -C "${GITHUB_WORKSPACE}/../${repo}" remote add origin "https://github.com/evorule/${repo}.git"
-            git -C "${GITHUB_WORKSPACE}/../${repo}" fetch --depth 1 origin "${sha}"
+            git -C "${GITHUB_WORKSPACE}/../${repo}" fetch --depth 1 origin "${ref}"
             git -C "${GITHUB_WORKSPACE}/../${repo}" checkout --detach FETCH_HEAD
           done
 
