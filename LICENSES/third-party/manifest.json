@@ -5041,9 +5041,10 @@
    "repo": "evorule-server",
    "ecosystem": "npm",
    "name": "evorule-codegraph-bridge",
-   "version": "0.1.0",
-   "license": "UNLICENSED/UNDECLARED",
+   "version": "0.2.0",
+   "license": "AGPL-3.0-or-later",
    "scope": "prod",
+   "own": true,
    "lockfile": "plugins/codegraph-bridge/package-lock.json"
   },
   {
@@ -5053,16 +5054,7 @@
    "version": "0.9.4",
    "license": "MIT",
    "scope": "prod",
-   "lockfile": "plugins/codegraph-bridge/package-lock.json"
-  },
-  {
-   "repo": "evorule-server",
-   "ecosystem": "npm",
-   "name": "@colbymchenry/codegraph",
-   "version": "",
-   "license": "UNLICENSED/UNDECLARED",
-   "scope": "prod",
-   "lockfile": "plugins/codegraph-bridge/package-lock.json"
+   "vendored": "plugins/codegraph-bridge/vendor/codegraph/"
   },
   {
    "repo": "evorule-rule",
@@ -19232,9 +19224,10 @@
   }
  ],
  "_meta": {
-  "generated": "2026-10-24",
+  "generated": "2026-10-26",
   "ecosystem": "evorule",
   "repos_covered": 13,
+  "npm_note": "npm 面按仓内实测修正（2026-10-26）：evorule-server 子集 evorule-codegraph-bridge 以仓内 package.json 为准（0.2.0，AGPL-3.0-or-later，private）；@colbymchenry/codegraph 已 vendoring（dist 入仓 + MIT 正文随附，同版钉 0.9.4），过期 UNLICENSED/UNDECLARED 记录已替换、重复条已去重",
   "note": "licence texts copied verbatim from the cargo registry cache or the npm registry tarball; NCSA / LGPL-2.1 fetched from OSI and gnu.org because the upstream crates ship no text (see SOURCE.txt in each dir)"
  }
 }
