@@ -82,7 +82,7 @@ jobs:
           print(f"OK: [licenses] allow ({len(cur)} entries) is a superset of baseline ({len(base)} entries)")
           EOF
 
-      - name: Install cargo-deny (runner-native: container action cannot see sibling checkouts placed outside the workspace mount)
+      - name: "Install cargo-deny (runner-native: container action cannot see sibling checkouts outside the workspace mount)"
         if: hashFiles('Cargo.toml') != ''
         uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2
         with:
