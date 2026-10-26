@@ -7,10 +7,19 @@
 #    与 baseline 行为逐字节一致——cargo-mutants 将其误报为 MISSED。
 #    这些代码的「测试」是 Kani 形式化验证（CBMC 属性断言），不归本门。
 #
-# 2. null_ref：cfg(kani) 分支实现（非 kani 分支为 rvalue promotion 直引
-#    常量），同 1。
+# 2. transition.rs:373 静默失败检测直接规则分支 `rule_type == instruction_type`
+#    的 `==`→`!=`：该分支要求规则无 params 且 type ∈ {set, increment,
+#    decrement, branch}，但执行器 dispatch 仅认 5 种元指令类型
+#    （set/push/branch/io_request/enforce），无 params 的 set/branch 在 exec
+#    层即缺字段报错，increment/decrement 属用户指令类型报
+#    UnknownMetaInstruction——任何能通过执行阶段到达匹配检测的规则必然带
+#    params 对象（进 domain 分支）。分支不可触达 ⇒ 突变为等价突变，行为
+#    测试数学上不可杀。可达性契约由
+#    transition.rs::tests::test_bare_direct_rules_fail_before_match_detection
+#    哨兵锁定；执行器放宽时哨兵红，届时补匹配/不匹配行为测试并摘除本项。
 exclude_re = [
   "KaniMap",
   "<impl Drop for JsonValue>",
   "null_ref",
+  "transition\\.rs:373:34: replace == with != in execute_transition",
 ]
