@@ -12,7 +12,7 @@
 [![Version](https://img.shields.io/badge/version-0.9.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Constitution CC0-1.0](https://img.shields.io/badge/constitution-CC0--1.0%20public%20domain-lightgrey.svg)](LICENSES/core_eval-CC0-1.0.txt)
-[![Tests](https://img.shields.io/badge/tests-782%20passed%20%C2%B7%202026--09--14-brightgreen.svg)](#testing--verification)
+[![Tests](https://img.shields.io/badge/tests-1032%20passed%20%C2%B7%202026--10--28-brightgreen.svg)](#testing--verification)
 [![Kani](https://img.shields.io/badge/Kani-48%20proofs%20%2819%20verified%20%C2%B7%20AL2%29-blue.svg)](#formal-verification)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb--minimal-trusted-computing-base)
 
@@ -291,27 +291,26 @@ evorule replay ./output/facts.jsonl
 
 ## Testing & verification
 
-### Full test suite (measured 2026-09-14)
+### Full test suite (measured 2026-10-28)
 
 ```bash
 cargo test --workspace --features persistence
-# Result: 782 passed / 0 failed / EXIT=0
+# Result: 1032 passed / 0 failed / EXIT=0
 ```
 
-| crate | unit tests | integration/verification | doc-test | total |
-|---|---|---|---|---|
-| evorule-tcb | 222 | determinism 5 + integration 18 + proptest_props 26 | 18 | 289 |
-| evorule-reactor | 186 | complex_rule 2 + differential 11 + integration 29 | 3 | 231 |
-| evorule-governance | 155 | differential 5 + e2e 9 + session 3 + sse 3 | 3 | 178 |
-| evorule-cli | 61 | integration 20 | 3 | 84 |
-| **total** | **624** | **131** | **27** | **782** |
+| 项 | 数 |
+|---|---|
+| unit tests | 822 |
+| integration/verification suites | 182 |
+| doc-test | 28 |
+| **total** | **1032** |
 
-> `persistence` is a non-default feature (`default=[]`); enabling it adds the WAL file-backend tests. Without it the test count is lower.
+> `persistence` is a non-default feature (`default=[]`); as of 2026-10-28 the suite counts are identical with and without it.
 
 ### Formal verification
 
-- **Kani proofs**: **46 total** (tcb 35 + reactor 11)
-  - tcb: `evorule-tcb/tests/kani/kani_proofs.rs` (35 = A-tier 14 + B-tier 21; A-tier all PASS in the v0.6.0 rerun @ `25c0cc0`, B-tier judged currently not runnable — measured 600s/3600s timeouts)
+- **Kani proofs**: **48 total** (tcb 37 + reactor 11)
+  - tcb: `evorule-tcb/tests/kani/kani_proofs.rs` (37 = A-tier 14 + B-tier 23; A-tier all PASS in the v0.6.0 rerun @ `25c0cc0`, B-tier judged currently not runnable — measured 600s/3600s timeouts)
   - reactor: `evorule-reactor/verification/kani_proofs.rs` (11, covering pure functions)
   - **Verified (current re-run)**: 19 — per [`verification/STATUS.md`](verification/STATUS.md), the single source of truth (five-tier vocabulary)
 - **Differential testing**: reactor vs pure module, 11 items (`differential_test.rs`), ensuring the side-effecting executor agrees with the pure reference implementation
@@ -542,7 +541,7 @@ evorule/
 [![Version](https://img.shields.io/badge/version-0.9.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Constitution CC0-1.0](https://img.shields.io/badge/constitution-CC0--1.0%20public%20domain-lightgrey.svg)](LICENSES/core_eval-CC0-1.0.txt)
-[![Tests](https://img.shields.io/badge/tests-782%20passed%20%C2%B7%202026--09--14-brightgreen.svg)](#测试与验证)
+[![Tests](https://img.shields.io/badge/tests-1032%20passed%20%C2%B7%202026--10--28-brightgreen.svg)](#测试与验证)
 [![Kani](https://img.shields.io/badge/Kani-48%20proofs%20%2819%20verified%20%C2%B7%20AL2%29-blue.svg)](#形式化验证)
 [![no_std](https://img.shields.io/badge/TCB-no__std-lightgrey.svg)](#evorule-tcb---最小信任基)
 
@@ -806,22 +805,21 @@ evorule replay ./output/facts.jsonl
 
 ## 测试与验证
 
-### 全量测试（2026-09-14 实测）
+### 全量测试（2026-10-28 实测）
 
 ```bash
 cargo test --workspace --features persistence
-# 结果：782 passed / 0 failed / EXIT=0
+# 结果：1032 passed / 0 failed / EXIT=0
 ```
 
-| crate | 单元测试 | 集成/验证测试 | doc-test | 合计 |
-|---|---|---|---|---|
-| evorule-tcb | 222 | determinism 5 + integration 18 + proptest_props 26 | 18 | 289 |
-| evorule-reactor | 186 | complex_rule 2 + differential 11 + integration 29 | 3 | 231 |
-| evorule-governance | 155 | differential 5 + e2e 9 + session 3 + sse 3 | 3 | 178 |
-| evorule-cli | 61 | integration 20 | 3 | 84 |
-| **合计** | **624** | **131** | **27** | **782** |
+| 项 | 数 |
+|---|---|
+| 单元测试 | 822 |
+| 集成/验证测试 | 182 |
+| doc-test | 28 |
+| **合计** | **1032** |
 
-> `persistence` 是非默认 feature（`default=[]`），启用后包含 WAL 文件后端测试。不加此 feature 会导致测试数偏低。
+> `persistence` 是非默认 feature（`default=[]`）；2026-10-28 实测含/不含该 feature 计数一致。
 
 ### 形式化验证
 
