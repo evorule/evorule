@@ -148,3 +148,17 @@ evid-verify-wasm/dist/bindgen/
 
 # 运营登记册（本地私有面，不上库）
 plan/
+
+# 批次本地变更台账（自述"本地台账，不随公开仓分发"，含内部信息，防误 add）
+**/CHANGE_REQUEST.md
+
+# 宣传视频产物（发布走宣传渠道, 不进 git 避免二进制膨胀）
+assets/promo/
+
+# cargo-mutants 实跑输出（证据由登记册+CI run 承载, 本地为复跑 scratch）
+mutants.out*/
+**/mutants.out*/
+
+# 自定义 CARGO_TARGET_DIR 构建产物（target-sc1b/target-ice 等, 可再生）
+target-*/
+**/target-*/
