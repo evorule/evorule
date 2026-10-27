@@ -15,7 +15,7 @@
 | 禁止级许可证（copyleft 不兼容 / 源码可见 / 非商用） | **0 项** |
 | 需登记的宽松许可（不在原白名单） | 7 类（MIT-0 / CDLA-Permissive-2.0 / BSL-1.0 / BlueOak-1.0.0 / NCSA / OFL-1.1 / BSD-1-Clause）— **已于 2026-10-24 全部登记入 `deny.toml`**，复验 0 红项 |
 | 需特别标注的 copyleft 依赖 | 1 类（MPL-2.0，dompurify，可选 Apache-2.0 分支） |
-| 已发布 crate 缺许可证正文 | **0 / 9**（evorule-discipline、evorule-eval 已于 Wave 2 补齐） |
+| 已发布 crate 缺许可证正文 | **0 / 9**（evorule-discipline、evorule-eval 已于 Wave 2 补齐；v0.9.0 四个首发 crate audit-chain / evid-verify-core / evid-verify-wasm / mcu 已于 2026-10-28 随发版批补齐 crate 级正文） |
 | 发行分发包缺 LICENSE/NOTICE/声明 | **0**（Wave 2 后有分发链的仓全部五件套随附 + dist-gate 阻断，详见第五节） |
 | 依赖许可 CI 门禁覆盖 | **全生态**：license-gate（防漂移比对 + cargo-deny 四闸）+ dist-gate（发布阻断）自根仓 reusable workflow 钉 SHA 复用，10 仓 `deny.toml` 统一 |
 | 自有许可七件套一致性 | **绿**（Wave 2 重写 17 件漂移件；核验覆盖面扩容至 16 仓进行中，详见第二节） |
@@ -26,7 +26,7 @@
 
 | # | 仓名 | 角色 | 依赖生态 | 依赖记录数 | 分发形态 |
 |---|---|---|---|---|---|
-| 1 | `evorule` | 核心引擎 / TCB 唯一版本源（8 crate） | cargo | 195 | crates.io ×6 + CLI 双平台二进制 |
+| 1 | `evorule` | 核心引擎 / TCB 唯一版本源（10 crate） | cargo | 195 | crates.io ×9 + CLI 双平台二进制 |
 | 2 | `evorule-server` | 官方 HTTP 服务入口（:18080） | cargo + npm | 504 | 零依赖分发包 win64.zip / linux64.tar.gz |
 | 3 | `evorule-rule` | 规则资产治理层 | cargo | 308 | crates.io + 双平台双 bin |
 | 4 | `evorule-system-rules` | 生态宪法 / schema 版本权威 | 无编译依赖 | 0 | 仓库内资产（schemas/migrations/signatures） |
@@ -142,7 +142,7 @@ AGPL-3.0 的分发义务：§4（随附许可证副本 + 保留声明 + 修改�
 
 | 仓 | 分发物 | 现状 | 结论 |
 |---|---|---|---|
-| `evorule` | crates.io 包（6 个 crate）+ CLI 双平台二进制 | ✅ 6 crate LICENSE 全部在位（cargo publish 自动附带）；CLI 合规归档随 Release（五件套 + SBOM） | dist-gate 已接线 |
+| `evorule` | crates.io 包（9 个 crate）+ CLI 双平台二进制 | ✅ 9 crate LICENSE 全部在位（cargo publish 自动附带；四个首发 crate 已于 2026-10-28 补齐 crate 级正文）；CLI 合规归档随 Release（五件套 + SBOM） | dist-gate 已接线 |
 | `evorule-server` | 零依赖分发包 win64.zip / linux64.tar.gz | ✅ 包内五件套（LICENSE + NOTICE + THIRD-PARTY-NOTICES + LICENSES/ + SOURCE.md）+ 源码 tarball | dist-gate 已接线（@a3aa299） |
 | `evorule-rule` | 双平台双 bin | ✅ 独立合规归档 zip 随 Release（五件套）+ 源码 tarball | dist-gate 已接线（@a3aa299） |
 | `evorule-bundle` | crates.io 包 | ✅ 已随包（LICENSE + 双许可文件 + NOTICE） | crate 闸：LICENSE 在位 |

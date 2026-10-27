@@ -60,10 +60,13 @@ $piecesFull = [ordered]@{
     "SOURCE.md"              = "SOURCE.md"
 }
 
-# Crates published to crates.io from this repo (embedded targets excluded).
+# Crates published to crates.io from this repo. Mirrors the release.yml publish
+# list plus evorule-eval (historically published via manual channel, not CI).
+# evorule-mcu ships as a library crate; embedded board targets are not published.
 $publishedCrates = @(
-    "evorule-tcb", "evorule-reactor", "evorule-governance", "evorule-cli",
-    "evorule-discipline", "evorule-eval"
+    "evorule-tcb", "evorule-audit-chain", "evid-verify-core", "evid-verify-wasm",
+    "evorule-reactor", "evorule-mcu", "evorule-governance", "evorule-discipline",
+    "evorule-cli", "evorule-eval"
 )
 
 $gapTotal = 0
