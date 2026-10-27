@@ -156,8 +156,12 @@ foreach ($prop in $reposMap.PSObject.Properties) {
 # --- Part 2: published crate directories (this repo) --------------------------
 Write-Host ""
 if ($Repo -eq "" -or $Repo -eq "evorule") {
+# Full-ecosystem mode scans the main-repo root ($evoruleRoot); single-repo CI
+# mode must scan the caller checkout (-RepoPath) — in CI $evoruleRoot resolves
+# to the sparse tooling checkout where crate directories do not exist.
+$crateBase = if ($Repo -ne "") { $RepoPath } else { $evoruleRoot }
 foreach ($crate in $publishedCrates) {
-    $crateDir = Join-Path $evoruleRoot $crate
+    $crateDir = Join-Path $crateBase $crate
     if (-not (Test-Path $crateDir)) {
         Write-Host "[GAP] crate $crate : directory not found" -ForegroundColor Red
         $gapTotal++
