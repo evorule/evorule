@@ -9,7 +9,7 @@
 [![CI](https://github.com/evorule/evorule/actions/workflows/ci.yml/badge.svg)](https://github.com/evorule/evorule/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/badge/github.com/evorule/evorule)](https://securityscorecards.dev/viewer/?uri=github.com/evorule/evorule)
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
-[![Version](https://img.shields.io/badge/version-0.8.5-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Constitution CC0-1.0](https://img.shields.io/badge/constitution-CC0--1.0%20public%20domain-lightgrey.svg)](LICENSES/core_eval-CC0-1.0.txt)
 [![Tests](https://img.shields.io/badge/tests-782%20passed%20%C2%B7%202026--09--14-brightgreen.svg)](#testing--verification)
@@ -47,13 +47,13 @@
 
 ---
 
-## Highlights of the current release (v0.6.0)
+## Highlights of the current release (v0.9.0)
 
-- **Slimmer Stable fact**: carries only the `version` number, not a full payload snapshot; WAL volume for long-lived sessions is O(n). Code: `evorule-reactor/src/fact.rs:228-242`
-- **Meta-instruction SSOT**: the tcb exports the authoritative `META_INSTRUCTION_TYPES` constant (5 types, `collect`/`merge` retired in v0.6.0); the cli `validate` enforces the L2 ruleset discipline set (DC-01..) whose accepted instruction types are test-locked to this SSOT. Code: `evorule-tcb/src/executor.rs`, `evorule-tcb/src/discipline.rs`; tests: `test_meta_instruction_types_ssot`, `discipline_types_match_tcb_ssot`
-- **WAL failure escalation**: 3 consecutive WAL write failures auto-terminate the session (fail-closed). Code: `evorule-reactor/src/facts_log.rs` (`WAL_FAIL_TERMINATE_THRESHOLD=3`)
-- **Hash-chain SSOT**: the BLAKE3 algorithm lives in the reactor and is re-exported by governance/cli; the three-way `cross_validate` agrees. Code: `evorule-reactor/src/hash.rs`; test: `test_three_way_hash_consistency`
-- **Full suite 782 passed / 0 failed** (`cargo test --workspace --features persistence`, EXIT=0, measured 2026-09-14)
+- **`JsonValue::U64` u64 full-range channel (⚠️ breaking)**: sources whose values may exceed `i64` ride a dedicated lossless variant; the `Ord` type-group order gains a `U64` group between `Integer` and `String` (migration notes in the [CHANGELOG](CHANGELOG.md)). Code: `evorule-tcb/src/value.rs`
+- **Standalone EVID verifier**: `evid-verify-core` — a `no_std` zero-trust verdict kernel (export 4-step / WAL 3-step / ed25519 anchor-seal v2, hash formulas via the audit-chain SSOT) — plus `evid-verify-wasm`: a zero-import byte-ABI cdylib + wasm-bindgen face and a single-file offline HTML verifier with zero network requests. Code: `evid-verify-core/src/verify.rs`, `evid-verify-wasm/src/abi.rs`
+- **Ops sentinel `evorule scan-wal-dir`**: periodic WAL-directory guardian — golden-vector self-check first, then full-chain verification with a prefix-anchored baseline diff (pure append vs rewritten history precisely distinguished). Code: `evorule-cli/src/commands/`
+- **`evorule compile-evopack`**: deterministic host compiler from JSON rule sets to compact `.evopack` MCU packages (same-input-same-bytes, fixture-guarded). Code: `evorule-cli/src/commands/compile_evopack.rs`
+- **License compliance batch**: reusable license-gate + dist-compliance CI gates across the ecosystem; per-repo THIRD-PARTY-NOTICES with 16-repo sync; `license-audit --repos` distribution-surface mode.
 
 ---
 
@@ -210,7 +210,7 @@ evorule replay ./output/facts.jsonl
 
 ---
 
-## The four crates in detail
+## The crates in detail
 
 ### evorule-tcb — minimal trusted computing base
 
@@ -263,6 +263,29 @@ evorule replay ./output/facts.jsonl
 - **Subcommands**: `validate` / `run` / `replay` / `verify-chain` / `verify-anchors` / `diff` / `version` / `help`
 - **Capability boundary**: the cli has no I/O handler — on `IoRequest` it emits an Error fact and stops (this is a **feature**: auditable failure, not silent skip)
 - **musl static linking**: single-file distributable (size per actual build)
+
+### evorule-audit-chain — audit-chain hash SSOT
+
+- **Positioning**: single source of truth for fact-chain hash formulas (`fact_hash` / `chain_step` / `fact_to_stable_json`) plus tamper-evident chain primitives; `no_std`-consumable (default features off)
+- **Consumers**: reactor / governance / mcu / evid-verify-core all call this SSOT — zero private re-implementations
+
+### evorule-mcu — embedded (MCU) kernel
+
+- **Positioning**: firmware-side `no_std` + `alloc` engine: compact `.evopack` rule packs + RAM WAL + tick clock + synchronous executor with the `io_request` pause-resume protocol
+- **Determinism**: WAL lines and chain-tail hashes byte-identical with the std host (shared audit-chain SSOT)
+
+### evorule-discipline — ruleset discipline layer
+
+- **Positioning**: L2 ruleset discipline checks (the policy layer behind `evorule validate`); registry dependency of the cli
+
+### evid-verify-core — standalone verification kernel
+
+- **Positioning**: zero-trust audit-chain verdicts (export 4-step / WAL 3-step / anchor-seal v2) in `no_std` + `alloc`; hash formulas via the audit-chain SSOT; g5 golden vectors embedded
+- **Constraints**: `#![no_std]` · `#![forbid(unsafe_code)]` · fail-closed parsing (unknown variants / floats / missing fields rejected)
+
+### evid-verify-wasm — browser/JS bindings
+
+- **Positioning**: dual-route wasm binding over the core kernel — zero-import `extern "C"` byte ABI (default) + wasm-bindgen face (`bindgen` feature); single-file offline HTML verifier (zero network requests)
 
 ---
 
@@ -444,13 +467,13 @@ evorule/
 
 ## Known limitations & roadmap
 
-### Limitations of the current release (v0.6.0)
+### Limitations of the current release (v0.9.0)
 
 - **Core repo has no hot-reload**: `core_eval` loads at startup and is immutable at runtime (business-rule hot-reload is an application-layer capability)
 - **cli has no I/O handler**: `IoRequest` errors and stops (auditable failure)
 - **ffi has no traditional debug semantics**: the event-driven state machine offers no `pause`/`resume`/`step`/`is_paused`; debug is provided by a purpose-built scheme
 - **Debug control is application-layer**: not a real single step, but a rewind replay
-- **Kani coverage is partial**: 18 of 45 proofs verified in the v0.6.0 rerun; 20 B-tier proofs judged currently not runnable (see [`verification/STATUS.md`](verification/STATUS.md))
+- **Kani coverage is partial**: proof-by-proof status (currently-verified / historical-PASS / indirect / not-runnable) is tracked in the authoritative [`verification/STATUS.md`](verification/STATUS.md); coverage is not complete
 - **Unknown IoResponse warn-ignored**: design to be confirmed
 
 ### Roadmap
@@ -516,7 +539,7 @@ evorule/
 [![CI](https://github.com/evorule/evorule/actions/workflows/ci.yml/badge.svg)](https://github.com/evorule/evorule/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/badge/github.com/evorule/evorule)](https://securityscorecards.dev/viewer/?uri=github.com/evorule/evorule)
 [![Gitee Stars](https://gitee.com/evorule/evorule/badge/star.svg?theme=gvp)](https://gitee.com/evorule/evorule/stargazers)
-[![Version](https://img.shields.io/badge/version-0.8.5-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.0-green.svg)](CHANGELOG.md)
 [![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Constitution CC0-1.0](https://img.shields.io/badge/constitution-CC0--1.0%20public%20domain-lightgrey.svg)](LICENSES/core_eval-CC0-1.0.txt)
 [![Tests](https://img.shields.io/badge/tests-782%20passed%20%C2%B7%202026--09--14-brightgreen.svg)](#测试与验证)
@@ -549,13 +572,13 @@ evorule/
 
 ---
 
-## 当前版本（v0.6.0）要点
+## 当前版本（v0.9.0）要点
 
-- **Stable fact 瘦身**：仅携带版本号，不携带全量 payload 快照；长驻会话 WAL 体积为 O(n)。代码：`evorule-reactor/src/fact.rs:228-242`
-- **元指令 SSOT**：tcb 导出 `META_INSTRUCTION_TYPES` 权威常量（5 种，v0.6.0 起 collect/merge 退役），cli validate 引用该常量。代码：`evorule-tcb/src/executor.rs:50`；测试：`test_meta_instruction_types_ssot`
-- **WAL 失败升级**：连续 3 次 WAL 写失败自动终止会话（fail-closed）。代码：`evorule-reactor/src/facts_log.rs`（`WAL_FAIL_TERMINATE_THRESHOLD=3`）
-- **哈希链 SSOT**：BLAKE3 哈希算法在 reactor，governance/cli re-export，三方 cross_validate 一致。代码：`evorule-reactor/src/hash.rs`；测试：`test_three_way_hash_consistency`
-- **全量测试 782 passed / 0 failed**（`cargo test --workspace --features persistence`，EXIT=0，2026-09-14 实测）
+- **`JsonValue::U64` u64 全域通道（⚠️ 破坏性变更）**：值域可能超出 i64 的来源走专用无损变体；`Ord` 类型分组在 Integer 与 String 之间新增 U64 组（迁移说明见 [CHANGELOG](CHANGELOG.md)）。代码：`evorule-tcb/src/value.rs`
+- **EVID 独立验证器**：`evid-verify-core`——no_std 零信任判定内核（导出四步 / WAL 三步 / ed25519 锚点封条 v2，哈希公式全走 audit-chain SSOT）+ `evid-verify-wasm`——零 import 字节 ABI cdylib 与 wasm-bindgen 面、单文件离线 HTML 验证器（零网络请求）。代码：`evid-verify-core/src/verify.rs`、`evid-verify-wasm/src/abi.rs`
+- **运维哨兵 `evorule scan-wal-dir`**：定时守护 WAL 目录——先做黄金向量自检，再全链验证并做前缀锚定基线比对（纯追加 vs 历史被改精确区分）。代码：`evorule-cli/src/commands/`
+- **`evorule compile-evopack`**：JSON 规则集 → 紧凑 `.evopack` MCU 包的确定性 host 编译器（同输入同字节，fixture 守卫）。代码：`evorule-cli/src/commands/compile_evopack.rs`
+- **许可证合规批**：生态可复用 license-gate + dist-compliance CI 闸；per-repo THIRD-PARTY-NOTICES 16 仓同步；`license-audit --repos` 分发面模式。
 
 ---
 
@@ -702,7 +725,7 @@ evorule replay ./output/facts.jsonl
 
 ---
 
-## 四 crate 详解
+## crate 详解
 
 ### evorule-tcb — 最小信任基
 
@@ -755,6 +778,29 @@ evorule replay ./output/facts.jsonl
 - **子命令**：`validate` / `run` / `replay` / `verify-chain` / `verify-anchors` / `diff` / `version` / `help`
 - **能力边界**：cli 无 I/O handler——遇到 IoRequest 即产生 Error fact 并停止（这是**特性**：可审计的失败，而非静默跳过）
 - **musl 静态链接**：单文件可分发（体积以实际构建为准）
+
+### evorule-audit-chain — 审计链哈希 SSOT
+
+- **定位**：事实链哈希公式唯一真相源（fact_hash / chain_step / fact_to_stable_json）+ 防篡改链原语；关 default-features 可 no_std 消费
+- **消费方**：reactor / governance / mcu / evid-verify-core 均经此 SSOT 调用——零私写复刻
+
+### evorule-mcu — 嵌入式（MCU）内核
+
+- **定位**：固件侧 no_std + alloc 引擎：紧凑 `.evopack` 规则包 + RAM WAL + tick 时钟 + 同步执行器（io_request 暂停-恢复协议）
+- **确定性**：与 std 宿主 WAL 行 / 链尾哈希逐字节一致（共享 audit-chain SSOT）
+
+### evorule-discipline — 规则集纪律层
+
+- **定位**：L2 规则集纪律检测（`evorule validate` 背后的策略层）；cli 的 registry 依赖
+
+### evid-verify-core — 独立验证内核
+
+- **定位**：零信任审计链判定（导出四步 / WAL 三步 / 锚点封条 v2）的 no_std + alloc 内核；哈希公式走 audit-chain SSOT；g5 黄金向量内嵌
+- **约束**：`#![no_std]` · `#![forbid(unsafe_code)]` · fail-closed 解析（未知变体 / 浮点 / 缺字段拒收）
+
+### evid-verify-wasm — 浏览器/JS 绑定
+
+- **定位**：内核上的双路线 wasm 绑定——零 import `extern "C"` 字节 ABI（默认）+ wasm-bindgen 面（`bindgen` feature）；单文件离线 HTML 验证器（零网络请求）
 
 ---
 
@@ -937,13 +983,13 @@ evorule/
 
 ## 已知限制与路线图
 
-### 当前版本（v0.6.0）限制
+### 当前版本（v0.9.0）限制
 
 - **核心仓无热重载**：core_eval 启动时加载，运行中不可变（业务规则热重载为应用层能力）
 - **cli 无 I/O handler**：IoRequest 即 Error 停止（可审计的失败）
 - **ffi 无传统调试语义**：事件驱动状态机不提供 pause/resume/step/is_paused；调试由专门方案提供
 - **调试控制为应用层能力**：非真正单步执行，为 rewind 回放
-- **Kani 覆盖为部分**：48 个 proof 中 19 个当前实跑验证；B 档 23 个判定当前不可运行（见 [`verification/STATUS.md`](verification/STATUS.md)）
+- **Kani 覆盖为部分**：逐 proof 状态（✅当前实跑 / 🟡历史PASS / 🔵间接覆盖 / ❌不可运行）以权威 [`verification/STATUS.md`](verification/STATUS.md) 为准，覆盖不完整
 - **未知 IoResponse warn 忽略**：设计待确认
 
 ### 路线图
