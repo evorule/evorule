@@ -24,7 +24,23 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
-## [Unreleased]
+## [0.9.0] - 2026-10-28
+
+### ⚠️ Breaking Change（破坏性变更）
+
+- **`JsonValue` 新增 `U64(u64)` 变体并插入 `Ord` 组序**（tcb `value.rs`）：
+  `Integer(i64)` 无法无损承载 u64 高位值，凡值域可能超出 `i64` 的来源一律走
+  `U64`。本仓全量已同步适配；对 crates.io 直消 0.8.x 的外部消费者有三处
+  升级注意点：
+  - **穷尽 `match` 编译失败**：`JsonValue` 未标 `#[non_exhaustive]`，新增变体
+    要求下游穷尽匹配补 `U64` 臂（或 `_` 兜底）。
+  - **`Ord` 组序变化**：类型分组由 Null < Bool < Integer < String < Array <
+    Object 变为 Null < Bool < Integer < **U64** < String < Array < Object——
+    既有可表示值的跨类型相对序不变，新组只承载此前无法无损表示的高位值。
+  - **跨形态相等**：`U64` 与 `Integer` 不做数值跨形态相等（与 `Ord` 类型分组
+    一致）；跨源比较前先归一形态（`as_u64`/`as_i64`）。
+  - 配套：`JsonValue::u64()` 构造、`From<u64>`、`as_u64`/`is_u64`；哈希口径
+    零扰动（`fact_to_stable_json` 不经 tcb JsonValue，黄金向量不变）。
 
 ### Added
 
@@ -44,17 +60,17 @@
   公钥按 key_id 手动粘贴建表零硬编码信任根，三面判定 UI，零网络请求）；
   浏览器实测 fixture 六件套随仓（`dist/fixtures/`）。
 - **EVID 移动端验证内核 `evid-verify-core`（S2 批）**：no_std 独立 crate——审计链导出（v1.0）四步判定 / WAL 行三步判定 / 锚点封条 v2 验签（ed25519，公钥注入式）；哈希公式全走 `evorule-audit-chain` SSOT（fact_hash/chain_step/fact_to_stable_json），解析层 fail-closed（未知变体/浮点/缺字段拒收，数字通道 i64 全域→Integer、u64 高位→U64）；g5 黄金向量 11 组 self-test 内嵌。供 wasm 绑定与三方复用。
-- **v0.9.0：`JsonValue::U64(u64)` u64 全域通道**（tcb `value.rs`）——`Integer(i64)`
-  无法无损承载 u64 高位值，凡值域可能超出 `i64` 的来源一律走 `U64`。配套
-  `JsonValue::u64()` 构造、`From<u64>`、`as_u64`/`is_u64`；形态严格语义：
-  `U64` 与 `Integer` 不做跨形态相等（与 `Ord` 类型分组一致，组序
-  Null < Bool < Integer < U64 < String < Array < Object）。
+- **CLI host 编译器 `evorule compile-evopack`**：JSON 规则（四格式单文件）
+  编译为紧凑 `.evopack` 二进制包（evorule-mcu 线格式 + postcard，BTreeMap
+  迭代序确定性编码，同输入同字节）；配套 `load_rules_file` 单文件加载；
+  规则数超 TCB 上限构造期 fail-fast；产物可被内核 `RulePack::from_evopack`
+  解码（双跑对拍 + committed fixture 守卫双层守护）。支撑嵌入式线——
+  core_eval.json 编译后烧录/内嵌进固件。
 - 审计链展示面 u64 无损化：`audit-chain` `Fact::to_json` 全部 17 处
   `as i64` cast 改走 `J::u64(...)`，高位 FactId（规则集锚定事实
   `u64::MAX-1` 哨兵）不再回绕为负；`tcb_to_serde`（audit-chain / reactor /
   governance 三处）与 mcu 线格式 `WireValue::Uint`（尾部追加，postcard
-  变体索引对存量 `.evopack` 双向兼容）同步补 U64 承载。哈希口径零扰动
-  （`fact_to_stable_json` 不经 tcb JsonValue，黄金向量不变）。
+  变体索引对存量 `.evopack` 双向兼容）同步补 U64 承载。
 - 审计链哨兵 `evorule scan-wal-dir`：定时扫描 WAL 目录的运维守护——每次运行先做
   黄金向量自检（验证器忠实性），再逐文件全链三查，并与上轮基线做前缀锚定比对
   （纯追加 vs 历史被改后整链重算精确区分）。退出码协议：0 全绿/2 自检失败/
@@ -64,14 +80,11 @@
   + .partial.bak 备份 + --confirm 门）。
 - `Auditor::import_compressed` 解压上限（256MB，防压缩炸弹 OOM）。
 - CLI `SentinelExit` 结构化退出码（thiserror 变体）。
-
-### Changed
-
-- 哨兵自检黄金向量（7 事实哈希快照+锚点验签）与内核 SSOT 同源锁定
-  （`builtin_snapshot_matches_kernel_file` 测试直读内核快照文件双保险）。
-
-### Added
-
+- **许可证合规批**：可复用 `license-gate` workflow（workflow_call，生态仓接入）
+  + Gitee Go pipeline license stage；可复用 dist-compliance 闸（release/dist
+  通道统一挂闸，checker 支持单仓 CI 模式）；per-repo THIRD-PARTY-NOTICES
+  生成与 16 仓同步；`license-audit --repos` 分发面第三方通知模式。
+- `publish-evorule-hash` crates.io 发布 dispatch workflow。
 - 审计链专项 fuzz 三目标（`fuzz_stable_json_hash` 稳定序列化规范形幂等/确定性、
   `fuzz_wal_parse_roundtrip` WAL 解析与 Fact 持久化 roundtrip、`fuzz_chain_invariants`
   链分解与单条敏感性）；fuzz 工作区无副作用纪律精确化（禁写路径清单化，仅纯函数面）。
@@ -85,6 +98,8 @@
 
 ### Changed
 
+- 哨兵自检黄金向量（7 事实哈希快照+锚点验签）与内核 SSOT 同源锁定
+  （`builtin_snapshot_matches_kernel_file` 测试直读内核快照文件双保险）。
 - `FactsLog::append` 与 WAL 重放的事实应用收敛为单点 `apply_fact_to_state`
   （快照/版本/last_stable 更新语义由构造保证一致，消除双份实现漂移隐患）；
   `recover_with_options` 薄壳化为 读→纯重放→挂载 三段；GATE_REFERENCE 对应
@@ -92,6 +107,20 @@
 - WAL 轮换读取消除每文件二次通读计行（行计数并入解析核心，`parse_wal_line`）。
 - 历史会话档案面（server 侧）与本仓 `Auditor::load_from_tier1_wal` 的验证口径
   差异（尽力全报 vs fast-fail）双侧文档化互引。
+- **发版线补齐**：`release.yml` publish 清单扩至全部 9 个可发布成员
+  （补入 `evorule-audit-chain` / `evorule-mcu` / `evid-verify-core` /
+  `evid-verify-wasm`——audit-chain 自 0.8.1 引入起漏列，本批随发版修正），
+  按依赖序发布。
+
+### Removed
+
+- 审计链白皮书迁出本仓（随产品仓叙事与文件索引维护，docs 引用同步摘除）。
+
+### Fixed
+
+- license-gate workflow 修复：step 名含冒号加引号；native cargo deny 运行
+  使 sibling checkout 可解析；extra-checkouts 支持 floating main ref；
+  server npm subset 记录刷新。
 
 ## [0.8.5] - 2026-10-13
 

@@ -128,10 +128,12 @@ jobs:
             echo "ERROR: CARGO_REGISTRY_TOKEN secret 未配置 - crates.io 发布阻断(fail-closed, 禁止静默假绿); 补配 secret 后 rerun 本 job"
             exit 1
           fi
-          # 依赖序含 workspace 全部 5 个可发布成员: discipline 是 cli 的
-          # registry 依赖(evorule-discipline ^x.y.z), 漏列会使 cli 发布时
-          # 解析不到新版本而失败(2026-10-10 v0.8.1 手工补发实证)。
-          for p in evorule-tcb evorule-reactor evorule-governance evorule-discipline evorule-cli; do
+          # 依赖序含 workspace 全部 9 个可发布成员(publish=false 仅 eval/fuzz):
+          # discipline 是 cli 的 registry 依赖(evorule-discipline ^x.y.z),
+          # audit-chain/mcu/evid-verify-core/evid-verify-wasm 为 v0.9.0 补齐
+          # (audit-chain 自 0.8.1 引入起漏列, 下游解析不到新版本会失败),
+          # evid-verify-wasm 依赖 evid-verify-core, 顺序须保持依赖在前。
+          for p in evorule-tcb evorule-audit-chain evid-verify-core evid-verify-wasm evorule-reactor evorule-mcu evorule-governance evorule-discipline evorule-cli; do
             echo "publishing $p ..."
             if cargo publish -p "$p" > /tmp/pub_$p.log 2>&1; then
               echo "$p published"
