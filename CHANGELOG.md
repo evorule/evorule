@@ -24,6 +24,21 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
+## [0.10.0] - 2026-10-28
+
+### Added
+
+- **WAL 轮换机制贯通（干预原语 wal.force_rotate 承载面）**：
+  - `evorule-reactor`：`FactWalStore` trait 新增 `rotate` 默认方法（无可轮换
+    物理后端返回 `Ok(false)`）；`WalWriter` 覆写实现（序号 +1 开新分片，
+    纯追加切换，崩溃安全，不影响链内容与可回放性）；`FactsLog::rotate_wal`
+    透传（persistence feature 门控；纯内存模式 `Ok(false)`）。
+  - `evorule-governance`：`SharedFactsLog::rotate_wal` 委托内层
+    `FactsLog::rotate_wal`。轮换不产生事实、不改 metadata——存储层操作，
+    与审计链内容无关。
+  - 语义先行实现随 evorule-server 干预端点批的 vendored reactor/governance
+    patch 运行（`wal.force_rotate`），本版将机制正本收编回主仓。
+
 ## [0.9.0] - 2026-10-28
 
 ### ⚠️ Breaking Change（破坏性变更）

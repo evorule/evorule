@@ -1141,6 +1141,21 @@ impl FactsLog {
     pub fn is_reusable(&self) -> bool {
         Arc::strong_count(&self.inner) == 1
     }
+
+    /// 轮换 WAL 文件（干预原语 wal.force_rotate 通路）
+    ///
+    /// 文件后端：切新分片（序号 +1 开新文件，旧分片保持完整——纯追加切换，
+    /// 崩溃安全，不影响链内容与可回放性），返回 `Ok(true)`；
+    /// 纯内存模式 / 无可轮换后端：`Ok(false)`。轮换不经过 `fact` 通道、
+    /// 不产生事实——它是存储层操作，与审计链内容无关。
+    #[cfg(feature = "persistence")]
+    pub fn rotate_wal(&self) -> Result<bool, FactsLogError> {
+        let mut inner = self.inner.write();
+        match inner.wal.as_deref_mut() {
+            Some(store) => store.rotate().map_err(|e| FactsLogError::WalError(e.to_string())),
+            None => Ok(false),
+        }
+    }
 }
 
 impl Default for FactsLog {
@@ -1726,6 +1741,38 @@ mod tests {
     }
 
     #[cfg(feature = "persistence")]
+    #[test]
+    fn test_rotate_wal_memory_mode_returns_false() {
+        let log = FactsLog::new();
+        assert!(
+            !log.rotate_wal().unwrap(),
+            "纯内存模式（无 WAL 后端）轮换必须返回 false"
+        );
+    }
+
+    #[test]
+    fn test_rotate_wal_file_backend_rotates_shard() {
+        let path = temp_wal_path("rotate_shard");
+
+        let log = FactsLog::with_wal(&path).unwrap();
+        log.append(Fact::Command {
+            id: FactId(1),
+            instruction: JsonValue::object_from_pairs(&[("type", JsonValue::string("increment"))]),
+        })
+        .unwrap();
+        assert!(log.rotate_wal().unwrap(), "文件后端轮换必须返回 true");
+        // 轮换后继续追加：新分片续写，旧分片保持完整；全量重放内容不丢
+        log.append(Fact::Command {
+            id: FactId(2),
+            instruction: JsonValue::object_from_pairs(&[("type", JsonValue::string("increment"))]),
+        })
+        .unwrap();
+        drop(log);
+
+        let recovered = FactsLog::recover(&path).unwrap();
+        assert_eq!(recovered.history().len(), 2, "轮换后旧分片内容必须可重放");
+    }
+
     #[test]
     fn test_wal_persists_facts_across_drop() {
         let path = temp_wal_path("persist_drop");

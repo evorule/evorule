@@ -431,6 +431,20 @@ impl SharedFactsLog {
         self.append_inner(path, value, source_session_id, None)
     }
 
+    /// 轮换共享事实 WAL 文件（干预原语 wal.force_rotate 通路）
+    ///
+    /// 委托内层 [`FactsLog::rotate_wal`]：纯追加式分片切换（序号 +1 开新
+    /// 文件，旧分片保持完整——崩溃安全，不影响链内容与可回放性）。
+    /// 纯内存模式 / 无可轮换后端：`Ok(false)`。轮换不产生事实、不改
+    /// metadata——它是存储层操作，与审计链内容无关。
+    pub fn rotate_wal(&self) -> Result<bool, FactsLogError> {
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .facts_log
+            .rotate_wal()
+    }
+
     /// 追加共享事实并携带会话侧源头 fact_id（N6 链路统一，R10）
     ///
     /// 与 [`append`](Self::append) 唯一区别：共享侧条目记录其会话侧源头
@@ -945,6 +959,15 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     #![allow(clippy::panic, clippy::expect_used)]
     use super::*;
+
+    #[test]
+    fn test_rotate_wal_memory_mode_returns_false() {
+        let shared = SharedFactsLog::new();
+        assert!(
+            !shared.rotate_wal().unwrap(),
+            "纯内存模式（无 WAL 后端）轮换必须返回 false"
+        );
+    }
 
     #[test]
     fn test_shared_facts_log_new() {

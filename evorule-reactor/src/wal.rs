@@ -190,6 +190,17 @@ pub trait FactWalStore: Send + Sync {
         prev_hash: &str,
         chain_hash: &str,
     ) -> Result<(), WalError>;
+
+    /// 轮换 WAL 后端的物理存储（干预原语 wal.force_rotate 通路）
+    ///
+    /// 文件后端：切新分片（序号 +1 开新文件，旧分片保持完整——纯追加切换，
+    /// 崩溃安全，不影响链内容与可回放性），返回 `Ok(true)`；
+    /// 无可轮换物理后端（如纯内存 [`MemoryWalStore`]）默认 `Ok(false)`。
+    /// 轮换不经过 `fact` 通道、不产生事实——它是存储层操作，与审计链内容无关。
+    fn rotate(&mut self) -> Result<bool, WalError> {
+        let _ = self;
+        Ok(false)
+    }
 }
 
 impl FactWalStore for WalWriter {
@@ -210,6 +221,11 @@ impl FactWalStore for WalWriter {
             prev_hash,
             chain_hash,
         )
+    }
+
+    fn rotate(&mut self) -> Result<bool, WalError> {
+        // 纯委托固有轮换：序号 +1 开新分片，旧分片保持完整（崩溃安全）
+        Self::rotate(self).map(|_| true)
     }
 }
 
