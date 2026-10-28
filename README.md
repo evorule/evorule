@@ -47,9 +47,10 @@
 
 ---
 
-## Highlights of the current release (v0.9.0)
+## Highlights of the current release (v0.10.0)
 
-- **`JsonValue::U64` u64 full-range channel (⚠️ breaking)**: sources whose values may exceed `i64` ride a dedicated lossless variant; the `Ord` type-group order gains a `U64` group between `Integer` and `String` (migration notes in the [CHANGELOG](CHANGELOG.md)). Code: `evorule-tcb/src/value.rs`
+- **WAL rotation finalized (`wal.force_rotate`)**: `FactWalStore::rotate` default method + `WalWriter` override (sequence+1 opens a new segment, pure-append split, crash-safe, chain content and replayability unaffected) + `FactsLog::rotate_wal` pass-through (persistence-feature gated; pure-memory returns `Ok(false)`) + `SharedFactsLog::rotate_wal` delegation. Rotation is a storage-layer op — produces no Facts, touches no metadata. Previously vendored as a patch in `evorule-server`; now canonicalized into the main reactor/governance crates. Code: `evorule-reactor/src/facts_log.rs`, `evorule-governance/src/`
+- **`JsonValue::U64` u64 full-range channel (⚠️ breaking, v0.9.0)**: sources whose values may exceed `i64` ride a dedicated lossless variant; the `Ord` type-group order gains a `U64` group between `Integer` and `String` (migration notes in the [CHANGELOG](CHANGELOG.md)). Code: `evorule-tcb/src/value.rs`
 - **Standalone EVID verifier**: `evid-verify-core` — a `no_std` zero-trust verdict kernel (export 4-step / WAL 3-step / ed25519 anchor-seal v2, hash formulas via the audit-chain SSOT) — plus `evid-verify-wasm`: a zero-import byte-ABI cdylib + wasm-bindgen face and a single-file offline HTML verifier with zero network requests. Code: `evid-verify-core/src/verify.rs`, `evid-verify-wasm/src/abi.rs`
 - **Ops sentinel `evorule scan-wal-dir`**: periodic WAL-directory guardian — golden-vector self-check first, then full-chain verification with a prefix-anchored baseline diff (pure append vs rewritten history precisely distinguished). Code: `evorule-cli/src/commands/`
 - **`evorule compile-evopack`**: deterministic host compiler from JSON rule sets to compact `.evopack` MCU packages (same-input-same-bytes, fixture-guarded). Code: `evorule-cli/src/commands/compile_evopack.rs`
@@ -466,7 +467,7 @@ evorule/
 
 ## Known limitations & roadmap
 
-### Limitations of the current release (v0.9.0)
+### Limitations of the current release (v0.10.0)
 
 - **Core repo has no hot-reload**: `core_eval` loads at startup and is immutable at runtime (business-rule hot-reload is an application-layer capability)
 - **cli has no I/O handler**: `IoRequest` errors and stops (auditable failure)
@@ -571,9 +572,10 @@ evorule/
 
 ---
 
-## 当前版本（v0.9.0）要点
+## 当前版本（v0.10.0）要点
 
-- **`JsonValue::U64` u64 全域通道（⚠️ 破坏性变更）**：值域可能超出 i64 的来源走专用无损变体；`Ord` 类型分组在 Integer 与 String 之间新增 U64 组（迁移说明见 [CHANGELOG](CHANGELOG.md)）。代码：`evorule-tcb/src/value.rs`
+- **WAL 轮换机制正式贯通（`wal.force_rotate`）**：`FactWalStore::rotate` 默认方法 + `WalWriter` 覆写实现（序号+1 开新分片，纯追加切割，宕盘安全，不影响链内容与可回放性）+ `FactsLog::rotate_wal` 透传（persistence feature 门控；纯内存模式返回 `Ok(false)`）+ `SharedFactsLog::rotate_wal` 委托内层。轮换是存储层操作——不产生事实、不改 metadata，与审计链内容无关。此前为 `evorule-server` 的 vendored patch，本版正式收编回主仓 reactor/governance。代码：`evorule-reactor/src/facts_log.rs`、`evorule-governance/src/`
+- **`JsonValue::U64` u64 全域通道（⚠️ 破坏性变更，v0.9.0）**：值域可能超出 i64 的来源走专用无损变体；`Ord` 类型分组在 Integer 与 String 之间新增 U64 组（迁移说明见 [CHANGELOG](CHANGELOG.md)）。代码：`evorule-tcb/src/value.rs`
 - **EVID 独立验证器**：`evid-verify-core`——no_std 零信任判定内核（导出四步 / WAL 三步 / ed25519 锚点封条 v2，哈希公式全走 audit-chain SSOT）+ `evid-verify-wasm`——零 import 字节 ABI cdylib 与 wasm-bindgen 面、单文件离线 HTML 验证器（零网络请求）。代码：`evid-verify-core/src/verify.rs`、`evid-verify-wasm/src/abi.rs`
 - **运维哨兵 `evorule scan-wal-dir`**：定时守护 WAL 目录——先做黄金向量自检，再全链验证并做前缀锚定基线比对（纯追加 vs 历史被改精确区分）。代码：`evorule-cli/src/commands/`
 - **`evorule compile-evopack`**：JSON 规则集 → 紧凑 `.evopack` MCU 包的确定性 host 编译器（同输入同字节，fixture 守卫）。代码：`evorule-cli/src/commands/compile_evopack.rs`
@@ -981,7 +983,7 @@ evorule/
 
 ## 已知限制与路线图
 
-### 当前版本（v0.9.0）限制
+### 当前版本（v0.10.0）限制
 
 - **核心仓无热重载**：core_eval 启动时加载，运行中不可变（业务规则热重载为应用层能力）
 - **cli 无 I/O handler**：IoRequest 即 Error 停止（可审计的失败）
