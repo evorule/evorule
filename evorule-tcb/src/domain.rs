@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 域类型评估器 - 7 种基本域类型
+//! 域类型评估器 - 8 种基本域类型
 //!
 //! # 支持的域类型
 //! - `eq`：相等比较
 //! - `lt`：小于比较
+//! - `in`：集合成员判定
 //! - `exists`：路径存在性检查
 //! - `instruction`：指令类型匹配
 //! - `all`：所有子域为真（空列表 = 真）
@@ -263,6 +264,7 @@ fn resolve_value_reference_outcome(
 /// - `eq`：相等比较
 /// - `lt`：小于比较（仅 i64）
 /// - `exists`：路径存在性检查（null 视为已清除 = 不存在）
+/// - `in`：集合成员判定
 /// - `instruction`：指令类型匹配
 /// - `all`：所有子域为真（空列表 = 真）
 /// - `not`：子域取反
@@ -372,6 +374,7 @@ fn evaluate_domain_outcome_inner(
     match domain_type {
         "eq" => evaluate_eq_outcome(domain, exec_state),
         "lt" => evaluate_lt_outcome(domain, exec_state),
+        "in" => evaluate_in_outcome(domain, exec_state),
         "exists" => evaluate_exists(domain, exec_state).map(DomainOutcome::from_bool),
         "instruction" => evaluate_instruction_eq(domain, exec_state).map(DomainOutcome::from_bool),
         "all" => evaluate_all_outcome(domain, exec_state, depth),
@@ -462,6 +465,46 @@ fn evaluate_lt_outcome(
         }),
         _ => dispatch_missing(policy, MissingReason::Incomparable, path),
     }
+}
+
+/// In 三态求值：路径值 ∈ `values` 集合
+///
+/// `values` 为纯字面量数组（元素不做 `__` 引用解析）；字符串元素命中
+/// 根段点分形态 → `Missing(ValueLiteralAmbiguous)`（与 eq 的 value 同族
+/// 同谓词 [`is_root_segment_dot_path`]，防字面量化静默比对）。空集 →
+/// `Unsat`（数学语义：不属于空集合恒假；装载面另行拒收空集写作错误）。
+/// 路径不存在 → `Missing(PathNotFound)` 按 `on_missing` 分派；
+/// `values` 缺失/非数组 → 结构侧 `Err`（fail-fast）。
+fn evaluate_in_outcome(
+    domain: &JsonValue,
+    exec_state: &JsonValue,
+) -> Result<DomainOutcome, TcbError> {
+    let policy = parse_on_missing(domain)?;
+    let path = get_str_field(domain, "path")?;
+    let values = domain.get("values").ok_or_else(|| TcbError::MissingField {
+        field: "values".to_string(),
+    })?;
+    let arr = values.as_array().ok_or_else(|| TcbError::InvalidType {
+        expected: "array",
+        actual: json_type_name(values),
+        context: "in.values".to_string(),
+    })?;
+    for item in arr.iter() {
+        if let JsonValue::String(s) = item {
+            if is_root_segment_dot_path(s) {
+                return dispatch_missing(policy, MissingReason::ValueLiteralAmbiguous, s);
+            }
+        }
+    }
+    let actual = match resolve_domain_path(exec_state, path) {
+        Some(a) => a,
+        None => return dispatch_missing(policy, MissingReason::PathNotFound, path),
+    };
+    Ok(if arr.iter().any(|v| v == actual) {
+        DomainOutcome::Sat
+    } else {
+        DomainOutcome::Unsat
+    })
 }
 
 /// Exists：路径存在且值非 null
@@ -820,6 +863,136 @@ mod tests {
             ("value", JsonValue::Integer(10)),
         ]);
         assert!(!eval_ok(&domain, &state));
+    }
+
+    // ===== in 测试 =====
+
+    fn make_in_domain(values: JsonValue) -> JsonValue {
+        JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("in")),
+            ("path", JsonValue::string("__exec__.payload.x")),
+            ("values", values),
+            ("on_missing", JsonValue::string("unsat")),
+        ])
+    }
+
+    fn make_string_array(items: &[&str]) -> JsonValue {
+        let v: alloc::vec::Vec<JsonValue> = items.iter().map(|s| JsonValue::string(*s)).collect();
+        JsonValue::Array(v)
+    }
+
+    #[test]
+    fn test_in_member_sat() {
+        let state = make_exec_state(
+            "noop",
+            JsonValue::object_from_pairs(&[("x", JsonValue::string("MiniMax-M3"))]),
+        );
+        let domain = make_in_domain(make_string_array(&["MiniMax-M2.5", "MiniMax-M3"]));
+        assert!(eval_ok(&domain, &state));
+    }
+
+    #[test]
+    fn test_in_not_member_unsat() {
+        let state = make_exec_state(
+            "noop",
+            JsonValue::object_from_pairs(&[("x", JsonValue::string("other-model"))]),
+        );
+        let domain = make_in_domain(make_string_array(&["MiniMax-M2.5", "MiniMax-M3"]));
+        assert!(!eval_ok(&domain, &state));
+    }
+
+    #[test]
+    fn test_in_integer_member() {
+        let state = make_exec_state("noop", make_payload(2));
+        let domain = make_in_domain(JsonValue::Array(vec![
+            JsonValue::Integer(1),
+            JsonValue::Integer(2),
+        ]));
+        assert!(eval_ok(&domain, &state));
+    }
+
+    #[test]
+    fn test_in_empty_values_is_unsat() {
+        let state = make_exec_state("noop", make_payload(1));
+        let domain = make_in_domain(JsonValue::Array(vec![]));
+        assert!(!eval_ok(&domain, &state));
+    }
+
+    #[test]
+    fn test_in_path_missing_projects_false() {
+        let state = make_exec_state("noop", make_payload(1));
+        // 无 on_missing（缺省兼容 unsat）+ 路径缺失 → Missing 投影 false
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("in")),
+            ("path", JsonValue::string("__exec__.payload.missing")),
+            ("values", make_string_array(&["a"])),
+        ]);
+        assert!(!eval_ok(&domain, &state));
+    }
+
+    #[test]
+    fn test_in_on_missing_error_rejects() {
+        let state = make_exec_state("noop", make_payload(1));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("in")),
+            ("path", JsonValue::string("__exec__.payload.missing")),
+            ("values", make_string_array(&["a"])),
+            ("on_missing", JsonValue::string("error")),
+        ]);
+        assert!(matches!(
+            evaluate_domain(&domain, &state),
+            Err(TcbError::MissingRejected { .. })
+        ));
+    }
+
+    #[test]
+    fn test_in_missing_values_is_structural_error() {
+        let state = make_exec_state("noop", make_payload(1));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("in")),
+            ("path", JsonValue::string("__exec__.payload.x")),
+        ]);
+        assert!(matches!(
+            evaluate_domain(&domain, &state),
+            Err(TcbError::MissingField { field }) if field == "values"
+        ));
+    }
+
+    #[test]
+    fn test_in_values_not_array_is_structural_error() {
+        let state = make_exec_state("noop", make_payload(1));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("in")),
+            ("path", JsonValue::string("__exec__.payload.x")),
+            ("values", JsonValue::string("a")),
+        ]);
+        assert!(matches!(
+            evaluate_domain(&domain, &state),
+            Err(TcbError::InvalidType { context, .. }) if context == "in.values"
+        ));
+    }
+
+    #[test]
+    fn test_in_root_segment_element_is_ambiguous() {
+        let state = make_exec_state(
+            "noop",
+            JsonValue::object_from_pairs(&[("x", JsonValue::string("instruction.params.model"))]),
+        );
+        let domain = make_in_domain(make_string_array(&["instruction.params.model"]));
+        assert!(!eval_ok(&domain, &state));
+    }
+
+    #[test]
+    fn test_in_outcome_deterministic() {
+        let state = make_exec_state(
+            "noop",
+            JsonValue::object_from_pairs(&[("x", JsonValue::string("MiniMax-M2.5"))]),
+        );
+        let domain = make_in_domain(make_string_array(&["MiniMax-M2.5", "MiniMax-M3"]));
+        let a = evaluate_domain_outcome(&domain, &state);
+        let b = evaluate_domain_outcome(&domain, &state);
+        assert_eq!(a, b);
+        assert!(matches!(a, Ok(DomainOutcome::Sat)));
     }
 
     // ===== exists 测试 =====

@@ -171,13 +171,14 @@ evorule 规则集是一个 JSON 文件，描述**指令到状态转换的映射*
 
 ## domain（域条件）类型
 
-domain 用于 branch 指令的条件评估。共 7 种类型（SSOT：`domain.rs` L128-139）：
+domain 用于 branch 指令的条件评估。共 8 种类型（SSOT：`domain.rs` dispatch L374-383）：
 
 | 类型 | 说明 | 必填参数 | 代码依据 |
 |------|------|---------|---------|
 | `instruction` | 当前指令类型匹配 | `instruction_type` | domain.rs L217 |
 | `eq` | 路径值 == 目标值 | `path`, `value`, `on_missing` | domain.rs L169 |
 | `lt` | 路径值 < 目标值（仅 i64） | `path`, `value`, `on_missing` | domain.rs L185 |
+| `in` | 路径值 ∈ 字面量集合 | `path`, `values`, `on_missing` | domain.rs L478 |
 | `exists` | 路径存在且非 null | `path` | domain.rs L205 |
 | `all` | 所有子域为真（AND） | `inner`（数组） | domain.rs L231 |
 | `not` | 子域为假 | `inner`（单个域） | domain.rs L257 |
@@ -185,17 +186,17 @@ domain 用于 branch 指令的条件评估。共 7 种类型（SSOT：`domain.rs
 
 > 注意：evorule v0.6.0 **没有** `gt`、`gte`、`neq`、`contains` 等操作符。大于比较可用 `not(lt)` 组合实现。
 
-### on_missing 声明（三态域判定，比较域必填）
+### on_missing 声明（三态域判定，eq/lt/in 必填）
 
-`eq` / `lt` 为比较域：状态侧缺失时输出**三态** `DomainOutcome`（`sat` 真实成立 / `unsat` 真实不成立 / `missing` 路径不存在、类型不可比或 value 引用歧义），由 `on_missing` 显式声明 missing 的处理策略——**禁止静默**：
+`eq` / `lt` / `in` 为三态域：状态侧缺失时输出**三态** `DomainOutcome`（`sat` 真实成立 / `unsat` 真实不成立 / `missing` 路径不存在、类型不可比或 value 引用歧义），由 `on_missing` 显式声明 missing 的处理策略——**禁止静默**：
 
 | 声明值 | 语义 |
 |--------|------|
 | `"error"` | 求值缺失 → 拒绝执行（显式报错，不走任何分支） |
 | `"unsat"` | 求值缺失 → 投影为假，走 `on_false` 分支，归因（`missing_reason`）随事实面落账审计 |
 
-- **装载期强制**：eq/lt 未声明 `on_missing`、声明值非法、或 `value` 呈缺 `__` 前缀的根段点分形态（像路径引用的字面量写作错误），在规则装载/导入期被拒收（fail-closed），不进入运行期。
-- `all.inner` 内的 eq/lt 同样必须声明（walk 整棵域树）。动态域字符串（`"__exec__.…"` 路径引用）不受此约束。
+- **装载期强制**：eq/lt/in 未声明 `on_missing`、声明值非法、或 `value`（`in` 为 `values` 字符串元素）呈缺 `__` 前缀的根段点分形态（像路径引用的字面量写作错误），在规则装载/导入期被拒收（fail-closed），不进入运行期。
+- `all.inner` 内的 eq/lt/in 同样必须声明（walk 整棵域树）。动态域字符串（`"__exec__.…"` 路径引用）不受此约束。
 - `exists` / `instruction` / `has_fields` 为存在性检查本体（二态，无 missing 语义），无需声明。
 - 归因透传：命中归因事实（TransitionTrace/TraceHit）的 `domain_attr` 记录三态结果、missing 归因与声明值，见 [fact-types.md](fact-types.md) TransitionTrace 节。
 
@@ -222,6 +223,14 @@ domain 用于 branch 指令的条件评估。共 7 种类型（SSOT：`domain.rs
 ```
 
 仅支持 i64 整数比较。任一侧非整数或路径不存在 → `missing`（三态，分派同 eq，见上方 on_missing 声明节）。
+
+### in（集合成员）
+
+```json
+{ "type": "in", "path": "__exec__.instruction.params.model", "values": ["MiniMax-M2.5", "MiniMax-M3"], "on_missing": "error" }
+```
+
+路径值 ∈ `values` 字面量数组任一元素 → `sat`，否则 `unsat`。`values` 为纯字面量数组（元素不做 `__` 引用解析），缺失/非数组/空数组在装载期拒收（fail-fast）；字符串元素呈根段点分形态按写作错误拒载。路径不存在 → `missing`（分派同 eq）。
 
 ### exists（存在）
 

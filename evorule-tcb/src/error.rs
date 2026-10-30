@@ -44,7 +44,7 @@ pub enum TcbError {
         meta_type: String,
     },
 
-    /// 未知的域类型（domain `type` 字段不在支持的 7 种之内）
+    /// 未知的域类型（domain `type` 字段不在支持的 8 种之内）
     UnknownDomainType {
         /// 未知的域类型名称
         domain_type: String,

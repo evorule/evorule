@@ -25,7 +25,7 @@
 | **类型安全** | 所有类型转换安全（无非法 unwrap） | P1 |
 | **边界安全** | 数组索引/算术运算不越界 | P1 |
 | **状态转换正确性** | 5 种元指令（branch/set/push/io_request/enforce）语义符合规格 | P2 |
-| **域评估正确性** | 7 种域类型（eq/lt/exists/instruction/all/not/has_fields）语义正确 | P2 |
+| **域评估正确性** | 8 种域类型（eq/lt/in/exists/instruction/all/not/has_fields）语义正确 | P2 |
 | **路径解析正确性** | `resolve_path` 符合 ABNF 规格，无效路径返回 `None`（不 panic） | P2 |
 
 > **v0.6.0 覆盖重点**：`io_request` 单轮触发/消费语义（多轮编排已于 v0.6.0 移交应用层）、

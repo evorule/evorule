@@ -92,12 +92,13 @@ let result = execute_transition(&core_eval, &instr, &payload, &queue).unwrap();
 
 ### 2.2 域类型（Domain Types）
 
-`branch` 元指令使用域类型判断条件。基本域类型 7 种：
+`branch` 元指令使用域类型判断条件。基本域类型 8 种：
 
 | 类型          | 含义                           |
 | ------------- | ------------------------------ |
 | `eq`          | 路径值 == 目标值               |
 | `lt`          | 路径值 < 目标值（仅整数）      |
+| `in`          | 路径值 ∈ 字面量集合            |
 | `exists`      | 路径存在性检查                 |
 | `instruction` | 当前指令类型匹配               |
 | `all`         | 所有子域为真（**空列表为真**） |
@@ -286,7 +287,7 @@ transition.rs （状态转换，依赖 executor/path/value）
 
 #### [domain.rs](src/domain.rs) — 域评估
 
-- 7 种基本域类型：`eq` / `lt` / `exists` / `instruction` / `all` / `not` / `has_fields`
+- 8 种基本域类型：`eq` / `lt` / `in` / `exists` / `instruction` / `all` / `not` / `has_fields`
 - `MAX_DOMAIN_DEPTH = 64` 防止无限递归
 - 派生域类型（`gt`/`ne`/`ge`/`le`/`or`）由 `core_eval.json` 组合实现
 
@@ -470,7 +471,7 @@ match result {
 pub enum TcbError {
     MissingField { field: String },              // 缺少必需字段
     UnknownMetaInstruction { meta_type: String },// 未知元指令类型
-    UnknownDomainType { domain_type: String },   // 未知域类型（不在 7 种基本域之内）
+    UnknownDomainType { domain_type: String },   // 未知域类型（不在 8 种基本域之内）
     UnknownOperation { operation: String },      // 未知 set 操作
     InvalidState { reason: String },             // 状态结构异常
     InvalidType { expected: &'static str, actual: &'static str, context: String }, // 类型不匹配
