@@ -1152,7 +1152,9 @@ impl FactsLog {
     pub fn rotate_wal(&self) -> Result<bool, FactsLogError> {
         let mut inner = self.inner.write();
         match inner.wal.as_deref_mut() {
-            Some(store) => store.rotate().map_err(|e| FactsLogError::WalError(e.to_string())),
+            Some(store) => store
+                .rotate()
+                .map_err(|e| FactsLogError::WalError(e.to_string())),
             None => Ok(false),
         }
     }
