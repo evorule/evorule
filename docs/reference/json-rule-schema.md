@@ -577,15 +577,15 @@ Domains are used for condition evaluation in branch instructions. There are 7 ty
 
 ### on_missing declaration (three-state domain verdict, required for comparison domains)
 
-`eq` / `lt` are comparison domains: when the state side is missing they emit a **three-state** `DomainOutcome` (`sat` genuinely holds / `unsat` genuinely fails / `missing` path absent, types incomparable, or ambiguous value reference), and `on_missing` explicitly declares the policy for `missing` — **silence is forbidden**:
+`eq` / `lt` / `in` are three-state domains: when the state side is missing they emit a **three-state** `DomainOutcome` (`sat` genuinely holds / `unsat` genuinely fails / `missing` path absent, types incomparable, or ambiguous value reference), and `on_missing` explicitly declares the policy for `missing` — **silence is forbidden**:
 
 | Declaration | Semantics |
 |-------------|-----------|
 | `"error"` | Missing evaluation → reject execution (explicit error; no branch is taken) |
 | `"unsat"` | Missing evaluation → project to false, take the `on_false` branch, and record attribution (`missing_reason`) on the fact surface for audit |
 
-- **Enforced at load time**: eq/lt without an `on_missing` declaration, with an illegal declaration value, or whose `value` is a root-segment dotted literal lacking the `__` prefix (a writing error that looks like a path reference) is rejected at rule load/import (fail-closed) and never reaches runtime.
-- eq/lt inside `all.inner` must declare as well (the whole domain tree is walked). Dynamic domain strings (`"__exec__.…"` path references) are exempt from this constraint.
+- **Enforced at load time**: eq/lt/in without an `on_missing` declaration, with an illegal declaration value, or whose `value` (for `in`, its `values` string elements) is a root-segment dotted literal lacking the `__` prefix (a writing error that looks like a path reference) is rejected at rule load/import (fail-closed) and never reaches runtime.
+- eq/lt/in inside `all.inner` must declare as well (the whole domain tree is walked). Dynamic domain strings (`"__exec__.…"` path references) are exempt from this constraint.
 - `exists` / `instruction` / `has_fields` are existence checks themselves (two-state, no missing semantics) and need no declaration.
 - Attribution passthrough: the `domain_attr` of the hit-attribution fact (TransitionTrace/TraceHit) records the three-state verdict, the missing attribution, and the declared value; see the TransitionTrace section in [fact-types.md](fact-types.md).
 
@@ -612,6 +612,14 @@ Matches the `type` field of the currently executing instruction. This is the mos
 ```
 
 i64 integer comparison only. If either side is not an integer, or the path does not exist → `missing` (three-state, dispatched like `eq`; see the `on_missing` declaration section above).
+
+### in (set membership)
+
+```json
+{ "type": "in", "path": "__exec__.instruction.params.model", "values": ["MiniMax-M2.5", "MiniMax-M3"], "on_missing": "error" }
+```
+
+Sat when the value at the path equals any element of the `values` literal array, otherwise Unsat. `values` must be a pure literal array (elements are never resolved as `__` references); a missing, non-array, or empty `values` is rejected at load time (fail-fast), and string elements shaped like a root-segment dot path are rejected as authoring errors. A missing path → `missing` (dispatched like `eq`).
 
 ### exists (existence)
 
