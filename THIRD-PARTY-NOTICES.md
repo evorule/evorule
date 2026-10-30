@@ -1,8 +1,8 @@
 # THIRD-PARTY-NOTICES — EvoRule 生态第三方组件使用声明
 
-> **本文件是 EvoRule 生态 13 个在役仓库的第三方组件使用声明（使用声明文件）。**
+> **本文件是 EvoRule 生态 14 个在役仓库的第三方组件使用声明（使用声明文件）。**
 > 适用范围、义务边界、归档位置与复现方法见下文。
-> 首次生成：2026-10-24 · 本版：2026-10-25（Wave 2 分发合规收口）· 审计基线：13 在役仓 · 依赖记录 2613 条
+> 首次生成：2026-10-24 · 本版：2026-10-31（evorule-wasm-host 独立 workspace 并面）· 审计基线：14 在役仓 · 依赖记录 3009 条
 
 ---
 
@@ -15,19 +15,19 @@
 | 禁止级许可证（copyleft 不兼容 / 源码可见 / 非商用） | **0 项** |
 | 需登记的宽松许可（不在原白名单） | 7 类（MIT-0 / CDLA-Permissive-2.0 / BSL-1.0 / BlueOak-1.0.0 / NCSA / OFL-1.1 / BSD-1-Clause）— **已于 2026-10-24 全部登记入 `deny.toml`**，复验 0 红项 |
 | 需特别标注的 copyleft 依赖 | 1 类（MPL-2.0，dompurify，可选 Apache-2.0 分支） |
-| 已发布 crate 缺许可证正文 | **0 / 9**（evorule-discipline、evorule-eval 已于 Wave 2 补齐；v0.9.0 四个首发 crate audit-chain / evid-verify-core / evid-verify-wasm / mcu 已于 2026-10-28 随发版批补齐 crate 级正文） |
+| 已发布 crate 缺许可证正文 | **0 / 9**（evorule-discipline、evorule-eval 已于 Wave 2 补齐） |
 | 发行分发包缺 LICENSE/NOTICE/声明 | **0**（Wave 2 后有分发链的仓全部五件套随附 + dist-gate 阻断，详见第五节） |
 | 依赖许可 CI 门禁覆盖 | **全生态**：license-gate（防漂移比对 + cargo-deny 四闸）+ dist-gate（发布阻断）自根仓 reusable workflow 钉 SHA 复用，10 仓 `deny.toml` 统一 |
 | 自有许可七件套一致性 | **绿**（Wave 2 重写 17 件漂移件；核验覆盖面扩容至 16 仓进行中，详见第二节） |
 
 ---
 
-## 一、适用范围：13 个在役仓
+## 一、适用范围：14 个在役仓
 
 | # | 仓名 | 角色 | 依赖生态 | 依赖记录数 | 分发形态 |
 |---|---|---|---|---|---|
-| 1 | `evorule` | 核心引擎 / TCB 唯一版本源（10 crate） | cargo | 195 | crates.io ×9 + CLI 双平台二进制 |
-| 2 | `evorule-server` | 官方 HTTP 服务入口（:18080） | cargo + npm | 504 | 零依赖分发包 win64.zip / linux64.tar.gz |
+| 1 | `evorule` | 核心引擎 / TCB 唯一版本源（8 crate） | cargo | 195 | crates.io ×6 + CLI 双平台二进制 |
+| 2 | `evorule-server` | 官方 HTTP 服务入口（:18080） | cargo + npm | 510 | 零依赖分发包 win64.zip / linux64.tar.gz |
 | 3 | `evorule-rule` | 规则资产治理层 | cargo | 308 | crates.io + 双平台双 bin |
 | 4 | `evorule-system-rules` | 生态宪法 / schema 版本权威 | 无编译依赖 | 0 | 仓库内资产（schemas/migrations/signatures） |
 | 5 | `evorule-bundle` | 治理↔执行唯一传递契约 | cargo | 147 | crates.io |
@@ -36,10 +36,11 @@
 | 8 | `evorule-integration-tests` | 跨仓一致性门禁 | cargo | 252 | 不分发 |
 | 9 | `evorule-context-inspector` | 上下文检查器 | cargo | 212 | crates.io |
 | 10 | `evorule-wasm-demo` | WASM 演示 | cargo + npm | 74 | npm 包 + wasm 产物 |
-| 11 | `evo-agent` | 应用层编排（可信 AI 工作站） | cargo + npm + pypi | 688 | npm 包 + 桌面端 |
+| 11 | `evo-agent` | 应用层编排（可信 AI 工作站） | cargo + npm + pypi | 706 | npm 包 + 桌面端 |
 | 12 | `evo-agent-desktop` | 桌面壳发行 / 自动更新通道 | pypi / 脚本 | 0 | 桌面安装包 |
 | 13 | `sync-sentinel` | 双端一致性哨兵 | shell | 0 | 不分发（运维脚本） |
-| | **合计** | | | **2613** | |
+| 14 | `evorule-wasm-host` | 服务端 UDF 宿（wasmtime 独立 workspace，随桌面安装包分发） | cargo | 184 | 内嵌于 evo-agent 桌面安装包 |
+| | **合计** | | | **3009** | |
 
 ---
 
@@ -47,7 +48,7 @@
 
 | 资产 | 许可 | 义务要点 |
 |---|---|---|
-| 代码（全部 13 仓） | AGPL-3.0-or-later | 分发须附许可证副本与修改说明（§4/§5(d)）；以网络提供服务须提供对应源码（§13） |
+| 代码（全部 14 仓） | AGPL-3.0-or-later | 分发须附许可证副本与修改说明（§4/§5(d)）；以网络提供服务须提供对应源码（§13） |
 | `core_eval.json`（宪法/解释器规范） | CC0-1.0 公共领域 | 无义务，鼓励第三方实现兼容引擎 |
 | 贡献物通道 D | 局部 Apache-2.0 再授权 | 见 `CONTRIBUTION_GRANT.md` |
 
@@ -69,7 +70,7 @@
 **七件套状态**（2026-10-25 更新）：
 
 1. **内容一致性：已收口**——2026-10-24 实测的 17 项不一致（`NOTICE.md` × 10 仓、`DUAL_LICENSE.md` × 7 仓）已于 Wave 2 全部重写对齐；`sync-licenses.ps1 -Check` 复验通过。
-2. **覆盖面：扩容中**——原核验 11 仓含 4 个已退役私有仓；扩容批次将核验面调整为 13 在役仓 + 3 退役私有仓 = 16 仓（`sync-licenses.ps1` 仓名/目录映射同步重构）。
+2. **覆盖面：扩容中**——原核验 11 仓含 4 个已退役私有仓；扩容批次将核验面调整为 14 在役仓 + 3 退役私有仓 = 17 仓（`sync-licenses.ps1` 仓名/目录映射同步重构）。
 
 ---
 
@@ -79,28 +80,28 @@
 
 | 许可证 | 依赖记录数 | 涉及组件（示例） | 义务 | 正文归档 |
 |---|---|---|---|---|
-| `MIT` | 2323 | `@asamuzakjp/css-color`, `@asamuzakjp/dom-selector`, `@babel/code-frame`, `@babel/helper-validator-identifier` 等 | 保留版权声明与许可证全文，随二进制分发。 | ✅ |
-| `Apache-2.0` | 1624 | `@playwright/test`, `@tauri-apps/cli`, `@tauri-apps/cli-darwin-arm64`, `@tauri-apps/cli-darwin-x64` 等 | 保留版权声明、许可证全文与变更说明；上游若有 NOTICE 须一并附带（§4(d)）。 | ✅ |
-| `Unicode-3.0` | 117 | `icu_collections`, `icu_locale_core`, `icu_normalizer`, `icu_normalizer_data` 等 | 保留版权声明与许可文本。 | ✅ |
-| `Apache-2.0 WITH LLVM-exception` | 39 | `blake3`, `linux-raw-sys`, `rustix`, `wasi` 等 | 保留版权声明与许可正文。 | ✅ |
-| `BSD-3-Clause` | 39 | `avif-serialize`, `curve25519-dalek`, `ed25519-dalek`, `encoding_rs` 等 | 保留版权声明、条款与免责声明。 | ✅ |
-| `ISC` | 37 | `forwarded-header-value`, `hmac-sha256`, `hyper-rustls`, `inotify` 等 | 保留版权声明与许可文本。 | ✅ |
-| `Unlicense` | 35 | `aho-corasick`, `byteorder`, `byteorder-lite`, `globset` 等 | 无义务。 | ✅ |
-| `Zlib` | 35 | `bytemuck`, `bytemuck_derive`, `foldhash`, `lru-slab` 等 | 保留版权声明与许可文本。 | ✅ |
-| `CC0-1.0` | 22 | `blake3`, `constant_time_eq`, `imgref`, `mdn-data` 等 | 公共领域贡献，无义务。 | ✅ |
+| `MIT` | 2494 | `@asamuzakjp/css-color`, `@asamuzakjp/dom-selector`, `@babel/code-frame`, `@babel/helper-validator-identifier` 等 | 保留版权声明与许可证全文，随二进制分发。 | ✅ |
+| `Apache-2.0` | 1788 | `@playwright/test`, `@tauri-apps/cli`, `@tauri-apps/cli-darwin-arm64`, `@tauri-apps/cli-darwin-x64` 等 | 保留版权声明、许可证全文与变更说明；上游若有 NOTICE 须一并附带（§4(d)）。 | ✅ |
+| `Unicode-3.0` | 118 | `icu_collections`, `icu_locale_core`, `icu_normalizer`, `icu_normalizer_data` 等 | 保留版权声明与许可文本。 | ✅ |
+| `Apache-2.0 WITH LLVM-exception` | 79 | `blake3`, `cranelift-assembler-x64`, `cranelift-assembler-x64-meta`, `cranelift-bforest` 等 | 保留版权声明与许可正文。 | ✅ |
+| `BSD-3-Clause` | 44 | `avif-serialize`, `curve25519-dalek`, `ed25519-dalek`, `encoding_rs` 等 | 保留版权声明、条款与免责声明。 | ✅ |
+| `Unlicense` | 40 | `aho-corasick`, `byteorder`, `byteorder-lite`, `globset` 等 | 无义务。 | ✅ |
+| `ISC` | 38 | `forwarded-header-value`, `hmac-sha256`, `hyper-rustls`, `inotify` 等 | 保留版权声明与许可文本。 | ✅ |
+| `Zlib` | 36 | `bytemuck`, `bytemuck_derive`, `foldhash`, `lru-slab` 等 | 保留版权声明与许可文本。 | ✅ |
+| `CC0-1.0` | 24 | `blake3`, `constant_time_eq`, `imgref`, `mdn-data` 等 | 公共领域贡献，无义务。 | ✅ |
 | `BSD-2-Clause` | 21 | `arrayref`, `av1-grain`, `entities`, `rav1e` 等 | 保留版权声明、条款与免责声明。 | ✅ |
-| `MIT-0` | 17 | `@csstools/color-helpers`, `@csstools/css-syntax-patches-for-csstree`, `borrow-or-share`, `constant_time_eq` | 保留版权声明与许可证全文，随二进制分发。 | ✅ |
+| `MIT-0` | 18 | `@csstools/color-helpers`, `@csstools/css-syntax-patches-for-csstree`, `borrow-or-share`, `constant_time_eq` | 保留版权声明与许可证全文，随二进制分发。 | ✅ |
+| `LGPL-2.1-or-later` | 12 | `r-efi` | 弱 copyleft：本生态统一选择 MIT/Apache 分支，不触发 LGPL 条款。 | ✅ |
 | `BSL-1.0` | 12 | `clipboard-win`, `error-code`, `ryu`, `wasite` 等 | 宽松许可：保留版权声明与正文。 | ✅ |
-| `LGPL-2.1-or-later` | 11 | `r-efi` | 弱 copyleft：本生态统一选择 MIT/Apache 分支，不触发 LGPL 条款。 | ✅ |
-| `AGPL-3.0-or-later` | 9 | `@evorule/console-cloud`, `@evorule/evo-agent-workbench`, `evorule-bundle`, `evorule-discipline` 等 | 网络 copyleft：以网络提供服务时须向使用者提供对应源码（§13）。 | ✅ |
+| `AGPL-3.0-or-later` | 10 | `@evorule/console-cloud`, `@evorule/evo-agent-workbench`, `evorule-bundle`, `evorule-discipline` 等 | 网络 copyleft：以网络提供服务时须向使用者提供对应源码（§13）。 | ✅ |
 | `0BSD` | 7 | `adler2` | 无附加义务。 | ✅ |
+| `BSD-1-Clause` | 6 | `fiat-crypto` | 保留版权声明与许可正文。 | ✅ |
 | `CDLA-Permissive-2.0` | 6 | `webpki-root-certs`, `webpki-roots` | 宽松许可：保留版权声明与正文。 | ✅ |
-| `BSD-1-Clause` | 5 | `fiat-crypto` | 保留版权声明与许可正文。 | ✅ |
 | `MPL-2.0` | 5 | `colored`, `dompurify`, `option-ext` | 文件级 copyleft：被修改的 MPL 文件须以 MPL 公开；分发时保留声明与正文。 | ✅ |
 | `NCSA` | 1 | `libfuzzer-sys` | 宽松许可：保留版权声明与正文。 | ✅ |
 | `BlueOak-1.0.0` | 1 | `lru-cache` | 宽松但非 OSI 认证：保留版权声明与正文。 | ✅ |
 
-机器可读全量清单见 [`LICENSES/third-party/manifest.json`](LICENSES/third-party/manifest.json)（2613 条依赖记录，含每条的许可标识与来源）。
+机器可读全量清单见 [`LICENSES/third-party/manifest.json`](LICENSES/third-party/manifest.json)（2825 条依赖记录，含每条的许可标识与来源）。
 
 ---
 
@@ -142,7 +143,7 @@ AGPL-3.0 的分发义务：§4（随附许可证副本 + 保留声明 + 修改�
 
 | 仓 | 分发物 | 现状 | 结论 |
 |---|---|---|---|
-| `evorule` | crates.io 包（9 个 crate）+ CLI 双平台二进制 | ✅ 9 crate LICENSE 全部在位（cargo publish 自动附带；四个首发 crate 已于 2026-10-28 补齐 crate 级正文）；CLI 合规归档随 Release（五件套 + SBOM） | dist-gate 已接线 |
+| `evorule` | crates.io 包（6 个 crate）+ CLI 双平台二进制 | ✅ 6 crate LICENSE 全部在位（cargo publish 自动附带）；CLI 合规归档随 Release（五件套 + SBOM） | dist-gate 已接线 |
 | `evorule-server` | 零依赖分发包 win64.zip / linux64.tar.gz | ✅ 包内五件套（LICENSE + NOTICE + THIRD-PARTY-NOTICES + LICENSES/ + SOURCE.md）+ 源码 tarball | dist-gate 已接线（@a3aa299） |
 | `evorule-rule` | 双平台双 bin | ✅ 独立合规归档 zip 随 Release（五件套）+ 源码 tarball | dist-gate 已接线（@a3aa299） |
 | `evorule-bundle` | crates.io 包 | ✅ 已随包（LICENSE + 双许可文件 + NOTICE） | crate 闸：LICENSE 在位 |

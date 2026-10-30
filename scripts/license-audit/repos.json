@@ -1,6 +1,7 @@
 {
  "evorule": "D:\\evorule",
  "evorule-server": "D:\\evorule-server",
+ "evorule-wasm-host": "D:\\evorule-server\\plugins\\wasm-host",
  "evorule-rule": "D:\\evorule-rule",
  "evorule-system-rules": "D:\\evorule-system-rules",
  "evorule-bundle": "D:\\evorule-bundle",

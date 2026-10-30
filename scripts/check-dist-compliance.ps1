@@ -37,6 +37,7 @@ $reposMap = Get-Content "$evoruleRoot/scripts/license-audit/repos.json" -Raw | C
 $distClass = @{
     "evorule"                  = "binary"
     "evorule-server"           = "binary"
+    "evorule-wasm-host"        = "binary"
     "evorule-rule"             = "binary"
     "evorule-console-cloud"    = "binary"
     "evo-agent-desktop"        = "binary"

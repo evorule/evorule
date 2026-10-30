@@ -300,7 +300,7 @@
 
 ### 2026-10-28：v0.10.0 发布准备——WAL 轮换机制收编批（rotate_wal 全链增补）与 STATUS 快照 v0.9.0→v0.10.0
 
-- **事实**：v0.10.0 发布准备批完成：① WAL 轮换机制增补——evorule-reactor：`FactWalStore` trait 新增 `rotate` 默认方法（缺省 `Ok(false)`，非破坏）+ `WalWriter` 覆写、`FactsLog::rotate_wal` 透传（persistence feature）；evorule-governance：`SharedFactsLog::rotate_wal` 委托。该机制语义先行实现随 evorule-server 干预端点批 vendored patch（patches/evorule-reactor）运行，本版收编回主仓为正本（governance patch 退役架构手术前置，design-39）。② workspace version 0.9.0→0.10.0 + 9 包间依赖 req 同步 + CHANGELOG 0.10.0 条目。③ STATUS.md 快照按 M4 同步 v0.10.0（增量叙述随批改写）。
+- **事实**：v0.10.0 发布准备批完成：① WAL 轮换机制增补——evorule-reactor：`FactWalStore` trait 新增 `rotate` 默认方法（缺省 `Ok(false)`，非破坏）+ `WalWriter` 覆写、`FactsLog::rotate_wal` 透传（persistence feature）；evorule-governance：`SharedFactsLog::rotate_wal` 委托。该机制语义先行实现随 evorule-server 干预端点批 vendored patch（patches/evorule-reactor）运行，本版收编回主仓为正本（governance patch 退役架构手术前置）。② workspace version 0.9.0→0.10.0 + 9 包间依赖 req 同步 + CHANGELOG 0.10.0 条目。③ STATUS.md 快照按 M4 同步 v0.10.0（增量叙述随批改写）。
 - **依据**：主仓 workspace 全量测试实测绿（rotate_wal 专项 3/3：reactor facts_log 内存/文件两测 + governance shared_facts_log 委托一测）；crates.io 发布按 release.yml publish-crates 依赖序（tcb→audit-chain→evid-verify-core→evid-verify-wasm→reactor→mcu→governance→discipline→cli）本机手工执行（v0.8.1 起惯例，CI publish-crates 幂等跳过兜底）。
 - **影响**：① 新增公开 API：`FactsLog::rotate_wal` / `SharedFactsLog::rotate_wal` / `FactWalStore::rotate`（缺省行为不变，非破坏）；② Kani 证明面零变更（fs 机制面，不在 A 档证明域，A 档证据基线维持 `a3d728f`）；③ 对外计数零变更。
 - **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行）。
