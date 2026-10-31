@@ -24,6 +24,19 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
+## [0.11.0] - 2026-10-31
+
+### Added
+
+- **`in` 域类型进内核（集合成员判定）**：`evorule-tcb` 基本域 7→8——
+  `in` 判定路径值是否属于 `values` 字面量集合（含→Sat / 不含→Unsat /
+  路径缺→按 `on_missing` 分派；空集运行时 Unsat、装载面拒收；字符串
+  元素呈根段点分形态按写作错误拒载）。治理白名单类守卫（会话模型准入）
+  的「任一命中即放行」表达自此为内核原生词汇；语义与 server 侧先行
+  实现逐字对齐（先行版经 server 路径补丁在役运行），补丁待本版随
+  注册表可用后按其自述条款退役。域词汇三方（schema / server 门禁 /
+  内核 dispatch）自此严格全同（对账豁免已随 system-rules 同批摘除）。
+
 ## [0.10.0] - 2026-10-28
 
 ### Added

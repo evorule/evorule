@@ -304,3 +304,10 @@
 - **依据**：主仓 workspace 全量测试实测绿（rotate_wal 专项 3/3：reactor facts_log 内存/文件两测 + governance shared_facts_log 委托一测）；crates.io 发布按 release.yml publish-crates 依赖序（tcb→audit-chain→evid-verify-core→evid-verify-wasm→reactor→mcu→governance→discipline→cli）本机手工执行（v0.8.1 起惯例，CI publish-crates 幂等跳过兜底）。
 - **影响**：① 新增公开 API：`FactsLog::rotate_wal` / `SharedFactsLog::rotate_wal` / `FactWalStore::rotate`（缺省行为不变，非破坏）；② Kani 证明面零变更（fs 机制面，不在 A 档证明域，A 档证据基线维持 `a3d728f`）；③ 对外计数零变更。
 - **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行）。
+
+### 2026-10-31：v0.11.0 发布准备——in 域类型收编批（集合成员判定进内核）与 STATUS 快照 v0.10.0→v0.11.0
+
+- **事实**：v0.11.0 发布准备批完成：① `evorule-tcb` 基本域 7→8——新增 `in` 集合成员判定域（dispatch 新增 `"in"` 分支 + `evaluate_in_outcome` 三态求值：含→Sat / 不含→Unsat / 路径缺→按 on_missing 分派；空集运行时 Unsat、装载面拒收空集（fail-fast）；values 字符串元素命中根段点分形态→ValueLiteralAmbiguous，复用既有谓词零镜像）。该能力语义先行实现随 evorule-server 路径补丁在役运行（会话模型准入白名单守卫），本版收编回主仓为正本；补丁随本版注册表可用后按其自述删除条件退役。② workspace version 0.10.0→0.11.0 + 10 包间依赖 req 同步 + CHANGELOG 0.11.0 条目。③ STATUS.md 快照按 M4 同步 v0.11.0。④ 配套：域词汇三方对账（schema / server 门禁 / 内核 dispatch）的历史单边豁免已随 system-rules 同批摘除，自此严格全同（8=8=8）。
+- **依据**：`evorule-tcb` 全量 274 tests 实测绿（in 组 10 件：含/不含/整数成员/空集 Unsat/缺省 unsat 投影/on_missing=error 拒执行/values 缺失 Err/values 非数组 Err/根段点元素歧义/确定性幂等）；CI 全门绿（kani-tcb-a-tier、tcb determinism 双跑、三平台测试、wasm32、license、公开面扫描）；system-rules verify-all 实测三方 8=8=8 严格 PASS（阴性对照：吸收前主仓被 FAIL 正确点名）；crates.io 发布按依赖序本机手工执行（v0.8.1 起惯例，CI publish-crates 幂等跳过兜底）。
+- **影响**：① 新增公开 API：`evaluate_domain`/`evaluate_domain_outcome` 对 `"in"` 域类型的求值支持（新增能力，非破坏——该域类型此前在主线被 UnknownDomainType 拒绝）；② Kani 证明面：in 求值无递归，不改变 all/not 深度模型，kani-tcb-a-tier CI 实跑 PASS 维持，A 档证据基线维持 `a3d728f`；③ 在役消费面：模型准入白名单守卫三副本语义零变化（values 无根段点分形态，人工逐项核验）。
+- **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行）。
