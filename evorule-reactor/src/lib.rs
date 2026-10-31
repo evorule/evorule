@@ -121,7 +121,10 @@ pub use io_context::{CallerRole, CallerRoleResolver, IoCallContext};
 pub use io_dispatcher::{IoDispatcher, IoDispatcherBuilder};
 pub use io_handler::{IoHandler, IoResult};
 pub use phase::{PhaseContext, ReactorPhase};
-pub use reactor::{PendingIoEntry, Reactor, ReactorBuilder, ReactorHandle, ReactorStateSnapshot};
+pub use reactor::{
+    InvariantScanReport, PendingIoEntry, Reactor, ReactorBuilder, ReactorHandle,
+    ReactorStateSnapshot,
+};
 pub use runtime::{ClockHandle, FixedClock, RuntimeClock, SystemClock};
 pub use stable_detector::StableDetector;
 #[cfg(feature = "persistence")]

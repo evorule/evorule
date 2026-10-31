@@ -15,8 +15,8 @@ rust-version = "1.81"
 # 仅用于锚点载荷哈希（公式与 server 侧 anchor.rs 逐字段对齐，g5/锚点
 # 向量闸守护）。详见 evorule-hash 反绕行棘轮的仓域豁免口径。
 [dependencies]
-evorule-audit-chain = { path = "../evorule-audit-chain", version = "0.11.0", default-features = false }
-evorule-tcb = { path = "../evorule-tcb", version = "0.11.0", default-features = false }
+evorule-audit-chain = { path = "../evorule-audit-chain", version = "0.12.0", default-features = false }
+evorule-tcb = { path = "../evorule-tcb", version = "0.12.0", default-features = false }
 serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 blake3 = { version = "1", default-features = false }

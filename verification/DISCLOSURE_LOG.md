@@ -311,3 +311,10 @@
 - **依据**：`evorule-tcb` 全量 274 tests 实测绿（in 组 10 件：含/不含/整数成员/空集 Unsat/缺省 unsat 投影/on_missing=error 拒执行/values 缺失 Err/values 非数组 Err/根段点元素歧义/确定性幂等）；CI 全门绿（kani-tcb-a-tier、tcb determinism 双跑、三平台测试、wasm32、license、公开面扫描）；system-rules verify-all 实测三方 8=8=8 严格 PASS（阴性对照：吸收前主仓被 FAIL 正确点名）；crates.io 发布按依赖序本机手工执行（v0.8.1 起惯例，CI publish-crates 幂等跳过兜底）。
 - **影响**：① 新增公开 API：`evaluate_domain`/`evaluate_domain_outcome` 对 `"in"` 域类型的求值支持（新增能力，非破坏——该域类型此前在主线被 UnknownDomainType 拒绝）；② Kani 证明面：in 求值无递归，不改变 all/not 深度模型，kani-tcb-a-tier CI 实跑 PASS 维持，A 档证据基线维持 `a3d728f`；③ 在役消费面：模型准入白名单守卫三副本语义零变化（values 无根段点分形态，人工逐项核验）。
 - **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行）。
+
+### 2026-10-31：v0.12.0 发布准备——reactor 干预原语收编批（cancel_all/pending 快照/扫描报告）与 STATUS 快照 v0.11.0→v0.12.0
+
+- **事实**：v0.12.0 发布准备批完成：① evorule-reactor 状态机增量三件——`cancel_all_pending()`（主循环 0.55 位消费：逐 pending 发 `Fact::Error` "cancelled by external request"+`force_remove_io_request`，镜像超时错误路径不发 Stable）+ `ReactorStateSnapshot::pending_io` 快照清单（每迭代头刷新，空表零分配）+ `InvariantScanReport`/`latest_invariant_scan()`（内置自检违规明细外部只读消费）+ `check_invariants` 可见性提 pub。该组原语语义先行实现随 evorule-server 干预端点批 vendored patch 在役运行，本版收编回主仓为正本；patch 随本版注册表可用后按其自述删除条件退役。② workspace version 0.11.0→0.12.0 + 成员依赖 req 同步 + CHANGELOG 0.12.0 条目。③ STATUS.md 快照按 M4 同步 v0.12.0。
+- **依据**：主仓 workspace 全量测试实测绿（48 目标 1045+ 用例，含新增 cancel-all 全链测试：挂起→快照清单可见→取消→清零→Error 入链→扫描干净）；crates.io 发布按依赖序本机手工执行（v0.8.1 起惯例，CI publish-crates 幂等跳过兜底）。
+- **影响**：① 新增公开 API：`ReactorHandle::cancel_all_pending`/`ReactorHandle::latest_invariant_scan`/`InvariantScanReport`/`ReactorStateSnapshot::pending_io`（新增能力，非破坏）；② Kani 证明面：增量=共享标志+槽位，不动既有证明路径，kani-reactor CI 实跑复核，A 档证据基线维持 `a3d728f`；③ 对外计数零变更。
+- **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行）。

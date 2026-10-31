@@ -24,6 +24,18 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
+## [0.12.0] - 2026-10-31
+
+### Added
+
+- **reactor 干预原语收编（会话干预面进内核）**：`evorule-reactor` 状态机
+  增量三件——`cancel_all_pending()`（主循环逐 pending 发 `Fact::Error`
+  并强制移除，镜像超时错误路径语义）、`ReactorStateSnapshot::pending_io`
+  快照清单（干预可视化对账面）、`InvariantScanReport`/`latest_invariant_scan()`
+  （引擎自身不变式自检明细的外部只读消费面）+ `check_invariants` 可见性
+  提升。语义与 server 侧先行实现逐字对齐（先行版经 server 路径补丁在役
+  运行于会话干预端点族），补丁待本版随注册表可用后按其自述条款退役。
+
 ## [0.11.0] - 2026-10-31
 
 ### Added

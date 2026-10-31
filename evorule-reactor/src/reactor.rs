@@ -14,6 +14,7 @@ use crate::channel::ChannelPair;
 use crate::error::ReactorError;
 use crate::fact::{Fact, FactId, FactIdGenerator, IoType, TraceHit};
 use crate::facts_log::FactsLog;
+use crate::invariants::InvariantViolation;
 use crate::phase::ReactorPhase;
 use crate::runtime::{ClockHandle, RuntimeClock};
 use crate::stable_detector::StableDetector;
@@ -71,6 +72,10 @@ pub struct ReactorStateSnapshot {
     pub structural_invariant_violations: u64,
     /// 待响应的 I/O 请求数量
     pub pending_io_count: usize,
+    /// 待响应 I/O 清单（干预可视化：cancel-all 前的取消对象对账面）
+    ///
+    /// 每轮迭代头随快照刷新；空表=无 pending（Vec 空不分配，热路径零成本）。
+    pub pending_io: Vec<PendingIoEntry>,
     /// 当前已执行指令步数
     pub steps: usize,
     /// 当前队列长度
@@ -91,6 +96,20 @@ pub struct PendingIoEntry {
     pub io_type: IoType,
     /// I/O 请求发射时间戳（inspect 时算 elapsed）
     pub started_at: Instant,
+}
+
+/// 最近一轮不变式扫描报告（每迭代头随内置自检刷新）
+///
+/// 反应器每轮迭代头本就运行 `check_invariants`（此前只累计计数+日志），
+/// 本报告把违规明细同步发布给外部只读消费——手动扫描端点由此获得
+/// 与引擎自身所见一致的最新结果（新鲜度 ≤ 一个迭代间隔），无需额外
+/// 按需扫描通路。
+#[derive(Debug, Clone, Default)]
+pub struct InvariantScanReport {
+    /// 产生本报告时的已执行步数（消费方可借此判断报告新鲜度）
+    pub steps: usize,
+    /// 本轮检出的违规明细（空表 = 干净）
+    pub violations: Vec<crate::invariants::InvariantViolation>,
 }
 
 /// 反应器配置构建器
@@ -117,6 +136,10 @@ pub struct ReactorBuilder {
     fact_id_start: Option<u64>,
     /// v0.2.0 能力4：已知 io_type 集合（快速失败校验，None=不校验透传）
     known_io_types: Option<Arc<HashSet<String>>>,
+    /// 取消全部 pending I/O 标志（外部干预原语，ReactorHandle 置位）
+    cancel_all_flag: Arc<AtomicBool>,
+    /// 最近一轮不变式扫描结果（每迭代头刷新，ReactorHandle 只读）
+    latest_invariants: Arc<Mutex<InvariantScanReport>>,
     /// 运行时时钟（时钟缝，默认 [`SystemClock`]；测试可注入 [`FixedClock`]）
     clock: ClockHandle,
 }
@@ -135,6 +158,8 @@ impl ReactorBuilder {
             interrupt_flag: Arc::new(AtomicBool::new(false)),
             fact_id_start: None,
             known_io_types: None,
+            cancel_all_flag: Arc::new(AtomicBool::new(false)),
+            latest_invariants: Arc::new(Mutex::new(InvariantScanReport::default())),
             clock: ClockHandle::system(),
         }
     }
@@ -247,6 +272,8 @@ impl ReactorBuilder {
             interrupt_flag: self.interrupt_flag,
             fact_id_start: self.fact_id_start,
             known_io_types: self.known_io_types,
+            cancel_all_flag: self.cancel_all_flag,
+            latest_invariants: self.latest_invariants,
             clock: self.clock,
         }
     }
@@ -271,6 +298,10 @@ pub struct Reactor {
     fact_id_start: Option<u64>,
     /// v0.2.0 能力4：已知 io_type 集合（快速失败校验，None=不校验透传）
     known_io_types: Option<Arc<HashSet<String>>>,
+    /// 取消全部 pending I/O 标志（外部干预原语，ReactorHandle 置位）
+    cancel_all_flag: Arc<AtomicBool>,
+    /// 最近一轮不变式扫描结果（每迭代头刷新，ReactorHandle 只读）
+    latest_invariants: Arc<Mutex<InvariantScanReport>>,
     /// 运行时时钟（时钟缝，经 Builder 注入，默认 SystemClock）
     clock: ClockHandle,
 }
@@ -313,6 +344,12 @@ impl Reactor {
         // 执行中断标志（共享在 reactor 主循环与 ReactorHandle 之间）
         let interrupt_flag = self.interrupt_flag.clone();
         let interrupt_flag_for_run = self.interrupt_flag.clone();
+        // 取消全部 pending I/O 标志（外部干预原语，同 interrupt 共享模式）
+        let cancel_all_flag = self.cancel_all_flag.clone();
+        let cancel_all_flag_for_run = self.cancel_all_flag.clone();
+        // 最近一轮不变式扫描（每迭代头刷新，handle 只读）
+        let latest_invariants = self.latest_invariants.clone();
+        let latest_invariants_for_run = self.latest_invariants.clone();
 
         // W1 方案 b（2026-08-27）：WAL 连续写失败达阈值 → 触发中断标志 +
         // 发射含用户自助指导的 Error fact，终止当前执行以保护可回放性。
@@ -338,6 +375,8 @@ impl Reactor {
             channels.event_tx,
             snapshot_for_run,
             interrupt_flag_for_run,
+            cancel_all_flag_for_run,
+            latest_invariants_for_run,
         ));
         (
             channels.command_tx,
@@ -347,6 +386,8 @@ impl Reactor {
                 handle,
                 snapshot,
                 interrupt_flag,
+                cancel_all_flag,
+                latest_invariants,
             },
             facts_log,
         )
@@ -379,6 +420,8 @@ impl Reactor {
         event_tx: EventSender,
         snapshot: Arc<Mutex<ReactorStateSnapshot>>,
         interrupt_flag: Arc<AtomicBool>,
+        cancel_all_flag: Arc<AtomicBool>,
+        latest_invariants: Arc<Mutex<InvariantScanReport>>,
     ) -> Result<(), ReactorError> {
         let mut state = ReactorState::new();
         // 种子化（2026-09-08）：facts_log 已带初始状态时（live fork /
@@ -409,8 +452,13 @@ impl Reactor {
             // 更新状态快照（供 tier2 只读查询）
             Self::update_snapshot(&snapshot, &state, steps, false);
             // 0. 不变式自检：检查上一轮是否引入结构性违规
-            //    违规用 tracing::error! 记录，不中断反应器（符合 F11）
-            Self::run_invariant_check(&mut state, steps);
+            //    违规用 tracing::error! 记录，不中断反应器（符合 F11）；
+            //    明细同步发布到共享扫描报告（外部干预端点只读消费）
+            let scan_violations = Self::run_invariant_check(&mut state, steps);
+            if let Ok(mut report) = latest_invariants.lock() {
+                report.steps = steps;
+                report.violations = scan_violations;
+            }
 
             // 0.5 检查执行中断标志
             if interrupt_flag.swap(false, std::sync::atomic::Ordering::Acquire) {
@@ -431,6 +479,27 @@ impl Reactor {
                 Self::emit_fact(&self.facts_log, &event_tx, stable_fact);
                 steps = 0;
                 state.phase = ReactorPhase::Idle;
+                continue 'main;
+            }
+
+            // 0.55 取消全部 pending I/O（外部干预原语，镜像超时错误路径：
+            // 逐请求 emit Fact::Error + force_remove，恢复反应器；不发 Stable——
+            // 与超时路径一致，由后续迭代头的稳定检测自然收敛）
+            if cancel_all_flag.swap(false, std::sync::atomic::Ordering::Acquire) {
+                let cancel_ids: Vec<FactId> = state.pending_io_timestamps.keys().copied().collect();
+                for io_id in cancel_ids {
+                    tracing::info!(
+                        io_request_id = %io_id,
+                        "I/O 请求被外部取消（cancel-all pending）：发射 Error 恢复反应器"
+                    );
+                    let err_fact_id = id_gen.next_id();
+                    let err_fact = Fact::Error {
+                        id: err_fact_id,
+                        message: format!("I/O request {io_id} cancelled by external request"),
+                    };
+                    Self::emit_fact(&self.facts_log, &event_tx, err_fact);
+                    state.force_remove_io_request(io_id);
+                }
                 continue 'main;
             }
 
@@ -835,6 +904,23 @@ impl Reactor {
             snap.version = state.version;
             snap.structural_invariant_violations = state.structural_invariant_violations;
             snap.pending_io_count = state.pending_io_count;
+            // pending I/O 清单（干预可视化面）：有 pending 才重建，空表零分配
+            snap.pending_io.clear();
+            if state.pending_io_count > 0 {
+                snap.pending_io
+                    .extend(state.pending_io_timestamps.iter().filter_map(
+                        |(io_id, started_at)| {
+                            state
+                                .pending_io_types
+                                .get(io_id)
+                                .map(|io_type| PendingIoEntry {
+                                    id: *io_id,
+                                    io_type: io_type.clone(),
+                                    started_at: *started_at,
+                                })
+                        },
+                    ));
+            }
             snap.steps = steps;
             snap.queue_len = state.queue.len();
             snap.finished = finished;
@@ -862,7 +948,7 @@ impl Reactor {
     /// 检查 5 条结构性不变式（[crate::invariants]），违规用 `tracing::error!` 记录
     ///
     /// 违规累计计数到 `state.structural_invariant_violations`，不中断反应器（符合 F11）。
-    fn run_invariant_check(state: &mut ReactorState, steps: usize) {
+    fn run_invariant_check(state: &mut ReactorState, steps: usize) -> Vec<InvariantViolation> {
         // 结构性不变式（硬编码，始终启用）
         let structural = crate::invariants::check_invariants(state, steps);
         let structural_count = structural.len() as u64;
@@ -878,6 +964,7 @@ impl Reactor {
                 v
             );
         }
+        structural
     }
 
     /// P3-11 + 阶段3-1.4: 扫描 pending I/O 超时（分级告警，按 io_type 查表）
@@ -1168,6 +1255,10 @@ pub struct ReactorHandle {
     snapshot: Arc<Mutex<ReactorStateSnapshot>>,
     /// 执行中断标志（共享在 reactor 主循环与 handle 之间）
     interrupt_flag: Arc<AtomicBool>,
+    /// 取消全部 pending I/O 标志（外部干预原语，ReactorHandle 置位）
+    cancel_all_flag: Arc<AtomicBool>,
+    /// 最近一轮不变式扫描结果（每迭代头刷新，ReactorHandle 只读）
+    latest_invariants: Arc<Mutex<InvariantScanReport>>,
 }
 
 impl ReactorHandle {
@@ -1184,6 +1275,25 @@ impl ReactorHandle {
     /// 中止反应器任务（强制）
     pub fn abort(&self) {
         self.handle.abort();
+    }
+
+    /// 取消全部 pending I/O（外部干预原语）
+    ///
+    /// 置位共享标志，反应器主循环下一迭代头消费：逐 pending 请求发射
+    /// `Fact::Error`（"cancelled by external request"）并强制移除，恢复
+    /// 反应器。镜像超时错误路径，不发 Stable。
+    pub fn cancel_all_pending(&self) {
+        self.cancel_all_flag
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    /// 最近一轮不变式扫描报告（只读）
+    ///
+    /// 反应器每轮迭代头运行内置自检并把违规明细发布到本报告——返回值即
+    /// 引擎自身最新所见（新鲜度 ≤ 一个迭代间隔）。`None` = 快照锁中毒。
+    /// 违规是否落账（Fact::Violation）由调用方决定，本层不重复落账。
+    pub fn latest_invariant_scan(&self) -> Option<InvariantScanReport> {
+        self.latest_invariants.lock().ok().map(|r| r.clone())
     }
 
     /// 检查反应器是否已结束
@@ -1353,6 +1463,82 @@ mod tests {
     fn test_builder_max_queue_len() {
         let builder = ReactorBuilder::new(vec![]).max_queue_len(500);
         assert_eq!(builder.max_queue_len, 500);
+    }
+
+    /// cancel-all 干预原语全链：pending I/O 挂起 → 快照清单可见 → 取消 →
+    /// pending 清零 + 逐请求 Error 事实入链（镜像超时路径语义）。
+    #[tokio::test]
+    async fn cancel_all_pending_clears_requests_and_emits_errors() {
+        // 宪法：任何指令 → 发射 io_request（等外部响应，永久挂起）
+        let instruction = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("io_request")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[("io_type", JsonValue::string("llm"))]),
+            ),
+        ]);
+        let reactor = Reactor::builder(vec![instruction])
+            .io_timeout_check_interval(Duration::from_millis(20))
+            .build();
+        let (command_tx, _event_rx, _event_tx, handle, facts_log) = reactor.spawn();
+
+        command_tx
+            .send(Fact::Command {
+                id: FactId(1),
+                instruction: JsonValue::object_from_pairs(&[(
+                    "type",
+                    JsonValue::string("io_request"),
+                )]),
+            })
+            .expect("command channel open");
+
+        // 等待 reactor 侧 pending 登记（快照清单接线验证）
+        let mut saw_pending = false;
+        for _ in 0..200 {
+            if let Some(snap) = handle.snapshot() {
+                if snap.pending_io_count == 1 && snap.pending_io.len() == 1 {
+                    saw_pending = true;
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(saw_pending, "pending I/O 必须进快照清单（干预可视化面）");
+
+        // 取消 → pending 清零
+        handle.cancel_all_pending();
+        let mut cleared = false;
+        for _ in 0..200 {
+            if handle
+                .snapshot()
+                .map(|s| s.pending_io_count == 0 && s.pending_io.is_empty())
+                .unwrap_or(false)
+            {
+                cleared = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(cleared, "cancel-all 后 pending 必须清零");
+
+        // 逐请求 Error 事实入链（取消清单可审计）
+        let cancelled: Vec<String> = facts_log
+            .history()
+            .into_iter()
+            .filter_map(|f| match f {
+                Fact::Error { message, .. }
+                    if message.contains("cancelled by external request") =>
+                {
+                    Some(message)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(cancelled.len(), 1, "恰好一条取消 Error 事实: {cancelled:?}");
+
+        // 不变式扫描报告可用且干净
+        let report = handle.latest_invariant_scan().expect("扫描报告可用");
+        assert!(report.violations.is_empty(), "正常取消不产生违规");
     }
 
     #[test]

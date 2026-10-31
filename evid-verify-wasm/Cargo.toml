@@ -22,14 +22,14 @@ default = []
 bindgen = ["dep:wasm-bindgen"]
 
 [dependencies]
-evid-verify-core = { path = "../evid-verify-core", version = "0.11.0" }
+evid-verify-core = { path = "../evid-verify-core", version = "0.12.0" }
 serde_json = "1"
 wasm-bindgen = { version = "0.2", optional = true }
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }
 ed25519-dalek = "2.2"
-evorule-audit-chain = { path = "../evorule-audit-chain", version = "0.11.0" }
+evorule-audit-chain = { path = "../evorule-audit-chain", version = "0.12.0" }
 
 [lints]
 workspace = true

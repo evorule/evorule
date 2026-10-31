@@ -107,6 +107,11 @@ mod kani_collections {
         pub fn iter(&self) -> std::slice::Iter<'_, (FactId, V)> {
             self.0.iter()
         }
+        /// 键迭代器（对齐 BTreeMap::keys 消费形态；kani 代形集合下
+        /// `iter().map(|(k, _)| k)` 会触发 clippy 的 map-keys 提示）
+        pub fn keys(&self) -> impl Iterator<Item = &FactId> {
+            self.0.iter().map(|(k, _)| k)
+        }
     }
 
     /// KIdMap 的引用迭代器，兼容 `for (k, v) in &map` 语法

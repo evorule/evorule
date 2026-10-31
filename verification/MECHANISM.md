@@ -8,7 +8,7 @@
 
 # EvoRule 验证机制（MECHANISM）
 
-> **版本对齐**：`Cargo.toml` workspace `version = "0.11.0"`（v0.11.0 收口 = `in` 域类型收编批（集合成员判定进内核域求值词汇表），2026-10-31）
+> **版本对齐**：`Cargo.toml` workspace `version = "0.12.0"`（v0.12.0 收口 = reactor 干预原语收编批（cancel_all_pending/pending 快照/不变式扫描报告进内核），2026-10-31）
 > **性质**：验证机制的宪法性文档。M1–M11 约束所有验证文档的状态表述、证据效力、变更披露与信息分级。
 > **配套文档**：[STATUS.md](STATUS.md)（验证状态唯一权威）｜[DISCLOSURE_LOG.md](DISCLOSURE_LOG.md)（变更披露）｜[README.md](README.md)（导航与资产登记）
 > **生效**：2026-09-12 首次成文。此前公开仓不存在成文验证机制，历史文档与本机制的差异一次性补记于 [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md) 首条。

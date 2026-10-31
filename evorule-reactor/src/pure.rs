@@ -295,7 +295,7 @@ fn inject_io_result(
 ///
 /// 此函数是 invariants::check_invariants 的重新导出，
 /// 方便从 pure 模块统一访问所有可验证的纯逻辑。
-pub(crate) fn check_invariants(state: &ReactorState, steps: usize) -> Vec<InvariantViolation> {
+pub fn check_invariants(state: &ReactorState, steps: usize) -> Vec<InvariantViolation> {
     crate::invariants::check_invariants(state, steps)
 }
 
