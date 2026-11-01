@@ -23,7 +23,7 @@ $checks = @(
     @{ Name = "文档安全合规 (R 系, check_doc_safety)";           Script = "check_doc_safety.py" },
     @{ Name = "验证状态同步 (S 系, check_status_sync)";          Script = "check_status_sync.py" },
     @{ Name = "ASSURANCE 规范合规 (T 系, check_assurance_compliance)"; Script = "check_assurance_compliance.py" },
-    @{ Name = "docs 中英双语完整性 (check_docs_bilingual)";      Script = "check_docs_bilingual.py" }
+    @{ Name = "en-only 语言面 (en_only_scan, allowlist+棘轮基线)"; Script = "en_only_scan.py"; Args = @("--ratchet", "scripts/en-only-baseline.txt") }
 )
 
 # L1-1 错误码 i18n 对照需要兄弟仓快照（CI 由 workflow checkout；本地存在时才跑）
