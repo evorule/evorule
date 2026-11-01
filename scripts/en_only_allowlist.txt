@@ -1,0 +1,7 @@
+# en-only allowlist — whole-file globs (repo-relative, '/' separators).
+# One path glob per line; trailing comment states why CJK must live there.
+# Ratchet: entries may only shrink, never grow (B-091 design, appendix D.2).
+# Each entry must answer: "why must Chinese live in this file?"
+# NOTE: exempting a file from the LANGUAGE face never exempts it from
+# disclosure scanning (public_face_scan.py always runs on all files).
+AGENTS.local.md           # E.2 (design 2026-11-01): untracked local agent notes, Chinese internal addendum

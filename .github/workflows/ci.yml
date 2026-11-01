@@ -122,21 +122,24 @@ jobs:
           cargo tree -p evorule-tcb --edges normal
 
   # ==========================================================================
-  # 4. i18n 双语门禁 (纯文本扫描, 无需 Rust 工具链)
-  #    L1-2: docs 中英双语完整性 (本仓自含, scripts/check_docs_bilingual.py)
-  #    L1-1: server code→err.* 字典对照 (跨仓: 额外 checkout 兄弟仓快照,
-  #          scripts/check_error_code_i18n.py; 新增错误码漏配前端字典即红)
+  # 4. Language gates (B-091 single-master: en-only base, ratchet baseline)
+  #    L3: en-only scan — new CJK outside allowlist/stock baseline is red
+  #        (scripts/en_only_scan.py; allowlist shrink-only)
+  #    L1-1: server code→err.* dict pairing (cross-repo, product i18n face,
+  #          scripts/check_error_code_i18n.py; missing dict entry is red)
+  #    NOTE: former docs bilingual anchor gate (check_docs_bilingual.py)
+  #    retired in the same batch (O-587 mutual exclusion).
   # ==========================================================================
   i18n-gates:
-    name: i18n gates (docs bilingual + error code dict)
+    name: language gates (en-only scan + error code dict)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: docs 中英双语完整性 (锚点/英文分节/章节结构对齐)
-        run: python3 scripts/check_docs_bilingual.py
+      - name: en-only scan (allowlist + stock ratchet)
+        run: python3 scripts/en_only_scan.py --ratchet scripts/en-only-baseline.txt
 
-      - name: checkout 兄弟仓快照 (L1-1 跨仓对照所需)
+      - name: checkout sibling snapshots (L1-1 cross-repo pairing)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: evorule/evorule-server
@@ -147,7 +150,7 @@ jobs:
           repository: evorule/evorule-console-cloud
           path: sibling/evorule-console-cloud
 
-      - name: server code→err.* 双字典对照 (zh/en)
+      - name: server code→err.* dict pairing (zh/en)
         run: |
           python3 scripts/check_error_code_i18n.py \
             --server-rs sibling/evorule-server/evorule-server/src/api/server.rs \

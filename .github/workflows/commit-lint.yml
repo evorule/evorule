@@ -1,0 +1,34 @@
+# Commit-message structural lint (layer 1). Canonical reusable workflow.
+# Disclosure face (layer 2) is NOT duplicated here — public-face scan owns it.
+name: commit-lint
+
+on:
+  workflow_call:
+    inputs:
+      ratchet_since:            # ISO date; push mode scans commits since it
+        required: false
+        type: string
+        default: "2026-11-03"  # ratchet baseline: day after B-091 P1-C landing
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: "Structural lint (PR: new commits only)"
+        if: github.event_name == 'pull_request'
+        run: |
+          python scripts/commit_lint.py \
+            --range "${{ github.event.pull_request.base.sha }}..HEAD"
+      - name: "Structural lint (push: ratchet window)"
+        if: github.event_name == 'push'
+        run: |
+          python scripts/commit_lint.py --commits-since "${{ inputs.ratchet_since }}"
