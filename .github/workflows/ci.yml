@@ -122,13 +122,13 @@ jobs:
           cargo tree -p evorule-tcb --edges normal
 
   # ==========================================================================
-  # 4. Language gates (B-091 single-master: en-only base, ratchet baseline)
+  # 4. Language gates (single-master conversion: en-only base, ratchet baseline)
   #    L3: en-only scan — new CJK outside allowlist/stock baseline is red
   #        (scripts/en_only_scan.py; allowlist shrink-only)
   #    L1-1: server code→err.* dict pairing (cross-repo, product i18n face,
   #          scripts/check_error_code_i18n.py; missing dict entry is red)
   #    NOTE: former docs bilingual anchor gate (check_docs_bilingual.py)
-  #    retired in the same batch (O-587 mutual exclusion).
+  #    retired in the same batch (mutual exclusion, see conversion design).
   # ==========================================================================
   i18n-gates:
     name: language gates (en-only scan + error code dict)
