@@ -55,9 +55,9 @@ if (Test-Path $scanner) {
         $hitFiles += (Split-Path $m.Groups[1].Value -Leaf)
     }
     $hitFiles = $hitFiles | Select-Object -Unique
-    # 待推范围：优先 gitee/main（主仓命名），回落 origin/main（server 仓命名）
+    # 待推范围：优先 github/main（主仓命名），回落 origin/main（server 仓命名）
     $base = $null
-    foreach ($r in @('gitee', 'origin')) {
+    foreach ($r in @('github', 'origin')) {
         if (& git -C $Repo remote | Select-String -SimpleMatch $r -Quiet) {
             $base = "$r/main"; break
         }

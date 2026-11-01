@@ -14,15 +14,14 @@
 |---|---|
 | 版本 | v0.9.0 |
 | 发布 tag | `v0.9.0` |
-| 源码归档（Gitee 主仓） | <https://gitee.com/evorule/evorule/repository/archive/v0.9.0.zip> |
-| 源码归档（GitHub 镜像） | <https://github.com/evorule/evorule/archive/refs/tags/v0.9.0.tar.gz> |
+| 源码归档（GitHub） | <https://github.com/evorule/evorule/archive/refs/tags/v0.9.0.tar.gz> |
 | 源码 tarball SHA256 | 见发布 Release 说明的 `sha256-checks.txt` |
 
 > 每次发版时更新本表；打包流程须以**本次发布对应的值**覆盖后随包分发，禁止携带未填写的占位值。
 
 ## 获取与校验方式
 
-1. **主仓**：<https://gitee.com/evorule/evorule>（权威源；GitHub 为镜像）
+1. **主仓**：<https://github.com/evorule/evorule>（权威源）
 2. **按 tag 取归档**：上表任一归档链接，或 `git clone` 后 `git checkout <tag>`
 3. **完整性校验**：下载归档后计算 SHA256，与发布 Release 说明中 `sha256-checks.txt` 记录值比对，一致即证明与发布产物同源
 

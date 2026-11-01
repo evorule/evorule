@@ -1,6 +1,6 @@
 # evid-verify-wasm
 
-EvoRule EVID 验证器的 wasm 绑定：让审计链判定跑进浏览器/JS 侧——**免安装、零网络请求、判定语义与 Rust 内核逐字节同源**。判定逻辑全部委托 [`evid-verify-core`](https://gitee.com/evorule/evorule/tree/main/evid-verify-core)，本 crate 只做 JSON 报文形态（handlers 共享判定层，永不 panic，解析失败同样产出结构化红）。
+EvoRule EVID 验证器的 wasm 绑定：让审计链判定跑进浏览器/JS 侧——**免安装、零网络请求、判定语义与 Rust 内核逐字节同源**。判定逻辑全部委托 [`evid-verify-core`](https://github.com/evorule/evorule/tree/main/evid-verify-core)，本 crate 只做 JSON 报文形态（handlers 共享判定层，永不 panic，解析失败同样产出结构化红）。
 
 ## 双路线
 

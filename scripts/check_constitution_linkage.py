@@ -22,8 +22,7 @@
 
 CI 挂载：
     - GitHub CI（.github/workflows/ci.yml）：PR 事件注入 PR_BODY，全量历史，强制阻断；
-    - Gitee Go（.gitee-ci/validate.yml）：PR 描述环境变量无标准化契约，
-      以 --skip-if-no-pr 守护——取得到描述则同等阻断，取不到则 [SKIP]。
+      非 PR 上下文用 --skip-if-no-pr 守护——取得到描述则同等阻断，取不到则 [SKIP]。
 """
 from __future__ import annotations
 
@@ -69,10 +68,9 @@ def pick_body(args: argparse.Namespace) -> str | None:
                 return fh.read()
         except OSError as exc:
             raise RuntimeError(f"读取 PR 描述文件失败 {path}: {exc}") from None
-    for name in (args.env_var, "GITEE_PR_BODY"):
-        value = os.environ.get(name, "")
-        if value.strip():
-            return value
+    value = os.environ.get(args.env_var, "")
+    if value.strip():
+        return value
     return None
 
 
@@ -99,7 +97,7 @@ def main() -> int:
     parser.add_argument(
         "--skip-if-no-pr",
         action="store_true",
-        help="无 PR 描述或 git diff 不可得时 [SKIP] 退出 0（Gitee Go 无 PR 上下文场景）",
+        help="无 PR 描述或 git diff 不可得时 [SKIP] 退出 0（非 PR 上下文场景）",
     )
     args = parser.parse_args()
 

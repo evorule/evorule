@@ -47,5 +47,5 @@ let report = verify_export(&doc);  // 逐条目判定报告
 
 ## 下游
 
-- [`evid-verify-wasm`](https://gitee.com/evorule/evorule/tree/main/evid-verify-wasm)：浏览器免安装单文件验证器与 wasm-pack/npm 绑定面；
+- [`evid-verify-wasm`](https://github.com/evorule/evorule/tree/main/evid-verify-wasm)：浏览器免安装单文件验证器与 wasm-pack/npm 绑定面；
 - 三方 Rust 宿主（移动端 app、server 复核、运维哨兵）直接依赖本 crate 离线验链。

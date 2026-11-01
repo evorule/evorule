@@ -35,7 +35,7 @@ jobs:
   tla-verify:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
-    continue-on-error: false  # 严格门禁（与 Gitee validate.yml allow_failure:false 一致）
+    continue-on-error: false  # 严格门禁（allow_failure:false）
 
     steps:
       - name: Checkout

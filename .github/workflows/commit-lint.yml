@@ -31,4 +31,6 @@ jobs:
       - name: "Structural lint (push: ratchet window)"
         if: github.event_name == 'push'
         run: |
-          python scripts/commit_lint.py --commits-since "${{ inputs.ratchet_since }}"
+          # push 事件没有 workflow_call inputs 上下文，空参会让 commit_lint.py
+          # 以 usage (exit 2) 拒跑 —— 用 || 回退到同一棘轮基线。
+          python scripts/commit_lint.py --commits-since "${{ inputs.ratchet_since || '2026-11-03' }}"

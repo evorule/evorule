@@ -82,7 +82,7 @@
 
 ## 🐛 报告 Bug
 
-使用 [Gitee Issues](https://gitee.com/evorule/evorule/issues)。
+使用 [GitHub Issues](https://github.com/evorule/evorule/issues)。
 
 **报告模板**:
 
@@ -113,7 +113,7 @@
 
 ## 💡 功能建议
 
-也用 [Gitee Issues](https://gitee.com/evorule/evorule/issues),标签 `enhancement`。
+也用 [GitHub Issues](https://github.com/evorule/evorule/issues),标签 `enhancement`。
 
 **建议模板**:
 
@@ -133,7 +133,7 @@
 
 ### 流程
 
-1. **Fork 仓库** → 在你的 Gitee 账号下创建 fork
+1. **Fork 仓库** → 在你的 GitHub 账号下创建 fork
 2. **创建分支**:`git checkout -b feature/your-feature-name`
 3. **写代码 + 写测试** — 测试覆盖率不掉
 4. **本地验证**:
@@ -148,7 +148,7 @@
 ```text
 
 5. **推送**:`git push origin feature/your-feature-name`
-6. **创建 PR** 到 Gitee,填写 PR 模板
+6. **创建 PR** 到 GitHub,填写 PR 模板
 7. **CLA 签署**(见下)
 8. **等 review** — 维护者会在 7 天内回复
 
@@ -190,7 +190,7 @@ test(e2e): 添加宪法核心冒烟测试
 - 个人贡献者:[CLA-individual.md](CLA-individual.md)(已发布)
 - 企业贡献者:[CLA-corporate.md](CLA-corporate.md)(已发布)
 
-> ⚠️ **企业贡献者注意**:Gitee 官方 CLA 模块当前**仅支持个人签署,无企业入口**。请勿以个人 CLA 代替公司 CLA。企业须按 [CLA-corporate.md](CLA-corporate.md) 的"企业如何签署"走邮件人工流程(下载 → 填写 → 发 <evorulelab@gmail.com> → 人工审阅)。
+> ⚠️ **企业贡献者注意**:在线签署当前**仅支持个人签署,无企业入口**。请勿以个人 CLA 代替公司 CLA。企业须按 [CLA-corporate.md](CLA-corporate.md) 的"企业如何签署"走邮件人工流程(下载 → 填写 → 发 <evorulelab@gmail.com> → 人工审阅)。
 
 **为什么需要 CLA?**
 
@@ -278,9 +278,9 @@ cargo kani -p evorule-tcb --tests --harness <proof函数名> --output-format=ter
 
 ## 📞 联系方式
 
-- **Gitee**: <https://gitee.com/evorule/evorule/issues>
+- **GitHub**: <https://github.com/evorule/evorule/issues>
 - **邮箱**: <evorulelab@gmail.com>
-- **组织**: [EvoRule](https://gitee.com/evorule)
+- **组织**: [EvoRule](https://github.com/evorule)
 
 ---
 

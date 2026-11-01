@@ -9,7 +9,7 @@
 #   .\scripts\sync-doc-safety.ps1 -Check     # 同上
 #   .\scripts\sync-doc-safety.ps1 -Sync      # 复制母本到各副本并逐文件哈希校验（只复制，不删除）
 #
-# 纪律：-Sync 后各仓产生未提交变更，须逐仓提交并推送双远端（Gitee 权威仓 + GitHub 镜像）；
+# 纪律：-Sync 后各仓产生未提交变更，须逐仓提交并推送 GitHub 权威源；
 #       推送后按 CI 绿灯纪律检查远端 CI 全绿。词表/豁免内容的变更须先修订内部术语表再改母本。
 param(
     [switch]$Check,

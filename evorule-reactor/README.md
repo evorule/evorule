@@ -23,7 +23,7 @@
 - **v0.6.0 收窄(2026-09-14,规则清理)**:依赖 evorule-tcb 升至 0.6.0;`collect`/`merge` 元指令退役,`io_loop_rules` 改单轮——ReAct 多轮编排归应用层,`io_request` 保留单轮触发/消费语义
 - **Kani 形式化验证**:11 个 `#[kani::proof]`(`verification/kani_proofs.rs`),其中 4 个入 CI PR 闸门(根仓 `.github/workflows/kani.yml`,v0.6.0 重跑 4/4 PASS);状态唯一权威见根 [`verification/STATUS.md`](../verification/STATUS.md)
 
-> 本 crate 属于 [EvoRule](https://gitee.com/evorule) 生态:[主仓](https://gitee.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://gitee.com/evorule/evorule-server)
+> 本 crate 属于 [EvoRule](https://github.com/evorule) 生态:[主仓](https://github.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://github.com/evorule/evorule-server)
 
 ## 设计原则
 

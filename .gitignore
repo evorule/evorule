@@ -130,7 +130,7 @@ check_out.json
 run_check.ps1
 run_tests.ps1
 
-# Release 二进制（CI 在 Gitee release 页发布, 本地仓不存, 避免 5MB+ dead artifact）
+# Release 二进制（CI 在 GitHub Release 页发布, 本地仓不存, 避免 5MB+ dead artifact）
 /release-assets/
 **/release-assets/
 
