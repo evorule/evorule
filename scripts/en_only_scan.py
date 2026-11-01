@@ -23,6 +23,7 @@ Modes:
 import fnmatch
 import os
 import re
+import subprocess
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,7 +35,6 @@ SELF_EXEMPT = {
     ALLOWLIST_PATH.replace("\\", "/"),
     BASELINE_PATH.replace("\\", "/"),
 }
-SKIP_DIRS = {".git", "node_modules", "__pycache__", "target-sc1b", ".obsidian"}
 TEXT_EXT = {
     ".md", ".rs", ".py", ".ts", ".tsx", ".js", ".mjs", ".json", ".toml",
     ".yml", ".yaml", ".html", ".htm", ".css", ".txt", ".sh", ".ps1",
@@ -70,28 +70,35 @@ def is_text(path):
 
 
 def scan_tree():
-    """Return {relpath: cjk_line_count} outside allowlist."""
+    """Return {relpath: cjk_line_count} outside allowlist.
+
+    Enumerates git-tracked files only (never the raw filesystem), so a
+    local --dump cannot pick up untracked working-tree directories.
+    """
     globs = load_allowlist()
+    out = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=REPO_ROOT, check=True,
+        stdout=subprocess.PIPE)
     counts = {}
-    for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        for name in filenames:
-            full = os.path.join(dirpath, name)
-            rel = os.path.relpath(full, REPO_ROOT).replace(os.sep, "/")
-            if rel in SELF_EXEMPT or rel in globs or is_allowed(rel, globs):
-                continue
-            if not is_text(full):
-                continue
-            n = 0
-            try:
-                with open(full, "r", encoding="utf-8", errors="replace") as f:
-                    for line in f:
-                        if CJK_RX.search(line):
-                            n += 1
-            except OSError:
-                continue
-            if n:
-                counts[rel] = n
+    for rel in out.stdout.decode("utf-8", "replace").split("\0"):
+        if not rel:
+            continue
+        rel = rel.replace("\\", "/")
+        if rel in SELF_EXEMPT or rel in globs or is_allowed(rel, globs):
+            continue
+        full = os.path.join(REPO_ROOT, rel)
+        if not is_text(full):
+            continue
+        n = 0
+        try:
+            with open(full, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    if CJK_RX.search(line):
+                        n += 1
+        except OSError:
+            continue
+        if n:
+            counts[rel] = n
     return counts
 
 
