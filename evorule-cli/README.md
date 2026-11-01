@@ -46,8 +46,8 @@
 
 ```bash
 # 1) 下载(按平台选,直达 v0.9.0 release 产物)
-wget https://gitee.com/evorule/evorule/releases/download/v0.9.0/evorule-linux-x86_64   # Linux x86_64
-# Windows x86_64: https://gitee.com/evorule/evorule/releases/download/v0.9.0/evorule-windows-x86_64.exe
+wget https://github.com/evorule/evorule/releases/download/v0.9.0/evorule-linux-x86_64   # Linux x86_64
+# Windows x86_64: https://github.com/evorule/evorule/releases/download/v0.9.0/evorule-windows-x86_64.exe
 
 # 2) 验证(可选,记录哈希备查)
 sha256sum evorule-linux-x86_64
@@ -471,7 +471,7 @@ JSON 规则文件遵循 `core_eval.json` 格式(transform 列表)。
 
 ```bash
 # Linux x86_64 圈 2 项目方
-wget https://gitee.com/evorule/evorule/releases/download/v0.9.0/evorule-linux-x86_64
+wget https://github.com/evorule/evorule/releases/download/v0.9.0/evorule-linux-x86_64
 chmod +x evorule-linux-x86_64
 ./evorule-linux-x86_64 validate /etc/company-rules/
 ./evorule-linux-x86_64 run /etc/company-rules/ -o /var/log/evorule-fact.log
@@ -548,7 +548,7 @@ bash tests/e2e.sh .build/rust/aarch64-unknown-linux-musl/release/evorule
 
 ### 供应链可信:可重现构建
 
-同源码两次 `cargo build --release`(同一 Rust toolchain、同一 target)产物 SHA256 一致。圈 2 监管方可独立从 GitHub/Gitee 拉源码构建,与官方 artifact 做 SHA 对比,无需信任分发渠道。
+同源码两次 `cargo build --release`(同一 Rust toolchain、同一 target)产物 SHA256 一致。圈 2 监管方可独立从 GitHub 拉源码构建,与官方 artifact 做 SHA 对比,无需信任分发渠道。
 
 ---
 
@@ -615,14 +615,13 @@ evorule-cli
 
 ## CI 集成
 
-CI 双轨并行:Gitee Go(`.gitee-ci/`)+ GitHub Actions(`.github/workflows/`),Gitee 为主仓、GitHub 为同步镜像:
+CI 单轨:GitHub Actions(`.github/workflows/`),GitHub 为权威源:
 
 | Workflow                        | 平台           | 触发                            | 输出                                              |
 | ------------------------------- | -------------- | ------------------------------- | ------------------------------------------------- |
-| `.gitee-ci/validate.yml`        | Gitee Go       | push / PR                       | 文档安全/版本一致性门禁 + lint + 全量测试 + 构建(G8 门禁内置) |
 | `.github/workflows/ci.yml`      | GitHub Actions | push / PR                       | Linux + Windows 测试矩阵 + cli e2e + TCB 确定性 + i18n 门禁 |
 | `.github/workflows/kani.yml`    | GitHub Actions | push / PR (paths)               | A 档 Kani proof 闸门(tcb 14 + reactor 4)          |
-| `.github/workflows/release.yml` | GitHub Actions | tag `v*`                        | Linux x86_64 (musl) + Windows x86_64 二进制 + SHA256 + 签名 → Release(Gitee 同步) |
+| `.github/workflows/release.yml` | GitHub Actions | tag `v*`                        | Linux x86_64 (musl) + Windows x86_64 二进制 + SHA256 + 签名 → Release |
 
 每个 build stage 内置 G8 门禁校验（通过 evorule-tcb / evorule-cli build.rs 自动执行）。
 

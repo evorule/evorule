@@ -325,7 +325,7 @@ impl Reactor {
     /// 返回的 `ReactorHandle` 携带共享快照与中断标志，支持：
     /// - `interrupt()`：请求反应器在当前指令后退出
     /// - `abort()`：强制中止反应器任务
-    /// - GDB 风格的 pause/resume/step/inspect + interrupt/watch 已由 [evorule-server 仓](https://gitee.com/evorule/evorule-server) `core/debug_control` 模块实现
+    /// - GDB 风格的 pause/resume/step/inspect + interrupt/watch 已由 [evorule-server 仓](https://github.com/evorule/evorule-server) `core/debug_control` 模块实现
     pub fn spawn(
         self,
     ) -> (
@@ -1246,7 +1246,7 @@ impl Reactor {
 /// - [`causal_depth`](Self::causal_depth)：因果链深度
 /// - [`is_finished`](Self::is_finished)：是否已结束
 ///
-/// **调试控制**（由 [evorule-server 仓](https://gitee.com/evorule/evorule-server) `core/debug_control` 模块实现）：
+/// **调试控制**（由 [evorule-server 仓](https://github.com/evorule/evorule-server) `core/debug_control` 模块实现）：
 /// - pause/resume/step/inspect + interrupt/watch
 /// - 基于 `interrupt()` + FactsLog rewind 实现伪单步
 pub struct ReactorHandle {

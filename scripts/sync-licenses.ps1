@@ -1,6 +1,6 @@
 ﻿# sync-licenses.ps1 — 许可文件七件套同步器（-Check 核验 / -Sync 分发）
 # 权威源＝本仓（evorule 主仓）根目录七件套；副本仓经仓名归一化后须与主仓一致。
-# 仓名定制规则：副本仓文本中 gitee.com/evorule/<repo> 等本仓名 token，归一化
+# 仓名定制规则：副本仓文本中 github.com/evorule/<repo> 等本仓名 token，归一化
 # （repo 名 → evorule）后与主仓文本逐行比对，一致即合规（NOTICE 末行 URL、
 # COMMERCIAL 等仓名替换版均按此规则核验）。
 # 特例：evorule-sdk 维持 Apache-2.0 自治体系（仓级许可差异设计），仅核验
@@ -64,7 +64,7 @@ foreach ($repo in $repos.Keys) {
       Write-Output "MISS $repo/$f 缺失"
       if ($Sync) {
         if ($f -eq 'NOTICE.md') {
-          $new = $mainText[$f].Replace('gitee.com/evorule/evorule', "gitee.com/evorule/$repo")
+          $new = $mainText[$f].Replace('github.com/evorule/evorule', "github.com/evorule/$repo")
           [IO.File]::WriteAllText($dst, $new)
         } else {
           Copy-Item (Join-Path $mainRoot $f) $dst -Force
@@ -87,7 +87,7 @@ foreach ($repo in $repos.Keys) {
       Write-Output "DIFF $repo/$f"
       if ($Sync) {
         if ($f -eq 'NOTICE.md') {
-          $new = $main.Replace('gitee.com/evorule/evorule', "gitee.com/evorule/$repo")
+          $new = $main.Replace('github.com/evorule/evorule', "github.com/evorule/$repo")
           [IO.File]::WriteAllText($dst, $new)
         } else {
           Copy-Item (Join-Path $mainRoot $f) $dst -Force

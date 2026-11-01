@@ -12,7 +12,7 @@
 
 **v0.3.x**(2026-08) — 已通过内部代码级审计,所有已知 P0/P1/P2 缺陷已修复;
 新增 `evorule-rule-schema` 内部 crate 作为引擎原生结构的固化 schema 校验器。
-详细变更见各子 crate 的 [CHANGELOG](https://gitee.com/evorule/evorule/blob/main/CHANGELOG.md)。
+详细变更见各子 crate 的 [CHANGELOG](https://github.com/evorule/evorule/blob/main/CHANGELOG.md)。
 
 ## 按角色看
 
@@ -63,7 +63,7 @@
 
 **v0.3.x** (2026-08) — has passed an internal code-level audit; all known P0/P1/P2 defects are fixed.
 The new internal crate `evorule-rule-schema` serves as a frozen schema validator for the engine's native structures.
-For details see each sub-crate's [CHANGELOG](https://gitee.com/evorule/evorule/blob/main/CHANGELOG.md).
+For details see each sub-crate's [CHANGELOG](https://github.com/evorule/evorule/blob/main/CHANGELOG.md).
 
 ## Find your role
 

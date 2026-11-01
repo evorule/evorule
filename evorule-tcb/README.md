@@ -20,7 +20,7 @@
 
 > **Kani 形式化验证**:34 个 `#[kani::proof]` 分 A/B 两档(v0.6.0 随规则清理退役 P15/P16/P17,原 37 个)——A 档 14 个 v0.6.0 重跑(2026-09-14,`25c0cc0`)全 PASS 并入 CI 闸门;B 档 20 个实测 600s/3600s 超时,判定当前不可运行(proptest 间接覆盖)。详见 [`TCB_SPEC.md` §六](TCB_SPEC.md#六形式化验证-kani-proof) 与 [`docs/KANI.md`](docs/KANI.md);状态唯一权威:[`verification/STATUS.md`](../verification/STATUS.md)。
 
-> 本 crate 属于 [EvoRule](https://gitee.com/evorule) 生态:[主仓](https://gitee.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://gitee.com/evorule/evorule-server)
+> 本 crate 属于 [EvoRule](https://github.com/evorule) 生态:[主仓](https://github.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://github.com/evorule/evorule-server)
 
 ---
 

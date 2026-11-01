@@ -12,7 +12,6 @@
 #   集成层, 不在本门禁范围
 # - 运行时逐位一致性 (WASM vs native 双跑) 需 wasm-bindgen-test
 #   测试 harness, 不在本文件
-# - Gitee Go 侧 (.gitee-ci/) 无 wasm32 门禁, 由 mirror 同步后 GitHub Actions 承担
 name: WASM Gate
 
 on:

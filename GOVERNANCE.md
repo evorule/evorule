@@ -48,7 +48,7 @@
 - **个人贡献者**：签署 [CLA-individual.md](CLA-individual.md)。
 - **企业贡献者**：签署 [CLA-corporate.md](CLA-corporate.md)（与 Individual 互为补充）。
 - 双轨 CLA 是商业再许可（DUAL_LICENSE）的必要条件，确保项目对全部代码拥有再许可权。
-- CLA 签署通过 CLA Assistant 机器人（GitHub）/ Gitee 在线签署自动核验；未签 CLA 的 PR 门禁拦截。
+- CLA 签署通过 CLA Assistant 机器人（GitHub）自动核验；未签 CLA 的 PR 门禁拦截。
 
 ## 五、与 CHANGE_REQUEST 流程的关系
 

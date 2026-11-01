@@ -255,7 +255,7 @@ jobs:
 
   # ==========================================================================
   # 3.5 CycloneDX SBOM 生成 (A3 供应链三件套)
-  #     全 workspace 成员的 .cdx.json 随 GitHub Release / Gitee Release 发布,
+  #     全 workspace 成员的 .cdx.json 随 GitHub Release 发布,
   #     供下游 ISV 满足其供应链合规（如欧盟 CRA、客户安全问卷）。
   # ==========================================================================
   sbom:
@@ -325,14 +325,13 @@ jobs:
           | 字段 | 值 |
           |---|---|
           | 发布 tag | v@@VER@@ |
-          | 源码仓库（权威源） | <https://gitee.com/evorule/evorule> |
-          | 源码仓库（GitHub 镜像） | <https://github.com/evorule/evorule> |
+          | 源码仓库（权威源） | <https://github.com/evorule/evorule> |
           | 源码 tarball | `evorule-@@VER@@-source.tar.gz`（随本 Release 附件分发） |
           | 源码 tarball SHA256 | `@@SHA@@` |
 
           ## 获取与校验方式
 
-          1. `git clone` 上表任一仓库，`git checkout v@@VER@@`
+          1. `git clone` 上表仓库，`git checkout v@@VER@@`
           2. 复现归档：`git archive --format=tar.gz --prefix=evorule-@@VER@@/ -o evorule-@@VER@@-source.tar.gz HEAD`
           3. 计算 SHA256 并与上表值比对（同一记录亦在随 Release 发布的 `sha256-checks.txt` 中）
 
@@ -342,7 +341,7 @@ jobs:
 
           ## 分发通道
 
-          - 二进制（GitHub / Gitee Release 附件）随本合规归档一同发布
+          - 二进制（GitHub Release 附件）随本合规归档一同发布
           - crates.io 包由 cargo publish 自动随附仓根 `LICENSE`
           EOF
           sed -i "s/@@VER@@/${VER}/g; s/@@SHA@@/${SRC_SHA}/g" SOURCE.md

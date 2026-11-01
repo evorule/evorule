@@ -14,7 +14,7 @@ Security disclosure procedures are public knowledge; we release them under CC0 s
 | `v0.6.x`（含 0.6.0）         | ✅ Supported   | 当前主支持线（2026-09-14 发布） |
 | `v0.2.x`（含 0.2.0）         | ❌ EOL         | 公开基座阶段，已被 0.6.x 取代  |
 | `v0.1.x`（含 0.1.0 / 0.1.1） | ❌ Unsupported | 早期阶段，不维护              |
-| `v6.0.x`（内部旧版）         | ❌ EOL         | 内部历史版本，已退役，无 Gitee 撤回成本 |
+| `v6.0.x`（内部旧版）         | ❌ EOL         | 内部历史版本，已退役 |
 | `< v0.1.0-alpha.1`           | ❌ Unsupported | 公开仓库之前的 commit 不维护 |
 
 **alpha 阶段承诺**:
@@ -39,7 +39,7 @@ Security disclosure procedures are public knowledge; we release them under CC0 s
 ### 📧 联系方式
 
 - **邮箱**: <evorulelab@gmail.com>(主题加 `[SECURITY]`)
-- **Gitee 私信**: 维护者(@evorule)
+- **GitHub 私信**: 维护者(@evorule)
 - **加密**: 当前未提供 PGP 公钥(如有需要可联系)
 
 ### 📋 报告内容

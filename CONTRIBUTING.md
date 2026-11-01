@@ -77,8 +77,7 @@
 
 ## 🐛 Reporting Bugs
 
-Use [Gitee Issues](https://gitee.com/evorule/evorule/issues) (preferred) or
-GitHub Issues for international contributors.
+Use [GitHub Issues](https://github.com/evorule/evorule/issues).
 
 **Report template**:
 
@@ -129,7 +128,7 @@ Also use Issues with the `enhancement` label.
 
 ### Workflow
 
-1. **Fork the repo** → create a fork under your Gitee/GitHub account
+1. **Fork the repo** → create a fork under your GitHub account
 2. **Create a branch**: `git checkout -b feature/your-feature-name`
 3. **Write code + write tests** — coverage must not drop
 4. **Local validation**:
@@ -144,7 +143,7 @@ Also use Issues with the `enhancement` label.
 ```text
 
 5. **Push**: `git push origin feature/your-feature-name`
-6. **Open PR** on Gitee (or GitHub), fill in the PR template
+6. **Open PR** on GitHub, fill in the PR template
 7. **Sign CLA** (see below)
 8. **Wait for review** — maintainers reply within 7 days
 
@@ -186,7 +185,7 @@ test(e2e): add core constitution smoke test
 - Individual contributors: [CLA-individual.md](CLA-individual.md)（已发布）
 - Corporate contributors: [CLA-corporate.md](CLA-corporate.md)（已发布）
 
-> ⚠️ **Corporate contributors**: Gitee's official CLA module currently supports **individual signing only — there is no corporate entry**. Do **not** sign the individual CLA on behalf of your company. Follow the "企业如何签署" / corporate signing steps in [CLA-corporate.md](CLA-corporate.md) (download → fill → email <evorulelab@gmail.com> → manual review).
+> ⚠️ **Corporate contributors**: the online signing channel currently supports **individual signing only — there is no corporate entry**. Do **not** sign the individual CLA on behalf of your company. Follow the "企业如何签署" / corporate signing steps in [CLA-corporate.md](CLA-corporate.md) (download → fill → email <evorulelab@gmail.com> → manual review).
 
 **Why CLA?**
 
@@ -274,9 +273,9 @@ All `.rs` files must include the SPDX header:
 
 ## 📞 Contact
 
-- **Gitee**: <https://gitee.com/evorule/evorule/issues>
+- **GitHub**: <https://github.com/evorule/evorule/issues>
 - **Email**: <evorulelab@gmail.com>
-- **Org**: [EvoRule](https://gitee.com/evorule)
+- **Org**: [EvoRule](https://github.com/evorule)
 
 ---
 

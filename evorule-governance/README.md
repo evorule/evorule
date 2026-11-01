@@ -19,7 +19,7 @@
 - **`unsafe`**:`#![forbid(unsafe_code)]`
 - **P0 修复(2026-07-25)**:锁中毒改为 `e.into_inner()` 恢复(非 panic);`auditor.rs` 哈希失败改为跳过损坏 Fact(非 panic);SIGTERM handler 安装失败降级为仅监听 SIGINT(非 panic)
 
-> 本 crate 属于 [EvoRule](https://gitee.com/evorule) 生态:[主仓](https://gitee.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://gitee.com/evorule/evorule-server)
+> 本 crate 属于 [EvoRule](https://github.com/evorule) 生态:[主仓](https://github.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://github.com/evorule/evorule-server)
 
 ## 定位声明
 

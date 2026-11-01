@@ -196,9 +196,9 @@ evorule 仓包含**机制层**与**工具**两类子 crate：
 
 当前 EvoRule 只用 `main` 分支。1.x 阶段前不需要多分支。
 
-### 9.3 Gitee 标签同步
+### 9.3 GitHub 标签发布
 
-推 v*.*.* tag → Gitee Go CI (`.gitee-ci/release.yml`) 自动构建并上传：
+推 v*.*.* tag → GitHub Actions (`.github/workflows/release.yml`) 自动构建并上传：
 
 | 平台       | Target                       | 二进制             | 备注                       |
 | ---------- | ---------------------------- | ------------------ | -------------------------- |
@@ -206,12 +206,11 @@ evorule 仓包含**机制层**与**工具**两类子 crate：
 | Linux aarch64  | `aarch64-unknown-linux-musl`  | `evorule-aarch64`      | musl 静态链接，1.4 MB，交叉编译 |
 | Windows x86_64 | `x86_64-pc-windows-msvc`      | `evorule-x86_64.exe`   | windows-latest runner      |
 
-构建产物通过 Gitee OpenAPI（`secrets.GITEE_TOKEN`）自动上传到 [Gitee release 页面](https://gitee.com/evorule/evorule/releases)，tag 与 git tag 一致。
+构建产物自动上传到 [GitHub release 页面](https://github.com/evorule/evorule/releases)，tag 与 git tag 一致。
 
-**macOS 二进制**：Gitee Go 无 macOS runner；macOS 二进制由未来英文版仓库（GitHub Actions）出。
+**macOS 二进制**：发版链无 macOS runner；macOS 二进制暂不发布。
 
-**GitHub 关系**：本仓库不向 GitHub 镜像（`不做镜像`），未来英文版独立仓库，单独的 release 流程。
-英文版 .github/workflows/ 暂留本仓作参考；正式开英文版仓时迁出。
+**GitHub 关系**：本仓库即 GitHub 权威源（2026-11-01 单主转换，无镜像）。
 
 ---
 
@@ -323,7 +322,7 @@ pwsh -NoProfile -File scripts/validate-version.ps1
 | F1 | `git add` 改完的文件 | 按 A-E 列表确认 |
 | F2 | `git commit -m "chore(release): vX.Y.Z"` | 遵循 §6.1 commit message 规范 |
 | F3 | `git tag vX.Y.Z` | 严格按 §9.1 格式（带 `v` 前缀） |
-| F4 | `git push origin main --tags` | 触发 Gitee Go CI（§9.3）自动 release |
+| F4 | `git push origin main --tags` | 触发 GitHub Actions（§9.3）自动 release |
 
 ### 12.7 发版前 Checklist（按顺序打勾）
 
@@ -335,7 +334,7 @@ pwsh -NoProfile -File scripts/validate-version.ps1
 - [ ] 检查 D1-D4 派生文档
 - [ ] 按 §4.3 写新 `CHANGELOG.md` 段
 - [ ] commit + tag + push（按 §12.6）
-- [ ] Gitee release 页面核对 CI 上传的二进制（§9.3）
+- [ ] GitHub release 页面核对 CI 上传的二进制（§9.3）
 
 ### 12.8 反模式（不要这样做）
 
@@ -350,7 +349,7 @@ pwsh -NoProfile -File scripts/validate-version.ps1
 
 **作者**: EvoRule Project
 **邮箱**: <evorulelab@gmail.com>
-**Gitee**: <https://gitee.com/evorule/evorule>
+**GitHub**: <https://github.com/evorule/evorule>
 
 ---
 
