@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Commit-message structural lint (layer 1), B-091 single-master batch.
+"""Commit-message structural lint (layer 1), single-master conversion batch.
 
 Rules: structural only (type/subject/CJK/banned ids). Disclosure scanning
 (internal ids/paths/secrets) stays in public_face_scan.py (layer 2); the two
