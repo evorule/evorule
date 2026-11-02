@@ -8,7 +8,7 @@ on:
       ratchet_since:            # ISO date; push mode scans commits since it
         required: false
         type: string
-        default: "2026-11-03"  # ratchet baseline: day after B-091 P1-C landing
+        default: "2026-11-03"  # ratchet baseline: day after gate landing
   push:
     branches: [main]
   pull_request:
