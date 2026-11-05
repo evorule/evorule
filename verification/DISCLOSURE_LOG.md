@@ -12,12 +12,12 @@
 > **记录规范**：只记事实——什么变了、客观依据、影响、修正去向（M10）。
 > **条目格式**：事实 / 依据 / 影响 / 修正去向。
 
-## 2026-11-05：reactor 事实落盘执行线程迁移（v0.12.1）——证据基线影响评估
+## 2026-11-05: reactor fact persistence executor-thread migration (v0.12.1) - evidence baseline impact assessment
 
-| # | 事实 | 依据 | 影响 | 修正去向 |
-| - | ---- | ---- | ---- | -------- |
-| 1 | reactor `emit_fact` 及其调用链（`handle_fact`/`check_io_timeouts`）改 async，经 `FactsLog::append_async`（`spawn_blocking` 包装既有 `append`）落盘；`append` 本体一字未改（写锁语义/write-ahead 序/哈希链逐条推进全部保持），纯执行线程迁移非语义变更 | 本批 diff；回归测试 `test_append_async_equivalent_to_append`（同步/异步路径 WAL 记录逐条等价+终态六元组等价） | reactor A 档证据（`a3d728f` 基线）作用面=纯函数/不变式 harness，不含执行线程面——迁移不触碰 harness 作用域，证据基线维持有效 | STATUS.md 快照 v0.12.1 增量说明；CI kani.yml 实跑维持 |
-| 2 | 修复运行性缺陷：异步任务内同步 WAL flush 常驻 tokio worker 且持锁跨 flush，磁盘抖动时拖冻同 runtime 全部服务（进程存活而端点全哑） | 回归测试 `test_append_async_slow_wal_does_not_freeze_worker`（慢 WAL 注入，同步形态已验红、blocking 池形态绿） | 运行时可用性修复，无证明域影响 | — |
+| # | Fact | Evidence | Impact | Remedy |
+| - | ---- | -------- | ------ | ------- |
+| 1 | The reactor `emit_fact` call chain (`handle_fact` / `check_io_timeouts`) became async and persists facts through `FactsLog::append_async` (a `spawn_blocking` wrapper around the existing `append`); the `append` body is untouched (lock semantics, write-ahead ordering and per-fact hash chaining all hold) - a pure executor-thread migration, not a semantic change | This diff; regression test `test_append_async_equivalent_to_append` (record-by-record WAL equality plus final-state equality between the sync and async paths) | The reactor A-tier evidence scope (baseline `a3d728f`) covers pure-function/invariant harnesses only, with no executor-thread surface - the migration does not touch the harness scope, so the evidence baseline remains valid | STATUS.md snapshot v0.12.1 increment note; CI kani.yml runs unchanged |
+| 2 | Runtime availability fix: a synchronous WAL flush executed on a tokio worker while holding the lock froze all services on the same runtime under disk stalls (process alive, endpoints unresponsive) | Regression test `test_append_async_slow_wal_does_not_freeze_worker` (slow-WAL injection; verified red on the synchronous form, green on the blocking-pool form) | Runtime availability fix, no proof-domain impact | - |
 
 ## 2026-10-24：JsonValue 新增 U64 变体（u64 全域通道）——P0-6 证据基线失效登记
 

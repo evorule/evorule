@@ -62,12 +62,13 @@ pub enum FactsLogError {
     /// 携带错误描述字符串。WAL 写失败时内存状态尚未更新，调用方可决定
     /// 是否终止反应器（避免内存与磁盘状态分叉）。
     WalError(String),
-    /// 异步执行面失败（[`FactsLog::append_async`] 专属）
+    /// Async executor failure (specific to [`FactsLog::append_async`]).
     ///
-    /// blocking 线程池任务 join 失败（append 内部 panic 等）时返回。
-    /// 此时磁盘与内存状态一致（append 的写锁+write-ahead 序保证单条
-    /// 事实要么完整落盘要么完全未动），调用方按与 [`Self::append`]
-    /// 相同的错误语义处置即可。
+    /// Returned when the blocking-pool task fails to join (panic inside
+    /// `append`, etc.). Disk and memory states remain consistent in that
+    /// case (the `append` lock + write-ahead ordering guarantee each fact
+    /// is either fully persisted or not touched at all); handle it with
+    /// the same error semantics as [`Self::append`].
     Internal(String),
 }
 
@@ -849,25 +850,31 @@ impl FactsLog {
         Ok(inner.version)
     }
 
-    /// [`Self::append`] 的异步版：把同步 WAL 磁盘写+flush 迁到 blocking 线程池执行
+    /// Async variant of [`Self::append`]: moves the synchronous WAL disk
+    /// write+flush onto the blocking thread pool.
     ///
-    /// # 动机（执行线程迁移，非语义变更）
+    /// # Motivation (executor-thread migration, not a semantic change)
     ///
-    /// `append` 在 facts-log **写锁内**做同步 WAL 写+flush（write-ahead 语义
-    /// 要求，不可移出锁）。当它在 tokio 异步任务里被同步直呼时，磁盘抖动
-    /// 会把 flush 拖到秒级——同步 IO 常驻 tokio worker + 持锁跨 flush，与
-    /// HTTP 服务同 runtime 时会拖冻整个 runtime（含全部读者）。
+    /// `append` performs the synchronous WAL write+flush **inside the
+    /// facts-log write lock** (write-ahead semantics; cannot move the flush
+    /// out of the lock). When invoked synchronously from a tokio async
+    /// task, disk stalls can stretch the flush to seconds - synchronous IO
+    /// pinned on a tokio worker plus a lock held across the flush will
+    /// freeze the whole runtime (all readers included) when it is shared
+    /// with HTTP serving.
     ///
-    /// 本函数仅做**执行线程迁移**（worker → blocking 池）：`append` 本体
-    /// 一字不改，写锁语义、write-ahead 序（先写盘后更新内存）、哈希链
-    /// 逐条推进全部保持。调用方逐条 `await`（如 reactor 主循环的
-    /// `emit_fact`），事实入链顺序与同步路径完全一致——确定性、可回放、
-    /// 可审计三性不受影响。
+    /// This function only performs an **executor-thread migration**
+    /// (worker -> blocking pool): the `append` body is untouched, and lock
+    /// semantics, write-ahead ordering (disk first, then memory), and
+    /// per-fact hash chaining all hold. Callers await per fact (as the
+    /// reactor main-loop `emit_fact` does), so fact ordering matches the
+    /// synchronous path exactly - determinism, replayability and
+    /// auditability are unaffected.
     ///
-    /// # 错误
-    /// - [`FactsLogError::Internal`]：blocking 任务 join 失败（append 内部
-    ///   panic 等，正常运维中不可达）
-    /// - 其余错误与 [`Self::append`] 完全一致
+    /// # Errors
+    /// - [`FactsLogError::Internal`]: the blocking task failed to join
+    ///   (panic inside `append`, etc.; unreachable in normal operation)
+    /// - All other errors are identical to [`Self::append`]
     pub async fn append_async(&self, fact: Fact) -> Result<u64, FactsLogError> {
         let log = self.clone();
         tokio::task::spawn_blocking(move || log.append(fact))
@@ -1285,12 +1292,16 @@ mod tests {
         assert_eq!(log.history_len(), 1);
     }
 
-    /// append_async 与 append 的等价性锚：同序事实经两路径写入后，
-    /// WAL 记录逐条相等（Debug 字符串逐字节比较）+ 终态六元组相等
-    /// （快照/队列/版本/链尾哈希/历史长度/稳定版本）。
+    /// Equivalence anchor between append_async and append: with the same
+    /// facts written in the same order through both paths, WAL records
+    /// must match record-by-record (byte-wise Debug string comparison)
+    /// and the final-state six-tuple must be equal (snapshot / queue /
+    /// version / tail hash / history length / stable version).
     ///
-    /// 这是"执行线程迁移非语义变更"的直接证据：写序、哈希链、内存投影
-    /// 全部不受 blocking 池迁移影响——确定性与可回放性的回归门。
+    /// Direct evidence that the executor-thread migration is not a
+    /// semantic change: write ordering, hash chaining and the in-memory
+    /// projection are all unaffected by the blocking-pool migration -
+    /// the regression gate for determinism and replayability.
     #[cfg(feature = "persistence")]
     #[tokio::test]
     async fn test_append_async_equivalent_to_append() {
@@ -1320,14 +1331,15 @@ mod tests {
             ]
         };
 
-        // 同步路径
+        // Synchronous path.
         let store_sync = MemoryWalStore::new();
         let log_sync = FactsLog::with_wal_store(Box::new(store_sync.clone()));
         for f in facts() {
             log_sync.append(f).expect("append ok");
         }
 
-        // 异步路径（逐条 await，与 reactor emit_fact 同序消费）
+        // Async path (awaited per fact, same consumption order as the
+        // reactor emit_fact).
         let store_async = MemoryWalStore::new();
         let log_async = FactsLog::with_wal_store(Box::new(store_async.clone()));
         for f in facts() {
@@ -1337,17 +1349,17 @@ mod tests {
         assert_eq!(
             format!("{:?}", store_sync.records()),
             format!("{:?}", store_async.records()),
-            "WAL 记录必须逐条相等（写序与哈希链不变）"
+            "WAL records must match record-by-record (write order and hash chain unchanged)"
         );
         let (snap_s, queue_s, ver_s) = log_sync.snapshot();
         let (snap_a, queue_a, ver_a) = log_async.snapshot();
-        assert_eq!(ver_s, ver_a, "版本推进必须一致");
-        assert_eq!(snap_s, snap_a, "快照必须一致");
-        assert_eq!(queue_s, queue_a, "队列必须一致");
+        assert_eq!(ver_s, ver_a, "version progression must match");
+        assert_eq!(snap_s, snap_a, "snapshots must match");
+        assert_eq!(queue_s, queue_a, "queues must match");
         assert_eq!(
             log_sync.last_hash(),
             log_async.last_hash(),
-            "链尾哈希必须一致"
+            "tail hashes must match"
         );
         assert_eq!(log_sync.history_len(), log_async.history_len());
         assert_eq!(
@@ -1356,19 +1368,24 @@ mod tests {
         );
     }
 
-    /// 慢速 WAL（模拟磁盘抖动下 flush 拖到数百毫秒）不冻结 tokio worker：
-    /// 单线程 runtime 上，append_async 进行中（blocking 池内 sleep），
-    /// 同 worker 的周期任务仍被正常调度。
+    /// A slow WAL (simulating disk stalls stretching the flush to hundreds
+    /// of milliseconds) must not freeze the tokio worker: on a
+    /// single-thread runtime, while append_async is in flight (sleeping
+    /// inside the blocking pool), periodic tasks on the same worker must
+    /// still be scheduled.
     ///
-    /// 回归锚：若 append_async 退化为在 worker 上同步直呼 append，
-    /// 首个周期任务必然饿死到首条慢 WAL 完成之后（≥300ms），断言即红。
+    /// Regression anchor: if append_async degenerated into a synchronous
+    /// append on the worker, the first periodic tick would starve until
+    /// after the first slow WAL write completes (>=300ms) and the
+    /// assertion would fail.
     #[cfg(feature = "persistence")]
     #[tokio::test(flavor = "current_thread")]
     async fn test_append_async_slow_wal_does_not_freeze_worker() {
         use crate::wal::{FactWalStore, MemoryWalStore, WalError};
         use std::time::{Duration, Instant};
 
-        /// 每条 WAL 写入注入 300ms 延迟的内存后端（模拟 flush 慢）
+        /// In-memory backend injecting a 300ms delay per WAL write
+        /// (simulating a slow flush).
         struct SlowWalStore {
             inner: MemoryWalStore,
         }
@@ -1396,7 +1413,8 @@ mod tests {
             inner: MemoryWalStore::new(),
         }));
 
-        // 周期任务：50ms 一拍（与慢 WAL 同一单线程 runtime）
+        // Periodic task: one tick every 50ms (same single-thread runtime
+        // as the slow WAL).
         let (tick_tx, mut tick_rx) = tokio::sync::mpsc::unbounded_channel::<u32>();
         tokio::spawn(async move {
             let mut n: u32 = 0;
@@ -1409,7 +1427,8 @@ mod tests {
             }
         });
 
-        // 后台跑 3 条慢 WAL 的 append_async（总耗时 ≥900ms）
+        // Run three slow-WAL append_async rounds in the background
+        // (total >=900ms).
         let append_task = tokio::spawn(async move {
             for i in 1..=3u64 {
                 log.append_async(Fact::Command {
@@ -1421,18 +1440,19 @@ mod tests {
             }
         });
 
-        // 断言：首拍必须在首条慢 WAL 完成（300ms）之前被调度到。
-        // 若 append 阻塞 worker（同步直呼形态），首拍要等到 ≥300ms。
+        // Assertion: the first tick must be scheduled before the first
+        // slow WAL write completes (300ms). If append blocked the worker
+        // (the synchronous form), the first tick would wait until >=300ms.
         let start = Instant::now();
         let first_tick = tokio::time::timeout(Duration::from_millis(290), tick_rx.recv()).await;
         let dt = start.elapsed();
         assert!(
             first_tick.is_ok(),
-            "慢 WAL 进行中周期任务必须仍被调度（worker 未冻结）"
+            "periodic task must stay scheduled during slow WAL writes (worker not frozen)"
         );
         assert!(
             dt < Duration::from_millis(300),
-            "首拍必须先于首条慢 WAL 完成，实际 {:?}",
+            "first tick must precede the first slow WAL completion, got {:?}",
             dt
         );
         append_task.await.expect("append task join ok");

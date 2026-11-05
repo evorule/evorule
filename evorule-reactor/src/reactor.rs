@@ -932,14 +932,19 @@ impl Reactor {
         }
     }
 
-    /// 发射事实：追加到 FactsLog 并发送到 event broadcast 通道
+    /// Emit a fact: append it to the FactsLog and send it to the event
+    /// broadcast channel.
     ///
-    /// - FactsLog append 失败：记录 warn（不影响主流程，因为 FactsLog 是审计辅助）
-    /// - event_tx send 失败：记录 warn（broadcast 通道无接收者时返回错误）
+    /// - FactsLog append failure: log a warn (does not affect the main
+    ///   flow; the FactsLog is an audit aid)
+    /// - event_tx send failure: log a warn (broadcast send errors when
+    ///   there are no receivers)
     ///
-    /// append 走 [`FactsLog::append_async`]（blocking 线程池）而非同步直呼：
-    /// WAL flush 慢时不再占用 tokio worker，避免与 HTTP 服务同 runtime 时
-    /// 拖冻全部读者。逐条 await 保证事实入链顺序与同步路径一致。
+    /// The append goes through [`FactsLog::append_async`] (blocking
+    /// thread pool) instead of a synchronous call: a slow WAL flush no
+    /// longer pins a tokio worker, so readers sharing the runtime with
+    /// HTTP serving are never frozen. Awaiting per fact keeps the fact
+    /// ordering identical to the synchronous path.
     async fn emit_fact(facts_log: &FactsLog, event_tx: &EventSender, fact: Fact) {
         if let Err(e) = facts_log.append_async(fact.clone()).await {
             tracing::warn!("FactsLog append failed: {}", e);
