@@ -15,11 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v0.13.0 - 2026-11-05
 
-**工作区版本对齐** — CLI 本体零产品代码变更（`compile_evopack` 越界测试由字面量 65 条改符号化 `cap+1` 构造、注释字样同步）：随 v0.13.0 工作区发布同步版本号与依赖 req。transform 规则帽扩容（64→128）与执行宽度预算同步详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.13.0]` 段。
+**Workspace version alignment** — No product code changes in the CLI (the `compile_evopack` over-limit test converted from a literal 65-rule construction to a symbolic `cap + 1` construction, comments synced): version and dependency requirements synced with the v0.13.0 workspace release. See the root [CHANGELOG.md](../CHANGELOG.md) `[0.13.0]` section for the transform rule cap widening (64 to 128) and the execution width budget sync.
 
 ## v0.12.1 - 2026-11-05
 
-**工作区版本对齐** — 无 CLI 功能变更：随 v0.12.1 工作区发布同步版本号与依赖 req（本区块为 v0.12.1 发布批漏同步的补录）。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.12.1]` 段。
+**Workspace version alignment** — No CLI functional changes: version and dependency requirements synced with the v0.12.1 workspace release (this block is a backfill missed by the v0.12.1 release batch). See the root [CHANGELOG.md](../CHANGELOG.md) `[0.12.1]` section.
 
 ## v0.12.0 - 2026-10-31
 
