@@ -237,7 +237,7 @@ Require Import MetaInstruction.
 Require Import List.
 Import ListNotations.
 
-Definition MAX_TRANSFORM_RULES := 64.
+Definition MAX_TRANSFORM_RULES := 128.
 
 (* 形式化 execute_transition 的语义 *)
 Fixpoint execute_transition

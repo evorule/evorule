@@ -751,7 +751,7 @@ proptest! {
     /// 任意 core_eval 长度（0..10 条规则）不 panic
     ///
     /// 验证 execute_transition 对不同长度 core_eval 的健壮性
-    /// （0..10 条 set 规则，远在 MAX_TRANSFORM_RULES=64 之内）
+    /// （0..10 条 set 规则，远在 MAX_TRANSFORM_RULES=128 之内）
     #[test]
     fn execute_transition_arbitrary_core_eval_length_no_panic(
         n in 0u8..10,

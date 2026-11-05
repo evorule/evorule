@@ -42,7 +42,7 @@ evorule 规则集是一个 JSON 文件，描述**指令到状态转换的映射*
 | `version` | String | 是 | 语义化版本 | core_eval.json L6 |
 | `description` | String | 否 | 人类可读描述 | core_eval.json L7 |
 | `metadata` | Object | 否 | 元数据（作者、许可证、约束说明等） | core_eval.json L8-33 |
-| `transform` | Array | 是 | transform 规则列表（元指令数组），上限 64 条 | transition.rs L30 `MAX_TRANSFORM_RULES` |
+| `transform` | Array | 是 | transform 规则列表（元指令数组），上限 128 条 | transition.rs `MAX_TRANSFORM_RULES` |
 
 ---
 
@@ -432,7 +432,7 @@ A rule set can live in a single file, or multiple files can share one directory 
 | `version` | String | Yes | Semantic version | core_eval.json L6 |
 | `description` | String | No | Human-readable description | core_eval.json L7 |
 | `metadata` | Object | No | Metadata (author, license, constraint notes, etc.) | core_eval.json L8-33 |
-| `transform` | Array | Yes | List of transform rules (array of meta-instructions), capped at 64 | transition.rs L30 `MAX_TRANSFORM_RULES` |
+| `transform` | Array | Yes | List of transform rules (array of meta-instructions), capped at 128 | transition.rs `MAX_TRANSFORM_RULES` |
 
 ---
 
