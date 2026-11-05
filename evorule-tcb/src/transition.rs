@@ -28,7 +28,7 @@ use alloc::vec::Vec;
 ///
 /// 终止性保证：防止恶意或误构造的超长 `core_eval` 导致
 /// `execute_transition` 迭代时间不可控。
-pub const MAX_TRANSFORM_RULES: usize = 64;
+pub const MAX_TRANSFORM_RULES: usize = 128;
 
 /// 单条 transform 规则的命中归因
 ///
@@ -151,7 +151,7 @@ pub enum TransitionResult {
 ///
 /// # Errors
 ///
-/// - `TcbError::TooManyTransformRules`：`core_eval` 规则数超过 `MAX_TRANSFORM_RULES`（64）
+/// - `TcbError::TooManyTransformRules`：`core_eval` 规则数超过 `MAX_TRANSFORM_RULES`（128）
 /// - `TcbError::InvalidState`：状态结构异常（`__exec__.payload` 不存在）
 /// - `TcbError::PathResolutionFailed`：`core_eval` 中路径解析失败
 ///
@@ -1911,8 +1911,8 @@ mod tests {
 
     #[test]
     fn test_execute_transition_branch_width_budget_enforced() {
-        // 单条 branch 规则（不违反 MAX_TRANSFORM_RULES=64），
-        // 但 on_true 子指令宽度爆炸：branch(1) + 1024 子指令 = 1025 > 1024 预算
+        // 单条 branch 规则（不违反 MAX_TRANSFORM_RULES=128），
+        // 但 on_true 子指令宽度爆炸：branch(1) + 2048 子指令 = 2049 > 2048 预算
         let instruction = make_instruction("noop", &[]);
         let payload = make_payload(0);
 
@@ -1960,7 +1960,7 @@ mod tests {
 
     #[test]
     fn test_execute_transition_branch_width_within_budget_succeeds() {
-        // 对照组：branch(1) + 1023 子指令 = 1024 = 恰好满额预算，应成功
+        // 对照组：branch(1) + 2047 子指令 = 2048 = 恰好满额预算，应成功
         let instruction = make_instruction("noop", &[]);
         let payload = make_payload(0);
 
@@ -1976,7 +1976,7 @@ mod tests {
             ),
         ]);
 
-        let width = MAX_TOTAL_META_INSTRUCTIONS - 1; // 1023：加上 branch 自身恰好 1024
+        let width = MAX_TOTAL_META_INSTRUCTIONS - 1; // 2047：加上 branch 自身恰好 2048
         let on_true: Vec<JsonValue> = (0..width).map(|_| sub.clone()).collect();
 
         let branch = JsonValue::object_from_pairs(&[

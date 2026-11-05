@@ -59,7 +59,7 @@ const VALID_OPERATIONS: &[&str] = &["set", "add", "sub"];
 // ============================================================================
 
 /// 最大 transform 规则数量（与 transition.rs 的 MAX_TRANSFORM_RULES 一致）
-const MAX_TRANSFORM_RULES: usize = 64;
+const MAX_TRANSFORM_RULES: usize = 128;
 /// 最大嵌套深度（branch 内的 branch 等）
 ///
 /// P2-02：对齐 TCB MAX_BRANCH_DEPTH=64（executor.rs L28），避免校验器比引擎更严
@@ -1106,9 +1106,9 @@ mod tests {
 
     #[test]
     fn test_transform_count_limit() {
-        // 超过 64 条规则应该报错
+        // 超过 128 条规则应该报错
         let mut transforms = Vec::new();
-        for _ in 0..65 {
+        for _ in 0..(MAX_TRANSFORM_RULES + 1) {
             transforms.push(json_to_tcb(
                 r#"{"type":"set","params":{"attr":"x","operation":"set","value":1}}"#,
             ));

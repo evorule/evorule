@@ -159,7 +159,7 @@ let core_eval = vec![
 
 | 概念 | 含义 |
 |---|---|
-| `core_eval` | 一组 `transform` 规则的数组,顺序执行,共享预算(最多 64 条规则) |
+| `core_eval` | 一组 `transform` 规则的数组,顺序执行,共享预算(最多 128 条规则) |
 | `payload` | 业务状态,JSON 对象(可以是嵌套) |
 | `instruction` | 当前指令,JSON 对象,含 `type` 字段 |
 | `TransitionResult::State` | 正常执行,返回新 payload |
@@ -337,7 +337,7 @@ payload after execution: {"x": 42, "y": "hello, evorule"}
 
 | Concept | Meaning |
 |---|---|
-| `core_eval` | An array of `transform` rules, executed sequentially, sharing a budget (max 64 rules) |
+| `core_eval` | An array of `transform` rules, executed sequentially, sharing a budget (max 128 rules) |
 | `payload` | Business state, a JSON object (can be nested) |
 | `instruction` | The current instruction, a JSON object with a `type` field |
 | `TransitionResult::State` | Normal execution, returns the new payload |

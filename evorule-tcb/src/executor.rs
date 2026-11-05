@@ -32,9 +32,9 @@ pub const MAX_BRANCH_DEPTH: usize = 64;
 /// 深度限制无法约束**宽度**（单条 branch 的子指令列表长度无上界），
 /// 本上限补齐该缺口——任意 core_eval 的执行路径指令总数有界。
 ///
-/// 取值依据：`MAX_TRANSFORM_RULES`(64) × 单规则平均指令数(≤16) = 1024，
+/// 取值依据：`MAX_TRANSFORM_RULES`(128) × 单规则平均指令数(≤16) = 2048，
 /// 覆盖 ReAct 宪法的实际需求（每条规则 < 15 条指令）并留有余量。
-pub const MAX_TOTAL_META_INSTRUCTIONS: usize = 1024;
+pub const MAX_TOTAL_META_INSTRUCTIONS: usize = 2048;
 
 /// 合法 core_eval 元指令类型权威清单（SSOT / C2）
 ///
@@ -2176,7 +2176,7 @@ mod tests {
         match err {
             TcbError::TooManyExecutedInstructions { limit } => {
                 assert_eq!(limit, MAX_TOTAL_META_INSTRUCTIONS);
-                assert_eq!(limit, 1024);
+                assert_eq!(limit, 2048);
             }
             other => panic!("unexpected error: {:?}", other),
         }

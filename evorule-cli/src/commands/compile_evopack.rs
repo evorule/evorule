@@ -98,11 +98,11 @@ mod tests {
 
     #[test]
     fn test_compile_rejects_rule_count_over_limit() {
-        // 规则数超过 TCB 上限（MAX_TRANSFORM_RULES=64）：构造期拒绝（fail-fast）
+        // 规则数超过 TCB 上限（MAX_TRANSFORM_RULES=128）：构造期拒绝（fail-fast）
         let dir = make_temp_dir("over-limit");
         let rules_file = dir.join("rules.json");
         let mut json = String::from("[");
-        for i in 0..65 {
+        for i in 0..(evorule_tcb::MAX_TRANSFORM_RULES + 1) {
             if i > 0 {
                 json.push(',');
             }

@@ -37,7 +37,7 @@ Model checking completed. No error has been found.
 
 | 参数         | 值   | 对应 Rust 常量         | 说明                                |
 | ------------ | ---- | ---------------------- | ----------------------------------- |
-| N_MAX        | 2    | MAX_TRANSFORM_RULES=64 | core_eval 规则数上限（降级为 2）    |
+| N_MAX        | 2    | MAX_TRANSFORM_RULES=128 | core_eval 规则数上限（降级为 2）    |
 | D_MAX        | 2    | MAX_BRANCH_DEPTH=64    | branch 嵌套深度上限（降级为 2）     |
 | D_DOM_MAX    | 2    | MAX_DOMAIN_DEPTH=64    | domain 递归深度上限（降级为 2）     |
 | InstrTypeSet | 4 种 | 4 元指令               | set / push / branch / io_request    |

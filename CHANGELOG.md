@@ -24,6 +24,22 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
+## [0.13.0] - 2026-11-05
+
+### Changed
+
+- **transform rule cap widened from 64 to 128 (governance constant)**:
+  `MAX_TRANSFORM_RULES` in `evorule-tcb` (and its mirrored threshold in
+  `evorule-governance` rule validation) raised to 128. The execution width
+  budget `MAX_TOTAL_META_INSTRUCTIONS` is raised from 1024 to 2048 in
+  lockstep, preserving the documented sizing invariant (rule cap x <=16
+  instructions per rule) so a rule set admitted by the load gate cannot
+  hit the execution budget at runtime. Both remain hard upper bounds:
+  termination guarantees (SPEC T6, M6) are unaffected; boundary tests,
+  proptest, and the Kani P20 harness reference the constants symbolically.
+  Documentation (TCB README, JSON rule schema reference, Kani verification
+  design) synced.
+
 ## [0.12.1] - 2026-11-05
 
 ### Fixed

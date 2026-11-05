@@ -12,6 +12,13 @@
 > **记录规范**：只记事实——什么变了、客观依据、影响、修正去向（M10）。
 > **条目格式**：事实 / 依据 / 影响 / 修正去向。
 
+## 2026-11-05: transform rule cap widened to 128 with execution width budget sync (v0.13.0) - evidence baseline impact assessment
+
+| # | Fact | Evidence | Impact | Remedy |
+| - | ---- | -------- | ------ | ------- |
+| 1 | Governance constants widened: `MAX_TRANSFORM_RULES` 64 → 128 (transition entry termination check + mirrored governance validation threshold) and `MAX_TOTAL_META_INSTRUCTIONS` 1024 → 2048 in lockstep, preserving the documented sizing invariant (rule cap × ≤16 instructions per rule), so a rule set admitted by the load gate can no longer hit the execution budget at runtime | This diff; boundary tests converted from literal 65-rule constructions to symbolic (cap + 1) constructions in cli/governance/mcu; full workspace test suite green (0 failed) | Both values remain hard upper bounds: termination guarantees (SPEC T6, M6) unaffected; A/B proof domains undisturbed | A-tier Kani harness re-run locally SUCCESSFUL (970 assertions, 0 failed); P20 `verify_transform_rules_limit` (B-tier) re-run hits the same 900 s timeout as its recorded historical status - proptest indirect coverage stands, CI kani.yml B-tier timeout handling unchanged |
+| 2 | A-tier evidence baseline `a3d728f` remains valid: the change widens two independent hard upper bounds and touches no proof-path logic | kani.yml A-tier harness list compared against the change surface; no proof-path file touched | No evidence-baseline invalidation | STATUS.md snapshot bumped to v0.13.0 with increment note; this entry satisfies the M5 disclosure coupling |
+
 ## 2026-11-05: reactor fact persistence executor-thread migration (v0.12.1) - evidence baseline impact assessment
 
 | # | Fact | Evidence | Impact | Remedy |

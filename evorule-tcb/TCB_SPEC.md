@@ -97,13 +97,13 @@
 **当前实现**:
 - `domain.rs` `MAX_DOMAIN_DEPTH = 64` （域嵌套）
 - `executor.rs` `MAX_BRANCH_DEPTH = 64` （分支嵌套）
-- `executor.rs` `MAX_TOTAL_META_INSTRUCTIONS = 1024` （v0.3.2 审计治理 M6：单次转换元指令执行总数上限，宽度防线——深度限制无法约束单条 branch 的子指令列表长度，本上限补齐该缺口；超限返回 `TcbError::TooManyExecutedInstructions`）
+- `executor.rs` `MAX_TOTAL_META_INSTRUCTIONS = 2048` （v0.3.2 审计治理 M6：单次转换元指令执行总数上限，宽度防线——深度限制无法约束单条 branch 的子指令列表长度，本上限补齐该缺口；超限返回 `TcbError::TooManyExecutedInstructions`）
 
 **L1 无法检测上限值，必须 L3 code review**。
 
 ### T7: `core_eval.json` transform 规则数上限
 
-**必须**: `core_eval` 规则数上限 = `MAX_TRANSFORM_RULES = 64` (SPEC T6)。
+**必须**: `core_eval` 规则数上限 = `MAX_TRANSFORM_RULES = 128` (SPEC T6)。
 
 **v0.3.2 格式规范化**: `core_eval.json` 新增元数据字段：
 - `$schema`: JSON Schema 引用（`https://evorule.org/schemas/rule_set/v1.0.json`）
@@ -456,7 +456,7 @@ EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 wa
 | T4     | 禁止 I/O                      | —      | —                      |
 | T5     | 禁止系统时间                  | —      | —                      |
 | T6     | 禁止随机数                    | —      | —                      |
-| T7     | 规则数上限 64                 | —      | —                      |
+| T7     | 规则数上限 128                | —      | —                      |
 | T8     | 禁止 HashMap/HashSet          | —      | —                      |
 | T9     | 禁止 .unwrap/.expect          | G1 别名 | （同 G1）              |
 | T10    | 禁止 unsafe                   | G2 别名 | （同 G2）              |

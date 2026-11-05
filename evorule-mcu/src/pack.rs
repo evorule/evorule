@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_pack_rejects_rule_count_over_limit() {
-        // TCB 上限 64：65 条直接 set 规则应在构造期被拒
+        // TCB 上限 128：129 条直接 set 规则应在构造期被拒
         let rules: Vec<JsonValue> = (0..(MAX_TRANSFORM_RULES as i64 + 1))
             .map(|i| {
                 JsonValue::object_from_pairs(&[
