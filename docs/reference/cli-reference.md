@@ -4,7 +4,7 @@
 # evorule CLI 参考
 
 > 字典式参考。所有子命令、参数、默认值。
-> 基于 `evorule-cli/src/cli.rs` v0.9.0 实测（Command 枚举 L35-117）。
+> 基于 `evorule-cli/src/cli.rs` v0.12.1 实测（Command 枚举 L36-165）。
 
 ## 总览
 
@@ -172,7 +172,7 @@ evorule verify-anchors <AUDIT> [OPTIONS]
 # evorule CLI Reference
 
 > Dictionary-style reference. All subcommands, arguments, and default values.
-> Based on hands-on inspection of `evorule-cli/src/cli.rs` v0.9.0 (Command enum, L35-117).
+> Based on hands-on inspection of `evorule-cli/src/cli.rs` v0.12.1 (Command enum, L36-165).
 
 ## Overview
 

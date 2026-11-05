@@ -1939,6 +1939,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "persistence")]
     #[test]
     fn test_rotate_wal_file_backend_rotates_shard() {
         let path = temp_wal_path("rotate_shard");
@@ -1962,6 +1963,7 @@ mod tests {
         assert_eq!(recovered.history().len(), 2, "轮换后旧分片内容必须可重放");
     }
 
+    #[cfg(feature = "persistence")]
     #[test]
     fn test_wal_persists_facts_across_drop() {
         let path = temp_wal_path("persist_drop");
