@@ -62,6 +62,13 @@ pub enum FactsLogError {
     /// 携带错误描述字符串。WAL 写失败时内存状态尚未更新，调用方可决定
     /// 是否终止反应器（避免内存与磁盘状态分叉）。
     WalError(String),
+    /// 异步执行面失败（[`FactsLog::append_async`] 专属）
+    ///
+    /// blocking 线程池任务 join 失败（append 内部 panic 等）时返回。
+    /// 此时磁盘与内存状态一致（append 的写锁+write-ahead 序保证单条
+    /// 事实要么完整落盘要么完全未动），调用方按与 [`Self::append`]
+    /// 相同的错误语义处置即可。
+    Internal(String),
 }
 
 impl core::fmt::Display for FactsLogError {
@@ -81,6 +88,7 @@ impl core::fmt::Display for FactsLogError {
             ),
             #[cfg(feature = "persistence")]
             FactsLogError::WalError(msg) => write!(f, "facts log WAL error: {msg}"),
+            FactsLogError::Internal(msg) => write!(f, "facts log internal error: {msg}"),
         }
     }
 }
@@ -841,6 +849,32 @@ impl FactsLog {
         Ok(inner.version)
     }
 
+    /// [`Self::append`] 的异步版：把同步 WAL 磁盘写+flush 迁到 blocking 线程池执行
+    ///
+    /// # 动机（执行线程迁移，非语义变更）
+    ///
+    /// `append` 在 facts-log **写锁内**做同步 WAL 写+flush（write-ahead 语义
+    /// 要求，不可移出锁）。当它在 tokio 异步任务里被同步直呼时，磁盘抖动
+    /// 会把 flush 拖到秒级——同步 IO 常驻 tokio worker + 持锁跨 flush，与
+    /// HTTP 服务同 runtime 时会拖冻整个 runtime（含全部读者）。
+    ///
+    /// 本函数仅做**执行线程迁移**（worker → blocking 池）：`append` 本体
+    /// 一字不改，写锁语义、write-ahead 序（先写盘后更新内存）、哈希链
+    /// 逐条推进全部保持。调用方逐条 `await`（如 reactor 主循环的
+    /// `emit_fact`），事实入链顺序与同步路径完全一致——确定性、可回放、
+    /// 可审计三性不受影响。
+    ///
+    /// # 错误
+    /// - [`FactsLogError::Internal`]：blocking 任务 join 失败（append 内部
+    ///   panic 等，正常运维中不可达）
+    /// - 其余错误与 [`Self::append`] 完全一致
+    pub async fn append_async(&self, fact: Fact) -> Result<u64, FactsLogError> {
+        let log = self.clone();
+        tokio::task::spawn_blocking(move || log.append(fact))
+            .await
+            .map_err(|e| FactsLogError::Internal(format!("blocking append join failed: {e}")))?
+    }
+
     /// 读取当前快照 (payload, queue, version)
     pub fn snapshot(&self) -> (JsonValue, Vec<JsonValue>, u64) {
         let inner = self.inner.read();
@@ -1249,6 +1283,159 @@ mod tests {
             "旧格式（无哈希字段）必须全链重算"
         );
         assert_eq!(log.history_len(), 1);
+    }
+
+    /// append_async 与 append 的等价性锚：同序事实经两路径写入后，
+    /// WAL 记录逐条相等（Debug 字符串逐字节比较）+ 终态六元组相等
+    /// （快照/队列/版本/链尾哈希/历史长度/稳定版本）。
+    ///
+    /// 这是"执行线程迁移非语义变更"的直接证据：写序、哈希链、内存投影
+    /// 全部不受 blocking 池迁移影响——确定性与可回放性的回归门。
+    #[cfg(feature = "persistence")]
+    #[tokio::test]
+    async fn test_append_async_equivalent_to_append() {
+        use crate::wal::MemoryWalStore;
+
+        let facts = || {
+            vec![
+                Fact::Command {
+                    id: FactId(1),
+                    instruction: JsonValue::empty_object(),
+                },
+                Fact::StateTransition {
+                    id: FactId(2),
+                    cause: FactId(1),
+                    new_payload: JsonValue::object_from_pairs(&[("x", JsonValue::Integer(1))]),
+                    new_queue: vec![],
+                },
+                Fact::PayloadUpdate {
+                    id: FactId(3),
+                    path: "y.z".into(),
+                    value: JsonValue::string("v"),
+                },
+                Fact::Stable {
+                    id: FactId(4),
+                    version: 2,
+                },
+            ]
+        };
+
+        // 同步路径
+        let store_sync = MemoryWalStore::new();
+        let log_sync = FactsLog::with_wal_store(Box::new(store_sync.clone()));
+        for f in facts() {
+            log_sync.append(f).expect("append ok");
+        }
+
+        // 异步路径（逐条 await，与 reactor emit_fact 同序消费）
+        let store_async = MemoryWalStore::new();
+        let log_async = FactsLog::with_wal_store(Box::new(store_async.clone()));
+        for f in facts() {
+            log_async.append_async(f).await.expect("append_async ok");
+        }
+
+        assert_eq!(
+            format!("{:?}", store_sync.records()),
+            format!("{:?}", store_async.records()),
+            "WAL 记录必须逐条相等（写序与哈希链不变）"
+        );
+        let (snap_s, queue_s, ver_s) = log_sync.snapshot();
+        let (snap_a, queue_a, ver_a) = log_async.snapshot();
+        assert_eq!(ver_s, ver_a, "版本推进必须一致");
+        assert_eq!(snap_s, snap_a, "快照必须一致");
+        assert_eq!(queue_s, queue_a, "队列必须一致");
+        assert_eq!(
+            log_sync.last_hash(),
+            log_async.last_hash(),
+            "链尾哈希必须一致"
+        );
+        assert_eq!(log_sync.history_len(), log_async.history_len());
+        assert_eq!(
+            log_sync.last_stable_version(),
+            log_async.last_stable_version()
+        );
+    }
+
+    /// 慢速 WAL（模拟磁盘抖动下 flush 拖到数百毫秒）不冻结 tokio worker：
+    /// 单线程 runtime 上，append_async 进行中（blocking 池内 sleep），
+    /// 同 worker 的周期任务仍被正常调度。
+    ///
+    /// 回归锚：若 append_async 退化为在 worker 上同步直呼 append，
+    /// 首个周期任务必然饿死到首条慢 WAL 完成之后（≥300ms），断言即红。
+    #[cfg(feature = "persistence")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_append_async_slow_wal_does_not_freeze_worker() {
+        use crate::wal::{FactWalStore, MemoryWalStore, WalError};
+        use std::time::{Duration, Instant};
+
+        /// 每条 WAL 写入注入 300ms 延迟的内存后端（模拟 flush 慢）
+        struct SlowWalStore {
+            inner: MemoryWalStore,
+        }
+        impl FactWalStore for SlowWalStore {
+            fn append_record_with_hash(
+                &mut self,
+                version_before: u64,
+                fact: &Fact,
+                content_hash: &str,
+                prev_hash: &str,
+                chain_hash: &str,
+            ) -> Result<(), WalError> {
+                std::thread::sleep(Duration::from_millis(300));
+                self.inner.append_record_with_hash(
+                    version_before,
+                    fact,
+                    content_hash,
+                    prev_hash,
+                    chain_hash,
+                )
+            }
+        }
+
+        let log = FactsLog::with_wal_store(Box::new(SlowWalStore {
+            inner: MemoryWalStore::new(),
+        }));
+
+        // 周期任务：50ms 一拍（与慢 WAL 同一单线程 runtime）
+        let (tick_tx, mut tick_rx) = tokio::sync::mpsc::unbounded_channel::<u32>();
+        tokio::spawn(async move {
+            let mut n: u32 = 0;
+            loop {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                n += 1;
+                if tick_tx.send(n).is_err() {
+                    break;
+                }
+            }
+        });
+
+        // 后台跑 3 条慢 WAL 的 append_async（总耗时 ≥900ms）
+        let append_task = tokio::spawn(async move {
+            for i in 1..=3u64 {
+                log.append_async(Fact::Command {
+                    id: FactId(i),
+                    instruction: JsonValue::empty_object(),
+                })
+                .await
+                .expect("append_async ok");
+            }
+        });
+
+        // 断言：首拍必须在首条慢 WAL 完成（300ms）之前被调度到。
+        // 若 append 阻塞 worker（同步直呼形态），首拍要等到 ≥300ms。
+        let start = Instant::now();
+        let first_tick = tokio::time::timeout(Duration::from_millis(290), tick_rx.recv()).await;
+        let dt = start.elapsed();
+        assert!(
+            first_tick.is_ok(),
+            "慢 WAL 进行中周期任务必须仍被调度（worker 未冻结）"
+        );
+        assert!(
+            dt < Duration::from_millis(300),
+            "首拍必须先于首条慢 WAL 完成，实际 {:?}",
+            dt
+        );
+        append_task.await.expect("append task join ok");
     }
 
     #[test]

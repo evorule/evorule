@@ -24,6 +24,23 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) v1.0,
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/) v2.0。
 
+## [0.12.1] - 2026-11-05
+
+### Fixed
+
+- **reactor 事实落盘改走 blocking 线程池（执行线程迁移，写序与哈希链零变化）**：
+  `FactsLog` 新增 `append_async`（`tokio::task::spawn_blocking` 包装既有
+  `append`），reactor 主循环 `emit_fact` 及其调用链（`handle_fact` /
+  `check_io_timeouts`）改 async 逐条 await。修复：`append` 在 facts-log 写锁内
+  同步执行 WAL 磁盘写+flush（write-ahead 语义要求），此前被异步任务同步直呼——
+  磁盘抖动把 flush 拖到秒级时，同步 IO 常驻 tokio worker 且持锁跨 flush，
+  与 HTTP 服务同 runtime 时会拖冻整个 runtime（进程存活而全部端点无响应）。
+  迁移后 WAL flush 慢只减速事实吞吐，不再冻结 runtime。`append` 本体一字
+  未改：写锁语义、write-ahead 序（先写盘后更新内存）、哈希链逐条推进
+  全部保持；事实入链顺序与同步路径完全一致（确定性/可回放/可审计不受
+  影响），配套等价性测试（同步/异步两路径 WAL 记录逐条相等+终态六元组
+  相等）与 worker 不冻结回归测试（慢 WAL 注入下周期任务仍被调度）。
+
 ## [0.12.0] - 2026-10-31
 
 ### Added

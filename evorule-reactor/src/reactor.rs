@@ -468,7 +468,7 @@ impl Reactor {
                     id,
                     message: "Execution interrupted by external request".to_string(),
                 };
-                Self::emit_fact(&self.facts_log, &event_tx, err_fact);
+                Self::emit_fact(&self.facts_log, &event_tx, err_fact).await;
                 // 发射 Stable 恢复
                 state.phase = ReactorPhase::Stable;
                 let stable_id = id_gen.next_id();
@@ -476,7 +476,7 @@ impl Reactor {
                     id: stable_id,
                     version: state.version,
                 };
-                Self::emit_fact(&self.facts_log, &event_tx, stable_fact);
+                Self::emit_fact(&self.facts_log, &event_tx, stable_fact).await;
                 steps = 0;
                 state.phase = ReactorPhase::Idle;
                 continue 'main;
@@ -497,7 +497,7 @@ impl Reactor {
                         id: err_fact_id,
                         message: format!("I/O request {io_id} cancelled by external request"),
                     };
-                    Self::emit_fact(&self.facts_log, &event_tx, err_fact);
+                    Self::emit_fact(&self.facts_log, &event_tx, err_fact).await;
                     state.force_remove_io_request(io_id);
                 }
                 continue 'main;
@@ -518,14 +518,15 @@ impl Reactor {
                             fact.id()
                         );
                         // 断点 1 修复：cause 在 handle_fact 中通过 push_back(instruction, fact_id) 关联
-                        Self::emit_fact(&self.facts_log, &event_tx, fact.clone());
+                        Self::emit_fact(&self.facts_log, &event_tx, fact.clone()).await;
                         Self::handle_fact(
                             &mut state,
                             fact,
                             &self.facts_log,
                             &event_tx,
                             &mut id_gen,
-                        )?;
+                        )
+                        .await?;
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => {
@@ -558,7 +559,7 @@ impl Reactor {
                     id,
                     version: state.version,
                 };
-                Self::emit_fact(&self.facts_log, &event_tx, fact);
+                Self::emit_fact(&self.facts_log, &event_tx, fact).await;
                 // 长驻模式：重置步数，继续等待下一命令（不退出）
                 steps = 0;
                 state.phase = ReactorPhase::Idle;
@@ -589,14 +590,16 @@ impl Reactor {
                             &mut id_gen,
                             self.io_warn_timeout,
                             self.io_error_timeout,
-                        );
+                        )
+                        .await;
                         continue 'main;
                     }
                 };
                 tracing::trace!("Processing fact: {} (id={})", fact.type_name(), fact.id());
                 // 断点 1 修复：cause 在 handle_fact 中通过 push_back(instruction, fact_id) 关联
-                Self::emit_fact(&self.facts_log, &event_tx, fact.clone());
-                Self::handle_fact(&mut state, fact, &self.facts_log, &event_tx, &mut id_gen)?;
+                Self::emit_fact(&self.facts_log, &event_tx, fact.clone()).await;
+                Self::handle_fact(&mut state, fact, &self.facts_log, &event_tx, &mut id_gen)
+                    .await?;
             }
 
             // 4. 持续执行队列指令（pending_io==0 时）
@@ -629,7 +632,7 @@ impl Reactor {
                         id,
                         message: err.to_string(),
                     };
-                    Self::emit_fact(&self.facts_log, &event_tx, fact);
+                    Self::emit_fact(&self.facts_log, &event_tx, fact).await;
                     // 长驻模式：清空队列，重置步数，发射 Stable，继续等待下一命令
                     // 断点 1 修复：同步清空 cause 队列
                     state.clear_queue();
@@ -640,7 +643,7 @@ impl Reactor {
                         id: stable_id,
                         version: state.version,
                     };
-                    Self::emit_fact(&self.facts_log, &event_tx, stable_fact);
+                    Self::emit_fact(&self.facts_log, &event_tx, stable_fact).await;
                     state.phase = ReactorPhase::Idle;
                     continue 'main;
                 }
@@ -703,7 +706,7 @@ impl Reactor {
                                     queue_len, self.max_queue_len
                                 ),
                             };
-                            Self::emit_fact(&self.facts_log, &event_tx, err_fact);
+                            Self::emit_fact(&self.facts_log, &event_tx, err_fact).await;
                             // 断点 1 修复：同步清空 cause 队列
                             state.clear_queue();
                             // 发射 Stable 恢复
@@ -713,7 +716,7 @@ impl Reactor {
                                 id: stable_id,
                                 version: state.version,
                             };
-                            Self::emit_fact(&self.facts_log, &event_tx, stable_fact);
+                            Self::emit_fact(&self.facts_log, &event_tx, stable_fact).await;
                             steps = 0;
                             state.phase = ReactorPhase::Idle;
                             continue 'main;
@@ -744,7 +747,7 @@ impl Reactor {
                             new_payload: state.payload.clone(),
                             new_queue: state.queue.iter().cloned().collect(),
                         };
-                        Self::emit_fact(&self.facts_log, &event_tx, fact);
+                        Self::emit_fact(&self.facts_log, &event_tx, fact).await;
                         // 收敛转换的命中归因轨迹（紧随 StateTransition，
                         // cause 指向它；记录性事实，不推进版本）
                         let trace_id = id_gen.next_id();
@@ -753,7 +756,7 @@ impl Reactor {
                             cause: id,
                             rule_hits: rule_hits.iter().map(TraceHit::from_rule_hit).collect(),
                         };
-                        Self::emit_fact(&self.facts_log, &event_tx, trace_fact);
+                        Self::emit_fact(&self.facts_log, &event_tx, trace_fact).await;
                     }
                     Ok(TransitionResult::Ignored {
                         instruction_type,
@@ -771,7 +774,7 @@ impl Reactor {
                         );
                         tracing::warn!(phase = %state.phase.as_str(), "{}", msg);
                         let fact = Fact::Error { id, message: msg };
-                        Self::emit_fact(&self.facts_log, &event_tx, fact);
+                        Self::emit_fact(&self.facts_log, &event_tx, fact).await;
                         // 静默失败的命中归因（全未命中是死规则检测的
                         // 直接数据源；cause 指向本 Error 事实）
                         let trace_id = id_gen.next_id();
@@ -780,7 +783,7 @@ impl Reactor {
                             cause: id,
                             rule_hits: rule_hits.iter().map(TraceHit::from_rule_hit).collect(),
                         };
-                        Self::emit_fact(&self.facts_log, &event_tx, trace_fact);
+                        Self::emit_fact(&self.facts_log, &event_tx, trace_fact).await;
                         state.phase = ReactorPhase::Idle;
                         continue 'main;
                     }
@@ -808,7 +811,7 @@ impl Reactor {
                             reason,
                             instruction: instruction.clone(),
                         };
-                        Self::emit_fact(&self.facts_log, &event_tx, fact);
+                        Self::emit_fact(&self.facts_log, &event_tx, fact).await;
                         state.phase = ReactorPhase::Idle;
                         continue 'main;
                     }
@@ -831,7 +834,7 @@ impl Reactor {
                                 );
                                 tracing::error!(phase = %state.phase.as_str(), "{}", msg);
                                 let fact = Fact::Error { id, message: msg };
-                                Self::emit_fact(&self.facts_log, &event_tx, fact);
+                                Self::emit_fact(&self.facts_log, &event_tx, fact).await;
                                 state.phase = ReactorPhase::Idle;
                                 continue 'main;
                             }
@@ -857,7 +860,7 @@ impl Reactor {
                             io_type,
                             params,
                         };
-                        Self::emit_fact(&self.facts_log, &event_tx, fact);
+                        Self::emit_fact(&self.facts_log, &event_tx, fact).await;
                         break; // 退出 while，等待 IoResponse
                     }
                     Err(err) => {
@@ -871,7 +874,7 @@ impl Reactor {
                         );
                         tracing::error!(phase = %state.phase.as_str(), "{}", msg);
                         let fact = Fact::Error { id, message: msg };
-                        Self::emit_fact(&self.facts_log, &event_tx, fact);
+                        Self::emit_fact(&self.facts_log, &event_tx, fact).await;
                         // 长驻模式：不退出，继续执行队列中剩余指令。
                         // 若队列已空，外层循环的稳定检测会自动发射 Stable。
                         state.phase = ReactorPhase::Idle;
@@ -933,8 +936,12 @@ impl Reactor {
     ///
     /// - FactsLog append 失败：记录 warn（不影响主流程，因为 FactsLog 是审计辅助）
     /// - event_tx send 失败：记录 warn（broadcast 通道无接收者时返回错误）
-    fn emit_fact(facts_log: &FactsLog, event_tx: &EventSender, fact: Fact) {
-        if let Err(e) = facts_log.append(fact.clone()) {
+    ///
+    /// append 走 [`FactsLog::append_async`]（blocking 线程池）而非同步直呼：
+    /// WAL flush 慢时不再占用 tokio worker，避免与 HTTP 服务同 runtime 时
+    /// 拖冻全部读者。逐条 await 保证事实入链顺序与同步路径一致。
+    async fn emit_fact(facts_log: &FactsLog, event_tx: &EventSender, fact: Fact) {
+        if let Err(e) = facts_log.append_async(fact.clone()).await {
             tracing::warn!("FactsLog append failed: {}", e);
         }
         if event_tx.send(fact).is_err() {
@@ -974,7 +981,7 @@ impl Reactor {
     ///
     /// 此方法在主循环的 `tokio::time::timeout` 超时分支中调用，
     /// 确保长时间未响应的 I/O 不会永久阻塞反应器。
-    fn check_io_timeouts(
+    async fn check_io_timeouts(
         state: &mut ReactorState,
         now: Instant,
         facts_log: &FactsLog,
@@ -1021,7 +1028,7 @@ impl Reactor {
                 id: err_fact_id,
                 message: format!("I/O request {} timed out after {}s", id, error_secs),
             };
-            Self::emit_fact(facts_log, event_tx, err_fact);
+            Self::emit_fact(facts_log, event_tx, err_fact).await;
             state.force_remove_io_request(id);
         }
     }
@@ -1032,7 +1039,7 @@ impl Reactor {
     /// （ / A1：unknown IoResponse 不再静默忽略）。
     // 7 种 Fact 变体 match, 拆函数需暴露内部状态。详见 GATE_REFERENCE.md §六(豁免索引)
     #[allow(clippy::cognitive_complexity)]
-    fn handle_fact(
+    async fn handle_fact(
         state: &mut ReactorState,
         fact: Fact,
         facts_log: &FactsLog,
@@ -1079,7 +1086,7 @@ impl Reactor {
                             request_id
                         ),
                     };
-                    Self::emit_fact(facts_log, event_tx, err_fact);
+                    Self::emit_fact(facts_log, event_tx, err_fact).await;
                     tracing::warn!("Unknown IoResponse: {}, recorded as Error fact", request_id);
                     return Ok(());
                 }
