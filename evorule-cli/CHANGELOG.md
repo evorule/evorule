@@ -13,6 +13,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.13.0 - 2026-11-05
+
+**工作区版本对齐** — CLI 本体零产品代码变更（`compile_evopack` 越界测试由字面量 65 条改符号化 `cap+1` 构造、注释字样同步）：随 v0.13.0 工作区发布同步版本号与依赖 req。transform 规则帽扩容（64→128）与执行宽度预算同步详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.13.0]` 段。
+
+## v0.12.1 - 2026-11-05
+
+**工作区版本对齐** — 无 CLI 功能变更：随 v0.12.1 工作区发布同步版本号与依赖 req（本区块为 v0.12.1 发布批漏同步的补录）。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.12.1]` 段。
+
 ## v0.12.0 - 2026-10-31
 
 **工作区版本对齐** — 无 CLI 功能变更：随 v0.12.0 工作区发布同步版本号与依赖 req。详见根 [CHANGELOG.md](../CHANGELOG.md) `[0.12.0]` 段。
