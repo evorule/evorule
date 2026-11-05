@@ -20,8 +20,8 @@
 # Contributing to EvoRule
 
 **Project**: EvoRule — Reactive Execution Engine
-**Version**: 0.9.0
-**Last updated**: 2026-08-18
+**Version**: 0.12.1
+**Last updated**: 2026-11-05
 
 > 🇨🇳 **中文版贡献指南见 [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md)。**
 > For international contributors, the English version is the authoritative reference.
