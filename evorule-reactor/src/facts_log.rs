@@ -1440,7 +1440,7 @@ mod tests {
             }
         });
 
-        // Assertion: the first tick must be scheduled before the first
+        // Assertion 1: the first tick must be scheduled before the first
         // slow WAL write completes (300ms). If append blocked the worker
         // (the synchronous form), the first tick would wait until >=300ms.
         let start = Instant::now();
@@ -1454,6 +1454,33 @@ mod tests {
             dt < Duration::from_millis(300),
             "first tick must precede the first slow WAL completion, got {:?}",
             dt
+        );
+
+        // Assertion 2 (scheduling-pause bound): track the largest gap
+        // between consecutive ticks for the whole duration of the
+        // slow-WAL run. Normal operation stays near the 50ms period;
+        // any synchronous IO reflow of >=200ms on the worker would show
+        // up as a gap at least that long (the fully synchronous
+        // degenerate form gaps by >=300ms per WAL write).
+        let mut last_tick_at = Instant::now();
+        let mut max_gap = Duration::ZERO;
+        while !append_task.is_finished() {
+            match tokio::time::timeout(Duration::from_millis(100), tick_rx.recv()).await {
+                Ok(Some(_)) => {
+                    let now = Instant::now();
+                    max_gap = max_gap.max(now - last_tick_at);
+                    last_tick_at = now;
+                }
+                _ => {
+                    let now = Instant::now();
+                    max_gap = max_gap.max(now - last_tick_at);
+                }
+            }
+        }
+        assert!(
+            max_gap < Duration::from_millis(200),
+            "max scheduling pause between ticks must stay under 200ms, got {:?}",
+            max_gap
         );
         append_task.await.expect("append task join ok");
     }
