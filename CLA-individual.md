@@ -150,7 +150,7 @@
 
 **方式 3:GitHub 在线签署**
 
-- 在 GitHub 仓库的 CLA 提示(PR 检查项)下,点击"我同意"。
+- 在 GitHub 仓库的 CLA 机器人提示下,点击"我同意"。
 
 ---
 
@@ -178,7 +178,7 @@
 
 ### Q4:公司贡献怎么处理?
 
-**A**: 公司贡献者需要签署 **Corporate CLA**（已发布，见 [CLA-corporate.md](CLA-corporate.md)）。注意：在线签署当前**仅支持个人签署、无企业入口**，企业贡献者请按 CLA-corporate.md 的"企业如何签署"走邮件人工流程，勿用个人 CLA 代替。
+**A**: 公司贡献者需要签署 **Corporate CLA**（已发布，见 [CLA-corporate.md](CLA-corporate.md)）。注意：在线签署通道当前**仅支持个人签署、无企业入口**，企业贡献者请按 CLA-corporate.md 的"企业如何签署"走邮件人工流程，勿用个人 CLA 代替。
 
 ### Q5:CLA 适用所有贡献吗?
 
