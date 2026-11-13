@@ -48,7 +48,6 @@ $distClass = @{
     "evorule-integration-tests"= "none"
     "evorule-context-inspector"= "none"
     "evorule-wasm-demo"        = "none"
-    "sync-sentinel"            = "none"
 }
 
 # 5-piece notice set -> detection substring. LICENSE uses a negative lookahead so the
