@@ -2,7 +2,7 @@
 
 > **本文件是 EvoRule 生态 13 个在役仓库的第三方组件使用声明（使用声明文件）。**
 > 适用范围、义务边界、归档位置与复现方法见下文。
-> 首次生成：2026-10-24 · 本版：2026-10-31（evorule-wasm-host 独立 workspace 并面）· 审计基线：13 在役仓 · 依赖记录 3009 条
+> 首次生成：2026-10-24 · 本版：2026-10-31（evorule-wasm-host 独立 workspace 并面）· 审计基线：13 在役仓 · 依赖记录 2796 条
 
 ---
 
@@ -18,16 +18,16 @@
 | 已发布 crate 缺许可证正文 | **0 / 9**（evorule-discipline、evorule-eval 已于 Wave 2 补齐） |
 | 发行分发包缺 LICENSE/NOTICE/声明 | **0**（Wave 2 后有分发链的仓全部五件套随附 + dist-gate 阻断，详见第五节） |
 | 依赖许可 CI 门禁覆盖 | **全生态**：license-gate（防漂移比对 + cargo-deny 四闸）+ dist-gate（发布阻断）自根仓 reusable workflow 钉 SHA 复用，10 仓 `deny.toml` 统一 |
-| 自有许可七件套一致性 | **绿**（Wave 2 重写 17 件漂移件；核验覆盖面扩容至 15 仓进行中，详见第二节） |
+| 自有许可七件套一致性 | **绿**（Wave 2 重写 17 件漂移件；核验覆盖面扩容至 17 仓进行中，详见第二节） |
 
 ---
 
-## 一、适用范围：13 个在役仓
+## 一、适用范围：14 项（13 在役仓 + evorule-wasm-host 组件）
 
 | # | 仓名 | 角色 | 依赖生态 | 依赖记录数 | 分发形态 |
 |---|---|---|---|---|---|
 | 1 | `evorule` | 核心引擎 / TCB 唯一版本源（8 crate） | cargo | 195 | crates.io ×6 + CLI 双平台二进制 |
-| 2 | `evorule-server` | 官方 HTTP 服务入口（:18080） | cargo + npm | 510 | 零依赖分发包 win64.zip / linux64.tar.gz |
+| 2 | `evorule-server` | 官方 HTTP 服务入口（:18080） | cargo + npm | 503 | 零依赖分发包 win64.zip / linux64.tar.gz |
 | 3 | `evorule-rule` | 规则资产治理层 | cargo | 308 | crates.io + 双平台双 bin |
 | 4 | `evorule-system-rules` | 生态宪法 / schema 版本权威 | 无编译依赖 | 0 | 仓库内资产（schemas/migrations/signatures） |
 | 5 | `evorule-bundle` | 治理↔执行唯一传递契约 | cargo | 147 | crates.io |
@@ -36,10 +36,11 @@
 | 8 | `evorule-integration-tests` | 跨仓一致性门禁 | cargo | 252 | 不分发 |
 | 9 | `evorule-context-inspector` | 上下文检查器 | cargo | 212 | crates.io |
 | 10 | `evorule-wasm-demo` | WASM 演示 | cargo + npm | 74 | npm 包 + wasm 产物 |
-| 11 | `evo-agent` | 应用层编排（可信 AI 工作站） | cargo + npm + pypi | 706 | npm 包 + 桌面端 |
+| 11 | `evo-agent` | 应用层编排（可信 AI 工作站） | cargo + npm + pypi | 688 | npm 包 + 桌面端 |
 | 12 | `evo-agent-desktop` | 桌面壳发行 / 自动更新通道 | pypi / 脚本 | 0 | 桌面安装包 |
 | 13 | `evorule-wasm-host` | 服务端 UDF 宿（wasmtime 独立 workspace，随桌面安装包分发） | cargo | 184 | 内嵌于 evo-agent 桌面安装包 |
-| | **合计** | | | **3009** | |
+| 14 | `evorule-video-engine` | 视频编排引擎（evo-media 线交付件） | python | 0 | 不分发（第三方依赖审计待补） |
+| | **合计** | | | **2796** | |
 
 ---
 
@@ -69,7 +70,7 @@
 **七件套状态**（2026-10-25 更新）：
 
 1. **内容一致性：已收口**——2026-10-24 实测的 17 项不一致（`NOTICE.md` × 10 仓、`DUAL_LICENSE.md` × 7 仓）已于 Wave 2 全部重写对齐；`sync-licenses.ps1 -Check` 复验通过。
-2. **覆盖面：扩容中**——原核验 11 仓含 4 个已退役私有仓；扩容批次将核验面调整为 11 在役仓 + 4 退役私有仓 = 15 仓（`sync-licenses.ps1` 仓名/目录映射同步重构）。
+2. **覆盖面：扩容中**——原核验 11 仓含 4 个已退役私有仓；扩容批次将核验面调整为 12 在役仓 + 5 退役私有仓 = 17 仓（`sync-licenses.ps1` 仓名/目录映射同步重构；sync-sentinel 退役摘除、evorule-agent 与 evorule-video-engine 补入）。
 
 ---
 
@@ -100,7 +101,7 @@
 | `NCSA` | 1 | `libfuzzer-sys` | 宽松许可：保留版权声明与正文。 | ✅ |
 | `BlueOak-1.0.0` | 1 | `lru-cache` | 宽松但非 OSI 认证：保留版权声明与正文。 | ✅ |
 
-机器可读全量清单见 [`LICENSES/third-party/manifest.json`](LICENSES/third-party/manifest.json)（2825 条依赖记录，含每条的许可标识与来源）。
+机器可读全量清单见 [`LICENSES/third-party/manifest.json`](LICENSES/third-party/manifest.json)（2796 条依赖记录，含每条的许可标识与来源）。
 
 ---
 
@@ -154,6 +155,8 @@ AGPL-3.0 的分发义务：§4（随附许可证副本 + 保留声明 + 修改�
 | `evorule-system-rules` | 仓库资产 | ✅ 仓根有 LICENSE | — |
 | `evorule-context-inspector` | crates.io 包 | ✅ 已随包（LICENSE 在位） | 发布为手工操作，无 CI 发布链（合规扫描器归类 none） |
 | `evorule-integration-tests` | 不分发 | — | — |
+| `evorule-wasm-host` | 内嵌于 evo-agent 桌面安装包 | ✅ 随桌面安装包五件套 | dist-gate 已接线（@a3aa299） |
+| `evorule-video-engine` | 不分发 | — | — |
 
 > 上表「现状」为 2026-10-25 对 Wave 2 门禁接线后各仓 release 链的复核（`check-dist-compliance.ps1` + `release.yml` 逐行核验）；2026-10-24 首轮审计的 6/13 分发缺口已全部收口。首轮对 crates.io 9 个 `.crate` 包的下载实测结论仍有效。
 
@@ -214,7 +217,7 @@ python gen_notice.py --repo evorule-server
 3. **[已收口] 两个 npm 工作区包未声明 license 字段** — `evo-agent-desktop`、`evorule-codegraph-bridge`（均为 private，不发布）均已补 `AGPL-3.0-or-later`。
 4. **[已收口] `@colbymchenry/codegraph` 为 `file:` 仓外本地依赖** — 已以 vendoring 消除：构建产物 dist 入仓（`evorule-server/plugins/codegraph-bridge/vendor/`，MIT 正文随附），上游版本同版钉 0.9.4，可复现可溯源。
 5. **[已收口] 依赖许可 CI 门禁覆盖** — Wave 2 已全生态接线：license-gate（防漂移比对 + cargo-deny 四闸）+ dist-gate（发布阻断）自根仓 reusable workflow 钉 SHA 复用，10 仓 deny.toml 统一。
-6. **[已收口] 七件套一致性门禁红（17 项不一致）** — Wave 2 已重写对齐（见第二节）；核验覆盖面扩容至 15 仓进行中。
+6. **[已收口] 七件套一致性门禁红（17 项不一致）** — Wave 2 已重写对齐（见第二节）；核验覆盖面扩容至 17 仓进行中。
 7. **[维持观察] `evorule-law-packs` 不在在役仓清单内** — 4 个判据包基于官方原文自行编写、未使用第三方译文（见各包 MAPPING.md 声明），法律风险低；维持条件触发：若未来随产品分发，需补其自身的许可声明（当前无 git 仓、无 LICENSE）。
 
 ---

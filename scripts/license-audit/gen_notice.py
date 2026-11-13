@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Render D:\\evorule\\THIRD-PARTY-NOTICES.md from the audit inventory."""
+import sys
 import argparse
 import json
 import re
@@ -8,7 +9,7 @@ from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
 
-ROOT = Path(r"D:\evorule")
+ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "THIRD-PARTY-NOTICES.md"
 INV_DEFAULT = r"D:\minimax-agent\.audit\inv_final.json"
 
@@ -37,6 +38,10 @@ REPO_META = {
                   "npm 包 + 桌面端", "cargo + npm + pypi"),
     "evo-agent-desktop": ("桌面壳发行 / 自动更新通道",
                            "桌面安装包", "pypi / 脚本"),
+    "evorule-wasm-host": ("服务端 UDF 宿（wasmtime 独立 workspace，随桌面安装包分发）",
+                          "内嵌于 evo-agent 桌面安装包", "cargo"),
+    "evorule-video-engine": ("视频编排引擎（evo-media 线交付件）",
+                             "不分发（第三方依赖审计待补）", "python"),
 }
 
 OBLIG = {
@@ -112,6 +117,9 @@ DIST_MATRIX = [
     ("evorule-context-inspector", "crates.io 包", "✅ 已随包（LICENSE 在位）",
      "发布为手工操作，无 CI 发布链（合规扫描器归类 none）"),
     ("evorule-integration-tests", "不分发", "—", "—"),
+    ("evorule-wasm-host", "内嵌于 evo-agent 桌面安装包",
+     "✅ 随桌面安装包五件套", "dist-gate 已接线（@a3aa299）"),
+    ("evorule-video-engine", "不分发", "—", "—"),
 ]
 
 
@@ -252,6 +260,40 @@ def render_subset_notice(repos, inv, man, out_path, label=""):
     print("wrote", out_path, len(text.encode("utf-8")), "bytes")
 
 
+def verify_scope_table(out_path):
+    """Scope-table vs tracked manifest: the anti-rot check for the numbers that
+    historically drifted apart (header total, per-row counts, grand total,
+    in-file manifest reference). Exits 1 listing every mismatch."""
+    man = json.loads((ROOT / "LICENSES" / "third-party" / "manifest.json").read_text(encoding="utf-8"))
+    truth = Counter(d["repo"] for d in man["dependencies"])
+    text = out_path.read_bytes().decode("utf-8")
+    bad = []
+    seen = {}
+    for line in text.splitlines():
+        m = re.match(r"\| \d+ \| `([\w-]+)` \| [^|]+ \| [^|]+ \| (\d+) \|", line)
+        if m:
+            seen[m.group(1)] = int(m.group(2))
+    for repo in sorted(set(seen) | set(truth)):
+        a, b = seen.get(repo), truth.get(repo, 0)
+        if a != b:
+            bad.append(f"row {repo}: notices={a} manifest={b}")
+    m_tot = re.search(r"\*\*合计\*\* \| \| \| \*\*(\d+)\*\*", text)
+    if not m_tot or int(m_tot.group(1)) != sum(truth.values()):
+        bad.append(f"grand total: notices={m_tot.group(1) if m_tot else None} manifest={sum(truth.values())}")
+    m_hdr = re.search(r"依赖记录 (\d+) 条", text)
+    if not m_hdr or int(m_hdr.group(1)) != sum(truth.values()):
+        bad.append(f"header total: notices={m_hdr.group(1) if m_hdr else None} manifest={sum(truth.values())}")
+    m_ref = re.search(r"（(\d+) 条依赖记录", text)
+    if not m_ref or int(m_ref.group(1)) != sum(truth.values()):
+        bad.append(f"manifest reference: notices={m_ref.group(1) if m_ref else None} manifest={sum(truth.values())}")
+    if bad:
+        print("check: DRIFT -", len(bad), "mismatch(es):")
+        for b in bad:
+            print("  -", b)
+        sys.exit(1)
+    print("check: scope table, totals and manifest reference all match the tracked manifest")
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Render the ecosystem THIRD-PARTY-NOTICES.md (default) "
@@ -269,10 +311,16 @@ def main():
                          "also pulls its DIST_MATRIX row into the义务 table)")
     ap.add_argument("--inv", default=INV_DEFAULT,
                     help="audit inventory JSON path (default: %(default)s)")
+    ap.add_argument("--check", action="store_true",
+                    help="verify the checked-in ecosystem notice against the tracked manifest (scope-table rows, totals and coverage claims) without writing; exit 1 on drift")
     ap.add_argument("--out", default="",
                     help="output path (default: THIRD-PARTY-NOTICES.md, "
                          "or THIRD-PARTY-NOTICES-<repo>.md with --repo)")
     args = ap.parse_args()
+
+    if args.check:
+        verify_scope_table(Path(args.out) if args.out else ROOT / "THIRD-PARTY-NOTICES.md")
+        return
 
     inv = json.loads(Path(args.inv).read_text(encoding="utf-8"))
     man = json.loads((ROOT / "LICENSES" / "third-party" / "manifest.json").read_text(encoding="utf-8"))
@@ -308,9 +356,9 @@ def main():
     A = L.append
     A("# THIRD-PARTY-NOTICES — EvoRule 生态第三方组件使用声明")
     A("")
-    A("> **本文件是 EvoRule 生态 12 个在役仓库的第三方组件使用声明（使用声明文件）。**")
+    A("> **本文件是 EvoRule 生态 13 个在役仓库的第三方组件使用声明（使用声明文件）。**")
     A("> 适用范围、义务边界、归档位置与复现方法见下文。")
-    A("> 首次生成：2026-10-24 · 本版：2026-10-25（Wave 2 分发合规收口）· 审计基线：12 在役仓 · 依赖记录 %d 条" % total_deps)
+    A("> 首次生成：2026-10-24 · 本版：2026-10-25（Wave 2 分发合规收口）· 审计基线：13 在役仓 · 依赖记录 %d 条" % total_deps)
     A("")
     A("---")
     A("")
@@ -331,11 +379,11 @@ def main():
     A("| 已发布 crate 缺许可证正文 | **0 / 9**（evorule-discipline、evorule-eval 已于 Wave 2 补齐） |")
     A("| 发行分发包缺 LICENSE/NOTICE/声明 | **0**（Wave 2 后有分发链的仓全部五件套随附 + dist-gate 阻断，详见第五节） |")
     A("| 依赖许可 CI 门禁覆盖 | **全生态**：license-gate（防漂移比对 + cargo-deny 四闸）+ dist-gate（发布阻断）自根仓 reusable workflow 钉 SHA 复用，10 仓 `deny.toml` 统一 |")
-    A("| 自有许可七件套一致性 | **绿**（Wave 2 重写 17 件漂移件；核验覆盖面扩容至 15 仓进行中，详见第二节） |")
+    A("| 自有许可七件套一致性 | **绿**（Wave 2 重写 17 件漂移件；核验覆盖面扩容至 17 仓进行中，详见第二节） |")
     A("")
     A("---")
     A("")
-    A("## 一、适用范围：12 个在役仓")
+    A("## 一、适用范围：14 项（13 在役仓 + evorule-wasm-host 组件）")
     A("")
     A("| # | 仓名 | 角色 | 依赖生态 | 依赖记录数 | 分发形态 |")
     A("|---|---|---|---|---|---|")
@@ -351,7 +399,7 @@ def main():
     A("")
     A("| 资产 | 许可 | 义务要点 |")
     A("|---|---|---|")
-    A("| 代码（全部 12 仓） | AGPL-3.0-or-later | 分发须附许可证副本与修改说明（§4/§5(d)）；"
+    A("| 代码（全部 13 仓 + evorule-wasm-host 组件） | AGPL-3.0-or-later | 分发须附许可证副本与修改说明（§4/§5(d)）；"
       "以网络提供服务须提供对应源码（§13） |")
     A("| `core_eval.json`（宪法/解释器规范） | CC0-1.0 公共领域 | 无义务，鼓励第三方实现兼容引擎 |")
     A("| 贡献物通道 D | 局部 Apache-2.0 再授权 | 见 `CONTRIBUTION_GRANT.md` |")
@@ -383,7 +431,7 @@ def main():
     A("1. **内容一致性：已收口**——2026-10-24 实测的 17 项不一致（`NOTICE.md` × 10 仓、"
       "`DUAL_LICENSE.md` × 7 仓）已于 Wave 2 全部重写对齐；`sync-licenses.ps1 -Check` 复验通过。")
     A("2. **覆盖面：扩容中**——原核验 11 仓含 4 个已退役私有仓；扩容批次将核验面调整为"
-      " 11 在役仓 + 4 退役私有仓 = 15 仓（`sync-licenses.ps1` 仓名/目录映射同步重构）。")
+      " 12 在役仓 + 5 退役私有仓 = 17 仓（`sync-licenses.ps1` 仓名/目录映射同步重构）。")
     A("")
     A("---")
     A("")
@@ -504,7 +552,7 @@ def main():
     A("5. **[已收口] 依赖许可 CI 门禁覆盖** — Wave 2 已全生态接线：license-gate（防漂移比对 + "
       "cargo-deny 四闸）+ dist-gate（发布阻断）自根仓 reusable workflow 钉 SHA 复用，10 仓 deny.toml 统一。")
     A("6. **[已收口] 七件套一致性门禁红（17 项不一致）** — Wave 2 已重写对齐（见第二节）；"
-      "核验覆盖面扩容至 15 仓进行中。")
+      "核验覆盖面扩容至 17 仓进行中。")
     A("7. **[维持观察] `evorule-law-packs` 不在在役仓清单内** — 4 个判据包基于官方原文自行编写、"
       "未使用第三方译文（见各包 MAPPING.md 声明），法律风险低；维持条件触发：若未来随产品分发，"
       "需补其自身的许可声明（当前无 git 仓、无 LICENSE）。")

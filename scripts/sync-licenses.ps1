@@ -33,6 +33,8 @@ $repos = [ordered]@{
   'evorule-context-inspector' = 'evorule-context-inspector'
   'evorule-wasm-demo'         = 'evorule-wasm-demo'
   'evo-agent-desktop'         = 'evo-agent-desktop-release-seed'
+  'evorule-agent'             = 'evorule-agent'
+  'evorule-video-engine'      = 'evorule-video-engine'
 }
 # Apache 自治仓：仅核验存在性（sdk 按设计维持 Apache-2.0）
 $apacheRepos = @('evorule-sdk')
@@ -100,4 +102,4 @@ foreach ($repo in $repos.Keys) {
 Write-Output ('----')
 if ($Sync) { Write-Output "SYNC 完成：重写 $synced 件；复验请再跑 -Check" }
 if ($fail -gt 0) { Write-Output "CHECK-FAIL: $fail 项不一致"; exit 1 }
-Write-Output 'CHECK-PASS: 十五仓许可文件全部合规'
+Write-Output ('CHECK-PASS: {0} 仓许可文件全部合规' -f $repos.Count)

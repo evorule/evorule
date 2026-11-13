@@ -40,7 +40,7 @@ ROADMAP.md|64
 SECURITY.md|56
 SIGNING.md|17
 SOURCE.md|22
-THIRD-PARTY-NOTICES.md|129
+THIRD-PARTY-NOTICES.md|130
 TRADEMARK.md|102
 VERSION_STRATEGY.md|186
 boards/ch32v307-evt/.cargo/config.toml|1
@@ -237,7 +237,7 @@ evorule-reactor/src/io_handler.rs|31
 evorule-reactor/src/lib.rs|39
 evorule-reactor/src/phase.rs|34
 evorule-reactor/src/pure.rs|149
-evorule-reactor/src/reactor.rs|412
+evorule-reactor/src/reactor.rs|409
 evorule-reactor/src/runtime.rs|40
 evorule-reactor/src/stable_detector.rs|37
 evorule-reactor/src/state.rs|182
@@ -328,7 +328,7 @@ scripts/check_status_sync.py|229
 scripts/cross_lang_verifier.py|14
 scripts/evid_wasm_gate.mjs|35
 scripts/g5_golden_vectors.json|1
-scripts/license-audit/gen_notice.py|223
+scripts/license-audit/gen_notice.py|230
 scripts/license-audit/gen_third_party.py|21
 scripts/ops/rerun-a-tier-20260924.sh|8
 scripts/pre-commit-doc-check.ps1|42
