@@ -14,6 +14,20 @@
 > **版本**: v0.3.3 (域判定声明化版；三态 DomainOutcome、on_missing 声明分派、MissingReason 归因、D1b；承 v0.3.2 审计治理——D1a、域错误显式化、M6 执行预算、M8 去持久化、D11 重放契约)
 > **跨模块设计**: 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)
 
+## Version axis map (authoritative)
+
+Four independent version axes apply to this crate. They move on different
+schedules and MUST NOT be conflated. This table is the single authoritative
+restatement of their current values; other documents should link here instead
+of restating numbers. Machine-guarded by `tests/doc_value_sync.rs`.
+
+| Axis | Current | Source of truth | Meaning | Change rule |
+| --- | --- | --- | --- | --- |
+| Workspace crate | 0.13.0 | root `Cargo.toml` `[workspace.package] version` | crates.io release surface | VERSION_STRATEGY §4.1: MINOR = milestone (breaking allowed), PATCH = fix |
+| TCB_SPEC | v0.3.3 | this document's header version declaration line | specification semantics | moves only on semantic change, decoupled from crate version |
+| Constitution data | 0.6.0 | `core_eval.json` field `version` | governance rule-set data version | frozen-face policy, special approval gate |
+| rule_set schema | v1.0 (frozen) | `core_eval.json` field `$schema` URL | JSON deployment contract | no in-place edits; new minor file (v1.1.json) per dual-version protocol |
+
 ---
 
 ## 核心原则
