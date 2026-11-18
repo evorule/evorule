@@ -1135,12 +1135,15 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
 
-    // 扩展单测套件 (tests/build_gate_test.rs 测试目标的接线): 本块是
-    // build.rs 私有 helper 唯一可达的子模块层级, 故套件经 #[path] 挂在
-    // 此处; 文件本体在 tests/gate/ 下 (tests/ 子目录不自动成独立 target,
-    // 与 tests/kani/ 同先例)。#[path] 基点沿用本测试目标已有的模块文件
-    // 目录链 (tests/), 而非 build.rs 所在目录。四仓共享函数同步守卫只
-    // 比对锁定函数体, 本声明在其视野之外 (GATE_REFERENCE.md §一)。
+    // Extended gate test suite (wired from tests/build_gate_test.rs): this
+    // block is the only submodule level that can reach build.rs's private
+    // helpers, so the suite mounts here via #[path]; the file body lives in
+    // tests/gate/ (subdirectories of tests/ do not auto-register as separate
+    // targets, same precedent as tests/kani/). The #[path] base follows the
+    // module file directory chain of this test target (tests/), not the
+    // build.rs directory. The four-repo shared-function sync guard compares
+    // locked function bodies only and never sees this declaration
+    // (GATE_REFERENCE.md section 1).
     #[path = "gate/extra_tests.rs"]
     mod gate_extra_tests;
 
