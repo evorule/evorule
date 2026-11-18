@@ -775,8 +775,8 @@ impl Reactor {
                         tracing::warn!(phase = %state.phase.as_str(), "{}", msg);
                         let fact = Fact::Error { id, message: msg };
                         Self::emit_fact(&self.facts_log, &event_tx, fact).await;
-                        // 静默失败的命中归因（全未命中是死规则检测的
-                        // 直接数据源；cause 指向本 Error 事实）
+                        // 静默失败的命中归因（照实承载，可含结构命中，
+                        // 死规则判定以 hit 聚合为准；cause 指向本 Error 事实）
                         let trace_id = id_gen.next_id();
                         let trace_fact = Fact::TransitionTrace {
                             id: trace_id,
