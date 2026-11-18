@@ -57,7 +57,7 @@ use std::process::ExitCode;
 /// 禁止模式: (标签, 字节子串)
 ///
 /// 用字节子串匹配而非 `regex`, 保持 build.rs 零依赖。
-pub const FORBIDDEN: &[(&str, &str)] = &[
+const FORBIDDEN: &[(&str, &str)] = &[
     // T8 / G6: 哈希容器 (非确定性迭代顺序)
     ("T8-HashMap", "HashMap"),
     ("T8-HashSet", "HashSet"),
@@ -109,7 +109,7 @@ pub const FORBIDDEN: &[(&str, &str)] = &[
 ///
 /// 附带跳过理由登记（EVORULE_SKIP_REASON）：跳过生效时若未设置非空理由，
 /// 追加 warning——「大声原则」：任何跳过都必须可追溯。
-pub fn skip_requested(var: &str) -> bool {
+fn skip_requested(var: &str) -> bool {
     match std::env::var(var) {
         Ok(v) => {
             let t = v.trim().to_ascii_lowercase();
@@ -138,7 +138,7 @@ pub fn skip_requested(var: &str) -> bool {
 /// 子串匹配下漏检，故每行额外生成去全部空白文本参与匹配。注释/属性行
 /// 判定仍用原文。代价：字符串字面量内凑巧去空白命中的极小概率误报——
 /// 符合门禁「宁可误报不可漏报」哲学。
-pub fn squeeze_ws(line: &str) -> String {
+fn squeeze_ws(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     for c in line.chars() {
         if !c.is_whitespace() {
@@ -169,7 +169,7 @@ pub fn squeeze_ws(line: &str) -> String {
 ///
 /// 字节级扫描安全：UTF-8 多字节序列所有连续字节 > 0x7F，不会与 ASCII
 /// 的 `/ * " ' # b r` 混淆。
-pub fn strip_inline_block_comments(line: &str) -> String {
+fn strip_inline_block_comments(line: &str) -> String {
     let b = line.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(b.len());
     let mut i = 0usize;
@@ -269,7 +269,7 @@ pub fn strip_inline_block_comments(line: &str) -> String {
 /// 空白/符号/标点（含 `.await` 后缀调用形式）。去空白口径下 `async fn`
 /// 合并为 `asyncfn`，词界检查自然拒绝该合并词——但原文口径已保证
 /// `async fn` 照常命中，两口径协同无漏报。其余 needle 走普通子串匹配。
-pub fn bare_word_hit(hay: &str, needle: &str) -> bool {
+fn bare_word_hit(hay: &str, needle: &str) -> bool {
     if needle != "async" && needle != "await" {
         return hay.contains(needle);
     }
@@ -296,7 +296,7 @@ pub fn bare_word_hit(hay: &str, needle: &str) -> bool {
 /// None，调用方保守回退为按原文整行匹配（fail-closed：宁可误报不可漏报）。
 /// 仅剥离首个属性，同一行后续内容继续参与子串匹配。字节级扫描安全：UTF-8
 /// 连续字节不会与 `[]` 混淆。
-pub fn strip_leading_attr(line: &str) -> Option<&str> {
+fn strip_leading_attr(line: &str) -> Option<&str> {
     let bytes = line.as_bytes();
     let mut i = 0;
     if bytes.first() != Some(&b'#') {
@@ -331,7 +331,7 @@ pub fn strip_leading_attr(line: &str) -> Option<&str> {
 ///
 /// 通过花括号计数 (感知字符串/字符/注释), 使测试内的字面量门禁模式
 /// 不触发误报。
-pub fn strip_test_mod(src: &str) -> String {
+fn strip_test_mod(src: &str) -> String {
     let bytes = src.as_bytes();
     let mut out = String::with_capacity(src.len());
     let mut i = 0;
@@ -453,7 +453,7 @@ fn skip_to_mod_tests(src: &str) -> Option<usize> {
 /// 不判别的后果：`fn f() -> &'static str {` 的 `'static` 进入字符态后吞掉
 /// 直到下一个 `'` 之间的所有 `{}`，令 match_brace 永不闭合、tests 模块
 /// 整体不被剥离，门禁对全文件测试代码全量误报。
-pub fn char_lit_starts(bytes: &[u8], i: usize) -> bool {
+fn char_lit_starts(bytes: &[u8], i: usize) -> bool {
     match bytes.get(i + 1) {
         Some(b'\\') => true,
         Some(_) => bytes.get(i + 2) == Some(&b'\''),
@@ -462,7 +462,7 @@ pub fn char_lit_starts(bytes: &[u8], i: usize) -> bool {
 }
 
 /// 生命周期跳过：从 `'` 起越过标识符字符（`'static` / `'a` / `'_`），停在非 ident 处。
-pub fn skip_lifetime(bytes: &[u8], mut i: usize) -> usize {
+fn skip_lifetime(bytes: &[u8], mut i: usize) -> usize {
     i += 1; // 越过 '
     while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
         i += 1;
@@ -471,7 +471,7 @@ pub fn skip_lifetime(bytes: &[u8], mut i: usize) -> usize {
 }
 
 /// 查找下一个不在注释/字符串内的 `{`, 遇到 `;` 返回 None (`mod tests;` 无体)。
-pub fn find_inline_lbrace(src: &str) -> Option<usize> {
+fn find_inline_lbrace(src: &str) -> Option<usize> {
     let bytes = src.as_bytes();
     let mut i = 0;
     let mut in_line_c = false;
@@ -556,7 +556,7 @@ pub fn find_inline_lbrace(src: &str) -> Option<usize> {
 }
 
 /// 为 `{` at `open_idx` 找匹配的 `}` (感知字符串/注释)。
-pub fn match_brace(src: &str, open_idx: usize) -> Option<usize> {
+fn match_brace(src: &str, open_idx: usize) -> Option<usize> {
     let bytes = src.as_bytes();
     if bytes[open_idx] != b'{' {
         return None;
@@ -651,7 +651,7 @@ pub fn match_brace(src: &str, open_idx: usize) -> Option<usize> {
 /// 测试惯例, panic!/assert!/unreachable!/todo! 是测试断言与失败路径
 /// 机制本体; 生产代码由 clippy panic=deny 与 L1 双守);
 /// T10/T11 (unsafe/debug_assert) 在所有位置强制。
-pub fn is_test_tolerant(label: &str) -> bool {
+fn is_test_tolerant(label: &str) -> bool {
     matches!(
         label,
         "T8-HashMap"
@@ -673,7 +673,7 @@ pub fn is_test_tolerant(label: &str) -> bool {
 /// strip_inline_block_comments），字符串在此掩码。
 /// 返回 (掩码文本, 引号是否行内闭合)；未闭合 = 多行字符串跨行，
 /// 调用方保守跳过该行（诚实边界：跨行字符串内的浮点形文本不检）。
-pub fn mask_string_contents(line: &str) -> (String, bool) {
+fn mask_string_contents(line: &str) -> (String, bool) {
     let mut out = String::with_capacity(line.len());
     let mut in_str = false;
     let mut chars = line.chars().peekable();
@@ -712,7 +712,7 @@ pub fn mask_string_contents(line: &str) -> (String, bool) {
 /// 的「数字.数字」除上述边界外只能是浮点字面量（推断默认 f64）。
 /// 范围 `0..1` 的连写 `..` 不构成数字.数字。已知残余漏报面：跨行字符
 /// 串内的浮点形文本（调用方跳过未闭合行）。
-pub fn float_lit_hit(text: &str) -> bool {
+fn float_lit_hit(text: &str) -> bool {
     let b = text.as_bytes();
     let is_d = |c: u8| c.is_ascii_digit() || c == b'_';
     for i in 1..b.len().saturating_sub(1) {
@@ -745,7 +745,7 @@ pub fn float_lit_hit(text: &str) -> bool {
 /// 同口径: 测试夹具数据可含小数形文本, 红线约束的是生产确定性);
 /// 注释行豁免与同行块注释剥离与主扫描同口径。
 /// 返回 (行号, 违规行裁剪文本) 列表。
-pub fn float_lit_violations(raw: &str) -> Vec<(usize, String)> {
+fn float_lit_violations(raw: &str) -> Vec<(usize, String)> {
     let mut hits: Vec<(usize, String)> = Vec::new();
     let float_scan = strip_test_mod(raw);
     for (lineno, line) in float_scan.lines().enumerate() {
@@ -1134,6 +1134,15 @@ fn collect_rs_files_for_strategy(dir: &Path, out: &mut Vec<PathBuf>) {
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+
+    // 扩展单测套件 (tests/build_gate_test.rs 测试目标的接线): 本块是
+    // build.rs 私有 helper 唯一可达的子模块层级, 故套件经 #[path] 挂在
+    // 此处; 文件本体在 tests/gate/ 下 (tests/ 子目录不自动成独立 target,
+    // 与 tests/kani/ 同先例)。#[path] 基点沿用本测试目标已有的模块文件
+    // 目录链 (tests/), 而非 build.rs 所在目录。四仓共享函数同步守卫只
+    // 比对锁定函数体, 本声明在其视野之外 (GATE_REFERENCE.md §一)。
+    #[path = "gate/extra_tests.rs"]
+    mod gate_extra_tests;
 
     #[test]
     fn test_match_brace_ignores_lifetime() {
