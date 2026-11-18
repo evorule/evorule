@@ -94,23 +94,30 @@
 
 **必须**: 递归深度上限 ≤ 64（防止栈溢出 + 保证终止性）。
 
-**当前实现**:
-- `domain.rs` `MAX_DOMAIN_DEPTH = 64` （域嵌套）
-- `executor.rs` `MAX_BRANCH_DEPTH = 64` （分支嵌套）
-- `executor.rs` `MAX_TOTAL_META_INSTRUCTIONS = 2048` （v0.3.2 审计治理 M6：单次转换元指令执行总数上限，宽度防线——深度限制无法约束单条 branch 的子指令列表长度，本上限补齐该缺口；超限返回 `TcbError::TooManyExecutedInstructions`）
+**Current implementation**:
+- `domain.rs` `MAX_DOMAIN_DEPTH = 64` (domain nesting)
+- `executor.rs` `MAX_BRANCH_DEPTH = 64` (branch nesting)
+- `executor.rs` `MAX_TOTAL_META_INSTRUCTIONS = 2048` (v0.3.2 audit M6: total executed meta-instruction cap per transition, width defense — depth caps cannot bound the sub-instruction list length of a single branch; this cap closes that gap; over-limit returns `TcbError::TooManyExecutedInstructions`)
+
+All caps above are the `EnvelopeLimits` defaults (envelope.rs): the default
+entry `execute_transition` behaves unchanged; deployments tuning the
+envelope go through `execute_transition_with_limits`, whose entry fail-fast
+validates the sizing invariant (budget >= rule cap x 16, violations return
+`InvalidState`). The termination guarantee (bounded termination) holds
+under every valid envelope value.
 
 **L1 无法检测上限值，必须 L3 code review**。
 
 ### T7: `core_eval.json` transform 规则数上限
 
-**必须**: `core_eval` 规则数上限 = `MAX_TRANSFORM_RULES = 128` (SPEC T6)。
+**Must**: the `core_eval` rule-count cap = `MAX_TRANSFORM_RULES = 128` (SPEC T6; this value is the `EnvelopeLimits` default — custom envelopes enforce the same semantics, over-limit returns `TcbError::TooManyTransformRules`).
 
 **v0.3.2 格式规范化**: `core_eval.json` 新增元数据字段：
 - `$schema`: JSON Schema 引用（`https://evorule.org/schemas/rule_set/v1.0.json`）
 - `kind`: 固定值 `"rule_set"`，标识文件类型
 - `id`: 规则集唯一标识（如 `"org.evorule.core.eval"`）
 
-**当前实现**: `transition.rs` `execute_transition` 入口检查规则数，超限返回 `TcbError::TooManyTransformRules`。
+**Current implementation**: `transition.rs` `execute_transition` (default envelope) / `execute_transition_with_limits` (custom envelope) check the rule count at the entry; over-limit returns `TcbError::TooManyTransformRules`.
 
 **代码实现已强制，超限编译/执行失败**。
 

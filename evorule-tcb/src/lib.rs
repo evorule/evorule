@@ -47,6 +47,7 @@ extern crate alloc;
 // 模块声明（按依赖顺序：基础类型在前）
 pub mod discipline;
 pub mod domain;
+pub mod envelope;
 pub mod error;
 pub mod executor;
 pub mod path;
@@ -54,6 +55,7 @@ pub mod transition;
 pub mod value;
 
 // 核心类型重导出（仅公开稳定的 API）
+pub use envelope::EnvelopeLimits;
 pub use error::TcbError;
 pub use executor::META_INSTRUCTION_TYPES;
 pub use transition::{execute_transition, RuleHit, TransitionResult, MAX_TRANSFORM_RULES};

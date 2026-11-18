@@ -62,7 +62,7 @@ evorule 规则集是一个 JSON 文件，描述**指令到状态转换的映射*
 
 > **v0.6.0 破坏性变更（规则清理）**：`collect` 与 `merge` 元指令已退役——LLM 多轮编排属于应用层职责，机制层不再内置 ReAct 循环原语。规则文件中使用这两个类型将被 schema 拒绝。多轮编排请由应用层 runner 实现。
 
-> 终止性保证：整棵规则树共享单一执行预算 `MAX_TOTAL_META_INSTRUCTIONS`（executor.rs L87），branch 递归深度上限 `MAX_BRANCH_DEPTH`（executor.rs L703）。
+> Termination guarantee: the whole rule tree shares a single execution budget `MAX_TOTAL_META_INSTRUCTIONS` (executor.rs), branch recursion is capped by `MAX_BRANCH_DEPTH` (executor.rs), and the rule count is capped by `MAX_TRANSFORM_RULES` (transition.rs) — together with the domain depth `MAX_DOMAIN_DEPTH` these are the `EnvelopeLimits` defaults (the default entry behaves identically); deployments tuning the envelope go through `execute_transition_with_limits` (fail-fast sizing-invariant validation at entry).
 
 ---
 
@@ -452,7 +452,7 @@ There are 5 meta-instruction types in total (SSOT: `executor.rs` `META_INSTRUCTI
 
 > **Breaking change in v0.6.0 (iteration #69 cleanup)**: the `collect` and `merge` meta-instructions have been retired — LLM multi-turn orchestration is an application-layer responsibility, and the mechanism layer no longer embeds ReAct loop primitives. Rule sets using these two types are rejected by the schema. Implement multi-turn orchestration in your application-layer runner.
 
-> Termination guarantee: the entire rule tree shares a single execution budget `MAX_TOTAL_META_INSTRUCTIONS` (executor.rs L87); branch recursion is capped by `MAX_BRANCH_DEPTH` (executor.rs L703).
+> Termination guarantee: the entire rule tree shares a single execution budget `MAX_TOTAL_META_INSTRUCTIONS` (executor.rs); branch recursion is capped by `MAX_BRANCH_DEPTH` (executor.rs), and the rule count is capped by `MAX_TRANSFORM_RULES` (transition.rs) — these, together with the domain depth `MAX_DOMAIN_DEPTH`, are the defaults of `EnvelopeLimits` (the default entry behaves identically); deployments that need custom envelope limits use `execute_transition_with_limits` (fail-fast validation at the entry).
 
 ---
 

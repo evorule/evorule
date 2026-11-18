@@ -298,15 +298,17 @@ transition.rs （状态转换，依赖 executor/path/value）
 - 5 个 `exec_*` 私有函数分别处理 5 种元指令
 - `resolve_path_or_literal`：统一的路径引用解析辅助函数
 - `resolve_instructions_list`：递归解析 `instructions` 数组中的路径引用元素
-- `MAX_BRANCH_DEPTH = 64` 防止 branch 嵌套过深
-- `MAX_TOTAL_META_INSTRUCTIONS = 2048` 单次转换元指令执行总数上限（宽度防线，超限返回 `TooManyExecutedInstructions`）
+- `MAX_BRANCH_DEPTH = 64` prevents branch nesting from growing unbounded
+- `MAX_TOTAL_META_INSTRUCTIONS = 2048` total executed meta-instruction cap per transition (width defense; over-limit returns `TooManyExecutedInstructions`)
+- `EnvelopeLimits`: termination envelope parameter (converged structure of the four caps, including domain depth) — the default equals the `pub const` values field-by-field and the default entry behaves identically; custom envelopes go through `execute_transition_with_limits` with fail-fast validation at entry (execution budget >= rule cap x 16)
 
 #### [transition.rs](src/transition.rs) — 状态转换入口
 
-- `execute_transition`：唯一公开的状态转换 API
-- 构建 `__exec__` 上下文（包含 `instruction`/`payload`/`queue`）
-- 迭代 `core_eval` transform 列表，检测 `IoRequired` 信号
-- `MAX_TRANSFORM_RULES = 128`：`core_eval` 规则数上限（SPEC T6 终止性保证）
+- `execute_transition`: state transition entry (default envelope; byte-identical to the pre-parameterization behavior)
+- `execute_transition_with_limits`: transition entry with a custom termination envelope (`EnvelopeLimits`, fail-fast validated at entry)
+- Builds the `__exec__` context (containing `instruction`/`payload`/`queue`)
+- Iterates the `core_eval` transform list, detecting the `IoRequired` signal
+- `MAX_TRANSFORM_RULES = 128`: `core_eval` rule-count cap (SPEC T6 termination guarantee; the envelope default, tunable via `EnvelopeLimits`)
 - `TransitionResult` 枚举：`State { new_payload, new_queue }` | `IoRequired { io_type, params }`
 
 #### [error.rs](src/error.rs) — 错误类型
@@ -460,10 +462,12 @@ match result {
 | ------------------------------------------------------ | ------------------------------------- |
 | `JsonValue`                                            | 确定性 JSON 数据模型                  |
 | `TcbError`                                             | 错误类型（11 个变体，永不 panic）     |
-| `execute_transition(core_eval, instr, payload, queue)` | 状态转换入口函数                      |
-| `TransitionResult`                                     | 转换结果：`State` 或 `IoRequired`     |
-| `MAX_TRANSFORM_RULES`                                  | `core_eval` 规则数上限（128，SPEC T6） |
-| `MAX_TOTAL_META_INSTRUCTIONS`                          | 单次转换元指令执行总数上限（2048，宽度防线） |
+| `execute_transition(core_eval, instr, payload, queue)` | state transition entry (default envelope) |
+| `execute_transition_with_limits(..., limits)`          | transition entry with a custom termination envelope |
+| `TransitionResult`                                     | transition result: `State` or `IoRequired` |
+| `MAX_TRANSFORM_RULES`                                  | `core_eval` rule-count cap (128, SPEC T6, envelope default) |
+| `MAX_TOTAL_META_INSTRUCTIONS`                          | total executed meta-instruction cap per transition (2048, width defense, envelope default) |
+| `EnvelopeLimits`                                       | termination envelope parameter (four converged caps, default = the consts above, fail-fast validated) |
 
 ### `TcbError` 变体
 
@@ -569,7 +573,7 @@ pub enum TcbError {
 三重保障：
 
 1. **类型系统**：路径解析返回 `Option`，整数运算使用 `checked_*`
-2. **递归深度限制**：`domain.rs` `MAX_DOMAIN_DEPTH=64`；`executor.rs` `MAX_BRANCH_DEPTH=64`；`executor.rs` `MAX_TOTAL_META_INSTRUCTIONS=2048`（执行总数宽度防线）
+2. **Recursion depth limits**: `domain.rs` `MAX_DOMAIN_DEPTH=64`; `executor.rs` `MAX_BRANCH_DEPTH=64`; `executor.rs` `MAX_TOTAL_META_INSTRUCTIONS=2048` (total-execution width defense) — the four caps are the `EnvelopeLimits` defaults; custom envelopes enter through `execute_transition_with_limits` with fail-fast validation (sizing invariant: budget >= rule cap x 16)
 3. **Clippy lint**：`deny(unwrap_used/expect_used/indexing_slicing/panic)`
 
 测试模块通过 `#![allow(clippy::unwrap_used)]` 等局部放宽以保持测试可读性。
@@ -645,7 +649,7 @@ EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 wa
 
 | 编号 | 事项                        | 状态      | 说明                                                                                                                |
 | ---- | --------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- |
-| N-01 | `MAX_TRANSFORM_RULES` 限制  | ✅ 已完成 | `execute_transition` 入口检查 `core_eval.len() ≤ 128`,超限返回 `TcbError::TooManyTransformRules`(SPEC T6 终止性保证) |
+| N-01 | `MAX_TRANSFORM_RULES` cap  | ✅ done | the `execute_transition` entry checks `core_eval.len() <= 128`; over-limit returns `TcbError::TooManyTransformRules` (SPEC T6 termination guarantee); 128 is the `EnvelopeLimits` default — custom envelopes enforce the same semantics fail-fast at their entry |
 | N-02 | Kani 形式化验证重建         | 🟡 历史 PASS | v0.3.1 以「结构化符号输入 + `KIdSet`/`KIdMap`」重建为 34 个 `#[kani::proof]`(P1-P21 旧编号),后增至 37 个并改行 A/B 两档;v0.6.0 随规则清理退役 P15/P16/P17(37→34)——A 档 14 个 v0.6.0 重跑(2026-09-14,`25c0cc0`)全 PASS 并入 CI 闸门,B 档 20 个实测超时判定当前不可运行(proptest 间接覆盖);详情见 §6.3 与 `docs/KANI.md`,状态唯一权威见 [`verification/STATUS.md`](../verification/STATUS.md) |
 
 ### 10.2 后续 Tier 路线

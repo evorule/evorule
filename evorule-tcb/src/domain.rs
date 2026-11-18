@@ -329,7 +329,7 @@ fn resolve_value_reference_outcome(
 ///
 /// 见上方决策表：域结构错误返回 `TcbError`，业务状态缺失返回 `Ok(false)`。
 pub fn evaluate_domain(domain: &JsonValue, exec_state: &JsonValue) -> Result<bool, TcbError> {
-    evaluate_domain_outcome_inner(domain, exec_state, 0).map(|o| o.to_bool())
+    evaluate_domain_outcome_inner(domain, exec_state, 0, MAX_DOMAIN_DEPTH).map(|o| o.to_bool())
 }
 
 /// 三态域评估（专项-20261001 方案 2' v4 主入口）
@@ -344,7 +344,22 @@ pub fn evaluate_domain_outcome(
     domain: &JsonValue,
     exec_state: &JsonValue,
 ) -> Result<DomainOutcome, TcbError> {
-    evaluate_domain_outcome_inner(domain, exec_state, 0)
+    evaluate_domain_outcome_inner(domain, exec_state, 0, MAX_DOMAIN_DEPTH)
+}
+
+/// Three-state domain evaluation with a custom recursion depth cap
+/// (parameterized envelope entry point).
+///
+/// Same semantics as [`evaluate_domain_outcome`]; `max_depth` is carried
+/// by the caller's envelope parameter (`EnvelopeLimits::max_domain_depth`)
+/// while the default behavior goes through `MAX_DOMAIN_DEPTH`. Over-limit
+/// returns `NestingTooDeep { limit: max_depth }`.
+pub fn evaluate_domain_outcome_with_limit(
+    domain: &JsonValue,
+    exec_state: &JsonValue,
+    max_depth: usize,
+) -> Result<DomainOutcome, TcbError> {
+    evaluate_domain_outcome_inner(domain, exec_state, 0, max_depth)
 }
 
 /// 读取规则文本的 `on_missing` 声明值（归因透传用，T3）
@@ -357,16 +372,18 @@ pub fn declared_on_missing(domain: &JsonValue) -> Option<&'static str> {
     parse_on_missing(domain).ok().flatten().map(|p| p.label())
 }
 
-/// 域评估内部实现（带递归深度限制，三态版）
+/// Domain evaluation core (recursion-depth limited, three-state version)
+///
+/// `max_depth` is the depth cap for this evaluation (carried by the
+/// envelope parameter; default = `MAX_DOMAIN_DEPTH`).
 fn evaluate_domain_outcome_inner(
     domain: &JsonValue,
     exec_state: &JsonValue,
     depth: usize,
+    max_depth: usize,
 ) -> Result<DomainOutcome, TcbError> {
-    if depth > MAX_DOMAIN_DEPTH {
-        return Err(TcbError::NestingTooDeep {
-            limit: MAX_DOMAIN_DEPTH,
-        });
+    if depth > max_depth {
+        return Err(TcbError::NestingTooDeep { limit: max_depth });
     }
 
     let domain_type = get_str_field(domain, "type")?;
@@ -377,8 +394,8 @@ fn evaluate_domain_outcome_inner(
         "in" => evaluate_in_outcome(domain, exec_state),
         "exists" => evaluate_exists(domain, exec_state).map(DomainOutcome::from_bool),
         "instruction" => evaluate_instruction_eq(domain, exec_state).map(DomainOutcome::from_bool),
-        "all" => evaluate_all_outcome(domain, exec_state, depth),
-        "not" => evaluate_not_outcome(domain, exec_state, depth),
+        "all" => evaluate_all_outcome(domain, exec_state, depth, max_depth),
+        "not" => evaluate_not_outcome(domain, exec_state, depth, max_depth),
         "has_fields" => evaluate_has_fields(domain, exec_state).map(DomainOutcome::from_bool),
         other => Err(TcbError::UnknownDomainType {
             domain_type: other.to_string(),
@@ -544,6 +561,7 @@ fn evaluate_all_outcome(
     domain: &JsonValue,
     exec_state: &JsonValue,
     depth: usize,
+    max_depth: usize,
 ) -> Result<DomainOutcome, TcbError> {
     let inner = domain.get("inner").ok_or_else(|| TcbError::MissingField {
         field: "inner".to_string(),
@@ -555,7 +573,7 @@ fn evaluate_all_outcome(
     })?;
 
     for sub_domain in arr {
-        match evaluate_domain_outcome_inner(sub_domain, exec_state, depth + 1)? {
+        match evaluate_domain_outcome_inner(sub_domain, exec_state, depth + 1, max_depth)? {
             DomainOutcome::Sat => continue,
             other => return Ok(other),
         }
@@ -573,12 +591,13 @@ fn evaluate_not_outcome(
     domain: &JsonValue,
     exec_state: &JsonValue,
     depth: usize,
+    max_depth: usize,
 ) -> Result<DomainOutcome, TcbError> {
     let inner = domain.get("inner").ok_or_else(|| TcbError::MissingField {
         field: "inner".to_string(),
     })?;
     Ok(
-        match evaluate_domain_outcome_inner(inner, exec_state, depth + 1)? {
+        match evaluate_domain_outcome_inner(inner, exec_state, depth + 1, max_depth)? {
             DomainOutcome::Sat => DomainOutcome::Unsat,
             DomainOutcome::Unsat => DomainOutcome::Sat,
             DomainOutcome::Missing(m) => DomainOutcome::Missing(m),
