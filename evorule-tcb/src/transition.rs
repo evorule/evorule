@@ -15,10 +15,9 @@
 //! - I/O 请求通过 `core_eval` 中的 `io_request` 元指令触发
 
 use crate::domain::DomainAttribution;
+use crate::envelope::EnvelopeLimits;
 use crate::error::TcbError;
-use crate::executor::{
-    execute_meta_instruction_budgeted, MetaInstructionResult, MAX_TOTAL_META_INSTRUCTIONS,
-};
+use crate::executor::{execute_meta_instruction_budgeted, MetaInstructionResult};
 use crate::path::resolve_path;
 use crate::value::{JsonValue, ObjectMap};
 use alloc::string::{String, ToString};
@@ -131,15 +130,42 @@ pub enum TransitionResult {
     },
 }
 
-/// 执行一步状态转换
+/// Execute one state transition (default envelope).
 ///
-/// # 参数
-/// - `core_eval`：transform 规则列表（由 `core_eval.json` 编译）
-/// - `instruction`：当前指令
-/// - `payload`：当前业务状态
-/// - `queue`：当前指令队列
+/// Same semantics as [`execute_transition_with_limits`] with the default
+/// envelope (`EnvelopeLimits::default()`, field-by-field equal to the four
+/// `pub const` current values) — byte-identical behavior to the
+/// pre-parameterization code (default invariant). Use
+/// [`execute_transition_with_limits`] to tune the termination envelope
+/// caps (rule count / execution budget / branch depth / domain depth) per
+/// deployment environment.
+pub fn execute_transition(
+    core_eval: &[JsonValue],
+    instruction: &JsonValue,
+    payload: &JsonValue,
+    queue: &[JsonValue],
+) -> Result<TransitionResult, TcbError> {
+    execute_transition_with_limits(
+        core_eval,
+        instruction,
+        payload,
+        queue,
+        &EnvelopeLimits::default(),
+    )
+}
+
+/// Execute one state transition (custom termination envelope).
 ///
-/// # 返回
+/// # Parameters
+/// - `core_eval`: transform rule list (compiled from `core_eval.json`)
+/// - `instruction`: current instruction
+/// - `payload`: current business state
+/// - `queue`: current instruction queue
+/// - `limits`: termination envelope parameters (four caps; the entry
+///   fail-fast validates the sizing invariants, violations return
+///   `InvalidState` — no guessing, no silent fallback)
+///
+/// # Returns
 /// - `Ok(State { new_payload, new_queue })`：正常转换
 /// - `Ok(IoRequired { io_type, params })`：`core_eval` 中遇到 `io_request` 元指令
 /// - `Err(TcbError)`：执行错误
@@ -151,7 +177,8 @@ pub enum TransitionResult {
 ///
 /// # Errors
 ///
-/// - `TcbError::TooManyTransformRules`：`core_eval` 规则数超过 `MAX_TRANSFORM_RULES`（128）
+/// - `TcbError::TooManyTransformRules`: `core_eval` rule count exceeds the
+///   envelope rule cap (default envelope = `MAX_TRANSFORM_RULES`, 128)
 /// - `TcbError::InvalidState`：状态结构异常（`__exec__.payload` 不存在）
 /// - `TcbError::PathResolutionFailed`：`core_eval` 中路径解析失败
 ///
@@ -196,16 +223,22 @@ pub enum TransitionResult {
 // 119 行: 约束前置门(BUG-P0-005) + transform 主循环 + 归因合并必须单函数原子语义,
 // 拆函数需共享 budget 与 rule_hits 中间状态; 豁免登记见 GATE_REFERENCE.md §6.3
 #[allow(clippy::too_many_lines)]
-pub fn execute_transition(
+pub fn execute_transition_with_limits(
     core_eval: &[JsonValue],
     instruction: &JsonValue,
     payload: &JsonValue,
     queue: &[JsonValue],
+    limits: &EnvelopeLimits,
 ) -> Result<TransitionResult, TcbError> {
-    // 0. 终止性检查：core_eval 规则数不得超过 MAX_TRANSFORM_RULES
-    if core_eval.len() > MAX_TRANSFORM_RULES {
+    // 0. envelope sizing-invariant re-check (fail-fast; hand-built invalid
+    //    combinations are rejected here)
+    limits.validate()?;
+
+    // 0. termination check: core_eval rule count must not exceed the
+    //    envelope rule cap
+    if core_eval.len() > limits.max_transform_rules {
         return Err(TcbError::TooManyTransformRules {
-            limit: MAX_TRANSFORM_RULES,
+            limit: limits.max_transform_rules,
             actual: core_eval.len(),
         });
     }
@@ -217,7 +250,7 @@ pub fn execute_transition(
     //    M6 终止性宽度防线：约束 branch 子指令列表的宽度）
     //    同步收集每条规则的结构命中（命中口径见 RuleHit / executor 文档）。
     let mut state = exec_state.clone();
-    let mut budget = MAX_TOTAL_META_INSTRUCTIONS;
+    let mut budget = limits.max_total_meta_instructions;
     let mut rule_hits: Vec<RuleHit> = Vec::with_capacity(core_eval.len());
 
     // 2.0 【约束前置门】enforce 约束先于任何状态变换 / IO 路由求值
@@ -258,6 +291,7 @@ pub fn execute_transition(
             &mut budget,
             &mut hit,
             &mut domain_attr,
+            limits,
         )?;
         enforce_hits.push(RuleHit {
             index,
@@ -293,6 +327,7 @@ pub fn execute_transition(
             &mut budget,
             &mut hit,
             &mut domain_attr,
+            limits,
         )?;
         rule_hits.push(RuleHit {
             index,
@@ -437,6 +472,7 @@ mod tests {
 
     use super::*;
     use crate::domain::{DomainOutcome, MissingReason};
+    use crate::executor::MAX_TOTAL_META_INSTRUCTIONS;
     use crate::value::JsonValue;
     use alloc::vec;
 

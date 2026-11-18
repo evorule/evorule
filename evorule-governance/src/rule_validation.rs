@@ -58,13 +58,17 @@ const VALID_OPERATIONS: &[&str] = &["set", "add", "sub"];
 // 安全分析阈值
 // ============================================================================
 
-/// 最大 transform 规则数量（与 transition.rs 的 MAX_TRANSFORM_RULES 一致）
-const MAX_TRANSFORM_RULES: usize = 128;
-/// 最大嵌套深度（branch 内的 branch 等）
+/// Maximum transform rule count (SSOT-sourced: references the evorule-tcb
+/// pub const directly; default 128 — still aligned with the default
+/// execution envelope after TCB envelope parameterization)
+const MAX_TRANSFORM_RULES: usize = evorule_tcb::MAX_TRANSFORM_RULES;
+/// Maximum nesting depth (branch within branch, etc.)
 ///
-/// P2-02：对齐 TCB MAX_BRANCH_DEPTH=64（executor.rs L28），避免校验器比引擎更严
-/// 造成假阳性（SSOT：同一上限不得多处不同定义）。防御性建议上限见 check_recursive_nesting。
-const MAX_NESTING_DEPTH: usize = 64;
+/// P2-02: aligned with TCB MAX_BRANCH_DEPTH (SSOT-sourced reference,
+/// default 64), so the validator is never stricter than the engine
+/// (SSOT: one cap must not be defined in more than one place). Defensive
+/// recommended cap: see check_recursive_nesting.
+const MAX_NESTING_DEPTH: usize = evorule_tcb::executor::MAX_BRANCH_DEPTH;
 /// 单个 io_request 内最大参数大小（字节）
 const MAX_IO_PARAMS_SIZE: usize = 1024 * 10; // 10KB
 /// 安全分析中检测到的最大循环深度阈值
