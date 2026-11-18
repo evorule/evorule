@@ -10,7 +10,7 @@
 
 > Tier 0 Trusted Computing Base of the EvoRule three-layer architecture — a zero-dependency, `no_std`-compatible pure computation kernel.
 
-- **Version**: 0.13.0 (pinned to the workspace version)
+- **Version**: the four version axes (workspace crate / TCB_SPEC / constitution data / rule_set schema) are independent — see the authoritative [version axis map](TCB_SPEC.md#version-axis-map-authoritative); the workspace crate is currently at 0.13.0
 - **Positioning**: pure functions + determinism + never panics
 - **External dependencies**: 0 (`Cargo.toml` `[dependencies]` is empty; `Cargo.lock` contains only dev-dependencies (proptest/criterion, for tests and benchmarks, not shipped); zero third-party crates at runtime)
 - **Tests**: `cargo test` full suite PASS / 0 failed (412 tests: 285 unit + 53 build-gate + 4 carrier + 31 property-based + 18 integration + 21 doc-family; resident in CI)
