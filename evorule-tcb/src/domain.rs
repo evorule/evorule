@@ -179,7 +179,7 @@ pub fn is_root_segment_dot_path(s: &str) -> bool {
     seg_count >= 1
 }
 
-/// `on_missing` 声明（eq/lt 域可选字段；缺省 = 兼容缺省 unsat）
+/// `on_missing` 声明（eq/lt/in 域可选字段；缺省 = 兼容缺省 unsat）
 #[derive(Debug, Clone, PartialEq)]
 enum OnMissingPolicy {
     /// Missing → Err 拒绝执行（显式报错，分支不执行）

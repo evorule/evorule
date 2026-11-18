@@ -124,8 +124,8 @@ pub enum TransitionResult {
         instruction_type: String,
         /// 说明：通常为 "no matching transform rule" 或 "rule matched but produced no effect"
         reason: String,
-        /// 本步各 transform 规则的命中归因（静默失败时全为未命中，
-        /// 是死规则检测的直接数据源）
+        /// 本步各 transform 规则的命中归因（本步无副作用；命中归因照实
+        /// 承载，可含结构命中，死规则判定以 hit 聚合为准）
         rule_hits: Vec<RuleHit>,
     },
 }

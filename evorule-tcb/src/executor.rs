@@ -786,7 +786,7 @@ fn exec_branch(
 /// `enforce` 元指令：元规则强制原语（回归验证，纯机制不存策略）
 ///
 /// # 参数（schema 门禁同口径：domain/reason 必填）
-/// - `domain`：域结构（7 基础域类型，与 branch 的 domain 同构；支持
+/// - `domain`：域结构（8 基础域类型，与 branch 的 domain 同构；支持
 ///   `__` 路径引用动态域，与 branch 范式一致）
 /// - `reason`：违规说明字符串——命中时随 Halted 信号透传，供反应器
 ///   系统独占发射的 Violation 事实审计回显（必填：无 reason 的拦截
