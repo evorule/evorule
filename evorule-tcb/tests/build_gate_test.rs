@@ -18,8 +18,8 @@
 //!   the FORBIDDEN literal table never enters the L1 gate scan root, so no
 //!   self-exemption carve-out is needed;
 //! - build.rs's cross-repo shared-function sync contract (GATE_REFERENCE.md
-//!   §一) is untouched: the sync guard extracts locked function bodies only,
-//!   and the added lines live inside the `#[cfg(test)] mod tests` block.
+//!   section 1) is untouched: the sync guard extracts locked function bodies
+//!   only, and the added lines live inside the `#[cfg(test)] mod tests` block.
 
 // Silence warn-level workspace lints that `-D warnings` would escalate for
 // gate machinery that is exercised by real builds rather than this target.
