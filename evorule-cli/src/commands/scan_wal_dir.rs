@@ -1,26 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 审计链哨兵：定时扫描 WAL 目录，逐文件全链验证 + 跨扫描基线比对
+//! Audit chain sentinel: periodically scan a WAL directory, verify every chain
+//! end-to-end, and compare across scans against a baseline
 //!
-//! # 双层比对模型
-//! - **尺子自检**（黄金向量）：扫描前断言内置 7 事实哈希快照与锚点黄金向量——
-//!   证明验证器自身忠实（计量校准思想）。自检失败=工具红（退出码 2），
-//!   不产出数据结论。
-//! - **数据比对**（基线前缀锚定）：基线记录每文件 `链尾+记录数`。追加判定=
-//!   重放本轮链至上轮记录数位置，断言链尾==上轮基线值——精确区分「纯追加」
-//!   与「历史被改后整链重算」（后者前缀锚定必失配）。旧链尾同位变化/回退/
-//!   文件消失分别对应退出码 3/3/4。
+//! # Two-layer comparison model
+//! - **Ruler self-check** (golden vectors): before scanning, assert the built-in
+//!   7-fact hash snapshot and the anchor golden vector — proving the verifier
+//!   itself is faithful (metrology-calibration thinking). Self-check failure =
+//!   broken tool (exit code 2); no data verdict is produced.
+//! - **Data comparison** (baseline prefix anchoring): the baseline records, per
+//!   file, `chain tail + record count`. The append verdict = replay this round's
+//!   chain up to the previous record count and assert the tail equals the previous
+//!   baseline value — precisely distinguishing "pure append" from "history
+//!   rewritten and the whole chain recomputed" (the latter always fails prefix
+//!   anchoring). Same-position tail change / regression / file disappearance map
+//!   to exit codes 3/3/4 respectively.
 //!
-//! # 退出码协议（调度器只认退出码）
-//! `0` 全绿/正常追加/首跑建基线；`2` 工具自检失败（尺子坏）；`3` 链破坏
-//! （验证失配/前缀锚定失配/同位链尾变化/记录回退）；`4` 基线有而磁盘无
-//! （文件消失）；`5` 半行/损坏拒收（衔接 `truncate-partial-line` 受控恢复）。
+//! # Exit code protocol (the scheduler only looks at exit codes)
+//! `0` all green / normal append / first run creates the baseline; `2` tool
+//! self-check failed (broken ruler); `3` chain broken (verification mismatch /
+//! prefix anchor mismatch / same-position tail change / record regression); `4`
+//! in baseline but missing on disk (file gone); `5` partial line / corruption
+//! rejected (pairs with the `truncate-partial-line` controlled recovery).
 //!
-//! # 无哈希账本口径
-//! `shared_facts.wal`（共享事实账本，暂无哈希链）做结构完整性记录
-//! （行数/字节/内容 BLAKE3 摘要入基线），变化检测照常、链验证跳过并如实
-//! 标注 `unhashed-ledger`。
+//! # Unhashed ledger policy
+//! `shared_facts.wal` (the shared fact ledger, currently without a hash chain)
+//! gets structural-integrity recording (line count / bytes / content BLAKE3
+//! digest into the baseline); change detection works as usual, chain
+//! verification is skipped and honestly labeled `unhashed-ledger`.
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
@@ -31,7 +39,7 @@ use evorule_reactor::{chain_step, fact_hash, read_wal_with_hash};
 
 use crate::error::CliError;
 
-/// 内核 SSOT 快照值（evorule-audit-chain/hash_snapshot.txt；有意变更须同批同步）
+/// Kernel SSOT snapshot values (evorule-audit-chain/hash_snapshot.txt; intentional changes must be synced in the same batch)
 const KERNEL_HASH_SNAPSHOT: [&str; 7] = [
     "56de9ce95d41896edf081f452b4ea5d3ad6508de3a0781a36fa5fbd13c586aa1",
     "902f22869450a78851d5bf1396b64d4bc7be0666468a39d2dac53b7d176f8047",
@@ -50,27 +58,27 @@ const EXIT_CORRUPT_REJECT: u8 = 5;
 
 #[derive(Debug, Args)]
 pub struct ScanWalDir {
-    /// WAL 目录（session_*.wal* / shared_facts.wal / governance_single_reactor.wal）
+    /// WAL directory (session_*.wal* / shared_facts.wal / governance_single_reactor.wal)
     pub wal_dir: PathBuf,
 
-    /// 基线文件（跨扫描比对；首跑创建，其后每次更新）
+    /// Baseline file (cross-scan comparison; created on the first run, updated every run after)
     #[arg(long)]
     pub baseline: Option<PathBuf>,
 
-    /// 哨兵日志（append-only，每次扫描每文件一行；建议独立目录）
+    /// Sentinel log (append-only, one line per file per scan; a dedicated directory is recommended)
     #[arg(long)]
     pub sentinel_log: Option<PathBuf>,
 
-    /// 机器可读 JSON 报告输出文件
+    /// Machine-readable JSON report output file
     #[arg(long)]
     pub json: Option<PathBuf>,
 }
 
-/// 单文件的本轮观测
+/// This round's observation for a single file
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct FileObs {
     records: u64,
-    /// 链尾（unhashed 账本为内容 BLAKE3 摘要）
+    /// Chain tail (for unhashed ledgers, the BLAKE3 digest of the content)
     tail: String,
     bytes: u64,
     verdict: String,
@@ -81,12 +89,12 @@ struct Baseline {
     files: BTreeMap<String, FileObs>,
 }
 
-/// 黄金向量自检：哈希快照 7 值 + genesis 语义 + 锚点黄金向量
+/// Golden vector self-check: 7-value hash snapshot + genesis semantics + anchor golden vector
 fn self_test() -> Result<(), CliError> {
     use evorule_reactor::{Fact, FactId, IoType};
     use evorule_tcb::JsonValue;
 
-    // ① 7 事实哈希快照（与内核 SSOT 逐字节）
+    // ① 7-fact hash snapshot (byte-for-byte with the kernel SSOT)
     let facts = [
         Fact::Command {
             id: FactId(1),
@@ -135,16 +143,18 @@ fn self_test() -> Result<(), CliError> {
         }
     }
 
-    // ② genesis 语义（空链链尾）
-    // compute_chain_hash(&[]) == "genesis" 由内核测试守护；此处验证 chain_step 起点
+    // ② genesis semantics (chain tail of an empty chain)
+    // compute_chain_hash(&[]) == "genesis" is guarded by kernel tests; here we verify the chain_step starting point
     let first = chain_step("genesis", KERNEL_HASH_SNAPSHOT[0]);
     if first.len() != 64 || !first.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(CliError::other("self-test FAILED: chain_step output shape"));
     }
 
-    // ③ 锚点黄金向量（固定 seed 黄金锚点）：v2 载荷从锚点字段独立重构 + 本地
-    // ed25519 验签——自检密码学元件与载荷格式忠实性（锚点链构造正确性由上游
-    // governance 黄金向量测试守护，此处不重复）
+    // ③ Anchor golden vector (fixed-seed golden anchor): the v2 payload is independently
+    // reconstructed from the anchor fields + locally verified with ed25519 — checking the
+    // cryptographic elements of the self-check and the payload-format faithfulness (anchor
+    // chain construction correctness is guarded by the upstream governance golden vector
+    // tests, not duplicated here)
     use crate::signing::{hex_decode, verify_signature, AuditSigner};
     const GOLDEN_PK: &str = "248acbdbaf9e050196de704bea2d68770e519150d103b587dae2d9cad53dd930";
     let signer = AuditSigner::from_bytes([0xabu8; 32]);
@@ -154,7 +164,7 @@ fn self_test() -> Result<(), CliError> {
             "self-test FAILED: anchor golden pubkey mismatch",
         ));
     }
-    // 黄金锚点 0：seq=0, range [0,5), chain_head=a×64（与 governance 黄金向量同源）
+    // Golden anchor 0: seq=0, range [0,5), chain_head=a×64 (same origin as the governance golden vector)
     let payload0 = format!(
         "evorule-anchor/2|vector-sess-1|0|0|5|{}|anchor-key-1|vector-engine/0.1|0",
         "a".repeat(64)
@@ -174,7 +184,7 @@ fn self_test() -> Result<(), CliError> {
     Ok(())
 }
 
-/// 解析会话 WAL 文件名：session_{n}.wal 或轮换分片 session_{n}.wal.{seq}
+/// Parse a session WAL file name: session_{n}.wal or rotation shard session_{n}.wal.{seq}
 fn session_wal_key(name: &str) -> Option<String> {
     let rest = name.strip_prefix("session_")?;
     let pos = rest.find(".wal")?;
@@ -193,7 +203,7 @@ fn session_wal_key(name: &str) -> Option<String> {
         .map(|id| format!("session:{id}"))
 }
 
-/// 归并同会话的分片（基线以会话为键：分片集合整体观测）
+/// Merge shards of the same session (the baseline is keyed by session: the shard set is observed as a whole)
 fn classify(dir: &Path) -> std::result::Result<BTreeMap<String, Vec<PathBuf>>, String> {
     let mut groups: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
     for entry in std::fs::read_dir(dir)
@@ -221,9 +231,9 @@ fn classify(dir: &Path) -> std::result::Result<BTreeMap<String, Vec<PathBuf>>, S
     Ok(groups)
 }
 
-/// 全链三查 + 链哈希轨迹（前缀锚定用）
+/// Full-chain triple check + chain hash trace (used for prefix anchoring)
 fn verify_group(paths: &[PathBuf]) -> std::result::Result<(Vec<String>, u64, u64), String> {
-    // paths 已排序：主文件 → .1 → .2（与写入时间序一致）
+    // paths is sorted: main file → .1 → .2 (consistent with write-time order)
     let mut prev = "genesis".to_string();
     let mut chain_hashes: Vec<String> = Vec::new();
     let mut bytes = 0u64;
@@ -269,7 +279,7 @@ fn verify_group(paths: &[PathBuf]) -> std::result::Result<(Vec<String>, u64, u64
     Ok((chain_hashes, count, bytes))
 }
 
-/// 无哈希账本：结构完整性摘要（当前无在役调用者；保留供未来无链账本）
+/// Unhashed ledger: structural integrity digest (no active caller currently; kept for future unchained ledgers)
 #[allow(dead_code)]
 fn digest_group(paths: &[PathBuf]) -> std::result::Result<(String, u64, u64), String> {
     let mut bytes = 0u64;
@@ -285,7 +295,7 @@ fn digest_group(paths: &[PathBuf]) -> std::result::Result<(String, u64, u64), St
 }
 
 fn bump(code: u8, worst: &mut u8) {
-    // 严重度序：3 > 4 > 5 > 2 > 0（自检已在 run 前短路，此处不会有 2）
+    // Severity order: 3 > 4 > 5 > 2 > 0 (the self-check short-circuits before run; code 2 never appears here)
     let rank = |c: u8| match c {
         EXIT_CHAIN_BROKEN => 4,
         EXIT_FILE_GONE => 3,
@@ -297,7 +307,7 @@ fn bump(code: u8, worst: &mut u8) {
     }
 }
 
-/// 基线前滚 + JSON 报告 + 人读摘要与处置指引
+/// Baseline roll-forward + JSON report + human-readable summary and remediation guidance
 fn finalize_and_report(
     cmd: &ScanWalDir,
     now: &Baseline,
@@ -306,8 +316,9 @@ fn finalize_and_report(
     first_run: bool,
     baseline_path: &Path,
 ) {
-    // 写新基线（仅在无破坏时前滚；有破坏保留旧基线供取证比对；写出失败降级为
-    // 告警——输出面故障不得改变扫描结论的退出码语义）
+    // Write the new baseline (roll forward only when nothing is broken; on breakage keep the old
+    // baseline for forensic comparison; a write failure degrades to a warning — output-side
+    // failures must not change the exit-code semantics of the scan verdict)
     if *worst == EXIT_OK {
         match serde_json::to_string_pretty(&now) {
             Ok(out) => {
@@ -344,11 +355,11 @@ fn finalize_and_report(
         println!("  {l}");
     }
     if *worst == EXIT_CORRUPT_REJECT {
-        println!("  处置指引：半行/损坏可用 `evorule truncate-partial-line <file> --confirm` 受控恢复（前缀链验证+备份）");
+        println!("  Remediation: a partial/corrupt line can be recovered in a controlled way with `evorule truncate-partial-line <file> --confirm` (prefix chain verification + backup)");
     }
 }
 
-/// 哨兵日志（append-only）：`ts | key | records | tail | verdict | delta`
+/// Sentinel log (append-only): `ts | key | records | tail | verdict | delta`
 fn append_sentinel_log(
     path: &Option<PathBuf>,
     key: &str,
@@ -377,7 +388,7 @@ fn append_sentinel_log(
     }
 }
 
-/// 基线比对（前缀锚定）：obs=本轮观测，prev=上轮基线条目（None=新文件）
+/// Baseline comparison (prefix anchoring): obs = this round's observation, prev = the previous baseline entry (None = new file)
 fn compare_with_baseline(
     obs: &FileObs,
     prev: Option<&FileObs>,
@@ -392,14 +403,15 @@ fn compare_with_baseline(
                 if prev_obs.tail == obs.tail {
                     "unchanged".to_string()
                 } else {
-                    // 无哈希账本：内容变化如实报（追加与篡改不可分——账本无链可锚）
+                    // Unhashed ledger: report content changes faithfully (append vs. tampering
+                    // indistinguishable — the ledger has no chain to anchor)
                     bump(EXIT_CHAIN_BROKEN, worst);
-                    "UNHASHED-CHANGED（内容变化：正常追加或篡改不可分，人工确认）".to_string()
+                    "UNHASHED-CHANGED (content changed: append vs. tampering indistinguishable, manual confirmation required)".to_string()
                 }
             } else if obs.records < prev_obs.records {
                 bump(EXIT_CHAIN_BROKEN, worst);
                 format!(
-                    "REGRESSED（记录回退：上轮 {} → 本轮 {}）",
+                    "REGRESSED (record count regressed: previous {} → current {})",
                     prev_obs.records, obs.records
                 )
             } else if obs.records == prev_obs.records {
@@ -407,20 +419,21 @@ fn compare_with_baseline(
                     "unchanged".to_string()
                 } else {
                     bump(EXIT_CHAIN_BROKEN, worst);
-                    "TAIL-CHANGED-SAME-LENGTH（同位链尾变化=篡改）".to_string()
+                    "TAIL-CHANGED-SAME-LENGTH (same-position tail change = tampering)".to_string()
                 }
             } else {
-                // 记录增加：前缀锚定——重放至上轮记录数处链尾必须==上轮 tail
+                // Record count grew: prefix anchoring — replaying up to the previous record
+                // count, the chain tail must equal the previous tail
                 match verify_group(paths) {
                     Ok((chain, _, _)) => {
                         let anchor_idx = (prev_obs.records as usize).saturating_sub(1);
                         match chain.get(anchor_idx) {
                             Some(h) if h == &prev_obs.tail => {
-                                "appended（前缀锚定通过）".to_string()
+                                "appended (prefix anchor verified)".to_string()
                             }
                             _ => {
                                 bump(EXIT_CHAIN_BROKEN, worst);
-                                "PREFIX-ANCHOR-MISMATCH（历史被改后重算/分片错位）".to_string()
+                                "PREFIX-ANCHOR-MISMATCH (history rewritten and recomputed, or shard misalignment)".to_string()
                             }
                         }
                     }
@@ -435,9 +448,9 @@ fn compare_with_baseline(
 }
 
 pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
-    // ===== 层 A：尺子自检（失败=码 2，不产出数据结论）=====
+    // ===== Layer A: ruler self-check (failure = code 2, no data verdict produced) =====
     if let Err(e) = self_test() {
-        eprintln!("[SENTINEL] SELF-TEST FAILED（验证器不可信，本轮不产出数据结论）: {e}");
+        eprintln!("[SENTINEL] SELF-TEST FAILED (verifier untrusted, no data verdict produced this round): {e}");
         return Err(CliError::SentinelExit(EXIT_SELF_TEST));
     }
 
@@ -449,7 +462,7 @@ pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
     let old: Baseline = match std::fs::read_to_string(&baseline_path) {
         Ok(s) => serde_json::from_str(&s)
             .map_err(|e| crate::error::CliError::other(format!("baseline parse: {e}")))?,
-        Err(_) => Baseline::default(), // 首跑
+        Err(_) => Baseline::default(), // first run
     };
     let first_run = old.files.is_empty();
 
@@ -458,9 +471,10 @@ pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
     let mut report_lines: Vec<String> = Vec::new();
 
     for (key, paths) in &groups {
-        // shared_facts.wal 自内核 WAL v2 起经 FactsLog::append 链化（实证带
-        // 三元组）——走链三查+前缀锚定路径；unhashed-ledger 口径仅保留给
-        // 确无哈希链的账本（当前无）
+        // Since kernel WAL v2, shared_facts.wal is chained via FactsLog::append (observed
+        // to carry the hash triple) — it takes the chain triple-check + prefix anchoring
+        // path; the unhashed-ledger policy is reserved only for ledgers genuinely without
+        // a hash chain (none currently)
         let unhashed = false;
         let obs_result = if unhashed {
             digest_group(paths).map(|(digest, lines, bytes)| FileObs {
@@ -481,7 +495,7 @@ pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
         match obs_result {
             Ok(obs) => {
                 let verdict_label = obs.verdict.clone();
-                // ===== 层 B：基线比对（前缀锚定）=====
+                // ===== Layer B: baseline comparison (prefix anchoring) =====
                 let comparison =
                     compare_with_baseline(&obs, old.files.get(key), unhashed, paths, &mut worst);
                 report_lines.push(format!(
@@ -494,7 +508,8 @@ pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
                 now.files.insert(key.clone(), obs);
             }
             Err(e) => {
-                // 解析/验证失败：区分「失配」（码 3）与「半行/损坏拒收」（码 5）
+                // Parse/verify failure: distinguish "mismatch" (code 3) from
+                // "partial line / corruption rejected" (code 5)
                 let partial = e.contains("JSON parse error") || e.contains("EOF while parsing");
                 let code = if partial {
                     EXIT_CORRUPT_REJECT
@@ -503,8 +518,9 @@ pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
                 };
                 bump(code, &mut worst);
                 report_lines.push(format!("{key}: REJECTED ({e})"));
-                // 拒收文件仍入本轮观测（verdict=rejected 占位）：
-                // 文件物理存在，不得被「文件消失」分支误报（码 4 与码 5 语义隔离）
+                // The rejected file still enters this round's observation (verdict=rejected placeholder):
+                // the file physically exists and must not be misreported by the "file gone"
+                // branch (code 4 and code 5 semantics are isolated)
                 let bytes_now = paths
                     .iter()
                     .filter_map(|p| std::fs::metadata(p).ok())
@@ -523,11 +539,13 @@ pub fn run(cmd: &ScanWalDir) -> Result<(), CliError> {
         }
     }
 
-    // 基线中存在而磁盘消失的会话 → 码 4
+    // Sessions present in the baseline but gone from disk → code 4
     for key in old.files.keys() {
         if !now.files.contains_key(key) && !first_run {
             bump(EXIT_FILE_GONE, &mut worst);
-            report_lines.push(format!("{key}: FILE-GONE（基线有而磁盘无——截断/误删）"));
+            report_lines.push(format!(
+                "{key}: FILE-GONE (in baseline but missing on disk — truncated or deleted)"
+            ));
         }
     }
 
@@ -551,32 +569,36 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
-    /// 自检必须通过（黄金向量=尺子校准的本体测试）
+    /// The self-check must pass (golden vector = the metrology calibration of the ruler itself)
     #[test]
     fn self_test_passes_with_current_binaries() {
-        assert!(self_test().is_ok(), "哨兵自检失败：验证器与黄金向量漂移");
+        assert!(
+            self_test().is_ok(),
+            "sentinel self-check failed: verifier drifted from the golden vectors"
+        );
     }
 
-    /// 内置快照常量必须与内核 SSOT 快照文件逐行一致（跨仓锁定的编译期+测试期双保险）
+    /// The built-in snapshot constants must match the kernel SSOT snapshot file line by line
+    /// (compile-time + test-time double lock across repos)
     #[test]
     fn builtin_snapshot_matches_kernel_file() {
         let kernel_snapshot = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../evorule-audit-chain/hash_snapshot.txt");
         let content = std::fs::read_to_string(&kernel_snapshot)
-            .expect("内核 SSOT 快照文件应存在（同 workspace）");
+            .expect("kernel SSOT snapshot file should exist (same workspace)");
         let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
-        assert_eq!(lines.len(), 7, "内核快照应为 7 行");
+        assert_eq!(lines.len(), 7, "kernel snapshot should have 7 lines");
         for (i, line) in lines.iter().enumerate() {
             assert_eq!(
                 *line,
                 KERNEL_HASH_SNAPSHOT[i],
-                "第 {} 行与内置常量不一致",
+                "line {} does not match the built-in constant",
                 i + 1
             );
         }
     }
 
-    /// 会话文件名归并（含轮换分片与非会话文件排除）
+    /// Session file-name merging (including rotation shards and exclusion of non-session files)
     #[test]
     fn session_wal_key_classification() {
         assert_eq!(

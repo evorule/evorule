@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 子命令模块
+//! Subcommand modules
 //!
-//! 每个子命令对应一个文件：
-//! - `validate`：规则集形态门禁（L2 纪律，见 `discipline_gate`）
-//! - `run`：调 executor 执行规则，输出 fact log
-//! - `replay`：pretty-print fact log
-//! - `diff`：按 FactId 对齐对比两个 fact log
-//! - `verify_chain`：验证 fact log 哈希链完整性
-//! - `compile_evopack`：host 编译器——JSON 规则 → 紧凑 .evopack 二进制包
-//! - `anchor_keygen`：生成 G-A1 审计锚点签名密钥对（一次性运维）
-//! - `verify_anchors`：离线校验 G-A1 审计锚点真实性（防抵赖）
+//! Each subcommand corresponds to one file:
+//! - `validate`: rule-set shape gate (L2 discipline, see `discipline_gate`)
+//! - `run`: call the executor to run rules, output a fact log
+//! - `replay`: pretty-print a fact log
+//! - `diff`: compare two fact logs aligned by FactId
+//! - `verify_chain`: verify fact log hash chain integrity
+//! - `compile_evopack`: host compiler — JSON rules → compact .evopack binary package
+//! - `anchor_keygen`: generate the G-A1 audit anchor signing keypair (one-time ops)
+//! - `verify_anchors`: verify G-A1 audit anchor authenticity offline (non-repudiation)
 
 pub mod anchor_keygen;
 pub mod anchor_pubkey;

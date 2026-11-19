@@ -1,57 +1,65 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 四仓 build.rs 共享函数同步测试（同步纪律机器化整改）。
+//! Four-repo build.rs shared-function sync test (mechanizing the sync discipline).
 //!
-//! evorule-tcb / evorule-reactor / evorule-governance / evorule-cli 四个 crate
-//! 的 build.rs 是同一骨架的内联副本：字面量门禁核心函数逐份内联、无运行期
-//! 共享依赖（build.rs 必须零依赖）。历史上四份副本只靠人工纪律同步，R01 审计
-//! 实测已发生多维漂移（模式数 23/15/14/7 各表失实、豁免模型互异、行数声明
-//! 与实际差 2~3 倍、漂移检测为零）。
+//! The build.rs files of the four crates evorule-tcb / evorule-reactor /
+//! evorule-governance / evorule-cli are inline copies of one skeleton: the
+//! literal-gate core functions are inlined copy by copy with no runtime shared
+//! dependency (build.rs must stay zero-dependency). Historically the four
+//! copies were synced only by manual discipline, and a prior audit measured
+//! multi-dimensional drift (pattern counts 23/15/14/7 wrong in each table,
+//! divergent exemption models, declared line counts off by 2-3x, zero drift
+//! detection).
 //!
-//! 本测试把同步纪律机器化：
-//! 1. 从四份 build.rs 中按函数名提取共享函数体（顶层 `fn name` 到行首 `}`）；
-//! 2. 规范化（字符串/字符字面量感知地剥离注释 + 去全部空白——注释措辞与
-//!    排版差异不构成漂移，语义差异才会）；
-//! 3. 以 evorule-tcb 为基准逐函数比对其余三仓，任何缺失/不一致即测试失败。
+//! This test mechanizes the sync discipline:
+//! 1. Extract shared function bodies from the four build.rs files by function
+//!    name (top-level `fn name` up to the line-start `}`);
+//! 2. Normalize (strip comments with string/char-literal awareness + remove
+//!    all whitespace — comment wording and layout differences are not drift,
+//!    semantic differences are);
+//! 3. Compare each function against the evorule-tcb baseline across the other
+//!    three repos; any missing/inconsistent function fails the test.
 //!
-//! 有意差异（不参与比对）见 GATE_REFERENCE.md §一「有意差异表」：
-//! FORBIDDEN 模式清单按 SPEC 各异、BOM 检查仅 tcb、T15 wildcard 与
-//! T10_FILE_EXEMPT 仅 reactor、`strip_leading_attr` 仅 tcb/reactor 等。
-//! 新增共享函数时必须同时加入下方锁定清单——清单本身以测试断言锁死，
-//! 防止「加了函数忘了锁定」。
+//! Intentional differences (excluded from comparison) are listed in
+//! GATE_REFERENCE.md §一 "intentional differences table": the FORBIDDEN
+//! pattern lists differ per SPEC, the BOM check is tcb-only, the T15 wildcard
+//! and T10_FILE_EXEMPT are reactor-only, `strip_leading_attr` is
+//! tcb/reactor-only, etc. Adding a shared function requires adding it to the
+//! lock list below as well — the list itself is pinned by a test assertion to
+//! prevent "added the function but forgot to lock it".
 
 #![allow(clippy::unwrap_used)]
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// 四仓共同锁定（函数体规范化后必须逐字节一致）。
+/// Locked across all four repos (normalized bodies must be byte-identical).
 const LOCKED_FNS_ALL_FOUR: &[&str] = &[
-    // 跳过阀（fail-closed）
+    // Skip valve (fail-closed)
     "skip_requested",
-    // 去空白匹配口径
+    // Whitespace-squeezed matching semantics
     "squeeze_ws",
-    // 同行块注释剥离 + 裸词词界
+    // Same-line block-comment stripping + bare-word boundary
     "strip_inline_block_comments",
     "bare_word_hit",
-    // 测试模块剥离（双向修复）
+    // Test-module stripping (two-way fix)
     "skip_to_mod_tests",
     "strip_test_mod",
-    // 剥离器支撑件
+    // Stripper support helpers
     "char_lit_starts",
     "skip_lifetime",
     "find_inline_lbrace",
     "match_brace",
-    // 策略层检测（crate 名为参数，四仓函数体一致）
+    // Strategy-layer detection (crate name as parameter; identical bodies across the four repos)
     "detect_strategy_patterns",
     "collect_rs_files_for_strategy",
 ];
 
-/// 仅 tcb/reactor 锁定（governance/cli 的 FORBIDDEN 不含 unsafe，无属性行剥离）。
+/// Locked for tcb/reactor only (governance/cli FORBIDDEN has no unsafe, hence no attribute-line stripping).
 const LOCKED_FNS_TCB_REACTOR: &[&str] = &["strip_leading_attr"];
 
-/// (目录, 显示名)——基准仓必须是第一项。
+/// (directory, display name) — the baseline repo must come first.
 const REPOS: &[(&str, &str)] = &[
     ("evorule-tcb", "tcb"),
     ("evorule-reactor", "reactor"),
@@ -72,7 +80,7 @@ fn four_repo_shared_gate_fns_are_in_sync() {
                 Ok(s) => (name.to_string(), s),
                 Err(e) => {
                     drifts.push(format!(
-                        "[{name}] build.rs 不可读: {} ({e})",
+                        "[{name}] build.rs unreadable: {} ({e})",
                         path.display()
                     ));
                     (name.to_string(), String::new())
@@ -88,19 +96,19 @@ fn four_repo_shared_gate_fns_are_in_sync() {
         .chain(LOCKED_FNS_TCB_REACTOR.iter())
     {
         let Some(baseline) = extract_fn(baseline_src, fn_name) else {
-            drifts.push(format!("[{baseline_name}] 基准缺失共享函数 `{fn_name}`"));
+            drifts.push(format!("[{baseline_name}] baseline missing shared function `{fn_name}`"));
             continue;
         };
-        // tcb/reactor 双仓锁定的函数在 governance/cli 中不存在——跳过而非报缺失
+        // Functions locked only for tcb/reactor do not exist in governance/cli — skip instead of reporting missing
         let scope_all = LOCKED_FNS_ALL_FOUR.contains(fn_name);
         for (name, src) in sources.iter().skip(1) {
             if !scope_all && !matches!(name.as_str(), "reactor") {
                 continue;
             }
             match extract_fn(src, fn_name) {
-                None => drifts.push(format!("[{name}] 缺失共享函数 `{fn_name}`")),
+                None => drifts.push(format!("[{name}] missing shared function `{fn_name}`")),
                 Some(body) if body != baseline => drifts.push(format!(
-                    "[{name}] `{fn_name}` 与基准 [{baseline_name}] 漂移:\n  基准: {baseline}\n  本仓: {body}"
+                    "[{name}] `{fn_name}` drifted from the baseline [{baseline_name}]:\n  baseline: {baseline}\n  this repo: {body}"
                 )),
                 Some(_) => {}
             }
@@ -109,13 +117,14 @@ fn four_repo_shared_gate_fns_are_in_sync() {
 
     assert!(
         drifts.is_empty(),
-        "四仓 build.rs 共享函数漂移 (既定整改, 同步声明见 GATE_REFERENCE.md §一):\n{}",
+        "four-repo build.rs shared-function drift (remediation already decided; sync declaration in GATE_REFERENCE.md §一):\n{}",
         drifts.join("\n")
     );
 }
 
-/// 锁定清单完整性: 上面的清单里不允许出现四份 build.rs 中根本不存在的函数名
-/// （防止清单腐化成摆设——锁定一个不存在的函数 = 锁了个寂寞）。
+/// Lock-list integrity: the list above must not contain function names that do
+/// not exist in any of the four build.rs files (preventing the list from
+/// rotting into decoration — locking a non-existent function locks nothing).
 #[test]
 fn locked_fn_inventory_matches_reality() {
     let root = workspace_root();
@@ -138,19 +147,20 @@ fn locked_fn_inventory_matches_reality() {
     }
     assert!(
         ghosts.is_empty(),
-        "锁定清单含不存在的函数 (清单与实现脱节):\n{}",
+        "lock list contains non-existent functions (list out of sync with the implementation):\n{}",
         ghosts.join("\n")
     );
 }
 
-/// workspace 根 = evorule-cli 的上一级（四仓 build.rs 均在 workspace 根下）。
+/// Workspace root = the parent of evorule-cli (all four build.rs files live under the workspace root).
 fn workspace_root() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest.parent().unwrap_or(Path::new(".")).to_path_buf()
 }
 
-/// 提取顶层函数体: 行首 `fn <name>`（行首至 fn 之间只允许空白），
-/// 到首个行首 `}`（列 0 闭合行）为止。返回规范化后的函数体。
+/// Extract a top-level function body: from a line-start `fn <name>` (only
+/// whitespace allowed between line start and fn) up to the first line-start
+/// `}` (a closing line at column 0). Returns the normalized body.
 fn extract_fn(source: &str, fn_name: &str) -> Option<String> {
     let marker = format!("fn {fn_name}");
     let mut search_from = 0;
@@ -164,7 +174,7 @@ fn extract_fn(source: &str, fn_name: &str) -> Option<String> {
             .next()
             .map_or(true, |c| !(c.is_ascii_alphanumeric() || c == '_'));
         if at_top_level && next_char_ok {
-            // 函数体结束: abs 之后首个 "\n}"（列 0 的闭合行）
+            // Body end: the first "\n}" after abs (a closing line at column 0)
             let close = source[abs..].find("\n}")? + abs + 1;
             let body = &source[line_start..=close];
             return Some(normalize(body));
@@ -174,8 +184,9 @@ fn extract_fn(source: &str, fn_name: &str) -> Option<String> {
     None
 }
 
-/// 规范化: 字符串/字符字面量感知地剥离 // 与 /* */ 注释, 再去全部空白。
-/// 注释措辞/排版/换行差异不构成漂移; 语义差异必然保留。
+/// Normalize: strip // and /* */ comments with string/char-literal awareness,
+/// then remove all whitespace. Comment wording/layout/line-break differences
+/// are not drift; semantic differences always survive.
 fn normalize(body: &str) -> String {
     let no_comments = strip_comments(body);
     no_comments.chars().filter(|c| !c.is_whitespace()).collect()
@@ -185,7 +196,7 @@ fn strip_comments(src: &str) -> String {
     let mut out = String::with_capacity(src.len());
     let mut chars = src.chars().peekable();
     let mut in_string = false; // "..."
-    let mut in_char = false; // 'x' / b'x'（含转义）
+    let mut in_char = false; // 'x' / b'x' (with escapes)
     let mut in_line_comment = false;
     let mut in_block_comment = false;
     while let Some(c) = chars.next() {

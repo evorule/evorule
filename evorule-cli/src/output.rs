@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 输出格式化（human-readable + diff）
+//! Output formatting (human-readable + diff)
 //!
-//! # 设计
-//! - `fact_to_human`：单个 Fact 的单行摘要（适合 replay/diff）
-//! - `facts_to_human`：多 Fact 的多行输出
-//! - `format_diff_line`：diff 行前缀（`[~]`/`[-]`/`[+]`）
+//! # Design
+//! - `fact_to_human`: one-line summary of a single Fact (used by replay/diff)
+//! - `facts_to_human`: multi-line output of many Facts
+//! - `format_diff_line`: diff line prefix (`[~]`/`[-]`/`[+]`)
 
 use evorule_reactor::Fact;
 
-/// 单个 Fact 的单行摘要
+/// One-line summary of a single Fact
 ///
-/// 格式：`[F{id}] {type} {detail}`
+/// Format: `[F{id}] {type} {detail}`
 /// - Command: `[F1] Command type=noop`
 /// - StateTransition: `[F2] StateTransition cause=F1`
 /// - IoRequest: `[F3] IoRequest io_type=call_external`
 /// - Stable: `[F4] Stable`
 /// - Error: `[F5] Error: max_steps exceeded`
 ///
-/// # 示例
+/// # Example
 /// ```
 /// use evorule_cli::output::fact_to_human;
 /// use evorule_reactor::{Fact, FactId};
@@ -105,7 +105,7 @@ pub fn fact_to_human(fact: &Fact) -> String {
     }
 }
 
-/// 多 Fact 的多行输出
+/// Multi-line output of many Facts
 pub fn facts_to_human(facts: &[Fact]) -> String {
     facts
         .iter()
@@ -114,17 +114,17 @@ pub fn facts_to_human(facts: &[Fact]) -> String {
         .join("\n")
 }
 
-/// diff 行前缀
+/// diff line prefix
 pub mod diff_prefix {
-    /// 两边都有但内容不同
+    /// Present on both sides but with different content
     pub const CHANGED: &str = "[~]";
-    /// 只在 A
+    /// Only in A
     pub const ONLY_A: &str = "[-]";
-    /// 只在 B
+    /// Only in B
     pub const ONLY_B: &str = "[+]";
 }
 
-/// 格式化 diff 行
+/// Format a diff line
 pub fn format_diff_line(prefix: &str, content: &str) -> String {
     format!("{} {}", prefix, content)
 }

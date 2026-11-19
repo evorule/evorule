@@ -10,9 +10,9 @@ rust-version.workspace = true
 description = "EvoRule CLI - Local JSON rule executor for compliance-critical users (zero network, zero telemetry, musl static)"
 readme = "README.md"
 documentation = "https://docs.rs/evorule-cli"
-# L0 合规核定位：零网络、零 telemetry、纯本地执行。面向政府/军工/医疗/金融/法律合规刚需场景
-# 需要远程 HTTP API 交互见 evorule-server 独立仓
-# 需要应用层工具（规则脚手架 / 仪表盘等）见 evorule-application 仓
+# L0 compliance-kernel positioning: zero network, zero telemetry, purely local execution. Aimed at government/defense/medical/finance/legal compliance-critical scenarios
+# For remote HTTP API interaction see the separate evorule-server repo
+# For application-layer tooling (rule scaffolding / dashboards etc.) see the evorule-application repo
 keywords = ["cli", "deterministic", "audit", "compliance", "rules-engine"]
 categories = [
     "command-line-utilities",
@@ -21,39 +21,43 @@ categories = [
     "development-tools",
 ]
 exclude = [
-    "build-musl.sh",      # musl 构建脚本（开发用）
-    "check-musl.sh",      # musl 校验脚本
-    "run_kani.sh",        # Kani 验证脚本（dev-only）
-    "verify.sh",          # 版本验证脚本
-    "tests/",             # e2e 测试脚本（含 fixtures，下游不需要）
-    "examples/README.md", # 已改为迁移说明（机制层最小样例，不打包）
-    "CLI_SPEC.md",        # 仓内设计文档
-    "**/*.log",           # 运行日志
+    "build-musl.sh",      # musl build script (development use)
+    "check-musl.sh",      # musl verification script
+    "run_kani.sh",        # Kani verification script (dev-only)
+    "verify.sh",          # version verification script
+    "tests/",             # e2e test scripts (including fixtures; downstream does not need them)
+    "examples/README.md", # now a migration note (minimal mechanism-layer sample, not packaged)
+    "CLI_SPEC.md",        # in-repo design document
+    "**/*.log",           # runtime logs
 ]
 
 [[bin]]
-name = "evorule"     # 用户友好名（不是包名 evorule-cli）
+name = "evorule"     # user-friendly name (not the package name evorule-cli)
 path = "src/main.rs"
 
 
 [lints]
 workspace = true
 [dependencies]
-# Core: evorule-tcb（纯函数 execute_transition）+ evorule-reactor（Fact/FactId/IoType/wal 序列化/哈希链）
+# Core: evorule-tcb (pure-function execute_transition) + evorule-reactor (Fact/FactId/IoType/wal serialization/hash chain)
 #
-# 依赖范围决策：
-# - evorule-reactor 拉 tokio + blake3 + serde_json（全 pure Rust），可 musl 静态链接
-# - evorule-governance 虽 H6 已去应用层依赖，但 CLI 目前仅需 tier0+tier1 功能，故不引入
-# - CLI 主执行路径同步（execute_transition 是纯函数），tokio 仅用于 reactor spawn + WAL flush
-# - persistence feature 启用 WAL 读写（含哈希链验证），serde_json/blake3 均 pure Rust，支持 musl
+# Dependency scope decisions:
+# - evorule-reactor pulls tokio + blake3 + serde_json (all pure Rust), musl statically linkable
+# - evorule-governance, though it has already shed application-layer dependencies, is not included:
+#   the CLI currently needs only tier0+tier1 functionality
+# - the CLI's main execution path is synchronous (execute_transition is a pure function);
+#   tokio is used only for reactor spawn + WAL flush
+# - the persistence feature enables WAL read/write (including hash chain verification);
+#   serde_json/blake3 are both pure Rust, musl-compatible
 evorule-tcb = { path = "../evorule-tcb", version = "0.13.0" }
 evorule-reactor = { path = "../evorule-reactor", version = "0.13.0", features = [
     "persistence",
 ] }
-# L2 纪律门禁判定引擎（2026-09-24 接线：机制自 cli 抽出，与 server 共享 SSOT）
+# L2 discipline gate decision engine (mechanism extracted from the CLI, sharing one SSOT with evorule-server)
 evorule-discipline = { path = "../evorule-discipline", version = "0.13.0" }
-# host 编译器（compile-evopack）：复用 evorule-mcu 正典编码路径（线格式 + postcard，
-# 纯 Rust，可 musl 静态链接），与 MCU no_std 内核加载侧互为对偶
+# Host compiler (compile-evopack): reuses the evorule-mcu canonical encoding path
+# (wire format + postcard, pure Rust, musl statically linkable), dual to the MCU
+# no_std kernel loading side
 evorule-mcu = { path = "../evorule-mcu", version = "0.13.0" }
 
 # CLI essentials (all pure Rust)
@@ -62,19 +66,19 @@ serde_json = "1"
 clap = { version = "4", features = ["derive", "env"] }
 thiserror = "2"
 
-# 哈希链验证（verify-chain 命令需要直接调用 blake3 验证存储的哈希）
+# Hash chain verification (verify-chain calls blake3 directly to verify stored hashes)
 blake3 = "1"
 
-# G-A1：审计锚点签名（anchor-keygen / verify-anchors）。ed25519（RFC 8032）确定性签名，无 RNG
+# G-A1: audit anchor signing (anchor-keygen / verify-anchors). ed25519 (RFC 8032) deterministic signatures, no RNG
 ed25519-dalek = "2"
-# G-A1：仅密钥生成（一次性运维）用 OS 熵源，不进入确定性执行路径
+# G-A1: key generation only (one-time ops) uses the OS entropy source; never enters the deterministic execution path
 getrandom = { version = "0.2", features = ["std"] }
 
 # Tracing (optional but useful for the user to see what evorule is doing)
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# 注: profile 在 workspace 根 Cargo.toml 统一配置
-# evorule-cli 不重复声明,避免 "profiles for the non root package will be ignored" 警告
+# Note: profiles are configured centrally in the workspace root Cargo.toml
+# evorule-cli does not redeclare them, avoiding the "profiles for the non root package will be ignored" warning
 
 # musl static link target: cargo build --release --target x86_64-unknown-linux-musl

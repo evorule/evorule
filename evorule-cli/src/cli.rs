@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! CLI 参数定义（clap derive）
+//! CLI argument definitions (clap derive)
 //!
-//! 子命令：
-//! - `run`：加载并执行 JSON 规则，输出 fact log
-//! - `replay`：重放 fact log（pretty-print）
-//! - `diff`：对比两个 fact log（按 FactId 对齐）
-//! - `validate`：校验 JSON 规则文件（用 tier1 RuleValidator）
-//! - `verify-chain`：验证 fact log 哈希链完整性
-//! - `compile-evopack`：JSON 规则 → 紧凑 .evopack 二进制包（host 编译器）
-//! - `anchor-keygen`：生成 G-A1 审计锚点签名密钥对（一次性运维）
-//! - `verify-anchors`：离线校验 G-A1 审计锚点真实性（防抵赖）
+//! Subcommands:
+//! - `run`: load and execute JSON rules, output a fact log
+//! - `replay`: replay a fact log (pretty-print)
+//! - `diff`: compare two fact logs (aligned by FactId)
+//! - `validate`: validate JSON rule files (tier1 RuleValidator)
+//! - `verify-chain`: verify fact log hash chain integrity
+//! - `compile-evopack`: JSON rules → compact .evopack binary package (host compiler)
+//! - `anchor-keygen`: generate the G-A1 audit anchor signing keypair (one-time ops)
+//! - `verify-anchors`: verify G-A1 audit anchor authenticity offline (non-repudiation)
 
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-/// evorule: 没有智能,只有执行的最佳实践
+/// evorule: no intelligence, only best practices of execution
 #[derive(Parser, Debug)]
 #[command(
     name = "evorule",

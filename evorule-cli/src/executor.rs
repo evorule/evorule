@@ -1,32 +1,39 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 同步反应器循环 —— CLI 执行核心
+//! Synchronous reactor loop — the CLI execution core
 //!
-//! # P0 修复
-//! 1. **FIFO 队列**：用 `VecDeque::pop_front()`，不能用 `Vec::pop()`。
-//!    tier0 `exec_push` 用 `new_queue.append(queue)` 把新指令前置（插队语义），
-//!    必须从前端取才能保证 push 的指令先执行。
-//! 2. **max_steps 上界**：先检后 pop（对齐 evorule-reactor reactor.rs BUG-3 修复）。
-//!    默认 10000，可 `--max-steps` 覆盖。超限发 `Fact::Error` + break。
-//! 3. **I/O 两阶段架构**：`pending_io: HashMap<FactId, JsonValue>` 缓存 orig 指令。
-//!    0.2.0 无 handler 时发 `Fact::Error` 退出，但架构正确——0.3.0 加 handler 时
-//!    只需在 IoRequest 分支注入 IoResponse + push_front(orig) 即可，循环主体不变。
+//! # P0 fixes
+//! 1. **FIFO queue**: use `VecDeque::pop_front()`, not `Vec::pop()`.
+//!    The tier0 `exec_push` uses `new_queue.append(queue)` to prepend new
+//!    instructions (queue-jumping semantics); taking from the front is what
+//!    guarantees pushed instructions execute first.
+//! 2. **max_steps upper bound**: check before pop (aligned with the
+//!    evorule-reactor reactor.rs BUG-3 fix).
+//!    Default 10000, overridable via `--max-steps`. On excess, emit
+//!    `Fact::Error` + break.
+//! 3. **Two-phase I/O architecture**: `pending_io: HashMap<FactId, JsonValue>`
+//!    caches the orig instruction. In 0.2.0 there is no handler, so a
+//!    `Fact::Error` is emitted and the loop exits — but the architecture is
+//!    correct: when 0.3.0 adds a handler, only the IoRequest branch needs to
+//!    inject IoResponse + push_front(orig); the loop body stays unchanged.
 //!
-//! # 不引入 tokio runtime
-//! `execute_transition` 是同步纯函数，整个循环无 await。tokio 仅作为 evorule-reactor
-//! 编译依赖存在，CLI 不创建 runtime。
+//! # No tokio runtime introduced
+//! `execute_transition` is a synchronous pure function; the whole loop has no
+//! await. tokio exists only as a build dependency of evorule-reactor; the CLI
+//! does not create a runtime.
 //!
-//! # Fact 序列
-//! 执行产生 `Vec<Fact>`：
-//! 1. `Command`（初始指令）
-//! 2. 若干 `StateTransition`（每步执行）
-//! 3. 可选 `IoRequest` + `Error`（I/O 请求但无 handler）
-//! 4. 可选 `Error`（TCB 错误或 max_steps 超限）
-//! 5. `Stable`（稳定标记，始终发射）
+//! # Fact sequence
+//! Execution produces `Vec<Fact>`:
+//! 1. `Command` (the initial instruction)
+//! 2. Several `StateTransition` (one per executed step)
+//! 3. Optional `IoRequest` + `Error` (I/O requested but no handler)
+//! 4. Optional `Error` (TCB error or max_steps exceeded)
+//! 5. `Stable` (stability marker, always emitted)
 //!
-//! 最终 payload 经返回值直接交给调用方（：Stable 不再
-//! 内嵌全量快照，状态本体从执行器持有的 payload 返回，不经事实链）。
+//! The final payload is handed to the caller directly via the return value
+//! (Stable no longer embeds a full snapshot; the state itself comes back from
+//! the executor-held payload and does not travel through the fact chain).
 
 use std::collections::{HashMap, VecDeque};
 
@@ -35,27 +42,31 @@ use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 
 use crate::error::CliError;
 
-/// 默认 max_steps（与 evorule-reactor 默认 max_rounds 一致量级）
+/// Default max_steps (same magnitude as the evorule-reactor default max_rounds)
 pub const DEFAULT_MAX_STEPS: usize = 10000;
 
-/// 执行规则，产生 Fact 序列
+/// Execute rules, producing a Fact sequence
 ///
-/// # 参数
-/// - `core_eval`：transform 规则列表（由 `io_util::load_rules` 加载）
-/// - `initial_payload`：初始 payload
-/// - `initial_instruction`：初始指令（通常是 `{"type":"noop"}` 触发 transform 链）
-/// - `max_steps`：最大执行步数上界（先检后 pop）
+/// # Parameters
+/// - `core_eval`: transform rule list (loaded by `io_util::load_rules`)
+/// - `initial_payload`: initial payload
+/// - `initial_instruction`: initial instruction (usually `{"type":"noop"}` to
+///   trigger the transform chain)
+/// - `max_steps`: maximum execution step bound (check before pop)
 ///
-/// # 返回
-/// `(Vec<Fact>, JsonValue)`：fact 序列（Command、若干 StateTransition、
-/// 可选 Error、结尾 Stable）+ 最终 payload（执行器持有，直接返回）
+/// # Returns
+/// `(Vec<Fact>, JsonValue)`: the fact sequence (Command, several
+/// StateTransition, optional Error, trailing Stable) + the final payload
+/// (held by the executor, returned directly)
 ///
-/// # 不变量
-/// - FIFO 队列：`VecDeque::pop_front`，不能用 `Vec::pop`
-/// - max_steps 先检后 pop：超限发 Error + break
-/// - I/O 两阶段：IoRequest 时缓存 orig 指令到 pending_io，0.2.0 无 handler 发 Error
-// 108 行: CLI 主循环 + I/O 两阶段 + max_steps 门禁 + 错误处理必须单函数原子语义
-// 拆函数会让 4 阶段 (loop / dispatch / pending_io / break) 状态传递出错
+/// # Invariants
+/// - FIFO queue: `VecDeque::pop_front`, never `Vec::pop`
+/// - max_steps check before pop: on excess, emit Error + break
+/// - Two-phase I/O: on IoRequest, cache the orig instruction into pending_io;
+///   0.2.0 has no handler and emits Error
+// 108 lines: the CLI main loop + two-phase I/O + max_steps gate + error
+// handling must stay atomic within a single function. Splitting it would break
+// state passing across the 4 phases (loop / dispatch / pending_io / break).
 #[allow(clippy::too_many_lines)]
 pub fn execute(
     core_eval: &[JsonValue],
@@ -69,12 +80,12 @@ pub fn execute(
     queue.push_back(initial_instruction);
     let mut payload = initial_payload;
     let mut steps = 0;
-    // 会话版本号：对齐 reactor 语义，每条 StateTransition +1
+    // Session version counter: aligned with reactor semantics, +1 per StateTransition
     let mut version: u64 = 0;
-    // 0.2.0 无 I/O handler，pending_io 仅缓存不消费（为 0.3.0 铺路）
+    // 0.2.0 has no I/O handler; pending_io only caches and never consumes (paving the way for 0.3.0)
     let mut pending_io: HashMap<FactId, JsonValue> = HashMap::new();
 
-    // 发射初始 Command fact
+    // Emit the initial Command fact
     let cmd_id = id_gen.next_id();
     let mut current_cause: FactId = cmd_id;
     let cmd_instruction = queue.front().cloned().unwrap_or(JsonValue::Null);
@@ -84,7 +95,7 @@ pub fn execute(
     });
 
     while !queue.is_empty() {
-        // max_steps 先检后 pop（对齐 evorule-reactor BUG-3 修复）
+        // max_steps check before pop (aligned with the evorule-reactor BUG-3 fix)
         if steps >= max_steps {
             let err_id = id_gen.next_id();
             facts.push(Fact::Error {
@@ -95,14 +106,14 @@ pub fn execute(
             break;
         }
 
-        // FIFO：pop_front（不能用 Vec::pop，那是 LIFO）
+        // FIFO: pop_front (never Vec::pop, that is LIFO)
         let instruction = match queue.pop_front() {
             Some(i) => i,
-            None => break, // 逻辑不可达（while 条件已检查），防御性
+            None => break, // logically unreachable (while condition already checked); defensive
         };
         steps += 1;
 
-        // 传当前 queue 快照给 execute_transition（供 core_eval 规则引用 __exec__.queue）
+        // Pass the current queue snapshot to execute_transition (so core_eval rules can reference __exec__.queue)
         let queue_snapshot: Vec<JsonValue> = queue.iter().cloned().collect();
         let result = execute_transition(core_eval, &instruction, &payload, &queue_snapshot);
 
@@ -110,7 +121,7 @@ pub fn execute(
             Ok(TransitionResult::State {
                 new_payload,
                 new_queue,
-                // cli 为校验工具，不采集命中归因（运行时归因在 server 链路）
+                // cli is a verification tool; no hit attribution is collected (runtime attribution lives in the server path)
                 rule_hits: _,
             }) => {
                 payload = new_payload;
@@ -127,10 +138,10 @@ pub fn execute(
                 current_cause = id;
             }
             Ok(TransitionResult::IoRequired { io_type, params }) => {
-                // v0.2.0：io_type 透传不校验（parse 已 deprecated，无条件接受）
+                // v0.2.0: io_type passed through without validation (parse is deprecated, accepted unconditionally)
                 let io_type = IoType::new(&io_type);
                 let req_id = id_gen.next_id();
-                // 缓存 orig 指令（0.3.0 加 handler 时用于 push_front 重执行）
+                // Cache the orig instruction (used for push_front re-execution when 0.3.0 adds a handler)
                 pending_io.insert(req_id, instruction.clone());
                 facts.push(Fact::IoRequest {
                     id: req_id,
@@ -138,7 +149,7 @@ pub fn execute(
                     io_type: io_type.clone(),
                     params,
                 });
-                // 0.2.0 无 I/O handler，发 Error 退出
+                // 0.2.0 has no I/O handler: emit Error and exit
                 let err_id = id_gen.next_id();
                 facts.push(Fact::Error {
                     id: err_id,
@@ -154,11 +165,11 @@ pub fn execute(
             Ok(TransitionResult::Ignored {
                 instruction_type,
                 reason,
-                // cli 为校验工具，不采集命中归因（运行时归因在 server 链路）
+                // cli is a verification tool; no hit attribution is collected (runtime attribution lives in the server path)
                 rule_hits: _,
             }) => {
-                // v0.3.1：指令被静默忽略（无匹配 transform 规则或规则产生 noop 效果）。
-                // 与 reactor 行为一致：产生 Error 事实使系统显式感知此问题
+                // v0.3.1: the instruction was silently ignored (no matching transform rule, or the rules produced a noop effect).
+                // Consistent with reactor behavior: emit an Error fact so the system notices this explicitly
                 let err_id = id_gen.next_id();
                 let msg = format!(
                     "Instruction ignored by TCB: type={}, reason={}, instruction={:?}",
@@ -176,8 +187,9 @@ pub fn execute(
                 break;
             }
             Ok(TransitionResult::Halted { rule_index, reason }) => {
-                // 回归验证：enforce 强制原语命中——违规指令被拒绝执行（不执行、不回队）。
-                // CLI 与 reactor 同语义：系统独占发射 Violation 事实，继续处理后续指令
+                // Regression check: the enforce enforcement primitive hit — the violating instruction is rejected
+                // (not executed, not re-queued). CLI shares reactor semantics: the system exclusively emits
+                // the Violation fact and keeps processing subsequent instructions
                 let v_id = id_gen.next_id();
                 facts.push(Fact::Violation {
                     id: v_id,
@@ -206,8 +218,8 @@ pub fn execute(
         }
     }
 
-    // 始终发射 Stable（即使是 Error 退出，也标记当前版本稳定）。
-    // 最终 payload 经返回值直接交付（：不再内嵌快照）
+    // Always emit Stable (even on an Error exit, the current version is marked stable).
+    // The final payload is delivered directly via the return value (no longer embeds a snapshot)
     let stable_id = id_gen.next_id();
     facts.push(Fact::Stable {
         id: stable_id,
@@ -223,12 +235,12 @@ mod tests {
     use super::*;
     use evorule_tcb::JsonValue;
 
-    /// 构造 noop 指令
+    /// Build a noop instruction
     fn noop_instruction() -> JsonValue {
         JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))])
     }
 
-    /// 构造无条件 push 规则：push 一条 noop 到队列前端
+    /// Build an unconditional push rule: push one noop to the front of the queue
     fn push_noop_rule() -> JsonValue {
         JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("push")),
@@ -242,7 +254,7 @@ mod tests {
         ])
     }
 
-    /// 构造无条件 io_request 规则
+    /// Build an unconditional io_request rule
     fn io_request_rule(io_type: &str) -> JsonValue {
         JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("io_request")),
@@ -258,8 +270,8 @@ mod tests {
 
     #[test]
     fn test_execute_empty_core_eval_noop() {
-        // v0.3.1：空 core_eval + noop 指令 → TCB 显式返回 `Ignored`（无匹配 transform 规则）
-        // cli executor 按 reactor 一致行为产生 `Error` 事实（不再静默失败）
+        // v0.3.1: empty core_eval + noop instruction → the TCB explicitly returns `Ignored` (no matching transform rule)
+        // the cli executor produces an `Error` fact consistent with reactor behavior (no more silent failure)
         let (facts, _) = execute(
             &[],
             JsonValue::empty_object(),
@@ -268,7 +280,7 @@ mod tests {
         )
         .unwrap();
 
-        // 应产生：Command + Error(ignored by TCB) + Stable
+        // Expected: Command + Error(ignored by TCB) + Stable
         assert_eq!(facts.len(), 3, "expected Command + Error(ignored) + Stable");
         assert!(matches!(facts[0], Fact::Command { .. }));
         match &facts[1] {
@@ -286,10 +298,10 @@ mod tests {
 
     #[test]
     fn test_execute_max_steps_zero() {
-        // max_steps=0：立即发 Error，不执行任何指令
+        // max_steps=0: emit Error immediately, execute no instruction
         let (facts, _) = execute(&[], JsonValue::empty_object(), noop_instruction(), 0).unwrap();
 
-        // 应产生：Command + Error + Stable
+        // Expected: Command + Error + Stable
         assert_eq!(facts.len(), 3, "expected Command + Error + Stable");
         assert!(matches!(facts[0], Fact::Command { .. }));
         match &facts[1] {
@@ -303,19 +315,19 @@ mod tests {
 
     #[test]
     fn test_execute_max_steps_exceeded_with_push() {
-        // core_eval 含 push 规则（无限循环），max_steps=3 限制
+        // core_eval contains a push rule (infinite loop), bounded by max_steps=3
         let core_eval = vec![push_noop_rule()];
         let (facts, _) =
             execute(&core_eval, JsonValue::empty_object(), noop_instruction(), 3).unwrap();
 
-        // 应产生：Command + 3×StateTransition + Error + Stable = 6
-        // (steps 0,1,2 各产生 StateTransition，step 3 触发 max_steps)
+        // Expected: Command + 3×StateTransition + Error + Stable = 6
+        // (steps 0,1,2 each produce a StateTransition; step 3 triggers max_steps)
         assert!(
             facts.len() >= 4,
             "expected at least Command + StateTransitions + Error + Stable, got {}",
             facts.len()
         );
-        // 最后第二个应为 Error
+        // The second-to-last should be an Error
         let last_idx = facts.len() - 2;
         match &facts[last_idx] {
             Fact::Error { message, .. } => {
@@ -323,18 +335,18 @@ mod tests {
             }
             other => panic!("expected Error at index {}, got {:?}", last_idx, other),
         }
-        // 最后应为 Stable
+        // The last one should be Stable
         assert!(matches!(facts[facts.len() - 1], Fact::Stable { .. }));
     }
 
     #[test]
     fn test_execute_push_produces_nonempty_queue() {
-        // core_eval 含 push 规则，max_steps=1 只执行一步
+        // core_eval contains a push rule; max_steps=1 executes only one step
         let core_eval = vec![push_noop_rule()];
         let (facts, _) =
             execute(&core_eval, JsonValue::empty_object(), noop_instruction(), 1).unwrap();
 
-        // 第一个 StateTransition 的 new_queue 应非空（push 生效）
+        // The first StateTransition's new_queue should be non-empty (push took effect)
         let st = facts.iter().find_map(|f| {
             if let Fact::StateTransition { new_queue, .. } = f {
                 Some(new_queue)
@@ -351,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_execute_io_request_produces_io_fact() {
-        // core_eval 含 io_request 规则
+        // core_eval contains an io_request rule
         let core_eval = vec![io_request_rule("call_external")];
         let (facts, _) = execute(
             &core_eval,
@@ -361,7 +373,7 @@ mod tests {
         )
         .unwrap();
 
-        // 应产生：Command + IoRequest + Error + Stable
+        // Expected: Command + IoRequest + Error + Stable
         let has_io_request = facts.iter().any(|f| matches!(f, Fact::IoRequest { .. }));
         assert!(has_io_request, "should have IoRequest fact");
 
@@ -370,14 +382,15 @@ mod tests {
         );
         assert!(has_error, "should have Error fact about no I/O handler");
 
-        // 最后应为 Stable
+        // The last one should be Stable
         assert!(matches!(facts[facts.len() - 1], Fact::Stable { .. }));
     }
 
     #[test]
     fn test_execute_unknown_io_type_produces_error() {
-        // v0.2.0：io_type 透传不校验，"unknown_io_type" 不再被 parse 拒绝，
-        // 而是透传后由 cli（无 handler）发 "no I/O handler for io_type=unknown_io_type" Error
+        // v0.2.0: io_type is passed through without validation; "unknown_io_type" is no longer
+        // rejected by parse — it passes through and the cli (no handler) emits a
+        // "no I/O handler for io_type=unknown_io_type" Error
         let core_eval = vec![io_request_rule("unknown_io_type")];
         let (facts, _) = execute(
             &core_eval,
@@ -398,7 +411,7 @@ mod tests {
 
     #[test]
     fn test_execute_tcb_error_produces_error() {
-        // 构造会触发 TCB 错误的场景：core_eval 含非法规则（缺 params）
+        // Build a scenario that triggers a TCB error: core_eval contains an illegal rule (missing params)
         let bad_rule = JsonValue::object_from_pairs(&[("type", JsonValue::string("set"))]);
         let (facts, _) = execute(
             &[bad_rule],
@@ -408,7 +421,7 @@ mod tests {
         )
         .unwrap();
 
-        // 应产生 Error（TCB error）
+        // An Error should be produced (TCB error)
         let has_error = facts
             .iter()
             .any(|f| matches!(f, Fact::Error { ref message, .. } if message.contains("TCB error")));
@@ -417,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_execute_fact_ids_monotonic() {
-        // 验证 FactId 单调递增
+        // Verify FactIds are monotonically increasing
         let (facts, _) = execute(
             &[],
             JsonValue::empty_object(),
@@ -438,8 +451,8 @@ mod tests {
 
     #[test]
     fn test_execute_fifo_pop_front_semantics() {
-        // 验证 FIFO：push 两条指令后，按顺序执行
-        // core_eval: push [noop, noop]（两条指令）
+        // Verify FIFO: after pushing two instructions, they execute in order
+        // core_eval: push [noop, noop] (two instructions)
         let push_two = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("push")),
             (
@@ -451,15 +464,15 @@ mod tests {
             ),
         ]);
         let core_eval = vec![push_two];
-        // max_steps=3：初始指令执行 push（step1），然后执行 push 的两条 noop（step2,3）
+        // max_steps=3: the initial instruction executes the push (step1), then the two pushed noops (step2,3)
         let (facts, _) =
             execute(&core_eval, JsonValue::empty_object(), noop_instruction(), 3).unwrap();
 
-        // 验证：每次执行都通过 pop_front 取指令（FIFO）
-        // step1: pop_front 初始 noop → push [noop, noop] → queue=[noop, noop]
-        // step2: pop_front noop(第1条) → push [noop, noop] → queue=[noop, noop, noop]
+        // Verify: each execution takes the instruction via pop_front (FIFO)
+        // step1: pop_front the initial noop → push [noop, noop] → queue=[noop, noop]
+        // step2: pop_front noop (1st) → push [noop, noop] → queue=[noop, noop, noop]
         // step3: pop_front noop → push → queue=[noop, noop, noop]
-        // max_steps=3 触发 Error
+        // max_steps=3 triggers Error
         let state_transitions: Vec<_> = facts
             .iter()
             .filter(|f| matches!(f, Fact::StateTransition { .. }))
@@ -468,7 +481,7 @@ mod tests {
             !state_transitions.is_empty(),
             "should have at least one StateTransition"
         );
-        // 第一个 StateTransition 的 new_queue 应有 2 条指令（push 的结果）
+        // The first StateTransition's new_queue should hold 2 instructions (the push result)
         if let Fact::StateTransition { new_queue, .. } = state_transitions[0] {
             assert_eq!(
                 new_queue.len(),

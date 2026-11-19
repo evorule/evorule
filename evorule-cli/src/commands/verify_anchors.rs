@@ -1,20 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! `evorule verify-anchors` —— 离线校验审计锚点链（防抵赖）
+//! `evorule verify-anchors` — verify the audit anchor chain offline (non-repudiation)
 //!
-//! 输入为 evorule-server `GET /api/sessions/{id}/anchors` 产物
-//! （`{session_id, count, anchors: [...]}`，或裸 `anchors` 数组）。
-//! 逐锚点校验（evorule-anchor/2 格式，governance ≥0.8.2）：
-//! 1. **seq 连续**：0 起严格 +1；
-//! 2. **区间无缝**：首锚 lo=0，相邻锚点 prev.hi == next.lo；
-//! 3. **签名真实性**：按 v2 载荷串接（`signature_payload_v2` 同构）重算并
-//!    用公钥验签——证明锚点确由私钥持有者生成（防抵赖），且篡改任何
-//!    载荷字段即失败。
+//! Input is the evorule-server `GET /api/sessions/{id}/anchors` output
+//! (`{session_id, count, anchors: [...]}`, or a bare `anchors` array).
+//! Per-anchor verification (evorule-anchor/2 format, governance ≥0.8.2):
+//! 1. **seq contiguous**: starting at 0, strictly +1;
+//! 2. **seamless ranges**: the first anchor has lo=0, and adjacent anchors satisfy prev.hi == next.lo;
+//! 3. **signature authenticity**: recomputed per the v2 payload concatenation
+//!    (isomorphic to `signature_payload_v2`) and verified with the public key —
+//!    proving the anchors were indeed produced by the private key holder
+//!    (non-repudiation); tampering with any payload field fails.
 //!
-//! 私钥只在生成方；公钥随锚点物分发，本命令仅需公钥。
-//! blake3 锚点哈希链重算（A2 截断/fork 检出）由 evorule verify 端点背书
-//! （诚实边界：与 evo-agent tools/verify_anchors.py 同口径）。
+//! The private key exists only at the producer; the public key ships with the
+//! anchor export, and this command needs only the public key. BLAKE3 anchor hash
+//! chain recomputation (truncation/fork detection) is backed by the evorule verify
+//! endpoint (honesty boundary: same criteria as the companion host-side anchor
+//! verification script).
 
 use std::path::Path;
 
@@ -23,8 +26,8 @@ use serde_json::Value;
 use crate::error::CliError;
 use crate::signing;
 
-/// v2 载荷串接（与 evorule-governance `signature_payload_v2` 同构；
-/// 字段序=结构体声明序，`|` 分隔）
+/// v2 payload concatenation (isomorphic with the evorule-governance
+/// `signature_payload_v2`; field order = struct declaration order, `|` separated)
 fn anchor_payload_v2(anchor: &Value) -> Result<String, CliError> {
     let get_str = |key: &str| -> Result<String, CliError> {
         anchor
@@ -60,7 +63,7 @@ fn anchor_payload_v2(anchor: &Value) -> Result<String, CliError> {
     ))
 }
 
-/// 从 64 位 hex 还原 32 字节公钥；非法则返回错误定位
+/// Restore a 32-byte public key from 64 hex chars; invalid input returns a locating error
 fn parse_pubkey(hex: &str) -> Result<[u8; 32], CliError> {
     let bytes = signing::hex_decode(hex).map_err(|e| CliError::other(e.to_string()))?;
     if bytes.len() != 32 {
@@ -74,22 +77,22 @@ fn parse_pubkey(hex: &str) -> Result<[u8; 32], CliError> {
     Ok(arr)
 }
 
-/// 执行 verify-anchors 子命令
+/// Run the verify-anchors subcommand
 ///
-/// # 参数
-/// - `anchors_path`：锚点列表 JSON（server `/anchors` 产物或裸数组）
-/// - `pubkey_hex`：可选公钥 hex；缺省使用文档内嵌 `verifying_key`
+/// # Parameters
+/// - `anchors_path`: anchor list JSON (server `/anchors` output or a bare array)
+/// - `pubkey_hex`: optional public key hex; defaults to the document's embedded `verifying_key`
 ///
-/// # 退出码
-/// - 0：全部锚点结构+签名有效
-/// - 1：任一锚点被篡改/断裂/错签或输入非法
+/// # Exit codes
+/// - 0: all anchors structurally + signature valid
+/// - 1: any anchor tampered / broken / wrongly signed, or invalid input
 pub fn run(anchors_path: &Path, pubkey_hex: Option<&str>) -> Result<(), CliError> {
     let json_str = std::fs::read_to_string(anchors_path)
         .map_err(|e| CliError::Other(format!("Read {} failed: {e}", anchors_path.display())))?;
     let parsed: Value = serde_json::from_str(&json_str)
         .map_err(|e| CliError::other(format!("JSON parse failed: {e}")))?;
 
-    // 公钥：命令行 > 文档内嵌 verifying_key
+    // Public key: command line > document-embedded verifying_key
     let pk_hex = if let Some(hex) = pubkey_hex {
         hex.to_string()
     } else {
@@ -120,7 +123,7 @@ pub fn run(anchors_path: &Path, pubkey_hex: Option<&str>) -> Result<(), CliError
     Ok(())
 }
 
-/// 核心校验（独立成函数以便单元测试）：结构三查 + 逐锚验签
+/// Core verification (standalone function for unit tests): structural triple check + per-anchor signature verification
 fn verify_value(parsed: &Value, pk: [u8; 32]) -> Result<usize, CliError> {
     let anchors_val = parsed
         .get("anchors")
@@ -134,7 +137,7 @@ fn verify_value(parsed: &Value, pk: [u8; 32]) -> Result<usize, CliError> {
 
     let mut expect_lo: u64 = 0;
     for (i, a) in anchors_val.iter().enumerate() {
-        // 1. seq 连续（0 起严格 +1）
+        // 1. seq contiguous (starting at 0, strictly +1)
         let seq = a
             .get("seq")
             .and_then(|v| v.as_u64())
@@ -144,7 +147,7 @@ fn verify_value(parsed: &Value, pk: [u8; 32]) -> Result<usize, CliError> {
                 "Anchor [{i}] seq broken: expected {i}, got {seq}"
             )));
         }
-        // 2. 区间无缝
+        // 2. Seamless ranges
         let lo = a
             .pointer("/fact_range/lo")
             .and_then(|v| v.as_u64())
@@ -160,7 +163,7 @@ fn verify_value(parsed: &Value, pk: [u8; 32]) -> Result<usize, CliError> {
         }
         expect_lo = hi;
 
-        // 3. v2 载荷验签
+        // 3. v2 payload signature verification
         let payload = anchor_payload_v2(a)?;
         let sig_hex = a
             .get("signature")
@@ -200,7 +203,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
 
-    /// 构造 v2 锚点链（与 governance signature_payload_v2 同源签名）
+    /// Build a v2 anchor chain (signed with the same origin as governance signature_payload_v2)
     fn build_anchors(seed: u8, count: usize) -> (Value, [u8; 32]) {
         let signer = crate::signing::AuditSigner::from_bytes([seed; 32]);
         let pk = signer.verifying_bytes();

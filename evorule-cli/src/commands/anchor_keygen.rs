@@ -1,30 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! `evorule anchor-keygen` —— 生成 G-A1 审计锚点签名密钥对（一次性运维操作）
+//! `evorule anchor-keygen` — generate the G-A1 audit anchor signing keypair (one-time ops operation)
 //!
-//! 产出：
-//! - 私钥种子（32 字节，64 位 hex）—— **必须私密保存**，用于配置审计器签名锚点
-//! - 公钥（32 字节，64 位 hex）—— 可公开分发，供第三方用 `verify-anchors` 离线验证审计链真实性
+//! Produces:
+//! - Private seed (32 bytes, 64 hex chars) — **must be kept secret**, used to configure the auditor signing anchor
+//! - Public key (32 bytes, 64 hex chars) — may be distributed publicly for third parties to verify audit chain authenticity offline with `verify-anchors`
 //!
-//! 密钥不落盘于审计资产/规则库，由使用方注入；本命令仅打印到 stdout（可重定向到安全位置）。
+//! Keys never land on disk in audit assets or rule repos; they are injected by the
+//! consumer. This command only prints to stdout (redirectable to a secure location).
 
 use std::path::Path;
 
 use crate::error::CliError;
 use crate::signing::AuditSigner;
 
-/// 执行 anchor-keygen 子命令
+/// Run the anchor-keygen subcommand
 ///
-/// # 退出码
-/// - 0：成功生成并打印密钥对
-/// - 1：OS 熵源不可用等错误
+/// # Exit codes
+/// - 0: keypair generated and printed successfully
+/// - 1: errors such as an unavailable OS entropy source
 pub fn run(output: Option<&Path>) -> Result<(), CliError> {
     let (sk_seed_hex, pk_hex) =
         AuditSigner::generate_keys().map_err(|e| CliError::other(e.to_string()))?;
 
     if let Some(path) = output {
-        // 仅写入私钥种子文件（配合 --pubkey 单独分发公钥，避免私钥散落）
+        // Write only the private seed file (pair with --pubkey to distribute the public key separately, avoiding scattered private keys)
         std::fs::write(path, format!("{}\n", sk_seed_hex))
             .map_err(|e| CliError::other(format!("Write private key file failed: {e}")))?;
         println!(

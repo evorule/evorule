@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! `evorule compile-evopack` —— host 编译器：JSON 规则 → 紧凑 .evopack 二进制包
+//! `evorule compile-evopack` — host compiler: JSON rules → compact .evopack binary package
 //!
-//! # 正典编码路径
-//! 复用 [`evorule_mcu::RulePack`] 的编码实现（tier0 线格式 + postcard），
-//! 与 MCU no_std 内核 `RulePack::from_evopack` 加载侧互为对偶——host 侧与
-//! 嵌入式侧共用同一 SSOT，不存在复刻编码器。
+//! # Canonical encoding path
+//! Reuses the [`evorule_mcu::RulePack`] encoding implementation (tier0 wire format +
+//! postcard), dual to the MCU no_std kernel `RulePack::from_evopack` loading side —
+//! host and embedded sides share one SSOT; there is no duplicated encoder.
 //!
-//! # 确定性
-//! 同输入规则必得同字节：线格式基于 BTreeMap 迭代序（键序字母序确定）+
-//! postcard 变长整数编码，无随机因素（由本模块双跑对拍测试与 evorule-mcu
-//! fixture 守卫测试双层守护）。
+//! # Determinism
+//! Same input rules always yield the same bytes: the wire format is based on BTreeMap
+//! iteration order (key order deterministically lexicographic) + postcard varint
+//! encoding, with no random factor (guarded on two layers by this module's double-run
+//! comparison test and the evorule-mcu fixture guard tests).
 
 use std::fs;
 use std::path::Path;
@@ -21,7 +22,7 @@ use evorule_mcu::RulePack;
 use crate::error::CliError;
 use crate::io_util;
 
-/// 执行 compile-evopack 子命令
+/// Run the compile-evopack subcommand
 pub fn run(rules_file: &Path, output: &Path) -> Result<(), CliError> {
     let rules = io_util::load_rules_file(rules_file)?;
     let rule_count = rules.len();
@@ -57,7 +58,7 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// 两条规则的样例：branch（domain 门控）+ 直接 set
+    /// Sample with two rules: branch (domain-gated) + direct set
     const SAMPLE_RULES: &str = r#"[
         {
             "type": "branch",
@@ -74,7 +75,7 @@ mod tests {
 
     #[test]
     fn test_compile_deterministic_same_bytes() {
-        // T4 验收判据：确定性——同输入两跑字节相同
+        // Acceptance criterion: determinism — same input, same bytes across two runs
         let dir = make_temp_dir("deterministic");
         let rules_file = dir.join("rules.json");
         fs::write(&rules_file, SAMPLE_RULES).unwrap();
@@ -87,9 +88,9 @@ mod tests {
         let bytes_a = fs::read(&out_a).unwrap();
         let bytes_b = fs::read(&out_b).unwrap();
         assert!(!bytes_a.is_empty());
-        assert_eq!(bytes_a, bytes_b, "同输入必须同字节（确定性）");
+        assert_eq!(bytes_a, bytes_b, "same input must produce identical bytes (determinism)");
 
-        // 产物可被 MCU 内核加载侧解码（host 编译器与内核加载侧互为对偶）
+        // The artifact is decodable by the MCU kernel loading side (host compiler and kernel loader are duals)
         let pack = RulePack::from_evopack(&bytes_a).unwrap();
         assert_eq!(pack.rules().len(), 2);
 
@@ -98,7 +99,7 @@ mod tests {
 
     #[test]
     fn test_compile_rejects_rule_count_over_limit() {
-        // 规则数超过 TCB 上限（MAX_TRANSFORM_RULES=128）：构造期拒绝（fail-fast）
+        // Rule count exceeds the TCB limit (MAX_TRANSFORM_RULES=128): rejected at construction (fail-fast)
         let dir = make_temp_dir("over-limit");
         let rules_file = dir.join("rules.json");
         let mut json = String::from("[");
@@ -119,7 +120,7 @@ mod tests {
             err.to_string().contains("exceeds transform limit"),
             "got: {err}"
         );
-        assert!(!out.exists(), "编译失败不得产出文件");
+        assert!(!out.exists(), "a failed compile must not produce a file");
 
         cleanup(&dir);
     }

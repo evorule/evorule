@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! I/O 工具：规则加载 + payload 解析 + 文件读写
+//! I/O utilities: rule loading + payload parsing + file read/write
 //!
-//! # P0-2 修复：确定性加载
-//! `load_rules` 必须按文件名排序后加载，保证不同平台/文件系统返回顺序一致。
-//! 原实现依赖 `fs::read_dir` 的返回顺序（Windows NTFS 字典序、Linux ext4 hash 序），
-//! 导致同目录规则在不同平台执行结果不同。
+//! # P0-2 fix: deterministic loading
+//! `load_rules` must sort by file name before loading, guaranteeing a consistent
+//! order across platforms/filesystems. The original implementation depended on
+//! `fs::read_dir` return order (Windows NTFS lexicographic, Linux ext4 hash
+//! order), which made the same rule directory behave differently on different
+//! platforms.
 //!
-//! # 复用 evorule-reactor 序列化
-//! `serde_json::Value → evorule_tcb::JsonValue` 转换复用 `evorule_reactor::serde_to_tcb`，
-//! 保证与 tier1 reactor WAL、tier2 auditor 的序列化路径一致。
+//! # Reuses the evorule-reactor serialization
+//! The `serde_json::Value → evorule_tcb::JsonValue` conversion reuses
+//! `evorule_reactor::serde_to_tcb`, keeping the serialization path identical to
+//! the tier1 reactor WAL and the tier2 auditor.
 
 use std::fs;
 use std::path::Path;
@@ -20,27 +23,30 @@ use serde_json::Value as SerdeValue;
 
 use crate::error::CliError;
 
-/// 加载规则目录，合并 transform 列表
+/// Load a rule directory, merging the transform list
 ///
-/// # 确定性加载（P0-2 修复）
-/// 按 `file_name()` 字典序排序后加载，消除 `fs::read_dir` 顺序差异。
+/// # Deterministic loading (P0-2 fix)
+/// Load after sorting by `file_name()` lexicographic order, eliminating
+/// `fs::read_dir` order differences.
 ///
-/// # 支持的文件格式
-/// 每个 `.json` 文件可以是以下三种格式之一：
-/// 1. `{"transform": [...]}` 或 `{"transforms": [...]}` — 提取数组
-/// 2. `[{...}, {...}]` — 顶层数组，每项是一条 transform
-/// 3. `{...}` — 单条 transform 对象
+/// # Supported file formats
+/// Each `.json` file can be one of three formats:
+/// 1. `{"transform": [...]}` or `{"transforms": [...]}` — extract the array
+/// 2. `[{...}, {...}]` — top-level array, each item a transform
+/// 3. `{...}` — a single transform object
 ///
-/// # 保留数据文件排除
-/// 文件名恰好为 `payload.json`（大小写不敏感）的文件被当作**初始输入数据**而非规则，
-/// 不参与加载。若用户在规则目录内放置初始 payload，其 `{}` 通常无 `type` 字段，
-/// 会被误当成规则并触发 `missing field: type`（见 `parse_initial_payload` 与教程约定）。
+/// # Reserved data file exclusion
+/// A file named exactly `payload.json` (case-insensitive) is treated as
+/// **initial input data**, not a rule, and is not loaded. If a user places an
+/// initial payload inside the rules directory, its `{}` usually has no `type`
+/// field and would be mistaken for a rule, triggering `missing field: type`
+/// (see `parse_initial_payload` and the tutorial conventions).
 ///
-/// # 错误
-/// - `RulesDirNotFound`：目录不存在
-/// - `NoRulesFound`：目录中无 `.json` 文件
-/// - `Io`：读取文件失败
-/// - `Json`：JSON 解析失败
+/// # Errors
+/// - `RulesDirNotFound`: directory does not exist
+/// - `NoRulesFound`: no `.json` files in the directory
+/// - `Io`: failed to read a file
+/// - `Json`: JSON parse failure
 pub fn load_rules(rules_dir: &Path) -> Result<Vec<JsonValue>, CliError> {
     if !rules_dir.exists() {
         return Err(CliError::RulesDirNotFound(rules_dir.display().to_string()));
@@ -52,9 +58,10 @@ pub fn load_rules(rules_dir: &Path) -> Result<Vec<JsonValue>, CliError> {
         )));
     }
 
-    // 收集 .json 文件并按文件名排序（P0-2 修复）
-    // 排除保留数据文件 `payload.json`（大小写不敏感）：它通常无 `type` 字段，
-    // 若被当规则加载会触发 "missing field: type"（见 parse_initial_payload 与教程约定）。
+    // Collect .json files and sort by file name (P0-2 fix)
+    // Exclude the reserved data file `payload.json` (case-insensitive): it usually has
+    // no `type` field, and loading it as a rule would trigger "missing field: type"
+    // (see parse_initial_payload and the tutorial conventions).
     let mut entries: Vec<_> = fs::read_dir(rules_dir)?
         .filter_map(Result::ok)
         .filter(|e| {
@@ -91,23 +98,24 @@ pub fn load_rules(rules_dir: &Path) -> Result<Vec<JsonValue>, CliError> {
         "Rules loaded"
     );
 
-    // 复用 evorule-reactor 序列化：serde_json::Value → tier0 JsonValue
+    // Reuse the evorule-reactor serialization: serde_json::Value → tier0 JsonValue
     Ok(all_transforms
         .into_iter()
         .map(|v| evorule_reactor::serde_to_tcb(&v))
         .collect())
 }
 
-/// 加载单个规则文件（compile-evopack host 编译器用）
+/// Load a single rule file (used by the compile-evopack host compiler)
 ///
-/// 与 [`load_rules`] 单文件侧同构：支持三种格式
-/// （`{"transform": [...]}` / `{"transforms": [...]}` / 顶层数组 / 单对象），
-/// 复用 [`extract_transforms`] 提取 + `serde_to_tcb` 转换，保证与规则目录
-/// 加载路径序列化语义一致。
+/// Isomorphic to the single-file side of [`load_rules`]: supports the three
+/// formats (`{"transform": [...]}` / `{"transforms": [...]}` / top-level array /
+/// single object), reuses [`extract_transforms`] for extraction plus the
+/// `serde_to_tcb` conversion, keeping the serialization semantics consistent
+/// with the rule-directory loading path.
 ///
-/// # 错误
-/// - `Io`：读取文件失败
-/// - `Other`：JSON 解析失败（含文件路径上下文）
+/// # Errors
+/// - `Io`: failed to read the file
+/// - `Other`: JSON parse failure (with file path context)
 pub fn load_rules_file(rules_file: &Path) -> Result<Vec<JsonValue>, CliError> {
     let content = fs::read_to_string(rules_file)?;
     let json: SerdeValue = serde_json::from_str(&content)
@@ -118,9 +126,9 @@ pub fn load_rules_file(rules_file: &Path) -> Result<Vec<JsonValue>, CliError> {
         .collect())
 }
 
-/// 从单个 JSON 文件提取 transform 列表
+/// Extract the transform list from a single JSON file
 ///
-/// 支持三格式：`{transform: [...]}` / `{transforms: [...]}` / 顶层数组 / 单对象
+/// Supports three formats: `{transform: [...]}` / `{transforms: [...]}` / top-level array / single object
 fn extract_transforms(json: SerdeValue) -> Vec<SerdeValue> {
     match &json {
         SerdeValue::Object(map) => {
@@ -137,12 +145,12 @@ fn extract_transforms(json: SerdeValue) -> Vec<SerdeValue> {
     }
 }
 
-/// 解析初始 payload
+/// Parse the initial payload
 ///
-/// 优先级：`--payload` 字符串 > `--payload-file` 文件 > 默认空对象 `{}`
+/// Priority: `--payload` string > `--payload-file` file > default empty object `{}`
 ///
-/// # 错误
-/// - `InvalidPayload`：JSON 解析失败
+/// # Errors
+/// - `InvalidPayload`: JSON parse failure
 pub fn parse_initial_payload(
     payload_str: Option<&str>,
     payload_file: Option<&Path>,
@@ -169,9 +177,9 @@ pub fn parse_initial_payload(
     }
 }
 
-/// 写输出到文件或 stdout
+/// Write output to a file or stdout
 ///
-/// `output` 为 `None` 时打印到 stdout，为 `Some(path)` 时写入文件。
+/// `output` being `None` prints to stdout; `Some(path)` writes to the file.
 pub fn write_output(output: Option<&Path>, content: &str) -> Result<(), CliError> {
     match output {
         Some(path) => {
@@ -204,7 +212,7 @@ mod tests {
 
     #[test]
     fn test_load_rules_deterministic_order() {
-        // 创建 3 个文件，文件名顺序与写入顺序故意不一致
+        // Create 3 files whose name order deliberately differs from the write order
         let dir = make_temp_dir("deterministic");
         let write_rule = |name: &str, t: &str| {
             let mut f = fs::File::create(dir.join(name)).unwrap();
@@ -229,7 +237,7 @@ mod tests {
             "load_rules must be deterministic across calls"
         );
 
-        // 验证顺序：01-first 的 noop 应该在第一位
+        // Verify order: 01-first's noop should be first
         let first = &rules1[0];
         let type_str = first.get("type").and_then(|v| v.as_str()).unwrap();
         assert_eq!(type_str, "noop");
@@ -240,13 +248,13 @@ mod tests {
     #[test]
     fn test_load_rules_three_formats() {
         let dir = make_temp_dir("formats");
-        // 格式1: {transform: [...]}
+        // Format 1: {transform: [...]}
         fs::write(dir.join("a.json"), r#"{"transform":[{"type":"noop"}]}"#).unwrap();
-        // 格式2: {transforms: [...]}
+        // Format 2: {transforms: [...]}
         fs::write(dir.join("b.json"), r#"{"transforms":[{"type":"noop"}]}"#).unwrap();
-        // 格式3: 顶层数组
+        // Format 3: top-level array
         fs::write(dir.join("c.json"), r#"[{"type":"noop"}]"#).unwrap();
-        // 格式4: 单对象
+        // Format 4: single object
         fs::write(dir.join("d.json"), r#"{"type":"noop"}"#).unwrap();
 
         let rules = load_rules(&dir).unwrap();
@@ -258,13 +266,13 @@ mod tests {
     #[test]
     fn test_load_rules_ignores_payload_json() {
         let dir = make_temp_dir("payload-skip");
-        // 规则文件
+        // A rule file
         fs::write(
             dir.join("01-capture.json"),
             r#"{"transform":[{"type":"noop"}]}"#,
         )
         .unwrap();
-        // 保留数据文件：无 type 字段的初始 payload，不应被当作规则加载
+        // Reserved data file: an initial payload without a type field, must not be loaded as a rule
         fs::write(dir.join("payload.json"), r#"{"request_id":"REQ-001"}"#).unwrap();
 
         let rules = load_rules(&dir).unwrap();
@@ -300,7 +308,7 @@ mod tests {
 
     #[test]
     fn test_load_rules_file_formats() {
-        // 与 load_rules 同构：单文件支持 transform/transforms/顶层数组/单对象四形态
+        // Isomorphic with load_rules: a single file supports the transform/transforms/top-level array/single object shapes
         let dir = make_temp_dir("single-file");
         let write_and_load = |name: &str, content: &str| {
             let path = dir.join(name);
