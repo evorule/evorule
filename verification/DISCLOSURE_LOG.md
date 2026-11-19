@@ -12,6 +12,12 @@
 > **记录规范**：只记事实——什么变了、客观依据、影响、修正去向（M10）。
 > **条目格式**：事实 / 依据 / 影响 / 修正去向。
 
+## 2026-11-19: P0-3 evidence refresh for two harnesses after comment-translation batch touched proof function bodies
+
+| # | Fact | Evidence | Impact | Remedy |
+| - | ---- | -------- | ------ | ------- |
+| 1 | The repo-wide English-translation batch edited comment lines inside the function bodies of two P0-3 A-tier harnesses (`verify_resolve_path_deterministic`, `verify_array_index_bounds`) in `evorule-tcb/tests/kani/kani_proofs.rs`; proof names, assertions and harness structure were untouched (translation-batch discipline). The M3.4 function-level freshness baseline for these two harnesses advanced to `3b77527`, invalidating the archived `a3d728f` evidence for exactly these two. The other 9 P0-3 harnesses and all 3 P0-6 harnesses were untouched inside their function bodies and keep baseline `a3d728f` | S7 (`check_status_sync.py`) flagged the two logs at the commit gate (function-level `git log -L`); diff review confirms comment-only changes inside the flagged ranges | Zero semantic change to the proofs; evidence-freshness bookkeeping only | Both harnesses re-run in WSL (Kani 0.67.0, Ubuntu 26.04 — distro differs from the historical Ubuntu-22.04 record, Kani version unchanged): 0 of 970 failed, SUCCESSFUL (~2s each); new evidence archived as `P0-3.<harness>_PASS_3b77527_20261119_125124` (log + stdout pairs); superseded `a3d728f` logs quarantined locally as batch 9 (kept out of the repo, same convention as batches 2-8); STATUS.md P0-3 evidence cell updated in the same commit (M5 coupling) |
+
 ## 2026-11-19: o40 in-type Kani harness backfill + o41 sizing-invariant claim corrected to sizing-basis framing
 
 | # | Fact | Evidence | Impact | Remedy |
