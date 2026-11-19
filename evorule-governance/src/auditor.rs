@@ -471,7 +471,7 @@ impl Auditor {
                     "audit_new: live audit verification failed; the audit chain may have been tampered with or corrupted"
                 );
             } else {
-                tracing::debug!(entries = self.entries.len(), "audit_new: live audit verification passed");
+                tracing::debug!(entries = self.entries.len(), "audit_new: audit passed");
             }
         }
 

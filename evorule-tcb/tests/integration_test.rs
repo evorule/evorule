@@ -1112,7 +1112,7 @@ fn test_while_loop_set_add_body_deadloop_regression() {
         1000,
     );
     assert_eq!(steps, 1000, "deadloop scenario must exhaust the step limit");
-    assert!(!queue.is_empty(), "deadloop shape: queue still non-empty at limit");
+    assert!(!queue.is_empty(), "deadloop: queue still non-empty");
     assert_eq!(
         payload.get("counter"),
         Some(&iv(1)),
