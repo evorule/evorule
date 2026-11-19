@@ -1,11 +1,11 @@
 # OpenSSF Scorecard (A4)
 #
-# 每周二 UTC 04:00 例行扫描 + main push 触发。
-# publish_results: true → 结果进入公共 API (api.securityscorecards.dev)，
-# README 的 Scorecard 徽章据此实时渲染。
-# （注意: 输入名是 publish_results 而非 publish——publish 会被
-#  scorecard-action 静默忽略且 publish_results 落回 false, 首跑已踩坑）
-# SARIF 同步上传至 Code Scanning，安全告警在 GitHub Security tab 可见。
+# Weekly scan every Tuesday 04:00 UTC + main push trigger.
+# publish_results: true -> results enter the public API (api.securityscorecards.dev),
+# which renders the Scorecard badge in the README in near real time.
+# (Note: the input name is publish_results, not publish -- publish is silently
+#  ignored by scorecard-action and publish_results falls back to false; first-run pitfall)
+# SARIF is also uploaded to Code Scanning; security alerts are visible in the GitHub Security tab.
 
 name: Scorecard
 

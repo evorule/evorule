@@ -1,20 +1,20 @@
-# lint 门禁 (独立 workflow): rustfmt 格式检查 + clippy 静态检查
+# lint gate (standalone workflow): rustfmt format check + clippy static analysis
 #
-# 覆盖:
-# - workspace 全 target `cargo fmt --all -- --check` (格式门禁)
-# - workspace 全 target clippy, 严格模式 -D warnings
-# - 应用 [workspace.lints.clippy] 规则:
-#   unwrap_used / expect_used / panic / panic_in_result_fn 全部 deny (fail-closed)
-# - 与本地 `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` 行为一致
+# Covers:
+# - workspace all-target `cargo fmt --all -- --check` (format gate)
+# - workspace all-target clippy in strict mode, -D warnings
+# - applies the [workspace.lints.clippy] rules:
+#   unwrap_used / expect_used / panic / panic_in_result_fn all deny (fail-closed)
+# - behaves the same as local `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings`
 #
-# 设计说明:
-# - 使用 rust-toolchain.toml 锁定的 1.98.1 (stable 通道), 组件含 rustfmt/clippy
-# - 独立于 ci.yml 运行, push/PR 到 main 时并行触发
-# - 此前本 workflow 只有 clippy 无 fmt, 本地工具链两者都有 ——
-#   双轨不对称, 「本地 fmt 未过」可在此全绿通过。现补 fmt job 对齐。
-#   workflow 名 (`Clippy`) 与既有 clippy job 名保持不变: 分支保护的 required status
-#   check 以 "<workflow> / <job>" 全名匹配, 改名会让该 check 永久 pending 阻塞合入;
-#   fmt 为新增独立 job, 不改变既有 check 标识。
+# Design notes:
+# - uses the 1.98.1 toolchain pinned by rust-toolchain.toml (stable channel), with rustfmt/clippy components
+# - runs independently of ci.yml, triggered in parallel on push/PR to main
+# - previously this workflow had clippy but no fmt, while the local toolchain had both --
+#   a two-track asymmetry: a failing local fmt could pass here all green. A fmt job is now added to align.
+#   The workflow name (`Clippy`) and the existing clippy job name stay unchanged: branch protection required status
+#   checks match the full "<workflow> / <job>" name, and renaming would leave that check permanently pending and block merges;
+#   fmt is a new standalone job and does not change existing check identifiers.
 name: Clippy
 
 on:
@@ -22,10 +22,10 @@ on:
     branches: [main, master, "release/**"]
   pull_request:
     branches: [main, master]
-  # 允许手动触发
+  # manual trigger allowed
   workflow_dispatch:
 
-# 显式最小权限 (Scorecard Token-Permissions): 仅需只读
+# Explicit minimal permissions (Scorecard Token-Permissions): read-only
 permissions: read-all
 
 env:
@@ -42,7 +42,7 @@ jobs:
         with:
           components: rustfmt
 
-      - name: fmt (workspace 全 target, --check)
+      - name: fmt (workspace all targets, --check)
         run: cargo fmt --all -- --check
 
   clippy:
@@ -53,10 +53,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
-      # 缓存 cargo 构建产物 (与 ci.yml 共享缓存 key)
+      # cache cargo build artifacts (cache key shared with ci.yml)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: . -> target
 
-      - name: clippy (workspace 全 target, -D warnings)
+      - name: clippy (workspace all targets, -D warnings)
         run: cargo clippy --workspace --all-targets -- -D warnings

@@ -1,16 +1,17 @@
 # Release workflow for EvoRule
 #
-# 触发: 推送 v* tag
-# 产物: 双平台二进制 (GitHub Release 附件)
-#   - Linux   x86_64 (ubuntu-latest, 静态 musl)
+# Trigger: push of a v* tag
+# Artifacts: two-platform binaries (GitHub Release attachments)
+#   - Linux   x86_64 (ubuntu-latest, static musl)
 #   - Windows x86_64 (windows-latest)
 #
-# 设计说明:
-# - 发布矩阵覆盖当前支持的平台 (Linux / Windows)——不发 macOS（产品决策
-#   2026-09-11，红线；2026-10-13 恢复红线效度，移除曾复发的 macOS 矩阵）
-# - Linux 用 musl 静态链接, 产出单一可执行文件
-# - tag 格式: v0.1.0 / v0.2.4 等
-# - 二进制由 cosign keyless (OIDC) 签名, .sig 随 Release 发布, 见 SIGNING.md
+# Design notes:
+# - the release matrix covers the currently supported platforms (Linux / Windows) --
+#   no macOS (product decision 2026-09-11, red line; 2026-10-13 restored the red line's
+#   validity, removing the once-recurred macOS matrix)
+# - Linux uses musl static linking, producing a single executable
+# - tag format: v0.1.0 / v0.2.4 etc.
+# - binaries are signed by cosign keyless (OIDC); the .sig is published with the Release, see SIGNING.md
 
 name: Release
 
@@ -26,9 +27,9 @@ env:
 
 jobs:
   # ==========================================================================
-  # 0. M4 发布同步门禁 (verification/MECHANISM.md M4)
-  #    - STATUS.md 快照版本 = 待发布 tag 版本
-  #    - kani.yml kani-tcb-a-tier job 在待发布 commit 上绿 (A 档 Kani CI)
+  # 0. M4 release sync gate (verification/MECHANISM.md M4)
+  #    - STATUS.md snapshot version = the version of the tag being released
+  #    - the kani.yml kani-tcb-a-tier job green on the commit being released (tier A Kani CI)
   # ==========================================================================
   release-gate:
     name: M4 release gate (STATUS snapshot + A-tier Kani)
@@ -37,41 +38,43 @@ jobs:
       contents: read
       actions: read
     steps:
-      - name: 门禁旁路断言 (EVORULE_SKIP_GATE 存在即 fail)
-        # 补偿检测: 四 crate build.rs 跳过阀虽 fail-closed, 但若构建/发布机
-        # 环境残留该变量(哪怕 =0), cargo build 时门禁静默跳过且无任何环节报警。
-        # 存在即拒绝——值内容不回显, 防变量内容泄入日志。
+      - name: Gate-bypass assertion (fail if EVORULE_SKIP_GATE exists)
+        # Compensating detection: the four crates' build.rs skip valves are fail-closed, but if the
+        # build/release machine's environment retains this variable (even =0), the gate silently
+        # skips during cargo build with no warning anywhere.
+        # Exists -> reject -- the value is never echoed, preventing the variable's content from leaking into logs.
         run: |
           set -e
-          [ -z "${EVORULE_SKIP_GATE+x}" ] || { echo "ERROR: EVORULE_SKIP_GATE 已设置(值不回显)——构建环境残留门禁旁路变量, 禁止发布"; exit 1; }
+          [ -z "${EVORULE_SKIP_GATE+x}" ] || { echo "ERROR: EVORULE_SKIP_GATE is set (value not echoed) -- the build environment retains a gate-bypass variable; release forbidden"; exit 1; }
 
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: 核对 STATUS.md 快照版本 = tag 版本
+      - name: Verify STATUS.md snapshot version = tag version
         run: |
           set -e
           TAG="${GITHUB_REF_NAME#v}"
           SNAP=$(grep -m1 '快照' verification/STATUS.md | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
-          echo "tag=v${TAG}  STATUS.md 快照=${SNAP}"
+          echo "tag=v${TAG}  STATUS.md snapshot=${SNAP}"
           if [ -z "${SNAP}" ]; then
-            echo "ERROR: 未能从 verification/STATUS.md 解析快照版本"
+            echo "ERROR: could not parse the snapshot version from verification/STATUS.md"
             exit 1
           fi
           if [ "${SNAP}" != "v${TAG}" ]; then
-            echo "ERROR: STATUS.md 快照(${SNAP}) != tag(v${TAG})；按 MECHANISM.md M4 先同步验证文档再发布"
+            echo "ERROR: STATUS.md snapshot (${SNAP}) != tag (v${TAG}); sync the verification docs per MECHANISM.md M4 before releasing"
             exit 1
           fi
 
-      - name: 核对 A 档 Kani CI（kani.yml kani-tcb-a-tier）在该 commit 上绿
+      - name: Verify tier A Kani CI (kani.yml kani-tcb-a-tier) is green on this commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
           SHA="${GITHUB_SHA}"
-          # 竞态修复（2026-10-10，v0.8.2 发版实证）：kani.yml 与本流水线由同
-          # 一 push 同时入队，本步原先只查"已完成"运行——kani 仍在途即误判
-          # "无已完成运行"而拒绝。改为有界等待（900s）：在途不判负，超时仍
-          # 按缺绿证据拒绝（fail-closed 不变）。
+          # Race fix (2026-10-10, proven in the v0.8.2 release): kani.yml and this pipeline are
+          # enqueued by the same push; this step originally only looked at "completed" runs --
+          # while kani was still in flight it misjudged "no completed run" and rejected.
+          # Changed to a bounded wait (900s): in-flight is not a failure, and on timeout it still
+          # rejects for missing green evidence (fail-closed unchanged).
           DEADLINE=$((SECONDS + 900))
           while :; do
             RUN_IDS=$(gh run list --workflow kani.yml --commit "${SHA}" --limit 10 --json databaseId,status,conclusion \
@@ -84,21 +87,21 @@ jobs:
               if [ "${CONC}" = "success" ]; then OK=1; break; fi
             done
             if [ -n "${OK}" ]; then
-              echo "M4: kani-tcb-a-tier 绿证据确认（commit ${SHA}）"
+              echo "M4: kani-tcb-a-tier green evidence confirmed (commit ${SHA})"
               break
             fi
             if [ ${SECONDS} -ge ${DEADLINE} ]; then
-              echo "ERROR: 有界等待 900s 后 commit ${SHA} 上仍无绿 kani-tcb-a-tier（MECHANISM.md M4）"
+              echo "ERROR: after the 900s bounded wait there is still no green kani-tcb-a-tier on commit ${SHA} (MECHANISM.md M4)"
               exit 1
             fi
-            echo "kani.yml 尚无完成的绿运行，30s 后重查（有界等待中）..."
+            echo "no completed green kani.yml run yet, re-checking in 30s (bounded wait)..."
             sleep 30
           done
 
   # ==========================================================================
-  # 1. crates.io 发布 (硬约束: 发版必须同步 crates.io)
-  #    依赖序: tcb → reactor → governance → cli
-  #    前置: repo Settings → Secrets and variables → Actions 配置 CARGO_REGISTRY_TOKEN
+  # 1. crates.io publishing (hard constraint: a release must sync crates.io)
+  #    dependency order: tcb -> reactor -> governance -> cli
+  #    prerequisite: repo Settings -> Secrets and variables -> Actions, configure CARGO_REGISTRY_TOKEN
   # ==========================================================================
   publish-crates:
     needs: [dist-gate, release-gate]
@@ -111,46 +114,46 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
-      - name: 按依赖序发布五核心 crate
+      - name: Publish the five core crates in dependency order
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -e
           if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
             {
-              echo "### ⚠️ crates.io 发布被阻断 (fail-closed)"
+              echo "### ⚠️ crates.io publishing blocked (fail-closed)"
               echo ""
-              echo "CARGO_REGISTRY_TOKEN secret 未配置，发版硬约束「发版必须同步 crates.io」无法满足。"
-              echo "历史教训（2026-10-13 实证）：secret 缺失时本步曾静默假绿（6 秒 success），"
-              echo "crates.io 实际未发布——v0.8.1 起各版本均由本机手工发布补齐。"
-              echo "修复：repo Settings → Secrets and variables → Actions 配置 CARGO_REGISTRY_TOKEN（crates.io publish token），补配后 rerun-failed-jobs。"
+              echo "The CARGO_REGISTRY_TOKEN secret is not configured, so the release hard constraint 'a release must sync crates.io' cannot be met."
+              echo "Historical lesson (2026-10-13 proof): when the secret was missing this step silently faked green (6-second success)"
+              echo "while crates.io was actually not published -- every version since v0.8.1 was completed by a manual local publish."
+              echo "Fix: repo Settings -> Secrets and variables -> Actions, configure CARGO_REGISTRY_TOKEN (crates.io publish token), then rerun-failed-jobs after adding it."
             } >> "${GITHUB_STEP_SUMMARY}"
-            echo "ERROR: CARGO_REGISTRY_TOKEN secret 未配置 - crates.io 发布阻断(fail-closed, 禁止静默假绿); 补配 secret 后 rerun 本 job"
+            echo "ERROR: CARGO_REGISTRY_TOKEN secret not configured - crates.io publishing blocked (fail-closed, no silent fake green); rerun this job after adding the secret"
             exit 1
           fi
-          # 依赖序含 workspace 全部 9 个可发布成员(publish=false 仅 eval/fuzz):
-          # discipline 是 cli 的 registry 依赖(evorule-discipline ^x.y.z),
-          # audit-chain/mcu/evid-verify-core/evid-verify-wasm 为 v0.9.0 补齐
-          # (audit-chain 自 0.8.1 引入起漏列, 下游解析不到新版本会失败),
-          # evid-verify-wasm 依赖 evid-verify-core, 顺序须保持依赖在前。
+          # dependency order covers all 9 publishable workspace members (publish=false only eval/fuzz):
+          # discipline is a registry dependency of cli (evorule-discipline ^x.y.z),
+          # audit-chain/mcu/evid-verify-core/evid-verify-wasm were added in v0.9.0
+          # (audit-chain was omitted since its 0.8.1 introduction; downstream resolution of the new version would fail),
+          # evid-verify-wasm depends on evid-verify-core, so the order must keep dependencies first.
           for p in evorule-tcb evorule-audit-chain evid-verify-core evid-verify-wasm evorule-reactor evorule-mcu evorule-governance evorule-discipline evorule-cli; do
             echo "publishing $p ..."
             if cargo publish -p "$p" > /tmp/pub_$p.log 2>&1; then
               echo "$p published"
               cat /tmp/pub_$p.log
             elif grep -qE "already exists|is already uploaded" /tmp/pub_$p.log; then
-              echo "$p 已在 crates.io(幂等跳过: 手工先行或重跑场景)"
+              echo "$p already on crates.io (idempotent skip: published manually first, or a rerun scenario)"
               cat /tmp/pub_$p.log
             else
               echo "$p publish FAILED"
               cat /tmp/pub_$p.log
               exit 1
             fi
-            sleep 15  # 等待 crates.io 索引更新, 避免下游依赖解析未就绪
+            sleep 15  # wait for the crates.io index update so downstream dependency resolution is ready
           done
 
   # ==========================================================================
-  # 2. 双平台矩阵构建
+  # 2. Two-platform matrix build
   # ==========================================================================
   build:
     needs: [dist-gate, release-gate]
@@ -181,62 +184,62 @@ jobs:
         with:
           workspaces: . -> target
 
-      - name: 安装 musl 工具链 (Linux)
+      - name: Install musl toolchain (Linux)
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      # 仓根 rust-toolchain.toml 指定的工具链会在 cargo 运行时生效,
-      # 并覆盖上方 action 传入的 targets 参数 —— 此步骤确保 target
-      # 安装到实际生效的工具链下, 使后续 --target 构建可用。
-      - name: 安装构建 target
+      # the toolchain pinned by the repo-root rust-toolchain.toml takes effect when cargo runs,
+      # overriding the targets passed to the action above -- this step ensures the target
+      # is installed under the actually-effective toolchain so subsequent --target builds work.
+      - name: Install the build target
         run: rustup target add ${{ matrix.target }}
 
-      - name: 构建 CLI 二进制
+      - name: Build the CLI binary
         run: cargo build -p evorule-cli --release --target ${{ matrix.target }} --bin evorule
 
-      # 以平台后缀重命名后再上传,使 merge-multiple 汇聚时文件名唯一
-      # (双平台产物重命名后互不覆盖)
-      - name: 补平台后缀
+      # rename with the platform suffix before uploading so filenames stay unique when
+      # merge-multiple converges (the two platforms' renamed artifacts do not overwrite each other)
+      - name: Add the platform suffix
         shell: bash
         run: |
           mkdir -p stage
           cp "target/${{ matrix.target }}/release/evorule${{ matrix.ext }}" "stage/${{ matrix.artifact }}${{ matrix.ext }}"
 
-      - name: 上传构建产物
+      - name: Upload build artifacts
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: ${{ matrix.artifact }}
           path: stage/${{ matrix.artifact }}${{ matrix.ext }}
 
   # ==========================================================================
-  # 2. 发布二进制 cosign keyless 签名 (OIDC, 无密钥管理)
-  #    签名落库为 .sig, 随 Release 资产发布。验证见 SIGNING.md。
+  # 2. cosign keyless signing of the release binaries (OIDC, no key management)
+  #    signatures stored as .sig, published as Release assets. Verification: SIGNING.md.
   # ==========================================================================
   sign:
     name: sign (cosign keyless)
     needs: [build]
     runs-on: ubuntu-latest
     permissions:
-      id-token: write   # cosign keyless 签名所需 OIDC token
+      id-token: write   # OIDC token required for cosign keyless signing
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: 下载 Linux 构建产物
+      - name: Download the Linux build artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-linux-x86_64
           path: sign/linux
 
-      - name: 下载 Windows 构建产物
+      - name: Download the Windows build artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-windows-x86_64
           path: sign/windows
 
-      - name: 安装 cosign
+      - name: Install cosign
         uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
 
-      - name: Keyless 签名 (OIDC)
+      - name: Keyless signing (OIDC)
         run: |
           mkdir -p sigout
           cosign sign-blob --yes \
@@ -247,16 +250,17 @@ jobs:
             --output-signature sigout/evorule-windows-x86_64.exe.sig
           ls -la sigout
 
-      - name: 上传签名产物
+      - name: Upload the signature artifacts
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: evorule-sigs
           path: sigout/
 
   # ==========================================================================
-  # 3.5 CycloneDX SBOM 生成 (A3 供应链三件套)
-  #     全 workspace 成员的 .cdx.json 随 GitHub Release 发布,
-  #     供下游 ISV 满足其供应链合规（如欧盟 CRA、客户安全问卷）。
+  # 3.5 CycloneDX SBOM generation (A3 supply-chain triad)
+  #     every workspace member's .cdx.json is published with the GitHub Release,
+  #     so downstream ISVs can meet their supply-chain compliance (e.g. EU CRA,
+  #     customer security questionnaires).
   # ==========================================================================
   sbom:
     name: sbom (CycloneDX)
@@ -270,31 +274,34 @@ jobs:
         with:
           workspaces: . -> target
 
-      - name: 安装 cargo-cyclonedx
+      - name: Install cargo-cyclonedx
         run: cargo install cargo-cyclonedx --locked
 
-      - name: 生成 SBOM (全 workspace, JSON)
+      - name: Generate SBOM (whole workspace, JSON)
         run: cargo cyclonedx --all --format json
 
-      # cargo-cyclonedx 将产物写到各 member 目录,统一收集到 sbom/
-      - name: 收集 SBOM 产物
+      # cargo-cyclonedx writes artifacts into each member directory; collect them into sbom/
+      - name: Collect SBOM artifacts
         run: |
           mkdir -p sbom
           find . -maxdepth 2 -name '*.cdx.json' -not -path './target/*' -exec mv {} sbom/ \;
           ls -la sbom/
 
-      - name: 上传 SBOM 产物
+      - name: Upload the SBOM artifacts
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: evorule-sbom
           path: sbom/*.cdx.json
 
   # ==========================================================================
-  # 3.6 合规随附包 (五件套) + 源码 tarball (AGPL §4/§13)
-  #     二进制为裸附件直附 Release: 许可正文/第三方声明/源码入口以独立合规
-  #     归档 evorule-<ver>-compliance.zip 随 Release 附加 (纯链接不满足随附
-  #     义务)。SOURCE.md 按本次发布动态生成 (遵守 SOURCE.md 自身规定: 打包
-  #     流程以本次发布对应的值覆盖后随包分发, 禁止携带过期指纹表)。
+  # 3.6 Compliance companion bundle (five pieces) + source tarball (AGPL §4/§13)
+  #     binaries are bare attachments on the Release: the license text / third-party
+  #     notices / source entry go in the standalone compliance archive
+  #     evorule-<ver>-compliance.zip attached to the Release (links alone do not
+  #     satisfy the companion obligation). SOURCE.md is generated dynamically per
+  #     release (per SOURCE.md's own rule: the packaging process overrides with the
+  #     values matching this release and distributes it in the bundle; carrying a
+  #     stale fingerprint table is forbidden).
   # ==========================================================================
   compliance:
     name: compliance bundle + source tarball
@@ -302,7 +309,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: 生成 SOURCE.md、源码 tarball 与五件套合规归档
+      - name: Generate SOURCE.md, the source tarball, and the five-piece compliance archive
         run: |
           set -e
           VER="${GITHUB_REF_NAME#v}"
@@ -316,33 +323,35 @@ jobs:
             SPDX-License-Identifier: AGPL-3.0-or-later
           -->
 
-          # EvoRule — 源码提供入口（AGPL-3.0 §13）
+          # EvoRule - Source Code Offer (AGPL-3.0 §13)
 
-          本合规归档随 EvoRule v@@VER@@ 的发布物（二进制 / crates.io 包）一同分发，
-          以 AGPL-3.0-or-later 授权。本文件按本次发布动态生成（指纹表填实值），
-          用于定位并校验与该发布物对应的完整源码（AGPL-3.0 第 13 条）。
+          This compliance archive is distributed together with the release artifacts (binaries /
+          crates.io packages) of EvoRule v@@VER@@, licensed under AGPL-3.0-or-later. This file is
+          generated dynamically per release (the fingerprint table filled with actual values) and
+          serves to locate and verify the complete source code corresponding to those artifacts
+          (AGPL-3.0 section 13).
 
-          | 字段 | 值 |
+          | Field | Value |
           |---|---|
-          | 发布 tag | v@@VER@@ |
-          | 源码仓库（权威源） | <https://github.com/evorule/evorule> |
-          | 源码 tarball | `evorule-@@VER@@-source.tar.gz`（随本 Release 附件分发） |
-          | 源码 tarball SHA256 | `@@SHA@@` |
+          | Release tag | v@@VER@@ |
+          | Source repository (authoritative source) | <https://github.com/evorule/evorule> |
+          | Source tarball | `evorule-@@VER@@-source.tar.gz` (distributed as a Release attachment) |
+          | Source tarball SHA256 | `@@SHA@@` |
 
-          ## 获取与校验方式
+          ## How to obtain and verify
 
-          1. `git clone` 上表仓库，`git checkout v@@VER@@`
-          2. 复现归档：`git archive --format=tar.gz --prefix=evorule-@@VER@@/ -o evorule-@@VER@@-source.tar.gz HEAD`
-          3. 计算 SHA256 并与上表值比对（同一记录亦在随 Release 发布的 `sha256-checks.txt` 中）
+          1. `git clone` the repository above, `git checkout v@@VER@@`
+          2. Reproduce the archive: `git archive --format=tar.gz --prefix=evorule-@@VER@@/ -o evorule-@@VER@@-source.tar.gz HEAD`
+          3. Compute the SHA256 and compare it with the value above (the same record is also in `sha256-checks.txt`, published with the Release)
 
-          ## 第三方组件
+          ## Third-party components
 
-          许可正文与归属声明见本归档内 `THIRD-PARTY-NOTICES.md` 与 `LICENSES/third-party/`。
+          For license texts and attribution notices see `THIRD-PARTY-NOTICES.md` and `LICENSES/third-party/` in this archive.
 
-          ## 分发通道
+          ## Distribution channels
 
-          - 二进制（GitHub Release 附件）随本合规归档一同发布
-          - crates.io 包由 cargo publish 自动随附仓根 `LICENSE`
+          - binaries (GitHub Release attachments) are published together with this compliance archive
+          - crates.io packages automatically carry the repo-root `LICENSE` via cargo publish
           EOF
           sed -i "s/@@VER@@/${VER}/g; s/@@SHA@@/${SRC_SHA}/g" SOURCE.md
           DIR="evorule-${VER}-compliance"
@@ -352,7 +361,7 @@ jobs:
           zip -qr "${DIR}.zip" "${DIR}"
           ls -la "${DIR}.zip" "${SRC_TGZ}"
 
-      - name: 上传合规产物
+      - name: Upload the compliance artifacts
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: evorule-compliance
@@ -362,7 +371,7 @@ jobs:
           if-no-files-found: error
 
   # ==========================================================================
-  # 4. 汇总发布 (GitHub Release)
+  # 4. Aggregate publish (GitHub Release)
   # ==========================================================================
   release:
     name: release
@@ -373,47 +382,48 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: 下载所有二进制
+      - name: Download all binaries
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           path: artifacts
           merge-multiple: true
 
-      # merge-multiple=true 时 artifacts/ 内是带平台后缀的产物本体(见 build 补后缀步骤),
-      # 双 target 文件名唯一 —— 仅校验存在性
-      - name: 校验产物
+      # with merge-multiple=true, artifacts/ contains the artifacts themselves with platform
+      # suffixes (see the build suffix step); the two targets' filenames are unique -- existence check only
+      - name: Verify the artifacts
         run: |
           ls -la artifacts/
           test -f artifacts/evorule-linux-x86_64
           test -f artifacts/evorule-windows-x86_64.exe
 
-      - name: 下载签名
+      - name: Download the signatures
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-sigs
           path: sigs
 
-      - name: 下载 SBOM
+      - name: Download the SBOM
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-sbom
           path: sbom
 
-      - name: 下载合规产物
+      - name: Download the compliance artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: evorule-compliance
           path: compliance
 
-      # SOURCE.md 向下载方承诺: 源码 tarball SHA256 记录在随 Release 发布的
-      # sha256-checks.txt —— 本步生成该承诺文件 (含二进制与合规归档)
-      - name: 生成 sha256-checks.txt
+      # SOURCE.md promises downloaders: the source tarball SHA256 is recorded in
+      # sha256-checks.txt published with the Release -- this step generates that
+      # promise file (covering the binaries and the compliance archive)
+      - name: Generate sha256-checks.txt
         run: |
           set -e
           sha256sum artifacts/evorule-linux-x86_64 artifacts/evorule-windows-x86_64.exe compliance/evorule-*-compliance.zip compliance/evorule-*-source.tar.gz > sha256-checks.txt
           cat sha256-checks.txt
 
-      - name: 创建 Release 并附加二进制与 SBOM
+      - name: Create the Release with binaries and SBOM attached
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |

@@ -1,18 +1,19 @@
-# Fuzz workflow for EvoRule (A1 供应链三件套)
+# Fuzz workflow for EvoRule (A1 supply-chain triad)
 #
-# 覆盖:
-# - fuzz_resolve_path:         TCB path.rs 路径解析（resolve_path / resolve_path_mut）
-# - fuzz_json_display:         JsonValue 边界构造 → Display 序列化
-# - fuzz_stable_json_hash:     审计链稳定序列化 + 事实哈希（纯函数面）
-# - fuzz_wal_parse_roundtrip:  WAL 解析 + Fact 持久化 roundtrip（Cursor 零文件 IO）
-# - fuzz_chain_invariants:     审计链链式性质（链分解/单条敏感性/genesis）
+# Covers:
+# - fuzz_resolve_path:         TCB path.rs path resolution (resolve_path / resolve_path_mut)
+# - fuzz_json_display:         JsonValue boundary construction -> Display serialization
+# - fuzz_stable_json_hash:     audit chain stable serialization + fact hashing (pure-function face)
+# - fuzz_wal_parse_roundtrip:  WAL parsing + Fact persistence roundtrip (Cursor, zero file IO)
+# - fuzz_chain_invariants:     audit chain chained properties (chain decomposition / per-entry sensitivity / genesis)
 #
-# 策略:
-# - push/PR 触碰 evorule-tcb/** 或 fuzz/** 时执行构建 + 每目标 60s smoke
-# - libFuzzer smoke 仅作冒烟（发现 panic 即红）；长期蓄水池运行可后续加 cron 长跑 job
-# - fuzz/ 为独立 workspace（父 Cargo.toml exclude），使用 nightly 工具链
-# - 无副作用最高原则：目标仅调用只读/无副作用 API（审计链三 target 走纯函数面：
-#   evorule-audit-chain 纯算法 + reactor 纯解析，禁 WalWriter/recover 等写路径）
+# Strategy:
+# - runs build + 60s smoke per target when push/PR touches evorule-tcb/** or fuzz/**
+# - libFuzzer smoke is a smoke test only (any panic is red); a long-running reservoir cron job can be added later
+# - fuzz/ is a standalone workspace (excluded by the parent Cargo.toml), using the nightly toolchain
+# - no side effects is the highest principle: targets only call read-only / side-effect-free APIs (the three
+#   audit-chain targets go through the pure-function face: evorule-audit-chain pure algorithms + reactor
+#   pure parsing; write paths such as WalWriter/recover are forbidden)
 
 name: Fuzz
 
@@ -39,7 +40,7 @@ on:
       - ".github/workflows/fuzz.yml"
   workflow_dispatch:
 
-# 显式最小权限 (Scorecard Token-Permissions): 冒烟仅需只读
+# Explicit minimal permissions (Scorecard Token-Permissions): smoke only needs read
 permissions: read-all
 
 env:
@@ -51,15 +52,15 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
-      # 覆盖仓根 rust-toolchain.toml 的固定工具链: cargo-fuzz 的 -Z sancov flags
-      # 只被 nightly 接受, 首跑因稳定版工具链拒绝 -Z 而失败 (run 34732535959)
+      # overrides the toolchain pinned by the repo-root rust-toolchain.toml: cargo-fuzz's -Z sancov flags
+      # are only accepted by nightly; the first run failed because the stable toolchain rejected -Z (run 34732535959)
       RUSTUP_TOOLCHAIN: nightly
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - uses: dtolnay/rust-toolchain@be39649afda95dbf70f87cce95f68b8d5797b296 # nightly
 
-      - name: 安装 cargo-fuzz
+      - name: Install cargo-fuzz
         uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2
         with:
           tool: cargo-fuzz
@@ -71,10 +72,11 @@ jobs:
             fuzz -> target
           key: fuzz
 
-      - name: 冒烟运行 (每目标 60s, panic 即红)
+      - name: Smoke run (60s per target, any panic is red)
         run: |
-          # --target 显式 host 三元组: cargo-fuzz 0.14+ 在 Linux 默认 musl 静态目标,
-          # 与 sanitizer 不兼容且 nightly 镜像缺 musl std (run 34732535959 二次失败根因)
+          # --target pins the host triple explicitly: cargo-fuzz 0.14+ defaults to the musl static
+          # target on Linux, which is incompatible with sanitizers and the nightly image lacks musl std
+          # (root cause of the second failure in run 34732535959)
           cargo fuzz run fuzz-resolve-path --target x86_64-unknown-linux-gnu -- -max_total_time=60 -rss_limit_mb=4096
           cargo fuzz run fuzz-json-display --target x86_64-unknown-linux-gnu -- -max_total_time=60 -rss_limit_mb=4096
           cargo fuzz run fuzz-stable-json-hash --target x86_64-unknown-linux-gnu -- -max_total_time=60 -rss_limit_mb=4096

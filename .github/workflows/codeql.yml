@@ -1,8 +1,8 @@
-# CodeQL 静态分析 (A4 后续提分项: Scorecard SAST 0→高)
+# CodeQL static analysis (A4 follow-up score item: Scorecard SAST 0 -> high)
 #
-# 覆盖: Rust 全 workspace (tcb/reactor/governance/cli)
-# 触发: main push + 每周一 UTC 03:00 例行扫描
-# 结果: GitHub Security tab (Code Scanning alerts)
+# Covers: Rust whole workspace (tcb/reactor/governance/cli)
+# Trigger: main push + weekly scan every Monday 03:00 UTC
+# Results: GitHub Security tab (Code Scanning alerts)
 
 name: CodeQL
 
@@ -15,7 +15,7 @@ on:
     - cron: "0 3 * * 1"
   workflow_dispatch:
 
-# 显式最小权限 (Scorecard Token-Permissions): 默认只读
+# Explicit minimal permissions (Scorecard Token-Permissions): read-only by default
 permissions: read-all
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
-      security-events: write   # 上传 SARIF 到 Code Scanning
+      security-events: write   # upload SARIF to Code Scanning
       contents: read
 
     steps:
@@ -35,7 +35,7 @@ jobs:
         uses: github/codeql-action/init@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3
         with:
           languages: rust
-          # 零依赖 TCB 构建极快; autobuild 走 cargo build 默认路径
+          # The zero-dependency TCB build is very fast; autobuild takes the default cargo build path
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3

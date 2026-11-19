@@ -1,21 +1,26 @@
-# 嵌入式编译门禁 (no_std 双目标: Cortex-M4F / RISC-V 中断态)
+# Embedded compile gate (no_std dual targets: Cortex-M4F / RISC-V interrupt state)
 #
-# 覆盖:
-# - 嵌入式双目标编译门禁: 核心两 crate (audit-chain / mcu) 必须持续可通过
-#   thumbv7em-none-eabihf (ARM Cortex-M4F) 与 riscv32imac-unknown-none-elf
-#   (RISC-V 中断态) 编译——第 3/4 编译目标正式化, 防嵌入式适配面腐化
-# - 嵌入式适配行数守卫: 适配面腐化触发条件的 CI 化——
-#   适配行数 > 50 即红, 红即触发 Runtime trait 抽象重构的启动条件
-# - 板级依赖图扫描门: 板级专属依赖 (stm32f4xx / ch32-metapac /
-#   ch32-hal / riscv-rt / embedded-hal) 只允许出现在 boards/ 独立构建目录,
-#   主 workspace 任一成员 Cargo.toml 出现即红——hal 依赖零进主依赖图
+# Covers:
+# - embedded dual-target compile gate: the two core crates (audit-chain / mcu) must keep
+#   compiling for thumbv7em-none-eabihf (ARM Cortex-M4F) and riscv32imac-unknown-none-elf
+#   (RISC-V interrupt state) -- the 3rd/4th compile targets formalized, preventing
+#   decay of the embedded adaptation surface
+# - embedded adaptation-line guard: CI enforcement of the adaptation-surface decay
+#   trigger -- more than 50 adaptation lines is red, and red is the start condition
+#   for the Runtime trait abstraction refactor
+# - board dependency-graph scan gate: board-specific dependencies (stm32f4xx /
+#   ch32-metapac / ch32-hal / riscv-rt / embedded-hal) are only allowed in the
+#   boards/ standalone build directories; any occurrence in a main-workspace member's
+#   Cargo.toml is red -- zero hal dependencies enter the main dependency graph
 #
-# 设计说明:
-# - cargo check 而非 build: 双目标门禁的目标是"类型/依赖可移植性"; 固件
-#   链接与跨目标运行时对拍由 job 4 (qemu-parity) 承担——QEMU mps2-an386
-#   仿真跑同场景, 与 native 基准链尾哈希逐字节比对断言, CI 即执法
-# - no_std 本体代码零适配行: 核心 crate 为纯可移植 no_std, 双目标编译
-#   与 host 编译路径同源; 适配行守卫防未来腐化 (基线 = 0)
+# Design notes:
+# - cargo check instead of build: the dual-target gate targets "type/dependency
+#   portability"; firmware linking and cross-target runtime comparison are handled
+#   by job 4 (qemu-parity) -- QEMU mps2-an386 emulation runs the same scenarios,
+#   asserted byte-for-byte against the native baseline chain-tail hash; CI enforces directly
+# - the no_std core code carries zero adaptation lines: the core crates are purely
+#   portable no_std and the dual-target build shares the host build path; the
+#   adaptation-line guard prevents future decay (baseline = 0)
 name: Embedded Gate
 
 on:
@@ -32,7 +37,7 @@ env:
 
 jobs:
   # ==========================================================================
-  # 1. 嵌入式双目标编译门禁 (核心两 crate)
+  # 1. Embedded dual-target compile gate (two core crates)
   # ==========================================================================
   embedded-check:
     name: ${{ matrix.target }} check (audit-chain + mcu)
@@ -50,11 +55,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # 关键: rust-toolchain.toml 锁定 1.98.1, rustup shim 会随文件自动装 1.98.1
-      # (minimal profile, 不含任何 target)——此步对"生效工具链"(=文件锁定的
-      # 1.98.1)补装嵌入式目标, 与本地环境对齐; 同 wasm-check 首跑教训:
-      # targets 挂在 dtolnay@stable 上装不对工具链。
-      - name: 对生效工具链补装 ${{ matrix.target }}
+      # Key: rust-toolchain.toml pins 1.98.1; the rustup shim installs 1.98.1 along with the file
+      # (minimal profile, no targets) -- this step installs the embedded target into the "effective
+      # toolchain" (= the file-pinned 1.98.1) to align with the local environment; same first-run
+      # lesson as wasm-check: targets attached to dtolnay@stable install into the wrong toolchain.
+      - name: Install ${{ matrix.target }} into the effective toolchain
         run: rustup target add ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
@@ -62,21 +67,23 @@ jobs:
           workspaces: . -> target
           key: embedded-${{ matrix.target }}
 
-      - name: ${{ matrix.target }} 编译检查 (核心两 crate)
+      - name: ${{ matrix.target }} compile check (two core crates)
         run: cargo check --target ${{ matrix.target }} -p evorule-audit-chain -p evorule-mcu
 
-      # tlsf-alloc 门控面（板级分配器包装）单独过双目标门禁
-      - name: ${{ matrix.target }} 编译检查 (mcu tlsf-alloc feature)
+      # tlsf-alloc gated face (board allocator wrapper) passes the dual-target gate separately
+      - name: ${{ matrix.target }} compile check (mcu tlsf-alloc feature)
         run: cargo check --target ${{ matrix.target }} -p evorule-mcu --features tlsf-alloc
 
   # ==========================================================================
-  # 2. 嵌入式适配行数守卫 (适配面腐化触发条件 CI 化)
-  #    计数口径: 核心两 crate src 中嵌入式目标 cfg (target_arch="arm"/
-  #    "riscv32"/target_os="none") 与 cortex-m / embedded-hal 等嵌入式
-  #    专属引用行。基线 = 0 (核心 crate 纯可移植 no_std, 门控落
-  #    Cargo.toml dev-deps 与固件 example, 不进 src)。
-  #    阈值 = 50: 超阈值即红, 红即触发 Runtime trait 抽象
-  #    重构的启动条件——本 job 把该触发从"人工记忆"固化为"机器执法"。
+  # 2. Embedded adaptation-line guard (CI enforcement of the adaptation-surface decay trigger)
+  #    Counting scope: embedded-target cfg lines (target_arch="arm"/
+  #    "riscv32"/target_os="none") and embedded-specific reference lines (cortex-m /
+  #    embedded-hal etc.) in the two core crates' src. Baseline = 0 (the core crates are
+  #    purely portable no_std; gating lives in Cargo.toml dev-deps and firmware
+  #    examples, not in src).
+  #    Threshold = 50: above threshold is red, and red is the start condition for
+  #    the Runtime trait abstraction refactor -- this job hardens that trigger from
+  #    "human memory" into "machine enforcement".
   # ==========================================================================
   embedded-adaptation-guard:
     name: embedded adaptation lines (threshold 50)
@@ -84,23 +91,24 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: 适配行数统计与阈值判定
+      - name: Adaptation-line count and threshold verdict
         run: |
           COUNT=$(grep -rnE 'target_arch *= *"(arm|riscv32)"|target_os *= *"none"|cortex_m|cortex-m|embedded_hal|embedded-hal|thumbv|no_main' \
             evorule-audit-chain/src evorule-mcu/src \
             --include='*.rs' | wc -l)
-          echo "嵌入式适配行数: ${COUNT} (阈值 50, 基线 0)"
+          echo "Embedded adaptation lines: ${COUNT} (threshold 50, baseline 0)"
           if [ "${COUNT}" -gt 50 ]; then
-            echo "::error::嵌入式适配行数 ${COUNT} > 50——触发 Runtime trait 抽象重构启动条件, 须先立项 trait 重构再扩适配面"
+            echo "::error::Embedded adaptation lines ${COUNT} > 50 -- Runtime trait abstraction refactor start condition triggered; start the trait refactor project before extending the adaptation surface"
             exit 1
           fi
 
   # ==========================================================================
-  # 3. 板级依赖图扫描门 (hal 依赖零进主依赖图)
-  #    boards/ 为独立构建目录（父 Cargo.toml exclude，各含 .cargo 配置与
-  #    memory.x），板级专属依赖只允许出现在该目录；主 workspace 任一成员
-  #    的 Cargo.toml 出现即红。名单含 ch32-hal（git-only 方案，已否决，
-  #    防 git 依赖绕道混入）。
+  # 3. Board dependency-graph scan gate (zero hal dependencies enter the main dependency graph)
+  #    boards/ are standalone build directories (excluded by the parent Cargo.toml;
+  #    each carries its own .cargo config and memory.x); board-specific dependencies
+  #    are only allowed there; any occurrence in a main-workspace member's Cargo.toml
+  #    is red. The list includes ch32-hal (git-only approach, rejected, to prevent git
+  #    dependencies from sneaking in via a detour).
   # ==========================================================================
   board-dep-scan:
     name: board deps stay out of main workspace
@@ -108,29 +116,29 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: 主 workspace 成员 Cargo.toml 扫描板级专属依赖
+      - name: Scan main-workspace members' Cargo.toml for board-specific dependencies
         run: |
           HITS=$(grep -rnE 'stm32f4xx|ch32-metapac|ch32-hal|riscv-rt|embedded-hal' \
             evorule-*/Cargo.toml || true)
           if [ -n "${HITS}" ]; then
-            echo "::error::板级专属依赖混入主 workspace 成员——hal 依赖零进主依赖图（板级面仅限 boards/ 独立构建目录）"
+            echo "::error::Board-specific dependencies leaked into a main-workspace member -- zero hal dependencies enter the main dependency graph (the board face is limited to the boards/ standalone build directories)"
             echo "${HITS}"
             exit 1
           fi
-          echo "扫描通过: 主 workspace 成员无板级专属依赖 (stm32f4xx / ch32-metapac / ch32-hal / riscv-rt / embedded-hal)"
+          echo "scan passed: main-workspace members carry no board-specific dependencies (stm32f4xx / ch32-metapac / ch32-hal / riscv-rt / embedded-hal)"
 
   # ==========================================================================
-  # 4. QEMU 仿真对拍门禁 (跨目标运行时逐位一致性)
-  #    同一规则包 + 同一指令序列 + 同一固定应答, 在 host (native 参照) 与
-  #    mps2-an386 固件 (thumbv7em-none-eabihf) 双端执行, 链尾哈希逐字节
-  #    比对断言相等:
-  #    - parity 场景 (parity_rules.evopack): increment/noop 三指令全链
-  #    - io_resume 场景 (io_resume_rules.evopack): call_external 暂停-
-  #      恢复全协议 (IoRequest 入链暂停 → IoBridge 执行 → IoResponse
-  #      注入 → 指令重推消费 → __io_results__ 容器清除)
-  #    执法意义: 任何使 no_std 内核与 std 宿主审计链分叉的改动 (哈希链
-  #    SSOT / 事实发射语义 / I/O 恢复协议 / TLSF 分配器) 在 CI 即红,
-  #    不再依赖本机手跑对拍。
+  # 4. QEMU emulation parity gate (cross-target runtime bit-for-bit consistency)
+  #    The same rule package + same instruction sequence + same fixed responses run
+  #    on both ends -- host (native reference) and mps2-an386 firmware
+  #    (thumbv7em-none-eabihf) -- with the chain-tail hashes asserted byte-for-byte equal:
+  #    - parity scenario (parity_rules.evopack): full increment/noop three-instruction chain
+  #    - io_resume scenario (io_resume_rules.evopack): full call_external pause-
+  #      resume protocol (IoRequest enqueues pause -> IoBridge executes -> IoResponse
+  #      injection -> instruction re-push consumption -> __io_results__ container cleared)
+  #    Enforcement meaning: any change that would fork the no_std kernel's audit chain
+  #    from the std host's (hash-chain SSOT / fact emission semantics / I/O resume
+  #    protocol / TLSF allocator) goes red in CI, no longer relying on manual local comparisons.
   # ==========================================================================
   qemu-parity:
     name: qemu parity (mps2-an386 vs native)
@@ -140,7 +148,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
-      - name: 对生效工具链补装 thumbv7em-none-eabihf
+      - name: Install thumbv7em-none-eabihf into the effective toolchain
         run: rustup target add thumbv7em-none-eabihf
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
@@ -148,13 +156,13 @@ jobs:
           workspaces: . -> target
           key: qemu-parity
 
-      - name: 安装 QEMU (arm 系统仿真)
+      - name: Install QEMU (ARM system emulation)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qemu-system-arm
           qemu-system-arm --version
 
-      - name: native 基准链尾 (host 双场景)
+      - name: Native baseline chain tails (host, both scenarios)
         run: |
           set -o pipefail
           cargo run --release -p evorule-mcu --example native_parity_tail | tee /tmp/native_parity.out
@@ -164,13 +172,13 @@ jobs:
           echo "native parity: $(cat /tmp/native_parity.tail)"
           echo "native io    : $(cat /tmp/native_io_resume.tail)"
 
-      - name: 交叉编译 QEMU 固件
+      - name: Cross-compile the QEMU firmware
         run: |
           cargo build --release --target thumbv7em-none-eabihf \
             -p evorule-mcu --features qemu,tlsf-alloc \
             --example qemu_parity --example qemu_io_resume
 
-      - name: QEMU 仿真 parity 场景
+      - name: QEMU emulation, parity scenario
         run: |
           set -o pipefail
           timeout 120 qemu-system-arm -machine mps2-an386 -nographic \
@@ -180,7 +188,7 @@ jobs:
           grep -oE 'CHAIN_TAIL=[0-9a-f]{64}' /tmp/qemu_parity.out | cut -d= -f2 > /tmp/qemu_parity.tail
           echo "qemu parity  : $(cat /tmp/qemu_parity.tail)"
 
-      - name: QEMU 仿真 io_resume 场景
+      - name: QEMU emulation, io_resume scenario
         run: |
           set -o pipefail
           timeout 120 qemu-system-arm -machine mps2-an386 -nographic \
@@ -190,8 +198,8 @@ jobs:
           grep -oE 'IO_CHAIN_TAIL=[0-9a-f]{64}' /tmp/qemu_io_resume.out | cut -d= -f2 > /tmp/qemu_io_resume.tail
           echo "qemu io      : $(cat /tmp/qemu_io_resume.tail)"
 
-      - name: 链尾逐字节比对断言 (native == qemu)
+      - name: Chain-tail byte-for-byte assertion (native == qemu)
         run: |
           diff /tmp/native_parity.tail /tmp/qemu_parity.tail
           diff /tmp/native_io_resume.tail /tmp/qemu_io_resume.tail
-          echo "对拍通过: parity 与 io_resume 双场景链尾哈希 native 与 qemu 逐字节一致"
+          echo "parity passed: chain-tail hashes match byte-for-byte between native and qemu in both the parity and io_resume scenarios"

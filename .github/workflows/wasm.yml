@@ -1,17 +1,19 @@
-# WASM 编译门禁 (SC0, 依据《evorule 科学计算平台总体规划》)
+# WASM compile gate (SC0, per the evorule scientific computing platform master plan)
 #
-# 覆盖:
-# - wasm32-unknown-unknown 编译门禁: 核心四 crate (tcb / reactor /
-#   governance / mcu) 必须持续可通过 wasm32 编译——第 2 编译目标正式化,
-#   防 WASM 适配面腐化 (mcu 为 no_std 内核, 纯可移植, 随批扩入)
-# - WASM 适配行数守卫: 适配面腐化触发条件的 CI 化——
-#   适配行数 > 50 即红, 红即触发 Runtime trait 抽象重构的启动条件
+# Covers:
+# - wasm32-unknown-unknown compile gate: the four core crates (tcb / reactor /
+#   governance / mcu) must keep compiling for wasm32 -- the 2nd compile target
+#   formalized, preventing decay of the WASM adaptation surface (mcu is a no_std
+#   kernel, purely portable, added to the batch alongside)
+# - WASM adaptation-line guard: CI enforcement of the adaptation-surface decay
+#   trigger -- more than 50 adaptation lines is red, and red is the start condition
+#   for the Runtime trait abstraction refactor
 #
-# 设计说明:
-# - cargo check 而非 build: 门禁目标是"类型/依赖可移植性", 产物链接属 wasm-bindgen
-#   集成层, 不在本门禁范围
-# - 运行时逐位一致性 (WASM vs native 双跑) 需 wasm-bindgen-test
-#   测试 harness, 不在本文件
+# Design notes:
+# - cargo check instead of build: the gate targets "type/dependency portability";
+#   artifact linking belongs to the wasm-bindgen integration layer, out of scope for this gate
+# - runtime bit-for-bit consistency (WASM vs native dual run) needs a
+#   wasm-bindgen-test harness and is not in this file
 name: WASM Gate
 
 on:
@@ -28,7 +30,7 @@ env:
 
 jobs:
   # ==========================================================================
-  # 1. wasm32 编译门禁 (核心四 crate)
+  # 1. wasm32 compile gate (four core crates)
   # ==========================================================================
   wasm-check:
     name: wasm32 check (tcb + reactor + governance + mcu + evid core/wasm)
@@ -40,11 +42,12 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      # 关键: rust-toolchain.toml 锁定 1.98.1, rustup shim 会随文件自动装 1.98.1
-      # (minimal profile, 不含任何 target)——首跑 8f9e2cc 失败根因即 CI 上 1.98.1
-      # 无 wasm32 std。此步对"生效工具链"(=文件锁定的 1.98.1)补装 wasm32 目标,
-      # 与本地环境对齐; 首跑教训: targets 挂在 dtolnay@stable 上装不对工具链。
-      - name: 对生效工具链补装 wasm32 目标
+      # Key: rust-toolchain.toml pins 1.98.1; the rustup shim installs 1.98.1 along with the file
+      # (minimal profile, no targets) -- the root cause of the first-run 8f9e2cc failure was that
+      # CI's 1.98.1 had no wasm32 std. This step installs the wasm32 target into the "effective
+      # toolchain" (= the file-pinned 1.98.1) to align with the local environment; first-run lesson:
+      # targets attached to dtolnay@stable install into the wrong toolchain.
+      - name: Install the wasm32 target into the effective toolchain
         run: rustup target add wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
@@ -52,15 +55,16 @@ jobs:
           workspaces: . -> target
           key: wasm32
 
-      - name: wasm32 编译检查 (核心四 crate + evid 验证内核/绑定)
+      - name: wasm32 compile check (four core crates + evid verification kernel/bindings)
         run: cargo check --target wasm32-unknown-unknown -p evorule-tcb -p evorule-reactor -p evorule-governance -p evorule-mcu -p evid-verify-core -p evid-verify-wasm
 
   # ==========================================================================
-  # 2. EVID 移动端黄金向量闸 (EVID 验证器设计稿 §5 第三端门: 移动端门)
-  #    真 wasm32 产物行为对拍: cdylib(零 import)裸实例化跑 dist/fixtures
-  #    冻结向量, 输出与宿主 handlers(core 同源正本)逐字节比对, 不等即红
-  #    fail-closed; 裸实例化同时每跑必证零 import 契约(污染即抛错即红);
-  #    另校验 dist/index.html 内嵌 wasm 与本次构建一致(防 dist 漂移)。
+  # 2. EVID mobile golden-vector gate (EVID verifier design doc §5 third end: mobile)
+  #    Real wasm32 artifact behavior comparison: instantiate the cdylib (zero imports) bare,
+  #    run the frozen vectors from dist/fixtures, and compare the output byte-for-byte against
+  #    the host handlers (same-origin copy as core); any mismatch is fail-closed red; bare
+  #    instantiation also proves the zero-import contract on every run (any pollution throws -> red);
+  #    also verifies the wasm embedded in dist/index.html matches this build (prevents dist drift).
   # ==========================================================================
   evid-wasm-gate:
     name: evid wasm gate (mobile golden vectors)
@@ -72,7 +76,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: 对生效工具链补装 wasm32 目标
+      - name: Install the wasm32 target into the effective toolchain
         run: rustup target add wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
@@ -80,24 +84,25 @@ jobs:
           workspaces: . -> target
           key: wasm32
 
-      - name: 构建 wasm32 release cdylib
+      - name: Build the wasm32 release cdylib
         run: cargo build -p evid-verify-wasm --target wasm32-unknown-unknown --release
 
-      - name: 宿主正本输出落盘 (handlers 判定层 = core 同源)
+      - name: Persist host-copy output (handler judgment layer = same-origin as core)
         env:
           EVID_WASM_HOST_OUT_DIR: ${{ github.workspace }}/target/evid-host-out
         run: cargo test -p evid-verify-wasm --test wasm_output_dump
 
-      - name: wasm 产物逐字节对拍 + dist 内嵌一致性
+      - name: wasm artifact byte-for-byte comparison + dist embedded consistency
         run: node scripts/evid_wasm_gate.mjs target/wasm32-unknown-unknown/release/evid_verify_wasm.wasm evid-verify-wasm/dist/fixtures target/evid-host-out evid-verify-wasm/dist/index.html
 
   # ==========================================================================
-  # 3. WASM 适配行数守卫 (适配面腐化触发条件 CI 化)
-  #    计数口径: 核心四 crate src 中 target_arch="wasm32" cfg 与
-  #    wasm-bindgen 引用行。基线 = 2 (reactor/ffi.rs; mcu 纯可移植
-  #    no_std 贡献 0 行)。
-  #    阈值 = 50: 超阈值即红, 红即触发 Runtime trait 抽象
-  #    重构的启动条件——本 job 把该触发从"人工记忆"固化为"机器执法"。
+  # 3. WASM adaptation-line guard (CI enforcement of the adaptation-surface decay trigger)
+  #    Counting scope: target_arch="wasm32" cfg lines and wasm-bindgen reference
+  #    lines in the four core crates' src. Baseline = 2 (reactor/ffi.rs; mcu is purely
+  #    portable no_std and contributes 0 lines).
+  #    Threshold = 50: above threshold is red, and red is the start condition for
+  #    the Runtime trait abstraction refactor -- this job hardens that trigger from
+  #    "human memory" into "machine enforcement".
   # ==========================================================================
   wasm-adaptation-guard:
     name: wasm adaptation lines (threshold 50)
@@ -105,13 +110,13 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: 适配行数统计与阈值判定
+      - name: Adaptation-line count and threshold verdict
         run: |
           COUNT=$(grep -rnE 'target_arch *= *"wasm32"|wasm_bindgen|wasm-bindgen' \
             evorule-tcb/src evorule-reactor/src evorule-governance/src evorule-mcu/src \
             --include='*.rs' | wc -l)
-          echo "WASM 适配行数: ${COUNT} (阈值 50, 基线 2)"
+          echo "WASM adaptation lines: ${COUNT} (threshold 50, baseline 2)"
           if [ "${COUNT}" -gt 50 ]; then
-            echo "::error::WASM 适配行数 ${COUNT} > 50——触发 Runtime trait 抽象重构启动条件, 须先立项 trait 重构再扩适配面"
+            echo "::error::WASM adaptation lines ${COUNT} > 50 -- Runtime trait abstraction refactor start condition triggered; start the trait refactor project before extending the adaptation surface"
             exit 1
           fi
