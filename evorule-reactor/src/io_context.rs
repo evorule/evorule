@@ -1,39 +1,44 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! I/O 调用上下文 —— 权限判定与审计对齐的信息载体
+//! I/O call context — information carrier for permission decisions and audit alignment
 //!
-//! # 定位
-//! 本模块提供两种**纯数据类型**（additive，不改动任何既有 trait/签名）：
-//! - [`CallerRole`]：调用者角色（human / llm / unknown）
-//! - [`IoCallContext`]：一次 I/O 调用的上下文快照（cause / v_trigger / caller_role ...）
+//! # Positioning
+//! This module provides two **pure data types** (additive; no existing trait or
+//! signature is changed):
+//! - [`CallerRole`]: the caller role (human / llm / unknown)
+//! - [`IoCallContext`]: a context snapshot of one I/O call (cause / v_trigger / caller_role ...)
 //!
-//! 它们首先被 governance 层权限判定（`PermissionTable::evaluate`）消费，
-//! 后续将透传给每个 `IoHandler` 与 `IoDispatcher::dispatch`（详见实施文档 17）。
+//! They are first consumed by governance-layer permission decisions
+//! (`PermissionTable::evaluate`), and later will be passed through to every
+//! `IoHandler` and `IoDispatcher::dispatch` (see implementation doc 17 for details).
 //!
-//! # 版本语义（重要，见实施文档 17 §5.3）
-//! `IoCallContext.v_trigger` 是**冻结版本**而非"当前版本"：
-//! - 权限判定永远基于调用发起时冻结（处理该 IoRequest 时 FactsLog::version()）的快照；
-//! - 权限变更只影响 v_trigger 更大的新调用，绝不影响已判定的旧调用；
-//! - 回放重算必须用 v_trigger，否则破坏确定性。
+//! # Version semantics (important; see implementation doc 17 §5.3)
+//! `IoCallContext.v_trigger` is a **frozen version**, not the "current version":
+//! - Permission decisions are always based on the snapshot frozen when the call was
+//!   initiated (FactsLog::version() when the IoRequest was handled);
+//! - Permission changes only affect new calls with a larger v_trigger, and never
+//!   affect already-decided older calls;
+//! - Replay recomputation must use v_trigger, otherwise determinism breaks.
 
 use std::sync::Arc;
 
 use crate::FactId;
 
-/// 调用者角色 —— 调用时"代表谁"（区别于规则 `author`：author 表示"谁写的"）
+/// Caller role — "on behalf of whom" the call is made (distinct from the rule
+/// `author`: the author means "who wrote it")
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallerRole {
-    /// 人类规则发起的调用
+    /// Call initiated by a human rule
     Human,
-    /// LLM 规则发起的调用
+    /// Call initiated by an LLM rule
     Llm,
-    /// 无法确定（fail-closed 默认拒绝；白名单豁免见实施文档 17 §7）
+    /// Undeterminable (fail-closed default denial; whitelist exemption see implementation doc 17 §7)
     Unknown,
 }
 
 impl CallerRole {
-    /// 稳定字符串表示（用于审计/记录与规则元数据解析）
+    /// Stable string representation (for audit/records and rule metadata parsing)
     pub const fn as_str(self) -> &'static str {
         match self {
             CallerRole::Human => "human",
@@ -42,7 +47,7 @@ impl CallerRole {
         }
     }
 
-    /// 从字符串解析：`"human"`/`"llm"` → 对应角色，其余 → [`CallerRole::Unknown`]
+    /// Parses from a string: `"human"`/`"llm"` → the corresponding role, anything else → [`CallerRole::Unknown`]
     pub fn from_str_opt(s: &str) -> Self {
         match s {
             "human" => CallerRole::Human,
@@ -58,33 +63,38 @@ impl core::fmt::Display for CallerRole {
     }
 }
 
-/// caller_role 解析器接缝（B-3）
+/// caller_role resolver seam (B-3)
 ///
-/// 由应用层注入：给定一次 I/O 调用上下文，返回其调用者角色。缺省不注入时
-/// `PermissionGate` 沿用 `ctx.caller_role`（默认 `Unknown` → 默认策略 fail-closed）。
-/// 完整的逐 cause 链解析依赖会话私有 `FactsLog`（governance 侧 `PermissionGate` 只持有
-/// `SharedFactsLog`，无法回溯会话事实流），故应在持有会话事实的应用层实现后注入本接缝；
-/// 局限性与后续建议见实施文档 24 §8.3 B-3。
+/// Injected by the application layer: given an I/O call context, returns its caller
+/// role. When not injected, `PermissionGate` falls back to `ctx.caller_role`
+/// (default `Unknown` → default fail-closed policy). A full per-cause chain
+/// resolution depends on the session-private `FactsLog` (the governance-side
+/// `PermissionGate` only holds a `SharedFactsLog` and cannot walk back the session
+/// fact stream), so the application layer that holds the session facts should
+/// implement and inject this seam; limitations and follow-up suggestions in
+/// implementation doc 24 §8.3 B-3.
 pub type CallerRoleResolver = Arc<dyn Fn(&IoCallContext) -> CallerRole + Send + Sync>;
 
-/// I/O 调用上下文 —— 权限判定与审计对齐的信息载体
+/// I/O call context — information carrier for permission decisions and audit alignment
 #[derive(Debug, Clone)]
 pub struct IoCallContext {
-    /// 触发本次 I/O 的源事实 ID（来自 `Fact::IoRequest.cause`）
+    /// Source fact ID that triggered this I/O (from `Fact::IoRequest.cause`)
     pub cause: FactId,
-    /// 触发时刻的引擎版本号（v_trigger，用于严格回放权限投影）。
-    /// 语义见模块级注释：这是**冻结版本**，权限判定基于该版本快照。
+    /// Engine version at trigger time (v_trigger, for strict replay of permission projections).
+    /// Semantics in the module-level comment: this is a **frozen version**; permission
+    /// decisions are based on the snapshot at that version.
     pub v_trigger: u64,
-    /// 调用者角色（沿 cause 链回溯得到）：human / llm / unknown
+    /// Caller role (resolved by walking back the cause chain): human / llm / unknown
     pub caller_role: CallerRole,
-    /// cause 链（预计算，或留空由权权限判定器惰性回溯）
+    /// Cause chain (precomputed, or left empty for the permission evaluator to walk back lazily)
     pub cause_chain: Vec<FactId>,
-    /// 租户 ID（None = 全局会话），用于多租户 scope 过滤
+    /// Tenant ID (None = global session), used for multi-tenant scope filtering
     pub tenant_id: Option<String>,
 }
 
 impl IoCallContext {
-    /// 便捷构造（默认未知调用者，后续由权权限判定器沿 cause 链解析 caller_role）
+    /// Convenience constructor (defaults to an unknown caller; the permission evaluator
+    /// later resolves caller_role along the cause chain)
     pub fn new(cause: FactId, v_trigger: u64, tenant_id: Option<String>) -> Self {
         Self {
             cause,

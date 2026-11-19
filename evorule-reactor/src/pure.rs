@@ -1,40 +1,41 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 反应器纯逻辑模块（阶段7：Kani 形式化验证准备）
+//! Reactor pure-logic module (Phase 7: preparation for Kani formal verification)
 //!
-//! # 设计目标
+//! # Design goals
 //!
-//! 将 reactor 主循环中**不含 I/O、不含 tokio、不含 tracing** 的纯逻辑抽离到本模块，
-//! 为后续 Kani 形式化验证做准备。Kani 不支持异步运行时和 I/O，
-//! 因此需要将"逻辑"与"运行时"分离。
+//! Extract the pure logic of the reactor main loop — **no I/O, no tokio, no
+//! tracing** — into this module, preparing for later Kani formal verification.
+//! Kani does not support async runtimes or I/O, so "logic" and "runtime" must
+//! be separated.
 //!
-//! # 抽离原则
+//! # Extraction principles
 //!
-//! - ✅ 纯函数：输入 → 输出，无副作用
-//! - ✅ 不含 tokio / async / await
-//! - ✅ 不含 tracing / logging
-//! - ✅ 不含 Instant::now() 等系统调用
-//! - ✅ 与 TCB 的 Kani 验证配对（TCB 验证单步，reactor 验证多步）
+//! - ✅ Pure functions: input → output, no side effects
+//! - ✅ No tokio / async / await
+//! - ✅ No tracing / logging
+//! - ✅ No syscalls such as Instant::now()
+//! - ✅ Pairs with the TCB's Kani verification (TCB verifies one step; the reactor verifies multiple steps)
 //!
-//! # 可验证的不变式（Kani 证明目标）
+//! # Verifiable invariants (Kani proof targets)
 //!
 //! 1. `pending_io_count == pending_requests.len() == pending_io_timestamps.len()`
-//! 2. `io_recovery == true ⇔ payload.__io_results__ 存在非 null 结果`
-//! 3. `version >= prev_version`（单调递增）
-//! 4. 单步执行后状态一致性
-//! 5. max_rounds 内终止（需 bounded model checking）
+//! 2. `io_recovery == true ⇔ payload.__io_results__ has a non-null result`
+//! 3. `version >= prev_version` (monotonically increasing)
+//! 4. State consistency after single-step execution
+//! 5. Termination within max_rounds (requires bounded model checking)
 //!
-//! # 规范合规
+//! # Spec compliance
 //!
-//! - ✅ 机制-策略分离：本模块只含机制层逻辑
-//! - ✅ F8/F9/F11：嵌套 ≤ 2 层，单函数 ≤ 50 行，无 debug_assert!
-//! - ✅ 不影响 TCB（evorule-tcb 完全不修改）
+//! - ✅ Mechanism-policy separation: this module contains only mechanism-layer logic
+//! - ✅ F8/F9/F11: nesting ≤ 2 levels, single function ≤ 50 lines, no debug_assert!
+//! - ✅ No impact on the TCB (evorule-tcb is not modified at all)
 //!
-//! # Kani 使用方式（未来）
+//! # Kani usage (future)
 //!
 //! ```bash
-//! # 启用 kani feature 运行验证
+//! # Enable the kani feature to run verification
 //! cargo kani -p evorule-reactor --features kani
 //! ```
 
@@ -44,69 +45,72 @@ use crate::invariants::InvariantViolation;
 use crate::state::ReactorState;
 use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 
-/// 单步执行结果
+/// Single-step execution outcome
 ///
-/// 描述执行一条指令后 reactor 状态的变化，包括：
-/// - 新的 payload / queue
-/// - 是否触发了 I/O 请求
-/// - 是否发生了错误
+/// Describes the reactor state change after executing one instruction, including:
+/// - the new payload / queue
+/// - whether an I/O request was triggered
+/// - whether an error occurred
 #[derive(Debug, Clone)]
 pub(crate) enum StepOutcome {
-    /// 状态转移成功（payload / queue 已更新）
+    /// State transition succeeded (payload / queue updated)
     StateChanged,
-    /// 指令被忽略：没有匹配的宪法规则或规则产生了 noop 效果
+    /// Instruction ignored: no matching constitution rule, or the rule produced a noop effect
     ///
-    /// 参见 docs/rule_taxonomy.md 规则分类体系
+    /// See docs/rule_taxonomy.md for the rule taxonomy
     Ignored {
-        /// 被忽略的指令类型
+        /// The ignored instruction type
         instruction_type: String,
-        /// 忽略原因
+        /// The ignore reason
         reason: String,
     },
-    /// 触发 I/O 请求（调用方需注册并发射 IoRequest）
+    /// I/O request triggered (the caller must register and emit the IoRequest)
     IoRequired {
-        /// I/O 类型字符串（原始字符串，调用方 parse 成 IoType）
+        /// I/O type string (raw string; the caller parses it into IoType)
         io_type: String,
-        /// I/O 参数
+        /// I/O params
         params: JsonValue,
     },
-    /// `enforce` 强制拦截（回归验证）：违规指令被拒绝执行
+    /// `enforce` hard stop (regression guard): the violating instruction is refused execution
     ///
-    /// 指令已出队即丢弃（不推回队列）；payload/queue 保持该步前原样、
-    /// version 不 bump（无任何状态转移发生）。调用方需系统独占发射
-    /// `Fact::Violation`（三权分立：阻止权/记录权在系统）。
+    /// The instruction is dequeued and discarded (not pushed back to the queue);
+    /// payload/queue stay as before the step and version is not bumped (no state
+    /// transition occurred). The caller must emit `Fact::Violation` with
+    /// system-exclusive authority (separation of powers: block/record authority
+    /// belongs to the system).
     Halted {
-        /// 命中的 enforce 规则下标（合并规则列表中）
+        /// Index of the matched enforce rule (within the merged rule list)
         rule_index: usize,
-        /// 违规说明（enforce params.reason）
+        /// Violation description (enforce params.reason)
         reason: String,
     },
-    /// TCB 执行错误
+    /// TCB execution error
     TcbError(String),
 }
 
-/// 执行单步指令（纯函数，不含 I/O）
+/// Executes a single instruction step (pure function, no I/O)
 ///
-/// 从 `state` 中弹出队首指令，调用 TCB 的 `execute_transition`，
-/// 根据结果更新 state。**不发射事实、不记录日志、不修改快照**。
+/// Pops the front instruction from `state`, calls the TCB's `execute_transition`,
+/// and updates state according to the result. **Emits no facts, logs nothing,
+/// touches no snapshot**.
 ///
-/// # 参数
+/// # Arguments
 ///
-/// - `core_eval`: 规则配置（来自 core_eval.json）
-/// - `state`: 反应器状态（可变引用，直接修改）
-/// - `max_queue_len`: 队列长度上限（0 表示无限制）
+/// - `core_eval`: rule configuration (from core_eval.json)
+/// - `state`: reactor state (mutable reference, modified in place)
+/// - `max_queue_len`: queue length cap (0 means unlimited)
 ///
-/// # 返回值
+/// # Returns
 ///
-/// - `StepOutcome::StateChanged`: 状态转移成功
-/// - `StepOutcome::IoRequired`: 触发 I/O 请求
-/// - `StepOutcome::TcbError`: TCB 执行错误
+/// - `StepOutcome::StateChanged`: state transition succeeded
+/// - `StepOutcome::IoRequired`: I/O request triggered
+/// - `StepOutcome::TcbError`: TCB execution error
 ///
-/// # 注意
+/// # Notes
 ///
-/// - 此函数假设队列非空，队列为空时返回 `None`
-/// - I/O 恢复态清理（clear_io_result）在此函数内部处理
-/// - version bump 在此函数内部处理
+/// - This function assumes the queue is non-empty; returns `None` when the queue is empty
+/// - I/O recovery-state cleanup (clear_io_result) is handled inside this function
+/// - The version bump is handled inside this function
 pub(crate) fn next_step(
     core_eval: &[JsonValue],
     state: &mut ReactorState,
@@ -121,23 +125,25 @@ pub(crate) fn next_step(
         Ok(TransitionResult::State {
             new_payload,
             new_queue,
-            // 纯函数路径（Kani 验证准备）：不采集命中归因（运行时路径在 reactor.rs）
+            // Pure-function path (Kani verification prep): no hit attribution collected
+            // (the runtime path lives in reactor.rs)
             rule_hits: _,
         }) => {
             state.payload = new_payload;
             state.update_queue_with_causes(new_queue, cause);
 
-            // I/O 恢复执行后整体清除 __io_results__，防止残留影响后续不同的 I/O 指令
+            // After I/O-resumed execution, clear __io_results__ wholesale to prevent
+            // leftovers affecting later, different I/O instructions
             if state.io_recovery {
                 state.clear_io_result();
                 state.io_recovery = false;
             }
             state.bump_version();
 
-            // 队列长度检查（返回结果供调用方处理告警/Error）
-            // 纯函数不发射事实，调用方决定是否告警
+            // Queue-length check (the outcome lets the caller handle warn/Error)
+            // The pure function emits no facts; the caller decides whether to warn
             if max_queue_len > 0 && state.queue.len() >= max_queue_len {
-                // 达到硬限制，清空队列（与原逻辑一致）
+                // Hard limit reached; clear the queue (same as the original logic)
                 state.clear_queue();
             }
 
@@ -146,17 +152,19 @@ pub(crate) fn next_step(
         Ok(TransitionResult::Ignored {
             instruction_type,
             reason,
-            // 纯函数路径（Kani 验证准备）：不采集命中归因（运行时路径在 reactor.rs）
+            // Pure-function path (Kani verification prep): no hit attribution collected
+            // (the runtime path lives in reactor.rs)
             rule_hits: _,
         }) => {
-            // 指令被静默忽略：记录告警并返回 Ignored 结果
-            // 这使得上层（reactor）可以产生 Error 事实，不再静默失败
-            // 规则分类参见 docs/rule_taxonomy.md
+            // Instruction silently ignored: log a warning and return the Ignored outcome
+            // This lets the upper layer (the reactor) produce an Error fact instead
+            // of failing silently
+            // See docs/rule_taxonomy.md for the rule taxonomy
             state.bump_version();
             tracing::warn!(
                 instruction_type = %instruction_type,
                 reason = %reason,
-                "指令被忽略：没有匹配的宪法规则或规则产生了 noop 效果"
+                "instruction ignored: no matching constitution rule or the rule produced a noop effect"
             );
             Some(StepOutcome::Ignored {
                 instruction_type,
@@ -164,34 +172,37 @@ pub(crate) fn next_step(
             })
         }
         Ok(TransitionResult::IoRequired { io_type, params }) => {
-            // 注意：register_io_request 含 Instant::now()，不在纯函数中
-            // 调用方需在外部注册 I/O 请求
-            // 这里先把指令推回队列，让调用方处理
-            // （原逻辑是在 IoRequired 分支中 register + save + break）
+            // Note: register_io_request contains Instant::now(), so it is not in the
+            // pure function. The caller must register the I/O request externally.
+            // Here the instruction is pushed back to the queue first, for the caller
+            // to handle (the original logic did register + save + break in the
+            // IoRequired branch)
             state.push_front(instruction, cause);
             Some(StepOutcome::IoRequired { io_type, params })
         }
         Ok(TransitionResult::Halted { rule_index, reason }) => {
-            // enforce 强制拦截（回归验证）：指令已出队即丢弃（不推回队列），
-            // payload/queue 保持该步前原样，version 不 bump（无状态转移发生）。
-            // 调用方据此系统独占发射 Fact::Violation。
+            // enforce hard stop (regression guard): the instruction is dequeued and
+            // discarded (not pushed back to the queue); payload/queue stay as before
+            // the step, version not bumped (no state transition occurred).
+            // The caller emits Fact::Violation with system-exclusive authority accordingly.
             Some(StepOutcome::Halted { rule_index, reason })
         }
         Err(err) => Some(StepOutcome::TcbError(err.to_string())),
     }
 }
 
-/// 应用 Command 指令到状态（纯函数）
+/// Applies a Command instruction to the state (pure function)
 ///
-/// 将指令追加到队列尾部。对应原 `handle_fact` 中 `Fact::Command` 分支。
+/// Appends the instruction to the back of the queue. Corresponds to the
+/// `Fact::Command` branch of the original `handle_fact`.
 pub(crate) fn apply_command(state: &mut ReactorState, instruction: JsonValue, cause: FactId) {
     state.push_back(instruction, cause);
 }
 
-/// 应用 PayloadUpdate 到状态（纯函数）
+/// Applies a PayloadUpdate to the state (pure function)
 ///
-/// 更新 payload 中指定路径的值，并递增 version。
-/// 对应原 `handle_fact` 中 `Fact::PayloadUpdate` 分支。
+/// Updates the value at the given path in the payload and increments version.
+/// Corresponds to the `Fact::PayloadUpdate` branch of the original `handle_fact`.
 pub(crate) fn apply_payload_update(
     state: &mut ReactorState,
     path: &str,
@@ -202,7 +213,7 @@ pub(crate) fn apply_payload_update(
         state.bump_version();
         return Ok(());
     }
-    // 路径不存在：仅支持顶层字段创建
+    // Path does not exist: only top-level field creation is supported
     if !path.contains('.') && !path.contains('[') {
         if let JsonValue::Object(map) = &mut state.payload {
             map.insert(path.to_string(), value);
@@ -215,29 +226,32 @@ pub(crate) fn apply_payload_update(
     })
 }
 
-/// 应用 IoResponse 到状态（纯函数）
+/// Applies an IoResponse to the state (pure function)
 ///
-/// 完成 I/O 请求、注入结果、推回原指令、设置恢复标志。
-/// 对应原 `handle_fact` 中 `Fact::IoResponse` 分支的纯逻辑部分。
+/// Completes the I/O request, injects the result, re-pushes the original
+/// instruction, and sets the recovery flag. Corresponds to the pure-logic part
+/// of the `Fact::IoResponse` branch of the original `handle_fact`.
 ///
-/// # 返回值
+/// # Returns
 ///
-/// - `Ok(true)`: I/O 请求存在，已应用
-/// - `Ok(false)`: I/O 请求不存在（未知 IoResponse，忽略）
-/// - `Err`: 注入结果时出错
+/// - `Ok(true)`: the I/O request exists and was applied
+/// - `Ok(false)`: the I/O request does not exist (unknown IoResponse; ignored)
+/// - `Err`: error while injecting the result
 pub(crate) fn apply_io_response(
     state: &mut ReactorState,
     request_id: FactId,
     result: JsonValue,
 ) -> Result<bool, ReactorError> {
-    // v0.3.1：先取 io_type（complete_io_request 会移除 io_type 记录）
+    // v0.3.1: fetch io_type first (complete_io_request removes the io_type record)
     let io_type = state.get_io_type(&request_id).cloned();
     if !state.complete_io_request(request_id) {
         return Ok(false);
     }
-    // v0.3.1 修复：null 结果没有可消费的内容（`exists` 将 null 视为不存在）。
-    // 若注入 null 后重新推送原指令，恢复执行会再次走 io_request → 死循环。
-    // 处理：丢弃缓存的原指令，不再重新推送（与 reactor::handle_fact 一致）。
+    // v0.3.1 fix: a null result has nothing consumable (`exists` treats null as absent).
+    // If null were injected and the original instruction re-pushed, resumed execution
+    // would hit io_request again → infinite loop.
+    // Handling: discard the cached original instruction instead of re-pushing
+    // (consistent with reactor::handle_fact).
     if result.is_null() {
         state.take_io_instruction(request_id);
         state.bump_version();
@@ -254,15 +268,16 @@ pub(crate) fn apply_io_response(
     Ok(true)
 }
 
-/// 注入 I/O 结果到 payload.__io_results__.{io_type}（纯函数）
+/// Injects the I/O result into payload.__io_results__.{io_type} (pure function)
 ///
-/// 对应原 `inject_io_result` 方法。
+/// Corresponds to the original `inject_io_result` method.
 ///
-/// # Kani 模式
+/// # Kani mode
 ///
-/// Kani 模式下不操作 `JsonValue::Object` 内部的 `BTreeMap`（会导致 CBMC 状态爆炸），
-/// 改为设置 `kani_has_io_result` 标志位。`has_io_result` 在 Kani 模式下
-/// 检查此标志位而非 BTreeMap，保证不变量验证的一致性。
+/// Under Kani mode the `BTreeMap` inside `JsonValue::Object` is not operated on
+/// (it would cause CBMC state explosion); instead the `kani_has_io_result` flag
+/// is set. `has_io_result` checks this flag rather than the BTreeMap in Kani
+/// mode, keeping invariant verification consistent.
 fn inject_io_result(
     state: &mut ReactorState,
     io_type: &IoType,
@@ -270,7 +285,7 @@ fn inject_io_result(
 ) -> Result<(), ReactorError> {
     #[cfg(kani)]
     {
-        let _ = (result, io_type); // 避免未使用变量警告
+        let _ = (result, io_type); // avoid unused-variable warnings
         state.kani_has_io_result = true;
         return Ok(());
     }
@@ -291,40 +306,41 @@ fn inject_io_result(
     }
 }
 
-/// 检查不变式（纯函数，委托给 invariants 模块）
+/// Checks the invariants (pure function; delegates to the invariants module)
 ///
-/// 此函数是 invariants::check_invariants 的重新导出，
-/// 方便从 pure 模块统一访问所有可验证的纯逻辑。
+/// This function re-exports invariants::check_invariants, so that all verifiable
+/// pure logic can be accessed uniformly from the pure module.
 pub fn check_invariants(state: &ReactorState, steps: usize) -> Vec<InvariantViolation> {
     crate::invariants::check_invariants(state, steps)
 }
 
-/// 稳定条件判定（纯函数）
+/// Stability condition decision (pure function)
 ///
-/// 队列空 + 无 pending I/O + 已执行过（steps > 0）。
-/// 对应原 `StableDetector::is_stable` + steps > 0。
+/// Empty queue + no pending I/O + at least one executed step (steps > 0).
+/// Corresponds to the original `StableDetector::is_stable` + steps > 0.
 pub(crate) fn is_stable(queue_len: usize, pending_io_count: usize, steps: usize) -> bool {
     queue_len == 0 && pending_io_count == 0 && steps > 0
 }
 
-/// 注册 I/O 请求（纯函数版本，不含 Instant::now()）
+/// Registers an I/O request (pure-function version, no Instant::now())
 ///
-/// 原 `state.register_io_request` 含 `Instant::now()`，不适合 Kani 验证。
-/// 此纯函数版本接受 `started_at` 参数由调用方传入，
-/// 保证所有时间相关逻辑在 pure 模块之外。
+/// The original `state.register_io_request` contains `Instant::now()`, which is
+/// unsuitable for Kani verification. This pure-function version accepts a
+/// `started_at` parameter supplied by the caller, keeping all time-related logic
+/// outside the pure module.
 ///
-/// # 参数
+/// # Arguments
 ///
-/// - `state`: 反应器状态
-/// - `id`: I/O 请求 ID
-/// - `io_type`: I/O 类型
-/// - `instruction`: 触发 I/O 的原指令（用于恢复执行）
-/// - `started_at_idx`: 时间戳索引（用于 Kani 验证时替代真实时间）
+/// - `state`: reactor state
+/// - `id`: I/O request ID
+/// - `io_type`: I/O type
+/// - `instruction`: the original instruction that triggered I/O (used for resumed execution)
+/// - `started_at_idx`: timestamp index (replaces real time during Kani verification)
 ///
-/// # 注意
+/// # Notes
 ///
-/// Kani 验证时，`started_at_idx` 可作为抽象时间戳，
-/// 验证计数一致性，无需真实 Instant。
+/// During Kani verification, `started_at_idx` can serve as an abstract timestamp,
+/// verifying count consistency without a real Instant.
 pub(crate) fn register_io_request_pure(
     state: &mut ReactorState,
     id: FactId,
@@ -337,22 +353,24 @@ pub(crate) fn register_io_request_pure(
         state
             .pending_io_instructions
             .insert(id, (instruction, FactId(0)));
-        // pending_io_timestamps 不在纯函数中设置（含 Instant::now()）
-        // 调用方需在外部设置时间戳
+        // pending_io_timestamps is not set in the pure function (contains Instant::now())
+        // The caller must set the timestamp externally
     }
 }
 
 // ============================================================================
-// Kani 形式化验证证明（阶段7）
+// Kani formal-verification proofs (Phase 7)
 //
-// 门控方式: #[cfg(kani)], 由 cargo kani 自动注入 --cfg kani,
-// 与 evorule-tcb/verification/kani_proofs.rs 风格一致。无需 --features kani。
+// Gating: #[cfg(kani)] — `cargo kani` automatically injects --cfg kani,
+// consistent with the evorule-tcb/verification/kani_proofs.rs style.
+// No --features kani needed.
 //
-// 启用: cargo kani -p evorule-reactor
-// 单个: cargo kani -p evorule-reactor --harness invariant_cause_queue_sync
+// Enable: cargo kani -p evorule-reactor
+// Single: cargo kani -p evorule-reactor --harness invariant_cause_queue_sync
 //
-// 验证代码位于 verification/ 目录(与 src/ 核心实现解耦):
-// - verification/kani_proofs.rs — Kani proof 函数(P0-11 cause 队列同步等)
+// Verification code lives in the verification/ directory (decoupled from the
+// src/ core implementation):
+// - verification/kani_proofs.rs — Kani proof functions (P0-11 cause-queue sync, etc.)
 // ============================================================================
 
 #[cfg(kani)]
@@ -366,7 +384,7 @@ mod tests {
     use crate::fact::FactId;
     use evorule_tcb::ObjectMap;
 
-    // 辅助：创建带初始队列的 state
+    // Helper: create a state with an initial queue
     fn state_with_queue(instructions: Vec<JsonValue>) -> ReactorState {
         let mut state = ReactorState::new();
         for instr in instructions {
@@ -375,7 +393,7 @@ mod tests {
         state
     }
 
-    // 辅助：构造 increment 指令
+    // Helper: build an increment instruction
     fn increment_instr(attr: &str, delta: i64) -> JsonValue {
         let mut params = ObjectMap::new();
         params.insert("attr".to_string(), JsonValue::string(attr));
@@ -386,7 +404,7 @@ mod tests {
         JsonValue::Object(instr)
     }
 
-    // 辅助：加载 core_eval（与集成测试一致）
+    // Helper: load core_eval (consistent with the integration tests)
     fn load_core_eval() -> Vec<JsonValue> {
         use std::path::PathBuf;
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -451,9 +469,9 @@ mod tests {
         assert_eq!(state.prev_version, prev_version);
     }
 
-    // ===== enforce 强制拦截（回归验证）=====
+    // ===== enforce hard stop (regression guard) =====
 
-    /// 辅助：构造 enforce 规则（单条 core_eval）
+    /// Helper: build an enforce rule (single-entry core_eval)
     fn enforce_core_eval(domain: JsonValue, reason: &str) -> Vec<JsonValue> {
         let mut params = ObjectMap::new();
         params.insert("domain".to_string(), domain);
@@ -464,7 +482,7 @@ mod tests {
         vec![JsonValue::Object(instr)]
     }
 
-    /// 辅助：构造 delete_all 指令
+    /// Helper: build a delete_all instruction
     fn delete_all_instr() -> JsonValue {
         let mut instr = ObjectMap::new();
         instr.insert("type".to_string(), JsonValue::string("delete_all"));
@@ -473,15 +491,16 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::panic)] // 测试断言失败提示使用 panic!（assert 风格，符合测试惯用法）
+    #[allow(clippy::panic)] // test-failure hints use panic! (assert style, idiomatic for tests)
     fn test_next_step_enforce_halt_drops_instruction_and_keeps_state() {
-        // enforce 语义：违规指令被拒——出队即丢弃（不推回）、payload/queue
-        // 保持原样、version 不 bump（无状态转移发生）
+        // enforce semantics: the violating instruction is refused — dequeued and
+        // discarded (not pushed back), payload/queue unchanged, version not bumped
+        // (no state transition occurred)
         let domain = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("instruction")),
             ("instruction_type", JsonValue::string("delete_all")),
         ]);
-        let core_eval = enforce_core_eval(domain, "违规：禁删数据集");
+        let core_eval = enforce_core_eval(domain, "violation: dataset deletion forbidden");
         let mut state = state_with_queue(vec![delete_all_instr()]);
         state.payload = JsonValue::object_from_pairs(&[("data", JsonValue::string("keep"))]);
         let prev_version = state.version;
@@ -489,12 +508,12 @@ mod tests {
         match next_step(&core_eval, &mut state, 1000) {
             Some(StepOutcome::Halted { rule_index, reason }) => {
                 assert_eq!(rule_index, 0);
-                assert_eq!(reason, "违规：禁删数据集");
+                assert_eq!(reason, "violation: dataset deletion forbidden");
             }
             other => panic!("expected Halted, got {other:?}"),
         }
 
-        // payload 原样、队列空（指令被丢弃未推回）、version 不变
+        // payload unchanged, queue empty (instruction discarded, not pushed back), version unchanged
         assert_eq!(state.payload.get("data"), Some(&JsonValue::string("keep")));
         assert!(state.queue.is_empty());
         assert_eq!(state.version, prev_version);
@@ -502,17 +521,17 @@ mod tests {
 
     #[test]
     fn test_next_step_enforce_domain_false_continues() {
-        // domain 为假：noop 继续，不产生 Halted
+        // domain false: noop continues, no Halted produced
         let domain = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("instruction")),
             ("instruction_type", JsonValue::string("harmless_op")),
         ]);
-        let core_eval = enforce_core_eval(domain, "不适用");
+        let core_eval = enforce_core_eval(domain, "not applicable");
         let mut state = state_with_queue(vec![delete_all_instr()]);
         let prev_version = state.version;
 
         let outcome = next_step(&core_eval, &mut state, 1000);
-        // enforce 不命中且无其他规则匹配 → Ignored（noop 检测）
+        // enforce misses and no other rule matches → Ignored (noop detection)
         assert!(matches!(outcome, Some(StepOutcome::Ignored { .. })));
         assert_eq!(state.version, prev_version + 1);
     }
@@ -529,7 +548,7 @@ mod tests {
     #[test]
     fn test_apply_payload_update_existing_path() {
         let mut state = ReactorState::new();
-        // 先创建顶层字段
+        // Create the top-level field first
         if let JsonValue::Object(map) = &mut state.payload {
             map.insert("x".to_string(), JsonValue::Integer(0));
         }
@@ -570,14 +589,14 @@ mod tests {
         let mut state = ReactorState::new();
         let id = FactId(1);
         let instr = increment_instr("x", 1);
-        // 注册 I/O 请求
+        // Register the I/O request
         state.register_io_request(id, IoType::call_external());
         state.save_io_instruction(id, instr.clone(), FactId(0));
-        // 应用响应
+        // Apply the response
         let result = apply_io_response(&mut state, id, JsonValue::string("result"));
         assert!(result.is_ok());
         assert!(result.unwrap());
-        // 验证结果已注入（v0.3.1：__io_results__.{io_type} 按类型隔离）
+        // Verify the result was injected (v0.3.1: __io_results__.{io_type} isolated per type)
         assert!(matches!(
             state
                 .payload
@@ -585,11 +604,11 @@ mod tests {
                 .and_then(|r| r.get("call_external")),
             Some(JsonValue::String(_))
         ));
-        // 验证恢复标志已设置
+        // Verify the recovery flag is set
         assert!(state.io_recovery);
-        // 验证原指令已推回队首
+        // Verify the original instruction was pushed back to the front
         assert_eq!(state.queue.front(), Some(&instr));
-        // 验证 I/O 请求已完成
+        // Verify the I/O request is completed
         assert_eq!(state.pending_io_count, 0);
     }
 
@@ -625,7 +644,7 @@ mod tests {
             state.pending_io_instructions.get(&id),
             Some(&(instr, FactId(0)))
         );
-        // 时间戳不在纯函数中设置，由调用方负责
+        // The timestamp is not set in the pure function; the caller is responsible
         assert!(!state.pending_io_timestamps.contains_key(&id));
     }
 

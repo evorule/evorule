@@ -1,55 +1,60 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 差分测试:Reactor 运行时逻辑 vs TCB 纯函数逻辑(P0-12)
+//! Differential test: Reactor runtime logic vs TCB pure-function logic
 //!
-//! # 位置说明
+//! # Placement
 //!
-//! 本文件位于 `verification/` 目录(形式化验证专属目录),与 `src/` 核心实现解耦:
-//! - 不受 `build.rs` T1-T14 编译时门禁约束(仅扫 `src/` 目录)
-//! - 通过 `Cargo.toml` 的 `[[test]]` 目标指向,作为集成测试编译
+//! This file lives in the `verification/` directory (dedicated to formal verification),
+//! decoupled from the core implementation in `src/`:
+//! - Not subject to the `build.rs` T1-T14 compile-time gates (they only scan `src/`)
+//! - Pointed to by the `[[test]]` target in `Cargo.toml` and compiled as an integration test
 //!
-//! # 验证目标(P0-12)
+//! # Verification goal
 //!
-//! `diff_reactor_vs_pure`:验证 Reactor 全异步流水线(经由 `pure::next_step`
-//! → `evorule_tcb::execute_transition`)与直接调用 `evorule_tcb::execute_transition`
-//! 产生相同的状态变更。
+//! `diff_reactor_vs_pure`: verifies that the Reactor's full async pipeline (via
+//! `pure::next_step` → `evorule_tcb::execute_transition`) produces the same state changes as
+//! calling `evorule_tcb::execute_transition` directly.
 //!
-//! # 差分对
+//! # Differential pair
 //!
-//! | 路径 A(运行时) | 路径 B(纯函数) | 比较字段 |
-//! |------------------|------------------|----------|
+//! | Path A (runtime) | Path B (pure functions) | Compared fields |
+//! |------------------|-------------------------|-----------------|
 //! | Reactor::spawn → Command → StateTransition fact | execute_transition(core_eval, instr, payload, &[]) | new_payload, new_queue |
 //!
-//! 如果两者一致,说明 Reactor 的队列管理、cause 追踪、version bump、
-//! I/O 恢复态清理等流水线逻辑没有篡改 TCB 核心算法的输出。
+//! If the two agree, the Reactor's pipeline logic — queue management, cause tracking,
+//! version bumping, I/O recovery-state cleanup, etc. — has not tampered with the TCB core
+//! algorithm's output.
 //!
-//! # 设计说明
+//! # Design note
 //!
-//! Reactor 的初始 payload 始终为 `empty_object()`(不读取 FactsLog 的初始 payload),
-//! 因此差分测试的路径 B 也使用 `empty_object()` 作为初始 payload,确保两条路径
-//! 从同一状态出发。
+//! The Reactor's initial payload is always `empty_object()` (the FactsLog's initial payload
+//! is not read), so differential path B also uses `empty_object()` as the initial payload,
+//! ensuring both paths start from the same state.
 //!
-//! # 语义等价规约(差分测试的形式化契约)
+//! # Semantic equivalence contract (the differential test's formal contract)
 //!
-//! 对任意指令 `I` 与初始 payload `S`(此处恒为 `empty_object()`):
+//! For any instruction `I` and initial payload `S` (here always `empty_object()`):
 //!
 //! ```text
-//! 路径 A(Reactor 异步流水线) ≙ 路径 B(execute_transition 纯函数)
-//! ⟺  (A 成功 ∧ B 成功 ∧ A.new_payload ≡ B.new_payload 结构全等)
-//!   ∨ (A 失败 ∧ B 失败)     // 两路径结果类型一致(成功/失败)
+//! path A (Reactor async pipeline) ≙ path B (execute_transition pure function)
+//! ⟺  (A succeeded ∧ B succeeded ∧ A.new_payload ≡ B.new_payload structurally equal)
+//!   ∨ (A failed ∧ B failed)     // both paths agree on the result kind (success/failure)
 //! ```
 //!
-//! 约束与例外:
-//! - **成功路径**:new_payload 必须结构全等(见 `assert_semantically_equivalent`)。
-//! - **失败路径**:仅要求两路径都失败(错误的具体类型由各自路径语义保证,
-//!   不在本规约范围内,因 Reactor 对错误的包装与 TCB 错误码存在合理的抽象差异)。
-//! - **多步序列**(如 set→increment):每一步分别满足上述规约,最终状态全等。
+//! Constraints and exceptions:
+//! - **Success path**: new_payload must be structurally equal (see `assert_semantically_equivalent`).
+//! - **Failure path**: only requires both paths to fail (the concrete error types are
+//!   guaranteed by each path's own semantics and are outside this contract, since the
+//!   Reactor's error wrapping and the TCB error codes differ by a reasonable abstraction gap).
+//! - **Multi-step sequences** (e.g. set→increment): each step satisfies the contract above;
+//!   final states are structurally equal.
 //!
-//! 该规约是 P0-12 抽象保真度的主要证据:Reactor 的队列管理、cause 追踪、
-//! version bump、I/O 恢复态清理等流水线逻辑不得篡改 TCB 核心算法的输出。
+//! This contract is the primary evidence of abstraction fidelity: the Reactor's pipeline
+//! logic — queue management, cause tracking, version bumping, I/O recovery-state cleanup,
+//! etc. — must not tamper with the TCB core algorithm's output.
 //!
-//! # 跑法
+//! # How to run
 //!
 //! ```bash
 //! cargo test --package evorule-reactor --test differential_test
@@ -65,7 +70,7 @@ use proptest::test_runner::FileFailurePersistence;
 use std::path::PathBuf;
 
 // =============================================================================
-// 辅助:加载 core_eval.json(与单元测试一致)
+// Helper: load core_eval.json (consistent with the unit tests)
 // =============================================================================
 
 fn serde_to_tcb(v: serde_json::Value) -> JsonValue {
@@ -107,39 +112,46 @@ fn load_core_eval() -> Vec<JsonValue> {
     transform.iter().cloned().map(serde_to_tcb).collect()
 }
 
-/// 差分测试宪法源=**evo-agent 仓真文件**（不再手抄内联副本）。
+/// The differential test's constitution source = **the real file in the evo-agent repo**
+/// (no more hand-copied inline duplicate).
 ///
-/// 背景：生产编排规则唯一实体 = evo-agent/assets/agent_constitution.json；
-/// 历史上 io_loop_rules() 为手抄内联副本，且宪法 v0.5.0（2026-09-14 规则清理）
-/// 移除 ReAct 循环规则后内联副本已静默漂移。本函数直接读真文件
-/// 并 sha256 锁定——宪法任何演进立即反映到差分面，双副本漂移结构性不可能。
+/// Background: the sole authority for production orchestration rules is
+/// evo-agent/assets/agent_constitution.json; io_loop_rules() was historically a hand-copied
+/// inline duplicate, and after constitution v0.5.0 (2026-09-14 rule cleanup) removed the
+/// ReAct-loop rules, the inline copy silently drifted. This function reads the real file
+/// directly and locks it with sha256 — any constitution evolution is immediately reflected
+/// on the differential surface, and dual-copy drift is structurally impossible.
 ///
-/// 路径解析：同仓 CI 布局 = `evorule/evorule-reactor/…` 与 evo-agent 为兄弟仓
-/// 不可假设；按环境变量 → 相对布局探测链解析，全失败则 panic（fail-fast：
-/// 差分测试找不到宪法=配置断链，宁红勿静默回退内联副本）。
+/// Path resolution: the same-repo CI layout (`evorule/evorule-reactor/…` with evo-agent as a
+/// sibling repo) cannot be assumed; resolution follows an env-var → relative-layout probing
+/// chain, and panics if all fail (fail-fast: the differential test not finding the
+/// constitution means a broken configuration — prefer red over silently falling back to an
+/// inline duplicate).
 fn load_agent_constitution() -> Vec<JsonValue> {
     use std::path::PathBuf;
 
-    // sha256 锁（宪法演进=bump 此值，显式人为动作）。
-    // 锁对象 = git blob 实体的 LF 原样字节；哈希前先做行尾归一化（见下），
-    // 使 Windows autocrlf 检出（CRLF）与 Linux CI 检出（LF）验为同一锁定值。
+    // sha256 lock (constitution evolution = bump this value; an explicit, intentional action).
+    // Locked object = the git blob entity's verbatim LF bytes; a newline normalization (see
+    // below) runs before hashing, so a Windows autocrlf checkout (CRLF) and a Linux CI
+    // checkout (LF) verify as the same lock value.
     const CONSTITUTION_SHA256: &str =
         "2e3a57038802f1940cd6fc113bcf1d1df9fba8a74de5f2340cf90356f24b7cc0";
 
     let candidates: Vec<PathBuf> = {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let mut v = Vec::new();
-        // ① env 覆盖（CI/异布局注入）
+        // (1) env override (CI / non-standard layout injection)
         if let Ok(p) = std::env::var("AGENT_CONSTITUTION_PATH") {
             v.push(PathBuf::from(p));
         }
-        // ② 兄弟仓布局（本地 D:\ 布局 / mono-workspace 检出）
+        // (2) sibling-repo layout (local checkout / mono-workspace)
         v.push(manifest_dir.join("../../../evo-agent/assets/agent_constitution.json"));
-        // ③ 本仓根上级（evo-agent 与 evorule 同父的另一常见检出位）
+        // (3) parent-of-repo-root (another common checkout location where evo-agent and
+        //     evorule share a parent)
         v.push(manifest_dir.join("../../../../evo-agent/assets/agent_constitution.json"));
-        // ④ 本仓根兄弟位（CI 单仓检出布局：evorule 仓根旁检入/克隆 evo-agent，
-        //    GH ci.yml test job 以 path: evo-agent 检出、非 CI 场景以
-        //    git clone 落位同名目录）
+        // (4) repo-root sibling (CI single-repo checkout layout: evo-agent checked out or
+        //     cloned next to the evorule repo root; the GH ci.yml test job checks it out at
+        //     path: evo-agent, and non-CI setups land it there via git clone)
         v.push(manifest_dir.join("../evo-agent/assets/agent_constitution.json"));
         v
     };
@@ -152,19 +164,22 @@ fn load_agent_constitution() -> Vec<JsonValue> {
     });
     let bytes = std::fs::read(path).expect("read agent_constitution.json");
     let digest = {
-        // 行尾归一化后再哈希：锁值锚定 git blob 实体（LF），免疫检出平台
-        // 行尾差异（autocrlf 检出为 CRLF 时同一实体不得误判为漂移）。
-        // JSON 规范禁止字符串字面量中出现裸 CR（必须转义），删除全部 \r
-        // 等价于 CRLF→LF 归一化，不触碰任何语义字节。
+        // Hash after newline normalization: the lock value anchors the git blob entity
+        // (LF), immune to checkout platform newline differences (with autocrlf producing a
+        // CRLF checkout, the same entity must not be misjudged as drifted).
+        // The JSON spec forbids bare CR inside string literals (it must be escaped), so
+        // deleting all \r is equivalent to CRLF→LF normalization and touches no semantic
+        // bytes.
         let normalized: Vec<u8> = bytes.iter().copied().filter(|&b| b != b'\r').collect();
-        // sha256（无 sha2 dev-dep 依赖：手写 FIPS 180-4 紧凑实现不引入；
-        // 用环形缓冲逐块——见下方 sha256_of）
+        // sha256 (no sha2 dev-dep: a compact handwritten FIPS 180-4 implementation,
+        // processed block by block via a ring buffer — see sha256_of below)
         sha256_of(&normalized)
     };
     assert_eq!(
         digest, CONSTITUTION_SHA256,
-        "agent_constitution.json sha256 漂移：宪法已演进，请核实差分用例是否需同步更新，\
-         然后 bump CONSTITUTION_SHA256（显式人为动作）"
+        "agent_constitution.json sha256 drift: the constitution has evolved; verify whether \
+         the differential cases need a synchronized update, then bump CONSTITUTION_SHA256 \
+         (an explicit, intentional action)"
     );
     let doc: serde_json::Value =
         serde_json::from_slice(&bytes).expect("agent_constitution.json is valid JSON");
@@ -177,8 +192,8 @@ fn load_agent_constitution() -> Vec<JsonValue> {
         .collect()
 }
 
-/// SHA-256 紧凑实现（仅测试用：避免为一条断言引入 sha2 dev-dep；
-/// FIPS 180-4，无 unsafe）。
+/// Compact SHA-256 implementation (test-only: avoids introducing a sha2 dev-dep for a
+/// single assertion; FIPS 180-4, no unsafe).
 fn sha256_of(data: &[u8]) -> String {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
@@ -252,7 +267,7 @@ fn sha256_of(data: &[u8]) -> String {
 }
 
 // =============================================================================
-// 辅助:构造指令
+// Helper: build instructions
 // =============================================================================
 
 fn increment_instr(attr: &str, delta: i64) -> JsonValue {
@@ -286,7 +301,8 @@ fn set_instr(attr: &str, value: i64) -> JsonValue {
     ])
 }
 
-/// set 指令（任意 JsonValue 值），用于构造嵌套对象等场景
+/// set instruction (arbitrary JsonValue value), used to build nested objects and similar
+/// scenarios
 fn set_json_instr(attr: &str, value: JsonValue) -> JsonValue {
     JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("set")),
@@ -302,7 +318,7 @@ fn set_json_instr(attr: &str, value: JsonValue) -> JsonValue {
 }
 
 // =============================================================================
-// v0.3.1 新指令/域类型构造（差分测试覆盖新逻辑）
+// v0.3.1 new instruction/domain-type builders (differential coverage of the new logic)
 // =============================================================================
 
 fn decrement_instr(attr: &str, delta: i64) -> JsonValue {
@@ -362,7 +378,7 @@ fn call_external_instr(messages: JsonValue, tools: JsonValue) -> JsonValue {
     ])
 }
 
-/// v0.3.1 域类型：has_fields（判断对象是否含指定字段）
+/// v0.3.1 domain type: has_fields (whether an object contains the given fields)
 fn has_fields_domain(path: &str, fields: &[&str]) -> JsonValue {
     JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("has_fields")),
@@ -374,10 +390,10 @@ fn has_fields_domain(path: &str, fields: &[&str]) -> JsonValue {
     ])
 }
 
-/// v0.3.1 域类型：lt（path 整数值 < value）
+/// v0.3.1 domain type: lt (integer at path < value)
 ///
-/// `path` 为完整状态路径（如 `__exec__.payload.x`），
-/// 与 TCB 的 `resolve_domain_path` 解析规则一致。
+/// `path` is a full state path (e.g. `__exec__.payload.x`), consistent with the TCB's
+/// `resolve_domain_path` resolution rules.
 fn lt_domain(path: &str, value: i64) -> JsonValue {
     JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("lt")),
@@ -387,19 +403,21 @@ fn lt_domain(path: &str, value: i64) -> JsonValue {
 }
 
 // =============================================================================
-// v0.3.1 差分辅助：多步队列执行模拟 + 事件排空
+// v0.3.1 differential helpers: multi-step queue execution simulation + event draining
 // =============================================================================
 
-/// 模拟 Reactor 的队列驱动主循环（仅用 execute_transition 纯函数）：
-/// 循环 pop 队首指令执行，直到队列为空、触发 I/O 或执行错误。
+/// Simulates the Reactor's queue-driven main loop (using only the execute_transition pure
+/// function): pops and executes the front instruction until the queue drains, I/O fires, or
+/// execution errors.
 ///
-/// 返回 `(最终 payload, 最终队列)`。这是差分测试路径 B 的多步模拟，
-/// 与 Reactor 每步调用一次 `execute_transition` 的语义完全一致。
+/// Returns `(final payload, final queue)`. This is the multi-step simulation of differential
+/// path B, semantically identical to the Reactor calling `execute_transition` once per step.
 ///
-/// # 步数上限
+/// # Step cap
 ///
-/// 带 10000 步硬上限（对应 Reactor 的 max_rounds 防线）：测试构造错误
-/// 导致队列永不排空时快速 panic，而非无限挂起拖垮整个测试套件。
+/// Hard cap of 10000 steps (mirroring the Reactor's max_rounds defense): panics quickly when
+/// a test-constructed error leaves the queue never draining, instead of hanging forever and
+/// dragging down the whole test suite.
 fn simulate_execution(
     core_eval: &[JsonValue],
     initial_payload: JsonValue,
@@ -422,8 +440,9 @@ fn simulate_execution(
                 payload = new_payload;
                 queue = new_queue;
             }
-            // I/O 触发/enforce 拦截/忽略/错误：与 Reactor 行为一致
-            // （Halted：指令被拒停止推进，payload/queue 保持原样，等待 Violation 事实）
+            // I/O fired / enforce rejected / ignored / error: consistent with Reactor
+            // behavior (Halted: the instruction is refused and progress stops;
+            // payload/queue stay as-is, awaiting the Violation fact)
             Ok(TransitionResult::IoRequired { .. })
             | Ok(TransitionResult::Halted { .. })
             | Ok(TransitionResult::Ignored { .. })
@@ -438,10 +457,11 @@ fn simulate_execution(
     );
 }
 
-/// 持续接收事件直到 Stable/Error，返回最后看到的 StateTransition 的 new_payload。
+/// Keeps receiving events until Stable/Error; returns the new_payload of the last
+/// StateTransition seen.
 ///
-/// 适用于多步指令（sequence/conditional/while_loop）以及 ReAct 结果消费场景：
-/// Reactor 会持续处理队列中的指令，直到稳定或出错。
+/// Suitable for multi-step instructions (sequence/conditional/while_loop) and ReAct result
+/// consumption: the Reactor keeps processing queued instructions until stable or error.
 async fn drain_to_stable(rx: &mut evorule_reactor::EventReceiver) -> Option<JsonValue> {
     let mut last_payload = None;
     while let Ok(fact) = rx.recv().await {
@@ -455,9 +475,10 @@ async fn drain_to_stable(rx: &mut evorule_reactor::EventReceiver) -> Option<Json
     last_payload
 }
 
-/// 持续接收事件直到 IoRequest，返回 `(request_id, io_type, params)`。
+/// Keeps receiving events until an IoRequest; returns `(request_id, io_type, params)`.
 ///
-/// 用于 ReAct 循环差分：call_external 无结果时 Reactor 触发 IoRequest fact。
+/// Used for ReAct-loop differential testing: call_external with no result makes the Reactor
+/// emit an IoRequest fact.
 async fn extract_io_request(
     rx: &mut evorule_reactor::EventReceiver,
 ) -> Option<(FactId, String, JsonValue)> {
@@ -477,7 +498,7 @@ async fn extract_io_request(
 }
 
 // =============================================================================
-// proptest 配置
+// proptest configuration
 // =============================================================================
 
 fn proptest_config() -> ProptestConfig {
@@ -493,13 +514,15 @@ fn proptest_config() -> ProptestConfig {
 }
 
 // =============================================================================
-// 语义等价规约断言(差分测试的形式化契约的裁决器)
+// Semantic equivalence contract assertion (arbiter of the differential test's formal contract)
 // =============================================================================
 //
-// 见模块文档「语义等价规约」。四个参数分别是两条路径的成功标志与 payload:
-// - 两路径都成功 → payload 必须结构全等;
-// - 两路径都失败 → 等价(错误类型一致性由各自路径语义保证);
-// - 一成一败 → 违反规约,直接 panic。
+// See the module doc "Semantic equivalence contract". The four parameters are the success
+// flags and payloads of the two paths:
+// - both paths succeed → payloads must be structurally equal;
+// - both paths fail → equivalent (error-type consistency is guaranteed by each path's own
+//   semantics);
+// - one succeeds and one fails → contract violation, immediate panic.
 // =============================================================================
 
 fn assert_semantically_equivalent(
@@ -513,22 +536,31 @@ fn assert_semantically_equivalent(
         (true, true) => {
             assert_eq!(
                 reactor_payload, direct_payload,
-                "语义等价规约违反: 两路径均成功但 new_payload 结构不等价 ({ctx})"
+                "semantic equivalence contract violated: both paths succeeded but new_payload \
+                 is not structurally equivalent ({ctx})"
             );
         }
         (false, false) => {
-            // 两路径均失败,视为等价(错误类型差异属合理抽象边界,不在规约内)
+            // Both paths failed — treated as equivalent (error-type differences are a
+            // reasonable abstraction boundary, outside the contract)
         }
-        (true, false) => panic!("语义等价规约违反: Reactor 成功但 execute_transition 失败 ({ctx})"),
-        (false, true) => panic!("语义等价规约违反: execute_transition 成功但 Reactor 失败 ({ctx})"),
+        (true, false) => panic!(
+            "semantic equivalence contract violated: Reactor succeeded but execute_transition \
+             failed ({ctx})"
+        ),
+        (false, true) => panic!(
+            "semantic equivalence contract violated: execute_transition succeeded but Reactor \
+             failed ({ctx})"
+        ),
     }
 }
 
 // =============================================================================
-// 辅助:从 Reactor 事件流中提取 StateTransition 的 new_payload
+// Helper: extract the StateTransition new_payload from the Reactor event stream
 // =============================================================================
 
-/// 从事件接收器中提取第一个 StateTransition 的 new_payload,遇到 Stable/Error 返回 None
+/// Extracts the first StateTransition's new_payload from the event receiver; returns None
+/// on Stable/Error
 async fn extract_state_transition(
     rx: &mut evorule_reactor::EventReceiver,
 ) -> Option<(JsonValue, Vec<JsonValue>)> {
@@ -547,21 +579,24 @@ async fn extract_state_transition(
 }
 
 // =============================================================================
-// P0-12: Reactor 运行时 vs execute_transition 纯函数
+// Reactor runtime vs the execute_transition pure function
 // =============================================================================
 //
-// 设计要点:
-// - Reactor 初始 payload 始终为 empty_object()(不读 FactsLog 初始 payload)
-// - 路径 B(execute_transition)也使用 empty_object() 作为初始 payload
-// - 只比较指令实际修改的字段(避免因初始状态差异导致误报)
+// Design points:
+// - The Reactor's initial payload is always empty_object() (the FactsLog's initial payload
+//   is not read)
+// - Path B (execute_transition) also uses empty_object() as the initial payload
+// - Only fields actually modified by the instruction are compared (avoids false positives
+//   from initial-state differences)
 // =============================================================================
 
 proptest! {
     #![proptest_config(proptest_config())]
 
-    /// P0-12: set 指令 —— Reactor 与 execute_transition 产生相同 new_payload
+    /// set instruction — the Reactor and execute_transition produce the same new_payload
     ///
-    /// set 指令将字段设为固定值,不依赖初始状态,是最干净的差分测试用例。
+    /// A set instruction assigns a field a fixed value independent of the initial state; the
+    /// cleanest differential case.
     #[test]
     fn diff_reactor_vs_pure_set(
         new_value in -1_000_000i64..1_000_000,
@@ -569,11 +604,11 @@ proptest! {
         let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
         rt.block_on(async move {
             let core_eval = load_core_eval();
-            // 两条路径都从 empty_object() 出发(Reactor 初始状态)
+            // Both paths start from empty_object() (the Reactor's initial state)
             let payload = JsonValue::empty_object();
             let instruction = set_instr("x", new_value);
 
-            // 路径 A: Reactor 运行时
+            // Path A: Reactor runtime
             let facts_log = FactsLog::new();
             let reactor = Reactor::builder(core_eval.clone())
                 .max_rounds(100)
@@ -589,7 +624,7 @@ proptest! {
             let reactor_result = extract_state_transition(&mut rx).await;
             handle.abort();
 
-            // 路径 B: execute_transition 直接调用
+            // Path B: direct execute_transition call
             let direct_result = execute_transition(&core_eval, &instruction, &payload, &[]);
 
             prop_assert!(reactor_result.is_some(), "reactor should emit StateTransition");
@@ -600,9 +635,10 @@ proptest! {
                 Err(e) => panic!("execute_transition failed: {:?}", e),
             };
 
-            // 语义等价规约: 两条路径均成功,new_payload 必须结构全等(不止比较 x 字段)
+            // Semantic equivalence contract: both paths succeeded, so new_payload must be
+            // structurally equal (not just the x field)
             assert_semantically_equivalent(true, &reactor_pl, true, &direct_pl, "set");
-            // 验证 x 确实是 new_value
+            // Verify x is indeed new_value
             prop_assert_eq!(
                 reactor_pl.get("x").and_then(|v| v.as_i64()),
                 Some(new_value),
@@ -613,10 +649,10 @@ proptest! {
         })?;
     }
 
-    /// P0-12: increment 指令 —— Reactor 与 execute_transition 产生相同 new_payload
+    /// increment instruction — the Reactor and execute_transition produce the same new_payload
     ///
-    /// increment 对不存在的字段执行 add 操作。两条路径应产生相同结果
-    /// (无论 TCB 如何处理缺失字段,reactor 与 direct 必须一致)。
+    /// increment performs an add on a possibly-missing field. Both paths must produce the
+    /// same result (however the TCB handles missing fields, reactor and direct must agree).
     #[test]
     fn diff_reactor_vs_pure_increment(
         delta in -100_000i64..100_000,
@@ -644,15 +680,16 @@ proptest! {
 
             let direct_result = execute_transition(&core_eval, &instruction, &payload, &[]);
 
-            // 两条路径应产生相同类型的结果(都 Ok(State) 或都 Err)
+            // Both paths must produce the same kind of result (both Ok(State) or both Err)
             match (&reactor_result, &direct_result) {
                 (Some((reactor_pl, _)), Ok(TransitionResult::State { new_payload: direct_pl, .. })) => {
-                    // 两条路径都成功:语义等价规约要求 payload 结构全等
+                    // Both paths succeeded: the semantic equivalence contract requires
+                    // structurally equal payloads
                     assert_semantically_equivalent(true, reactor_pl, true, direct_pl, "increment");
                 }
                 (None, Err(_)) => {
-                    // 两条路径都失败(如 increment on missing field 返回错误):
-                    // 满足语义等价规约的失败分支
+                    // Both paths failed (e.g. increment on a missing field errors):
+                    // satisfies the failure branch of the semantic equivalence contract
                     prop_assert!(true, "both paths failed as expected");
                 }
                 (reactor_opt, direct_res) => {
@@ -669,10 +706,10 @@ proptest! {
         })?;
     }
 
-    /// P0-12: set + increment 组合 —— 两条路径产生相同 x 值
+    /// set + increment combination — both paths produce the same x value
     ///
-    /// 先 set x = initial,再 increment x += delta。
-    /// 验证多步执行后 reactor 与 direct 一致。
+    /// First set x = initial, then increment x += delta.
+    /// Verifies reactor/direct consistency after multi-step execution.
     #[test]
     fn diff_reactor_vs_pure_set_then_increment(
         initial in -500_000i64..500_000,
@@ -682,7 +719,7 @@ proptest! {
         rt.block_on(async move {
             let core_eval = load_core_eval();
 
-            // 路径 A: Reactor —— 先 set 再 increment
+            // Path A: Reactor — set first, then increment
             let facts_log = FactsLog::new();
             let reactor = Reactor::builder(core_eval.clone())
                 .max_rounds(100)
@@ -690,20 +727,21 @@ proptest! {
                 .build();
             let (tx, mut rx, _event_tx, handle, _log) = reactor.spawn();
 
-            // 步骤 1: set x = initial
+            // Step 1: set x = initial
             tx.send(Fact::Command {
                 id: FactId(1),
                 instruction: set_instr("x", initial),
             }).expect("send set failed");
             let set_result = extract_state_transition(&mut rx).await;
-            // 排空 set 命令的 Stable 事实,避免污染下一条命令的提取
+            // Drain the set command's Stable fact to avoid polluting the next command's
+            // extraction
             while let Ok(fact) = rx.recv().await {
                 if matches!(fact, Fact::Stable { .. } | Fact::Error { .. }) {
                     break;
                 }
             }
 
-            // 步骤 2: increment x += delta
+            // Step 2: increment x += delta
             tx.send(Fact::Command {
                 id: FactId(2),
                 instruction: increment_instr("x", delta),
@@ -711,17 +749,17 @@ proptest! {
             let increment_result = extract_state_transition(&mut rx).await;
             handle.abort();
 
-            // 路径 B: execute_transition 直接调用
-            // 步骤 1: set x = initial
+            // Path B: direct execute_transition call
+            // Step 1: set x = initial
             let set_direct = execute_transition(&core_eval, &set_instr("x", initial), &JsonValue::empty_object(), &[]);
             let payload_after_set = match set_direct {
                 Ok(TransitionResult::State { new_payload, .. }) => new_payload,
                 _ => panic!("set should succeed"),
             };
-            // 步骤 2: increment x += delta
+            // Step 2: increment x += delta
             let increment_direct = execute_transition(&core_eval, &increment_instr("x", delta), &payload_after_set, &[]);
 
-            // 比较
+            // Compare
             prop_assert!(set_result.is_some(), "reactor should emit StateTransition for set");
             prop_assert!(increment_result.is_some(), "reactor should emit StateTransition for increment");
 
@@ -743,10 +781,11 @@ proptest! {
         })?;
     }
 
-    /// P0-12: decrement 指令 —— Reactor 与 execute_transition 产生相同 new_payload
+    /// decrement instruction — the Reactor and execute_transition produce the same new_payload
     ///
-    /// v0.3.1 基础指令（与 increment 对称，采用 sub 操作）。
-    /// TCB 将缺失字段视为 0（0 - delta = -delta），两条路径应产生相同结果。
+    /// v0.3.1 basic instruction (symmetric to increment, using the sub operation).
+    /// The TCB treats a missing field as 0 (0 - delta = -delta); both paths must produce the
+    /// same result.
     #[test]
     fn diff_reactor_vs_pure_decrement(
         delta in -100_000i64..100_000,
@@ -793,10 +832,12 @@ proptest! {
         })?;
     }
 
-    /// P0-12: sequence 指令 —— Reactor 与 execute_transition 队列调度一致
+    /// sequence instruction — the Reactor and execute_transition schedule the queue identically
     ///
-    /// v0.3.1 控制流指令：sequence 将多条指令 push 进队列依次执行。
-    /// 路径 A 排空到 Stable 后与路径 B（纯函数多步模拟）最终 payload 结构全等。
+    /// v0.3.1 control-flow instruction: sequence pushes multiple instructions into the queue
+    /// for sequential execution.
+    /// Path A drains to Stable and must be structurally equal to path B's (pure-function
+    /// multi-step simulation) final payload.
     #[test]
     fn diff_reactor_vs_pure_sequence(
         v1 in -1_000i64..1_000,
@@ -810,7 +851,7 @@ proptest! {
                 set_instr("y", v2),
             ]);
 
-            // 路径 A: Reactor
+            // Path A: Reactor
             let facts_log = FactsLog::new();
             let reactor = Reactor::builder(core_eval.clone())
                 .max_rounds(100)
@@ -824,7 +865,8 @@ proptest! {
             let reactor_payload = drain_to_stable(&mut rx).await;
             handle.abort();
 
-            // 路径 B: 纯函数多步模拟（模拟 Reactor 队列驱动）
+            // Path B: pure-function multi-step simulation (simulating the Reactor's queue
+            // drive)
             let (direct_payload, _) = simulate_execution(
                 &core_eval,
                 JsonValue::empty_object(),
@@ -849,10 +891,12 @@ proptest! {
         })?;
     }
 
-    /// P0-12: conditional 指令 —— Reactor 与 execute_transition 分支选择一致
+    /// conditional instruction — the Reactor and execute_transition pick the same branch
     ///
-    /// v0.3.1 控制流指令：conditional 依据 lt 域类型选择 then/else 分支。
-    /// 路径 A 先 set x = base，再执行 conditional；路径 B 用纯函数模拟同两步。
+    /// v0.3.1 control-flow instruction: conditional selects the then/else branch via the lt
+    /// domain type.
+    /// Path A first sets x = base, then executes conditional; path B simulates the same two
+    /// steps with pure functions.
     #[test]
     fn diff_reactor_vs_pure_conditional(
         base in -100i64..100,
@@ -867,7 +911,7 @@ proptest! {
                 set_instr("a", 2),
             );
 
-            // 路径 A: Reactor —— 先 set x = base，再执行 conditional
+            // Path A: Reactor — set x = base first, then execute conditional
             let facts_log = FactsLog::new();
             let reactor = Reactor::builder(core_eval.clone())
                 .max_rounds(100)
@@ -886,7 +930,7 @@ proptest! {
             let reactor_payload = drain_to_stable(&mut rx).await;
             handle.abort();
 
-            // 路径 B: 纯函数两步模拟
+            // Path B: pure-function two-step simulation
             let (after_set, _) = simulate_execution(
                 &core_eval,
                 JsonValue::empty_object(),
@@ -915,14 +959,18 @@ proptest! {
         })?;
     }
 
-    /// P0-12: while_loop 指令 —— Reactor 与 execute_transition 循环终止一致
+    /// while_loop instruction — the Reactor and execute_transition terminate the loop
+    /// identically
     ///
-    /// v0.3.1 控制流指令：while_loop 依据 lt 域类型反复执行 body 直到条件不满足。
-    /// 路径 A 先 set counter = 0，再执行 while_loop；路径 B 用纯函数模拟同两步。
+    /// v0.3.1 control-flow instruction: while_loop repeatedly executes body per the lt domain
+    /// type until the condition fails.
+    /// Path A first sets counter = 0, then executes while_loop; path B simulates the same
+    /// two steps with pure functions.
     ///
-    /// body 必须用 `increment`（宪法加法指令）：业务 `set` 规则硬编码
-    /// operation="set"（覆盖语义），误用 `set+add` 会让 counter 每轮被覆盖回
-    /// 常量，condition 永真 → while_loop 死循环（历史回归教训）。
+    /// body must use `increment` (the constitution's add instruction): the business `set`
+    /// rule hardcodes operation="set" (overwriting semantics), so misusing `set+add` would
+    /// overwrite the counter back to a constant each round, making the condition always true
+    /// → while_loop infinite loop (a historical regression lesson).
     #[test]
     fn diff_reactor_vs_pure_while_loop(
         n in 1i64..10,
@@ -936,7 +984,7 @@ proptest! {
                 increment_instr("counter", 1),
             );
 
-            // 路径 A: Reactor —— 先 set counter = 0，再执行 while_loop
+            // Path A: Reactor — set counter = 0 first, then execute while_loop
             let facts_log = FactsLog::new();
             let reactor = Reactor::builder(core_eval.clone())
                 .max_rounds(200)
@@ -955,7 +1003,7 @@ proptest! {
             let reactor_payload = drain_to_stable(&mut rx).await;
             handle.abort();
 
-            // 路径 B: 纯函数两步模拟
+            // Path B: pure-function two-step simulation
             let (after_set, _) = simulate_execution(
                 &core_eval,
                 JsonValue::empty_object(),
@@ -983,16 +1031,17 @@ proptest! {
 }
 
 // =============================================================================
-// P0-12: noop 指令(无参数,放在 proptest! 块外作为普通 #[test])
+// noop instruction (no parameters; kept outside the proptest! block as a plain #[test])
 // =============================================================================
 //
-// proptest! 宏的所有 item-style arm 都要求至少一个参数($($parm:...),+),
-// 因此无参数的 noop 测试不能放在 proptest! 块内。
+// Every item-style arm of the proptest! macro requires at least one parameter
+// ($($parm:...),+), so the parameterless noop test cannot live inside the proptest! block.
 // =============================================================================
 
-/// P0-12: noop 指令 —— Reactor 与 execute_transition 产生相同 new_payload(不变)
+/// noop instruction — the Reactor and execute_transition produce the same new_payload
+/// (unchanged)
 ///
-/// noop 不修改任何字段,两条路径都应保持 empty_object()。
+/// noop modifies nothing; both paths must keep empty_object().
 #[test]
 fn diff_reactor_vs_pure_noop() {
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
@@ -1033,9 +1082,9 @@ fn diff_reactor_vs_pure_noop() {
             Err(e) => panic!("execute_transition failed: {:?}", e),
         };
 
-        // noop 应保持 payload 不变(两条路径都应为空对象)
+        // noop must keep the payload unchanged (both paths should be empty objects)
         assert_eq!(reactor_pl, direct_pl, "payload mismatch after noop");
-        // 验证 reactor 和 direct 都返回空对象
+        // Verify both reactor and direct return empty objects
         assert!(
             reactor_pl.is_object(),
             "reactor payload should be object after noop"
@@ -1048,20 +1097,24 @@ fn diff_reactor_vs_pure_noop() {
 }
 
 // =============================================================================
-// P0-12: I/O 循环（v0.3.1 语言层组合语义，应用剧本自持）
+// I/O loop (v0.3.1 language-layer composition semantics; self-contained application playbook)
 // =============================================================================
 //
-// 用例 5/6 覆盖 I/O 循环（call_external 应用剧本）的触发与结果消费两条路径：
-// - call_external 无 __io_results__ 结果 → io_request（路径 A 触发 IoRequest fact）
-// - call_external 有 __io_results__ 结果 → 消费到 llm_response，__io_results__ 按类型隔离
-// 路径 B 分别与 execute_transition 返回的 IoRequired / 注入结果后的 State 全等。
+// Cases 5/6 cover both paths of the I/O loop (the call_external application playbook):
+// triggering and result consumption.
+// - call_external with no __io_results__ result → io_request (path A emits an IoRequest fact)
+// - call_external with an __io_results__ result → consumed into llm_response; __io_results__
+//   is type-isolated
+// Path B matches the IoRequired returned by execute_transition / the State after result
+// injection, respectively.
 // =============================================================================
 
-/// P0-12: call_external 指令 —— Reactor 与 execute_transition 的 I/O 触发一致
+/// call_external instruction — the Reactor and execute_transition trigger I/O identically
 ///
-/// v0.3.1 I/O 循环入口：call_external 无 `__io_results__.call_external` 结果时，
-/// 触发 io_request（io_type=call_external，messages/tools 透传）。
-/// Reactor 应发出 IoRequest fact，execute_transition 应返回 IoRequired，二者参数一致。
+/// v0.3.1 I/O loop entry: when call_external has no `__io_results__.call_external` result,
+/// it triggers an io_request (io_type=call_external, messages/tools passed through).
+/// The Reactor should emit an IoRequest fact and execute_transition should return
+/// IoRequired, with matching parameters.
 #[test]
 fn diff_reactor_vs_pure_call_external_io_request() {
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
@@ -1074,7 +1127,7 @@ fn diff_reactor_vs_pure_call_external_io_request() {
         let tools = JsonValue::Array(vec![]);
         let instruction = call_external_instr(messages.clone(), tools);
 
-        // 路径 A: Reactor —— call_external 无结果时触发 IoRequest
+        // Path A: Reactor — call_external with no result triggers an IoRequest
         let facts_log = FactsLog::new();
         let reactor = Reactor::builder(core_eval.clone())
             .max_rounds(100)
@@ -1089,7 +1142,7 @@ fn diff_reactor_vs_pure_call_external_io_request() {
         let reactor_io = extract_io_request(&mut rx).await;
         handle.abort();
 
-        // 路径 B: execute_transition 直接调用 → IoRequired
+        // Path B: direct execute_transition call → IoRequired
         let direct_result =
             execute_transition(&core_eval, &instruction, &JsonValue::empty_object(), &[]);
 
@@ -1104,31 +1157,32 @@ fn diff_reactor_vs_pure_call_external_io_request() {
             Err(e) => panic!("execute_transition failed: {:?}", e),
         };
 
-        // io_type 一致（ReAct 循环的 I/O 触发路径）
+        // io_type matches (the ReAct loop's I/O trigger path)
         assert_eq!(reactor_io_type, direct_io_type, "io_type mismatch");
         assert_eq!(
             reactor_io_type, "call_external",
             "should request call_external"
         );
-        // params 一致（messages/tools 路径解析结果）
+        // params match (the resolved messages/tools path results)
         assert_eq!(reactor_params, direct_params, "io_request params mismatch");
-        // messages 透传（v0.3.1: call_external 参数仅使用 messages + tools）
+        // messages passed through (v0.3.1: call_external parameters use only messages + tools)
         let messages_array = messages.as_array().expect("messages should be an array");
         assert_eq!(
             direct_params.get("messages").and_then(|v| v.as_array()),
             Some(messages_array),
             "messages should be passed through to io_request"
         );
-        // request_id 已分配
+        // request_id assigned
         assert!(request_id.0 > 0, "request_id should be positive");
     });
 }
 
-/// P0-12: call_external 结果消费 —— Reactor 与 execute_transition 状态一致
+/// call_external result consumption — the Reactor and execute_transition reach the same state
 ///
-/// v0.3.1 I/O 循环：注入 IoResponse 结果后，Reactor 恢复执行原指令，
-/// 消费 `__io_results__.call_external`（按类型隔离）到 `llm_response`，
-/// 并清除 `__io_results__` 容器。路径 B 用预设结果 + 模拟清理做纯函数对比。
+/// v0.3.1 I/O loop: after an IoResponse result is injected, the Reactor resumes the original
+/// instruction, consumes `__io_results__.call_external` (type-isolated) into `llm_response`,
+/// and clears the `__io_results__` container. Path B uses a preset result + simulated cleanup
+/// for the pure-function comparison.
 #[test]
 fn diff_reactor_vs_pure_call_external_consume() {
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
@@ -1141,13 +1195,14 @@ fn diff_reactor_vs_pure_call_external_consume() {
         let tools = JsonValue::Array(vec![]);
         let instruction = call_external_instr(messages, tools);
 
-        // LLM 回复：纯文本（无 tool_calls）→ 走 on_false 分支 push noop 后稳定
+        // LLM reply: plain text (no tool_calls) → takes the on_false branch, pushes noop,
+        // then stabilizes
         let llm_result = JsonValue::object_from_pairs(&[
             ("role", JsonValue::string("assistant")),
             ("content", JsonValue::string("no tools needed")),
         ]);
 
-        // 路径 A: Reactor —— 触发 IoRequest → 注入 IoResponse → 消费 → Stable
+        // Path A: Reactor — trigger IoRequest → inject IoResponse → consume → Stable
         let facts_log = FactsLog::new();
         let reactor = Reactor::builder(core_eval.clone())
             .max_rounds(100)
@@ -1164,7 +1219,7 @@ fn diff_reactor_vs_pure_call_external_consume() {
             .expect("reactor should emit IoRequest");
         assert_eq!(io_type, "call_external", "io_type should be call_external");
 
-        // 注入 IoResponse（模拟 LLM 返回）
+        // Inject the IoResponse (simulating the LLM reply)
         tx.send(Fact::IoResponse {
             id: FactId(100),
             request_id,
@@ -1176,8 +1231,9 @@ fn diff_reactor_vs_pure_call_external_consume() {
         let reactor_payload = drain_to_stable(&mut rx).await;
         handle.abort();
 
-        // 路径 B: 纯函数模拟 —— 预设 __io_results__.call_external 再执行指令，
-        // 随后模拟 Reactor 的 clear_io_recovery（整体移除 __io_results__ 容器）
+        // Path B: pure-function simulation — preset __io_results__.call_external, then
+        // execute the instruction; afterwards simulate the Reactor's clear_io_recovery
+        // (removing the whole __io_results__ container)
         let io_injected_payload = JsonValue::object_from_pairs(&[(
             "__io_results__",
             JsonValue::object_from_pairs(&[("call_external", llm_result.clone())]),
@@ -1190,12 +1246,14 @@ fn diff_reactor_vs_pure_call_external_consume() {
 
         let reactor_pl =
             reactor_payload.expect("reactor should reach Stable after consuming io result");
-        // 结构全等（Reactor 与纯函数模拟最终状态一致）
+        // Structurally equal (the Reactor and the pure-function simulation end in the same
+        // state)
         assert_eq!(
             reactor_pl, direct_payload,
             "payload mismatch after consuming io result"
         );
-        // llm_response 应为 LLM 回复（__io_results__ 按类型隔离消费）
+        // llm_response should hold the LLM reply (__io_results__ consumed with type
+        // isolation)
         assert_eq!(
             reactor_pl
                 .get("llm_response")
@@ -1204,7 +1262,7 @@ fn diff_reactor_vs_pure_call_external_consume() {
             Some("no tools needed"),
             "llm_response should contain the LLM reply"
         );
-        // __io_results__ 容器应已被清除（不残留陈旧结果）
+        // The __io_results__ container should be cleared (no stale results left behind)
         assert!(
             reactor_pl.get("__io_results__").is_none(),
             "__io_results__ container should be cleared after consumption"
@@ -1212,14 +1270,14 @@ fn diff_reactor_vs_pure_call_external_consume() {
     });
 }
 
-/// P0-12: conditional + has_fields 域类型 —— Reactor 与 execute_transition 一致
+/// conditional + has_fields domain type — the Reactor and execute_transition agree
 ///
-/// v0.3.1 新增 `has_fields` 域类型（core_eval 第 8 条规则用其判断 llm_response
-/// 是否含 tool_calls）。本用例用 conditional + has_fields 验证：
-/// - has_fields(payload.x, ["flag_a"]) 为真 → then 分支
-/// - has_fields(payload.x, ["flag_missing"]) 为假 → else 分支
+/// v0.3.1 adds the `has_fields` domain type (core_eval rule 8 uses it to check whether
+/// llm_response contains tool_calls). This case uses conditional + has_fields to verify:
+/// - has_fields(payload.x, ["flag_a"]) true → then branch
+/// - has_fields(payload.x, ["flag_missing"]) false → else branch
 ///
-/// 路径 B 用纯函数多步模拟，最终 payload 结构全等。
+/// Path B uses a pure-function multi-step simulation; final payloads are structurally equal.
 #[test]
 fn diff_reactor_vs_pure_conditional_has_fields() {
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
@@ -1243,7 +1301,7 @@ fn diff_reactor_vs_pure_conditional_has_fields() {
             set_instr("b", 2),
         );
 
-        // 路径 A: Reactor —— set x → cond_then → cond_else
+        // Path A: Reactor — set x → cond_then → cond_else
         let facts_log = FactsLog::new();
         let reactor = Reactor::builder(core_eval.clone())
             .max_rounds(100)
@@ -1270,7 +1328,7 @@ fn diff_reactor_vs_pure_conditional_has_fields() {
         let reactor_payload = drain_to_stable(&mut rx).await;
         handle.abort();
 
-        // 路径 B: 纯函数三步模拟
+        // Path B: pure-function three-step simulation
         let (after_set, _) = simulate_execution(
             &core_eval,
             JsonValue::empty_object(),
@@ -1285,13 +1343,13 @@ fn diff_reactor_vs_pure_conditional_has_fields() {
             reactor_pl, direct_payload,
             "payload mismatch for has_fields conditional"
         );
-        // has_fields(x, [flag_a]) 为真 → a = 1（then 分支）
+        // has_fields(x, [flag_a]) true → a = 1 (then branch)
         assert_eq!(
             reactor_pl.get("a").and_then(|v| v.as_i64()),
             Some(1),
             "has_fields(payload.x, [flag_a]) should be true → a = 1"
         );
-        // has_fields(x, [flag_missing]) 为假 → b = 2（else 分支）
+        // has_fields(x, [flag_missing]) false → b = 2 (else branch)
         assert_eq!(
             reactor_pl.get("b").and_then(|v| v.as_i64()),
             Some(2),

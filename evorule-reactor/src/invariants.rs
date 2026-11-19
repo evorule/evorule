@@ -1,66 +1,70 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 反应器不变式自检（白盒化：结构性约束验证）
+//! Reactor invariant self-checks (white-box: structural constraint verification)
 //!
-//! # 设计
+//! # Design
 //!
-//! 5 条结构性不变式，每次 phase 转移时检查。
-//! 违规用 `tracing::error!` 记录（非 `debug_assert!`，符合 F11）。
-//! 不强制中断反应器，仅累计计数到 `ReactorState::structural_invariant_violations`。
+//! 5 structural invariants, checked on every phase transition.
+//! Violations are recorded with `tracing::error!` (not `debug_assert!`, per F11).
+//! The reactor is never forcibly interrupted; only the count accumulates in
+//! `ReactorState::structural_invariant_violations`.
 //!
-//! # 5 条不变式
+//! # The 5 invariants
 //!
 //! 1. `pending_io_count == pending_requests.len() == pending_io_timestamps.len()`
-//! 2. `io_recovery == true ⇒ payload.__io_results__ 存在非 null 结果`
-//! 3. `version >= prev_version`（单调递增）
-//! 4. `payload.__io_results__ 存在非 null 结果 ⇒ io_recovery == true`（与 #2 合为 ⟺）
+//! 2. `io_recovery == true ⇒ payload.__io_results__ has a non-null result`
+//! 3. `version >= prev_version` (monotonically increasing)
+//! 4. `payload.__io_results__ has a non-null result ⇒ io_recovery == true` (together with #2 forms ⟺)
 //! 5. `pending_io_count > 0 ∧ queue.is_empty() ⇒ io_recovery == false`
-//!    （等待 I/O 期间不应处于恢复态；恢复指令已 pop 后队列空是合法的，
-//!    但此时 io_recovery 应已被清或 pending_io 应已涨）
+//!    (while awaiting I/O the reactor should not be in the recovery state; an empty
+//!    queue after the recovery instruction was popped is legitimate, but then
+//!    io_recovery should already be cleared or pending_io should have risen)
 //!
-//! # 注：原 #5 "pending_io==0 ∧ queue空 ∧ steps==0 ⇒ 应已 Stable" 在长驻模式下
-//!    会误报（Stable 发射后的合法空闲态），故改为检查恢复态与等待态的不冲突。
+//! # Note: the original #5 "pending_io==0 ∧ queue empty ∧ steps==0 ⇒ should already be Stable"
+//!    would misreport in long-lived mode (the legitimate idle state after the Stable
+//!    fact is emitted), so it was changed to check that the recovery and awaiting
+//!    states do not conflict.
 //!
-//! # 规范合规
+//! # Spec compliance
 //!
-//! - ✅ 纯结构性检查，不涉及业务（机制-策略分离）
-//! - ✅ 用 `tracing::error!` 而非 `debug_assert!`（F11）
-//! - ✅ 违规计数是状态机的一部分
-//! - ✅ 单函数 ≤ 50 行（F9），嵌套 ≤ 2 层（F8）
+//! - ✅ Purely structural checks, no business involvement (mechanism-policy separation)
+//! - ✅ `tracing::error!` instead of `debug_assert!` (F11)
+//! - ✅ The violation counter is part of the state machine
+//! - ✅ Single function ≤ 50 lines (F9), nesting ≤ 2 levels (F8)
 
 use crate::state::ReactorState;
 use evorule_tcb::JsonValue;
 
-/// 不变式违规
+/// Invariant violation
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InvariantViolation {
-    /// #1: pending_io_count 与 pending_requests/pending_io_timestamps 大小不一致
+    /// #1: pending_io_count inconsistent with the pending_requests/pending_io_timestamps sizes
     IoCountMismatch {
-        /// 当前 pending_io_count 值
+        /// Current pending_io_count value
         count: usize,
-        /// pending_requests 集合大小
+        /// Size of the pending_requests set
         requests_len: usize,
-        /// pending_io_timestamps 映射大小
+        /// Size of the pending_io_timestamps map
         timestamps_len: usize,
     },
-    /// #2: io_recovery==true 但 payload 中无 __io_result__
+    /// #2: io_recovery==true but no __io_result__ in the payload
     IoRecoveryWithoutResult,
-    /// #3: version 回退（current < previous）
+    /// #3: version decreased (current < previous)
     VersionDecreased {
-        /// 当前 version
+        /// Current version
         current: u64,
-        /// 上一次 version
+        /// Previous version
         previous: u64,
     },
-    /// #4: payload 有 __io_result__ 但 io_recovery==false
+    /// #4: payload has __io_result__ but io_recovery==false
     ResultWithoutIoRecovery,
-    /// #5: pending_io>0 ∧ queue空 ∧ io_recovery=true（恢复态与等待态冲突）
+    /// #5: pending_io>0 ∧ queue empty ∧ io_recovery=true (recovery and awaiting states conflict)
     RecoveryWhileAwaitingIo,
 }
 
 impl InvariantViolation {
-    /// 违规标签（用于 tracing/Prometheus）
+    /// Violation label (for tracing/Prometheus)
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::IoCountMismatch { .. } => "io_count_mismatch",
@@ -107,15 +111,15 @@ impl std::fmt::Display for InvariantViolation {
     }
 }
 
-/// 检查 5 条结构性不变式
+/// Checks the 5 structural invariants
 ///
-/// 纯函数：仅读取状态，不修改。
-/// 返回违规列表（空表示全部通过）。
+/// Pure function: reads state only, never modifies.
+/// Returns the violation list (empty means all pass).
 ///
-/// # 参数
+/// # Arguments
 ///
-/// - `state`: 反应器状态快照
-/// - `_steps`: 当前已执行指令步数（保留参数，#5 已重设计不再使用）
+/// - `state`: reactor state snapshot
+/// - `_steps`: number of executed instruction steps (reserved parameter; #5 was redesigned and no longer uses it)
 pub(crate) fn check_invariants(state: &ReactorState, _steps: usize) -> Vec<InvariantViolation> {
     let mut violations = Vec::new();
 
@@ -125,22 +129,22 @@ pub(crate) fn check_invariants(state: &ReactorState, _steps: usize) -> Vec<Invar
     // #2 + #4: io_recovery == payload_has_io_result
     check_io_recovery_consistency(state, &mut violations);
 
-    // #3: version 单调递增
+    // #3: version monotonically increasing
     check_version_monotonic(state, &mut violations);
 
-    // #5: pending_io>0 ∧ queue空 ∧ io_recovery=true（恢复态与等待态冲突）
+    // #5: pending_io>0 ∧ queue empty ∧ io_recovery=true (recovery and awaiting states conflict)
     check_no_recovery_conflict(state, &mut violations);
 
     violations
 }
 
-/// 不变式 #1：I/O 计数一致性
+/// Invariant #1: I/O count consistency
 fn check_io_count_consistency(state: &ReactorState, violations: &mut Vec<InvariantViolation>) {
     let req_len = state.pending_requests.len();
     let ts_len = state.pending_io_timestamps.len();
-    // Kani 模式：register_io_request_pure 有意不设置 pending_io_timestamps
-    // （Instant::now() → clock_gettime 不被 Kani 支持），跳过 timestamp 长度检查。
-    // timestamp 是运行时超时检测用的，不是结构性不变量。
+    // Kani mode: register_io_request_pure deliberately does not set pending_io_timestamps
+    // (Instant::now() → clock_gettime is not supported by Kani); skip the timestamp-length check.
+    // The timestamp serves runtime timeout detection, not a structural invariant.
     let mismatch = if cfg!(kani) {
         state.pending_io_count != req_len
     } else {
@@ -155,7 +159,7 @@ fn check_io_count_consistency(state: &ReactorState, violations: &mut Vec<Invaria
     }
 }
 
-/// 不变式 #2 + #4：io_recovery 与 __io_results__ 一致性（双向）
+/// Invariant #2 + #4: io_recovery and __io_results__ consistency (bidirectional)
 fn check_io_recovery_consistency(state: &ReactorState, violations: &mut Vec<InvariantViolation>) {
     let has_io_result = has_io_result(&state.payload);
     if state.io_recovery && !has_io_result {
@@ -166,7 +170,7 @@ fn check_io_recovery_consistency(state: &ReactorState, violations: &mut Vec<Inva
     }
 }
 
-/// 不变式 #3：version 单调递增
+/// Invariant #3: version monotonically increasing
 fn check_version_monotonic(state: &ReactorState, violations: &mut Vec<InvariantViolation>) {
     if state.version < state.prev_version {
         violations.push(InvariantViolation::VersionDecreased {
@@ -176,17 +180,21 @@ fn check_version_monotonic(state: &ReactorState, violations: &mut Vec<InvariantV
     }
 }
 
-/// 不变式 #5：恢复态与等待态不冲突
+/// Invariant #5: recovery and awaiting states do not conflict
 ///
-/// 当 `pending_io > 0`（等待新 IoResponse）且队列空（恢复指令已 pop）时，
-/// `io_recovery` 应已为 false（State 分支已清）或保持但 pending_io 应为 0。
-/// 冲突场景：上一轮 IoResponse 处理后 push_front 恢复指令 → pop 执行 →
-/// 触发新 IoRequest → break（io_recovery 仍 true, pending_io=1, queue 空）。
-/// 此场景下 io_recovery=true 是过期标志，应被新 IoRequest 的 break 路径清理。
-/// 当前实现允许此过渡态，故此不变式记录为弱约束（默认通过）。
+/// When `pending_io > 0` (awaiting a new IoResponse) and the queue is empty (the
+/// recovery instruction was already popped), `io_recovery` should already be false
+/// (cleared by the State branch) or, if still set, pending_io should be 0.
+/// Conflict scenario: after the previous round's IoResponse handling, push_front the
+/// recovery instruction → pop and execute → triggers a new IoRequest → break
+/// (io_recovery still true, pending_io=1, queue empty).
+/// In this scenario io_recovery=true is a stale flag that should be cleaned up by the
+/// new IoRequest's break path. The current implementation permits this transitional
+/// state, so this invariant is recorded as a weak constraint (passes by default).
 fn check_no_recovery_conflict(state: &ReactorState, violations: &mut Vec<InvariantViolation>) {
-    // 弱约束：仅当 pending_io > 0 且 queue 空 且 io_recovery=true 且 __io_results__ 无非 null 结果时
-    // 才视为违规（此时 io_recovery 是过期标志且已无对应结果可消费）
+    // Weak constraint: counts as a violation only when pending_io > 0, the queue is
+    // empty, io_recovery=true, and __io_results__ has no non-null result
+    // (then io_recovery is a stale flag with no corresponding result left to consume)
     if state.pending_io_count > 0
         && state.queue.is_empty()
         && state.io_recovery
@@ -196,11 +204,11 @@ fn check_no_recovery_conflict(state: &ReactorState, violations: &mut Vec<Invaria
     }
 }
 
-/// 判定 payload 的 `__io_results__` 中是否存在非 null 的 I/O 结果
+/// Decides whether the payload's `__io_results__` contains any non-null I/O result
 ///
-/// v0.3.1：结果按 io_type 隔离存储在 `__io_results__.{io_type}`，
-/// core_eval 消费后以 null 清除（`exists` 将 null 视为不存在），
-/// 因此"存在非 null 结果"等价于旧版的"存在 `__io_result__` 字段"。
+/// v0.3.1: results are stored per io_type in `__io_results__.{io_type}`;
+/// core_eval clears them with null after consumption (`exists` treats null as absent),
+/// so "has a non-null result" is equivalent to the old "has a `__io_result__` field".
 fn has_io_result(payload: &JsonValue) -> bool {
     match payload.get("__io_results__") {
         Some(JsonValue::Object(map)) => map.values().any(|v| !v.is_null()),
@@ -214,10 +222,12 @@ mod tests {
     use super::*;
     use crate::fact::FactId;
 
-    /// 测试辅助：向 payload.__io_results__.call_external 注入非 null 结果
-    // 2026-09-18：原用 BTreeMap::entry().or_insert_with()，但 kani cfg 下 Object 底层
-    // 是 KaniMap 替身（Vec 模型，见 tcb value.rs L58-132），替身无 entry（建模成本不划算）；
-    // 改用 contains_key + get_mut / insert 组合，BTreeMap 与 KaniMap 两 cfg API 统一。
+    /// Test helper: inject a non-null result into payload.__io_results__.call_external
+    // 2026-09-18: originally used BTreeMap::entry().or_insert_with(), but under the
+    // kani cfg the Object backing is a KaniMap stand-in (Vec model, see tcb value.rs
+    // L58-132); the stand-in has no entry API (modeling cost not worth it).
+    // Switched to a contains_key + get_mut / insert combination, unifying the API
+    // across the BTreeMap and KaniMap cfgs.
     fn set_io_result(state: &mut ReactorState) {
         if let JsonValue::Object(map) = &mut state.payload {
             if !map.contains_key("__io_results__") {

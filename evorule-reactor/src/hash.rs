@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 审计链哈希工具（BLAKE3）—— re-export 壳
+//! Audit-chain hash utilities (BLAKE3) — re-export shell
 //!
-//! 哈希算法单一真相源已随 2026-10-18 SC3-a 方案乙迁入 [`evorule_audit_chain`]
-//! （no_std 审计链内核），本模块按既有 re-export 先例保持 `crate::hash` 路径
-//! 与公开面零变化。哈希输出逐字节不变（`hash_snapshot.txt` 快照测试随迁守护）。
+//! The single source of truth for the hash algorithm was migrated into
+//! [`evorule_audit_chain`] (the no_std audit-chain kernel) in the 2026-10-18
+//! SC3-a scheme-B consolidation; per the existing re-export precedent this
+//! module keeps the `crate::hash` path and the public surface unchanged. Hash
+//! output is byte-for-byte identical (guarded by the migrated `hash_snapshot.txt`
+//! snapshot test).
 
 pub use evorule_audit_chain::hash::*;

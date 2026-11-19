@@ -1,29 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! I/O Dispatcher —— trait object 动态分发（机制层，v0.2.0 从 governance 下沉至 reactor）
+//! I/O Dispatcher — dynamic dispatch via trait objects (mechanism layer; sunk from
+//! governance to reactor in v0.2.0)
 //!
-//! # v0.2.0 下沉背景
+//! # v0.2.0 sinking background
 //!
-//! v0.1.x 中 `IoDispatcher` 位于 evorule-governance，但 agent（解决方案1）不依赖
-//! governance，导致 agent 无法复用 IoDispatcher，只能用 `call_service` + 二级路由
-//! 借道。v0.2.0 自定义 IoType 能力要求 agent 能直接按 IoType 注册 handler，故将
-//! IoDispatcher 下沉到 evorule-reactor（机制层基座），governance 与 agent 均可复用。
+//! In v0.1.x `IoDispatcher` lived in evorule-governance, but the agent (solution 1)
+//! did not depend on governance, so the agent could not reuse IoDispatcher and had
+//! to detour via `call_service` + secondary routing. In v0.2.0 the custom-IoType
+//! capability requires the agent to register handlers directly by IoType, so
+//! IoDispatcher was sunk down into evorule-reactor (the mechanism-layer base);
+//! both governance and the agent can reuse it.
 //!
-//! # 设计
+//! # Design
 //!
-//! `HashMap<IoType, Arc<dyn IoHandler>>` trait object 模式：
-//! - 具体 handler 实现由应用层注入
-//! - 通过 `builder()` + `register()` 动态注册
-//! - 核心层不感知具体实现类型（解耦 sqlx/reqwest 等）
+//! `HashMap<IoType, Arc<dyn IoHandler>>` trait-object pattern:
+//! - Concrete handler implementations are injected by the application layer
+//! - Registered dynamically via `builder()` + `register()`
+//! - The core layer is unaware of concrete implementation types (decoupled from sqlx/reqwest etc.)
 //!
-//! # 性能
+//! # Performance
 //!
-//! trait object 动态分发对 I/O 操作无感知：dispatch 调用后立即 await，
-//! vtable 查找的纳秒级开销相比 I/O 毫秒级延迟可忽略。
+//! Trait-object dynamic dispatch is imperceptible for I/O operations: after a
+//! dispatch call it immediately awaits, and the nanosecond-scale vtable lookup
+//! overhead is negligible compared to millisecond-scale I/O latency.
 //!
-//! `IoType` 作 `HashMap` key：v0.2.0 起 `IoType(pub Arc<str>)` 实现 `Hash + Eq`，
-//! 哈希基于 `str` 内容，相同字符串的 `IoType`（无论 `new` 还是工厂函数构造）哈希一致。
+//! `IoType` as a `HashMap` key: since v0.2.0 `IoType(pub Arc<str>)` implements
+//! `Hash + Eq`; the hash is based on the `str` content, so `IoType` values with the
+//! same string (whether built via `new` or a factory function) hash identically.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -31,39 +36,41 @@ use std::sync::Arc;
 use crate::{IoHandler, IoResult, IoType};
 use evorule_tcb::JsonValue;
 
-/// I/O 分发器（机制层）
+/// I/O dispatcher (mechanism layer)
 ///
-/// 持有 `HashMap<IoType, Arc<dyn IoHandler>>`，根据 IoType 分发到对应 handler。
-/// 具体 handler 由应用层注册，核心层不感知具体实现类型。
+/// Holds `HashMap<IoType, Arc<dyn IoHandler>>` and dispatches to the corresponding
+/// handler by IoType. Concrete handlers are registered by the application layer;
+/// the core layer is unaware of concrete implementation types.
 ///
-/// `Clone`：内部 handler 都是 `Arc<dyn IoHandler>`，clone 仅增加引用计数，
-/// 不复制 handler 本身。多会话模式下每个 session 可共享同一组 handler。
+/// `Clone`: the internal handlers are all `Arc<dyn IoHandler>`; cloning only bumps
+/// reference counts and never copies the handlers themselves. In multi-session mode
+/// each session can share the same set of handlers.
 #[derive(Clone)]
 pub struct IoDispatcher {
-    /// IoType → handler 映射
+    /// IoType → handler map
     handlers: HashMap<IoType, Arc<dyn IoHandler>>,
 }
 
 impl IoDispatcher {
-    /// 创建空分发器（无 handler 注册）
+    /// Creates an empty dispatcher (no handlers registered)
     ///
-    /// 通常使用 `IoDispatcher::builder()` 链式注册 handler。
+    /// Usually handlers are registered in a chain via `IoDispatcher::builder()`.
     pub fn new() -> Self {
         Self {
             handlers: HashMap::new(),
         }
     }
 
-    /// 注册 handler 到指定 IoType
+    /// Registers a handler for the given IoType
     ///
-    /// 若该 IoType 已有 handler，将覆盖旧 handler。
+    /// If the IoType already has a handler, the old handler is overwritten.
     pub fn register(&mut self, io_type: IoType, handler: Arc<dyn IoHandler>) {
         self.handlers.insert(io_type, handler);
     }
 
-    /// 获取 builder，链式注册 handler
+    /// Returns a builder for chaining handler registrations
     ///
-    /// # 示例
+    /// # Example
     /// ```ignore
     /// let dispatcher = IoDispatcher::builder()
     ///     .register(IoType::call_external(), Arc::new(llm_handler))
@@ -74,9 +81,10 @@ impl IoDispatcher {
         IoDispatcherBuilder::new()
     }
 
-    /// 根据 IoType 分发执行
+    /// Dispatches execution by IoType
     ///
-    /// 若该 IoType 未注册 handler，返回错误（让反应器感知，而非静默失败）。
+    /// If no handler is registered for the IoType, returns an error (so the reactor
+    /// becomes aware of it, rather than failing silently).
     pub async fn dispatch(&self, io_type: &IoType, params: &JsonValue) -> IoResult {
         match self.handlers.get(io_type) {
             Some(handler) => handler.execute(params).await,
@@ -93,17 +101,19 @@ impl IoDispatcher {
         }
     }
 
-    /// 是否存在该 IoType 的 handler
+    /// Whether a handler exists for the given IoType
     ///
-    /// 供加载期校验（能力7 `validate_core_eval_io_types`）使用。
+    /// Used by load-time validation (Capability 7, `validate_core_eval_io_types`).
     pub fn contains(&self, io_type: &IoType) -> bool {
         self.handlers.contains_key(io_type)
     }
 
-    /// 已注册的所有 IoType
+    /// All registered IoTypes
     ///
-    /// 供 `ReactorBuilder::known_io_types` 快速失败校验（能力4）：注册了 dispatcher 的
-    /// reactor 可拒绝不在集合内的 io_type（拼错立即 `Fact::Error`，而非透传到 subscriber）。
+    /// Used by `ReactorBuilder::known_io_types` fail-fast validation (Capability 4):
+    /// a reactor with a registered dispatcher can reject io_types outside the set
+    /// (a typo immediately yields a `Fact::Error`, rather than being passed through
+    /// to the subscriber).
     pub fn known_types(&self) -> impl Iterator<Item = &IoType> {
         self.handlers.keys()
     }
@@ -115,28 +125,29 @@ impl Default for IoDispatcher {
     }
 }
 
-/// I/O 分发器 builder（链式注册）
+/// I/O dispatcher builder (chained registration)
 ///
-/// 通过 `IoDispatcher::builder()` 创建，链式调用 `register()` 后 `build()` 完成。
+/// Created via `IoDispatcher::builder()`; chain `register()` calls, then finish
+/// with `build()`.
 pub struct IoDispatcherBuilder {
     handlers: HashMap<IoType, Arc<dyn IoHandler>>,
 }
 
 impl IoDispatcherBuilder {
-    /// 创建空 builder
+    /// Creates an empty builder
     pub fn new() -> Self {
         Self {
             handlers: HashMap::new(),
         }
     }
 
-    /// 注册 handler（链式调用）
+    /// Registers a handler (chained call)
     pub fn register(mut self, io_type: IoType, handler: Arc<dyn IoHandler>) -> Self {
         self.handlers.insert(io_type, handler);
         self
     }
 
-    /// 构建 IoDispatcher
+    /// Builds the IoDispatcher
     pub fn build(self) -> IoDispatcher {
         IoDispatcher {
             handlers: self.handlers,
@@ -183,7 +194,7 @@ mod tests {
 
     #[test]
     fn new_equals_factory_key_collision() {
-        // IoType::new("call_service") 与 IoType::call_service() 哈希一致，同一 key
+        // IoType::new("call_service") and IoType::call_service() hash identically — the same key
         let mut d = IoDispatcher::new();
         d.register(IoType::call_service(), Arc::new(EchoHandler));
         assert!(d.contains(&IoType::new("call_service")));

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 反应器核心 - 事实驱动的状态转换引擎
+//! Reactor core - a fact-driven state transition engine
 //!
-//! # 架构
-//! - 双通道：command 通道（用户→反应器），event 通道（反应器→用户）
-//! - 每轮：等待 Fact → 处理 Fact → 持续执行队列指令直到空或 IoRequired
-//! - max_rounds 限制**指令执行步数**（替代 max_steps），不限制 Fact 数
-//! - 稳定条件：队列空 + 无待处理 I/O + 已执行过（steps > 0）
-//! - 所有 Fact 追加到 FactsLog 审计链，支持审计重放
+//! # Architecture
+//! - Dual channels: command channel (user → reactor), event channel (reactor → user)
+//! - Each round: wait for a Fact → process it → keep executing queued instructions until the queue is empty or IoRequired
+//! - max_rounds bounds the **number of executed instruction steps** (replacing max_steps); it does not bound the number of Facts
+//! - Stability condition: empty queue + no pending I/O + having executed (steps > 0)
+//! - All Facts are appended to the FactsLog audit chain, supporting audit replay
 
 use crate::channel::ChannelPair;
 use crate::error::ReactorError;
@@ -31,121 +31,127 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// 默认队列长度上限（P3-11：超过时 80% warn / 100% Error）
+/// Default queue length cap (P3-11: 80% warn / 100% Error on breach)
 const DEFAULT_MAX_QUEUE_LEN: usize = 1000;
 
-/// 默认 I/O 超时检查间隔（P3-11：阻塞等待时定期扫描超时）
+/// Default I/O timeout check interval (P3-11: periodic timeout scan while blocked waiting)
 const IO_TIMEOUT_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
-/// 阶段3-1.3：Executing 阶段快照更新间隔（每 N 步更新一次）
+/// Phase 3-1.3: snapshot update interval during the Executing phase (refresh every N steps)
 ///
-/// 反应器在 Executing 阶段的 `while` 循环中连续执行指令时，
-/// 每执行 N 步更新一次 `ReactorStateSnapshot`，让 tier2 能观察到执行进度。
-/// 选用 100 的原因：
-/// - 锁开销可忽略（纳秒级，相对 `execute_transition` 的微秒级可不计）
-/// - tier2 轮询 Prometheus 指标的典型间隔为 5-15s，
-///   100 步粒度足以反映宏观进度而不产生噪声
+/// While the reactor executes instructions consecutively in the Executing-phase
+/// `while` loop, it refreshes `ReactorStateSnapshot` every N steps so tier2 can
+/// observe execution progress. Why 100:
+/// - Lock overhead is negligible (nanoseconds, dwarfed by the microseconds of
+///   `execute_transition`)
+/// - tier2 typically polls Prometheus metrics every 5-15s; a 100-step
+///   granularity reflects macro progress without introducing noise
 const SNAPSHOT_UPDATE_INTERVAL: usize = 100;
 
-/// 反应器状态快照（只读访问，供 tier2 查询）
+/// Reactor state snapshot (read-only access, for tier2 queries)
 ///
-/// 反应器主循环定期更新此快照，ReactorHandle 通过它暴露状态机语义。
-/// 所有字段都是机制（控制层状态），非业务语义。
+/// The reactor main loop refreshes this snapshot periodically, and ReactorHandle
+/// exposes state-machine semantics through it. All fields are mechanism
+/// (control-layer state), not business semantics.
 ///
-/// # version 字段说明
+/// # The version field
 ///
-/// `version` 字段表示**状态变更次数**（state_version），
-/// 只在 PayloadUpdate/IoResponse/StateTransition 时递增。
-/// Command/Stable/Error 不递增（不改变业务状态）。
+/// The `version` field counts **state changes** (state_version); it is
+/// incremented only on PayloadUpdate/IoResponse/StateTransition.
+/// Command/Stable/Error do not increment it (they do not change business state).
 ///
-/// 注意: 此字段不是"Fact 处理总深度"（causal_depth）。
-/// 真正的 causal_depth 应通过 FactsLog 的 Fact 总数计算。
-/// HTTP API 的 `reactor.causal_depth` 字段名保留了历史兼容性，
-/// 但实际语义是 state_version（状态变更次数），不是 Fact 处理总深度。
+/// Note: this field is not the "total Fact-processing depth" (causal_depth).
+/// The true causal_depth should be computed from the total number of Facts in
+/// the FactsLog. The HTTP API field name `reactor.causal_depth` is kept for
+/// historical compatibility, but its actual semantics are state_version (the
+/// state-change count), not total Fact-processing depth.
 #[derive(Debug, Clone, Default)]
 pub struct ReactorStateSnapshot {
-    /// 当前执行阶段
+    /// Current execution phase
     pub phase: ReactorPhase,
-    /// 状态变更次数（state_version，只在 PayloadUpdate/IoResponse/StateTransition 时递增）
+    /// State-change count (state_version; incremented only on PayloadUpdate/IoResponse/StateTransition)
     pub version: u64,
-    /// 不变式违规累计计数
+    /// Cumulative invariant-violation count
     pub structural_invariant_violations: u64,
-    /// 待响应的 I/O 请求数量
+    /// Number of I/O requests awaiting a response
     pub pending_io_count: usize,
-    /// 待响应 I/O 清单（干预可视化：cancel-all 前的取消对象对账面）
+    /// List of I/O requests awaiting a response (intervention visibility: the reconciliation ledger of cancel targets before cancel-all)
     ///
-    /// 每轮迭代头随快照刷新；空表=无 pending（Vec 空不分配，热路径零成本）。
+    /// Refreshed with the snapshot at each iteration head; an empty list = no pending (an empty Vec does not allocate, zero cost on the hot path).
     pub pending_io: Vec<PendingIoEntry>,
-    /// 当前已执行指令步数
+    /// Number of instruction steps executed so far
     pub steps: usize,
-    /// 当前队列长度
+    /// Current queue length
     pub queue_len: usize,
-    /// 反应器是否已结束（true = 已退出）
+    /// Whether the reactor has finished (true = exited)
     pub finished: bool,
 }
 
-/// 阶段6：pending I/O 详情条目（snapshot 中单个 I/O 请求的状态）
+/// Phase 6: pending I/O detail entry (state of a single I/O request in the snapshot)
 ///
-/// `started_at` 存的是发射时间戳，inspect 时调用 `started_at.elapsed()`
-/// 计算 Duration，避免 snapshot 持续更新时 Duration 失真。
+/// `started_at` stores the emit timestamp; inspect calls `started_at.elapsed()`
+/// to compute the Duration, avoiding Duration distortion while the snapshot
+/// keeps being refreshed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingIoEntry {
-    /// I/O 请求的 FactId
+    /// FactId of the I/O request
     pub id: FactId,
-    /// I/O 类型（机制：路由用，非业务语义）
+    /// I/O type (mechanism: used for routing, not business semantics)
     pub io_type: IoType,
-    /// I/O 请求发射时间戳（inspect 时算 elapsed）
+    /// Emit timestamp of the I/O request (elapsed computed at inspect time)
     pub started_at: Instant,
 }
 
-/// 最近一轮不变式扫描报告（每迭代头随内置自检刷新）
+/// Report of the latest invariant scan (refreshed with the built-in self-check at each iteration head)
 ///
-/// 反应器每轮迭代头本就运行 `check_invariants`（此前只累计计数+日志），
-/// 本报告把违规明细同步发布给外部只读消费——手动扫描端点由此获得
-/// 与引擎自身所见一致的最新结果（新鲜度 ≤ 一个迭代间隔），无需额外
-/// 按需扫描通路。
+/// The reactor already runs `check_invariants` at each iteration head
+/// (previously only counting + logging); this report additionally publishes
+/// the violation details to external read-only consumers — the manual scan
+/// endpoint thereby sees the same latest results as the engine itself
+/// (freshness ≤ one iteration interval) with no extra on-demand scan path.
 #[derive(Debug, Clone, Default)]
 pub struct InvariantScanReport {
-    /// 产生本报告时的已执行步数（消费方可借此判断报告新鲜度）
+    /// Steps executed when this report was produced (consumers can use it to judge report freshness)
     pub steps: usize,
-    /// 本轮检出的违规明细（空表 = 干净）
+    /// Violation details detected in the latest scan (empty list = clean)
     pub violations: Vec<crate::invariants::InvariantViolation>,
 }
 
-/// 反应器配置构建器
+/// Reactor configuration builder
 #[derive(Debug, Clone)]
 pub struct ReactorBuilder {
     core_eval: Vec<JsonValue>,
     max_rounds: usize,
-    /// P3-11：队列长度上限（默认 1000）
+    /// P3-11: queue length cap (default 1000)
     max_queue_len: usize,
-    /// P3-11：I/O 超时警告阈值（默认 30s）
+    /// P3-11: I/O timeout warn threshold (default 30s)
     io_warn_timeout: Duration,
-    /// P3-11：I/O 超时错误阈值（默认 60s，超过后发射 Error 恢复反应器）
+    /// P3-11: I/O timeout error threshold (default 60s; on breach an Error fact is emitted to recover the reactor)
     io_error_timeout: Duration,
-    /// P3-11：I/O 超时检查间隔（默认 5s，测试可缩短）
+    /// P3-11: I/O timeout check interval (default 5s; tests may shorten it)
     io_timeout_check_interval: Duration,
-    /// FactsLog（默认使用 `FactsLog::new()` 纯内存模式）
+    /// FactsLog (defaults to the in-memory-only `FactsLog::new()` mode)
     facts_log: FactsLog,
-    /// 执行中断标志（外部可通过 ReactorHandle 设置）
+    /// Execution interrupt flag (external code can set it via ReactorHandle)
     interrupt_flag: Arc<AtomicBool>,
-    /// FactId 起始值（None=从 1 开始全新启动，Some(n)=从 n 恢复续跑）
+    /// FactId start value (None = fresh start from 1, Some(n) = resume from n)
     ///
-    /// 用于崩溃恢复：从历史 WAL 中的最大 reactor 内部 FactId + 1 续跑，
-    /// 避免 StateTransition/IoRequest/Stable/Error 的 FactId 与历史 WAL 重复。
+    /// Used for crash recovery: resume from the maximum reactor-internal FactId
+    /// found in the historical WAL plus 1, so that the FactIds of
+    /// StateTransition/IoRequest/Stable/Error do not collide with the historical WAL.
     fact_id_start: Option<u64>,
-    /// v0.2.0 能力4：已知 io_type 集合（快速失败校验，None=不校验透传）
+    /// v0.2.0 capability 4: set of known io_types (fail-fast validation; None = pass through without validation)
     known_io_types: Option<Arc<HashSet<String>>>,
-    /// 取消全部 pending I/O 标志（外部干预原语，ReactorHandle 置位）
+    /// Cancel-all pending I/O flag (external intervention primitive, set by ReactorHandle)
     cancel_all_flag: Arc<AtomicBool>,
-    /// 最近一轮不变式扫描结果（每迭代头刷新，ReactorHandle 只读）
+    /// Latest invariant-scan result (refreshed at each iteration head; ReactorHandle reads it read-only)
     latest_invariants: Arc<Mutex<InvariantScanReport>>,
-    /// 运行时时钟（时钟缝，默认 [`SystemClock`]；测试可注入 [`FixedClock`]）
+    /// Runtime clock (clock seam, defaults to [`SystemClock`]; tests can inject [`FixedClock`])
     clock: ClockHandle,
 }
 
 impl ReactorBuilder {
-    /// 创建构建器
+    /// Create the builder
     pub fn new(core_eval: Vec<JsonValue>) -> Self {
         Self {
             core_eval,
@@ -164,82 +170,86 @@ impl ReactorBuilder {
         }
     }
 
-    /// 设置最大指令执行步数（硬上界，替代 max_steps）
+    /// Set the maximum number of executed instruction steps (hard upper bound, replacing max_steps)
     pub fn max_rounds(mut self, max_rounds: usize) -> Self {
         self.max_rounds = max_rounds;
         self
     }
 
-    /// 设置队列长度上限（P3-11）
+    /// Set the queue length cap (P3-11)
     ///
-    /// 队列长度达到 80% 时发射 warn 日志，达到 100% 时发射 `Fact::Error` 并清空队列。
+    /// At 80% of the cap a warn log is emitted; at 100% a `Fact::Error` is emitted and the queue is cleared.
     pub fn max_queue_len(mut self, max_queue_len: usize) -> Self {
         self.max_queue_len = max_queue_len;
         self
     }
 
-    /// 设置 I/O 超时警告阈值（P3-11，默认 30s）
+    /// Set the I/O timeout warn threshold (P3-11, default 30s)
     ///
-    /// pending I/O 超过此时长未响应时发射 warn 日志。
+    /// A warn log is emitted when pending I/O stays unanswered beyond this duration.
     pub fn io_warn_timeout(mut self, timeout: Duration) -> Self {
         self.io_warn_timeout = timeout;
         self
     }
 
-    /// 设置 I/O 超时错误阈值（P3-11，默认 60s）
+    /// Set the I/O timeout error threshold (P3-11, default 60s)
     ///
-    /// pending I/O 超过此时长未响应时发射 `Fact::Error`，移除该 I/O 请求，恢复反应器。
+    /// When pending I/O stays unanswered beyond this duration, a `Fact::Error` is
+    /// emitted, the I/O request is removed, and the reactor recovers.
     pub fn io_error_timeout(mut self, timeout: Duration) -> Self {
         self.io_error_timeout = timeout;
         self
     }
 
-    /// 设置 I/O 超时检查间隔（P3-11，默认 5s，测试可缩短）
+    /// Set the I/O timeout check interval (P3-11, default 5s; tests may shorten it)
     ///
-    /// 反应器在阻塞等待命令时，每隔此间隔扫描一次 pending I/O 超时。
-    /// 生产环境建议 5s，测试环境可设为 50ms 以加速测试。
+    /// While the reactor is blocked waiting for a command, it scans pending I/O
+    /// timeouts once per this interval. 5s is recommended in production; tests
+    /// may set 50ms to speed them up.
     pub fn io_timeout_check_interval(mut self, interval: Duration) -> Self {
         self.io_timeout_check_interval = interval;
         self
     }
 
-    /// 设置自定义 FactsLog（用于 WAL 持久化场景）
+    /// Set a custom FactsLog (for WAL persistence scenarios)
     ///
-    /// 默认使用 `FactsLog::new()`（纯内存模式）。如需 WAL 持久化，
-    /// 可先调用 `FactsLog::with_wal()` 创建，再通过此方法传入。
+    /// Defaults to `FactsLog::new()` (in-memory-only mode). For WAL persistence,
+    /// create the log via `FactsLog::with_wal()` first, then pass it in here.
     ///
-    /// # 规范合规
+    /// # Spec compliance
     ///
-    /// - ✅ 持久化是机制（Rust 可写，见 §2.1）
-    /// - ✅ 不涉及业务语义判断
+    /// - ✅ Persistence is mechanism (writable in Rust, see §2.1)
+    /// - ✅ No business-semantic judgment involved
     pub fn facts_log(mut self, facts_log: FactsLog) -> Self {
         self.facts_log = facts_log;
         self
     }
 
-    /// 设置 reactor 内部 FactId 起始值（崩溃恢复续跑用）
+    /// Set the starting FactId for reactor-internal facts (for crash-recovery resume)
     ///
-    /// 默认 `None` = 从 1 开始（`FactIdGenerator::new()`）。
-    /// `Some(n)` = 从 n 开始（`FactIdGenerator::resume(n)`），用于崩溃恢复续跑，
-    /// 避免 reactor 内部产生的 StateTransition/IoRequest/Stable/Error 的 FactId
-    /// 与历史 WAL 中同类型 Fact 的 FactId 重复。
+    /// Default `None` = start from 1 (`FactIdGenerator::new()`).
+    /// `Some(n)` = start from n (`FactIdGenerator::resume(n)`), used for crash
+    /// recovery, so that the FactIds of reactor-generated
+    /// StateTransition/IoRequest/Stable/Error facts do not collide with the
+    /// FactIds of same-type Facts in the historical WAL.
     ///
-    /// # 规范合规
+    /// # Spec compliance
     ///
-    /// - ✅ FactId 是机制（控制层标识），非业务语义
-    /// - ✅ 不影响 Kani 不变式（无 proof 验证 FactId 全局唯一性）
+    /// - ✅ FactId is mechanism (control-layer identifier), not business semantics
+    /// - ✅ Does not affect Kani invariants (no proof verifies global FactId uniqueness)
     pub fn fact_id_start(mut self, start: u64) -> Self {
         self.fact_id_start = Some(start);
         self
     }
 
-    /// v0.2.0 能力4：注册已知 io_type 集合（快速失败校验）
+    /// v0.2.0 capability 4: register the set of known io_types (fail-fast validation)
     ///
-    /// 注册后，IoRequired 时若 io_type 不在集合内，立即发射 `Fact::Error`（恢复
-    /// v0.1.x 拼错 io_type 快速失败的确定性）。未注册（默认）则透传不校验，
-    /// 由 subscriber 决定能否处理。
+    /// Once registered, an IoRequired whose io_type is not in the set immediately
+    /// emits `Fact::Error` (restoring the v0.1.x determinism of failing fast on a
+    /// misspelled io_type). Unregistered (default) passes through without
+    /// validation; the subscriber decides whether it can handle the type.
     ///
-    /// 通常从 `IoDispatcher::known_types()` 收集：
+    /// Usually collected from `IoDispatcher::known_types()`:
     /// ```ignore
     /// let dispatcher = IoDispatcher::builder().register(...).build();
     /// reactor.known_io_types(dispatcher.known_types().map(|t| t.as_str().to_string()));
@@ -249,17 +259,18 @@ impl ReactorBuilder {
         self
     }
 
-    /// 注入运行时时钟（时钟缝）
+    /// Inject a runtime clock (clock seam)
     ///
-    /// 默认 [`SystemClock`]（native 行为与直接 `Instant::now()` 一致）。
-    /// 测试与嵌入式形态可注入 [`FixedClock`] 等确定性实现，
-    /// 使超时扫描等时间相关行为可确定性复现。
+    /// Defaults to [`SystemClock`] (native behavior identical to a direct
+    /// `Instant::now()`). Tests and embedded forms can inject deterministic
+    /// implementations such as [`FixedClock`], making time-dependent behavior
+    /// such as timeout scans deterministically reproducible.
     pub fn clock<C: RuntimeClock + 'static>(mut self, clock: C) -> Self {
         self.clock = ClockHandle::new(Arc::new(clock));
         self
     }
 
-    /// 构建反应器
+    /// Build the reactor
     pub fn build(self) -> Reactor {
         Reactor {
             core_eval: self.core_eval,
@@ -279,53 +290,53 @@ impl ReactorBuilder {
     }
 }
 
-/// 反应器实例
+/// Reactor instance
 pub struct Reactor {
     core_eval: Vec<JsonValue>,
     max_rounds: usize,
-    /// P3-11：队列长度上限
+    /// P3-11: queue length cap
     max_queue_len: usize,
-    /// P3-11：I/O 超时警告阈值
+    /// P3-11: I/O timeout warn threshold
     io_warn_timeout: Duration,
-    /// P3-11：I/O 超时错误阈值
+    /// P3-11: I/O timeout error threshold
     io_error_timeout: Duration,
-    /// P3-11：I/O 超时检查间隔
+    /// P3-11: I/O timeout check interval
     io_timeout_check_interval: Duration,
     facts_log: FactsLog,
-    /// 执行中断标志（外部可通过 ReactorHandle 设置）
+    /// Execution interrupt flag (external code can set it via ReactorHandle)
     interrupt_flag: Arc<AtomicBool>,
-    /// FactId 起始值（None=从 1 开始全新启动，Some(n)=从 n 恢复续跑）
+    /// FactId start value (None = fresh start from 1, Some(n) = resume from n)
     fact_id_start: Option<u64>,
-    /// v0.2.0 能力4：已知 io_type 集合（快速失败校验，None=不校验透传）
+    /// v0.2.0 capability 4: set of known io_types (fail-fast validation; None = pass through without validation)
     known_io_types: Option<Arc<HashSet<String>>>,
-    /// 取消全部 pending I/O 标志（外部干预原语，ReactorHandle 置位）
+    /// Cancel-all pending I/O flag (external intervention primitive, set by ReactorHandle)
     cancel_all_flag: Arc<AtomicBool>,
-    /// 最近一轮不变式扫描结果（每迭代头刷新，ReactorHandle 只读）
+    /// Latest invariant-scan result (refreshed at each iteration head; ReactorHandle reads it read-only)
     latest_invariants: Arc<Mutex<InvariantScanReport>>,
-    /// 运行时时钟（时钟缝，经 Builder 注入，默认 SystemClock）
+    /// Runtime clock (clock seam, injected via the builder, defaults to SystemClock)
     clock: ClockHandle,
 }
 
 impl Reactor {
-    /// 创建构建器
+    /// Create the builder
     pub fn builder(core_eval: Vec<JsonValue>) -> ReactorBuilder {
         ReactorBuilder::new(core_eval)
     }
 
-    /// 启动反应器，返回 (command_tx, event_rx, event_tx, handle, facts_log)
+    /// Spawn the reactor; returns (command_tx, event_rx, event_tx, handle, facts_log)
     ///
-    /// - `command_tx`：用户通过它提交 Fact（Command/PayloadUpdate/IoResponse）
-    /// - `event_rx`：用户通过它接收反应器产生的 Fact（StateTransition/IoRequest/Stable/Error）
-    /// - `event_tx`：event 通道发送端克隆，tier2 可通过 `event_tx.subscribe()` 创建额外接收者
-    /// - `handle`：反应器任务句柄（含状态快照 + 中断标志，支持只读查询与 interrupt）
-    /// - `facts_log`：审计链克隆（可用于审计重放）
+    /// - `command_tx`: the user submits Facts through it (Command/PayloadUpdate/IoResponse)
+    /// - `event_rx`: the user receives reactor-produced Facts through it (StateTransition/IoRequest/Stable/Error)
+    /// - `event_tx`: a clone of the event-channel sender; tier2 can create extra receivers via `event_tx.subscribe()`
+    /// - `handle`: reactor task handle (state snapshot + interrupt flag, supporting read-only queries and interrupt)
+    /// - `facts_log`: a clone of the audit chain (usable for audit replay)
     ///
-    /// # 阶段6（第四组）
+    /// # Phase 6 (fourth group)
     ///
-    /// 返回的 `ReactorHandle` 携带共享快照与中断标志，支持：
-    /// - `interrupt()`：请求反应器在当前指令后退出
-    /// - `abort()`：强制中止反应器任务
-    /// - GDB 风格的 pause/resume/step/inspect + interrupt/watch 已由 [evorule-server 仓](https://github.com/evorule/evorule-server) `core/debug_control` 模块实现
+    /// The returned `ReactorHandle` carries the shared snapshot and the interrupt flag, supporting:
+    /// - `interrupt()`: ask the reactor to exit after the current instruction
+    /// - `abort()`: forcibly abort the reactor task
+    /// - GDB-style pause/resume/step/inspect + interrupt/watch is implemented by the `core/debug_control` module of the [evorule-server repo](https://github.com/evorule/evorule-server)
     pub fn spawn(
         self,
     ) -> (
@@ -338,23 +349,25 @@ impl Reactor {
         let channels = ChannelPair::new();
         let facts_log = self.facts_log.clone();
         let event_tx_clone = channels.event_tx.clone();
-        // 创建共享状态快照，reactor 主循环更新，ReactorHandle 读取
+        // Create the shared state snapshot: the reactor main loop updates it, ReactorHandle reads it
         let snapshot = Arc::new(Mutex::new(ReactorStateSnapshot::default()));
         let snapshot_for_run = Arc::clone(&snapshot);
-        // 执行中断标志（共享在 reactor 主循环与 ReactorHandle 之间）
+        // Execution interrupt flag (shared between the reactor main loop and ReactorHandle)
         let interrupt_flag = self.interrupt_flag.clone();
         let interrupt_flag_for_run = self.interrupt_flag.clone();
-        // 取消全部 pending I/O 标志（外部干预原语，同 interrupt 共享模式）
+        // Cancel-all pending I/O flag (external intervention primitive, same sharing pattern as interrupt)
         let cancel_all_flag = self.cancel_all_flag.clone();
         let cancel_all_flag_for_run = self.cancel_all_flag.clone();
-        // 最近一轮不变式扫描（每迭代头刷新，handle 只读）
+        // Latest invariant scan (refreshed at each iteration head; the handle reads it read-only)
         let latest_invariants = self.latest_invariants.clone();
         let latest_invariants_for_run = self.latest_invariants.clone();
 
-        // W1 方案 b（2026-08-27）：WAL 连续写失败达阈值 → 触发中断标志 +
-        // 发射含用户自助指导的 Error fact，终止当前执行以保护可回放性。
-        // Error fact 无法经 emit_fact 写入（那正是失败的路径），改经 event
-        // 通道直接下发，保证客户端必收到指导信息。
+        // W1 option b (2026-08-27): consecutive WAL write failures reaching the
+        // threshold → raise the interrupt flag + emit an Error fact carrying
+        // user self-service guidance, terminating the current execution to
+        // protect replayability. The Error fact cannot go through emit_fact
+        // (that is exactly the failing path); it is delivered directly via the
+        // event channel instead, guaranteeing the client receives the guidance.
         #[cfg(feature = "persistence")]
         {
             let interrupt_for_cb = interrupt_flag.clone();
@@ -362,7 +375,7 @@ impl Reactor {
             facts_log.set_on_wal_failure_exhausted(move |guidance: &str| {
                 tracing::error!("WAL failure escalation: terminating session. {guidance}");
                 interrupt_for_cb.store(true, std::sync::atomic::Ordering::Release);
-                // 尽力发送；broadcast 无接收者时错误可忽略（客户端重连后从状态查询感知）
+                // Best effort; a broadcast error with no receivers is ignorable (the client senses it via state queries after reconnecting)
                 let _ = event_tx_for_cb.send(Fact::Error {
                     id: FactId(u64::MAX),
                     message: guidance.to_string(),
@@ -393,26 +406,27 @@ impl Reactor {
         )
     }
 
-    /// 反应器主循环（长驻模式）
+    /// Reactor main loop (long-running mode)
     ///
-    /// 流程：
-    /// 1. 非阻塞 drain command 通道中所有待处理 Fact（ISSUE-1 修复：避免多命令丢失）
-    /// 2. 稳定检测：队列空 + 无 pending I/O + 已执行过（ISSUE-2：使用 StableDetector）
-    /// 3. 如果队列空或等待 I/O 且未 drain 到任何 Fact，阻塞等 Fact
-    /// 4. 持续执行队列指令，直到队列空或 IoRequired
-    ///    - BUG-3 修复：max_rounds 检查在 pop_instruction 之前，避免指令丢失
-    ///    - ISSUE-4/5：FactsLog append 和 event_tx send 错误记录警告日志
+    /// Flow:
+    /// 1. Non-blockingly drain all pending Facts from the command channel (ISSUE-1 fix: avoid losing queued commands)
+    /// 2. Stability check: empty queue + no pending I/O + having executed (ISSUE-2: uses StableDetector)
+    /// 3. If the queue is empty or awaiting I/O and nothing was drained, block waiting for a Fact
+    /// 4. Keep executing queued instructions until the queue is empty or IoRequired
+    ///    - BUG-3 fix: the max_rounds check runs before pop_instruction so no instruction is lost
+    ///    - ISSUE-4/5: FactsLog append and event_tx send errors are logged as warnings
     ///
-    /// # 长驻模式（v6.1）
+    /// # Long-running mode (v6.1)
     ///
-    /// 反应器在 Stable 后**不退出**，重置步数计数器，继续等待下一命令。
-    /// 这使 HTTP API 能持续服务多个顺序命令。
+    /// After Stable the reactor does **not exit**; it resets the step counter and keeps waiting for the next command.
+    /// This lets the HTTP API keep serving multiple sequential commands.
     ///
-    /// 错误处理：
-    /// - `MaxRoundsExceeded`：发射 Error → 清空队列 → 重置 steps → 发射 Stable → 继续
-    /// - `TcbError`：发射 Error → 继续（队列空时由稳定检测自动发射 Stable）
-    /// - `ChannelClosed`（所有 command_tx 被丢弃）：优雅退出 `Ok(())`
-    // 反应器主循环: 多 match 分支 + 嵌套 if, 拆函数影响接口稳定性。详见 GATE_REFERENCE.md §六(豁免索引)
+    /// Error handling:
+    /// - `MaxRoundsExceeded`: emit Error → clear queue → reset steps → emit Stable → continue
+    /// - `TcbError`: emit Error → continue (when the queue is empty the stability check emits Stable automatically)
+    /// - `ChannelClosed` (all command_tx dropped): graceful exit `Ok(())`
+    // Reactor main loop: multiple match branches + nested ifs; splitting into
+    // functions would destabilize the interface. See GATE_REFERENCE.md §6 (exemption index)
     #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
     async fn run(
         self,
@@ -424,11 +438,14 @@ impl Reactor {
         latest_invariants: Arc<Mutex<InvariantScanReport>>,
     ) -> Result<(), ReactorError> {
         let mut state = ReactorState::new();
-        // 种子化（2026-09-08）：facts_log 已带初始状态时（live fork /
-        // fork-from-archive 经 set_initial_state，或 WAL recover 重放后挂载），
-        // TCB 必须从该状态续跑——否则 TCB 与审计链快照分叉：链上 payload = X，
-        // 实际执行却从空状态起步，fork 语义与"可回放"承诺同时被破坏。
-        // 条件 version > 0：全新会话的空链（version 0）无需种子，行为不变。
+        // Seeding (2026-09-08): when facts_log already carries an initial state
+        // (live fork / fork-from-archive via set_initial_state, or mounting after
+        // a WAL recover replay), the TCB must resume from that state — otherwise
+        // the TCB and the audit-chain snapshot diverge: the chain says payload = X
+        // while actual execution starts from an empty state, breaking both the
+        // fork semantics and the "replayable" promise.
+        // Condition version > 0: a fresh session's empty chain (version 0) needs
+        // no seeding; behavior unchanged.
         let (seed_payload, seed_queue, seed_version) = self.facts_log.snapshot();
         if seed_version > 0 {
             state.payload = seed_payload;
@@ -440,8 +457,8 @@ impl Reactor {
             .fact_id_start
             .map_or_else(FactIdGenerator::new, FactIdGenerator::resume);
         let mut steps: usize = 0;
-        // 断点 1 修复：删除 current_cause 全局变量，
-        // 改为通过 instruction_causes 队列追踪每个指令的独立 cause。
+        // Breakpoint-1 fix: removed the current_cause global variable;
+        // per-instruction causes are now tracked via the instruction_causes queue.
 
         tracing::debug!(
             "Reactor started (long-running), max_rounds={}",
@@ -449,18 +466,18 @@ impl Reactor {
         );
 
         'main: loop {
-            // 更新状态快照（供 tier2 只读查询）
+            // Refresh the state snapshot (for tier2 read-only queries)
             Self::update_snapshot(&snapshot, &state, steps, false);
-            // 0. 不变式自检：检查上一轮是否引入结构性违规
-            //    违规用 tracing::error! 记录，不中断反应器（符合 F11）；
-            //    明细同步发布到共享扫描报告（外部干预端点只读消费）
+            // 0. Invariant self-check: check whether the previous round introduced structural violations
+            //    Violations are recorded via tracing::error! without interrupting the reactor (per F11);
+            //    details are published to the shared scan report (read by the external intervention endpoint)
             let scan_violations = Self::run_invariant_check(&mut state, steps);
             if let Ok(mut report) = latest_invariants.lock() {
                 report.steps = steps;
                 report.violations = scan_violations;
             }
 
-            // 0.5 检查执行中断标志
+            // 0.5 Check the execution interrupt flag
             if interrupt_flag.swap(false, std::sync::atomic::Ordering::Acquire) {
                 state.phase = ReactorPhase::Error;
                 let id = id_gen.next_id();
@@ -469,7 +486,7 @@ impl Reactor {
                     message: "Execution interrupted by external request".to_string(),
                 };
                 Self::emit_fact(&self.facts_log, &event_tx, err_fact).await;
-                // 发射 Stable 恢复
+                // Emit Stable to recover
                 state.phase = ReactorPhase::Stable;
                 let stable_id = id_gen.next_id();
                 let stable_fact = Fact::Stable {
@@ -482,15 +499,16 @@ impl Reactor {
                 continue 'main;
             }
 
-            // 0.55 取消全部 pending I/O（外部干预原语，镜像超时错误路径：
-            // 逐请求 emit Fact::Error + force_remove，恢复反应器；不发 Stable——
-            // 与超时路径一致，由后续迭代头的稳定检测自然收敛）
+            // 0.55 Cancel all pending I/O (external intervention primitive, mirroring
+            // the timeout error path: per request emit Fact::Error + force_remove to
+            // recover the reactor; no Stable emitted — consistent with the timeout
+            // path, converging naturally via the stability check at the next iteration head)
             if cancel_all_flag.swap(false, std::sync::atomic::Ordering::Acquire) {
                 let cancel_ids: Vec<FactId> = state.pending_io_timestamps.keys().copied().collect();
                 for io_id in cancel_ids {
                     tracing::info!(
                         io_request_id = %io_id,
-                        "I/O 请求被外部取消（cancel-all pending）：发射 Error 恢复反应器"
+                        "I/O request cancelled externally (cancel-all pending): emitting Error to recover the reactor"
                     );
                     let err_fact_id = id_gen.next_id();
                     let err_fact = Fact::Error {
@@ -503,8 +521,8 @@ impl Reactor {
                 continue 'main;
             }
 
-            // 1. 非阻塞 drain command 通道中所有待处理 Fact
-            //    ISSUE-1 修复：避免稳定检测前遗漏通道中已排队的 Fact
+            // 1. Non-blockingly drain all pending Facts from the command channel
+            //    ISSUE-1 fix: avoid missing Facts already queued in the channel before the stability check
             state.phase = ReactorPhase::Draining;
             let mut drained_any = false;
             loop {
@@ -517,7 +535,7 @@ impl Reactor {
                             fact.type_name(),
                             fact.id()
                         );
-                        // 断点 1 修复：cause 在 handle_fact 中通过 push_back(instruction, fact_id) 关联
+                        // Breakpoint-1 fix: the cause is associated in handle_fact via push_back(instruction, fact_id)
                         Self::emit_fact(&self.facts_log, &event_tx, fact.clone()).await;
                         Self::handle_fact(
                             &mut state,
@@ -533,19 +551,20 @@ impl Reactor {
                         tracing::debug!(
                             "Reactor command channel closed during drain, shutting down"
                         );
-                        // 标记反应器已结束，让 tier2 只读 API 返回 None
+                        // Mark the reactor as finished so tier2 read-only APIs return None
                         Self::update_snapshot(&snapshot, &state, steps, true);
                         return Ok(());
                     }
                 }
             }
 
-            // 2. 稳定检测：队列空 + 无 pending I/O + 已执行过
-            //    ISSUE-2 修复：使用 StableDetector::is_stable 静态方法
+            // 2. Stability check: empty queue + no pending I/O + having executed
+            //    ISSUE-2 fix: uses the StableDetector::is_stable static method
             //
-            //    注意: steps > 0 条件意味着纯 PayloadUpdate（不入队、不增加 steps）
-            //    在系统刚启动时不会触发 Stable。tier2 应直接监听 Fact::PayloadUpdate
-            //    来确认状态变更，而非依赖 Stable 事件。
+            //    Note: the steps > 0 condition means a pure PayloadUpdate (nothing
+            //    enqueued, steps unchanged) will not trigger Stable right after
+            //    startup. tier2 should listen for Fact::PayloadUpdate directly to
+            //    confirm state changes rather than relying on the Stable event.
             if StableDetector::is_stable(state.queue.len(), state.pending_io_count) && steps > 0 {
                 state.phase = ReactorPhase::Stable;
                 tracing::info!(
@@ -560,14 +579,14 @@ impl Reactor {
                     version: state.version,
                 };
                 Self::emit_fact(&self.facts_log, &event_tx, fact).await;
-                // 长驻模式：重置步数，继续等待下一命令（不退出）
+                // Long-running mode: reset steps and keep waiting for the next command (no exit)
                 steps = 0;
                 state.phase = ReactorPhase::Idle;
                 continue 'main;
             }
 
-            // 3. 如果队列空或等待 I/O 且未 drain 到任何 Fact，阻塞等 Fact
-            //    P3-11：使用 timeout 定期扫描 pending I/O 超时（30s warn / 60s error）
+            // 3. If the queue is empty or awaiting I/O and nothing was drained, block waiting for a Fact
+            //    P3-11: use timeout to scan pending I/O timeouts periodically (30s warn / 60s error)
             if (state.queue.is_empty() || state.pending_io_count > 0) && !drained_any {
                 state.phase = ReactorPhase::AwaitingIo;
                 let fact = match tokio::time::timeout(self.io_timeout_check_interval, cmd_rx.recv())
@@ -576,12 +595,12 @@ impl Reactor {
                     Ok(Some(f)) => f,
                     Ok(None) => {
                         tracing::debug!("Reactor command channel closed, shutting down");
-                        // 标记反应器已结束，让 tier2 只读 API 返回 None
+                        // Mark the reactor as finished so tier2 read-only APIs return None
                         Self::update_snapshot(&snapshot, &state, steps, true);
                         return Ok(());
                     }
                     Err(_) => {
-                        // P3-11: 超时，扫描 pending I/O 超时（时钟缝：now 由注入时钟提供）
+                        // P3-11: timed out; scan pending I/O timeouts (clock seam: now comes from the injected clock)
                         Self::check_io_timeouts(
                             &mut state,
                             self.clock.now(),
@@ -596,16 +615,16 @@ impl Reactor {
                     }
                 };
                 tracing::trace!("Processing fact: {} (id={})", fact.type_name(), fact.id());
-                // 断点 1 修复：cause 在 handle_fact 中通过 push_back(instruction, fact_id) 关联
+                // Breakpoint-1 fix: the cause is associated in handle_fact via push_back(instruction, fact_id)
                 Self::emit_fact(&self.facts_log, &event_tx, fact.clone()).await;
                 Self::handle_fact(&mut state, fact, &self.facts_log, &event_tx, &mut id_gen)
                     .await?;
             }
 
-            // 4. 持续执行队列指令（pending_io==0 时）
+            // 4. Keep executing queued instructions (while pending_io == 0)
             state.phase = ReactorPhase::Executing;
             while state.pending_io_count == 0 {
-                // P3-11: max_rounds 80% 警告（首次触发时记录，仅一次）
+                // P3-11: max_rounds 80% warning (logged once, only on first trigger)
                 let warn_threshold = self.max_rounds * 4 / 5;
                 if warn_threshold > 0 && steps == warn_threshold {
                     tracing::warn!(
@@ -613,13 +632,13 @@ impl Reactor {
                         steps,
                         max_rounds = self.max_rounds,
                         threshold_pct = 80,
-                        "指令执行步数达到 max_rounds 的 80%（{} / {}），即将接近上限",
+                        "instruction execution reached 80% of max_rounds ({} / {}), approaching the limit",
                         steps,
                         self.max_rounds
                     );
                 }
 
-                // BUG-3 修复：先检查 max_rounds，再弹出指令，避免指令丢失
+                // BUG-3 fix: check max_rounds before popping an instruction so none is lost
                 if steps >= self.max_rounds {
                     state.phase = ReactorPhase::Error;
                     let id = id_gen.next_id();
@@ -633,8 +652,8 @@ impl Reactor {
                         message: err.to_string(),
                     };
                     Self::emit_fact(&self.facts_log, &event_tx, fact).await;
-                    // 长驻模式：清空队列，重置步数，发射 Stable，继续等待下一命令
-                    // 断点 1 修复：同步清空 cause 队列
+                    // Long-running mode: clear the queue, reset steps, emit Stable, keep waiting for the next command
+                    // Breakpoint-1 fix: clear the cause queue in sync
                     state.clear_queue();
                     steps = 0;
                     state.phase = ReactorPhase::Stable;
@@ -650,12 +669,12 @@ impl Reactor {
 
                 let (instruction, cause) = match state.pop_instruction() {
                     Some(pair) => pair,
-                    None => break, // 队列空
+                    None => break, // queue empty
                 };
                 steps += 1;
 
-                // 每 N 步更新快照，让 tier2 能观察到执行进度
-                // （'main 循环开头已更新一次，此处补充 Executing 热路径中的定期更新）
+                // Refresh the snapshot every N steps so tier2 can observe execution progress
+                // (updated once at the top of the 'main loop; this adds periodic updates on the Executing hot path)
                 if steps % SNAPSHOT_UPDATE_INTERVAL == 0 {
                     Self::update_snapshot(&snapshot, &state, steps, false);
                 }
@@ -681,22 +700,22 @@ impl Reactor {
                         rule_hits,
                     }) => {
                         state.payload = new_payload;
-                        // 断点 1 修复：同步重建 cause 队列
-                        // new_queue = [新 push 的指令] + [原有指令]
-                        // 新 push 的指令继承当前 cause，原有指令保留原 cause
+                        // Breakpoint-1 fix: rebuild the cause queue in sync
+                        // new_queue = [newly pushed instructions] + [original instructions]
+                        // newly pushed instructions inherit the current cause; original instructions keep theirs
                         state.update_queue_with_causes(new_queue, cause);
 
-                        // P3-11: 队列长度分级告警（80% warn / 100% Error+清空）
+                        // P3-11: tiered queue-length alerting (80% warn / 100% Error + clear)
                         let queue_len = state.queue.len();
                         let queue_warn_threshold = self.max_queue_len * 4 / 5;
                         if queue_len >= self.max_queue_len && self.max_queue_len > 0 {
-                            // 100%：硬限制，发射 Error 并清空队列
+                            // 100%: hard limit; emit Error and clear the queue
                             state.phase = ReactorPhase::Error;
                             tracing::error!(
                                 phase = %state.phase.as_str(),
                                 queue_len,
                                 max_queue_len = self.max_queue_len,
-                                "队列长度超过上限，发射 Error 并清空队列"
+                                "queue length exceeded the limit, emitting Error and clearing the queue"
                             );
                             let err_id = id_gen.next_id();
                             let err_fact = Fact::Error {
@@ -707,9 +726,9 @@ impl Reactor {
                                 ),
                             };
                             Self::emit_fact(&self.facts_log, &event_tx, err_fact).await;
-                            // 断点 1 修复：同步清空 cause 队列
+                            // Breakpoint-1 fix: clear the cause queue in sync
                             state.clear_queue();
-                            // 发射 Stable 恢复
+                            // Emit Stable to recover
                             state.phase = ReactorPhase::Stable;
                             let stable_id = id_gen.next_id();
                             let stable_fact = Fact::Stable {
@@ -721,21 +740,21 @@ impl Reactor {
                             state.phase = ReactorPhase::Idle;
                             continue 'main;
                         } else if queue_len >= queue_warn_threshold && queue_warn_threshold > 0 {
-                            // 80%：软限制警告
+                            // 80%: soft-limit warning
                             tracing::warn!(
                                 phase = %state.phase.as_str(),
                                 queue_len,
                                 max_queue_len = self.max_queue_len,
                                 threshold_pct = 80,
-                                "队列长度接近上限（80%）：{} / {}",
+                                "queue length approaching the limit (80%): {} / {}",
                                 queue_len,
                                 self.max_queue_len
                             );
                         }
 
-                        // I/O 恢复执行后清除 __io_results__，防止残留影响后续 I/O 指令。
-                        // v0.3.1：core_eval 消费结果后以 null 清除（exists 将 null 视为不存在），
-                        // 此处在恢复执行完成后整体移除 __io_results__ 容器并复位 io_recovery 标志。
+                        // After I/O resumed execution, clear __io_results__ so leftovers cannot affect later I/O instructions.
+                        // v0.3.1: core_eval clears the slot with null after consuming the result (exists treats null as absent);
+                        // here, once resumed execution completes, the whole __io_results__ container is removed and the io_recovery flag is reset.
                         if state.io_recovery {
                             state.clear_io_recovery();
                         }
@@ -743,13 +762,14 @@ impl Reactor {
                         let id = id_gen.next_id();
                         let fact = Fact::StateTransition {
                             id,
-                            cause, // 断点 1 修复：使用指令关联的 cause
+                            cause, // Breakpoint-1 fix: use the cause associated with the instruction
                             new_payload: state.payload.clone(),
                             new_queue: state.queue.iter().cloned().collect(),
                         };
                         Self::emit_fact(&self.facts_log, &event_tx, fact).await;
-                        // 收敛转换的命中归因轨迹（紧随 StateTransition，
-                        // cause 指向它；记录性事实，不推进版本）
+                        // Hit-attribution trace for the converged transition (immediately
+                        // after the StateTransition, with cause pointing at it; a
+                        // record-keeping fact, does not bump the version)
                         let trace_id = id_gen.next_id();
                         let trace_fact = Fact::TransitionTrace {
                             id: trace_id,
@@ -763,9 +783,9 @@ impl Reactor {
                         reason,
                         rule_hits,
                     }) => {
-                        // 指令被静默忽略：产生 Error 事实，使系统显式感知此问题
-                        // 注意：Error 事实不 bump log version（与 FactsLog 行为对齐），
-                        // 因此 reactor 也不 bump version，保持 reactor_version == log_version 不变式
+                        // The instruction was silently ignored: emit an Error fact so the system perceives the issue explicitly
+                        // Note: an Error fact does not bump the log version (aligned with FactsLog behavior),
+                        // so the reactor does not bump version either, preserving the reactor_version == log_version invariant
                         state.phase = ReactorPhase::Error;
                         let id = id_gen.next_id();
                         let msg = format!(
@@ -775,8 +795,9 @@ impl Reactor {
                         tracing::warn!(phase = %state.phase.as_str(), "{}", msg);
                         let fact = Fact::Error { id, message: msg };
                         Self::emit_fact(&self.facts_log, &event_tx, fact).await;
-                        // 静默失败的命中归因（照实承载，可含结构命中，
-                        // 死规则判定以 hit 聚合为准；cause 指向本 Error 事实）
+                        // Hit attribution for the silent failure (recorded as-is, may contain
+                        // structural hits; dead-rule detection aggregates on hit; cause points
+                        // at this Error fact)
                         let trace_id = id_gen.next_id();
                         let trace_fact = Fact::TransitionTrace {
                             id: trace_id,
@@ -788,25 +809,28 @@ impl Reactor {
                         continue 'main;
                     }
                     Ok(TransitionResult::Halted { rule_index, reason }) => {
-                        // enforce 强制原语命中（回归验证）：违规指令被**拒绝执行**
-                        // —— 指令已出队即丢弃（不推回队列、不产生 StateTransition、
-                        // 不 bump version：payload/queue 保持该步前原样，动作被阻止
-                        // 而非仅留痕）。系统独占发射 Violation 事实（三权分立：
-                        // 阻止权/记录权在系统，LLM/规则零通道伪造拦截记录），
-                        // Halted 信号本身即收敛信号（TCB 已中断剩余 transform 并
-                        // 丢弃半成品），无需 TransitionTrace（无 rule_hits 可归因，
-                        // 归因以 rule_index+reason 承载）。
+                        // enforce meta instruction hit (regression verification): the violating
+                        // instruction is **refused execution** — once dequeued it is discarded
+                        // (not pushed back, no StateTransition produced, no version bump:
+                        // payload/queue stay exactly as before this step; the action is blocked,
+                        // not merely logged). The system exclusively emits the Violation fact
+                        // (separation of powers: blocking and recording belong to the system;
+                        // LLM/rules have zero channel to forge an interception record). The
+                        // Halted signal is itself the convergence signal (the TCB has already
+                        // interrupted the remaining transforms and discarded partial work); no
+                        // TransitionTrace is needed (no rule_hits to attribute; attribution is
+                        // carried by rule_index+reason).
                         state.phase = ReactorPhase::Error;
                         let id = id_gen.next_id();
                         tracing::warn!(
                             phase = %state.phase.as_str(),
                             rule_index,
                             %reason,
-                            "enforce 强制拦截：违规指令被拒绝执行"
+                            "enforce guard blocked execution: violating instruction rejected"
                         );
                         let fact = Fact::Violation {
                             id,
-                            cause, // 指向触发违规的来源事实（Command/IoResponse）
+                            cause, // points at the source fact that triggered the violation (Command/IoResponse)
                             rule_index: rule_index as u64,
                             reason,
                             instruction: instruction.clone(),
@@ -820,11 +844,12 @@ impl Reactor {
                         params,
                     }) => {
                         let id = id_gen.next_id();
-                        // v0.2.0：io_type 透传不校验（校验责任移到 subscriber；
-                        // known_io_types 快速失败见能力4/阶段2）。未知 io_type 由
-                        // 下游 subscriber 决定能否处理，处理不了 → error IoResponse
-                        // → reactor 走现有 Error 路径。
-                        // v0.2.0 能力4：known_io_types 快速失败校验（可选）
+                        // v0.2.0: io_type passes through without validation (validation moved
+                        // to the subscriber; for known_io_types fail-fast see capability 4 /
+                        // Phase 2). An unknown io_type is decided by the downstream subscriber;
+                        // if it cannot handle it → error IoResponse → the reactor takes the
+                        // existing Error path.
+                        // v0.2.0 capability 4: known_io_types fail-fast validation (optional)
                         if let Some(known) = &self.known_io_types {
                             if !known.contains(&io_type_str) {
                                 state.phase = ReactorPhase::Error;
@@ -840,12 +865,14 @@ impl Reactor {
                             }
                         }
                         let io_type = IoType::new(&io_type_str);
-                        // .clone()：io_type 之后还要用于 debug! 与 Fact::IoRequest
+                        // .clone(): io_type is still needed afterwards for debug! and Fact::IoRequest
                         state.register_io_request(id, io_type.clone());
-                        // BUG 修复：缓存触发 I/O 的原指令及其 cause，IoResponse 到达后重新推送回队列，
-                        // 使 core_eval.json 中的 exists(__io_results__.{io_type}) 双路径生效：
-                        // 首次执行走 on_false（io_request），恢复执行走 on_true（set 消费结果）。
-                        // 断点 1 修复：同时缓存 cause，使恢复执行时 cause 指向正确的 Fact。
+                        // BUG fix: cache the original instruction that triggered the I/O and its
+                        // cause; when the IoResponse arrives it is pushed back onto the queue so
+                        // the exists(__io_results__.{io_type}) dual path in core_eval.json works:
+                        // first execution takes on_false (io_request), resumed execution takes
+                        // on_true (set consumes the result).
+                        // Breakpoint-1 fix: the cause is cached too, so resumed execution points at the right Fact.
                         state.save_io_instruction(id, instruction.clone(), cause);
                         state.phase = ReactorPhase::AwaitingIo;
                         tracing::debug!(
@@ -856,18 +883,19 @@ impl Reactor {
                         );
                         let fact = Fact::IoRequest {
                             id,
-                            cause, // 断点 1 修复：使用指令关联的 cause
+                            cause, // Breakpoint-1 fix: use the cause associated with the instruction
                             io_type,
                             params,
                         };
                         Self::emit_fact(&self.facts_log, &event_tx, fact).await;
-                        break; // 退出 while，等待 IoResponse
+                        break; // leave the while loop and wait for the IoResponse
                     }
                     Err(err) => {
                         state.phase = ReactorPhase::Error;
                         let id = id_gen.next_id();
-                        // 断点 2 修复：在 Error 消息中包含指令 Debug 信息，
-                        // 使审计链可追溯丢失的指令（指令不推回队列，避免无限循环）
+                        // Breakpoint-2 fix: include the instruction's Debug representation in the
+                        // Error message so the audit chain can trace the lost instruction (the
+                        // instruction is not pushed back, avoiding an infinite loop)
                         let msg = format!(
                             "TCB error at step {}: {} (instruction: {:?})",
                             steps, err, instruction
@@ -875,8 +903,8 @@ impl Reactor {
                         tracing::error!(phase = %state.phase.as_str(), "{}", msg);
                         let fact = Fact::Error { id, message: msg };
                         Self::emit_fact(&self.facts_log, &event_tx, fact).await;
-                        // 长驻模式：不退出，继续执行队列中剩余指令。
-                        // 若队列已空，外层循环的稳定检测会自动发射 Stable。
+                        // Long-running mode: do not exit; keep executing the remaining queued instructions.
+                        // If the queue is already empty, the stability check in the outer loop emits Stable automatically.
                         state.phase = ReactorPhase::Idle;
                         continue 'main;
                     }
@@ -885,17 +913,18 @@ impl Reactor {
         }
     }
 
-    /// 更新共享状态快照（供 ReactorHandle 只读查询）
+    /// Update the shared state snapshot (for ReactorHandle read-only queries)
     ///
-    /// 反应器主循环每次迭代开头调用，将 `ReactorState` 的关键字段
-    /// 复制到 `ReactorStateSnapshot`，使 tier2 无需访问反应器内部状态即可查询。
+    /// Called at the start of every iteration of the reactor main loop; copies the
+    /// key fields of `ReactorState` into `ReactorStateSnapshot` so tier2 can query
+    /// without touching reactor internals.
     ///
-    /// # 规范合规
+    /// # Spec compliance
     ///
-    /// - ✅ 只读访问（snapshot 由 Arc<Mutex> 共享，仅此处写入）
-    /// - ✅ 字段都是机制（控制层状态），非业务语义
-    /// - ✅ 锁持有时间极短（仅字段拷贝），不跨 await
-    /// - ✅ 锁中毒时不中断反应器（仅记录 warn）
+    /// - ✅ Read-only access (the snapshot is shared via Arc<Mutex>; only this site writes)
+    /// - ✅ All fields are mechanism (control-layer state), not business semantics
+    /// - ✅ Lock held for a very short time (field copies only), never across await
+    /// - ✅ Mutex poisoning does not interrupt the reactor (a warn is logged only)
     fn update_snapshot(
         snapshot: &Arc<Mutex<ReactorStateSnapshot>>,
         state: &ReactorState,
@@ -907,7 +936,7 @@ impl Reactor {
             snap.version = state.version;
             snap.structural_invariant_violations = state.structural_invariant_violations;
             snap.pending_io_count = state.pending_io_count;
-            // pending I/O 清单（干预可视化面）：有 pending 才重建，空表零分配
+            // pending I/O list (intervention visibility surface): rebuilt only when pending exists; empty list allocates nothing
             snap.pending_io.clear();
             if state.pending_io_count > 0 {
                 snap.pending_io
@@ -954,14 +983,14 @@ impl Reactor {
         }
     }
 
-    /// 不变式自检（结构性 + 语义性）
+    /// Invariant self-check (structural + semantic)
     ///
-    /// 在主循环每次迭代开头调用：
-    /// 检查 5 条结构性不变式（[crate::invariants]），违规用 `tracing::error!` 记录
+    /// Called at the start of every iteration of the main loop:
+    /// checks the 5 structural invariants ([crate::invariants]); violations are recorded via `tracing::error!`
     ///
-    /// 违规累计计数到 `state.structural_invariant_violations`，不中断反应器（符合 F11）。
+    /// Violations accumulate into `state.structural_invariant_violations` without interrupting the reactor (per F11).
     fn run_invariant_check(state: &mut ReactorState, steps: usize) -> Vec<InvariantViolation> {
-        // 结构性不变式（硬编码，始终启用）
+        // Structural invariants (hardcoded, always enabled)
         let structural = crate::invariants::check_invariants(state, steps);
         let structural_count = structural.len() as u64;
         state.structural_invariant_violations = state
@@ -972,20 +1001,20 @@ impl Reactor {
                 phase = %state.phase.as_str(),
                 violation = v.as_str(),
                 total_violations = state.structural_invariant_violations,
-                "不变式违规: {}",
+                "invariant violation: {}",
                 v
             );
         }
         structural
     }
 
-    /// P3-11 + 阶段3-1.4: 扫描 pending I/O 超时（分级告警，按 io_type 查表）
+    /// P3-11 + Phase 3-1.4: scan pending I/O timeouts (tiered alerting; per io_type lookup)
     ///
-    /// - `warn_ids`：超过 warn 阈值但未超过 error 阈值，记录 warn 日志
-    /// - `error_ids`：超过 error 阈值，发射 `Fact::Error`，强制移除请求，恢复反应器
+    /// - `warn_ids`: past the warn threshold but not the error threshold; a warn log is recorded
+    /// - `error_ids`: past the error threshold; a `Fact::Error` is emitted, the request is force-removed, and the reactor recovers
     ///
-    /// 此方法在主循环的 `tokio::time::timeout` 超时分支中调用，
-    /// 确保长时间未响应的 I/O 不会永久阻塞反应器。
+    /// Called from the timeout branch of the main loop's `tokio::time::timeout`,
+    /// ensuring I/O that goes unanswered for a long time cannot block the reactor forever.
     async fn check_io_timeouts(
         state: &mut ReactorState,
         now: Instant,
@@ -1016,7 +1045,7 @@ impl Reactor {
             tracing::warn!(
                 io_request_id = %id,
                 warn_timeout_secs = warn_secs,
-                "I/O 请求超时警告：pending I/O 超过 {}s 未响应",
+                "I/O request timeout warning: pending I/O unanswered for over {}s",
                 warn_secs
             );
         }
@@ -1025,7 +1054,7 @@ impl Reactor {
             tracing::error!(
                 io_request_id = %id,
                 error_timeout_secs = error_secs,
-                "I/O 请求超时错误：pending I/O 超过 {}s 未响应，发射 Error 恢复反应器",
+                "I/O request timeout error: pending I/O unanswered for over {}s, emitting Error to recover the reactor",
                 error_secs
             );
             let err_fact_id = id_gen.next_id();
@@ -1038,11 +1067,12 @@ impl Reactor {
         }
     }
 
-    /// 处理 Fact（仅更新状态，不执行 TCB）
+    /// Handle a Fact (updates state only; does not execute the TCB)
     ///
-    /// `facts_log`/`event_tx`/`id_gen`：用于异常路径发射 `Fact::Error`
-    /// （ / A1：unknown IoResponse 不再静默忽略）。
-    // 7 种 Fact 变体 match, 拆函数需暴露内部状态。详见 GATE_REFERENCE.md §六(豁免索引)
+    /// `facts_log`/`event_tx`/`id_gen`: used to emit `Fact::Error` on exceptional
+    /// paths ( / A1: unknown IoResponse is no longer silently ignored).
+    // match over 7 Fact variants; splitting would require exposing internal
+    // state. See GATE_REFERENCE.md §6 (exemption index)
     #[allow(clippy::cognitive_complexity)]
     async fn handle_fact(
         state: &mut ReactorState,
@@ -1054,7 +1084,7 @@ impl Reactor {
         match fact {
             Fact::Command { id, instruction } => {
                 tracing::debug!("Received Command");
-                // 断点 1 修复：以 Command 的 FactId 作为 cause 关联到指令
+                // Breakpoint-1 fix: use the Command's FactId as the cause associated with the instruction
                 state.push_back(instruction, id);
             }
 
@@ -1074,15 +1104,18 @@ impl Reactor {
                 if let Some(err_msg) = &error {
                     tracing::warn!("IoResponse carries error: {}", err_msg);
                 }
-                // v0.3.1：先取 io_type（complete_io_request 会移除 io_type 记录），
-                // 用于将结果注入 `__io_results__.{io_type}`（按类型隔离）。
+                // v0.3.1: fetch the io_type first (complete_io_request removes the io_type
+                // record); it is used to inject the result into `__io_results__.{io_type}`
+                // (per-type isolation).
                 let io_type = state.get_io_type(&request_id).cloned();
                 if !state.complete_io_request(request_id) {
-                    //（A1）：unknown IoResponse 不再静默忽略。
-                    // IoResponse 事实本身已入链（command 通道先 emit 再 handle），但
-                    // 状态层拒绝消费——链上需有显式异常标记才能自解释（审计重放可
-                    // 逐条对账"响应事实 + 异常标记"）。与上方超时路径的 Error-fact
-                    // 机制同构；Error 为可恢复事实，不影响会话可用性。
+                    // (A1): unknown IoResponse is no longer silently ignored.
+                    // The IoResponse fact itself is already on the chain (the command channel
+                    // emits first, then handles), but the state layer refuses to consume it —
+                    // the chain needs an explicit anomaly marker to be self-explanatory (audit
+                    // replay can reconcile "response fact + anomaly marker" entry by entry).
+                    // Isomorphic to the Error-fact mechanism of the timeout path above; an
+                    // Error is a recoverable fact and does not affect session availability.
                     let err_fact_id = id_gen.next_id();
                     let err_fact = Fact::Error {
                         id: err_fact_id,
@@ -1095,11 +1128,14 @@ impl Reactor {
                     tracing::warn!("Unknown IoResponse: {}, recorded as Error fact", request_id);
                     return Ok(());
                 }
-                // v0.3.1 修复：null 结果与错误响应没有可消费的结果。
-                // `exists` 域将 null 视为"已清除/不存在"，若把 null 注入 __io_results__ 后
-                // 再重新推送原指令，恢复执行时 exists==false → 指令无限重发 io_request（死循环）。
-                // 处理：丢弃缓存的原指令，不再重新推送；错误信息由 warn 日志与
-                // FactsLog 中的 IoResponse（error 字段）保留。
+                // v0.3.1 fix: a null result or an error response has no consumable result.
+                // The `exists` domain treats null as "cleared/absent"; if null were injected
+                // into __io_results__ and the original instruction re-pushed, the resumed
+                // execution would see exists == false → the instruction would re-emit
+                // io_request forever (infinite loop).
+                // Handling: drop the cached original instruction instead of re-pushing; the
+                // error information is preserved by the warn log and the IoResponse in the
+                // FactsLog (error field).
                 if result.is_null() || error.is_some() {
                     state.take_io_instruction(request_id);
                     state.bump_version();
@@ -1108,29 +1144,31 @@ impl Reactor {
                 if let Some(io_type) = io_type {
                     Self::inject_io_result(state, &io_type, result)?;
                 } else {
-                    // 理论不可达：register_io_request 总是记录 io_type。
-                    // 此处静默跳过注入，避免中断反应器主流程。
+                    // Theoretically unreachable: register_io_request always records the io_type.
+                    // Skip the injection silently here to avoid interrupting the reactor main flow.
                     tracing::warn!(
                         "IoResponse for {} has no recorded io_type, result not injected",
                         request_id
                     );
                 }
-                // BUG 修复：取出缓存的原指令，重新推送回队列前端。
-                // 反应器主循环将再次调用 execute_transition 执行同一指令，
-                // 此时 payload.__io_results__.{io_type} 已注入，core_eval.json 中
-                // exists(__io_results__.{io_type}) 为真 → 走 on_true 分支，set 消费结果到业务字段。
+                // BUG fix: take the cached original instruction and push it back to the front
+                // of the queue. The reactor main loop will call execute_transition again on
+                // the same instruction; by then payload.__io_results__.{io_type} has been
+                // injected, so exists(__io_results__.{io_type}) in core_eval.json is true →
+                // the on_true branch runs, and set consumes the result into the business field.
                 if let Some((orig_instruction, orig_cause)) = state.take_io_instruction(request_id)
                 {
-                    // 断点 1 修复：用缓存的 cause 重新关联指令
+                    // Breakpoint-1 fix: re-associate the instruction with the cached cause
                     state.push_front(orig_instruction, orig_cause);
-                    // 标记 I/O 恢复执行：下一次 execute_transition 返回 State 后
-                    // 需清除 __io_results__，防止残留影响后续不同的 I/O 指令。
+                    // Mark I/O resumed execution: after the next execute_transition returns
+                    // State, __io_results__ must be cleared so leftovers cannot affect later,
+                    // different I/O instructions.
                     state.io_recovery = true;
                 }
                 state.bump_version();
             }
 
-            // 反应器自身产生的 Fact 不应通过 command 通道回来，忽略
+            // Facts produced by the reactor itself should not come back through the command channel; ignore them
             Fact::IoRequest { .. }
             | Fact::StateTransition { .. }
             | Fact::Stable { .. }
@@ -1143,11 +1181,11 @@ impl Reactor {
         Ok(())
     }
 
-    /// 更新 payload 字段
+    /// Update a payload field
     ///
-    /// - 支持已存在的嵌套路径（通过 resolve_path_mut）
-    /// - 支持顶层字段创建（path 不含 `.` 或 `[`）
-    /// - 支持递归创建嵌套路径（中间节点不存在时自动创建空对象）
+    /// - Supports existing nested paths (via resolve_path_mut)
+    /// - Supports top-level field creation (path without `.` or `[`)
+    /// - Supports recursively creating nested paths (missing intermediate nodes become empty objects automatically)
     fn update_payload(
         state: &mut ReactorState,
         path: &str,
@@ -1208,10 +1246,10 @@ impl Reactor {
         Ok(())
     }
 
-    /// 注入 I/O 结果到 payload.__io_results__.{io_type}（v0.3.1 按类型隔离）
+    /// Inject the I/O result into payload.__io_results__.{io_type} (v0.3.1 per-type isolation)
     ///
-    /// 使用 `update_payload` 处理嵌套路径：`__io_results__` 不存在时自动创建空对象。
-    /// 不递增 version（version 递增由调用方在 IoResponse 处理时统一执行）。
+    /// Uses `update_payload` for the nested path: an `__io_results__` object is created automatically when missing.
+    /// Does not increment version (the caller bumps version once while handling the IoResponse).
     fn inject_io_result(
         state: &mut ReactorState,
         io_type: &IoType,
@@ -1222,98 +1260,103 @@ impl Reactor {
     }
 }
 
-/// 反应器任务句柄
+/// Reactor task handle
 ///
-/// # 生命周期（长驻模式）
+/// # Lifecycle (long-running mode)
 ///
-/// 反应器在 Stable 后不退出，持续等待下一命令。终止方式：
-/// - **优雅退出**：丢弃所有 `command_tx` 发送端 → `join()` 返回 `Ok(())`
-/// - **强制中止**：调用 `abort()` → `join()` 返回 `Err(TaskJoinError)`
+/// The reactor does not exit after Stable; it keeps waiting for the next command. Termination:
+/// - **Graceful exit**: drop all `command_tx` senders → `join()` returns `Ok(())`
+/// - **Forced abort**: call `abort()` → `join()` returns `Err(TaskJoinError)`
 ///
-/// # 阶段3-1.3：只读状态机 API
+/// # Phase 3-1.3: read-only state-machine API
 ///
-/// `ReactorHandle` 内部持有 `Arc<Mutex<ReactorStateSnapshot>>`，
-/// 反应器主循环每次迭代时更新快照。tier2 可通过以下 5 个只读 API
-/// 查询反应器的控制层状态，无需访问反应器内部：
+/// `ReactorHandle` internally holds `Arc<Mutex<ReactorStateSnapshot>>`,
+/// refreshed by the reactor main loop on every iteration. tier2 can query the
+/// reactor's control-layer state through the following 5 read-only APIs without
+/// touching reactor internals:
 ///
-/// - [`current_phase`](Self::current_phase)：当前执行阶段
-/// - [`causal_depth`](Self::causal_depth)：因果链深度（= version 号）
-/// - [`structural_invariant_violations`](Self::structural_invariant_violations)：不变式违规累计计数
-/// - [`pending_io_count`](Self::pending_io_count)：待响应的 I/O 请求数量
-/// - [`current_step`](Self::current_step)：当前已执行指令步数
+/// - [`current_phase`](Self::current_phase): current execution phase
+/// - [`causal_depth`](Self::causal_depth): causal-chain depth (= version number)
+/// - [`structural_invariant_violations`](Self::structural_invariant_violations): cumulative invariant-violation count
+/// - [`pending_io_count`](Self::pending_io_count): number of I/O requests awaiting a response
+/// - [`current_step`](Self::current_step): instruction steps executed so far
 ///
-/// 反应器结束后，前 4 个 "当前状态" API 返回 `None`（`structural_invariant_violations`
-/// 是累计计数，仍可读）。
+/// After the reactor finishes, the first 4 "current state" APIs return `None` (`structural_invariant_violations`
+/// is a cumulative count and stays readable).
 ///
-/// # 阶段6：可观测性与中断（第四组）
+/// # Phase 6: observability and interruption (fourth group)
 ///
-/// `ReactorHandle` 持有共享快照与中断标志，支持：
+/// `ReactorHandle` holds the shared snapshot and the interrupt flag, supporting:
 ///
-/// **中断 API**：
-/// - [`interrupt`](Self::interrupt)：请求反应器在当前指令后退出（设置标志，主循环检测后退出）
-/// - [`abort`](Self::abort)：强制中止反应器任务（tokio::task::abort）
+/// **Interrupt APIs**:
+/// - [`interrupt`](Self::interrupt): ask the reactor to exit after the current instruction (sets the flag; the main loop exits upon detecting it)
+/// - [`abort`](Self::abort): forcibly abort the reactor task (tokio::task::abort)
 ///
-/// **只读查询 API**（基于 snapshot）：
-/// - [`current_phase`](Self::current_phase)：当前执行阶段
-/// - [`causal_depth`](Self::causal_depth)：因果链深度
-/// - [`is_finished`](Self::is_finished)：是否已结束
+/// **Read-only query APIs** (snapshot-based):
+/// - [`current_phase`](Self::current_phase): current execution phase
+/// - [`causal_depth`](Self::causal_depth): causal-chain depth
+/// - [`is_finished`](Self::is_finished): whether it has finished
 ///
-/// **调试控制**（由 [evorule-server 仓](https://github.com/evorule/evorule-server) `core/debug_control` 模块实现）：
+/// **Debug control** (implemented by the `core/debug_control` module of the [evorule-server repo](https://github.com/evorule/evorule-server)):
 /// - pause/resume/step/inspect + interrupt/watch
-/// - 基于 `interrupt()` + FactsLog rewind 实现伪单步
+/// - pseudo single-stepping built on `interrupt()` + FactsLog rewind
 pub struct ReactorHandle {
     handle: JoinHandle<Result<(), ReactorError>>,
-    /// 共享状态快照（reactor 主循环更新，只读 API 读取）
+    /// Shared state snapshot (updated by the reactor main loop, read by read-only APIs)
     snapshot: Arc<Mutex<ReactorStateSnapshot>>,
-    /// 执行中断标志（共享在 reactor 主循环与 handle 之间）
+    /// Execution interrupt flag (shared between the reactor main loop and the handle)
     interrupt_flag: Arc<AtomicBool>,
-    /// 取消全部 pending I/O 标志（外部干预原语，ReactorHandle 置位）
+    /// Cancel-all pending I/O flag (external intervention primitive, set by ReactorHandle)
     cancel_all_flag: Arc<AtomicBool>,
-    /// 最近一轮不变式扫描结果（每迭代头刷新，ReactorHandle 只读）
+    /// Latest invariant-scan result (refreshed at each iteration head; ReactorHandle reads it read-only)
     latest_invariants: Arc<Mutex<InvariantScanReport>>,
 }
 
 impl ReactorHandle {
-    /// 等待反应器结束
+    /// Wait for the reactor to finish
     ///
-    /// - 优雅退出（command_tx 全部丢弃）返回 `Ok(())`
-    /// - 强制中止（abort）返回 `Err(TaskJoinError)`
+    /// - Graceful exit (all command_tx dropped) returns `Ok(())`
+    /// - Forced abort returns `Err(TaskJoinError)`
     pub async fn join(self) -> Result<(), ReactorError> {
         self.handle.await.map_err(|e| ReactorError::TaskJoinError {
             message: e.to_string(),
         })?
     }
 
-    /// 中止反应器任务（强制）
+    /// Abort the reactor task (forced)
     pub fn abort(&self) {
         self.handle.abort();
     }
 
-    /// 取消全部 pending I/O（外部干预原语）
+    /// Cancel all pending I/O (external intervention primitive)
     ///
-    /// 置位共享标志，反应器主循环下一迭代头消费：逐 pending 请求发射
-    /// `Fact::Error`（"cancelled by external request"）并强制移除，恢复
-    /// 反应器。镜像超时错误路径，不发 Stable。
+    /// Sets the shared flag; the reactor main loop consumes it at the next
+    /// iteration head: for each pending request it emits `Fact::Error`
+    /// ("cancelled by external request") and force-removes it, recovering the
+    /// reactor. Mirrors the timeout error path; no Stable emitted.
     pub fn cancel_all_pending(&self) {
         self.cancel_all_flag
             .store(true, std::sync::atomic::Ordering::Release);
     }
 
-    /// 最近一轮不变式扫描报告（只读）
+    /// Report of the latest invariant scan (read-only)
     ///
-    /// 反应器每轮迭代头运行内置自检并把违规明细发布到本报告——返回值即
-    /// 引擎自身最新所见（新鲜度 ≤ 一个迭代间隔）。`None` = 快照锁中毒。
-    /// 违规是否落账（Fact::Violation）由调用方决定，本层不重复落账。
+    /// The reactor runs its built-in self-check at each iteration head and
+    /// publishes violation details into this report — the return value is exactly
+    /// what the engine itself most recently saw (freshness ≤ one iteration
+    /// interval). `None` = snapshot mutex poisoned. Whether a violation is
+    /// recorded as an audit entry (Fact::Violation) is the caller's decision;
+    /// this layer does not double-record.
     pub fn latest_invariant_scan(&self) -> Option<InvariantScanReport> {
         self.latest_invariants.lock().ok().map(|r| r.clone())
     }
 
-    /// 检查反应器是否已结束
+    /// Check whether the reactor has finished
     ///
-    /// 综合 `tokio::task` 的结束状态与快照的 `finished` 标志：
-    /// - 任务句柄已结束 → `true`
-    /// - 快照标记 `finished=true`（reactor 主循环在退出前设置）→ `true`
-    /// - 否则 → `false`
+    /// Combines the `tokio::task` finished state with the snapshot's `finished` flag:
+    /// - task handle finished → `true`
+    /// - snapshot flagged `finished=true` (set by the reactor main loop before exiting) → `true`
+    /// - otherwise → `false`
     pub fn is_finished(&self) -> bool {
         if self.handle.is_finished() {
             return true;
@@ -1321,9 +1364,9 @@ impl ReactorHandle {
         self.snapshot.lock().map(|s| s.finished).unwrap_or(false)
     }
 
-    /// 当前执行阶段（阶段3-1.3）
+    /// Current execution phase (Phase 3-1.3)
     ///
-    /// 返回 `None` 表示反应器已结束或快照锁中毒。
+    /// Returns `None` when the reactor has finished or the snapshot mutex is poisoned.
     pub fn current_phase(&self) -> Option<ReactorPhase> {
         let snap = self.snapshot.lock().ok()?;
         if snap.finished {
@@ -1332,10 +1375,10 @@ impl ReactorHandle {
         Some(snap.phase)
     }
 
-    /// 因果链深度（= version 号，阶段3-1.3）
+    /// Causal-chain depth (= version number, Phase 3-1.3)
     ///
-    /// 返回 `None` 表示反应器已结束或快照锁中毒。
-    /// version 是 `u64`，转 `usize` 失败时也返回 `None`。
+    /// Returns `None` when the reactor has finished or the snapshot mutex is poisoned.
+    /// version is `u64`; also returns `None` if the conversion to `usize` fails.
     pub fn causal_depth(&self) -> Option<usize> {
         let snap = self.snapshot.lock().ok()?;
         if snap.finished {
@@ -1344,10 +1387,10 @@ impl ReactorHandle {
         usize::try_from(snap.version).ok()
     }
 
-    /// 不变式违规累计计数（阶段3-1.3）
+    /// Cumulative invariant-violation count (Phase 3-1.3)
     ///
-    /// 返回 `u64`：即使反应器已结束，累计计数仍可读（用于事后审计）。
-    /// 锁中毒时返回 0。
+    /// Returns `u64`: even after the reactor finishes, the cumulative count stays readable (for post-hoc audit).
+    /// Returns 0 when the mutex is poisoned.
     pub fn structural_invariant_violations(&self) -> u64 {
         self.snapshot
             .lock()
@@ -1355,9 +1398,9 @@ impl ReactorHandle {
             .unwrap_or(0)
     }
 
-    /// 待响应的 I/O 请求数量（阶段3-1.3）
+    /// Number of I/O requests awaiting a response (Phase 3-1.3)
     ///
-    /// 返回 `None` 表示反应器已结束或快照锁中毒。
+    /// Returns `None` when the reactor has finished or the snapshot mutex is poisoned.
     pub fn pending_io_count(&self) -> Option<usize> {
         let snap = self.snapshot.lock().ok()?;
         if snap.finished {
@@ -1366,9 +1409,9 @@ impl ReactorHandle {
         Some(snap.pending_io_count)
     }
 
-    /// 当前已执行指令步数（阶段3-1.3）
+    /// Number of instruction steps executed so far (Phase 3-1.3)
     ///
-    /// 返回 `None` 表示反应器已结束或快照锁中毒。
+    /// Returns `None` when the reactor has finished or the snapshot mutex is poisoned.
     pub fn current_step(&self) -> Option<usize> {
         let snap = self.snapshot.lock().ok()?;
         if snap.finished {
@@ -1377,25 +1420,25 @@ impl ReactorHandle {
         Some(snap.steps)
     }
 
-    /// 读取完整快照（阶段3-1.3 + 1.5）
+    /// Read the full snapshot (Phase 3-1.3 + 1.5)
     ///
-    /// 返回 `ReactorStateSnapshot` 的克隆。tier2 可基于此构建 Prometheus 指标。
-    /// 反应器结束后仍可读取最后一次快照（含 `finished=true`）。
+    /// Returns a clone of `ReactorStateSnapshot`. tier2 can build Prometheus metrics from it.
+    /// After the reactor finishes, the last snapshot (with `finished=true`) remains readable.
     pub fn snapshot(&self) -> Option<ReactorStateSnapshot> {
         self.snapshot.lock().ok().map(|s| s.clone())
     }
 
-    /// 请求中断反应器执行（控制 API）
+    /// Request interruption of reactor execution (control API)
     ///
-    /// 设置中断标志，reactor 在下次主循环检查点响应：
-    /// - 发射 Error 事件（消息："Execution interrupted by external request"）
-    /// - 发射 Stable 事件（包含当前 payload 快照）
-    /// - 重置步数计数器
-    /// - 返回到 Idle 状态等待下一命令
+    /// Sets the interrupt flag; the reactor responds at the next main-loop checkpoint:
+    /// - emits an Error event (message: "Execution interrupted by external request")
+    /// - emits a Stable event (with the current payload snapshot)
+    /// - resets the step counter
+    /// - returns to the Idle state and waits for the next command
     ///
-    /// 与 `abort()` 的区别：
-    /// - `interrupt()`：优雅中断，保留当前状态，可继续执行
-    /// - `abort()`：强制终止任务，状态不可恢复
+    /// Difference from `abort()`:
+    /// - `interrupt()`: graceful interruption; current state is kept and execution can continue
+    /// - `abort()`: forcibly terminates the task; state cannot be recovered
     pub fn interrupt(&self) {
         self.interrupt_flag
             .store(true, std::sync::atomic::Ordering::Release);
@@ -1459,7 +1502,7 @@ mod tests {
         );
     }
 
-    // ===== P3-11 资源管理 Builder 配置测试 =====
+    // ===== P3-11 resource-management Builder configuration tests =====
 
     #[test]
     fn test_builder_defaults() {
@@ -1477,11 +1520,12 @@ mod tests {
         assert_eq!(builder.max_queue_len, 500);
     }
 
-    /// cancel-all 干预原语全链：pending I/O 挂起 → 快照清单可见 → 取消 →
-    /// pending 清零 + 逐请求 Error 事实入链（镜像超时路径语义）。
+    /// cancel-all intervention primitive, full chain: pending I/O hangs → visible in
+    /// the snapshot list → cancel → pending cleared to zero + per-request Error facts
+    /// on the chain (mirroring the timeout-path semantics).
     #[tokio::test]
     async fn cancel_all_pending_clears_requests_and_emits_errors() {
-        // 宪法：任何指令 → 发射 io_request（等外部响应，永久挂起）
+        // Constitution: any instruction → emits io_request (waits for an external response, hangs forever)
         let instruction = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("io_request")),
             (
@@ -1504,7 +1548,7 @@ mod tests {
             })
             .expect("command channel open");
 
-        // 等待 reactor 侧 pending 登记（快照清单接线验证）
+        // Wait for the reactor side to register the pending request (wiring check of the snapshot list)
         let mut saw_pending = false;
         for _ in 0..200 {
             if let Some(snap) = handle.snapshot() {
@@ -1515,9 +1559,9 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        assert!(saw_pending, "pending I/O 必须进快照清单（干预可视化面）");
+        assert!(saw_pending, "pending I/O must appear in the snapshot list (intervention visibility surface)");
 
-        // 取消 → pending 清零
+        // Cancel → pending cleared to zero
         handle.cancel_all_pending();
         let mut cleared = false;
         for _ in 0..200 {
@@ -1531,9 +1575,9 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        assert!(cleared, "cancel-all 后 pending 必须清零");
+        assert!(cleared, "pending must be cleared to zero after cancel-all");
 
-        // 逐请求 Error 事实入链（取消清单可审计）
+        // Per-request Error facts on the chain (the cancellation list is auditable)
         let cancelled: Vec<String> = facts_log
             .history()
             .into_iter()
@@ -1546,11 +1590,11 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(cancelled.len(), 1, "恰好一条取消 Error 事实: {cancelled:?}");
+        assert_eq!(cancelled.len(), 1, "exactly one cancellation Error fact: {cancelled:?}");
 
-        // 不变式扫描报告可用且干净
-        let report = handle.latest_invariant_scan().expect("扫描报告可用");
-        assert!(report.violations.is_empty(), "正常取消不产生违规");
+        // The invariant scan report is available and clean
+        let report = handle.latest_invariant_scan().expect("scan report available");
+        assert!(report.violations.is_empty(), "a normal cancellation produces no violations");
     }
 
     #[test]
@@ -1564,7 +1608,7 @@ mod tests {
 
     #[test]
     fn test_builder_all_p3_11_options() {
-        // P3-11: 综合配置
+        // P3-11: combined configuration
         let builder = ReactorBuilder::new(vec![])
             .max_rounds(100)
             .max_queue_len(200)
@@ -1579,7 +1623,7 @@ mod tests {
 
     #[test]
     fn test_max_rounds_80_percent_threshold() {
-        // P3-11: 验证 80% 阈值计算
+        // P3-11: verify the 80% threshold arithmetic
         // max_rounds=100 → warn_threshold=80
         assert_eq!(100usize * 4 / 5, 80);
         // max_rounds=1000 → warn_threshold=800
@@ -1592,7 +1636,7 @@ mod tests {
 
     #[test]
     fn test_queue_80_percent_threshold() {
-        // P3-11: 验证队列 80% 阈值计算
+        // P3-11: verify the queue 80% threshold arithmetic
         // max_queue_len=1000 → warn_threshold=800
         assert_eq!(1000usize * 4 / 5, 800);
         // max_queue_len=100 → warn_threshold=80
@@ -1601,103 +1645,103 @@ mod tests {
         assert_eq!(10usize * 4 / 5, 8);
     }
 
-    // ===== ReactorHandle 只读 API 测试 =====
+    // ===== ReactorHandle read-only API tests =====
 
     #[tokio::test]
     async fn test_handle_snapshot_initial_state() {
-        // 反应器刚启动时，快照应反映初始状态
+        // Right after startup, the snapshot should reflect the initial state
         let reactor = Reactor::builder(vec![]).build();
         let (cmd_tx, _event_rx, _event_tx, handle, _facts_log) = reactor.spawn();
 
-        // 等待反应器主循环更新快照（第一次 'main 迭代开头调用 update_snapshot）
+        // Wait for the reactor main loop to refresh the snapshot (update_snapshot is called at the start of the first 'main iteration)
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // 因果深度初始为 0
+        // Causal depth starts at 0
         let depth = handle.causal_depth();
-        assert!(depth.is_some(), "causal_depth 应返回 Some");
+        assert!(depth.is_some(), "causal_depth should return Some");
         assert_eq!(depth.unwrap(), 0);
 
-        // 不变式违规为 0
+        // Invariant violations are 0
         assert_eq!(handle.structural_invariant_violations(), 0);
 
-        // pending_io_count 为 0
+        // pending_io_count is 0
         let pending = handle.pending_io_count();
-        assert!(pending.is_some(), "pending_io_count 应返回 Some");
+        assert!(pending.is_some(), "pending_io_count should return Some");
         assert_eq!(pending.unwrap(), 0);
 
-        // current_step 为 0
+        // current_step is 0
         let step = handle.current_step();
-        assert!(step.is_some(), "current_step 应返回 Some");
+        assert!(step.is_some(), "current_step should return Some");
         assert_eq!(step.unwrap(), 0);
 
-        // current_phase 应是 Idle 或 Draining（反应器刚启动可能处于任一阶段）
+        // current_phase should be Idle or Draining (either is possible right after startup)
         let phase = handle.current_phase();
-        assert!(phase.is_some(), "current_phase 应返回 Some");
+        assert!(phase.is_some(), "current_phase should return Some");
         let p = phase.unwrap();
         assert!(
             p == ReactorPhase::Idle || p == ReactorPhase::Draining,
-            "初始阶段应为 Idle 或 Draining，实际: {:?}",
+            "initial phase should be Idle or Draining, got: {:?}",
             p
         );
 
-        // snapshot() 应返回完整快照
+        // snapshot() should return the full snapshot
         let snap = handle.snapshot();
-        assert!(snap.is_some(), "snapshot 应返回 Some");
+        assert!(snap.is_some(), "snapshot should return Some");
         assert_eq!(snap.unwrap().version, 0);
 
-        // 优雅退出
+        // Graceful exit
         drop(cmd_tx);
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
     #[tokio::test]
     async fn test_handle_snapshot_returns_none_after_shutdown() {
-        // 反应器结束后，"当前状态" API 返回 None，但 structural_invariant_violations 仍可读
+        // After the reactor finishes, the "current state" APIs return None, but structural_invariant_violations stays readable
         let reactor = Reactor::builder(vec![]).build();
         let (cmd_tx, _event_rx, _event_tx, handle, _facts_log) = reactor.spawn();
 
-        // 等待反应器启动
+        // Wait for the reactor to start
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // 优雅退出：丢弃所有 command_tx
+        // Graceful exit: drop all command_tx
         drop(cmd_tx);
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        // 反应器应已结束
-        assert!(handle.is_finished(), "反应器应在 command_tx 丢弃后结束");
+        // The reactor should have finished
+        assert!(handle.is_finished(), "the reactor should finish after command_tx is dropped");
 
-        // "当前状态" API 应返回 None（finished=true）
+        // "Current state" APIs should return None (finished=true)
         assert_eq!(
             handle.current_phase(),
             None,
-            "结束后 current_phase 应返回 None"
+            "current_phase should return None after finish"
         );
         assert_eq!(
             handle.causal_depth(),
             None,
-            "结束后 causal_depth 应返回 None"
+            "causal_depth should return None after finish"
         );
         assert_eq!(
             handle.pending_io_count(),
             None,
-            "结束后 pending_io_count 应返回 None"
+            "pending_io_count should return None after finish"
         );
         assert_eq!(
             handle.current_step(),
             None,
-            "结束后 current_step 应返回 None"
+            "current_step should return None after finish"
         );
 
-        // structural_invariant_violations 是累计计数，仍可读
+        // structural_invariant_violations is a cumulative count and stays readable
         assert_eq!(
             handle.structural_invariant_violations(),
             0,
-            "结束后 structural_invariant_violations 仍可读（累计计数）"
+            "structural_invariant_violations stays readable after finish (cumulative count)"
         );
 
-        // snapshot() 仍可读最后一次快照（含 finished=true）
+        // snapshot() still returns the last snapshot (with finished=true)
         let snap = handle.snapshot();
-        assert!(snap.is_some(), "结束后 snapshot 仍可读");
-        assert!(snap.unwrap().finished, "快照应标记 finished=true");
+        assert!(snap.is_some(), "snapshot stays readable after finish");
+        assert!(snap.unwrap().finished, "the snapshot should be flagged finished=true");
     }
 }

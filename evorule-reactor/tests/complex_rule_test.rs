@@ -1,23 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 复杂 JSON 规则端到端测试
+//! Complex JSON rule end-to-end tests
 //!
-//! 测试流程：
-//! 1. 加载 JSON 规则文件（通过 serde_json 解析）
-//! 2. 通过 reactor 执行指令
+//! Test flow:
+//! 1. Load the JSON rule file (parsed via serde_json)
+//! 2. Execute instructions through the reactor
 
-// 测试代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 GATE_REFERENCE.md §六(豁免索引)
+// Test code L2 clippy exemption (the L1 build.rs gate already guards panic-prone code).
+// See GATE_REFERENCE.md §六 (exemption index)
 #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
-//! 3. 检查审计链中的 Fact 记录
-//! 4. 验证执行结果
+//! 3. Check the Fact records in the audit chain
+//! 4. Verify the execution result
 
 use evorule_reactor::{Fact, FactIdGenerator, Reactor};
 use evorule_tcb::{JsonValue, ObjectMap};
 use std::time::Duration;
 use tokio::time::timeout;
 
-/// 将 serde_json::Value 转换为 evorule_tcb::JsonValue
+/// Converts serde_json::Value into evorule_tcb::JsonValue
 fn serde_to_tcb(v: serde_json::Value) -> JsonValue {
     match v {
         serde_json::Value::Null => JsonValue::Null,
@@ -43,7 +44,7 @@ fn serde_to_tcb(v: serde_json::Value) -> JsonValue {
     }
 }
 
-/// 从 JSON 文件加载 transform 规则
+/// Loads the transform rules from JSON
 fn load_json_rule(json_str: &str) -> Vec<JsonValue> {
     let json: serde_json::Value =
         serde_json::from_str(json_str).expect("Failed to parse JSON rule");
@@ -54,15 +55,16 @@ fn load_json_rule(json_str: &str) -> Vec<JsonValue> {
         .unwrap_or_default()
 }
 
-/// 测试场景 1: VIP 客户订单处理
+/// Test scenario 1: VIP customer order processing
 #[tokio::test]
-// 端到端测试场景, 161 行 fixture (规则 + 执行 + 断言)。详见 GATE_REFERENCE.md §六(豁免索引)
+// End-to-end test scenario, 161-line fixture (rules + execution + assertions). See
+// GATE_REFERENCE.md §六 (exemption index)
 #[allow(clippy::too_many_lines)]
 async fn test_vip_order_processing() {
-    // JSON 规则：电商订单处理（遵循 TCB 的 I/O 两阶段模式）
-    // v0.3.1：I/O 结果按类型隔离在 __io_results__.{io_type}
-    // 阶段 1：检查 is_vip，如果存在且 __io_results__.call_service 不存在，则发起 I/O
-    // 阶段 2：如果 __io_results__.call_service 存在，则消费结果
+    // JSON rules: e-commerce order processing (following the TCB's two-phase I/O pattern)
+    // v0.3.1: I/O results are type-isolated in __io_results__.{io_type}
+    // Phase 1: check is_vip; if present and __io_results__.call_service is absent, issue I/O
+    // Phase 2: if __io_results__.call_service is present, consume the result
     let json_rule = r#"{
   "transform": [
     {
@@ -112,7 +114,7 @@ async fn test_vip_order_processing() {
                         "params": {
                           "io_type": "call_service",
                           "service_name": "notify_vip",
-                          "prompt": "VIP 客户享受 9 折优惠"
+                          "prompt": "VIP customers enjoy a 10% discount"
                         }
                       }
                     ]
@@ -139,7 +141,7 @@ async fn test_vip_order_processing() {
 
     let core_eval = load_json_rule(json_rule);
 
-    // 初始 payload：VIP 客户
+    // Initial payload: VIP customer
     let _initial_payload = JsonValue::object_from_pairs(&[
         ("is_vip", JsonValue::Bool(true)),
         ("inventory", JsonValue::Integer(100)),
@@ -150,7 +152,7 @@ async fn test_vip_order_processing() {
 
     let mut gen = FactIdGenerator::new();
 
-    // 设置初始状态
+    // Set the initial state
     tx.send(Fact::PayloadUpdate {
         id: gen.next_id(),
         path: "is_vip".to_string(),
@@ -164,7 +166,7 @@ async fn test_vip_order_processing() {
     })
     .unwrap();
 
-    // 提交 VIP 客户订单指令
+    // Submit the VIP customer order instruction
     let instruction = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("process_order")),
         (
@@ -182,7 +184,7 @@ async fn test_vip_order_processing() {
     })
     .unwrap();
 
-    // 阶段 1：等待 IoRequest
+    // Phase 1: wait for the IoRequest
     let request_id = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
@@ -207,7 +209,7 @@ async fn test_vip_order_processing() {
     .unwrap()
     .expect("IoRequest not received");
 
-    // 阶段 2：发送 IoResponse，等待 Stable
+    // Phase 2: send the IoResponse and wait for Stable
     tx.send(Fact::IoResponse {
         id: gen.next_id(),
         request_id,
@@ -219,7 +221,8 @@ async fn test_vip_order_processing() {
     let final_state = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
-                // Stable 不再携带快照(),状态经 FactsLog 快照取
+                // Stable no longer carries a snapshot (); the state is taken from the
+                // FactsLog snapshot
                 Fact::Stable { .. } => return Some(facts_log.snapshot().0),
                 Fact::Error { message, .. } => {
                     panic!("Error during execution: {}", message);
@@ -233,21 +236,21 @@ async fn test_vip_order_processing() {
     .unwrap()
     .expect("Timeout waiting for Stable after IoResponse");
 
-    // 检查 discount 是否设置为 10
+    // Check whether discount was set to 10
     let discount = final_state
         .get("discount")
         .and_then(|v| v.as_i64())
         .expect("discount should exist");
     assert_eq!(discount, 10, "VIP customer should have 10% discount");
 
-    // 检查审计链
+    // Check the audit chain
     let facts = facts_log.history();
-    println!("\n=== 审计链记录 ===");
+    println!("\n=== Audit chain records ===");
     for (i, fact) in facts.iter().enumerate() {
         println!("Fact {}: {:?}", i, fact);
     }
 
-    // 验证审计链中有 Command 和 IoRequest
+    // Verify the audit chain contains Command and IoRequest
     let has_command = facts.iter().any(|f| matches!(f, Fact::Command { .. }));
     let has_io_request = facts.iter().any(|f| matches!(f, Fact::IoRequest { .. }));
     let has_io_response = facts.iter().any(|f| matches!(f, Fact::IoResponse { .. }));
@@ -256,10 +259,10 @@ async fn test_vip_order_processing() {
     assert!(has_io_request, "Should have IoRequest fact");
     assert!(has_io_response, "Should have IoResponse fact");
 
-    println!("\n✓ 审计链完整，包含 Command → IoRequest → IoResponse");
+    println!("\n✓ Audit chain complete, containing Command → IoRequest → IoResponse");
 }
 
-/// 测试场景 2: 普通客户订单处理
+/// Test scenario 2: normal customer order processing
 #[tokio::test]
 async fn test_normal_order_processing() {
     let json_rule = r#"{
@@ -313,7 +316,7 @@ async fn test_normal_order_processing() {
 
     let mut gen = FactIdGenerator::new();
 
-    // 提交普通客户订单指令（无 is_vip 字段）
+    // Submit the normal customer order instruction (no is_vip field)
     let mut params = ObjectMap::new();
     params.insert("order_id".to_string(), JsonValue::string("ORD-002"));
     params.insert("amount".to_string(), JsonValue::Integer(500));
@@ -330,12 +333,13 @@ async fn test_normal_order_processing() {
     })
     .unwrap();
 
-    // 等待执行完成
+    // Wait for execution to complete
     let result = timeout(Duration::from_secs(5), async {
         let mut final_state = None;
         while let Ok(fact) = rx.recv().await {
             match &fact {
-                // Stable 不再携带快照(),状态经 FactsLog 快照取
+                // Stable no longer carries a snapshot (); the state is taken from the
+                // FactsLog snapshot
                 Fact::Stable { .. } => {
                     final_state = Some(facts_log.snapshot().0);
                     break;
@@ -351,23 +355,23 @@ async fn test_normal_order_processing() {
     .await
     .expect("Timeout waiting for execution");
 
-    // 验证结果
+    // Verify the result
     assert!(result.is_some(), "Should have final state");
     let final_state = result.unwrap();
 
-    // 检查 discount 是否设置为 0（普通客户）
+    // Check whether discount was set to 0 (normal customer)
     let discount = final_state
         .get("discount")
         .and_then(|v| v.as_i64())
         .expect("discount should exist");
     assert_eq!(discount, 0, "Normal customer should have 0% discount");
 
-    // 检查审计链
+    // Check the audit chain
     let facts = facts_log.history();
-    println!("\n=== 审计链记录 ===");
+    println!("\n=== Audit chain records ===");
     for (i, fact) in facts.iter().enumerate() {
         println!("Fact {}: {:?}", i, fact);
     }
 
-    println!("\n✓ 普通客户无折扣，审计链完整");
+    println!("\n✓ Normal customer has no discount; audit chain complete");
 }

@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-// 测试代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 GATE_REFERENCE.md §六(豁免索引)
-// too_many_lines: 测试 fixture(长 JSON 规则字面量)豁免
+// Test code L2 clippy exemption (the L1 build.rs gate already guards panic-prone code).
+// See GATE_REFERENCE.md §六 (exemption index)
+// too_many_lines: test fixture (long JSON rule literals) exemption
 #![allow(
     clippy::unwrap_used,
     clippy::panic,
     clippy::expect_used,
     clippy::too_many_lines
 )]
-//! 反应式执行器集成测试
+//! Reactive executor integration tests
 
 use evorule_reactor::{Fact, FactId, FactIdGenerator, IoType, Reactor};
 use evorule_tcb::{JsonValue, ObjectMap};
@@ -18,10 +19,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::timeout;
 
-/// 将 serde_json::Value 转换为 evorule_tcb::JsonValue
+/// Converts serde_json::Value into evorule_tcb::JsonValue
 ///
-/// evorule-tcb 是零依赖 no_std crate，未实现 serde。
-/// 集成测试通过 serde_json 解析 core_eval.json 后用此函数转换。
+/// evorule-tcb is a zero-dependency no_std crate without serde.
+/// Integration tests parse core_eval.json via serde_json and convert with this function.
 fn serde_to_tcb(v: serde_json::Value) -> JsonValue {
     match v {
         serde_json::Value::Null => JsonValue::Null,
@@ -30,7 +31,7 @@ fn serde_to_tcb(v: serde_json::Value) -> JsonValue {
             if let Some(i) = n.as_i64() {
                 JsonValue::Integer(i)
             } else {
-                // 浮点或大整数：转为字符串（TCB 不支持 Float）
+                // Float or large integer: converted to a string (the TCB does not support Float)
                 JsonValue::string(n.to_string())
             }
         }
@@ -48,12 +49,15 @@ fn serde_to_tcb(v: serde_json::Value) -> JsonValue {
     }
 }
 
-/// 从 core_eval.json 加载 transform 列表
+/// Loads the transform list from core_eval.json
 ///
-/// 背景：T8 迁出后核心仓 core_eval.json 为最小评估集，不再含 call_external /
-/// call_external 应用剧本规则；本文件大量用例依赖完整 I/O 循环行为，故在
-/// 最小评估集基础上内联追加同构的 I/O 循环规则链（忠实复刻消费方自持宪法
-/// evo-agent agent_constitution.json 的对应规则），测试夹具自足、不依赖被迁出资产。
+/// Background: after the rules were migrated out, the core repo's core_eval.json is a minimal
+/// evaluation set without the call_external / call_external application-playbook rules; many
+/// cases in this file depend on full I/O-loop behavior, so an isomorphic I/O-loop rule chain
+/// is inlined on top of the minimal evaluation set (faithfully replicating the corresponding
+/// rules of the consumer's self-contained constitution, evo-agent
+/// agent_constitution.json), keeping the test fixture self-sufficient and independent of the
+/// migrated-out assets.
 fn load_core_eval() -> Vec<JsonValue> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let core_eval_path = manifest_dir.join("../evorule-tcb/core_eval.json");
@@ -77,13 +81,15 @@ fn load_core_eval() -> Vec<JsonValue> {
     rules
 }
 
-/// 内联最小 I/O 单轮（应用剧本）规则链：call_external 触发/消费 +
-/// call_service 触发/消费 + 兜底。规则清理（2026-09-14）后逐条对齐宪法
-/// evo-agent agent_constitution.json v0.5.0 单轮口径：react_iteration 初始化 /
-/// collect 工具扇出 / merge 结果回环已随 ReAct 循环退役，多轮编排由应用层负责。
+/// Inline minimal single-round I/O (application playbook) rule chain: call_external
+/// trigger/consume + call_service trigger/consume + fallback. After the rule cleanup
+/// (2026-09-14), each rule aligns with the single-round semantics of the constitution
+/// evo-agent agent_constitution.json v0.5.0: react_iteration initialization / collect tool
+/// fan-out / merge result loop-back retired with the ReAct loop; multi-round orchestration
+/// is the application layer's responsibility.
 fn io_loop_rules() -> Vec<JsonValue> {
     let rules = serde_json::json!([
-        // call_external: 无结果 → io_request；有结果 → 消费到 llm_response
+        // call_external: no result → io_request; with result → consumed into llm_response
         {
             "type": "branch",
             "params": {
@@ -164,7 +170,8 @@ fn io_loop_rules() -> Vec<JsonValue> {
                 "on_false": []
             }
         },
-        // call_service: 无结果 → io_request；有结果 → 消费到 service_result（单轮止步）
+        // call_service: no result → io_request; with result → consumed into service_result
+        // (single round, then stop)
         {
             "type": "branch",
             "params": {
@@ -224,7 +231,7 @@ fn io_loop_rules() -> Vec<JsonValue> {
                 "on_false": []
             }
         },
-        // noop + all([]) 兜底（与核心评估集收尾形态一致）
+        // noop + all([]) fallback (same closing shape as the core evaluation set)
         {
             "type": "branch",
             "params": {
@@ -261,8 +268,8 @@ fn make_instruction(typ: &str, attr: &str, delta: i64) -> JsonValue {
 
 fn make_call_external_instruction(prompt: &str) -> JsonValue {
     let mut params = ObjectMap::new();
-    // v0.3.1：call_external 使用 messages 参数（LLM 消息历史数组），
-    // io_request 透传 instruction 的 messages/tools 参数。
+    // v0.3.1: call_external uses the messages parameter (array of LLM message history),
+    // and io_request passes through the instruction's messages/tools parameters.
     params.insert(
         "messages".to_string(),
         JsonValue::Array(vec![JsonValue::object_from_pairs(&[
@@ -293,7 +300,8 @@ async fn test_simple_increment() {
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
-                // Stable 不再携带快照(),状态经 FactsLog 快照取
+                // Stable no longer carries a snapshot (); the state is taken from the
+                // FactsLog snapshot
                 Fact::Stable { .. } => return Some(()),
                 Fact::Error { message, .. } => panic!("Error: {}", message),
                 _ => {}
@@ -323,7 +331,7 @@ async fn test_io_request_detection() {
     })
     .unwrap();
 
-    // 等待 IoRequest，提取 ID
+    // Wait for the IoRequest and extract the ID
     let (request_id, io_type, params) = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
@@ -344,7 +352,8 @@ async fn test_io_request_detection() {
     .expect("IoRequest not received");
 
     assert_eq!(io_type, IoType::call_external());
-    // v0.3.1：call_external 的 io_request 透传 instruction 的 messages/tools 参数
+    // v0.3.1: call_external's io_request passes through the instruction's messages/tools
+    // parameters
     let messages = params.get("messages").and_then(|v| v.as_array());
     assert!(
         messages.is_some(),
@@ -356,7 +365,7 @@ async fn test_io_request_detection() {
         .and_then(|v| v.as_str());
     assert_eq!(first_msg, Some("Hello"));
 
-    // 使用实际的 request_id 回复
+    // Reply with the actual request_id
     let result = JsonValue::string("response from LLM");
     tx.send(Fact::IoResponse {
         id: gen.next_id(),
@@ -369,7 +378,8 @@ async fn test_io_request_detection() {
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
-                // Stable 不再携带快照(),状态经 FactsLog 快照取
+                // Stable no longer carries a snapshot (); the state is taken from the
+                // FactsLog snapshot
                 Fact::Stable { .. } => return Some(()),
                 Fact::Error { message, .. } => panic!("Error: {}", message),
                 _ => {}
@@ -382,8 +392,9 @@ async fn test_io_request_detection() {
 
     assert!(result.is_some());
     let (snapshot, _, _) = facts_log.snapshot();
-    // v0.3.1：I/O 结果应被消费为业务字段 llm_response，
-    // 恢复执行完成后 __io_results__ 应被整体移除（防止残留影响后续 I/O 指令）。
+    // v0.3.1: the I/O result should be consumed into the business field llm_response,
+    // and after recovery execution the __io_results__ container should be removed entirely
+    // (preventing residue from affecting subsequent I/O instructions).
     assert_eq!(
         snapshot.get("llm_response").and_then(|v| v.as_str()),
         Some("response from LLM"),
@@ -403,8 +414,8 @@ async fn test_unknown_io_response_records_error_fact() {
 
     let mut gen = FactIdGenerator::new();
 
-    // 发送一个未知的 IoResponse（ / A1：状态不变，
-    // 但必须发射 Error fact 入链——不再静默忽略）
+    // Send an unknown IoResponse (state unchanged,
+    // but an Error fact must still be emitted into the chain — no longer silently ignored)
     tx.send(Fact::IoResponse {
         id: gen.next_id(),
         request_id: FactId(999),
@@ -413,7 +424,7 @@ async fn test_unknown_io_response_records_error_fact() {
     })
     .unwrap();
 
-    // 提交一个简单指令验证反应器仍在工作
+    // Submit a simple instruction to verify the reactor still works
     let instruction = make_instruction("increment", "x", 5);
     tx.send(Fact::Command {
         id: gen.next_id(),
@@ -425,12 +436,14 @@ async fn test_unknown_io_response_records_error_fact() {
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
-                // Stable 不再携带快照(),状态经 FactsLog 快照取
+                // Stable no longer carries a snapshot (); the state is taken from the
+                // FactsLog snapshot
                 Fact::Stable { .. } => return Some(()),
                 Fact::Error { message, .. } => {
                     assert!(
                         message.contains("unknown/stale request_id F999"),
-                        "unknown IoResponse 必须以 Error fact 显式入链，实际消息: {message}"
+                        "an unknown IoResponse must be explicitly recorded as an Error fact; \
+                         actual message: {message}"
                     );
                     seen_error = true;
                 }
@@ -443,9 +456,9 @@ async fn test_unknown_io_response_records_error_fact() {
     .unwrap();
 
     assert!(result.is_some());
-    assert!(seen_error, "未观察到 unknown IoResponse 对应的 Error fact");
+    assert!(seen_error, "did not observe the Error fact for the unknown IoResponse");
     let (snapshot, _, _) = facts_log.snapshot();
-    // 状态不受 spurious 响应影响
+    // The state is unaffected by the spurious response
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(5)));
 }
 
@@ -463,7 +476,7 @@ async fn test_facts_log_records_all_facts() {
     })
     .unwrap();
 
-    // 等待 Stable
+    // Wait for Stable
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
@@ -478,26 +491,26 @@ async fn test_facts_log_records_all_facts() {
     .unwrap();
     assert!(result.is_some());
 
-    // 验证 FactsLog 记录了所有事实
+    // Verify the FactsLog recorded all facts
     let history = facts_log.history();
-    // 至少应包含: 1 Command + 1 StateTransition + 1 Stable = 3
+    // Should contain at least: 1 Command + 1 StateTransition + 1 Stable = 3
     assert!(
         history.len() >= 3,
         "Expected at least 3 facts in log, got {}",
         history.len()
     );
 
-    // 第一个应该是 Command
+    // The first should be Command
     assert!(matches!(history[0], Fact::Command { .. }));
 
-    // 最后一个应该是 Stable
+    // The last should be Stable
     assert!(matches!(history.last().unwrap(), Fact::Stable { .. }));
 
-    // 验证版本号递增
+    // Verify the version number increases
     let version = facts_log.version();
     assert!(version >= 1, "Version should be >= 1, got {}", version);
 
-    // 验证 read_from(0) 返回完整历史
+    // Verify read_from(0) returns the full history
     let all = facts_log.read_from(0).unwrap();
     assert_eq!(all.len(), history.len());
 }
@@ -510,7 +523,7 @@ async fn test_facts_log_with_io_request() {
 
     let mut gen = FactIdGenerator::new();
 
-    // 发送 call_external 指令
+    // Send a call_external instruction
     let instruction = make_call_external_instruction("test prompt");
     tx.send(Fact::Command {
         id: gen.next_id(),
@@ -518,7 +531,7 @@ async fn test_facts_log_with_io_request() {
     })
     .unwrap();
 
-    // 等待 IoRequest
+    // Wait for the IoRequest
     let request_id = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
@@ -533,7 +546,7 @@ async fn test_facts_log_with_io_request() {
     .unwrap()
     .expect("IoRequest not received");
 
-    // 回复 IoResponse
+    // Reply with an IoResponse
     tx.send(Fact::IoResponse {
         id: gen.next_id(),
         request_id,
@@ -542,7 +555,7 @@ async fn test_facts_log_with_io_request() {
     })
     .unwrap();
 
-    // 等待 Stable
+    // Wait for Stable
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
@@ -557,7 +570,7 @@ async fn test_facts_log_with_io_request() {
     .unwrap();
     assert!(result.is_some());
 
-    // 验证 FactsLog 包含 IoRequest 和 IoResponse
+    // Verify the FactsLog contains IoRequest and IoResponse
     let history = facts_log.history();
     let has_io_request = history.iter().any(|f| matches!(f, Fact::IoRequest { .. }));
     let has_io_response = history.iter().any(|f| matches!(f, Fact::IoResponse { .. }));
@@ -565,7 +578,7 @@ async fn test_facts_log_with_io_request() {
     assert!(has_io_request, "FactsLog should contain IoRequest");
     assert!(has_io_response, "FactsLog should contain IoResponse");
 
-    // 验证 cause 链：IoRequest 的 cause 应为 Command 的 id
+    // Verify the cause chain: the IoRequest's cause should be the Command's id
     let command_id = history
         .iter()
         .find_map(|f| match f {
@@ -596,7 +609,7 @@ async fn test_io_response_with_error_field() {
 
     let mut gen = FactIdGenerator::new();
 
-    // 发送 call_external 指令
+    // Send a call_external instruction
     let instruction = make_call_external_instruction("test error");
     tx.send(Fact::Command {
         id: gen.next_id(),
@@ -604,7 +617,7 @@ async fn test_io_response_with_error_field() {
     })
     .unwrap();
 
-    // 等待 IoRequest
+    // Wait for the IoRequest
     let request_id = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
@@ -619,7 +632,7 @@ async fn test_io_response_with_error_field() {
     .unwrap()
     .expect("IoRequest not received");
 
-    // 回复带错误的 IoResponse
+    // Reply with an IoResponse carrying an error
     tx.send(Fact::IoResponse {
         id: gen.next_id(),
         request_id,
@@ -628,7 +641,7 @@ async fn test_io_response_with_error_field() {
     })
     .unwrap();
 
-    // 等待 Stable（即使有错误，反应器仍应继续完成）
+    // Wait for Stable (even with an error, the reactor should still finish)
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
@@ -643,7 +656,7 @@ async fn test_io_response_with_error_field() {
     .unwrap();
     assert!(result.is_some());
 
-    // 验证 FactsLog 中的 IoResponse 包含 error 字段
+    // Verify the IoResponse in the FactsLog contains the error field
     let history = facts_log.history();
     let io_resp = history.iter().find_map(|f| match f {
         Fact::IoResponse { error, .. } => Some(error.clone()),
@@ -657,9 +670,9 @@ async fn test_io_response_with_error_field() {
     );
 }
 
-// ===== 新增集成测试：覆盖修复后的逻辑 =====
+// ===== New integration tests: covering the fixed logic =====
 
-/// 构造 set 指令
+/// Builds a set instruction
 fn make_set_instruction(attr: &str, value: i64) -> JsonValue {
     let mut params = ObjectMap::new();
     params.insert("attr".to_string(), JsonValue::string(attr));
@@ -670,7 +683,7 @@ fn make_set_instruction(attr: &str, value: i64) -> JsonValue {
     JsonValue::Object(instr)
 }
 
-/// 构造 decrement 指令
+/// Builds a decrement instruction
 fn make_decrement_instruction(attr: &str, delta: i64) -> JsonValue {
     let mut params = ObjectMap::new();
     params.insert("attr".to_string(), JsonValue::string(attr));
@@ -681,7 +694,7 @@ fn make_decrement_instruction(attr: &str, delta: i64) -> JsonValue {
     JsonValue::Object(instr)
 }
 
-/// 构造 sequence 指令
+/// Builds a sequence instruction
 fn make_sequence_instruction(instructions: Vec<JsonValue>) -> JsonValue {
     let mut params = ObjectMap::new();
     params.insert("instructions".to_string(), JsonValue::Array(instructions));
@@ -691,7 +704,8 @@ fn make_sequence_instruction(instructions: Vec<JsonValue>) -> JsonValue {
     JsonValue::Object(instr)
 }
 
-/// 等待 Stable 事实（不再携带快照），返回 FactsLog 当前快照
+/// Waits for the Stable fact (no longer carries a snapshot); returns the FactsLog's current
+/// snapshot
 async fn wait_for_stable(
     rx: &mut evorule_reactor::EventReceiver,
     facts_log: &evorule_reactor::FactsLog,
@@ -719,9 +733,9 @@ async fn test_decrement_instruction() {
 
     let mut gen = FactIdGenerator::new();
 
-    // 同时发送 set 和 decrement：drain 会将两个 Command 都 push 到队列
-    // 执行 set: x=10
-    // 执行 decrement: x=10-3=7
+    // Send set and decrement together: the drain pushes both Commands onto the queue
+    // executing set: x=10
+    // executing decrement: x=10-3=7
     tx.send(Fact::Command {
         id: gen.next_id(),
         instruction: make_set_instruction("x", 10),
@@ -766,7 +780,7 @@ async fn test_sequence_instruction_expansion() {
 
     let mut gen = FactIdGenerator::new();
 
-    // sequence 包含 3 个 increment 指令
+    // The sequence contains 3 increment instructions
     let instructions = vec![
         make_instruction("increment", "x", 1),
         make_instruction("increment", "x", 2),
@@ -788,7 +802,8 @@ async fn test_sequence_instruction_expansion() {
 #[tokio::test]
 async fn test_max_rounds_exceeded() {
     let core_eval = load_core_eval();
-    // max_rounds=3：sequence(1步) + 3个increment(3步) = 4步，第4步会超限
+    // max_rounds=3: sequence (1 step) + 3 increments (3 steps) = 4 steps; the 4th step
+    // exceeds the limit
     let reactor = Reactor::builder(core_eval).max_rounds(3).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
@@ -805,7 +820,7 @@ async fn test_max_rounds_exceeded() {
     })
     .unwrap();
 
-    // 应该收到 Error fact（MaxRoundsExceeded）
+    // Should receive an Error fact (MaxRoundsExceeded)
     let result = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             match fact {
@@ -826,7 +841,7 @@ async fn test_max_rounds_exceeded() {
         result
     );
 
-    // 验证 FactsLog 中有 Error fact
+    // Verify the FactsLog contains an Error fact
     let history = facts_log.history();
     let has_error = history.iter().any(|f| matches!(f, Fact::Error { .. }));
     assert!(has_error, "FactsLog should contain Error fact");
@@ -840,7 +855,7 @@ async fn test_payload_update() {
 
     let mut gen = FactIdGenerator::new();
 
-    // 发送 PayloadUpdate 创建 x=42
+    // Send a PayloadUpdate creating x=42
     tx.send(Fact::PayloadUpdate {
         id: gen.next_id(),
         path: "x".to_string(),
@@ -848,15 +863,16 @@ async fn test_payload_update() {
     })
     .unwrap();
 
-    // 发送 Command increment x by 5
+    // Send a Command incrementing x by 5
     tx.send(Fact::Command {
         id: gen.next_id(),
         instruction: make_instruction("increment", "x", 5),
     })
     .unwrap();
 
-    // drain 会同时处理两个 Fact：PayloadUpdate 设置 x=42，Command push increment
-    // 执行 increment: x = 42 + 5 = 47
+    // The drain processes both Facts: the PayloadUpdate sets x=42, the Command pushes
+    // increment
+    // executing increment: x = 42 + 5 = 47
     let snapshot = wait_for_stable(&mut rx, &facts_log)
         .await
         .expect("Stable not received");
@@ -871,23 +887,23 @@ async fn test_payload_update_existing_field() {
 
     let mut gen = FactIdGenerator::new();
 
-    // 先设置 x=10
+    // First set x=10
     tx.send(Fact::Command {
         id: gen.next_id(),
         instruction: make_set_instruction("x", 10),
     })
     .unwrap();
 
-    // 同时发送 PayloadUpdate 覆盖 x=99
-    // 注意：drain 会先处理 Command（push set 到队列），再处理 PayloadUpdate（更新 x=99）
-    // 然后执行 set x=10... 这会覆盖 PayloadUpdate 的值
-    // 所以需要在 set 执行后再发送 PayloadUpdate
+    // Also send a PayloadUpdate overwriting x=99
+    // Note: the drain processes the Command first (pushing set onto the queue), then the
+    // PayloadUpdate (updating x=99), then executes set x=10... which overwrites the
+    // PayloadUpdate's value, so the PayloadUpdate would need to be sent after set executes.
 
-    // 让我们改用不同方式：先发送 set，等待 Stable 后...但反应器已结束
-    // 所以我们需要在同一个 drain 批次中确保顺序
-    // 实际上 drain 是 FIFO，所以先发送的先处理
+    // Alternative approach: send set, wait for Stable... but the reactor has already
+    // finished, so ordering must be ensured within the same drain batch.
+    // Actually the drain is FIFO, so whatever is sent first is processed first.
 
-    // 重新设计：发送 set + PayloadUpdate 覆盖 y
+    // Redesigned: send set + a PayloadUpdate covering y
     tx.send(Fact::PayloadUpdate {
         id: gen.next_id(),
         path: "y".to_string(),
@@ -898,21 +914,22 @@ async fn test_payload_update_existing_field() {
     let snapshot = wait_for_stable(&mut rx, &facts_log)
         .await
         .expect("Stable not received");
-    // set x=10 执行，PayloadUpdate 创建 y="hello"
+    // set x=10 executes; the PayloadUpdate creates y="hello"
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(10)));
     assert_eq!(snapshot.get("y").and_then(|v| v.as_str()), Some("hello"));
 }
 
 #[tokio::test]
 async fn test_multiple_commands_batch() {
-    // ISSUE-1 修复验证：快速连续发送多个 Command，确保都被执行
+    // Regression fix verification: rapidly sending multiple Commands in a row, ensuring all
+    // execute
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
-    // 快速连续发送 3 个 Command
+    // Rapidly send 3 Commands in a row
     tx.send(Fact::Command {
         id: gen.next_id(),
         instruction: make_instruction("increment", "x", 5),
@@ -929,7 +946,7 @@ async fn test_multiple_commands_batch() {
     })
     .unwrap();
 
-    // 所有 3 个 Command 应该在同一轮 drain 中被处理
+    // All 3 Commands should be processed in the same drain round
     // x = 5 + 10 + 20 = 35
     let snapshot = wait_for_stable(&mut rx, &facts_log)
         .await
@@ -948,13 +965,13 @@ async fn test_channel_closed() {
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
     let (tx, _rx, _event_tx, handle, _facts_log) = reactor.spawn();
 
-    // 丢弃 tx，触发通道关闭
+    // Drop tx to trigger channel closure
     drop(tx);
 
-    // 等待反应器结束
+    // Wait for the reactor to finish
     let result = handle.join().await;
 
-    // 长驻模式：所有 command_tx 被丢弃 → 优雅退出 Ok(())
+    // Long-running mode: all command_tx dropped → graceful exit Ok(())
     assert!(
         result.is_ok(),
         "Expected graceful shutdown Ok(()), got: {:?}",
@@ -981,7 +998,7 @@ async fn test_state_transition_cause_chain() {
         .await
         .expect("Stable not received");
 
-    // 验证 FactsLog 中的 StateTransition 的 cause 指向 Command 的 id
+    // Verify the StateTransition in the FactsLog has its cause pointing to the Command's id
     let history = facts_log.history();
 
     let command = history
@@ -1015,7 +1032,7 @@ async fn test_noop_instruction() {
 
     let mut gen = FactIdGenerator::new();
 
-    // noop 指令不执行任何操作
+    // The noop instruction performs no operation
     let mut instr = ObjectMap::new();
     instr.insert("type".to_string(), JsonValue::string("noop"));
     tx.send(Fact::Command {
@@ -1027,23 +1044,25 @@ async fn test_noop_instruction() {
     let snapshot = wait_for_stable(&mut rx, &facts_log)
         .await
         .expect("Stable not received");
-    // noop 不修改 payload，仍为空对象
+    // noop does not modify the payload; it remains an empty object
     assert_eq!(snapshot, JsonValue::empty_object());
 }
 
 #[tokio::test]
 async fn test_unknown_instruction_falls_to_noop() {
-    // v0.3.1: 未知指令类型不再静默当 noop。
-    // `all([])` 兜底规则匹配但显式标注非业务规则（evorule-tcb/src/transition.rs:179），
-    // TCB 返回 `TransitionResult::Ignored`，反应器产生 Error 事实。
-    // 这取代了之前"静默失败"的旧设计，强制上游感知未知指令。
+    // v0.3.1: unknown instruction types are no longer silently treated as noop.
+    // The `all([])` fallback rule matches but is explicitly marked as non-business
+    // (evorule-tcb/src/transition.rs:179); the TCB returns `TransitionResult::Ignored` and
+    // the reactor emits an Error fact.
+    // This replaces the old "silent failure" design, forcing upstream to notice unknown
+    // instructions.
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
     let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
-    // 未知指令类型：all([]) 兜底规则匹配但无业务效果
+    // Unknown instruction type: the all([]) fallback rule matches but has no business effect
     let mut instr = ObjectMap::new();
     instr.insert(
         "type".to_string(),
@@ -1055,7 +1074,8 @@ async fn test_unknown_instruction_falls_to_noop() {
     })
     .unwrap();
 
-    // 等待 Error 事实（v0.3.1 新行为：未知指令产生显式告警）
+    // Wait for the Error fact (v0.3.1 new behavior: unknown instructions produce an explicit
+    // warning)
     let error_msg = tokio::time::timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             if let Fact::Error { message, .. } = fact {
@@ -1067,7 +1087,7 @@ async fn test_unknown_instruction_falls_to_noop() {
     .await
     .expect("timeout waiting for Error fact");
 
-    // Error 消息必须明确指出"被 TCB 忽略"
+    // The Error message must explicitly say "ignored by TCB"
     assert!(
         error_msg.contains("ignored by TCB"),
         "expected 'ignored by TCB' in error message, got: {}",
@@ -1083,7 +1103,7 @@ async fn test_facts_log_version_tracking() {
 
     let mut gen = FactIdGenerator::new();
 
-    // 发送 increment 指令
+    // Send an increment instruction
     tx.send(Fact::Command {
         id: gen.next_id(),
         instruction: make_instruction("increment", "x", 5),
@@ -1094,7 +1114,7 @@ async fn test_facts_log_version_tracking() {
         .await
         .expect("Stable not received");
 
-    // 验证版本号 > 0（至少一次 StateTransition）
+    // Verify the version number > 0 (at least one StateTransition)
     let version = facts_log.version();
     assert!(
         version >= 1,
@@ -1102,14 +1122,14 @@ async fn test_facts_log_version_tracking() {
         version
     );
 
-    // 验证 last_stable_version 被记录
+    // Verify last_stable_version is recorded
     let stable_version = facts_log.last_stable_version();
     assert_eq!(
         stable_version, version,
         "last_stable_version should equal current version after Stable"
     );
 
-    // 验证 snapshot 与最终 payload 一致
+    // Verify the snapshot matches the final payload
     let (snap, _, _) = facts_log.snapshot();
     assert_eq!(snap.get("x"), Some(&JsonValue::Integer(5)));
 }
@@ -1131,7 +1151,7 @@ async fn test_read_from_for_audit_replay() {
         .await
         .expect("Stable not received");
 
-    // 审计重放：读取所有事实
+    // Audit replay: read all facts
     let all_facts = facts_log.read_from(0).unwrap();
     assert!(
         all_facts.len() >= 3,
@@ -1139,14 +1159,14 @@ async fn test_read_from_for_audit_replay() {
         all_facts.len()
     );
 
-    // 第一个应该是 Command
+    // The first should be Command
     assert!(matches!(all_facts[0], Fact::Command { .. }));
 
-    // 最后一个应该是 Stable
+    // The last should be Stable
     assert!(matches!(all_facts.last().unwrap(), Fact::Stable { .. }));
 }
 
-/// 辅助：等待 IoRequest 并返回 (request_id, io_type)
+/// Helper: wait for an IoRequest and return (request_id, io_type)
 async fn wait_for_io_request(rx: &mut evorule_reactor::EventReceiver) -> Option<(FactId, IoType)> {
     timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
@@ -1162,29 +1182,33 @@ async fn wait_for_io_request(rx: &mut evorule_reactor::EventReceiver) -> Option<
     .unwrap()
 }
 
-// ===== I/O 双路径机制测试（BUG 修复验证）=====
+// ===== I/O dual-path mechanism tests (bug fix verification) =====
 
 #[tokio::test]
 async fn test_consecutive_different_io_requests_no_interference() {
-    // 关键 BUG 修复验证：连续两次不同的 I/O 调用（call_external + call_service）
-    // 必须各自走完整的 io_request → io_response → set 消费流程，
-    // 不能因为第一次的 __io_results__ 残留导致第二次错误走 on_true 分支。
+    // Critical bug fix verification: two consecutive different I/O calls (call_external +
+    // call_service) must each run the full io_request → io_response → set consumption flow;
+    // residue from the first __io_results__ must not make the second wrongly take the on_true
+    // branch.
     //
-    // v0.3.1：I/O 结果按 io_type 隔离存储在 __io_results__.{io_type}，
-    // 恢复执行完成后整体移除 __io_results__ 容器。
+    // v0.3.1: I/O results are stored type-isolated in __io_results__.{io_type}; after
+    // recovery execution the whole __io_results__ container is removed.
     //
-    // 使用 sequence 指令将两个 I/O 指令打包在同一次执行中：
-    // sequence([call_external, call_service]) → 队列展开为 [call_external, call_service]
-    // 1. call_external 首次执行 → IoRequest → IoResponse → 重新执行 → set llm_response
-    // 2. call_service 首次执行 → 若 __io_results__ 未清除，会错误走 on_true（消费旧值）
-    //    清除后 → IoRequest → IoResponse → 重新执行 → set service_result
+    // A sequence instruction packs the two I/O instructions into one execution:
+    // sequence([call_external, call_service]) → the queue expands to
+    // [call_external, call_service]
+    // 1. call_external first execution → IoRequest → IoResponse → re-execution → set
+    //    llm_response
+    // 2. call_service first execution → if __io_results__ were not cleared, it would wrongly
+    //    take on_true (consuming the stale value);
+    //    after clearing → IoRequest → IoResponse → re-execution → set service_result
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
 
     let mut gen = FactIdGenerator::new();
 
-    // 用 sequence 打包两个 I/O 指令
+    // Pack the two I/O instructions with sequence
     let sequence_instr = make_sequence_instruction(vec![
         make_call_external_instruction("Hello"),
         make_call_service_instruction("calculator"),
@@ -1195,15 +1219,16 @@ async fn test_consecutive_different_io_requests_no_interference() {
     })
     .unwrap();
 
-    // 1. 等待第一个 IoRequest（call_external）→ 回复 LLM 对象（含 messages）
+    // 1. Wait for the first IoRequest (call_external) → reply with the LLM object (with
+    //    messages)
     let (request_id_1, io_type_1) = wait_for_io_request(&mut rx).await.expect("IoRequest 1");
     assert_eq!(io_type_1, IoType::call_external());
     send_io_response_value(&tx, &mut gen, request_id_1, make_llm_response("llm answer"));
 
-    // 2. 等待第二个 IoRequest（call_service）
-    //    如果 __io_results__ 未被清除，call_service 会错误地走 on_true 分支，
-    //    直接 set service_result = 残留的 "llm answer"，而不发起 IoRequest。
-    //    此时 wait_for_io_request 会超时 panic。
+    // 2. Wait for the second IoRequest (call_service)
+    //    If __io_results__ were not cleared, call_service would wrongly take the on_true
+    //    branch and directly set service_result = the stale "llm answer" without issuing an
+    //    IoRequest. wait_for_io_request would then time out and panic.
     let (request_id_2, io_type_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
     assert_eq!(io_type_2, IoType::call_service());
     tx.send(Fact::IoResponse {
@@ -1214,8 +1239,8 @@ async fn test_consecutive_different_io_requests_no_interference() {
     })
     .unwrap();
 
-    // 3. 等待 Stable（规则清理后单轮口径：call_service 消费后止步，
-    //    不再由 merge 生成下一轮 call_external）
+    // 3. Wait for Stable (single-round semantics after the rule cleanup: call_service stops
+    //    after consuming; no next-round call_external is generated by merge)
     let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
     let final_llm = make_llm_response("llm answer");
     assert_eq!(
@@ -1226,7 +1251,7 @@ async fn test_consecutive_different_io_requests_no_interference() {
     assert_eq!(
         snapshot.get("service_result").and_then(|v| v.as_str()),
         Some("service rows"),
-        "call_service should set service_result from its own IoResponse (not残留的 llm answer)"
+        "call_service should set service_result from its own IoResponse (not the stale llm answer)"
     );
     assert!(
         snapshot.get("__io_results__").is_none(),
@@ -1236,7 +1261,8 @@ async fn test_consecutive_different_io_requests_no_interference() {
 
 #[tokio::test]
 async fn test_io_result_consumed_to_business_field() {
-    // 验证 I/O 双路径机制：io_request → io_response → set 消费 → 业务字段
+    // Verify the I/O dual-path mechanism: io_request → io_response → set consumption →
+    // business field
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
@@ -1261,13 +1287,13 @@ async fn test_io_result_consumed_to_business_field() {
 
     let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
 
-    // 业务字段 llm_response 应被设置为 I/O 结果
+    // The business field llm_response should be set to the I/O result
     assert_eq!(
         snapshot.get("llm_response").and_then(|v| v.as_str()),
         Some("summary ok")
     );
 
-    // 验证 FactsLog 中有完整的因果链：
+    // Verify the FactsLog holds the full cause chain:
     // Command → StateTransition(1) → IoRequest → IoResponse → StateTransition(2) → Stable
     let history = facts_log.history();
     let has_command = history.iter().any(|f| matches!(f, Fact::Command { .. }));
@@ -1283,10 +1309,11 @@ async fn test_io_result_consumed_to_business_field() {
     assert!(has_io_request, "Should have IoRequest");
     assert!(has_io_response, "Should have IoResponse");
     assert!(has_stable, "Should have Stable");
-    // 应有 2 次 StateTransition：第一次触发 io_request（不产生 StateTransition，只产生 IoRequest）
-    // 实际上：call_external 首次执行 → IoRequest（无 StateTransition）
-    //         恢复执行 → StateTransition（set llm_response）
-    // 所以只有 1 次 StateTransition
+    // Should there be 2 StateTransitions? The first trigger fires io_request (no
+    // StateTransition, only an IoRequest).
+    // Actually: call_external first execution → IoRequest (no StateTransition)
+    //           recovery execution → StateTransition (set llm_response)
+    // So there is only 1 StateTransition.
     assert!(
         state_transitions >= 1,
         "Should have at least 1 StateTransition (recovery execution), got {}",
@@ -1294,9 +1321,9 @@ async fn test_io_result_consumed_to_business_field() {
     );
 }
 
-// ===== 扩展 I/O 双路径测试：多类型、同类型、混合场景 =====
+// ===== Extended I/O dual-path tests: multiple types, same type, mixed scenarios =====
 
-/// 辅助：构造 call_service 指令
+/// Helper: build a call_service instruction
 fn make_call_service_instruction(service_name: &str) -> JsonValue {
     let mut params = ObjectMap::new();
     params.insert("service_name".to_string(), JsonValue::string(service_name));
@@ -1306,11 +1333,12 @@ fn make_call_service_instruction(service_name: &str) -> JsonValue {
     JsonValue::Object(instr)
 }
 
-/// 构造 call_external 恢复消费的 LLM 响应对象。
+/// Builds the LLM response object consumed by call_external recovery.
 ///
-/// core_eval 夹具的 call_external 消费分支执行 `set llm_response`，
-/// IoResponse 返回含 `messages` 数组的对象（形态对齐真实 LLM 响应；
-/// 规则清理后宪法单轮止步，不再由 merge 引用 messages 生成下一轮）。
+/// The core_eval fixture's call_external consume branch executes `set llm_response`;
+/// the IoResponse returns an object containing a `messages` array (shaped like a real LLM
+/// response; after the rule cleanup the constitution stops after one round and merge no
+/// longer references messages to generate the next round).
 fn make_llm_response(content: &str) -> JsonValue {
     JsonValue::object_from_pairs(&[(
         "messages",
@@ -1321,7 +1349,7 @@ fn make_llm_response(content: &str) -> JsonValue {
     )])
 }
 
-/// 辅助：发送 IoResponse（字符串结果）
+/// Helper: send an IoResponse (string result)
 fn send_io_response(
     tx: &evorule_reactor::FactSender,
     gen: &mut FactIdGenerator,
@@ -1337,7 +1365,7 @@ fn send_io_response(
     .unwrap();
 }
 
-/// 辅助：发送 IoResponse（JsonValue 结果，如 LLM 对象响应）
+/// Helper: send an IoResponse (JsonValue result, e.g. an LLM object response)
 fn send_io_response_value(
     tx: &evorule_reactor::FactSender,
     gen: &mut FactIdGenerator,
@@ -1355,14 +1383,15 @@ fn send_io_response_value(
 
 #[tokio::test]
 async fn test_two_different_io_types_sequence() {
-    // 验证 2 种受支持 I/O 类型连续调用（call_external + call_service）
-    // 每次都必须走完整的 io_request → io_response → set 消费流程。
-    // v0.3.1：core_eval 仅内置 call_external（LLM 推理）与 call_service（工具/服务）两类 I/O；
-    // query_db/http_get/save_memory 已移出宪法，由应用层以 call_service 实现。
+    // Verify two consecutive calls of the 2 supported I/O types (call_external +
+    // call_service); each must run the full io_request → io_response → set consumption flow.
+    // v0.3.1: core_eval only has call_external (LLM inference) and call_service
+    // (tools/services) as built-in I/O types; query_db/http_get/save_memory were moved out of
+    // the constitution and are implemented by the application layer via call_service.
     //
-    // 规则清理后单轮口径：call_service 消费结果后止步（push noop），
-    // 不再由 merge 生成下一轮 call_external。因此共 2 次 IoRequest：
-    // call_external(#1) → call_service(#2)。
+    // Single-round semantics after the rule cleanup: call_service stops after consuming the
+    // result (push noop); no next-round call_external is generated by merge. So there are
+    // 2 IoRequests in total: call_external(#1) → call_service(#2).
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(200).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
@@ -1380,18 +1409,20 @@ async fn test_two_different_io_types_sequence() {
     })
     .unwrap();
 
-    // 1. call_external → IoRequest → IoResponse（LLM 返回含 messages 的对象）
+    // 1. call_external → IoRequest → IoResponse (the LLM returns an object with messages)
     let (rid_1, ty_1) = wait_for_io_request(&mut rx).await.expect("IoRequest 1");
     assert_eq!(ty_1, IoType::call_external());
     let first_llm = make_llm_response("llm-result");
     send_io_response_value(&tx, &mut gen, rid_1, first_llm.clone());
 
-    // 2. call_service → IoRequest（若 __io_results__ 未清除，会错误消费旧值）
+    // 2. call_service → IoRequest (if __io_results__ were not cleared, the stale value would
+    //    be wrongly consumed)
     let (rid_2, ty_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
     assert_eq!(ty_2, IoType::call_service());
     send_io_response(&tx, &mut gen, rid_2, "service-output");
 
-    // 3. 验证最终快照（单轮止步，llm_response 来自第一次 call_external）
+    // 3. Verify the final snapshot (single round; llm_response comes from the first
+    //    call_external)
     let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
     assert_eq!(
         snapshot.get("llm_response"),
@@ -1411,8 +1442,9 @@ async fn test_two_different_io_types_sequence() {
 
 #[tokio::test]
 async fn test_same_io_type_twice_no_stale_consumption() {
-    // 验证相同 I/O 类型连续调用两次（call_external × 2）
-    // 第二次必须发起新的 io_request，不能消费第一次的残留 __io_results__
+    // Verify two consecutive calls of the same I/O type (call_external × 2)
+    // The second must issue a new io_request and must not consume the first's stale
+    // __io_results__
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(200).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
@@ -1430,19 +1462,20 @@ async fn test_same_io_type_twice_no_stale_consumption() {
     })
     .unwrap();
 
-    // 1. 第一个 call_external → IoRequest
+    // 1. The first call_external → IoRequest
     let (rid_1, ty_1) = wait_for_io_request(&mut rx).await.expect("IoRequest 1");
     assert_eq!(ty_1, IoType::call_external());
     send_io_response(&tx, &mut gen, rid_1, "first-answer");
 
-    // 2. 第二个 call_external → 必须发起新的 IoRequest
-    //    若 __io_results__ 未清除，第二次 call_external 会直接走 on_true
-    //    set llm_response = 残留的 "first-answer"，导致 wait_for_io_request 超时
+    // 2. The second call_external → must issue a new IoRequest
+    //    If __io_results__ were not cleared, the second call_external would take on_true
+    //    directly, setting llm_response = the stale "first-answer" and timing out
+    //    wait_for_io_request
     let (rid_2, ty_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
     assert_eq!(ty_2, IoType::call_external());
     send_io_response(&tx, &mut gen, rid_2, "second-answer");
 
-    // 3. 验证：llm_response 应为第二次的结果（覆盖第一次）
+    // 3. Verify: llm_response should be the second result (overriding the first)
     let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
     assert_eq!(
         snapshot.get("llm_response").and_then(|v| v.as_str()),
@@ -1457,11 +1490,11 @@ async fn test_same_io_type_twice_no_stale_consumption() {
 
 #[tokio::test]
 async fn test_io_interleaved_with_normal_instructions() {
-    // 验证 I/O 请求与普通指令混合执行
+    // Verify I/O requests interleaved with normal instructions
     // sequence([increment(x,5), call_external, increment(y,10)])
-    // 1. increment x=5（普通指令，无 I/O）
+    // 1. increment x=5 (normal instruction, no I/O)
     // 2. call_external → IoRequest → IoResponse → set llm_response
-    // 3. increment y=10（普通指令，不应受 I/O 残留影响）
+    // 3. increment y=10 (normal instruction, must not be affected by I/O residue)
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(200).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
@@ -1479,16 +1512,17 @@ async fn test_io_interleaved_with_normal_instructions() {
     })
     .unwrap();
 
-    // 1. 等待 call_external 的 IoRequest
-    //    （increment 不产生 IoRequest，会先执行完再到达 call_external）
+    // 1. Wait for call_external's IoRequest
+    //    (increment produces no IoRequest; it finishes executing before call_external is
+    //    reached)
     let (rid, ty) = wait_for_io_request(&mut rx).await.expect("IoRequest");
     assert_eq!(ty, IoType::call_external());
     send_io_response(&tx, &mut gen, rid, "mixed-result");
 
-    // 2. 等待 Stable
+    // 2. Wait for Stable
     let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
 
-    // 3. 验证所有指令都正确执行
+    // 3. Verify all instructions executed correctly
     assert_eq!(
         snapshot.get("x"),
         Some(&JsonValue::Integer(5)),
@@ -1512,8 +1546,9 @@ async fn test_io_interleaved_with_normal_instructions() {
 
 #[tokio::test]
 async fn test_all_supported_io_types_sequence() {
-    // 终极验证：v0.3.1 支持的 2 种 I/O 类型全部连续调用
-    // （规则清理后单轮口径：call_service 消费后止步，无 merge 回环）
+    // Final verification: both supported I/O types of v0.3.1 called consecutively
+    // (single-round semantics after the rule cleanup: call_service stops after consuming;
+    // no merge loop-back)
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(500).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
@@ -1530,8 +1565,8 @@ async fn test_all_supported_io_types_sequence() {
     })
     .unwrap();
 
-    // 依次等待 2 个 IoRequest 并回复
-    // #1 call_external → LLM 对象；#2 call_service → 工具结果
+    // Wait for the 2 IoRequests in turn and reply
+    // #1 call_external → LLM object; #2 call_service → tool result
     let expected_types = [IoType::call_external(), IoType::call_service()];
     let expected_results = ["llm-output", "tool-output"];
 
@@ -1547,15 +1582,16 @@ async fn test_all_supported_io_types_sequence() {
             expected_ty
         );
         if i == 1 {
-            // call_service → 字符串工具结果
+            // call_service → string tool result
             send_io_response(&tx, &mut gen, rid, expected_results[i]);
         } else {
-            // call_external → LLM 对象（含 messages）
+            // call_external → LLM object (with messages)
             send_io_response_value(&tx, &mut gen, rid, make_llm_response(expected_results[i]));
         }
     }
 
-    // 验证最终快照（单轮止步，llm_response 来自第一次 call_external）
+    // Verify the final snapshot (single round; llm_response comes from the first
+    // call_external)
     let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
     let first_llm = make_llm_response("llm-output");
     assert_eq!(
@@ -1576,16 +1612,21 @@ async fn test_all_supported_io_types_sequence() {
 
 #[tokio::test]
 async fn test_io_response_with_null_result_clears_properly() {
-    // 验证 IoResponse 携带 Null 结果时，不产生死循环，且后续 I/O 不受影响。
+    // Verify that an IoResponse carrying a Null result causes no infinite loop and does not
+    // affect subsequent I/O.
     //
-    // v0.3.1 语义：null 结果没有可消费的内容（`exists` 将 null 视为不存在），
-    // 若把 null 注入 __io_results__ 后重新推送原指令，恢复执行时 exists==false
-    // → 指令无限重发 io_request（死循环）。
-    // 处理：丢弃缓存的原指令，不再重新推送（错误/空结果走同一路径）。
+    // v0.3.1 semantics: a null result has nothing consumable (`exists` treats null as
+    // absent). If null were injected into __io_results__ and the original instruction
+    // re-pushed, recovery execution would see exists==false → the instruction would re-issue
+    // io_request forever (infinite loop).
+    // Handling: drop the cached original instruction and do not re-push it (errors/empty
+    // results follow the same path).
     //
-    // 测试设计：sequence([call_external(null), call_external(normal)])
-    // 1. call_external #1 → IoRequest → 回复 Null → 指令被丢弃（无死循环）
-    // 2. call_external #2 仍在队列 → 必须发起新 IoRequest → 回复结果 → set llm_response
+    // Test design: sequence([call_external(null), call_external(normal)])
+    // 1. call_external #1 → IoRequest → reply Null → the instruction is dropped (no infinite
+    //    loop)
+    // 2. call_external #2 remains in the queue → must issue a new IoRequest → reply result →
+    //    set llm_response
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(200).build();
     let (tx, mut rx, _event_tx, _handle, facts_log) = reactor.spawn();
@@ -1603,7 +1644,8 @@ async fn test_io_response_with_null_result_clears_properly() {
     })
     .unwrap();
 
-    // 1. call_external #1 → IoRequest → 回复 Null（指令应被丢弃，不重发 io_request）
+    // 1. call_external #1 → IoRequest → reply Null (the instruction should be dropped, not
+    //    re-issuing io_request)
     let (rid_1, ty_1) = wait_for_io_request(&mut rx).await.expect("IoRequest 1");
     assert_eq!(ty_1, IoType::call_external());
     tx.send(Fact::IoResponse {
@@ -1614,14 +1656,15 @@ async fn test_io_response_with_null_result_clears_properly() {
     })
     .unwrap();
 
-    // 2. call_external #2 → 必须仍发起新 IoRequest（不受 #1 的 Null 影响）
+    // 2. call_external #2 → must still issue a new IoRequest (unaffected by #1's Null)
     let (rid_2, ty_2) = wait_for_io_request(&mut rx).await.expect("IoRequest 2");
     assert_eq!(ty_2, IoType::call_external());
     send_io_response(&tx, &mut gen, rid_2, "second-answer");
 
-    // 3. 验证
+    // 3. Verify
     let snapshot = wait_for_stable(&mut rx, &facts_log).await.expect("Stable");
-    // llm_response 应来自第二次 I/O 的结果（第一次 Null 的指令被丢弃，未消费任何字段）
+    // llm_response should come from the second I/O result (the first Null's instruction was
+    // dropped, consuming no fields)
     assert_eq!(
         snapshot.get("llm_response").and_then(|v| v.as_str()),
         Some("second-answer"),
@@ -1633,24 +1676,26 @@ async fn test_io_response_with_null_result_clears_properly() {
     );
 }
 
-// ===== 阶段3-1.3：Executing 循环中快照更新测试 =====
+// ===== Snapshot updates during the Executing loop =====
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_snapshot_updates_during_executing_loop() {
-    // 验证 Executing 循环中每 SNAPSHOT_UPDATE_INTERVAL（=100）步更新快照。
+    // Verify that the Executing loop updates the snapshot every SNAPSHOT_UPDATE_INTERVAL
+    // (=100) steps.
     //
-    // 构造 500 条 increment 指令的 sequence，max_rounds = 600。
-    // 反应器在 Executing 阶段连续执行时，每 100 步调用 update_snapshot。
-    // 测试 task 在另一个 worker thread 上定期轮询 handle.current_step()，
-    // 期望在执行过程中观察到 steps >= 100。
+    // Build a sequence of 500 increment instructions with max_rounds = 600.
+    // While the reactor executes continuously in the Executing phase, it calls
+    // update_snapshot every 100 steps.
+    // The test task on another worker thread polls handle.current_step() periodically,
+    // expecting to observe steps >= 100 during execution.
     //
-    // 注意：必须用 multi_thread runtime，因为反应器在 Executing 循环中不 yield，
-    // single_thread runtime 下测试 task 不会被调度。
+    // Note: a multi_thread runtime is required because the reactor does not yield inside the
+    // Executing loop; on a single_thread runtime the test task would never be scheduled.
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(600).build();
     let (tx, mut rx, _event_tx, handle, _facts_log) = reactor.spawn();
 
-    // 构造 500 条 increment 指令的 sequence
+    // Build the sequence of 500 increment instructions
     let increments: Vec<JsonValue> = (0..500)
         .map(|_| make_instruction("increment", "x", 1))
         .collect();
@@ -1661,7 +1706,7 @@ async fn test_snapshot_updates_during_executing_loop() {
     })
     .unwrap();
 
-    // 在反应器执行过程中，定期检查快照
+    // While the reactor executes, periodically check the snapshot
     let mut max_step_seen = 0usize;
     let mut saw_step_ge_100 = false;
 
@@ -1691,37 +1736,39 @@ async fn test_snapshot_updates_during_executing_loop() {
     })
     .await;
 
-    assert!(result.is_ok(), "测试超时（10s 内未收到 Stable）");
+    assert!(result.is_ok(), "test timed out (no Stable within 10s)");
     assert!(
         saw_step_ge_100,
-        "期望在 Executing 循环中观察到 steps >= 100（SNAPSHOT_UPDATE_INTERVAL=100），\
-         实际观察到的最大 steps: {}。\
-         这表明 Executing 循环中的定期快照更新未生效。",
+        "expected to observe steps >= 100 during the Executing loop \
+         (SNAPSHOT_UPDATE_INTERVAL=100); maximum steps actually observed: {}. \
+         This indicates the periodic snapshot update inside the Executing loop is not taking \
+         effect.",
         max_step_seen
     );
 
-    // 验证最终结果：500 条 increment(x, 1) → x = 500
-    // 反应器已 Stable，快照中 steps 应为 0（长驻模式重置），finished=false
+    // Verify the final result: 500 × increment(x, 1) → x = 500
+    // The reactor is Stable; the snapshot's steps should be 0 (reset in long-running mode),
+    // finished=false
     let snap = handle.snapshot().expect("snapshot should be readable");
     assert!(
         !snap.finished,
-        "反应器应仍在运行（长驻模式），finished 应为 false"
+        "the reactor should still be running (long-running mode); finished should be false"
     );
 }
 
-/// 阶段6：pending_io() 返回 I/O 详情（inspect API）
+/// pending_io() returns I/O details (inspect API)
 ///
-/// 验证 inspect API 返回的 pending I/O 详情：
-/// - call_external 触发 IoRequest 后，pending_io() 返回非空列表
-/// - 列表包含 (FactId, IoType::call_external(), Duration)
-/// - Duration 是已等待时长（>= 0）
+/// Verifies the pending I/O details returned by the inspect API:
+/// - after call_external triggers an IoRequest, pending_io() returns a non-empty list
+/// - the list contains (FactId, IoType::call_external(), Duration)
+/// - Duration is the elapsed wait time (>= 0)
 #[tokio::test]
 async fn test_inspect_returns_pending_io() {
     let core_eval = load_core_eval();
     let reactor = Reactor::builder(core_eval).max_rounds(100).build();
     let (tx, mut rx, _event_tx, handle, facts_log) = reactor.spawn();
 
-    // 1. 发送 call_llm 指令
+    // 1. Send the call_llm instruction
     let mut gen = FactIdGenerator::new();
     tx.send(Fact::Command {
         id: gen.next_id(),
@@ -1729,7 +1776,7 @@ async fn test_inspect_returns_pending_io() {
     })
     .unwrap();
 
-    // 2. 等待 IoRequest（reactor 发射后进入 AwaitingIo 阶段）
+    // 2. Wait for the IoRequest (after emitting it the reactor enters the AwaitingIo phase)
     let request_id = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx.recv().await {
             if let Fact::IoRequest { id, .. } = fact {
@@ -1739,23 +1786,23 @@ async fn test_inspect_returns_pending_io() {
                 panic!("Error: {}", message);
             }
         }
-        panic!("IoRequest 未收到");
+        panic!("IoRequest not received");
     })
     .await
-    .expect("等待 IoRequest 超时");
+    .expect("timed out waiting for the IoRequest");
 
-    // 3. 等待一小段时间，让 snapshot 更新 pending_io_snapshot
+    // 3. Wait a little while so the snapshot updates pending_io_snapshot
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    // 4. 调用 pending_io_count()，验证返回内容
+    // 4. Call pending_io_count() and verify the returned content
     let pending_count = handle.pending_io_count().unwrap_or(0);
     assert_eq!(
         pending_count, 1,
-        "pending_io_count 应返回 1，got {}",
+        "pending_io_count should return 1, got {}",
         pending_count
     );
 
-    // 5. 回复 IoResponse，等待 Stable
+    // 5. Reply with an IoResponse and wait for Stable
     tx.send(Fact::IoResponse {
         id: gen.next_id(),
         request_id,
@@ -1766,18 +1813,18 @@ async fn test_inspect_returns_pending_io() {
 
     let snapshot = wait_for_stable(&mut rx, &facts_log)
         .await
-        .expect("回复 IoResponse 后应收到 Stable");
+        .expect("Stable should arrive after replying with the IoResponse");
     assert_eq!(
         snapshot.get("llm_response").and_then(|v| v.as_str()),
         Some("llm result"),
-        "llm_response 应被设置"
+        "llm_response should be set"
     );
 
-    // 6. 验证 Stable 后 pending_io_count 为 0
+    // 6. Verify pending_io_count is 0 after Stable
     let pending_after = handle.pending_io_count().unwrap_or(0);
     assert!(
         pending_after == 0,
-        "Stable 后 pending_io_count 应为 0，got {}",
+        "pending_io_count should be 0 after Stable, got {}",
         pending_after
     );
 
@@ -1785,16 +1832,19 @@ async fn test_inspect_returns_pending_io() {
     let _ = handle.join().await;
 }
 
-// === D11 REPLAY TEST START (DELETE_RANGE: 整段从下一行到 D11 REPLAY TEST END) ===
-// D11 IoRequired 重放契约差分测试
+// === D11 REPLAY TEST START (DELETE_RANGE: the whole block from the next line to D11 REPLAY TEST END) ===
+// D11 IoRequired replay-contract differential test
 //
-// 验证: 跨层不变式 "重放等价性" (TCB_SPEC.md §四 D11)
-//   - 路径 A (首次执行): submit Command -> 收 IoRequest -> submit IoResponse -> Stable
-//   - 路径 B (重放执行): submit PayloadUpdate (预注入 __io_results__) -> submit Command -> Stable (走 on_true, 跳过 IoRequest)
-//   - 差分断言: snap_a.llm_response == snap_b.llm_response (业务结果一致)
-//   - D11 步骤 4: 两条路径最终 __io_results__.call_external 都被清除 (exists == false)
+// Verifies the cross-layer invariant "replay equivalence" (TCB_SPEC.md §四 D11):
+//   - Path A (first execution): submit Command -> receive IoRequest -> submit IoResponse ->
+//     Stable
+//   - Path B (replay execution): submit PayloadUpdate (pre-injecting __io_results__) ->
+//     submit Command -> Stable (takes on_true, skipping IoRequest)
+//   - Differential assertion: snap_a.llm_response == snap_b.llm_response (business results
+//     match)
+//   - D11 step 4: both paths end with __io_results__.call_external cleared (exists == false)
 //
-// 删除指南: 失败时用 PowerShell [System.IO.File] 截断 L1577 之后
+// Deletion guide: on failure, truncate after L1577 with PowerShell [System.IO.File]
 #[tokio::test]
 async fn test_d11_replay_consistency_first_vs_preresult() {
     let core_eval = load_core_eval();
@@ -1802,7 +1852,7 @@ async fn test_d11_replay_consistency_first_vs_preresult() {
         JsonValue::object_from_pairs(&[("llm_response", JsonValue::string("d11_diff_mock"))]);
 
     // ============================================================
-    // 路径 A: 首次执行 (标准 IoRequest -> IoResponse -> 重放)
+    // Path A: first execution (standard IoRequest -> IoResponse -> replay)
     // ============================================================
     let (tx_a, mut rx_a, _event_a, handle_a, facts_a) = Reactor::builder(core_eval.clone())
         .max_rounds(100)
@@ -1810,29 +1860,30 @@ async fn test_d11_replay_consistency_first_vs_preresult() {
         .spawn();
     let mut gen_a = FactIdGenerator::new();
 
-    // 1. 提交 call_external 指令
+    // 1. Submit the call_external instruction
     tx_a.send(Fact::Command {
         id: gen_a.next_id(),
         instruction: make_call_external_instruction("d11_test"),
     })
     .unwrap();
 
-    // 2. 等待 IoRequest (首次执行应触发)
+    // 2. Wait for the IoRequest (first execution should trigger it)
     let request_id_a = timeout(Duration::from_secs(5), async {
         while let Ok(fact) = rx_a.recv().await {
             match fact {
                 Fact::IoRequest { id, .. } => return Some(id),
-                Fact::Error { message, .. } => panic!("D11 路径 A Error: {}", message),
+                Fact::Error { message, .. } => panic!("D11 path A Error: {}", message),
                 _ => {}
             }
         }
         None
     })
     .await
-    .expect("D11 路径 A: 等待 IoRequest 超时")
-    .expect("D11 路径 A: 未收到 IoRequest");
+    .expect("D11 path A: timed out waiting for the IoRequest")
+    .expect("D11 path A: IoRequest not received");
 
-    // 3. 提交 IoResponse (D11 步骤 2: 注入 __io_results__ + io_recovery=true + 原指令重放)
+    // 3. Submit the IoResponse (D11 step 2: inject __io_results__ + io_recovery=true + replay
+    //    the original instruction)
     tx_a.send(Fact::IoResponse {
         id: gen_a.next_id(),
         request_id: request_id_a,
@@ -1841,22 +1892,23 @@ async fn test_d11_replay_consistency_first_vs_preresult() {
     })
     .unwrap();
 
-    // 4. 等待 Stable (D11 步骤 3 重放后,步骤 4 清除 __io_results__)
+    // 4. Wait for Stable (after the D11 step 3 replay, step 4 clears __io_results__)
     let snap_a = wait_for_stable(&mut rx_a, &facts_a)
         .await
-        .expect("D11 路径 A: IoResponse 后应 Stable");
+        .expect("D11 path A: should be Stable after the IoResponse");
 
     drop(tx_a);
     let _ = handle_a.join().await;
 
     // ============================================================
-    // 路径 B: 重放执行 (预注入 __io_results__, 模拟 D11 步骤 2 完成态)
+    // Path B: replay execution (pre-injecting __io_results__, simulating the completed
+    // D11 step 2 state)
     // ============================================================
     let (tx_b, mut rx_b, _event_b, handle_b, facts_b) =
         Reactor::builder(core_eval).max_rounds(100).build().spawn();
     let mut gen_b = FactIdGenerator::new();
 
-    // 1. 预注入 __io_results__.call_external (模拟步骤 2 完成态)
+    // 1. Pre-inject __io_results__.call_external (simulating the completed step 2 state)
     tx_b.send(Fact::PayloadUpdate {
         id: gen_b.next_id(),
         path: "__io_results__.call_external".to_string(),
@@ -1864,55 +1916,61 @@ async fn test_d11_replay_consistency_first_vs_preresult() {
     })
     .unwrap();
 
-    // 2. 提交同一条 call_external 指令
+    // 2. Submit the same call_external instruction
     tx_b.send(Fact::Command {
         id: gen_b.next_id(),
         instruction: make_call_external_instruction("d11_test"),
     })
     .unwrap();
 
-    // 3. 收集事实流,断言不应收到 IoRequest (走 on_true 跳过)
+    // 3. Collect the fact stream and assert no IoRequest is received (takes on_true,
+    //    skipping it)
     let mut got_io_request_b = false;
     let mut stable_b = false;
     while let Ok(fact) = rx_b.recv().await {
         match fact {
             Fact::IoRequest { .. } => got_io_request_b = true,
-            // Stable 不再携带快照(),状态经 FactsLog 快照取
+            // Stable no longer carries a snapshot (); the state is taken from the
+            // FactsLog snapshot
             Fact::Stable { .. } => {
                 stable_b = true;
                 break;
             }
-            Fact::Error { message, .. } => panic!("D11 路径 B Error: {}", message),
+            Fact::Error { message, .. } => panic!("D11 path B Error: {}", message),
             _ => {}
         }
     }
-    assert!(stable_b, "D11 路径 B: 应 Stable");
+    assert!(stable_b, "D11 path B: should be Stable");
     let (snap_b, _, _) = facts_b.snapshot();
 
     drop(tx_b);
     let _ = handle_b.join().await;
 
     // ============================================================
-    // 差分断言 (D11 跨层不变式: 重放等价性)
+    // Differential assertions (D11 cross-layer invariant: replay equivalence)
     // ============================================================
 
-    // 1. 业务结果一致 (核心差分断言)
+    // 1. Business results match (core differential assertion)
     assert_eq!(
         snap_a.get("llm_response"),
         snap_b.get("llm_response"),
-        "D11 重放契约 (跨层不变式): snap_a.llm_response 应 == snap_b.llm_response"
+        "D11 replay contract (cross-layer invariant): snap_a.llm_response should == \
+         snap_b.llm_response"
     );
 
-    // 2. 路径 B 不应收 IoRequest (D11 步骤 3: 重放走 on_true, 跳过 IoRequest)
+    // 2. Path B should not receive an IoRequest (D11 step 3: the replay takes on_true,
+    //    skipping IoRequest)
     assert!(
         !got_io_request_b,
-        "D11 重放契约: 预注入 __io_results__ 后路径 B 不应触发 IoRequest, 应走 on_true"
+        "D11 replay contract: after pre-injecting __io_results__, path B should not trigger an \
+         IoRequest and should take on_true"
     );
 
-    // 3. D11 步骤 4: 两条路径殊途同归 — 都不再可消费 __io_results__.call_external
-    //    - 路径 A: reactor 整体移除 __io_results__ 容器 (reactor.rs L609-613)
-    //    - 路径 B: on_true 分支 set null 到 call_external (core_eval.json L247-254)
-    //    两者都让后续 `exists __io_results__.call_external == false`
+    // 3. D11 step 4: both paths converge — __io_results__.call_external is no longer
+    //    consumable
+    //    - Path A: the reactor removes the whole __io_results__ container (reactor.rs L609-613)
+    //    - Path B: the on_true branch sets null into call_external (core_eval.json L247-254)
+    //    Both make the later `exists __io_results__.call_external == false`
     let is_consumable_a = snap_a
         .get("__io_results__")
         .and_then(|v| v.get("call_external"))
@@ -1925,11 +1983,13 @@ async fn test_d11_replay_consistency_first_vs_preresult() {
         .unwrap_or(false);
     assert!(
         !is_consumable_a,
-        "D11 步骤 4: 路径 A __io_results__.call_external 应不可消费 (exists == false)"
+        "D11 step 4: path A's __io_results__.call_external should not be consumable \
+         (exists == false)"
     );
     assert!(
         !is_consumable_b,
-        "D11 步骤 4: 路径 B __io_results__.call_external 应不可消费 (exists == false)"
+        "D11 step 4: path B's __io_results__.call_external should not be consumable \
+         (exists == false)"
     );
 }
 // === D11 REPLAY TEST END ===

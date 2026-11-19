@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 性能基准 — FactsLog append 吞吐（内存模式）
+//! Performance benchmark — FactsLog append throughput (in-memory mode)
 //!
-//! 041 v2.0 A7：建立审计链 append 性能基线。
-//! 每次 append 含 BLAKE3 哈希链计算（content_hash + chain_hash），
-//! 是反应器每步执行的核心写入路径。
+//! 041 v2.0 A7: establish the audit-chain append performance baseline.
+//! Every append includes BLAKE3 hash-chain computation (content_hash + chain_hash);
+//! it is the core write path of every reactor execution step.
 //!
-//! # 运行
+//! # Run
 //! ```bash
 //! cargo bench -p evorule-reactor --bench facts_log_append
 //! ```
