@@ -20,11 +20,14 @@
 //! # Sizing invariant (fail-fast validation)
 //!
 //! The execution budget must be >= rule cap x [`META_INSTRUCTIONS_PER_RULE`]
-//! (default 2048 = 128 x 16): this preserves the acceptance-boundary
-//! consistency that "a rule set admitted by the load gate can never hit the
-//! execution budget at runtime" (parameterized form of the v0.13.0
-//! lockstep semantics). Violating constructions/uses return `Err` — no
-//! guessing, no silent fallback.
+//! (default 2048 = 128 x 16): this sizes the budget for the standard load
+//! (16 instructions per rule on average; the ReAct constitution stays well
+//! under it). This is a sizing basis, NOT a hard admission guarantee — the
+//! load-side schema bounds the rule count (rule_set v1.1 `maxItems: 128`)
+//! but does not bound per-rule nested instruction fan-out, so an unusually
+//! deep rule set can still hit the budget at runtime; that fails explicitly
+//! with `TooManyExecutedInstructions`, preserving termination. Violating
+//! constructions/uses return `Err` — no guessing, no silent fallback.
 //!
 //! # Upper bound and load-gate boundary
 //!
