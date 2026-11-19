@@ -1,52 +1,62 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 审计锚点签名（G-A1：真实性 / 防抵赖）
+//! Audit anchor signing (G-A1: authenticity / non-repudiation)
 //!
-//! # 背景
+//! # Background
 //!
-//! 审计③发现：[`crate::hash`] 的 BLAKE3 哈希链是无密钥的，只能证明"完整性/被动篡改"，
-//! **不能证明"真实性/防抵赖"**（恶意者改写 WAL 事实 + 哈希字段可重建一条"合法"链）。
-//! G-A1 在此之上引入**密钥签名锚点**：定期对审计链尾签名，用公钥即可验证审计链确由私钥持有者生成。
+//! Audit ③ found that the BLAKE3 hash chain of [`crate::hash`] is keyless and can only prove
+//! "integrity / passive tamper-evidence"; it **cannot prove "authenticity / non-repudiation"**
+//! (an attacker rewriting WAL facts + hash fields can rebuild a "valid-looking" chain).
+//! On top of this, G-A1 introduces **keyed signature anchors**: the tail of the audit chain is
+//! signed periodically, and anyone with the public key can verify that the chain was indeed
+//! produced by the private-key holder.
 //!
-//! # 为何用 ed25519
+//! # Why ed25519
 //!
-//! - ed25519（RFC 8032）签名是**确定性**的：同一私钥 + 同一消息 → 同一签名（nonce 由消息派生，无 RNG）。
-//!   这与 evorule 的**确定性执行**纪律完全兼容——审计锚点签名不引入不确定性。
-//! - 非对称：私钥签名、公钥验证；私钥可只在审计器端持有，公钥可随导出物分发供第三方验证。
+//! - ed25519 (RFC 8032) signatures are **deterministic**: same private key + same message → same
+//!   signature (nonce derived from the message, no RNG).
+//!   This is fully compatible with evorule's deterministic-execution discipline — audit anchor
+//!   signing introduces no nondeterminism.
+//! - Asymmetric: the private key signs, the public key verifies; the private key can be held only
+//!   by the auditor, while the public key can be distributed with exports for third-party verification.
 //!
-//! # 私钥供给
+//! # Private key provisioning
 //!
-//! 遵循"凭据不进审计资产/不进规则库"纪律：本模块不落盘任何密钥于审计资产，
-//! 由调用方（文件路径 / 执行侧 secret 管理）注入 32 字节种子。
-//! 未配置签名器时审计行为与旧版完全一致（可选的真实性锚定）。
+//! Following the "credentials never enter audit assets / the rule base" discipline: this module
+//! never persists any key into audit assets; the caller injects the 32-byte seed (file path /
+//! executor-side secret management).
+//! When no signer is configured, audit behavior is identical to the previous version (optional
+//! authenticity anchoring).
 
 use ed25519_dalek::{Signature, Signer, Verifier};
 
-/// 签名相关错误
+/// Signing-related errors
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignError {
-    /// 签名/验证输入非法（种子长度、验证密钥字节、签名长度、hex 解析）
+    /// Invalid signing/verification input (seed length, verifying-key bytes, signature length, hex parsing)
     Invalid(String),
-    /// 生成随机种子失败（OS 熵源不可用）
+    /// Failed to generate a random seed (OS entropy source unavailable)
     Randomness(&'static str),
 }
 
 impl core::fmt::Display for SignError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            SignError::Invalid(msg) => write!(f, "审计签名: 非法输入: {}", msg),
-            SignError::Randomness(src) => write!(f, "审计签名: 随机种子失败: {}", src),
+            SignError::Invalid(msg) => write!(f, "audit signature: invalid input: {}", msg),
+            SignError::Randomness(src) => write!(f, "audit signature: random seed generation failed: {}", src),
         }
     }
 }
 
 impl std::error::Error for SignError {}
 
-/// ed25519 审计签名器（持有私钥）
+/// ed25519 audit signer (holds the private key)
 ///
-/// 用私钥对审计链尾（锚点载荷）做**确定性签名**；公钥可导出供验证方使用。
-/// 本类型只有 `sign` 能力，不含公钥信任管理（验证方自持公钥）。
+/// Signs the audit-chain tail (the anchor payload) with the private key as a **deterministic
+/// signature**; the public key can be exported for verifiers.
+/// This type only has the `sign` capability and contains no public-key trust management (verifiers
+/// hold their own public keys).
 #[derive(Debug, Clone)]
 pub struct AuditSigner {
     signing: ed25519_dalek::SigningKey,
@@ -54,47 +64,49 @@ pub struct AuditSigner {
 }
 
 impl AuditSigner {
-    /// 从 32 字节私钥种子构造签名器
+    /// Constructs a signer from a 32-byte private-key seed
     ///
-    /// # 确定性
+    /// # Determinism
     ///
-    /// 只要种子相同，`sign` 对同一条消息的输出**完全相同**（RFC 8032 确定性 nonce）。
+    /// Given the same seed, `sign` produces **exactly the same** output for the same message
+    /// (RFC 8032 deterministic nonce).
     pub fn from_bytes(seed: [u8; 32]) -> Self {
         let signing = ed25519_dalek::SigningKey::from_bytes(&seed);
         let verifying = signing.verifying_key();
         Self { signing, verifying }
     }
 
-    /// 生成一对新密钥（一次性运维操作）
+    /// Generates a new key pair (a one-time ops operation)
     ///
-    /// 返回 `(sk_seed_hex, pk_hex)`：`sk_seed_hex` 为 32 字节私钥种子的十六进制（需私密保存），
-    /// `pk_hex` 为 32 字节压缩公钥（可公开分发供验证）。
+    /// Returns `(sk_seed_hex, pk_hex)`: `sk_seed_hex` is the hex of the 32-byte private-key seed
+    /// (keep it private); `pk_hex` is the 32-byte compressed public key (may be distributed
+    /// publicly for verification).
     ///
-    /// # 运行时缝声明（诚实边界）
+    /// # Runtime seam declaration (honest boundary)
     ///
-    /// 本函数是 governance 侧唯一的 OS 熵源消费点。签名种子**必须保持
-    /// 非确定**——此缝不参与确定性回放（与 reactor 时钟缝的可重放目标
-    /// 性质相反）。确定性测试/派生构造走 [`Self::from_bytes`] /
-    /// [`Self::from_hex`]（固定种子入口已覆盖可测试性需求），
-    /// 因此不设 RuntimeEntropy trait（YAGNI；嵌入式 P6 若需要真实
-    /// 熵源注入再立项）。
+    /// This function is the only OS entropy consumption point on the governance side. The signing
+    /// seed **must stay nondeterministic** — this seam does not participate in deterministic
+    /// replay (the opposite nature of the replayable reactor clock seam). Deterministic tests /
+    /// derived construction go through [`Self::from_bytes`] / [`Self::from_hex`] (the fixed-seed
+    /// entry points already cover testability needs), so no RuntimeEntropy trait is provided
+    /// (YAGNI; file a separate item if embedded P6 later needs real entropy injection).
     pub fn generate_keys() -> Result<(String, String), SignError> {
         let mut seed = [0u8; 32];
-        getrandom::getrandom(&mut seed).map_err(|_| SignError::Randomness("OS 熵源不可用"))?;
+        getrandom::getrandom(&mut seed).map_err(|_| SignError::Randomness("OS entropy source unavailable"))?;
         let signer = Self::from_bytes(seed);
         Ok((hex_encode(&seed), hex_encode(&signer.verifying_bytes())))
     }
 
-    /// 从 64 位 hex 私钥种子字符串构造签名器
+    /// Constructs a signer from a 64-char hex private-key seed string
     pub fn from_hex(seed_hex: &str) -> Result<Self, SignError> {
         let bytes = hex_decode(seed_hex)?;
         if bytes.len() != 32 {
             return Err(SignError::Invalid(format!(
-                "私钥种子长度 != 32: {}",
+                "private-key seed length != 32: {}",
                 bytes.len()
             )));
         }
-        // len 已校验 == 32，无 panic-prone 拷贝（规避 F11-expect 门禁）
+        // len already verified == 32; no panic-prone copy (avoids the F11-expect gate)
         let mut seed = [0u8; 32];
         for (dst, src) in seed.iter_mut().zip(bytes.iter()) {
             *dst = *src;
@@ -102,42 +114,44 @@ impl AuditSigner {
         Ok(Self::from_bytes(seed))
     }
 
-    /// 32 字节压缩公钥（供验证方使用）
+    /// 32-byte compressed public key (for verifiers)
     pub fn verifying_bytes(&self) -> [u8; 32] {
         self.verifying.to_bytes()
     }
 
-    /// 公钥的 64 位 hex 字符串
+    /// 64-char hex string of the public key
     pub fn verifying_hex(&self) -> String {
         hex_encode(&self.verifying.to_bytes())
     }
 
-    /// 对载荷做确定性签名，返回 64 字节签名
+    /// Signs the payload deterministically, returning a 64-byte signature
     ///
-    /// 同一实例 + 同一载荷 bytes → 同一签名（确定性）。
+    /// Same instance + same payload bytes → same signature (deterministic).
     pub fn signature_bytes(&self, payload: &[u8]) -> [u8; 64] {
-        // ed25519-dalek 的 Signer::sign 使用 RFC 8032 确定性 nonce，无 RNG，输出确定
+        // ed25519-dalek's Signer::sign uses the RFC 8032 deterministic nonce, no RNG, deterministic output
         let sig: Signature = self.signing.sign(payload);
         sig.to_bytes()
     }
 }
 
-/// 用公钥验证签名（供验证方 / 导入校验使用）
+/// Verifies a signature with a public key (for verifiers / import validation)
 ///
-/// `verifying_bytes`：32 字节压缩公钥；`payload`：被签名的载荷；`sig_bytes`：64 字节签名。
-/// 返回 `Ok(true)` 表示签名有效且完整；`Ok(false)` 表示签名不匹配；`Err` 表示输入非法。
+/// `verifying_bytes`: 32-byte compressed public key; `payload`: the signed payload; `sig_bytes`:
+/// the 64-byte signature.
+/// `Ok(true)` means the signature is valid and complete; `Ok(false)` means a signature mismatch;
+/// `Err` means invalid input.
 pub fn verify_signature(
     verifying_bytes: [u8; 32],
     payload: &[u8],
     sig_bytes: &[u8; 64],
 ) -> Result<bool, SignError> {
     let verifying = ed25519_dalek::VerifyingKey::from_bytes(&verifying_bytes)
-        .map_err(|e| SignError::Invalid(format!("公钥非法: {e}")))?;
+        .map_err(|e| SignError::Invalid(format!("invalid public key: {e}")))?;
     let sig = Signature::from_bytes(sig_bytes);
     Ok(verifying.verify(payload, &sig).is_ok())
 }
 
-/// 十六进制编码
+/// Hex encoding
 pub fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
@@ -146,10 +160,10 @@ pub fn hex_encode(bytes: &[u8]) -> String {
     s
 }
 
-/// 十六进制解码
+/// Hex decoding
 pub fn hex_decode(hex: &str) -> Result<Vec<u8>, SignError> {
     if hex.len() % 2 != 0 {
-        return Err(SignError::Invalid(format!("hex 长度为奇数: {}", hex.len())));
+        return Err(SignError::Invalid(format!("odd hex length: {}", hex.len())));
     }
     let mut out = Vec::with_capacity(hex.len() / 2);
     let bytes = hex.as_bytes();
@@ -158,7 +172,7 @@ pub fn hex_decode(hex: &str) -> Result<Vec<u8>, SignError> {
         let lo = (bytes[i + 1] as char).to_digit(16);
         match (hi, lo) {
             (Some(h), Some(l)) => out.push(((h << 4) | l) as u8),
-            _ => return Err(SignError::Invalid("hex 含非十六进制字符".into())),
+            _ => return Err(SignError::Invalid("hex contains non-hexadecimal characters".into())),
         }
     }
     Ok(out)
@@ -195,13 +209,13 @@ mod tests {
         let payload = b"hello-audit";
         let sig = signer.signature_bytes(payload);
 
-        // 篡改载荷
+        // tamper the payload
         assert!(!verify_signature(pk, b"hello-audiT", &sig).unwrap());
-        // 篡改签名
+        // tamper the signature
         let mut bad_sig = sig;
         bad_sig[0] ^= 0xff;
         assert!(!verify_signature(pk, payload, &bad_sig).unwrap());
-        // 错误公钥
+        // wrong public key
         let other = AuditSigner::from_bytes([8u8; 32]);
         assert!(!verify_signature(other.verifying_bytes(), payload, &sig).unwrap());
     }

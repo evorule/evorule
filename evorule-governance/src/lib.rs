@@ -1,43 +1,49 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! EvoRule 治理层 - I/O 订阅者、审计链、规则验证、时间机器
+//! EvoRule governance layer - I/O subscribers, audit chain, rule validation, time machine
 //!
-//! # 定位
-//! evorule-governance 是三层架构的最上层（纯机制层库）：
-//! - 订阅 evorule-reactor 的 event broadcast 通道，过滤 `IoRequest` 事实
-//! - 通过 IoDispatcher 框架分发 I/O（具体 Handler 实现由应用层注入，本 crate 仅定义机制）
-//! - 基于 `FactsLog` 构建审计链（BLAKE3 哈希 + 逻辑时钟）
-//! - 提供规则验证器（RuleValidator）+ 时间机器（TimeMachine: replay / rewind / fork / diff）
-//! - 提供 SessionManager：会话管理器（机制层，管理反应器实例生命周期）
+//! # Positioning
+//! evorule-governance is the top layer of the three-layer architecture (a pure
+//! mechanism-layer library):
+//! - subscribes to the event broadcast channel of evorule-reactor and filters `IoRequest` facts
+//! - dispatches I/O through the IoDispatcher framework (concrete Handler implementations are
+//!   injected by the application layer; this crate only defines the mechanism)
+//! - builds the audit chain on top of `FactsLog` (BLAKE3 hashing + logical clock)
+//! - provides the rule validator (RuleValidator) + time machine (TimeMachine: replay / rewind / fork / diff)
+//! - provides SessionManager: a session manager (mechanism layer, manages reactor instance lifecycles)
 //!
-//! **H5/H6 边界清理后不再包含**：HTTP API、SSE、Prometheus metrics、Bearer 认证、具体 I/O Handler 实现。
-//! 上述应用层功能由应用层自行构建，本 crate 仅提供机制层接口。
+//! **No longer included after the H5/H6 boundary cleanup**: HTTP API, SSE, Prometheus metrics,
+//! Bearer authentication, concrete I/O Handler implementations.
+//! The above application-layer features are built by the application layer itself; this crate
+//! only provides mechanism-layer interfaces.
 //!
-//! # 设计原则
-//! - **不染指控制流**：治理层完全不知道 `conditional`/`while_loop`/`sequence` 的存在
-//! - **I/O 外挂**：仅定义 IoHandler trait + IoDispatcher 框架（机制），零业务逻辑侵入；具体实现由应用层注入
-//! - **事实总线**：所有组件通过 Fact 通信，无直接函数调用
+//! # Design principles
+//! - **Never touches control flow**: the governance layer is completely unaware of the existence
+//!   of `conditional`/`while_loop`/`sequence`
+//! - **I/O as an add-on**: only defines the IoHandler trait + IoDispatcher framework (mechanism),
+//!   with zero business-logic intrusion; concrete implementations are injected by the application layer
+//! - **Fact bus**: all components communicate through Fact, with no direct function calls
 //!
-//! # 模块结构
-//! - `io_handler` — IoHandler trait + IoResult（机制定义，应用层注入实现）
-//! - `io_dispatcher` — Enum Dispatch（I/O 分发框架）
-//! - `io_subscriber` — 订阅 IoRequest → 分发 → 回写 IoResponse
-//! - `auditor` — 基于 FactsLog 的审计链
-//! - `hash` — BLAKE3 哈希
-//! - `clock` — 逻辑时钟
-//! - `session` — 会话管理器（机制层，管理反应器实例生命周期）
-//! - `rule_validation` — 规则 JSON Schema 验证器（tier0 core_eval.json）
-//! - `time_machine` — 时间机器：replay / rewind / fork / diff
-//! - `shared_facts_log` — 跨 session 共享 FactsLog 包装
-//! - `metrics` — IoMetrics trait（机制层接口，Prometheus 实现由应用层提供）
-// cluster 已移除（多 reactor 协作原语，应用层功能，后续由应用层实现）
-// api, io_handlers, bin 目录已全部迁出本 crate（H5/H6 边界清理）
+//! # Module structure
+//! - `io_handler` — IoHandler trait + IoResult (mechanism definition; implementations injected by the application layer)
+//! - `io_dispatcher` — Enum Dispatch (I/O dispatch framework)
+//! - `io_subscriber` — subscribes IoRequest → dispatch → write back IoResponse
+//! - `auditor` — audit chain built on FactsLog
+//! - `hash` — BLAKE3 hashing
+//! - `clock` — logical clock
+//! - `session` — session manager (mechanism layer, manages reactor instance lifecycles)
+//! - `rule_validation` — rule JSON Schema validator (tier0 core_eval.json)
+//! - `time_machine` — time machine: replay / rewind / fork / diff
+//! - `shared_facts_log` — cross-session shared FactsLog wrapper
+//! - `metrics` — IoMetrics trait (mechanism-layer interface; the Prometheus implementation is provided by the application layer)
+// cluster removed (multi-reactor collaboration primitives, an application-layer feature to be implemented by the application layer later)
+// api, io_handlers and bin directories have all been moved out of this crate (H5/H6 boundary cleanup)
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-// H6: api 模块已迁出本 crate（机制-策略分离，核心层不再包含 HTTP API 代码）
+// H6: the api module has been moved out of this crate (mechanism-policy separation; the core layer no longer contains HTTP API code)
 pub mod anchor;
 pub mod auditor;
 pub mod circuit_breaker;
@@ -45,25 +51,25 @@ pub mod clock;
 pub mod hash;
 pub mod io_dispatcher;
 pub mod io_handler;
-// H5: io_handlers 具体实现已外迁（机制-策略分离）
-// 具体 handler 实现(DbHandler/HttpHandler/MemoryHandler)不再属于本 crate
+// H5: concrete io_handlers implementations have been moved out (mechanism-policy separation)
+// concrete handler implementations (DbHandler/HttpHandler/MemoryHandler) no longer belong to this crate
 pub mod io_subscriber;
 pub mod metrics;
 pub mod permission;
-// object_pool 已移除（性能优化，非核心功能）
+// object_pool removed (performance optimization, non-core feature)
 pub mod rule_validation;
-// H6: session 模块从 api/ 提升到顶层（机制层，管理反应器实例生命周期）
+// H6: the session module has been promoted from api/ to the top level (mechanism layer, manages reactor instance lifecycles)
 pub mod session;
-// G-A1: 审计锚点签名（真实性/防抵赖），可选能力——未配置签名器时审计行为与旧版完全一致
+// G-A1: audit anchor signing (authenticity/non-repudiation), an optional capability — when no signer is configured, audit behavior is identical to the previous version
 pub mod shared_facts_log;
 pub mod signing;
 pub mod time_machine;
 
-// 公开 API 重导出
-// H6: AppState/GovernanceApi/GovernanceServer/SessionApi 已迁移到应用层（不再从核心导出）
+// Public API re-exports
+// H6: AppState/GovernanceApi/GovernanceServer/SessionApi have moved to the application layer (no longer exported from core)
 pub use auditor::{Auditor, LoadError};
 pub use clock::LogicalClock;
-// cluster 已移除（多 reactor 协作原语，应用层功能）
+// cluster removed (multi-reactor collaboration primitives, an application-layer feature)
 pub use hash::content_hash;
 pub use io_dispatcher::{IoDispatcher, IoDispatcherBuilder};
 pub use io_handler::{IoHandler, IoResult};
@@ -74,11 +80,11 @@ pub use permission::{
     PermissionState, PermissionTable, Verdict,
 };
 pub use session::{Session, SessionAnchorConfig, SessionError, SessionId, SessionManager};
-// G-A1: 审计锚点签名（真实性/防抵赖）
+// G-A1: audit anchor signing (authenticity/non-repudiation)
 pub use anchor::{
     signature_payload_v2, verify_anchor_chain, verify_binding, AnchorChainBuilder, AnchorError,
     AnchorProto, AuditAnchor, FactRange, ANCHOR_FORMAT, ANCHOR_GENESIS,
 };
 pub use signing::{verify_signature, AuditSigner, SignError};
-// ObjectPool 已移除（性能优化，非核心功能）
+// ObjectPool removed (performance optimization, non-core feature)
 pub use shared_facts_log::{SharedFact, SharedFactsLog};

@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! 时间机器模块 —— 提供 rewind/diff 核心能力
+//! Time machine module — provides the core rewind/diff capabilities
 //!
-//! # 设计原则
-//! - 基于 FactsLog 的完整历史，支持回溯到任意版本
-//! - 计算两个版本间的 payload 差异
-//! - 纯函数实现，无副作用，可测试
+//! # Design principles
+//! - built on the full FactsLog history, supporting rewinds to any version
+//! - computes the payload difference between two versions
+//! - pure-function implementation, no side effects, testable
 
 use evorule_reactor::Fact;
 use evorule_tcb::JsonValue;
 use serde::{Deserialize, Serialize};
 
-/// 将 JsonValue 转换为 serde_json::Value
+/// Converts a JsonValue into serde_json::Value
 fn json_value_to_serde(v: &JsonValue) -> serde_json::Value {
     match v {
         JsonValue::Null => serde_json::Value::Null,
         JsonValue::Bool(b) => serde_json::Value::Bool(*b),
         JsonValue::Integer(i) => serde_json::Value::Number((*i).into()),
-        // u64 全域通道（v0.9.0）：serde Number 原生无损承载，不经 i64 cast
+        // u64 full-range channel (v0.9.0): carried losslessly natively by serde Number, without an i64 cast
         JsonValue::U64(v) => serde_json::Value::Number((*v).into()),
         JsonValue::String(s) => serde_json::Value::String(s.to_string()),
         JsonValue::Array(arr) => {
@@ -32,42 +32,42 @@ fn json_value_to_serde(v: &JsonValue) -> serde_json::Value {
     }
 }
 
-/// rewind 结果：指定版本的物化快照
+/// Rewind result: the materialized snapshot of a specified version
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RewindSnapshot {
-    /// 该版本的 payload 快照
+    /// The payload snapshot of that version
     pub payload: serde_json::Value,
-    /// 该版本的指令队列
+    /// The instruction queue of that version
     pub queue: Vec<serde_json::Value>,
-    /// 版本号
+    /// Version number
     pub version: u64,
 }
 
-/// 两个版本间的 payload diff
+/// The payload diff between two versions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PayloadDiff {
-    /// v_b 新增的字段（v_a 没有，v_b 有）
+    /// Fields added in v_b (absent in v_a, present in v_b)
     pub added: Vec<(String, serde_json::Value)>,
-    /// v_b 删除的字段（v_a 有，v_b 没有）
+    /// Fields removed in v_b (present in v_a, absent in v_b)
     pub removed: Vec<(String, serde_json::Value)>,
-    /// 值变化的字段 (key, v_a 的值, v_b 的值)
+    /// Fields whose value changed (key, v_a's value, v_b's value)
     pub changed: Vec<(String, serde_json::Value, serde_json::Value)>,
-    /// 值未变化的字段名
+    /// Names of fields whose value did not change
     pub unchanged: Vec<String>,
 }
 
 impl PayloadDiff {
-    /// diff 是否为空（两个 payload 完全相同）
+    /// Whether the diff is empty (the two payloads are identical)
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty() && self.changed.is_empty()
     }
 
-    /// 变更字段总数（added + removed + changed）
+    /// Total number of changed fields (added + removed + changed)
     pub fn change_count(&self) -> usize {
         self.added.len() + self.removed.len() + self.changed.len()
     }
 
-    /// 生成可读的 diff 摘要
+    /// Produces a human-readable diff summary
     pub fn summary(&self) -> String {
         format!(
             "diff: +{} -{} ~{} (={} unchanged)",
@@ -79,41 +79,41 @@ impl PayloadDiff {
     }
 }
 
-/// 时间机器错误（ / B8b）
+/// Time machine error ( / B8b)
 ///
-/// `diff` 在 rewind 不可达时不再静默回退空 payload（旧行为会产生无告警的
-/// 错误 diff 结果），而是显式返回本错误。
+/// `diff` no longer silently falls back to an empty payload when rewind is unreachable (the old
+/// behavior produced warning-free, wrong diff results); it explicitly returns this error instead.
 #[derive(Debug, thiserror::Error)]
 #[error("time machine: rewind to version {version} unavailable (facts history insufficient or version out of range)")]
 pub struct TimeMachineError {
-    /// 不可达的版本号
+    /// The unreachable version number
     pub version: u64,
 }
 
-/// 应用 PayloadUpdate 的路径更新（与 reactor::update_payload 逻辑一致）
+/// Applies a PayloadUpdate's path update (logic consistent with reactor::update_payload)
 ///
-/// 断点 9 修复：rewind/rewind_payload 需要正确应用 PayloadUpdate 对 payload
-/// 的修改，否则版本计数和状态重建都会错误。
+/// Checkpoint 9 fix: rewind/rewind_payload must correctly apply a PayloadUpdate's modification to
+/// the payload, otherwise both version counting and state reconstruction go wrong.
 ///
-/// # 算法（与 reactor.rs:832-890 保持一致）
+/// # Algorithm (kept consistent with reactor.rs:832-890)
 ///
-/// 1. 先尝试 `resolve_path_mut`（路径已存在 → 直接更新）
-/// 2. 失败则尝试嵌套路径创建（`split('.')` 导航，中间节点自动创建）
-/// 3. 都失败则静默跳过（rewind 是 best-effort 重建，不返回 Err）
+/// 1. first try `resolve_path_mut` (the path already exists → update directly)
+/// 2. on failure, try nested path creation (`split('.')` navigation, intermediate nodes auto-created)
+/// 3. if both fail, silently skip (rewind is a best-effort reconstruction and does not return Err)
 ///
-/// # 为什么不复用 reactor::update_payload
+/// # Why reactor::update_payload is not reused
 ///
-/// - reactor::update_payload 是 Reactor 的私有方法，返回 `Result<(), ReactorError>`
-/// - rewind 不能失败（返回 Option），需要 best-effort 语义
-/// - 提取为 pub(crate) 辅助函数避免跨 crate 暴露内部实现
+/// - reactor::update_payload is a private Reactor method returning `Result<(), ReactorError>`
+/// - rewind must not fail (returns Option) and needs best-effort semantics
+/// - extracted as a pub(crate) helper to avoid exposing internals across crates
 pub(crate) fn apply_payload_update(payload: &mut JsonValue, path: &str, value: JsonValue) {
-    // 1. 路径已存在：直接更新
+    // 1. path already exists: update directly
     if let Some(target) = evorule_tcb::path::resolve_path_mut(payload, path) {
         *target = value;
         return;
     }
 
-    // 2. 路径不存在：嵌套创建（与 reactor.rs:832-890 一致）
+    // 2. path missing: nested creation (consistent with reactor.rs:832-890)
     let parts: Vec<&str> = path.split('.').collect();
     if parts.is_empty() {
         return;
@@ -125,14 +125,14 @@ pub(crate) fn apply_payload_update(payload: &mut JsonValue, path: &str, value: J
     };
 
     let parent_obj = if parts.len() == 1 {
-        // 单层路径：在 payload 顶层创建字段
+        // single-level path: create the field at the payload top level
         if let JsonValue::Object(map) = payload {
             map
         } else {
             return;
         }
     } else {
-        // 多层路径：导航到父对象，中间节点不存在则自动创建
+        // multi-level path: navigate to the parent object, auto-creating missing intermediate nodes
         let mut current = payload;
         for &part in &parts[0..parts.len() - 1] {
             if let JsonValue::Object(map) = current {
@@ -157,31 +157,32 @@ pub(crate) fn apply_payload_update(payload: &mut JsonValue, path: &str, value: J
     parent_obj.insert(field.to_string(), value);
 }
 
-/// 从 facts 列表回溯到指定 version，返回当时的快照
+/// Rewinds the facts list back to the specified version and returns the snapshot at that time
 ///
-/// # 语义说明
+/// # Semantics
 ///
-/// - rewind 返回指定 version 的状态快照（payload + queue + version）
-/// - 包含 target_version 及之前的所有状态变更：
-///   - `StateTransition`：更新 payload 和 queue，version += 1
-///   - `IoResponse`：version += 1（状态变更是瞬时的，由后续 StateTransition 捕获）
-///   - `PayloadUpdate`：应用路径更新到 payload，version += 1
-/// - 其他 Fact（Command/Stable/Error）：不改变状态，不递增 version
+/// - rewind returns the state snapshot (payload + queue + version) of the specified version
+/// - includes all state changes up to and including target_version:
+///   - `StateTransition`: updates payload and queue, version += 1
+///   - `IoResponse`: version += 1 (the state change is transient, captured by the later StateTransition)
+///   - `PayloadUpdate`: applies the path update to the payload, version += 1
+/// - other Facts (Command/Stable/Error): no state change, no version increment
 ///
-/// # 断点 9 修复
+/// # Checkpoint 9 fix
 ///
-/// 原实现忽略 PayloadUpdate（`_ => {}`），导致 version 计数不一致和状态重建
-/// 错误。修复后正确应用 PayloadUpdate 的路径更新。
+/// The original implementation ignored PayloadUpdate (`_ => {}`), causing inconsistent version
+/// counting and wrong state reconstruction. After the fix, the PayloadUpdate path update is
+/// applied correctly.
 ///
-/// # 算法
+/// # Algorithm
 ///
-/// 遍历 facts，对每个 Fact 应用状态转换规则：
-/// - `StateTransition`：更新 payload 和 queue，version += 1
-/// - `IoResponse`：version += 1（不应用状态变更，由后续 StateTransition 捕获）
-/// - `PayloadUpdate`：应用路径更新到 payload，version += 1
-/// - 其他 Fact：忽略
+/// Traverse the facts, applying the state-transition rule to each Fact:
+/// - `StateTransition`: update payload and queue, version += 1
+/// - `IoResponse`: version += 1 (no state change applied; captured by the later StateTransition)
+/// - `PayloadUpdate`: apply the path update to the payload, version += 1
+/// - other Facts: ignored
 ///
-/// 当 version == target_version 时停止，返回当前快照。
+/// Stop when version == target_version and return the current snapshot.
 pub fn rewind(facts: &[Fact], target_version: u64) -> Option<RewindSnapshot> {
     if target_version == 0 {
         return Some(RewindSnapshot {
@@ -191,7 +192,7 @@ pub fn rewind(facts: &[Fact], target_version: u64) -> Option<RewindSnapshot> {
         });
     }
 
-    // 断点 9 修复：内部使用 JsonValue 以支持 resolve_path_mut
+    // Checkpoint 9 fix: use JsonValue internally to support resolve_path_mut
     let mut payload = JsonValue::empty_object();
     let mut queue: Vec<JsonValue> = Vec::new();
     let mut version: u64 = 0;
@@ -208,12 +209,13 @@ pub fn rewind(facts: &[Fact], target_version: u64) -> Option<RewindSnapshot> {
                 version += 1;
             }
             Fact::IoResponse { .. } => {
-                // IoResponse 的状态变更是瞬时的（inject __io_result__ + push_front
-                // 原指令），后续 StateTransition 会捕获最终状态。
-                // rewind 到 IoResponse 版本时返回最近 StateTransition 的状态。
+                // The IoResponse state change is transient (inject __io_result__ + push_front of
+                // the original instruction); the later StateTransition captures the final state.
+                // When rewinding to an IoResponse version, the most recent StateTransition's
+                // state is returned.
                 version += 1;
             }
-            // 断点 9 修复：PayloadUpdate 必须应用路径更新并递增 version
+            // Checkpoint 9 fix: PayloadUpdate must apply the path update and increment version
             Fact::PayloadUpdate { path, value, .. } => {
                 apply_payload_update(&mut payload, path, value.clone());
                 version += 1;
@@ -236,23 +238,25 @@ pub fn rewind(facts: &[Fact], target_version: u64) -> Option<RewindSnapshot> {
     })
 }
 
-/// 计算两个版本间的 payload diff
+/// Computes the payload diff between two versions
 ///
-/// # 参数
+/// # Arguments
 ///
-/// - `facts`：完整的 Fact 历史
-/// - `v_a`：起始版本
-/// - `v_b`：目标版本
+/// - `facts`: the complete Fact history
+/// - `v_a`: the starting version
+/// - `v_b`: the target version
 ///
-/// # 返回
+/// # Returns
 ///
-/// 返回 `Ok(PayloadDiff)`，包含 added/removed/changed/unchanged 四类字段。
+/// Returns `Ok(PayloadDiff)` containing the four field classes
+/// added/removed/changed/unchanged.
 ///
-/// # 错误（ / B8b）
+/// # Errors ( / B8b)
 ///
-/// 任一版本 rewind 不可达（事实历史不足/版本越界）时返回
-/// [`TimeMachineError`]——**不再**静默回退空 payload（旧行为会产生无告警的
-/// 错误 diff 结果，直接动摇回放工具的可信性）。
+/// Returns [`TimeMachineError`] when either version's rewind is unreachable (insufficient fact
+/// history / version out of range) — **no longer** silently falling back to an empty payload (the
+/// old behavior produced warning-free, wrong diff results, directly undermining the replay
+/// tools' trustworthiness).
 pub fn diff(facts: &[Fact], v_a: u64, v_b: u64) -> Result<PayloadDiff, TimeMachineError> {
     let payload_a = rewind(facts, v_a)
         .map(|s| s.payload)
@@ -264,7 +268,7 @@ pub fn diff(facts: &[Fact], v_a: u64, v_b: u64) -> Result<PayloadDiff, TimeMachi
     Ok(compute_diff(&payload_a, &payload_b))
 }
 
-/// 计算两个 JSON 对象的 diff
+/// Computes the diff between two JSON objects
 fn compute_diff(payload_a: &serde_json::Value, payload_b: &serde_json::Value) -> PayloadDiff {
     let mut added = Vec::new();
     let mut removed = Vec::new();
@@ -311,17 +315,17 @@ mod tests {
     use evorule_reactor::FactId;
     use evorule_tcb::JsonValue;
 
-    /// 将 serde_json::Value 转换为 JsonValue
+    /// Converts a serde_json::Value into a JsonValue
     fn serde_to_json(v: serde_json::Value) -> JsonValue {
         match v {
             serde_json::Value::Null => JsonValue::Null,
             serde_json::Value::Bool(b) => JsonValue::Bool(b),
             serde_json::Value::Number(n) => {
-                // JsonValue 不支持 Float，尝试转换为 Integer
+                // JsonValue has no Float support; try converting to Integer
                 if let Some(i) = n.as_i64() {
                     JsonValue::Integer(i)
                 } else {
-                    // 浮点数或超出范围，转为 Null
+                    // floating point or out of range; convert to Null
                     JsonValue::Null
                 }
             }
@@ -489,8 +493,9 @@ mod tests {
         assert!(summary.contains("=1"));
     }
 
-    /// B8b 回归（）：rewind 不可达时 diff 必须显式报错，
-    /// 绝不静默回退空 payload（旧 unwrap_or_else 行为会产生无告警的错误 diff）。
+    /// B8b regression (): diff must explicitly error when rewind is unreachable,
+    /// never silently falling back to an empty payload (the old unwrap_or_else behavior produced
+    /// warning-free wrong diffs).
     #[test]
     fn test_diff_unreachable_version_is_error_not_empty() {
         let facts = vec![make_state_transition(1, serde_json::json!({"a": 1}))];
@@ -498,7 +503,7 @@ mod tests {
         let err = diff(&facts, 1, 99).unwrap_err();
         assert_eq!(
             err.version, 99,
-            "越界版本必须返回 TimeMachineError 并携带版本号"
+            "an out-of-range version must return TimeMachineError carrying the version number"
         );
 
         let err = diff(&facts, 50, 1).unwrap_err();
@@ -506,7 +511,7 @@ mod tests {
     }
 
     // ========================================================================
-    // 断点 9 修复测试：PayloadUpdate 在 rewind/diff 中的正确处理
+    // Checkpoint 9 fix tests: correct handling of PayloadUpdate in rewind/diff
     // ========================================================================
 
     fn make_payload_update(version: u64, path: &str, value: serde_json::Value) -> Fact {
@@ -517,7 +522,7 @@ mod tests {
         }
     }
 
-    /// 验证 rewind 正确应用 PayloadUpdate 的路径更新
+    /// Verifies rewind correctly applies a PayloadUpdate's path update
     #[test]
     fn test_rewind_payload_update_applied() {
         let facts = vec![
@@ -532,7 +537,7 @@ mod tests {
         assert_eq!(snap.payload, serde_json::json!({"amount": 200}));
     }
 
-    /// 验证 PayloadUpdate 正确递增 version，且不干扰其他版本的 rewind
+    /// Verifies PayloadUpdate correctly increments version without disturbing rewinds of other versions
     #[test]
     fn test_rewind_payload_update_version_increment() {
         let facts = vec![
@@ -540,14 +545,14 @@ mod tests {
             make_payload_update(2, "y", serde_json::json!(2)),
         ];
 
-        // rewind 到 version 1（StateTransition）
+        // rewind to version 1 (StateTransition)
         let result = rewind(&facts, 1);
         assert!(result.is_some());
         let snap = result.unwrap();
         assert_eq!(snap.version, 1);
         assert_eq!(snap.payload, serde_json::json!({"x": 1}));
 
-        // rewind 到 version 2（PayloadUpdate）
+        // rewind to version 2 (PayloadUpdate)
         let result = rewind(&facts, 2);
         assert!(result.is_some());
         let snap = result.unwrap();
@@ -555,7 +560,7 @@ mod tests {
         assert_eq!(snap.payload, serde_json::json!({"x": 1, "y": 2}));
     }
 
-    /// 验证 StateTransition + IoResponse + PayloadUpdate 混合场景
+    /// Verifies the mixed scenario of StateTransition + IoResponse + PayloadUpdate
     #[test]
     fn test_rewind_mixed_facts() {
         let facts = vec![
@@ -565,14 +570,14 @@ mod tests {
             make_state_transition(4, serde_json::json!({"a": 1, "b": 2, "c": 3})),
         ];
 
-        // rewind 到 version 3（PayloadUpdate 后，StateTransition 前）
+        // rewind to version 3 (after the PayloadUpdate, before the StateTransition)
         let result = rewind(&facts, 3);
         assert!(result.is_some());
         let snap = result.unwrap();
         assert_eq!(snap.version, 3);
         assert_eq!(snap.payload, serde_json::json!({"a": 1, "b": 2}));
 
-        // rewind 到 version 4（StateTransition 覆盖整个 payload）
+        // rewind to version 4 (the StateTransition overwrites the whole payload)
         let result = rewind(&facts, 4);
         assert!(result.is_some());
         let snap = result.unwrap();
@@ -580,7 +585,7 @@ mod tests {
         assert_eq!(snap.payload, serde_json::json!({"a": 1, "b": 2, "c": 3}));
     }
 
-    /// 验证 PayloadUpdate 的嵌套路径创建（与 reactor::update_payload 一致）
+    /// Verifies a PayloadUpdate's nested path creation (consistent with reactor::update_payload)
     #[test]
     fn test_rewind_payload_update_nested_path() {
         let facts = vec![
@@ -598,7 +603,7 @@ mod tests {
         );
     }
 
-    /// 验证 diff 在 PayloadUpdate 场景下正确计算差异
+    /// Verifies diff computes the difference correctly in the PayloadUpdate scenario
     #[test]
     fn test_diff_with_payload_update() {
         let facts = vec![
@@ -615,7 +620,7 @@ mod tests {
         assert_eq!(diff_result.unchanged[0], "a");
     }
 
-    /// 验证 PayloadUpdate 修改已存在字段时 diff 计算为 changed
+    /// Verifies that when a PayloadUpdate modifies an existing field, diff counts it as changed
     #[test]
     fn test_diff_payload_update_changed_field() {
         let facts = vec![

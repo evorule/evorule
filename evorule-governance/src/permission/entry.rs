@@ -1,81 +1,81 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 权限条目数据模型
+//! Permission entry data model
 //!
-//! 定义 [`PermissionEntry`] 及其组成类型，schema 与实施文档 18 对齐。
-//! 本模块为纯数据模型（serde 驱动），不包含任何判定逻辑。
+//! Defines [`PermissionEntry`] and its constituent types; the schema aligns with implementation doc 18.
+//! This module is a pure data model (serde-driven) and contains no decision logic.
 
 use serde::{Deserialize, Serialize};
 
-/// 权限条目生命周期状态
+/// Permission entry lifecycle state
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum PermissionState {
-    /// 草稿：创建者编辑中，尚未提交审批
+    /// Draft: being edited by the creator, not yet submitted for approval
     #[default]
     Draft,
-    /// 候选：已提交，等待审批人裁决
+    /// Candidate: submitted, awaiting the approver's decision
     Candidate,
-    /// 激活：已通过，进入判定集合
+    /// Active: approved and entered into the decision set
     Active,
-    /// 已拒绝｜已作废（从有效判定集合移除）
+    /// Rejected | voided (removed from the effective decision set)
     Rejected,
 }
 
 impl PermissionState {
-    /// 是否处于"有效判定"状态（只有 `Active` 参与判定）
+    /// Whether in the "effective decision" state (only `Active` participates in decisions)
     pub const fn is_active(self) -> bool {
         matches!(self, PermissionState::Active)
     }
 
-    /// 是否处于"待审批"状态（`Candidate`）
+    /// Whether in the "pending approval" state (`Candidate`)
     pub const fn is_candidate(self) -> bool {
         matches!(self, PermissionState::Candidate)
     }
 }
 
-/// 判定效果：允许或拒绝
+/// Decision effect: allow or deny
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Effect {
-    /// 允许
+    /// Allow
     #[default]
     Allow,
-    /// 拒绝
+    /// Deny
     Deny,
 }
 
-/// 主体类型
+/// Subject type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SubjectType {
-    /// 具名用户
+    /// Named user
     User,
-    /// 角色
+    /// Role
     Role,
-    /// 规则文件（author）
+    /// Rule file (author)
     Rule,
-    /// LLM 智能体
+    /// LLM agent
     LlmAgent,
-    /// 任意主体（通配）
+    /// Any subject (wildcard)
     #[default]
     Any,
 }
 
-/// 权限主体：谁被允许/拒绝
+/// Permission subject: who is allowed/denied
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Subject {
-    /// 主体类型
+    /// Subject type
     #[serde(default)]
     pub subject_type: SubjectType,
-    /// 主体标识符（`type = Any` 时为空串）
+    /// Subject identifier (empty string when `type = Any`)
     #[serde(default)]
     pub id: String,
 }
 
 impl Subject {
-    /// 通配主体（匹配任意调用者）
+    /// Wildcard subject (matches any caller)
     pub fn any() -> Self {
         Self {
             subject_type: SubjectType::Any,
@@ -83,7 +83,7 @@ impl Subject {
         }
     }
 
-    /// 人类规则作者主体
+    /// Human rule-author subject
     pub fn human(name: impl Into<String>) -> Self {
         Self {
             subject_type: SubjectType::User,
@@ -92,92 +92,92 @@ impl Subject {
     }
 }
 
-/// 资源类型
+/// Resource type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ResourceType {
-    /// 事实（state/queue/shared 路径）
+    /// Fact (state/queue/shared paths)
     Fact,
-    /// I/O 动作
+    /// I/O action
     IoAction,
     /// HTTP API
     Api,
-    /// 共享事实域
+    /// Shared-facts domain
     #[default]
     Shared,
 }
 
-/// 权限资源：要保护什么
+/// Permission resource: what to protect
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Resource {
-    /// 资源类型
+    /// Resource type
     #[serde(default)]
     pub resource_type: ResourceType,
-    /// 资源匹配模式（`*` 结尾为前缀通配），例如 `shared.*` / `db.users.*`
+    /// Resource match pattern (trailing `*` = prefix wildcard), e.g. `shared.*` / `db.users.*`
     #[serde(default)]
     pub path: String,
 }
 
-/// 作用域：限定生效的租户范围
+/// Scope: limits the tenant range in effect
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Scope {
-    /// 生效租户 ID；`None` = 全局生效
+    /// Tenant ID in effect; `None` = globally effective
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tenant_id: Option<String>,
 }
 
-/// 权限条目 —— 一条 subject→resource→action 的授权/拒绝声明
+/// Permission entry — one subject→resource→action allow/deny declaration
 ///
-/// 数据模型与实施文档 18 对齐。作为纯数据存于 `SharedFactsLog` 下的 TCB JSON，
-/// 由 [`super::PermissionTable`] 重建快照后判定。
+/// The data model aligns with implementation doc 18. Stored as pure data in TCB JSON under
+/// `SharedFactsLog`, and decided after [`super::PermissionTable`] rebuilds the snapshot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PermissionEntry {
-    /// 条目 ID（即存储路径 `shared.__permission__.entry.<id>` 的 `<id>` 部分）
+    /// Entry ID (the `<id>` part of the storage path `shared.__permission__.entry.<id>`)
     pub id: String,
-    /// 版本号（读取时以最新全局版本覆盖，用于回放对齐）
+    /// Version (overwritten with the latest global version on read, for replay alignment)
     #[serde(default)]
     pub version: u64,
-    /// 生命周期状态
+    /// Lifecycle state
     #[serde(default)]
     pub state: PermissionState,
-    /// 主体
+    /// Subject
     #[serde(default)]
     pub subject: Subject,
-    /// 资源
+    /// Resource
     #[serde(default)]
     pub resource: Resource,
-    /// 动作标识（对应实际 I/O 指令 type / API 名称）
+    /// Action identifier (corresponds to the actual I/O instruction type / API name)
     #[serde(default = "default_action")]
     pub action: String,
-    /// 判定效果
+    /// Decision effect
     #[serde(default)]
     pub effect: Effect,
-    /// 条件表达式（可选，交给 TCB `evaluate_domain`）：结构见 [`super::condition`]
+    /// Condition expression (optional, handed to TCB `evaluate_domain`); structure see [`super::condition`]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conditions: Option<serde_json::Value>,
-    /// 作用域
+    /// Scope
     #[serde(default)]
     pub scope: Scope,
-    /// 触发来源（审批/审计追根溯源）
+    /// Trigger origin (for approval/audit traceability)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cause: Option<String>,
-    /// 最近修改者
+    /// Last modified by
     #[serde(default = "default_updated_by")]
     pub updated_by: String,
 }
 
-/// `action` 字段默认值（`*` = 任意动作）
+/// Default value of the `action` field (`*` = any action)
 fn default_action() -> String {
     "*".to_string()
 }
 
-/// `updated_by` 字段默认值
+/// Default value of the `updated_by` field
 fn default_updated_by() -> String {
     "unknown".to_string()
 }
 
 impl PermissionEntry {
-    /// 构造一个新条目（版本恒为 1，状态恒为 `Draft`，动作通配）
+    /// Constructs a new entry (version always 1, state always `Draft`, action wildcard)
     pub fn new(
         id: impl Into<String>,
         subject: Subject,
@@ -199,7 +199,7 @@ impl PermissionEntry {
         }
     }
 
-    /// 进入候选（待审批）状态
+    /// Enters the candidate (pending-approval) state
     pub fn submit(&mut self) -> Result<(), PermissionError> {
         self.state = match self.state {
             PermissionState::Draft => PermissionState::Candidate,
@@ -212,7 +212,7 @@ impl PermissionEntry {
         Ok(())
     }
 
-    /// 审批裁决：同意则激活，拒绝则作废
+    /// Approval decision: approve activates, deny voids
     pub fn review(&mut self, approve: bool) -> Result<(), PermissionError> {
         match self.state {
             PermissionState::Candidate => {
@@ -230,22 +230,22 @@ impl PermissionEntry {
     }
 }
 
-/// 权限子系统错误
+/// Permission subsystem errors
 #[derive(Debug, thiserror::Error)]
 pub enum PermissionError {
-    /// 条目不存在
+    /// Entry not found
     #[error("permission entry not found: {0}")]
     NotFound(String),
-    /// 状态非法
+    /// Invalid state
     #[error("invalid permission state: {0}")]
     InvalidState(String),
-    /// 条件评估失败
+    /// Condition evaluation failed
     #[error("condition evaluation failed: {0}")]
     Condition(String),
-    /// 序列化/反序列化失败
+    /// Serialization/deserialization failed
     #[error("permission serialization error: {0}")]
     Json(#[from] serde_json::Error),
-    /// 存储层错误
+    /// Storage-layer error
     #[error("permission store error: {0}")]
     Store(String),
 }

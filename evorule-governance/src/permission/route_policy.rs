@@ -1,28 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! I/O 路由策略资产（SG-2）—— 静态收紧层
+//! I/O route policy asset (SG-2) — the static tightening layer
 //!
-//! 资产化三元决策表 `caller_role × io_type × target → allow/deny/ask`，
-//! 装配于 [`super::PermissionGate`]（`with_route_policy`），先于动态权限表判定。
+//! An asset-based three-way decision table `caller_role × io_type × target → allow/deny/ask`,
+//! assembled into [`super::PermissionGate`] (`with_route_policy`), ahead of the dynamic
+//! permission table verdict.
 //!
-//! # 定位（裁决序 v2，统帅批准）
+//! # Positioning (verdict order v2, leadership-approved)
 //!
-//! **放行权唯一来源 = 动态 [`super::PermissionTable`]（审批流 Active 条目 /
-//! 审批过的 default policy）；本层只握收紧权（deny）与升级权（ask），无放行权。**
+//! **The sole source of allow power is the dynamic [`super::PermissionTable`] (approval-flow
+//! Active entries / approved default policy); this layer only holds tightening power (deny) and
+//! escalation power (ask), never allow power.**
 //!
-//! 裁决序：
-//! 1. 静态命中 deny → 终局 Deny（收紧闸门；动态表 Active Allow 也拒——
-//!    deny-overrides 单向收紧，不属绕过审批流）；
-//! 2. 静态命中 ask + caller_role=llm/unknown（无人值守）→ 回退 Deny，
-//!    由 [`super::gate::PermissionGate::check_routed`] 给出 `ask-fallback` 语义留痕；
-//! 3. 静态命中 ask + caller_role=human → 落动态表（保留审批通路）；
-//! 4. 静态 allow / 未命中 → 落动态表 + default policy（现状不变）。
+//! Verdict order:
+//! 1. static hit deny → final Deny (tightening gate; a dynamic-table Active Allow is also denied —
+//!    deny-overrides is a one-way tightening, not a bypass of the approval flow);
+//! 2. static hit ask + caller_role=llm/unknown (unattended) → fall back to Deny,
+//!    with `ask-fallback` semantics recorded by [`super::gate::PermissionGate::check_routed`];
+//! 3. static hit ask + caller_role=human → fall to the dynamic table (approval path preserved);
+//! 4. static allow / no hit → fall to the dynamic table + default policy (status quo unchanged).
 //!
-//! 资产中 allow 条目仍可表达，语义 = 显式声明「此路由归审批流管辖」（可审计
-//! 对照），**不产生额外放行**。
+//! allow entries can still be expressed in the asset; their semantics = an explicit declaration
+//! that "this route is governed by the approval flow" (auditable cross-check), **producing no
+//! extra allow**.
 //!
-//! # 资产 schema（v1）
+//! # Asset schema (v1)
 //!
 //! ```json
 //! {
@@ -35,46 +38,49 @@
 //! }
 //! ```
 //!
-//! - `default`：未命中 rules 时按角色的静态处置。**缺省全 allow（不收紧）**——
-//!   静态层缺省 deny 会让审批过的 Active Allow 也被拒，违反审批流权威；
-//!   收紧必须显式声明。
-//! - `ask_fallback.unattended`：ask 无人值守回退规则（资产显式声明），
-//!   唯一合法值 `deny`（allow = 静默放行 LLM 绝不允许；ask = 循环无意义）。
+//! - `default`: per-role static disposition when no rule hits. **Defaults to all-allow (no
+//!   tightening)** — a static-layer default deny would also reject approved Active Allows,
+//!   violating the approval-flow authority; tightening must be declared explicitly.
+//! - `ask_fallback.unattended`: the unattended ask fallback rule (explicitly declared in the
+//!   asset); the only legal value is `deny` (allow = silently letting LLM through is never
+//!   acceptable; ask = a meaningless loop).
 //!
-//! # 匹配语义（确定性）
+//! # Matching semantics (deterministic)
 //!
-//! - rules 数组顺序遍历，**先命中先用**；
-//! - caller_role：精确（`human`/`llm`/`unknown`）或 `*` 通配；
-//! - io_type / target：`*` 全通配、`prefix*` 前缀通配、否则精确相等；
-//! - target 描述串：取 IoRequest params 的 `target` 字段（缺省空串；
-//!   各 io_type 的 params 结构异构，P0 约定字段而非逐类型提取）；
-//! - 解析失败整体拒绝（fail-closed），绝不静默降级——装配端对解析失败
-//!   显式告警且不装配本层（动态表权威不变），禁止静默通过。
+//! - the rules array is traversed in order, **first hit wins**;
+//! - caller_role: exact (`human`/`llm`/`unknown`) or `*` wildcard;
+//! - io_type / target: `*` full wildcard, `prefix*` prefix wildcard, otherwise exact equality;
+//! - target description string: taken from the `target` field of the IoRequest params (empty
+//!   string by default; params structures differ across io_types, so P0 convention is a field
+//!   rather than per-type extraction);
+//! - parse failure rejects the whole asset (fail-closed), never silent degradation — the assembly
+//!   side explicitly warns on parse failure and does not assemble this layer (the dynamic table
+//!   authority unchanged); silent pass-through is forbidden.
 
 use serde::{Deserialize, Serialize};
 
-/// 路由决策三元
+/// The three-way route decision
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RouteDecision {
-    /// 不收紧，落动态权限表（审批流权威；本层不产生放行权）
+    /// No tightening, fall to the dynamic permission table (approval-flow authority; this layer grants no allow power)
     Allow,
-    /// 终局拒绝（收紧闸门）
+    /// Final rejection (tightening gate)
     Deny,
-    /// 升级人工裁决；无人值守（llm/unknown）按 ask_fallback 回退
+    /// Escalate to human decision; unattended (llm/unknown) falls back per ask_fallback
     Ask,
 }
 
-/// ask 无人值守回退规则（资产显式声明段）
+/// The unattended ask fallback rule (an explicitly declared asset section)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", default)]
 pub struct AskFallback {
-    /// caller_role ∈ {llm, unknown} 命中 ask 时的回退决策；唯一合法值 deny
+    /// Fallback decision when caller_role ∈ {llm, unknown} hits ask; the only legal value is deny
     pub unattended: RouteDecision,
 }
 
 impl Default for AskFallback {
-    /// 缺省 deny（fail-closed 回退）
+    /// Defaults to deny (fail-closed fallback)
     fn default() -> Self {
         Self {
             unattended: RouteDecision::Deny,
@@ -82,20 +88,20 @@ impl Default for AskFallback {
     }
 }
 
-/// 逐角色缺省静态处置（未命中 rules 时）
+/// Per-role default static disposition (when no rule hits)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", default)]
 pub struct PerRoleDefault {
-    /// human 角色缺省处置
+    /// Default disposition for the human role
     pub human: RouteDecision,
-    /// llm 角色缺省处置
+    /// Default disposition for the llm role
     pub llm: RouteDecision,
-    /// unknown 角色缺省处置
+    /// Default disposition for the unknown role
     pub unknown: RouteDecision,
 }
 
 impl Default for PerRoleDefault {
-    /// 缺省全 allow（不收紧）——见模块文档「default 段」语义
+    /// Defaults to all-allow (no tightening) — see the "default section" semantics in the module doc
     fn default() -> Self {
         Self {
             human: RouteDecision::Allow,
@@ -105,34 +111,35 @@ impl Default for PerRoleDefault {
     }
 }
 
-/// 单条路由规则
+/// A single route rule
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RouteRule {
-    /// 调用者角色：`human` / `llm` / `unknown` / `*`
+    /// Caller role: `human` / `llm` / `unknown` / `*`
     pub caller_role: String,
-    /// I/O 类型：精确、`prefix*` 前缀通配或 `*`
+    /// I/O type: exact, `prefix*` prefix wildcard, or `*`
     pub io_type: String,
-    /// 目标描述串模式：精确、`prefix*` 前缀通配或 `*`
+    /// Target description string pattern: exact, `prefix*` prefix wildcard, or `*`
     pub target: String,
-    /// 决策
+    /// Decision
     pub decision: RouteDecision,
 }
 
-/// 路由策略资产 —— `caller_role × io_type × target → allow/deny/ask`
+/// Route policy asset — `caller_role × io_type × target → allow/deny/ask`
 ///
-/// 纯数据 + 纯函数判定（无时钟/随机/可变状态），同输入重放字节一致。
+/// Pure data + pure-function verdict (no clock/randomness/mutable state); the same input replays
+/// byte-identically.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct RoutePolicy {
-    /// 资产 schema 版本（当前 1）
+    /// Asset schema version (currently 1)
     #[serde(default = "default_version")]
     pub version: u32,
-    /// 未命中 rules 时的逐角色缺省处置
+    /// Per-role default disposition when no rule hits
     #[serde(default)]
     pub default: PerRoleDefault,
-    /// ask 无人值守回退规则
+    /// The unattended ask fallback rule
     #[serde(default)]
     pub ask_fallback: AskFallback,
-    /// 路由规则（数组顺序先命中先用）
+    /// Route rules (array order, first hit wins)
     #[serde(default)]
     pub rules: Vec<RouteRule>,
 }
@@ -142,20 +149,20 @@ fn default_version() -> u32 {
 }
 
 impl RoutePolicy {
-    /// 从 JSON 文本解析资产（fail-closed：任何非法值整体拒绝）
+    /// Parses the asset from JSON text (fail-closed: any illegal value rejects the whole asset)
     ///
-    /// 校验：
-    /// - version 必须为 1；
-    /// - `ask_fallback.unattended` 只允许 deny（allow = 静默放行 LLM，
-    ///   ask = 升级循环无意义）；
-    /// - 规则字段非空。
+    /// Validation:
+    /// - version must be 1;
+    /// - `ask_fallback.unattended` only allows deny (allow = silently letting LLM through,
+    ///   ask = a meaningless escalation loop);
+    /// - rule fields non-empty.
     pub fn from_json_str(text: &str) -> Result<Self, RoutePolicyError> {
         let policy: RoutePolicy = serde_json::from_str(text)?;
         policy.validate()?;
         Ok(policy)
     }
 
-    /// 结构校验（反序列化后仍需满足的语义约束）
+    /// Structural validation (semantic constraints that must still hold after deserialization)
     pub fn validate(&self) -> Result<(), RoutePolicyError> {
         if self.version != 1 {
             return Err(RoutePolicyError::Invalid(format!(
@@ -179,9 +186,10 @@ impl RoutePolicy {
         Ok(())
     }
 
-    /// 纯函数判定：返回原始路由决策（无人值守回退逻辑在 gate 层处理）
+    /// Pure-function verdict: returns the raw route decision (unattended fallback logic is
+    /// handled at the gate layer)
     ///
-    /// 未知名角色（非 human/llm/unknown）走 `unknown` 槽（fail-closed 对齐）。
+    /// Unknown role names (non human/llm/unknown) go to the `unknown` slot (fail-closed alignment).
     pub fn decide(&self, caller_role: &str, io_type: &str, target: &str) -> RouteDecision {
         for r in &self.rules {
             if role_matches(&r.caller_role, caller_role)
@@ -199,13 +207,13 @@ impl RoutePolicy {
     }
 }
 
-/// 角色匹配：`*` 通配或精确相等
+/// Role matching: `*` wildcard or exact equality
 fn role_matches(pattern: &str, role: &str) -> bool {
     pattern == "*" || pattern == role
 }
 
-/// 模式匹配：`*` 全通配、`prefix*` 前缀通配、否则精确相等
-/// （与 [`super::table`] 的 resource_matches 同规则）
+/// Pattern matching: `*` full wildcard, `prefix*` prefix wildcard, otherwise exact equality
+/// (same rules as `resource_matches` in [`super::table`])
 fn pattern_matches(pattern: &str, value: &str) -> bool {
     if pattern == "*" {
         return true;
@@ -216,13 +224,13 @@ fn pattern_matches(pattern: &str, value: &str) -> bool {
     }
 }
 
-/// 路由策略错误
+/// Route policy errors
 #[derive(Debug, thiserror::Error)]
 pub enum RoutePolicyError {
-    /// JSON 反序列化失败
+    /// JSON deserialization failed
     #[error("route policy deserialization failed: {0}")]
     Json(#[from] serde_json::Error),
-    /// 语义校验失败
+    /// Semantic validation failed
     #[error("route policy validation failed: {0}")]
     Invalid(String),
 }
@@ -233,8 +241,8 @@ mod tests {
 
     use super::*;
 
-    /// J-SG2 schema 权威样例（资产文件 rules/00_constraint_route_policy.json
-    /// 由 gitignore 管辖不进 commit；本测试即 schema 权威锁）
+    /// J-SG2 schema authoritative sample (the asset file rules/00_constraint_route_policy.json
+    /// is under gitignore and never committed; this test is the schema authority lock)
     const SAMPLE: &str = r#"{
         "version": 1,
         "default": { "human": "allow", "llm": "allow", "unknown": "allow" },
@@ -255,7 +263,7 @@ mod tests {
 
     #[test]
     fn parse_defaults_when_sections_missing() {
-        // 缺段：default 全 allow（不收紧）、ask_fallback 缺省 deny、rules 空
+        // missing sections: default all-allow (no tightening), ask_fallback defaults to deny, empty rules
         let p = RoutePolicy::from_json_str(r#"{"version":1}"#).expect("minimal must parse");
         assert_eq!(p.default, PerRoleDefault::default());
         assert!(p.rules.is_empty());
@@ -264,7 +272,7 @@ mod tests {
 
     #[test]
     fn reject_bad_ask_fallback_and_version_and_empty_fields() {
-        // unattended=allow = 静默放行 LLM，必须整体拒绝
+        // unattended=allow = silently letting LLM through; must reject the whole asset
         let bad = r#"{"version":1,"ask_fallback":{"unattended":"allow"}}"#;
         assert!(RoutePolicy::from_json_str(bad).is_err());
         let bad = r#"{"version":1,"ask_fallback":{"unattended":"ask"}}"#;
@@ -284,17 +292,17 @@ mod tests {
     fn rules_first_match_wins_with_patterns() {
         let p = RoutePolicy::from_json_str(SAMPLE).unwrap();
 
-        // rule[0]：llm + http_get + target 前缀 api.internal: → deny
+        // rule[0]: llm + http_get + target prefix api.internal: → deny
         assert_eq!(
             p.decide("llm", "http_get", "api.internal:8080/x"),
             RouteDecision::Deny
         );
-        // rule[0] target 不匹配 → 落 default.llm = allow
+        // rule[0] target does not match → falls to default.llm = allow
         assert_eq!(
             p.decide("llm", "http_get", "other.example"),
             RouteDecision::Allow
         );
-        // rule[1]：任意角色 + call_external → ask（rule[0] io_type 不匹配跳过）
+        // rule[1]: any role + call_external → ask (rule[0] skipped on io_type mismatch)
         assert_eq!(
             p.decide("human", "call_external", "anything"),
             RouteDecision::Ask
@@ -303,7 +311,7 @@ mod tests {
             p.decide("llm", "call_external", "anything"),
             RouteDecision::Ask
         );
-        // 未命中任何 rule → default 按角色
+        // no rule hit → default per role
         assert_eq!(p.decide("human", "query_db", "x"), RouteDecision::Allow);
         assert_eq!(p.decide("unknown", "query_db", "x"), RouteDecision::Allow);
     }
@@ -311,11 +319,11 @@ mod tests {
     #[test]
     fn unknown_role_uses_unknown_slot() {
         let p = RoutePolicy::from_json_str(SAMPLE).unwrap();
-        // 非 human/llm 角色串 → unknown 槽（fail-closed 对齐）
+        // non human/llm role string → unknown slot (fail-closed alignment)
         assert_eq!(p.decide("weird", "query_db", "x"), RouteDecision::Allow);
     }
 
-    /// J-SG2 重放确定性：同输入重复判定结果一致（serde 序列化字节一致）
+    /// J-SG2 replay determinism: repeated verdicts on the same input agree (serde serialization byte-identical)
     #[test]
     fn decide_is_deterministic_replay() {
         let p = RoutePolicy::from_json_str(SAMPLE).unwrap();
@@ -330,11 +338,11 @@ mod tests {
             let first_serde = serde_json::to_string(&first).unwrap();
             for _ in 0..3 {
                 let again = p.decide(role, io, tgt);
-                assert_eq!(again, first, "decide 必须确定性：{role}/{io}/{tgt}");
+                assert_eq!(again, first, "decide must be deterministic: {role}/{io}/{tgt}");
                 assert_eq!(
                     serde_json::to_string(&again).unwrap(),
                     first_serde,
-                    "决策序列化字节必须一致：{role}/{io}/{tgt}"
+                    "decision serialization bytes must match: {role}/{io}/{tgt}"
                 );
             }
         }

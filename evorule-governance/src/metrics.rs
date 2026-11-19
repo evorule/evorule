@@ -2,130 +2,138 @@
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 #![forbid(unsafe_code)]
-//! I/O 指标收集接口（机制层 trait 定义）
+//! I/O metrics collection interface (mechanism-layer trait definition)
 //!
-//! 本模块仅定义 `IoMetrics` trait 和默认的 `NoOpMetrics` 实现。
-//! 具体的 Prometheus 实现由应用层提供（evorule-server 独立仓 evorule-server/src/metrics_impl.rs + core/metrics/）。
+//! This module only defines the `IoMetrics` trait and the default `NoOpMetrics` implementation.
+//! The concrete Prometheus implementation is provided by the application layer (separate repo
+//! evorule-server at evorule-server/src/metrics_impl.rs + core/metrics/).
 //!
-//! # 设计理由
-//! 指标收集是可观测性能力，属于应用层（AGENTS.md 边界判断表：
-//! "加个 Prometheus 指标 → 放 evorule-application / evorule-server（可观测性是应用层）"）。
-//! 核心层通过 trait 抽象暴露指标收集点，应用层通过依赖注入注入具体实现
-//!（如 Prometheus、OpenTelemetry 等）。
+//! # Design rationale
+//! Metrics collection is an observability capability and belongs to the application layer
+//! (AGENTS.md boundary decision table:
+//! "adding a Prometheus metric → put it in evorule-application / evorule-server (observability
+//! is application layer)").
+//! The core layer exposes metrics collection points through the trait abstraction, and the
+//! application layer injects concrete implementations via dependency injection
+//! (e.g. Prometheus, OpenTelemetry, etc.).
 //!
-//! # H6 架构合规整改
-//! 原 `metrics.rs` 直接依赖 `prometheus` crate，违反机制-策略分离原则。
-//! 现重写为 trait 定义，移除 prometheus 依赖，消除 RUSTSEC-2024-0437 漏洞链路。
+//! # H6 architecture-compliance rectification
+//! The original `metrics.rs` directly depended on the `prometheus` crate, violating the
+//! mechanism-policy separation principle.
+//! It is now rewritten as a trait definition, removing the prometheus dependency and
+//! eliminating the RUSTSEC-2024-0437 vulnerability link.
 //!
-//! # 指标列表（trait 暴露的收集点）
-//! | 方法 | 对应原 Prometheus 指标 | 说明 |
+//! # Metric list (collection points exposed by the trait)
+//! | Method | Corresponding original Prometheus metric | Description |
 //! |------|----------------------|------|
-//! | `observe_io_duration` | `evorule_io_duration_seconds` | I/O 调用耗时（按 io_type） |
-//! | `inc_io_errors` | `evorule_io_errors_total` | I/O 调用失败总数 |
-//! | `inc_sessions` / `dec_sessions` / `set_sessions` | `evorule_sessions_active` | 当前活跃会话数 |
-//! | `inc_commands` | `evorule_commands_total` | 命令提交总数（按指令类型） |
-//! | `set_facts_log_version` | `evorule_facts_log_version` | FactsLog 当前版本号 |
-//! | `inc_sse_connections` / `dec_sse_connections` / `set_sse_connections` | `evorule_sse_connections_active` | SSE 连接数 |
-//! | `inc_http_requests` | `evorule_http_requests_total` | HTTP 请求总数 |
-//! | `inc_sanitize_hits` | `evorule_sanitize_hits_total` | 输入净化命中数（P5-A1，2026-08-27） |
-//! | `inc_auto_verify_failures` | `evorule_auto_verify_failures_total` | 实时审计验证失败次数（P5-A2，2026-08-27） |
-//! | `inc_auto_verify_skips` | `evorule_auto_verify_skips_total` | 自动验证跳过次数（P5-A2，2026-08-27） |
-//! | `render_as_text` | `/metrics` 端点输出 | 渲染为 Prometheus 文本格式 |
+//! | `observe_io_duration` | `evorule_io_duration_seconds` | I/O call duration (by io_type) |
+//! | `inc_io_errors` | `evorule_io_errors_total` | Total failed I/O calls |
+//! | `inc_sessions` / `dec_sessions` / `set_sessions` | `evorule_sessions_active` | Currently active sessions |
+//! | `inc_commands` | `evorule_commands_total` | Total commands submitted (by instruction type) |
+//! | `set_facts_log_version` | `evorule_facts_log_version` | Current FactsLog version |
+//! | `inc_sse_connections` / `dec_sse_connections` / `set_sse_connections` | `evorule_sse_connections_active` | SSE connection count |
+//! | `inc_http_requests` | `evorule_http_requests_total` | Total HTTP requests |
+//! | `inc_sanitize_hits` | `evorule_sanitize_hits_total` | Input sanitization hits (P5-A1, 2026-08-27) |
+//! | `inc_auto_verify_failures` | `evorule_auto_verify_failures_total` | Real-time audit verification failures (P5-A2, 2026-08-27) |
+//! | `inc_auto_verify_skips` | `evorule_auto_verify_skips_total` | Auto-verification skips (P5-A2, 2026-08-27) |
+//! | `render_as_text` | `/metrics` endpoint output | Renders into the Prometheus text format |
 
 use std::sync::Arc;
 use std::time::Duration;
 
-/// I/O 指标收集 trait（机制层接口定义）
+/// I/O metrics collection trait (mechanism-layer interface definition)
 ///
-/// 核心层通过此 trait 暴露指标收集点，应用层负责具体实现。
-/// 默认实现 `NoOpMetrics` 所有方法空转，不引入任何依赖。
+/// The core layer exposes metrics collection points through this trait; the application layer
+/// provides concrete implementations.
+/// The default implementation `NoOpMetrics` no-ops on every method and introduces no dependency.
 ///
-/// # 使用方式
-/// - 核心层默认使用 `NoOpMetrics`（通过 `noop_metrics()` 构造）
-/// - 应用层通过 `IoSubscriber::with_metrics()` 注入 Prometheus 等具体实现
-/// - 所有方法都提供默认实现（空转），便于 trait 扩展时保持向后兼容
+/// # Usage
+/// - The core layer uses `NoOpMetrics` by default (constructed via `noop_metrics()`)
+/// - The application layer injects concrete implementations such as Prometheus via `IoSubscriber::with_metrics()`
+/// - All methods provide default implementations (no-ops), keeping backward compatibility when the trait is extended
 pub trait IoMetrics: Send + Sync {
-    /// 记录 I/O 调用耗时（按 io_type 打标签）
+    /// Records the duration of an I/O call (tagged by io_type)
     ///
-    /// # 参数
-    /// - `io_type`：I/O 类型字符串（如 "call_external"、"call_service"）
-    /// - `duration`：本次 I/O 调用耗时
+    /// # Arguments
+    /// - `io_type`: the I/O type string (e.g. "call_external", "call_service")
+    /// - `duration`: the duration of this I/O call
     fn observe_io_duration(&self, _io_type: &str, _duration: Duration) {}
 
-    /// I/O 错误计数 +1（按 io_type 打标签）
+    /// I/O error counter +1 (tagged by io_type)
     fn inc_io_errors(&self, _io_type: &str) {}
 
-    /// 会话数 +1（创建会话时调用）
+    /// Session counter +1 (called when a session is created)
     fn inc_sessions(&self) {}
 
-    /// 会话数 -1（关闭会话时调用）
+    /// Session counter -1 (called when a session is closed)
     fn dec_sessions(&self) {}
 
-    /// 设置当前活跃会话数（批量同步时调用）
+    /// Sets the current active session count (called during batch synchronization)
     fn set_sessions(&self, _n: i64) {}
 
-    /// 命令计数 +1（按指令类型打标签）
+    /// Command counter +1 (tagged by instruction type)
     fn inc_commands(&self, _instruction_type: &str) {}
 
-    /// 设置 FactsLog 当前版本号
+    /// Sets the current FactsLog version
     fn set_facts_log_version(&self, _version: u64) {}
 
-    /// SSE 连接数 +1
+    /// SSE connection counter +1
     fn inc_sse_connections(&self) {}
 
-    /// SSE 连接数 -1
+    /// SSE connection counter -1
     fn dec_sse_connections(&self) {}
 
-    /// 设置当前 SSE 连接数（从计数器同步时调用）
+    /// Sets the current SSE connection count (called when synchronizing from the counter)
     fn set_sse_connections(&self, _n: i64) {}
 
-    /// HTTP 请求计数 +1（按 method/path/status 打标签）
+    /// HTTP request counter +1 (tagged by method/path/status)
     fn inc_http_requests(&self, _method: &str, _path: &str, _status: &str) {}
 
-    /// 输入净化命中计数 +1（P5-A1：攻击态势可指标化）
+    /// Input sanitization hit counter +1 (P5-A1: attack posture becomes measurable)
     ///
-    /// 按 rule 打标签（如 "role_override_ignore_previous"），使 L1 防线
-    /// 的命中情况可被监控告警，而非仅 stderr 日志。
+    /// Tagged by rule (e.g. "role_override_ignore_previous"), so L1-line hits can be monitored and
+    /// alerted on instead of only appearing in stderr logs.
     fn inc_sanitize_hits(&self, _rule: &str) {}
 
-    /// 实时审计验证失败计数 +1（P5-A2：审计链篡改探测结果可观测）
+    /// Real-time audit verification failure counter +1 (P5-A2: audit-chain tamper detection results are observable)
     fn inc_auto_verify_failures(&self) {}
 
-    /// 自动审计验证跳过计数 +1（P5-A2：因阈值/间隔跳过时留痕）
+    /// Auto audit-verification skip counter +1 (P5-A2: leaves a trace when skipped due to threshold/interval)
     fn inc_auto_verify_skips(&self) {}
 
-    /// 渲染为 Prometheus 文本格式（供 `/metrics` 端点返回）
+    /// Renders into the Prometheus text format (returned by the `/metrics` endpoint)
     ///
-    /// 默认返回空字符串。应用层若需暴露 `/metrics` 端点，
-    /// 应在实现中覆写此方法返回 Prometheus 文本格式数据。
+    /// Returns an empty string by default. If the application layer needs to expose a `/metrics`
+    /// endpoint, it should override this method in its implementation to return Prometheus text-format data.
     fn render_as_text(&self) -> String {
         String::new()
     }
 }
 
-/// 默认空实现（所有操作空转，不引入任何依赖）
+/// Default no-op implementation (all operations no-op, no dependency introduced)
 ///
-/// 核心层默认使用此实现。应用层通过 `IoSubscriber::with_metrics()`
-/// 注入 Prometheus 等具体实现。
+/// The core layer uses this implementation by default. The application layer injects concrete
+/// implementations such as Prometheus via `IoSubscriber::with_metrics()`.
 #[derive(Debug, Default, Clone)]
 pub struct NoOpMetrics;
 
 impl IoMetrics for NoOpMetrics {
-    // 所有方法使用 trait 默认实现（空转），无需覆写
-    // 显式覆写 observe_io_duration 和 inc_io_errors 以表达"这两个是核心收集点"的语义
+    // All methods use the trait default implementations (no-ops); no override needed
+    // observe_io_duration and inc_io_errors are explicitly overridden to convey the semantics
+    // that "these two are the core collection points"
     fn observe_io_duration(&self, _io_type: &str, _duration: Duration) {}
     fn inc_io_errors(&self, _io_type: &str) {}
 }
 
-/// 共享指标引用（Arc 包装，供 handler 和后台任务共享）
+/// Shared metrics reference (Arc wrapper, shared by handlers and background tasks)
 ///
-/// 使用 trait object（`dyn IoMetrics`），应用层可注入任意实现。
+/// Uses a trait object (`dyn IoMetrics`); the application layer may inject any implementation.
 pub type SharedMetrics = Arc<dyn IoMetrics>;
 
-/// 构造默认的 NoOpMetrics 共享引用
+/// Constructs the default NoOpMetrics shared reference
 ///
-/// 核心层默认使用此函数构造指标收集器。
-/// 应用层应使用 `PrometheusMetrics::new()` 构造具体实现。
+/// The core layer uses this function to construct the metrics collector by default.
+/// The application layer should use `PrometheusMetrics::new()` to construct concrete implementations.
 pub fn noop_metrics() -> SharedMetrics {
     Arc::new(NoOpMetrics)
 }
@@ -139,7 +147,7 @@ mod tests {
     #[test]
     fn test_noop_metrics_does_not_panic() {
         let m = NoOpMetrics;
-        // 调用所有方法，验证不 panic
+        // Call every method and verify no panic
         m.observe_io_duration("call_external", Duration::from_millis(100));
         m.inc_io_errors("call_external");
         m.inc_sessions();
@@ -161,31 +169,30 @@ mod tests {
 
     #[test]
     fn test_shared_metrics_via_trait_object() {
-        // 验证 trait object 可以正常构造和分发
+        // Verify the trait object can be constructed and dispatched normally
         let m: SharedMetrics = noop_metrics();
         m.observe_io_duration("test", Duration::from_secs(0));
         m.inc_io_errors("test");
         m.inc_sessions();
         m.set_facts_log_version(1);
-        // render_as_text 默认返回空字符串
+        // render_as_text returns an empty string by default
         assert_eq!(m.render_as_text(), "");
     }
 
     #[test]
     fn test_shared_metrics_clone_preserves_behavior() {
-        // 验证 Arc<dyn IoMetrics> 可以 clone 且行为不变
+        // Verify Arc<dyn IoMetrics> can be cloned with unchanged behavior
         let m1: SharedMetrics = noop_metrics();
         let m2 = m1.clone();
         m1.observe_io_duration("a", Duration::from_millis(1));
         m2.observe_io_duration("b", Duration::from_millis(2));
-        // NoOp 不 panic 即可
+        // NoOp simply must not panic
     }
 
-    /// 辅助测试：验证自定义实现可以被注入到 SharedMetrics
+    /// Helper test: verifies a custom implementation can be injected into SharedMetrics
     ///
-    /// 使用共享的 `Arc<AtomicU32>` 计数器（而非 Arc::downcast），
-    /// 因为 `Arc::downcast` 要求 trait object 是 `dyn Any + Send + Sync`，
-    /// 而 `dyn IoMetrics` 不满足此约束。
+    /// Uses a shared `Arc<AtomicU32>` counter (rather than Arc::downcast), because `Arc::downcast`
+    /// requires the trait object to be `dyn Any + Send + Sync`, which `dyn IoMetrics` does not satisfy.
     struct CountingMetrics {
         count: std::sync::Arc<std::sync::atomic::AtomicU32>,
     }
@@ -205,7 +212,7 @@ mod tests {
         m.inc_sessions();
         m.inc_sessions();
         m.inc_sessions();
-        // 验证自定义实现被正确调用（通过共享计数器，无需 downcast）
+        // Verify the custom implementation is invoked correctly (via the shared counter, no downcast needed)
         assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 }

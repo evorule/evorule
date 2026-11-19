@@ -1,23 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! I/O 订阅者 - 订阅 event broadcast 通道，过滤 IoRequest 事实，执行 I/O，回写 IoResponse
+//! I/O subscriber - subscribes to the event broadcast channel, filters IoRequest facts,
+//! performs the I/O, and writes back the IoResponse
 //!
-//! # 工作流程
-//! 1. 从 EventReceiver 接收 Fact
-//! 2. 过滤 `Fact::IoRequest { id, io_type, params, .. }`
-//! 3. 调用 `IoDispatcher::dispatch` 执行实际 I/O
-//! 4. 通过 FactSender 发送 `Fact::IoResponse { id, request_id, result, error }` 回反应器
-//! 5. 其他 Fact 类型忽略（不阻塞，继续接收）
+//! # Workflow
+//! 1. receive a Fact from the EventReceiver
+//! 2. filter `Fact::IoRequest { id, io_type, params, .. }`
+//! 3. call `IoDispatcher::dispatch` to perform the actual I/O
+//! 4. send `Fact::IoResponse { id, request_id, result, error }` back to the reactor via FactSender
+//! 5. ignore other Fact types (non-blocking, keep receiving)
 //!
-//! # ID 分配策略
-//! `IoSubscriber` 维护独立的 ID 计数器，从 `10000` 起步，避免与反应器自身的
-//! `FactIdGenerator`（从 1 开始）发生 ID 冲突，便于审计追踪时区分事实来源。
+//! # ID allocation strategy
+//! `IoSubscriber` maintains an independent ID counter starting from `10000`, avoiding ID
+//! collisions with the reactor's own `FactIdGenerator` (starting from 1), so audit tracing can
+//! distinguish fact origins.
 //!
-//! # 错误处理
-//! - `RecvError::Lagged`：订阅者落后于 broadcast 通道容量，记录 `warn` 并继续
-//! - `RecvError::Closed`：通道已关闭，正常退出循环
-//! - `SendError`：command 通道关闭（反应器已退出），返回 `IoSubscriberError::CommandClosed`
+//! # Error handling
+//! - `RecvError::Lagged`: the subscriber lagged behind the broadcast channel capacity; log `warn`
+//!   and continue
+//! - `RecvError::Closed`: the channel is closed; exit the loop normally
+//! - `SendError`: the command channel is closed (the reactor has exited); return
+//!   `IoSubscriberError::CommandClosed`
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -32,33 +36,35 @@ use crate::io_dispatcher::IoDispatcher;
 use crate::metrics::{NoOpMetrics, SharedMetrics};
 use crate::permission::{PermissionGate, Verdict};
 
-/// ID 起始偏移量，避免与反应器自身的 FactId 冲突
+/// ID start offset, avoiding collisions with the reactor's own FactId
 const ID_OFFSET: u64 = 10000;
 
-/// 最大重试次数（P0-2：瞬时错误指数退避重试，最多 3 次，即总计 4 次尝试）
+/// Maximum retry count (P0-2: exponential backoff retries for transient errors, up to 3
+/// retries, i.e. 4 attempts in total)
 const MAX_RETRIES: u32 = 3;
-/// 初始退避时长（P0-2：指数退避 200ms → 400ms → 800ms）
+/// Initial backoff duration (P0-2: exponential backoff 200ms → 400ms → 800ms)
 const INITIAL_BACKOFF: Duration = Duration::from_millis(200);
 
-/// 判断 I/O 错误是否可重试（P0-2）
+/// Decides whether an I/O error is retryable (P0-2)
 ///
-/// 仅瞬时错误重试：超时、连接问题、HTTP 5xx 服务端错误。
-/// 客户端错误（4xx、参数缺失、工具未找到）不重试——重试不会改变结果。
+/// Only transient errors are retried: timeouts, connection issues, HTTP 5xx server errors.
+/// Client errors (4xx, missing params, tool not found) are never retried — retrying cannot
+/// change the outcome.
 fn is_retryable_error(err: &str) -> bool {
     let lower = err.to_lowercase();
-    // 超时（reqwest tokio timeout、db timeout 等）
+    // timeout (reqwest tokio timeout, db timeout, etc.)
     if lower.contains("timeout") || lower.contains("timed out") {
         return true;
     }
-    // 连接问题（connection refused / reset / closed）
+    // connection issues (connection refused / reset / closed)
     if lower.contains("connection") {
         return true;
     }
-    // 瞬时服务端错误
+    // transient server errors
     if lower.contains("temporarily") || lower.contains("temporary") {
         return true;
     }
-    // HTTP 5xx 服务端错误
+    // HTTP 5xx server errors
     for code in ["500", "502", "503", "504"] {
         if lower.contains(code) {
             return true;
@@ -67,80 +73,90 @@ fn is_retryable_error(err: &str) -> bool {
     false
 }
 
-/// I/O 订阅者错误
+/// I/O subscriber errors
 #[derive(Debug, thiserror::Error)]
 pub enum IoSubscriberError {
-    /// Event broadcast 通道关闭（所有发送端已释放）
+    /// The event broadcast channel is closed (all senders dropped)
     ///
-    /// 此错误在 `run()` 内部已被处理为正常退出（`Ok(())`），保留枚举变体以供
-    /// 调用方在自定义流程中显式表达该语义。
+    /// This error is already handled inside `run()` as a normal exit (`Ok(())`); the enum variant
+    /// is kept so callers can express this semantics explicitly in custom flows.
     #[error("Event channel closed")]
     ChannelClosed,
 
-    /// Command 通道关闭：反应器已退出，无法回写 `IoResponse`
+    /// The command channel is closed: the reactor has exited; the `IoResponse` cannot be
+    /// written back
     ///
-    /// 携带错误上下文描述（如正在处理的 request_id）。
+    /// Carries an error-context description (e.g. the request_id being processed).
     #[error("Command channel closed: {0}")]
     CommandClosed(String),
 }
 
-/// 跳过谓词：返回 `true` 时该 IoRequest **不由本订阅者自动应答**，
-/// 留给外部执行者（如审计桥的浏览器/agent 侧本地 LLM 执行）处理。
+/// Skip predicate: when it returns `true`, that IoRequest is **not auto-answered by this
+/// subscriber** and is left to the external executor (e.g. the audit bridge's browser/agent-side
+/// local LLM execution).
 pub type SkipPredicate = Arc<dyn Fn(&IoType, &JsonValue) -> bool + Send + Sync>;
 
-/// I/O 订阅者
+/// I/O subscriber
 ///
-/// 订阅反应器的 event broadcast 通道，过滤出 `Fact::IoRequest`，交由
-/// `IoDispatcher` 执行实际 I/O，并通过 command 通道回写 `Fact::IoResponse`。
+/// Subscribes to the reactor's event broadcast channel, filters out `Fact::IoRequest`, hands it
+/// to `IoDispatcher` for the actual I/O, and writes back `Fact::IoResponse` via the command channel.
 ///
-/// # 设计要点
-/// - 持有自己的 ID 计数器（从 `10000` 起），与反应器 ID 隔离
-/// - 对 `Lagged` 容错（记录日志并继续），不中断订阅循环
-/// - 非阻塞处理：忽略非 `IoRequest` 类型 Fact，不影响其他订阅者
-/// - 可选 `skip` 谓词：命中时**不自动应答**（不回写任何 IoResponse），
-///   留给外部执行者处理。用于 LLM 审计形态的 `call_external`（prompt 全文
-///   经命令事实入审计链，结果由外部执行者经 `submit_io_response` 回写）——
-///   若本订阅者抢先以"missing service_name"错误应答，外部执行者的
-///   io_response 将被反应器忽略（Unknown IoResponse），审计回路永远失败
+/// # Design points
+/// - holds its own ID counter (starting from `10000`), isolated from reactor IDs
+/// - tolerant of `Lagged` (logs and continues), never interrupting the subscription loop
+/// - non-blocking handling: ignores non-`IoRequest` Facts without affecting other subscribers
+/// - optional `skip` predicate: on a hit, **no auto-answer** (no IoResponse written back at all),
+///   leaving it to the external executor. Used for the LLM-audit form of `call_external` (the
+///   full prompt enters the audit chain via a command fact; the result is written back by the
+///   external executor via `submit_io_response`) — if this subscriber raced ahead and answered
+///   with a "missing service_name" error, the external executor's io_response would be ignored by
+///   the reactor (Unknown IoResponse) and the audit loop would fail forever
 ///
-/// # 示例
+/// # Example
 /// ```ignore
 /// use evorule_governance::{IoDispatcher, IoSubscriber};
-/// // dispatcher 由具体 handler 构造
+/// // the dispatcher is constructed from concrete handlers
 /// let dispatcher: IoDispatcher = /* ... */;
 /// let subscriber = IoSubscriber::new(dispatcher);
 /// let event_rx = event_tx.subscribe();
 /// subscriber.run(event_rx, command_tx).await.ok();
 /// ```
 pub struct IoSubscriber {
-    /// I/O 分发器
+    /// The I/O dispatcher
     dispatcher: IoDispatcher,
-    /// 下一个 FactId（独立计数器，从 10000 起）
+    /// The next FactId (an independent counter starting from 10000)
     next_id: u64,
-    /// I/O 指标收集器（默认 NoOpMetrics，应用层可通过 `with_metrics()` 注入 Prometheus 实现）
+    /// I/O metrics collector (default NoOpMetrics; the application layer may inject a Prometheus
+    /// implementation via `with_metrics()`)
     metrics: SharedMetrics,
-    /// 可选跳过谓词（默认 None = 全部自动应答，行为与历史版本一致）
+    /// Optional skip predicate (default None = auto-answer everything, behavior unchanged from
+    /// historical versions)
     skip: Option<SkipPredicate>,
-    /// 可选 I/O 权限前置判定门（ / B6）。
-    /// 默认 None = 不做权限判定（行为与历史版本一致）；注入后每次自动分发的
-    /// IoRequest 在 dispatch 前按权限快照做"入口仲裁"（`PermissionGate::check`）。
+    /// Optional I/O permission pre-verdict gate ( / B6).
+    /// Default None = no permission verdict (behavior unchanged from historical versions); once
+    /// injected, every auto-dispatched IoRequest undergoes "entry arbitration" against the
+    /// permission snapshot before dispatch (`PermissionGate::check`).
     gate: Option<PermissionGate>,
-    /// 可选会话级熔断状态（SG-3 family-②「白名单外锚点连发」）。
-    /// 默认 None = 熔断面关闭（行为与 SG-2 一致）；注入后静态层 deny 按滑动
-    /// 窗口计数，达阈值跳闸：熔断信号指令提交会话（规则层 enforce 拒链入链）
-    /// + 跳闸持续期内 egress 全量拒绝，窗口过期自动复位。
+    /// Optional session-level circuit-breaker state (SG-3 family-② "anchor bursts off the allowlist").
+    /// Default None = the circuit-breaker surface is off (consistent with SG-2); once injected,
+    /// static-layer denies are counted over a sliding window; reaching the threshold trips: the
+    /// circuit-breaker signal instruction is submitted into the session (the rule-layer enforce
+    /// rejection chain enters the chain) + egress is rejected wholesale while tripped, auto-reset
+    /// after the window expires.
     circuit: Option<CircuitState>,
-    /// 时钟句柄（Runtime trait 抽象，复用 reactor 侧定义零重复）。
-    /// 默认 [`ClockHandle::system()`]（native 行为与直接 `Instant::now()`
-    /// 逐字一致）；注入 FixedClock 后熔断窗口判定可确定性测试。
+    /// Clock handle (the Runtime trait abstraction, reusing the reactor-side definition with zero duplication).
+    /// Defaults to [`ClockHandle::system()`] (native behavior is verbatim-identical to a direct
+    /// `Instant::now()`); with a FixedClock injected, circuit-window decisions become deterministically testable.
     clock: ClockHandle,
 }
 
 impl IoSubscriber {
-    /// 创建新的订阅者
+    /// Creates a new subscriber
     ///
-    /// ID 计数器从 `10000` 起，避免与反应器的 `FactIdGenerator` 冲突。
-    /// 默认使用 `NoOpMetrics`（不收集指标），应用层可通过 `with_metrics()` 注入实现。
+    /// The ID counter starts from `10000`, avoiding collisions with the reactor's
+    /// `FactIdGenerator`.
+    /// Uses `NoOpMetrics` by default (no metrics collected); the application layer may inject an
+    /// implementation via `with_metrics()`.
     pub fn new(dispatcher: IoDispatcher) -> Self {
         Self {
             dispatcher,
@@ -153,111 +169,120 @@ impl IoSubscriber {
         }
     }
 
-    /// 注入 I/O 权限前置判定门（builder 模式； / B6）
+    /// Injects the I/O permission pre-verdict gate (builder style; / B6)
     ///
-    /// 注入后，本订阅者自动分发的每条 IoRequest 在 dispatch 之前先经
-    /// [`PermissionGate::check`] 做"入口仲裁"（而非事后审计）：
-    /// - `Allow` → 照常 dispatch；
-    /// - `Deny` / `Candidate` → 不 dispatch，回写错误 IoResponse
-    ///   （反应器恢复执行，IoRequest 不会悬空）。
+    /// Once injected, every IoRequest auto-dispatched by this subscriber first passes
+    /// [`PermissionGate::check`] for "entry arbitration" (rather than after-the-fact audit) before
+    /// dispatch:
+    /// - `Allow` → dispatch as usual;
+    /// - `Deny` / `Candidate` → no dispatch; an error IoResponse is written back
+    ///   (the reactor resumes execution; the IoRequest never dangles).
     ///
-    /// # 判定上下文
-    /// 以 IoRequest 的 `cause` 构造 `IoCallContext`（默认 caller_role=Unknown，
-    /// 应用层可经 `PermissionGate::with_caller_role_resolver` 注入解析器）；
-    /// `v_trigger` 由门内部冻结为 SharedFactsLog 当前版本（D8 语义）。
+    /// # Verdict context
+    /// An `IoCallContext` is built from the IoRequest's `cause` (default caller_role=Unknown; the
+    /// application layer may inject a resolver via
+    /// `PermissionGate::with_caller_role_resolver`);
+    /// `v_trigger` is frozen inside the gate to the SharedFactsLog current version (D8 semantics).
     ///
-    /// # 与 skip 谓词的顺序
-    /// skip 谓词**先**于权限门：skip 命中 = 请求交由外部执行者（审计桥 LLM）
-    /// 处理，不属本订阅者分发器的权限域——若先门后跳，默认策略下 LLM 角色
-    /// Deny 会抢答错误响应，外部执行者的应答将被反应器忽略（Unknown
-    /// IoResponse），审计回路断裂。权限门只仲裁本订阅者自己分发的 I/O。
+    /// # Ordering with the skip predicate
+    /// The skip predicate runs **before** the permission gate: a skip hit = the request is handed
+    /// to the external executor (the audit-bridge LLM), outside the permission domain of this
+    /// subscriber's dispatcher — if the gate ran first, under the default policy the LLM role's
+    /// Deny would race to answer with an error response, the external executor's answer would be
+    /// ignored by the reactor (Unknown IoResponse), and the audit loop would break. The permission
+    /// gate only arbitrates the I/O this subscriber dispatches itself.
     pub fn with_permission_gate(mut self, gate: PermissionGate) -> Self {
         self.gate = Some(gate);
         self
     }
 
-    /// 权限前置判定门是否已装配（可观测性）
+    /// Whether the permission pre-verdict gate is assembled (observability)
     ///
-    /// 守卫是**可选**装配的（`gate: Option<..>`）：未装配时 `run()` 会 warn，
-    /// 且本订阅者自动分发的每条 IoRequest 都跳过权限仲裁（fail-open）。
+    /// The guard is **optionally** assembled (`gate: Option<..>`): when not assembled, `run()`
+    /// warns, and every IoRequest auto-dispatched by this subscriber skips permission arbitration
+    /// (fail-open).
     ///
-    /// 「已装配」这件事此前在核心仓内不可查询、不可断言，只能检查调用方
-    /// 的装配代码才能发现。本方法把它变成可在编译期断言的事实，供集成测试
-    /// 与部署自检使用。
+    /// "Assembled" was previously unqueryable and unassertable inside the core repo — one had to
+    /// inspect the caller's assembly code to discover it. This method turns it into a fact
+    /// assertable at compile time, for integration tests and deployment self-checks.
     ///
-    /// 注意：本方法只回答「装配与否」，**不**回答「策略是否正确」——
-    /// 装了一个策略为空的门同样是装配，是否达到预期仍需调用方自证。
+    /// Note: this method answers only "assembled or not", **not** "whether the policy is correct" —
+    /// a gate with an empty policy is still assembled; whether it meets expectations remains the
+    /// caller's burden of proof.
     pub fn permission_gate_enabled(&self) -> bool {
         self.gate.is_some()
     }
 
-    /// 注入会话级熔断状态（builder 模式；SG-3 family-②）
+    /// Injects the session-level circuit-breaker state (builder style; SG-3 family-②)
     ///
-    /// 注入后，本订阅者对**静态路由层 deny**（`route` 命中，即白名单外锚点
-    /// 拒绝）按滑动窗口计数：
-    /// - 达阈值 → 跳闸：熔断信号指令 `set meta_security.circuit_breaker = ...`
-    ///   经 command 通道提交会话（规则层 `00_constraint_enforce_anchor.json`
-    ///   第 3 条 enforce 拒链 = 跳闸证据确定性入链）+ 跳闸持续期内后续 egress
-    ///   全量拒绝（error 串带 `circuit=tripped` 段）；
-    /// - 窗口过期自动复位重新计数。
+    /// Once injected, this subscriber counts **static route-layer denies** (`route` hits, i.e.
+    /// off-allowlist-anchor rejections) over a sliding window:
+    /// - reaching the threshold → trip: the circuit-breaker signal instruction
+    ///   `set meta_security.circuit_breaker = ...` is submitted into the session via the command
+    ///   channel (rule-layer `00_constraint_enforce_anchor.json` clause 3's enforce rejection
+    ///   chain = trip evidence deterministically recorded) + subsequent egress is rejected
+    ///   wholesale while tripped (the error string carries a `circuit=tripped` segment);
+    /// - auto-reset and recount after the window expires.
     ///
-    /// 未装配 = 熔断面关闭（行为与 SG-2 一致）。计数/跳闸语义见
-    /// [`crate::circuit_breaker`] 模块文档。
+    /// Not assembled = the circuit-breaker surface is off (consistent with SG-2). For the
+    /// counting/tripping semantics see the [`crate::circuit_breaker`] module doc.
     pub fn with_circuit_breaker(mut self, state: CircuitState) -> Self {
         self.circuit = Some(state);
         self
     }
 
-    /// 注入时钟句柄（builder 模式，Runtime trait 抽象）
+    /// Injects the clock handle (builder style, the Runtime trait abstraction)
     ///
-    /// 默认 [`ClockHandle::system()`]（native 行为与直接 `Instant::now()`
-    /// 逐字一致——字节等价铁律）；注入 FixedClock 后熔断窗口语义可
-    /// 确定性测试（无 sleep、无竞态）。
+    /// Defaults to [`ClockHandle::system()`] (native behavior verbatim-identical to a direct
+    /// `Instant::now()` — the byte-equivalence iron rule); with a FixedClock injected, the
+    /// circuit-window semantics become deterministically testable (no sleep, no races).
     pub fn with_clock(mut self, clock: ClockHandle) -> Self {
         self.clock = clock;
         self
     }
 
-    /// 注入跳过谓词（builder 模式）
+    /// Injects the skip predicate (builder style)
     ///
-    /// 谓词命中的 IoRequest **不自动应答**（不回写任何 IoResponse），
-    /// 留给外部执行者（审计桥）处理。
+    /// IoRequests matching the predicate are **not auto-answered** (no IoResponse written back),
+    /// left to the external executor (the audit bridge).
     pub fn with_skip(mut self, predicate: SkipPredicate) -> Self {
         self.skip = Some(predicate);
         self
     }
 
-    /// 注入指标收集器（builder 模式）
+    /// Injects the metrics collector (builder style)
     ///
-    /// 注入后，`dispatch_and_respond` 将通过 trait object 分发调用具体的指标记录方法。
-    /// 应用层通常注入 `PrometheusMetrics` 实现。
+    /// Once injected, `dispatch_and_respond` calls the concrete metric-recording methods through
+    /// the trait object.
+    /// The application layer typically injects a `PrometheusMetrics` implementation.
     pub fn with_metrics(mut self, metrics: SharedMetrics) -> Self {
         self.metrics = metrics;
         self
     }
 
-    /// 生成下一个 FactId 并推进计数器
+    /// Generates the next FactId and advances the counter
     fn next_fact_id(&mut self) -> FactId {
         let id = FactId(self.next_id);
         self.next_id += 1;
         id
     }
 
-    /// 启动订阅循环
+    /// Starts the subscription loop
     ///
-    /// # 参数
-    /// - `event_rx`：event broadcast 通道接收端（可通过 `event_tx.subscribe()` 创建）
-    /// - `command_tx`：command 通道发送端（用于回写 `IoResponse`）
+    /// # Arguments
+    /// - `event_rx`: the event broadcast channel receiver (created via `event_tx.subscribe()`)
+    /// - `command_tx`: the command channel sender (for writing back `IoResponse`)
     ///
-    /// # 返回
-    /// - `Ok(())`：通道正常关闭，订阅循环结束
-    /// - `Err(IoSubscriberError::CommandClosed)`：反应器已退出，无法回写 `IoResponse`
+    /// # Returns
+    /// - `Ok(())`: the channel closed normally; the subscription loop ended
+    /// - `Err(IoSubscriberError::CommandClosed)`: the reactor has exited; the `IoResponse` cannot
+    ///   be written back
     ///
-    /// # 行为
-    /// - 接收 `Fact::IoRequest` → 调度执行 → 回写 `Fact::IoResponse`
-    /// - 忽略其他 Fact 类型（仅记录 `trace` 日志）
-    /// - `RecvError::Lagged` 记录 `warn` 并继续，不中断循环
-    /// - `RecvError::Closed` 视为正常结束，返回 `Ok(())`
+    /// # Behavior
+    /// - receive `Fact::IoRequest` → dispatch → write back `Fact::IoResponse`
+    /// - ignore other Fact types (only `trace` logging)
+    /// - `RecvError::Lagged` logs `warn` and continues without interrupting the loop
+    /// - `RecvError::Closed` counts as a normal end, returning `Ok(())`
     pub async fn run(
         mut self,
         mut event_rx: EventReceiver,
@@ -265,15 +290,18 @@ impl IoSubscriber {
     ) -> Result<(), IoSubscriberError> {
         tracing::info!(
             id_offset = ID_OFFSET,
-            "IoSubscriber 启动，开始订阅 event broadcast 通道"
+            "IoSubscriber started; subscribing to the event broadcast channel"
         );
 
-        // 可观测性：守卫未装配 = 本订阅者的 I/O 全部跳过权限仲裁（fail-open）。
-        // 此前该状态在核心仓内完全静默，只能检查调用方的装配代码才能发现。
+        // Observability: guard not assembled = all I/O of this subscriber skips permission
+        // arbitration (fail-open).
+        // This state used to be completely silent inside the core repo; one had to inspect the
+        // caller's assembly code to discover it.
         if !self.permission_gate_enabled() {
             tracing::warn!(
-                "IoSubscriber 未装配 PermissionGate：本订阅者对 IoRequest 一律 \
-                 fail-closed 拒绝（不分发）。生产装配须经 with_permission_gate(..) 注入。"
+                "IoSubscriber: PermissionGate not assembled; this subscriber rejects every \
+                 IoRequest fail-closed (no dispatch). Production assembly must inject it via \
+                 with_permission_gate(..)."
             );
         }
 
@@ -285,22 +313,23 @@ impl IoSubscriber {
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     tracing::warn!(
                         skipped = n,
-                        "IoSubscriber 落后于 event 通道，已跳过 {} 条 Fact",
+                        "IoSubscriber lagged behind the event channel; skipped {} Facts",
                         n
                     );
                     continue;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    tracing::info!("Event 通道已关闭，IoSubscriber 正常退出");
+                    tracing::info!("event channel closed; IoSubscriber exiting normally");
                     return Ok(());
                 }
             }
         }
     }
 
-    /// 处理单个 Fact：若是 `IoRequest` 则调度执行并回写 `IoResponse`，否则忽略。
+    /// Handles a single Fact: if it is an `IoRequest`, dispatches it and writes back the
+    /// `IoResponse`; otherwise ignores it.
     ///
-    /// 发送失败（反应器已退出）时返回 `CommandClosed` 错误。
+    /// Returns a `CommandClosed` error when the send fails (the reactor has exited).
     async fn handle_fact(
         &mut self,
         fact: Fact,
@@ -313,15 +342,16 @@ impl IoSubscriber {
                 io_type,
                 params,
             } => {
-                // 跳过谓词命中 → 不自动应答，留给外部执行者（审计桥）。
-                // 必须在 dispatch（与权限门）之前判断：一旦回写（哪怕错误），外部执行者的
-                // io_response 会被反应器忽略（Unknown IoResponse）。
+                // skip predicate hit → no auto-answer; leave it to the external executor (the
+                // audit bridge). Must be decided before dispatch (and the permission gate): once
+                // anything is written back (even an error), the external executor's io_response
+                // would be ignored by the reactor (Unknown IoResponse).
                 if let Some(skip) = &self.skip {
                     if skip(&io_type, &params) {
                         tracing::trace!(
                             fact_id = %id,
                             io_type = %io_type,
-                            "IoSubscriber 命中跳过谓词，IoRequest 留待外部执行者应答"
+                            "IoSubscriber skip predicate hit; IoRequest left for the external executor to answer"
                         );
                         return Ok(());
                     }
@@ -333,23 +363,26 @@ impl IoSubscriber {
                 tracing::trace!(
                     fact_id = %other.id(),
                     fact_type = other.type_name(),
-                    "IoSubscriber 忽略非 IoRequest 事实"
+                    "IoSubscriber ignored a non-IoRequest fact"
                 );
                 Ok(())
             }
         }
     }
 
-    /// 执行 I/O 调度并回写 `IoResponse`
+    /// Performs the I/O dispatch and writes back the `IoResponse`
     ///
-    /// - 成功：`result = JsonValue`，`error = None`
-    /// - 失败：`result = JsonValue::Null`，`error = Some(msg)`
+    /// - success: `result = JsonValue`, `error = None`
+    /// - failure: `result = JsonValue::Null`, `error = Some(msg)`
     ///
-    /// # P0-2 重试策略
-    /// 对瞬时错误（超时/连接/5xx）执行指数退避重试，最多 `MAX_RETRIES` 次：
-    /// 200ms → 400ms → 800ms。客户端错误（参数缺失/4xx/工具未找到）不重试。
-    /// 重试耗尽后回写最终错误 `IoResponse`，让反应器恢复而非永久阻塞。
-    // IO dispatch + 重试 + 错误回写多分支, 拆函数需共享 self/cmd 状态。详见 GATE_REFERENCE.md §六(豁免索引)
+    /// # P0-2 retry policy
+    /// Transient errors (timeout/connection/5xx) are retried with exponential backoff, at most
+    /// `MAX_RETRIES` times: 200ms → 400ms → 800ms. Client errors (missing params/4xx/tool not
+    /// found) are never retried.
+    /// After retries are exhausted, the final error `IoResponse` is written back so the reactor
+    /// resumes instead of blocking forever.
+    // IO dispatch + retry + error write-back have many branches sharing self/cmd state; splitting
+    // the function would need that shared state. See GATE_REFERENCE.md §六 (exemption index)
     #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
     async fn dispatch_and_respond(
         &mut self,
@@ -362,24 +395,26 @@ impl IoSubscriber {
         tracing::info!(
             request_id = %request_id,
             io_type = %io_type,
-            "处理 IoRequest"
+            "processing IoRequest"
         );
 
-        //：权限前置判定门（可选装配）。
-        // Deny/Candidate → 不 dispatch，回写错误 IoResponse 让反应器恢复
-        // （IoRequest 不会悬空）；Candidate 需审批人裁决，自动路径按拒绝处理
-        // （fail-closed）。
-        // SG-2：check_routed 额外给出静态路由语义，拼入 error 串（确定性构造，
-        // 无时间戳/路径分隔符），使 deny / ask-fallback 与 default deny 可区分。
-        // SG-3：熔断闸位先于权限门——跳闸持续期内 egress 全量拒绝（静态层
-        // deny 连发熔断的持续语义；窗口过期自动复位）。
+        //: the permission pre-verdict gate (optional assembly).
+        // Deny/Candidate → no dispatch; an error IoResponse is written back so the reactor
+        // resumes (the IoRequest never dangles); Candidate needs the approver's decision, and the
+        // automatic path treats it as rejection (fail-closed).
+        // SG-2: check_routed additionally yields static route semantics, spliced into the error
+        // string (deterministically constructed, no timestamp/path separators), making deny /
+        // ask-fallback distinguishable from default deny.
+        // SG-3: the circuit-breaker gate runs before the permission gate — egress is rejected
+        // wholesale while tripped (the sustained semantics of static-layer deny bursts tripping
+        // the breaker; auto-reset after the window expires).
         if let Some(circuit) = &mut self.circuit {
             if circuit.is_tripped(self.clock.now()) {
                 self.metrics.inc_io_errors(io_type.as_str());
                 tracing::warn!(
                     request_id = %request_id,
                     io_type = %io_type.as_str(),
-                    "IoRequest 被会话熔断闸位拒绝（circuit=tripped）"
+                    "IoRequest rejected by the session circuit-breaker gate (circuit=tripped)"
                 );
                 let response = Fact::IoResponse {
                     id: self.next_fact_id(),
@@ -415,12 +450,14 @@ impl IoSubscriber {
                     caller_role = ?ctx.caller_role,
                     verdict = ?verdict,
                     route = ?route,
-                    "IoRequest 权限判定未通过，回写错误 IoResponse"
+                    "IoRequest permission verdict not allowed; writing back an error IoResponse"
                 );
-                // SG-3：静态层 deny 计数（family-② 白名单外锚点连发）——仅
-                // route 命中的静态收紧拒绝计数（动态表 deny 属 PermissionGate
-                // 级留痕观察，威胁建模 §十一 D-3 拍板）；达阈值 → 跳闸 + 熔断
-                // 信号指令提交会话（规则层 enforce 拒链 = 跳闸证据确定性入链）。
+                // SG-3: static-layer deny counting (family-② anchor bursts off the allowlist) —
+                // only route-hit static-tightening rejections are counted (dynamic-table denies
+                // belong to PermissionGate-level trace observation, per the threat-model §11 D-3
+                // decision); reaching the threshold → trip + the circuit-breaker signal
+                // instruction submitted into the session (the rule-layer enforce rejection chain =
+                // trip evidence deterministically recorded).
                 if route.is_some() {
                     if let Some(circuit) = &mut self.circuit {
                         if let Some(signal) = circuit.record_deny(self.clock.now()) {
@@ -435,8 +472,9 @@ impl IoSubscriber {
                                     ]),
                                 ),
                             ]);
-                            // 信号提交失败不阻断本次 deny 回写（通道关闭时主
-                            // 响应同样失败）；warn 留痕禁静默。
+                            // a signal-submission failure does not block this deny write-back
+                            // (when the channel is closed the main response fails the same way);
+                            // warn traces it, silence forbidden.
                             if let Err(err) = command_tx.send(Fact::Command {
                                 id: self.next_fact_id(),
                                 instruction,
@@ -444,12 +482,12 @@ impl IoSubscriber {
                                 tracing::warn!(
                                     request_id = %request_id,
                                     error = %err,
-                                    "熔断信号指令提交失败（command 通道异常）"
+                                    "circuit-breaker signal instruction submission failed (command channel error)"
                                 );
                             } else {
                                 tracing::warn!(
                                     request_id = %request_id,
-                                    "熔断跳闸：静态层 deny 达阈值，circuit_breaker 信号已提交会话"
+                                    "circuit breaker tripped: static-layer deny reached the threshold; the circuit_breaker signal was submitted to the session"
                                 );
                             }
                         }
@@ -474,14 +512,15 @@ impl IoSubscriber {
                 });
             }
         } else {
-            // 权限门未装配 = 无仲裁能力（fail-closed）：拒绝分发并回写错误
-            // IoResponse（IoRequest 不悬空），替代原先 warn 后照发的
-            // fail-open 缺省——未显式装配门的订阅者不具备 I/O 分发能力。
+            // permission gate not assembled = no arbitration capability (fail-closed): refuse to
+            // dispatch and write back an error IoResponse (the IoRequest never dangles), replacing
+            // the former fail-open default of warn-then-proceed — a subscriber without an
+            // explicitly assembled gate has no I/O dispatch capability.
             self.metrics.inc_io_errors(io_type.as_str());
             tracing::error!(
                 request_id = %request_id,
                 io_type = %io_type.as_str(),
-                "IoSubscriber 未装配 PermissionGate：按 fail-closed 拒绝该 IoRequest"
+                "IoSubscriber: PermissionGate not assembled; rejecting the IoRequest fail-closed"
             );
             let response = Fact::IoResponse {
                 id: self.next_fact_id(),
@@ -498,8 +537,9 @@ impl IoSubscriber {
                 .map_err(|_| IoSubscriberError::CommandClosed(format!("request_id={request_id}")));
         }
 
-        // 记录整体 I/O 耗时（包含重试）。通过 trait object 分发，
-        // 默认 NoOpMetrics 空转，应用层注入的 PrometheusMetrics 会实际记录。
+        // record the overall I/O duration (including retries). Dispatched through the trait
+        // object; the default NoOpMetrics no-ops, while an application-injected PrometheusMetrics
+        // actually records.
         let overall_start = self.clock.now();
         let io_type_str: &str = io_type.as_str();
         let mut had_error = false;
@@ -513,12 +553,12 @@ impl IoSubscriber {
                         tracing::info!(
                             request_id = %request_id,
                             attempt,
-                            "IoRequest 在重试后执行成功"
+                            "IoRequest succeeded after retry"
                         );
                     } else {
                         tracing::info!(
                             request_id = %request_id,
-                            "IoRequest 执行成功，回写 IoResponse"
+                            "IoRequest succeeded; writing back IoResponse"
                         );
                     }
                     break Fact::IoResponse {
@@ -529,7 +569,7 @@ impl IoSubscriber {
                     };
                 }
                 Err(err_msg) => {
-                    // P0-2：瞬时错误指数退避重试
+                    // P0-2: exponential backoff retry for transient errors
                     if attempt <= MAX_RETRIES && is_retryable_error(&err_msg) {
                         let backoff =
                             INITIAL_BACKOFF.saturating_mul(2u32.saturating_pow(attempt - 1));
@@ -539,7 +579,7 @@ impl IoSubscriber {
                             max_attempts = MAX_RETRIES + 1,
                             backoff_ms = backoff.as_millis() as u64,
                             error = %err_msg,
-                            "IoRequest 瞬时错误，指数退避重试"
+                            "IoRequest transient error; retrying with exponential backoff"
                         );
                         tokio::time::sleep(backoff).await;
                         continue;
@@ -548,7 +588,7 @@ impl IoSubscriber {
                         request_id = %request_id,
                         attempt,
                         error = %err_msg,
-                        "IoRequest 执行失败（最终），回写错误 IoResponse"
+                        "IoRequest failed (final); writing back an error IoResponse"
                     );
                     had_error = true;
                     break Fact::IoResponse {
@@ -561,7 +601,7 @@ impl IoSubscriber {
             }
         };
 
-        // 通过 trait object 分发记录指标（NoOpMetrics 空转，PrometheusMetrics 实际记录）
+        // record metrics through the trait object (NoOpMetrics no-ops; PrometheusMetrics actually records)
         self.metrics
             .observe_io_duration(io_type_str, overall_start.elapsed());
         if had_error {
@@ -585,8 +625,9 @@ mod tests {
 
     #[test]
     fn test_id_starts_at_offset() {
-        // 仅验证 ID 计数器逻辑，不依赖 dispatcher 构造
-        // （dispatcher 的实际构造需要 DB / LLM 等外部资源，留给集成测试）
+        // verifies only the ID counter logic, without depending on dispatcher construction
+        // (actually constructing a dispatcher needs external resources like DB / LLM; left to
+        // integration tests)
         let next_id = ID_OFFSET;
         assert_eq!(FactId(next_id), FactId(10000));
         assert_eq!(FactId(next_id + 1), FactId(10001));
@@ -604,7 +645,8 @@ mod tests {
 
     #[test]
     fn test_io_type_import_available() {
-        // 确保 IoType 在本模块内可见且可使用（防止 import 被意外删除）
+        // ensures IoType is visible and usable in this module (guards against the import being
+        // accidentally removed)
         let t = IoType::call_external();
         assert_eq!(t.as_str(), "call_external");
     }
@@ -642,11 +684,11 @@ mod tests {
 
     #[test]
     fn test_is_not_retryable_error_client_errors() {
-        // 参数缺失——bug，重试无意义
+        // missing params — a bug; retrying is meaningless
         assert!(!is_retryable_error("missing required param: prompt"));
-        // 工具未找到——配置问题
+        // tool not found — a configuration problem
         assert!(!is_retryable_error("tool not found: foo"));
-        // HTTP 4xx 客户端错误
+        // HTTP 4xx client errors
         assert!(!is_retryable_error("LLM API returned 401: unauthorized"));
         assert!(!is_retryable_error("http request failed with status: 404"));
         assert!(!is_retryable_error("bad request 400"));
@@ -654,10 +696,10 @@ mod tests {
 
     #[test]
     fn test_retry_constants() {
-        // 验证 P0-2 重试配置
+        // verifies the P0-2 retry configuration
         assert_eq!(MAX_RETRIES, 3);
         assert_eq!(INITIAL_BACKOFF, Duration::from_millis(200));
-        // 退避序列：200ms, 400ms, 800ms
+        // backoff sequence: 200ms, 400ms, 800ms
         assert_eq!(
             INITIAL_BACKOFF.saturating_mul(2u32.saturating_pow(0)),
             Duration::from_millis(200)
@@ -672,9 +714,9 @@ mod tests {
         );
     }
 
-    // ===== skip 谓词（审计桥 2026-08-30）：命中时不自动应答 =====
+    // ===== skip predicate (audit bridge 2026-08-30): no auto-answer on hit =====
 
-    /// 构造 LLM 审计形态的 call_external params（有 messages、无 service_name）
+    /// Builds LLM-audit-form call_external params (has messages, no service_name)
     fn llm_audit_params() -> JsonValue {
         JsonValue::object_from_pairs(&[(
             "messages",
@@ -685,10 +727,12 @@ mod tests {
         )])
     }
 
-    /// skip 命中 → handle_fact 返回 Ok 且**不回写任何 IoResponse**（留给外部执行者）
+    /// skip hit → handle_fact returns Ok and **writes back no IoResponse at all** (left to the
+    /// external executor)
     #[tokio::test]
     async fn test_skip_predicate_leaves_io_request_unanswered() {
-        // 空 dispatcher：若未跳过而走 dispatch，必然回写错误 IoResponse
+        // empty dispatcher: if not skipped and dispatch runs, an error IoResponse would certainly
+        // be written back
         let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build()).with_skip(
             Arc::new(|io_type: &IoType, params: &JsonValue| {
                 io_type.as_str() == "call_external"
@@ -708,11 +752,13 @@ mod tests {
 
         let result = subscriber.handle_fact(fact, &tx).await;
         assert!(result.is_ok());
-        // 关键断言：command 通道无任何 IoResponse（外部执行者的 io_response 不会被抢答）
-        assert!(rx.try_recv().is_err(), "skip 命中时不应回写任何 IoResponse");
+        // key assertion: the command channel has no IoResponse at all (the external executor's
+        // io_response is never raced away)
+        assert!(rx.try_recv().is_err(), "no IoResponse should be written back on a skip hit");
     }
 
-    /// 对照组：默认（无 skip）→ dispatch 失败 → 回写错误 IoResponse（历史行为不变）
+    /// Control group: default (no skip) → dispatch fails → an error IoResponse is written back
+    /// (historical behavior unchanged)
     #[tokio::test]
     async fn test_without_skip_error_response_is_written() {
         let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build());
@@ -727,19 +773,20 @@ mod tests {
 
         let result = subscriber.handle_fact(fact, &tx).await;
         assert!(result.is_ok());
-        // 空 dispatcher → dispatch Err → 错误 IoResponse 回写
+        // empty dispatcher → dispatch Err → error IoResponse written back
         match rx.try_recv() {
             Ok(Fact::IoResponse {
                 request_id, error, ..
             }) => {
                 assert_eq!(request_id, FactId(2));
-                assert!(error.is_some(), "未注册类型应回写错误 IoResponse");
+                assert!(error.is_some(), "an unregistered type should write back an error IoResponse");
             }
-            other => panic!("应回写错误 IoResponse，实际: {other:?}"),
+            other => panic!("an error IoResponse should have been written back, got: {other:?}"),
         }
     }
 
-    /// 谓词只命中 LLM 审计形态：带 service_name 的 call_external 不跳过（照常分发）
+    /// The predicate hits only the LLM-audit form: call_external with service_name is not skipped
+    /// (dispatched as usual)
     #[tokio::test]
     async fn test_skip_predicate_does_not_hit_service_calls() {
         let mut subscriber = IoSubscriber::new(IoDispatcher::builder().build()).with_skip(
@@ -752,7 +799,7 @@ mod tests {
         );
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        // service 调用形态：service_name 存在、无 messages
+        // service-call form: service_name present, no messages
         let params = JsonValue::object_from_pairs(&[(
             "service_name",
             JsonValue::string("inverse_kinematics_solver"),
@@ -766,16 +813,16 @@ mod tests {
 
         let result = subscriber.handle_fact(fact, &tx).await;
         assert!(result.is_ok());
-        // 未跳过 → dispatch（空 dispatcher）→ 错误 IoResponse 回写
+        // not skipped → dispatch (empty dispatcher) → error IoResponse written back
         assert!(
             rx.try_recv().is_ok(),
-            "带 service_name 的调用不应被跳过，应照常分发并回写"
+            "a call with service_name should not be skipped; it should dispatch and write back as usual"
         );
     }
 
-    // ===== 权限前置判定门（ / B6）=====
+    // ===== permission pre-verdict gate ( / B6) =====
 
-    /// 构造一个 service 调用形态的 IoRequest（供门测试用）
+    /// Builds a service-call-form IoRequest (for gate tests)
     fn service_call_request(id: u64) -> Fact {
         let params = JsonValue::object_from_pairs(&[(
             "service_name",
@@ -789,34 +836,36 @@ mod tests {
         }
     }
 
-    /// 可观测性：`permission_gate_enabled()` 必须如实反映装配状态。
+    /// Observability: `permission_gate_enabled()` must faithfully reflect the assembly state.
     ///
-    /// 这是「守卫未装配」能被自动发现的前提 —— 此前该事实需检查调用方装配代码。
-    /// 注：本测试断言的是**装配状态**；`run()` 中同状态输出的 warn 因缺少
-    /// tracing 捕获依赖，未纳入断言（可观测性仍不完整，待后续补强）。
+    /// This is the premise for "guard not assembled" being auto-discoverable — previously this
+    /// fact required inspecting the caller's assembly code.
+    /// Note: this test asserts the **assembly state**; the warn emitted by `run()` for the same
+    /// state is not asserted because tracing-capture dependencies are missing (observability
+    /// remains incomplete, to be strengthened later).
     #[test]
     fn test_permission_gate_enabled_reflects_assembly() {
         use crate::permission::PermissionGate;
         use std::sync::Arc as StdArc;
 
-        // 未装配 → false
+        // not assembled → false
         let bare = IoSubscriber::new(IoDispatcher::builder().build());
         assert!(
             !bare.permission_gate_enabled(),
-            "默认构造的 IoSubscriber 必须报告守卫未装配"
+            "a default-constructed IoSubscriber must report the guard as not assembled"
         );
 
-        // 装配后 → true
+        // assembled → true
         let gate = PermissionGate::new(StdArc::new(crate::shared_facts_log::SharedFactsLog::new()));
         let gated = IoSubscriber::new(IoDispatcher::builder().build()).with_permission_gate(gate);
         assert!(
             gated.permission_gate_enabled(),
-            "注入 PermissionGate 后必须报告守卫已装配"
+            "after injecting a PermissionGate it must report the guard as assembled"
         );
     }
 
-    /// 门 Deny（默认 Unknown 角色 + 空表 → fail-closed Deny）→ 回写
-    /// "permission denied" 错误 IoResponse，不进入 dispatch
+    /// Gate Deny (default Unknown role + empty table → fail-closed Deny) → writes back a
+    /// "permission denied" error IoResponse, without entering dispatch
     #[tokio::test]
     async fn test_permission_gate_deny_writes_error_response() {
         use crate::permission::PermissionGate;
@@ -837,18 +886,18 @@ mod tests {
                 request_id, error, ..
             }) => {
                 assert_eq!(request_id, FactId(10));
-                let err = error.expect("Deny 必须回写错误 IoResponse");
+                let err = error.expect("Deny must write back an error IoResponse");
                 assert!(
                     err.contains("permission denied"),
-                    "错误消息应表明权限拒绝，实际: {err}"
+                    "the error message should indicate permission denial, got: {err}"
                 );
             }
-            other => panic!("Deny 应回写错误 IoResponse，实际: {other:?}"),
+            other => panic!("Deny should write back an error IoResponse, got: {other:?}"),
         }
     }
 
-    /// 门 Allow（resolver→Human，空表默认 human=Allow）→ 照常进入 dispatch
-    /// （空 dispatcher 报"分发失败"类错误，而非权限拒绝）
+    /// Gate Allow (resolver→Human, empty-table default human=Allow) → proceeds into dispatch
+    /// as usual (the empty dispatcher reports a "dispatch failed"-class error, not a permission denial)
     #[tokio::test]
     async fn test_permission_gate_allow_proceeds_to_dispatch() {
         use crate::permission::{
@@ -858,7 +907,8 @@ mod tests {
         use evorule_reactor::CallerRole;
         use std::sync::Arc as StdArc;
 
-        // 缺省策略收紧（human=Deny）后，Allow 通路须以显式播种条目表达
+        // after the default-policy tightening (human=Deny), the Allow path must be expressed by
+        // explicitly seeded entries
         let log = StdArc::new(crate::shared_facts_log::SharedFactsLog::new());
         let mut entry = PermissionEntry::new(
             "seed-human-call-external",
@@ -885,18 +935,19 @@ mod tests {
 
         match rx.try_recv() {
             Ok(Fact::IoResponse { error, .. }) => {
-                let err = error.expect("空 dispatcher 必然分发失败");
+                let err = error.expect("an empty dispatcher must fail to dispatch");
                 assert!(
                     !err.contains("permission denied"),
-                    "Allow 后错误应来自 dispatch 而非权限门，实际: {err}"
+                    "after Allow the error should come from dispatch, not the permission gate, got: {err}"
                 );
             }
-            other => panic!("Allow 应照常 dispatch 并回写，实际: {other:?}"),
+            other => panic!("Allow should dispatch and write back as usual, got: {other:?}"),
         }
     }
 
-    /// SG-2 负向实测①（J-SG2）：llm 命中静态 deny → 错误 IoResponse 含 route=deny，
-    /// 与 default deny（无 route 段）可区分；每决策一 Fact（错误 IoResponse 落链）
+    /// SG-2 negative field test ① (J-SG2): llm hits a static deny → the error IoResponse contains
+    /// route=deny, distinguishable from default deny (no route segment); one Fact per decision
+    /// (the error IoResponse lands in the chain)
     #[tokio::test]
     async fn test_sg2_route_deny_negative_case() {
         use crate::permission::{PermissionGate, RoutePolicy};
@@ -933,22 +984,23 @@ mod tests {
                 request_id, error, ..
             }) => {
                 assert_eq!(request_id, FactId(20));
-                let err = error.expect("静态 deny 必须回写错误 IoResponse");
+                let err = error.expect("a static deny must write back an error IoResponse");
                 assert!(
                     err.contains("permission denied"),
-                    "权限拒绝语义保留，实际: {err}"
+                    "the permission-denial semantics is preserved, got: {err}"
                 );
                 assert!(
                     err.contains("route=deny"),
-                    "J-SG2：静态 deny 必须携带 route 语义与 default deny 可区分，实际: {err}"
+                    "J-SG2: a static deny must carry route semantics, distinguishable from default deny, got: {err}"
                 );
             }
-            other => panic!("静态 deny 应回写错误 IoResponse，实际: {other:?}"),
+            other => panic!("a static deny should write back an error IoResponse, got: {other:?}"),
         }
     }
 
-    /// SG-2 负向实测②（J-SG2）：llm 命中 ask（无人值守）→ 按资产 ask_fallback
-    /// 回退 deny，error 含 route=ask-fallback（SG-5 挂账的 ask 语义收口）
+    /// SG-2 negative field test ② (J-SG2): llm hits ask (unattended) → falls back to deny per
+    /// the asset's ask_fallback, error contains route=ask-fallback (the ask-semantics closure of
+    /// SG-5's open item)
     #[tokio::test]
     async fn test_sg2_ask_fallback_negative_case() {
         use crate::permission::{PermissionGate, RoutePolicy};
@@ -980,17 +1032,18 @@ mod tests {
                 request_id, error, ..
             }) => {
                 assert_eq!(request_id, FactId(21));
-                let err = error.expect("ask 无人值守回退必须回写错误 IoResponse");
+                let err = error.expect("the unattended ask fallback must write back an error IoResponse");
                 assert!(
                     err.contains("route=ask-fallback"),
-                    "J-SG2：ask 回退必须携带 ask-fallback 语义，实际: {err}"
+                    "J-SG2: the ask fallback must carry ask-fallback semantics, got: {err}"
                 );
             }
-            other => panic!("ask 回退应回写错误 IoResponse，实际: {other:?}"),
+            other => panic!("the ask fallback should write back an error IoResponse, got: {other:?}"),
         }
     }
 
-    /// skip 命中优先于权限门：外部执行者（审计桥 LLM）请求不被门抢答
+    /// skip hit takes precedence over the permission gate: the external executor's (audit-bridge
+    /// LLM) request is never raced away by the gate
     #[tokio::test]
     async fn test_permission_gate_does_not_override_skip() {
         use crate::permission::PermissionGate;
@@ -1016,15 +1069,16 @@ mod tests {
 
         assert!(
             rx.try_recv().is_err(),
-            "skip 命中时权限门不得抢答（审计回路依赖外部执行者应答）"
+            "on a skip hit the permission gate must not race to answer (the audit loop depends on the external executor's answer)"
         );
     }
 
-    // ===== 时钟贯通（Runtime trait 抽象）=====
+    // ===== clock threading (the Runtime trait abstraction) =====
 
-    /// FixedClock 驱动的熔断确定性测试：跳闸判定与窗口语义不再依赖真实时间——
-    /// 同一固定时刻下，第 1 次 deny 记数+回写，第 2 次必为 `circuit=tripped`
-    /// 全量拒绝（此前该路径隐式依赖 `Instant::now()`，测试原则上存在时间竞态）。
+    /// FixedClock-driven circuit-breaker determinism test: the trip decision and window semantics
+    /// no longer depend on real time — at the same fixed instant, the 1st deny counts + writes
+    /// back, and the 2nd must be a `circuit=tripped` wholesale rejection (previously this path
+    /// implicitly depended on `Instant::now()`, so the test had a time race in principle).
     #[tokio::test]
     async fn test_circuit_tripped_is_deterministic_over_injected_time() {
         use crate::circuit_breaker::{CircuitConfig, CircuitState};
@@ -1064,45 +1118,46 @@ mod tests {
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
-        // 第 1 次：deny 记数达阈值 → 熔断信号指令 + deny IoResponse 各一条
+        // 1st: the deny count reaches the threshold → one circuit-breaker signal instruction + one deny IoResponse
         subscriber.handle_fact(make_request(30), &tx).await.unwrap();
         match rx.try_recv() {
             Ok(Fact::Command { instruction, .. }) => {
                 let s = instruction.to_string();
                 assert!(
                     s.contains("meta_security.circuit_breaker"),
-                    "阈值 1：首 deny 即跳闸并提交熔断信号，实际: {s}"
+                    "threshold 1: the first deny trips and submits the circuit-breaker signal, got: {s}"
                 );
             }
-            other => panic!("首个产出必须是熔断信号 Command，实际: {other:?}"),
+            other => panic!("the first output must be the circuit-breaker signal Command, got: {other:?}"),
         }
         match rx.try_recv() {
             Ok(Fact::IoResponse { error, .. }) => {
-                let err = error.expect("静态 deny 必须回写错误 IoResponse");
+                let err = error.expect("a static deny must write back an error IoResponse");
                 assert!(
                     err.contains("route=deny") && !err.contains("circuit=tripped"),
-                    "首 deny 尚未处于跳闸态，实际: {err}"
+                    "the first deny is not yet in the tripped state, got: {err}"
                 );
             }
-            other => panic!("次产出必须是 deny IoResponse，实际: {other:?}"),
+            other => panic!("the next output must be a deny IoResponse, got: {other:?}"),
         }
-        assert!(rx.try_recv().is_err(), "第 1 次请求只应产出上述两条 Fact");
+        assert!(rx.try_recv().is_err(), "the 1st request should produce exactly the two Facts above");
 
-        // 第 2 次（同一固定时刻，窗口 300s 未过期）：is_tripped 必为真 →
-        // 全量拒绝回写，不含 route 段（跳闸分支先于权限门）
+        // 2nd (the same fixed instant, the 300s window not expired): is_tripped must be true →
+        // a wholesale-rejection write-back without a route segment (the trip branch precedes the
+        // permission gate)
         subscriber.handle_fact(make_request(31), &tx).await.unwrap();
         match rx.try_recv() {
             Ok(Fact::IoResponse {
                 request_id, error, ..
             }) => {
                 assert_eq!(request_id, FactId(31));
-                let err = error.expect("跳闸期必须回写错误 IoResponse");
+                let err = error.expect("the tripped period must write back an error IoResponse");
                 assert!(
                     err.contains("circuit=tripped"),
-                    "FixedClock 下窗口未过期，必须确定性跳闸拒绝，实际: {err}"
+                    "with FixedClock the window has not expired; it must deterministically reject as tripped, got: {err}"
                 );
             }
-            other => panic!("第 2 次请求必须被跳闸闸位拒绝，实际: {other:?}"),
+            other => panic!("the 2nd request must be rejected by the trip gate, got: {other:?}"),
         }
         assert!(rx.try_recv().is_err());
     }
