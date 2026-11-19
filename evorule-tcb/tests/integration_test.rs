@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-// 集成测试不受 build.rs 门禁扫描（仅扫描 src/），允许 unwrap/panic
+// Integration tests are not scanned by the build.rs gate (only src/ is scanned); unwrap/panic allowed
 #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
-//! 集成测试：从外部 crate 视角验证 evorule-tcb 公开 API
+//! Integration tests: validate the evorule-tcb public API from an external crate's perspective
 //!
-//! 与单元测试互补，重点验证：
-//! - 确定性保证（相同输入 → 相同输出）
-//! - 状态隔离（无跨调用副作用）
-//! - 错误类型可被外部 crate 匹配
-//! - 跨模块集成（域评估 + 路径解析 + 状态转换）
-//! - 完整 ReAct 循环（手工构造，与 core_eval.json v0.3.1 结构一致）
+//! Complementary to unit tests, focusing on:
+//! - Determinism guarantees (same input → same output)
+//! - State isolation (no cross-call side effects)
+//! - Error types matchable by external crates
+//! - Cross-module integration (domain evaluation + path resolution + state transition)
+//! - A full ReAct loop (hand-crafted, structurally consistent with core_eval.json v0.3.1)
 //!
-//! 所有规则均手工构造 `JsonValue`（零 serde 依赖）。
+//! All rules are hand-crafted `JsonValue` values (zero serde dependency).
 
 use evorule_tcb::domain::evaluate_domain;
 use evorule_tcb::path::resolve_path;
 use evorule_tcb::{execute_transition, JsonValue, TcbError, TransitionResult};
 
 // ============================================================================
-// 辅助函数
+// Helper functions
 // ============================================================================
 
 fn s(v: &str) -> JsonValue {
@@ -98,10 +98,10 @@ fn domain_all(inner: Vec<JsonValue>) -> JsonValue {
 }
 
 // ============================================================================
-// ReAct 宪法规则构造（对应 core_eval.json v0.3.1 transform[6..12]）
+// ReAct constitution rule construction (corresponds to core_eval.json v0.3.1 transform[6..12])
 // ============================================================================
 
-/// 规则 1：react_iteration 自初始化（call_external 且 react_iteration 缺失时置 0）
+/// Rule 1: react_iteration self-initialization (set to 0 when call_external fires and react_iteration is missing)
 fn rule_self_init() -> JsonValue {
     branch(
         domain_all(vec![
@@ -113,7 +113,7 @@ fn rule_self_init() -> JsonValue {
     )
 }
 
-/// 规则 2：call_external —— 消费 LLM 结果 / 发起 LLM 请求
+/// Rule 2: call_external — consume the LLM result / initiate an LLM request
 fn rule_call_external() -> JsonValue {
     branch(
         domain_instruction("call_external"),
@@ -125,7 +125,7 @@ fn rule_call_external() -> JsonValue {
                     "set",
                     s("__exec__.payload.__io_results__.call_external"),
                 ),
-                // 持久化 tools（如果指令中有）
+                // Persist tools (if present in the instruction)
                 branch(
                     domain_exists("__exec__.instruction.params.tools"),
                     vec![set_instr(
@@ -135,13 +135,13 @@ fn rule_call_external() -> JsonValue {
                     )],
                     vec![],
                 ),
-                // 清除 I/O 结果
+                // Clear the I/O result
                 set_instr(
                     "__exec__.payload.__io_results__.call_external",
                     "set",
                     JsonValue::Null,
                 ),
-                // 循环终止（工具扇出编排在应用层 runner，collect 已退役）
+                // Loop termination (tool fan-out orchestration lives in the application-layer runner; collect is retired)
                 push_noop(),
             ],
             vec![io_request_call_external()],
@@ -150,7 +150,7 @@ fn rule_call_external() -> JsonValue {
     )
 }
 
-/// call_external 的 io_request
+/// io_request for call_external
 fn io_request_call_external() -> JsonValue {
     obj(&[
         ("type", s("io_request")),
@@ -165,7 +165,7 @@ fn io_request_call_external() -> JsonValue {
     ])
 }
 
-/// 规则 3：call_service —— 消费工具结果 / 发起工具请求
+/// Rule 3: call_service — consume the tool result / initiate a tool request
 fn rule_call_service() -> JsonValue {
     branch(
         domain_instruction("call_service"),
@@ -182,7 +182,7 @@ fn rule_call_service() -> JsonValue {
                     "set",
                     JsonValue::Null,
                 ),
-                // 循环终止（结果合并与下一条 LLM 调用编排在应用层 runner，merge 已退役）
+                // Loop termination (result merging and the next LLM call are orchestrated by the application-layer runner; merge is retired)
                 push_noop(),
             ],
             vec![io_request_call_service()],
@@ -191,7 +191,7 @@ fn rule_call_service() -> JsonValue {
     )
 }
 
-/// call_service 的 io_request
+/// io_request for call_service
 fn io_request_call_service() -> JsonValue {
     obj(&[
         ("type", s("io_request")),
@@ -209,17 +209,17 @@ fn io_request_call_service() -> JsonValue {
     ])
 }
 
-/// 规则：noop 指令（空操作）
+/// Rule: noop instruction (no-op)
 fn rule_noop() -> JsonValue {
     branch(domain_instruction("noop"), vec![], vec![])
 }
 
-/// 规则：兜底（所有未匹配的指令）
+/// Rule: fallback (all unmatched instructions)
 fn rule_catch_all() -> JsonValue {
     branch(domain_all(vec![]), vec![], vec![])
 }
 
-/// 构造完整的 ReAct 宪法规则列表
+/// Build the full ReAct constitution rule list
 fn react_constitution() -> Vec<JsonValue> {
     vec![
         rule_self_init(),
@@ -231,7 +231,7 @@ fn react_constitution() -> Vec<JsonValue> {
 }
 
 // ============================================================================
-// 测试辅助函数
+// Test helper functions
 // ============================================================================
 
 fn make_payload(pairs: &[(&str, JsonValue)]) -> JsonValue {
@@ -258,35 +258,35 @@ fn user_messages() -> JsonValue {
 }
 
 // ============================================================================
-// 集成测试用例
+// Integration test cases
 // ============================================================================
 
-// ── 确定性 ────────────────────────────────────────────────────────────────
+// ── Determinism ───────────────────────────────────────────────────────────
 
-/// 确定性保证：同一输入执行 10 次，结果必须完全相同
+/// Determinism guarantee: executing the same input 10 times must produce fully identical results
 #[test]
 fn test_determinism_repeated_calls() {
     let core_eval = react_constitution();
     let instruction = make_instruction("noop", &[]);
     let payload = make_payload(&[("x", iv(42))]);
 
-    // 10 次调用，结果全部相同
+    // 10 calls, all results identical
     let mut results = Vec::new();
     for _ in 0..10 {
         let result = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
         results.push(result);
     }
 
-    // 两两比较
+    // Pairwise comparison
     for i in 1..results.len() {
         assert_eq!(
             results[0], results[i],
-            "确定性违反：第 {} 次与第 0 次结果不同",
+            "determinism violation: call {} differs from call 0",
             i
         );
     }
 
-    // 验证具体值
+    // Verify concrete values
     match &results[0] {
         TransitionResult::State {
             new_payload,
@@ -296,19 +296,19 @@ fn test_determinism_repeated_calls() {
             assert_eq!(new_payload.get("x"), Some(&iv(42)));
             assert!(new_queue.is_empty());
         }
-        _ => panic!("noop 应返回 State"),
+        _ => panic!("noop should return State"),
     }
 }
 
-// ── 状态隔离 ──────────────────────────────────────────────────────────────
+// ── State isolation ───────────────────────────────────────────────────────
 
-/// 状态隔离：不同 payload 的独立调用互不干扰
+/// State isolation: independent calls with different payloads do not interfere
 #[test]
 fn test_state_isolation_independent_calls() {
     let core_eval = react_constitution();
     let instruction = make_instruction("noop", &[]);
 
-    // 两个独立调用，不同 payload
+    // Two independent calls with different payloads
     let r1 = execute_transition(
         &core_eval,
         &instruction,
@@ -334,17 +334,17 @@ fn test_state_isolation_independent_calls() {
             },
         ) => {
             assert_eq!(p1.get("a"), Some(&iv(1)));
-            assert_eq!(p1.get("b"), None, "p1 不应有 b 字段");
+            assert_eq!(p1.get("b"), None, "p1 should not have field b");
             assert_eq!(p2.get("b"), Some(&iv(2)));
-            assert_eq!(p2.get("a"), None, "p2 不应有 a 字段");
+            assert_eq!(p2.get("a"), None, "p2 should not have field a");
         }
-        _ => panic!("两个调用都应返回 State"),
+        _ => panic!("both calls should return State"),
     }
 }
 
-// ── 错误类型匹配 ──────────────────────────────────────────────────────────
+// ── Error type matching ───────────────────────────────────────────────────
 
-/// 外部 crate 可以匹配所有 TcbError 变体
+/// An external crate can match all TcbError variants
 #[test]
 fn test_error_type_matching_from_external_crate() {
     // 1. MissingField
@@ -353,7 +353,7 @@ fn test_error_type_matching_from_external_crate() {
     };
     match &err {
         TcbError::MissingField { field } => assert_eq!(field, "test"),
-        _ => panic!("应匹配 MissingField"),
+        _ => panic!("should match MissingField"),
     }
 
     // 2. UnknownMetaInstruction
@@ -362,7 +362,7 @@ fn test_error_type_matching_from_external_crate() {
     };
     match &err {
         TcbError::UnknownMetaInstruction { meta_type } => assert_eq!(meta_type, "foo"),
-        _ => panic!("应匹配 UnknownMetaInstruction"),
+        _ => panic!("should match UnknownMetaInstruction"),
     }
 
     // 3. UnknownOperation
@@ -371,7 +371,7 @@ fn test_error_type_matching_from_external_crate() {
     };
     match &err {
         TcbError::UnknownOperation { operation } => assert_eq!(operation, "multiply"),
-        _ => panic!("应匹配 UnknownOperation"),
+        _ => panic!("should match UnknownOperation"),
     }
 
     // 4. InvalidState
@@ -380,7 +380,7 @@ fn test_error_type_matching_from_external_crate() {
     };
     match &err {
         TcbError::InvalidState { reason } => assert_eq!(reason, "bad state"),
-        _ => panic!("应匹配 InvalidState"),
+        _ => panic!("should match InvalidState"),
     }
 
     // 5. InvalidType
@@ -399,7 +399,7 @@ fn test_error_type_matching_from_external_crate() {
             assert_eq!(actual, &"string");
             assert_eq!(context, "value");
         }
-        _ => panic!("应匹配 InvalidType"),
+        _ => panic!("should match InvalidType"),
     }
 
     // 6. PathResolutionFailed
@@ -412,14 +412,14 @@ fn test_error_type_matching_from_external_crate() {
             assert_eq!(path, "a.b");
             assert_eq!(reason, "not found");
         }
-        _ => panic!("应匹配 PathResolutionFailed"),
+        _ => panic!("should match PathResolutionFailed"),
     }
 
     // 7. NestingTooDeep
     let err = TcbError::NestingTooDeep { limit: 64 };
     match &err {
         TcbError::NestingTooDeep { limit } => assert_eq!(*limit, 64),
-        _ => panic!("应匹配 NestingTooDeep"),
+        _ => panic!("should match NestingTooDeep"),
     }
 
     // 8. IntegerOverflow
@@ -438,7 +438,7 @@ fn test_error_type_matching_from_external_crate() {
             assert_eq!(*left, i64::MAX);
             assert_eq!(*right, 1);
         }
-        _ => panic!("应匹配 IntegerOverflow"),
+        _ => panic!("should match IntegerOverflow"),
     }
 
     // 9. TooManyTransformRules
@@ -451,16 +451,16 @@ fn test_error_type_matching_from_external_crate() {
             assert_eq!(*limit, 64);
             assert_eq!(*actual, 100);
         }
-        _ => panic!("应匹配 TooManyTransformRules"),
+        _ => panic!("should match TooManyTransformRules"),
     }
 }
 
-// ── 域评估 + 路径解析 + 状态转换 跨模块集成 ──────────────────────────────
+// ── Cross-module integration: domain evaluation + path resolution + state transition ──────
 
-/// 跨模块集成：构造包含 domain 检测的 branch 规则，验证 domain → path → transition 链路
+/// Cross-module integration: build a branch rule with a domain check and verify the domain → path → transition chain
 #[test]
 fn test_domain_path_transition_integration() {
-    // 构造一条规则：如果 payload.x == 10，则 set x = 20
+    // Build a rule: if payload.x == 10, then set x = 20
     let rule = branch(
         obj(&[
             ("type", s("eq")),
@@ -472,7 +472,7 @@ fn test_domain_path_transition_integration() {
     );
     let core_eval = vec![rule];
 
-    // 条件满足：x == 10 → x 变为 20
+    // Condition satisfied: x == 10 → x becomes 20
     let result = execute_transition(
         &core_eval,
         &make_instruction("noop", &[]),
@@ -484,10 +484,10 @@ fn test_domain_path_transition_integration() {
         TransitionResult::State { new_payload, .. } => {
             assert_eq!(new_payload.get("x"), Some(&iv(20)));
         }
-        _ => panic!("应返回 State"),
+        _ => panic!("should return State"),
     }
 
-    // 条件不满足：x == 5 → x 保持不变
+    // Condition not satisfied: x == 5 → x stays unchanged
     let result = execute_transition(
         &core_eval,
         &make_instruction("noop", &[]),
@@ -499,34 +499,34 @@ fn test_domain_path_transition_integration() {
         TransitionResult::State { new_payload, .. } => {
             assert_eq!(new_payload.get("x"), Some(&iv(5)));
         }
-        _ => panic!("应返回 State"),
+        _ => panic!("should return State"),
     }
 }
 
-// ── ReAct 循环：第一步（call_external → IoRequired） ─────────────────────
+// ── ReAct loop: step 1 (call_external → IoRequired) ─────────────────────
 
-/// ReAct 第 1 步：首次 call_external 无 I/O 结果 → 发起 io_request
+/// ReAct step 1: first call_external with no I/O result → fire io_request
 #[test]
 fn test_react_round1_io_request_fires() {
     let core_eval = react_constitution();
     let instruction = call_external_instr(user_messages());
-    let payload = make_payload(&[]); // 空 payload，react_iteration 未初始化
+    let payload = make_payload(&[]); // empty payload, react_iteration uninitialized
 
     let result = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
     match result {
         TransitionResult::IoRequired { io_type, params } => {
             assert_eq!(io_type, "call_external");
             assert_eq!(params.get("messages"), Some(&user_messages()));
-            // tools 未提供 → 应不存在
+            // tools not provided → should be absent
             assert!(params.get("tools").is_none());
         }
-        _ => panic!("round 1: 应返回 IoRequired"),
+        _ => panic!("round 1: should return IoRequired"),
     }
 }
 
-// ── ReAct 循环：第三步（call_service → IoRequired） ─────────────────────
+// ── ReAct loop: step 3 (call_service → IoRequired) ─────────────────────
 
-/// ReAct 第 3 步：call_service 无 I/O 结果 → 发起 io_request
+/// ReAct step 3: call_service with no I/O result → fire io_request
 #[test]
 fn test_react_round3_call_service_io_request() {
     let core_eval = react_constitution();
@@ -552,13 +552,13 @@ fn test_react_round3_call_service_io_request() {
                 Some("Beijing")
             );
         }
-        _ => panic!("round 3: 应返回 IoRequired"),
+        _ => panic!("round 3: should return IoRequired"),
     }
 }
 
-// ── ReAct 循环：迭代上限 ──────────────────────────────────────────────────
+// ── ReAct loop: iteration cap ─────────────────────────────────────────────
 
-/// call_service 消费轮结果落 payload 后 push noop 终止循环（react_iteration 保持不变）
+/// call_service consumption round persists the result into payload then pushes noop to terminate the loop (react_iteration unchanged)
 #[test]
 fn test_react_iteration_cap_terminates_with_noop() {
     let core_eval = react_constitution();
@@ -579,28 +579,28 @@ fn test_react_iteration_cap_terminates_with_noop() {
         rule_hits: _,
     } = result
     else {
-        panic!("cap: 应返回 State")
+        panic!("cap: should return State")
     };
 
-    // 队列只有 1 条 noop（循环终止）
+    // Queue holds exactly 1 noop (loop termination)
     assert_eq!(new_queue.len(), 1);
     assert_eq!(
         new_queue[0].get("type").and_then(|v| v.as_str()),
         Some("noop")
     );
-    // 计数不再增长
+    // Counter no longer grows
     assert_eq!(new_payload.get("react_iteration"), Some(&iv(10)));
-    // 无 updated_messages
+    // No updated_messages
     assert!(new_payload.get("updated_messages").is_none());
 }
 
-// ── I/O 结果 null 清除后 exists 为 false ──────────────────────────────────
+// ── exists returns false after the I/O result is cleared with null ────────
 
-/// JSON null 视为"已清除"：exists 必须返回 false，否则陈旧结果被反复消费
+/// JSON null counts as "cleared": exists must return false, otherwise stale results get consumed repeatedly
 #[test]
 fn test_io_result_null_cleared_exists_returns_false() {
     let core_eval = react_constitution();
-    // 模拟上一轮已消费 I/O 结果并用 null 清除
+    // Simulate the previous round having consumed the I/O result and cleared it with null
     let payload = make_payload(&[
         ("react_iteration", iv(1)),
         ("llm_response", obj(&[("messages", user_messages())])),
@@ -608,7 +608,7 @@ fn test_io_result_null_cleared_exists_returns_false() {
     ]);
     let instruction = call_external_instr(user_messages());
 
-    // null 视为不存在 → 应发起新的 io_request（而非消费陈旧结果）
+    // null counts as absent → a new io_request should fire (instead of consuming the stale result)
     let result = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
     match result {
         TransitionResult::IoRequired { io_type, .. } => {
@@ -616,29 +616,29 @@ fn test_io_result_null_cleared_exists_returns_false() {
         }
         TransitionResult::State { new_queue, .. } => {
             panic!(
-                "null 清除后应发起第二轮 IoRequired，但得到 State (queue len={})",
+                "after null clearing a second-round IoRequired should fire, but got State (queue len={})",
                 new_queue.len()
             );
         }
         TransitionResult::Ignored { .. } => {
-            panic!("null 清除后应发起第二轮 IoRequired，但得到 Ignored");
+            panic!("after null clearing a second-round IoRequired should fire, but got Ignored");
         }
         TransitionResult::Halted { rule_index, reason } => {
-            panic!("null 清除后应发起第二轮 IoRequired，但得到 Halted(rule_index={rule_index}, reason={reason})");
+            panic!("after null clearing a second-round IoRequired should fire, but got Halted(rule_index={rule_index}, reason={reason})");
         }
     }
 }
 
-// ── 整数溢出传播 ──────────────────────────────────────────────────────────
+// ── Integer overflow propagation ──────────────────────────────────────────
 
-/// 整数溢出通过 execute_transition 正确传播
+/// Integer overflow propagates correctly through execute_transition
 #[test]
 fn test_integer_overflow_propagates_through_execute_transition() {
-    // 构造 set(add) 指令：向 x 加上 i64::MAX，再尝试 +1 → 溢出
+    // Build a set(add) instruction: add i64::MAX to x, then try +1 → overflow
     let instruction = make_instruction("increment", &[("attr", s("x")), ("delta", iv(1))]);
     let payload = make_payload(&[("x", iv(i64::MAX))]);
 
-    // set 规则：匹配 increment 指令 → add
+    // set rule: matches the increment instruction → add
     let rule = branch(
         domain_instruction("increment"),
         vec![set_instr(
@@ -655,13 +655,13 @@ fn test_integer_overflow_propagates_through_execute_transition() {
         Err(TcbError::IntegerOverflow { operation, .. }) => {
             assert_eq!(operation, "add");
         }
-        other => panic!("应返回 IntegerOverflow，但得到: {:?}", other),
+        other => panic!("should return IntegerOverflow, but got: {:?}", other),
     }
 }
 
-// ── 未知指令类型 → Ignored 显式提醒 ──────────────────────────────────────
+// ── Unknown instruction type → explicit Ignored notice ───────────────────
 
-/// 未知指令类型落入 all([]) 兜底规则，TCB 显式返回 Ignored 而非静默忽略
+/// Unknown instruction types fall into the all([]) fallback rule; the TCB returns Ignored explicitly instead of silently skipping
 #[test]
 fn test_unknown_instruction_falls_to_catch_all() {
     let core_eval = vec![rule_noop(), rule_catch_all()];
@@ -678,17 +678,17 @@ fn test_unknown_instruction_falls_to_catch_all() {
             assert_eq!(instruction_type, "unknown_instruction");
             assert!(reason.contains("not matched"));
         }
-        _ => panic!("未知指令应返回 Ignored，实际返回: {:?}", result),
+        _ => panic!("unknown instruction should return Ignored, actual: {:?}", result),
     }
 }
 
-// ── 空 tool_calls → push noop ────────────────────────────────────────────
+// ── Empty tool_calls → push noop ─────────────────────────────────────────
 
-/// LLM 返回不含 tool_calls 的响应 → 消费后 push noop 终止
+/// An LLM response without tool_calls → push noop terminates after consumption
 #[test]
 fn test_no_tool_calls_terminates_via_noop() {
     let core_eval = react_constitution();
-    let llm_response = obj(&[("messages", user_messages())]); // 无 tool_calls
+    let llm_response = obj(&[("messages", user_messages())]); // no tool_calls
     let payload = make_payload(&[
         ("react_iteration", iv(0)),
         (
@@ -705,27 +705,27 @@ fn test_no_tool_calls_terminates_via_noop() {
         rule_hits: _,
     } = result
     else {
-        panic!("应返回 State")
+        panic!("should return State")
     };
 
-    // 无 call_service，只有 noop
+    // No call_service, only noop
     assert_eq!(new_queue.len(), 1);
     assert_eq!(
         new_queue[0].get("type").and_then(|v| v.as_str()),
         Some("noop")
     );
-    // llm_response 已消费（不含 tool_calls 字段，但整个对象被保存）
+    // llm_response consumed (no tool_calls field, but the whole object is saved)
     assert_eq!(new_payload.get("llm_response"), Some(&llm_response));
 }
 
-// ── 空 tool_calls 数组 → push noop ───────────────────────────────────────
+// ── Empty tool_calls array → push noop ───────────────────────────────────
 
-/// tool_calls 为空数组时消费轮同样 push noop 终止
+/// An empty tool_calls array likewise pushes noop to terminate in the consumption round
 #[test]
 fn test_empty_tool_calls_array_triggers_noop() {
     let core_eval = react_constitution();
     let llm_response = obj(&[
-        ("tool_calls", arr(vec![])), // 空数组
+        ("tool_calls", arr(vec![])), // empty array
         ("messages", user_messages()),
     ]);
     let payload = make_payload(&[
@@ -739,10 +739,10 @@ fn test_empty_tool_calls_array_triggers_noop() {
 
     let result = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
     let TransitionResult::State { new_queue, .. } = result else {
-        panic!("应返回 State")
+        panic!("should return State")
     };
 
-    // 空 tool_calls 不生成 call_service，只 push noop（collect 已退役，消费轮统一终止）
+    // Empty tool_calls generates no call_service, only pushes noop (collect is retired; consumption rounds terminate uniformly)
     assert_eq!(new_queue.len(), 1);
     assert_eq!(
         new_queue[0].get("type").and_then(|v| v.as_str()),
@@ -750,9 +750,9 @@ fn test_empty_tool_calls_array_triggers_noop() {
     );
 }
 
-// ── 空队列输入 ────────────────────────────────────────────────────────────
+// ── Empty queue input ────────────────────────────────────────────────────
 
-/// 空队列作为输入，noop 指令返回空队列
+/// Empty queue as input: the noop instruction returns an empty queue
 #[test]
 fn test_empty_queue_input() {
     let core_eval = react_constitution();
@@ -767,20 +767,20 @@ fn test_empty_queue_input() {
             ..
         } => {
             assert_eq!(new_payload.get("x"), Some(&iv(1)));
-            assert!(new_queue.is_empty(), "空队列输入应返回空队列");
+            assert!(new_queue.is_empty(), "empty queue input should return an empty queue");
         }
-        _ => panic!("应返回 State"),
+        _ => panic!("should return State"),
     }
 }
 
-// ── 非空队列输入，push 指令附加到前端 ─────────────────────────────────────
+// ── Non-empty queue input, push prepends to the front ─────────────────────
 
-/// push 指令将新指令插入队列前端，保留原有队列
+/// The push instruction inserts new instructions at the front of the queue, preserving the existing queue
 #[test]
 fn test_push_appends_to_front_of_existing_queue() {
     let existing_queue = vec![make_instruction("decrement", &[("delta", iv(1))])];
 
-    // 构造规则：push increment 到队列前端
+    // Build a rule: push increment to the front of the queue
     let rule = branch(
         domain_instruction("spawn"),
         vec![push_instr(vec![make_instruction(
@@ -796,7 +796,7 @@ fn test_push_appends_to_front_of_existing_queue() {
     let result = execute_transition(&core_eval, &instruction, &payload, &existing_queue).unwrap();
     match result {
         TransitionResult::State { new_queue, .. } => {
-            // 新队列 = [increment(5), decrement(1)]
+            // New queue = [increment(5), decrement(1)]
             assert_eq!(new_queue.len(), 2);
             assert_eq!(
                 new_queue[0].get("type").and_then(|v| v.as_str()),
@@ -807,13 +807,13 @@ fn test_push_appends_to_front_of_existing_queue() {
                 Some("decrement")
             );
         }
-        _ => panic!("应返回 State"),
+        _ => panic!("should return State"),
     }
 }
 
-// ── 域评估：not(not(exists)) 双否定 ──────────────────────────────────────
+// ── Domain evaluation: not(not(exists)) double negation ──────────────────
 
-/// 双否定域评估：not(not(exists(...))) == exists(...)
+/// Double-negation domain evaluation: not(not(exists(...))) == exists(...)
 #[test]
 fn test_domain_double_negation() {
     let state = obj(&[(
@@ -829,30 +829,30 @@ fn test_domain_double_negation() {
     let not_exists = domain_not(domain_exists("__exec__.payload.flag"));
     assert!(!evaluate_domain(&not_exists, &state).unwrap());
 
-    // not(not(exists)): true（双否定还原）
+    // not(not(exists)): true (double negation restores)
     let double_not = domain_not(domain_not(domain_exists("__exec__.payload.flag")));
     assert!(evaluate_domain(&double_not, &state).unwrap());
 }
 
-// ── 路径解析：非对象/非数组路径返回 None ──────────────────────────────────
+// ── Path resolution: non-object/non-array paths return None ──────────────
 
-/// 对非对象类型进行字段访问 → None（不 panic）
+/// Field access on a non-object type → None (no panic)
 #[test]
 fn test_path_resolve_on_non_object_returns_none() {
     let state = obj(&[("value", iv(42))]);
 
-    // value 是整数，对其访问子字段应返回 None
+    // value is an integer; accessing a subfield on it should return None
     let result = resolve_path(&state, "value.nested");
-    assert!(result.is_none(), "整数不应有子字段");
+    assert!(result.is_none(), "integer should not have subfields");
 
-    // missing 路径返回 None
+    // missing path returns None
     let result = resolve_path(&state, "missing.field");
     assert!(result.is_none());
 }
 
-// ── 多规则链：set → increment → decrement 顺序执行 ────────────────────────
+// ── Multi-rule chain: set → increment → decrement executed in order ────────
 
-/// 模拟多条规则顺序执行：set x=10 → increment x+=5 → decrement x-=3
+/// Simulate sequential execution of multiple rules: set x=10 → increment x+=5 → decrement x-=3
 #[test]
 fn test_rule_chain_sequential_execution() {
     let rules = vec![
@@ -886,7 +886,7 @@ fn test_rule_chain_sequential_execution() {
         rule_catch_all(),
     ];
 
-    // 第 1 步：set x=10
+    // Step 1: set x=10
     let r1 = execute_transition(
         &rules,
         &make_instruction("set", &[("attr", s("x")), ("value", iv(10))]),
@@ -900,11 +900,11 @@ fn test_rule_chain_sequential_execution() {
             new_queue,
             ..
         } => (new_payload, new_queue),
-        _ => panic!("step 1: 应返回 State"),
+        _ => panic!("step 1: should return State"),
     };
     assert_eq!(p1.get("x"), Some(&iv(10)));
 
-    // 第 2 步：increment x += 5
+    // Step 2: increment x += 5
     let r2 = execute_transition(
         &rules,
         &make_instruction("increment", &[("attr", s("x")), ("delta", iv(5))]),
@@ -918,11 +918,11 @@ fn test_rule_chain_sequential_execution() {
             new_queue,
             ..
         } => (new_payload, new_queue),
-        _ => panic!("step 2: 应返回 State"),
+        _ => panic!("step 2: should return State"),
     };
     assert_eq!(p2.get("x"), Some(&iv(15)));
 
-    // 第 3 步：decrement x -= 3
+    // Step 3: decrement x -= 3
     let r3 = execute_transition(
         &rules,
         &make_instruction("decrement", &[("attr", s("x")), ("delta", iv(3))]),
@@ -936,21 +936,23 @@ fn test_rule_chain_sequential_execution() {
             new_queue,
             ..
         } => (new_payload, new_queue),
-        _ => panic!("step 3: 应返回 State"),
+        _ => panic!("step 3: should return State"),
     };
     assert_eq!(p3.get("x"), Some(&iv(12)));
 }
 
-// ── while_loop 死循环防护（2026-08-17 审计修复根因的专项回归）───────────
+// ── while_loop infinite-loop defense (targeted regression for the 2026-08-17 audit-fix root cause) ───
 
-/// 带步数上限的队列驱动多步执行（模拟反应器主循环）
+/// Queue-driven multi-step execution with a step limit (simulates the reactor main loop)
 ///
-/// 循环 pop 队首指令调用 `execute_transition`，直到队列排空、触发 I/O、
-/// 执行错误或达到步数上限。返回 `(已执行步数, 最终 payload, 剩余队列)`。
+/// Pops the head instruction each iteration and calls `execute_transition`, until the
+/// queue drains, I/O fires, an execution error occurs, or the step limit is reached.
+/// Returns `(executed steps, final payload, remaining queue)`.
 ///
-/// 步数上限是本辅助函数的核心价值：死循环场景（队列永不排空）下
-/// 测试快速返回观察死循环形态，而非无限挂起拖垮测试套件——对应
-/// reactor 层 `max_rounds` 防线与差分测试 `simulate_execution` 上限。
+/// The step limit is the core value of this helper: in an infinite-loop scenario (queue
+/// never drains) the test returns quickly to observe the deadloop shape instead of
+/// hanging forever and stalling the suite — mirroring the reactor-layer `max_rounds`
+/// defense and the differential test's `simulate_execution` cap.
 fn run_queue_with_step_limit(
     core_eval: &[JsonValue],
     initial_payload: JsonValue,
@@ -981,12 +983,12 @@ fn run_queue_with_step_limit(
                 ..
             }) => {
                 panic!(
-                    "Step {}: 指令类型 '{}' 被忽略: {}",
+                    "Step {}: instruction type '{}' was ignored: {}",
                     steps, instruction_type, reason
                 );
             }
-            // I/O 触发、enforce 拦截或错误：停止推进（与反应器行为一致：
-            // Halted 时指令被拒，payload/queue 保持进入该步前的原样）
+            // I/O fired, enforce intercepted, or error: stop advancing (consistent with reactor behavior:
+            // on Halted the instruction is rejected and payload/queue stay as they were entering the step)
             Ok(TransitionResult::IoRequired { .. })
             | Ok(TransitionResult::Halted { .. })
             | Err(_) => return (steps, payload, queue),
@@ -995,29 +997,34 @@ fn run_queue_with_step_limit(
     (steps, payload, queue)
 }
 
-/// 专项回归：while_loop body 误用 `set + operation:add` 导致死循环
+/// Targeted regression: while_loop body misusing `set + operation:add` causes an infinite loop
 ///
-/// # 根因（2026-08-17 差分测试挂起事故）
+/// # Root cause (2026-08-17 differential-test hang incident)
 ///
-/// 宪法业务 `set` 规则硬编码元指令 `operation="set"`（覆盖语义），
-/// 业务指令 params 中的 `operation` 字段（如 `add`）被静默忽略。
-/// 误用 `set+add` 做 while_loop body 累加 → 计数器每轮被覆盖回常量
-/// → `lt` 条件永真 → push `[body, while_loop自身]` 无限循环，
-/// 队列永不排空（无上限的多步模拟曾因此永久挂起）。
+/// The constitution's business `set` rule hardcodes the meta instruction `operation="set"`
+/// (overwrite semantics); the `operation` field in the business instruction's params
+/// (e.g. `add`) is silently ignored. Misusing `set+add` as a while_loop body to
+/// accumulate → the counter gets overwritten back to a constant every round
+/// → the `lt` condition is always true → push `[body, while_loop itself]` loops
+/// forever and the queue never drains (uncapped multi-step simulation once hung
+/// permanently because of this).
 ///
-/// # 固化的三道防线
+/// # The three pinned defenses
 ///
-/// 1. **语义防线**：业务 `set` 的 `operation` 字段确实被忽略（覆盖语义）。
-///    若未来让 set 尊重该字段，本测试失败——提醒这是宪法语义变更，
-///    需同步 core_eval.json constraints 与版本说明。
-/// 2. **死循环形态**：`set+add` body 在步数上限内队列始终非空、
-///    计数器恒为常量（用上限截断观察，测试本身不挂起）。
-/// 3. **对照组**：`increment` body（宪法规定的加法指令）正常终止，
-///    计数器收敛到边界值——同一 condition 下两种 body 的行为差异
-///    即覆盖语义与累加语义的差异。
+/// 1. **Semantics defense**: the business `set`'s `operation` field is indeed ignored
+///    (overwrite semantics). If `set` ever respects that field, this test fails —
+///    signaling a constitution semantics change that requires syncing
+///    core_eval.json constraints and version notes.
+/// 2. **Deadloop shape**: with a `set+add` body the queue stays non-empty within the
+///    step limit and the counter stays constant (observed via limit truncation; the
+///    test itself does not hang).
+/// 3. **Control group**: the `increment` body (the constitution's designated addition
+///    instruction) terminates normally and the counter converges to the boundary —
+///    the behavioral difference between the two bodies under the same condition is
+///    exactly the difference between overwrite and accumulate semantics.
 #[test]
 fn test_while_loop_set_add_body_deadloop_regression() {
-    // 宪法规则子集（与 core_eval.json v0.3.1 对应规则结构一致）
+    // Constitution rule subset (structurally consistent with the corresponding rules in core_eval.json v0.3.1)
     let rule_increment = branch(
         domain_instruction("increment"),
         vec![set_instr(
@@ -1031,7 +1038,7 @@ fn test_while_loop_set_add_body_deadloop_regression() {
         domain_instruction("set"),
         vec![set_instr(
             "__exec__.instruction.params.attr",
-            // 硬编码 "set"：业务指令的 operation 字段被忽略（根因所在）
+            // Hardcoded "set": the business instruction's operation field is ignored (the root cause)
             "set",
             s("__exec__.instruction.params.value"),
         )],
@@ -1059,8 +1066,8 @@ fn test_while_loop_set_add_body_deadloop_regression() {
     // condition: counter < 3
     let condition = domain_lt("__exec__.payload.counter", 3);
 
-    // —— 防线 1：业务 set 的 operation:"add" 被忽略（覆盖语义）——
-    // counter=5 --set(value=1)--> 1；若 set 尊重 add 则应为 6
+    // —— Defense 1: the business set's operation:"add" is ignored (overwrite semantics) ——
+    // counter=5 --set(value=1)--> 1; if set respected add it would be 6
     let set_add_body = make_instruction(
         "set",
         &[
@@ -1081,13 +1088,13 @@ fn test_while_loop_set_add_body_deadloop_regression() {
             assert_eq!(
                 new_payload.get("counter"),
                 Some(&iv(1)),
-                "业务 set 必须是覆盖语义：operation 字段被宪法忽略（core_eval.json constraints）"
+                "business set must be overwrite semantics: the operation field is ignored by the constitution (core_eval.json constraints)"
             );
         }
-        _ => panic!("set 指令应成功执行"),
+        _ => panic!("set instruction should execute successfully"),
     }
 
-    // —— 防线 2：set+add 作为 while_loop body → 死循环形态 ——
+    // —— Defense 2: set+add as while_loop body → deadloop shape ——
     let deadloop_instr = make_instruction(
         "while_loop",
         &[("condition", condition.clone()), ("body", set_add_body)],
@@ -1098,15 +1105,15 @@ fn test_while_loop_set_add_body_deadloop_regression() {
         vec![deadloop_instr],
         1000,
     );
-    assert_eq!(steps, 1000, "死循环场景必须耗尽步数上限（队列永不排空）");
-    assert!(!queue.is_empty(), "死循环形态：达到上限后队列仍非空");
+    assert_eq!(steps, 1000, "deadloop scenario must exhaust the step limit (queue never drains)");
+    assert!(!queue.is_empty(), "deadloop shape: queue still non-empty after reaching the limit");
     assert_eq!(
         payload.get("counter"),
         Some(&iv(1)),
-        "计数器被覆盖回常量（不增长）——死循环根因的形态固化"
+        "counter overwritten back to a constant (no growth) — pinned shape of the deadloop root cause"
     );
 
-    // —— 防线 3：对照组，increment body 正常终止 ——
+    // —— Defense 3: control group, increment body terminates normally ——
     let inc_body = make_instruction("increment", &[("attr", s("counter")), ("delta", iv(1))]);
     let good_instr = make_instruction(
         "while_loop",
@@ -1118,11 +1125,11 @@ fn test_while_loop_set_add_body_deadloop_regression() {
         vec![good_instr],
         1000,
     );
-    assert!(queue.is_empty(), "increment body：队列排空（正常终止）");
-    assert!(steps < 1000, "increment body：步数应远小于上限");
+    assert!(queue.is_empty(), "increment body: queue drained (normal termination)");
+    assert!(steps < 1000, "increment body: steps should be far below the limit");
     assert_eq!(
         payload.get("counter"),
         Some(&iv(3)),
-        "counter 从 0 递增到 3（counter < 3 不再满足，循环退出）"
+        "counter increments from 0 to 3 (counter < 3 no longer holds, loop exits)"
     );
 }

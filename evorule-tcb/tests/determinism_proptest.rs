@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! evorule-tcb 确定性属性测试（proptest）
+//! evorule-tcb determinism property tests (proptest)
 //!
-//! TCB 是确定性计算内核，核心承诺：**相同输入 → 相同输出**。
-//! 本文件用随机输入（随机 payload / 随机指令 / 随机 core_eval 规则）
-//! 对 `execute_transition` 进行大量采样验证：
+//! The TCB is a deterministic computation kernel whose core promise is:
+//! **same input → same output**. This file samples `execute_transition` heavily
+//! with random inputs (random payload / random instructions / random core_eval rules):
 //!
-//! 1. **确定性**：同一输入重复执行多次，输出必须字节级一致
-//! 2. **纯函数**：执行不修改输入（输入在调用前后保持不变）
-//! 3. **永不 panic**：任意合法输入下 `execute_transition` 不 panic
+//! 1. **Determinism**: repeating the same input many times, output must be byte-identical
+//! 2. **Pure function**: execution does not modify inputs (inputs unchanged before/after the call)
+//! 3. **Never panics**: `execute_transition` never panics on any valid input
 //!
-//! # 运行方式
+//! # How to run
 //! ```bash
 //! cargo test -p evorule-tcb --test determinism_proptest
 //! ```
@@ -24,10 +24,10 @@ use evorule_tcb::{execute_transition, JsonValue, ObjectMap};
 use proptest::prelude::*;
 
 // ============================================================================
-// 随机 JsonValue 生成器
+// Random JsonValue generators
 // ============================================================================
 
-/// 随机 JsonValue（限制深度/宽度，保证生成快速且覆盖各类类型）
+/// Random JsonValue (depth/width capped to keep generation fast while covering all type kinds)
 fn json_value_strategy() -> impl Strategy<Value = JsonValue> {
     let leaf: BoxedStrategy<JsonValue> = prop_oneof![
         1 => Just(JsonValue::Null),
@@ -40,9 +40,9 @@ fn json_value_strategy() -> impl Strategy<Value = JsonValue> {
 
     leaf.prop_recursive(3, 20, 10, |inner| {
         prop_oneof![
-            // 数组
+            // array
             1 => proptest::collection::vec(inner.clone(), 0..4).prop_map(JsonValue::Array),
-            // 对象（键为简单字符串）
+            // object (keys are simple strings)
             1 => proptest::collection::vec((".*".prop_map(|s| s.to_string()), inner.clone()), 0..4)
                 .prop_map(|pairs| {
                     let mut map = ObjectMap::new();
@@ -56,7 +56,7 @@ fn json_value_strategy() -> impl Strategy<Value = JsonValue> {
     })
 }
 
-/// 随机 payload：总是对象（__exec__ 上下文需要）
+/// Random payload: always an object (required by the __exec__ context)
 fn payload_strategy() -> impl Strategy<Value = JsonValue> {
     proptest::collection::vec(
         (".*".prop_map(|s| s.to_string()), json_value_strategy()),
@@ -71,14 +71,14 @@ fn payload_strategy() -> impl Strategy<Value = JsonValue> {
     })
 }
 
-/// 随机指令：各种合法/边界指令类型
+/// Random instruction: various valid/edge instruction types
 fn instruction_strategy() -> impl Strategy<Value = JsonValue> {
     prop_oneof![
         // noop
         1 => Just(JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("noop")),
         ])),
-        // set（attr 固定为 "x"，值随机）
+        // set (attr fixed to "x", value random)
         1 => (".*".prop_map(|s| s.to_string()), json_value_strategy()).prop_map(|(attr, value)| {
             JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("set")),
@@ -89,7 +89,7 @@ fn instruction_strategy() -> impl Strategy<Value = JsonValue> {
                 ])),
             ])
         }),
-        // 未知指令类型（验证 all([]) 兜底）
+        // unknown instruction type (exercises the all([]) fallback)
         1 => Just(JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("unknown_instruction_xyz")),
         ])),
@@ -97,15 +97,15 @@ fn instruction_strategy() -> impl Strategy<Value = JsonValue> {
     .boxed()
 }
 
-/// 随机 core_eval：一组规则（noop / set / branch）
+/// Random core_eval: a set of rules (noop / set / branch)
 fn core_eval_strategy() -> impl Strategy<Value = Vec<JsonValue>> {
     proptest::collection::vec(
         prop_oneof![
-            // noop 规则
+            // noop rule
             1 => Just(JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("noop")),
             ])),
-            // set 规则：无条件 set(x, set, 随机值)
+            // set rule: unconditional set(x, set, random value)
             1 => json_value_strategy().prop_map(|value| {
                 JsonValue::object_from_pairs(&[
                     ("type", JsonValue::string("set")),
@@ -116,7 +116,7 @@ fn core_eval_strategy() -> impl Strategy<Value = Vec<JsonValue>> {
                     ])),
                 ])
             }),
-            // branch：all([]) 无条件 true → on_true 执行 set(x)
+            // branch: all([]) unconditionally true → on_true executes set(x)
             1 => Just(JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("branch")),
                 ("params", JsonValue::object_from_pairs(&[
@@ -141,7 +141,7 @@ fn core_eval_strategy() -> impl Strategy<Value = Vec<JsonValue>> {
 }
 
 // ============================================================================
-// 属性 1: 确定性 —— 相同输入 → 相同输出
+// Property 1: determinism — same input → same output
 // ============================================================================
 
 proptest! {
@@ -153,7 +153,7 @@ proptest! {
         instruction in instruction_strategy(),
         core_eval in core_eval_strategy(),
     ) {
-        // 同一输入执行两次，结果必须完全一致
+        // Execute the same input twice; results must be fully identical
         let r1 = execute_transition(&core_eval, &instruction, &payload, &[]);
         let r2 = execute_transition(&core_eval, &instruction, &payload, &[]);
 
@@ -162,44 +162,44 @@ proptest! {
                 match (a, b) {
                     (evorule_tcb::TransitionResult::State { new_payload: p1, new_queue: q1, rule_hits: h1 },
                      evorule_tcb::TransitionResult::State { new_payload: p2, new_queue: q2, rule_hits: h2 }) => {
-                        assert_eq!(p1, p2, "确定性被破坏: 相同输入产生不同 payload");
-                        assert_eq!(q1, q2, "确定性被破坏: 相同输入产生不同 queue");
-                        assert_eq!(h1, h2, "确定性被破坏: 相同输入产生不同命中归因");
+                        assert_eq!(p1, p2, "determinism broken: same input produced different payload");
+                        assert_eq!(q1, q2, "determinism broken: same input produced different queue");
+                        assert_eq!(h1, h2, "determinism broken: same input produced different hit attribution");
                     }
                     (evorule_tcb::TransitionResult::Ignored { instruction_type: t1, reason: r1, rule_hits: h1 },
                      evorule_tcb::TransitionResult::Ignored { instruction_type: t2, reason: r2, rule_hits: h2 }) => {
-                        assert_eq!(t1, t2, "确定性被破坏: 不同 instruction_type");
-                        assert_eq!(r1, r2, "确定性被破坏: 不同 reason");
-                        assert_eq!(h1, h2, "确定性被破坏: 相同输入产生不同命中归因");
+                        assert_eq!(t1, t2, "determinism broken: different instruction_type");
+                        assert_eq!(r1, r2, "determinism broken: different reason");
+                        assert_eq!(h1, h2, "determinism broken: same input produced different hit attribution");
                     }
                     (evorule_tcb::TransitionResult::IoRequired { io_type: t1, params: rp1 },
                      evorule_tcb::TransitionResult::IoRequired { io_type: t2, params: rp2 }) => {
-                        assert_eq!(t1, t2, "确定性被破坏: 不同 io_type");
-                        assert_eq!(rp1, rp2, "确定性被破坏: 不同 io params");
+                        assert_eq!(t1, t2, "determinism broken: different io_type");
+                        assert_eq!(rp1, rp2, "determinism broken: different io params");
                     }
                     (evorule_tcb::TransitionResult::Halted { rule_index: i1, reason: s1 },
                      evorule_tcb::TransitionResult::Halted { rule_index: i2, reason: s2 }) => {
-                        assert_eq!(i1, i2, "确定性被破坏: 不同 enforce 命中下标");
-                        assert_eq!(s1, s2, "确定性被破坏: 不同 violation reason");
+                        assert_eq!(i1, i2, "determinism broken: different enforce hit index");
+                        assert_eq!(s1, s2, "determinism broken: different violation reason");
                     }
-                    // 两个结果类型不同
+                    // The two results have different kinds
                     _ => {
-                        unreachable!("相同输入产生不同结果类型");
+                        unreachable!("same input produced different result kinds");
                     }
                 }
             }
             (Err(a), Err(b)) => {
-                assert_eq!(a, b, "确定性被破坏: 相同输入产生不同错误");
+                assert_eq!(a, b, "determinism broken: same input produced different errors");
             }
             _ => {
-                unreachable!("相同输入一个成功一个失败: Ok vs Err");
+                unreachable!("same input: one succeeded, one failed: Ok vs Err");
             }
         }
     }
 }
 
 // ============================================================================
-// 属性 2: 纯函数 —— 执行不修改输入
+// Property 2: pure function — execution does not modify inputs
 // ============================================================================
 
 proptest! {
@@ -211,23 +211,23 @@ proptest! {
         instruction in instruction_strategy(),
         core_eval in core_eval_strategy(),
     ) {
-        // 克隆输入快照
+        // Clone input snapshots
         let payload_snapshot = payload.clone();
         let instruction_snapshot = instruction.clone();
         let core_eval_snapshot = core_eval.clone();
 
-        // 执行（无论成功/失败）
+        // Execute (regardless of success/failure)
         let _ = execute_transition(&core_eval, &instruction, &payload, &[]);
 
-        // 执行后输入必须保持不变
-        assert_eq!(payload, payload_snapshot, "纯函数被破坏: execute_transition 修改了 payload");
-        assert_eq!(instruction, instruction_snapshot, "纯函数被破坏: execute_transition 修改了 instruction");
-        assert_eq!(core_eval, core_eval_snapshot, "纯函数被破坏: execute_transition 修改了 core_eval");
+        // Inputs must be unchanged after execution
+        assert_eq!(payload, payload_snapshot, "pure function broken: execute_transition modified payload");
+        assert_eq!(instruction, instruction_snapshot, "pure function broken: execute_transition modified instruction");
+        assert_eq!(core_eval, core_eval_snapshot, "pure function broken: execute_transition modified core_eval");
     }
 }
 
 // ============================================================================
-// 属性 3: 永不 panic —— 任意输入执行不 panic（proptest 断言失败即 panic）
+// Property 3: never panics — arbitrary inputs never panic (proptest assertion failure panics)
 // ============================================================================
 
 proptest! {
@@ -240,13 +240,13 @@ proptest! {
         core_eval in core_eval_strategy(),
         queue in proptest::collection::vec(instruction_strategy(), 0..4),
     ) {
-        // 执行不应 panic（返回 Ok/Err 均可，但不能崩溃）
+        // Execution should not panic (Ok/Err both fine, but no crash)
         let _ = execute_transition(&core_eval, &instruction, &payload, &queue);
     }
 }
 
 // ============================================================================
-// 属性 4: 队列传播 —— State 结果的 new_queue 必须是合法数组
+// Property 4: queue propagation — a State result's new_queue must be a valid array
 // ============================================================================
 
 proptest! {
@@ -261,7 +261,7 @@ proptest! {
         if let Ok(evorule_tcb::TransitionResult::State { new_queue, .. }) =
             execute_transition(&core_eval, &instruction, &payload, &[])
         {
-            // new_queue 是 Vec<JsonValue>，天然是数组；验证其中的元素是合法 JsonValue
+            // new_queue is a Vec<JsonValue>, inherently an array; verify its elements are valid JsonValues
             for item in &new_queue {
                 let _: &JsonValue = item;
             }
@@ -270,7 +270,7 @@ proptest! {
 }
 
 // ============================================================================
-// 属性 5: 多轮串联 —— 连续执行 State 结果仍保持确定性
+// Property 5: sequential chaining — State results stay deterministic across consecutive executions
 // ============================================================================
 
 proptest! {
@@ -282,7 +282,7 @@ proptest! {
         instruction in instruction_strategy(),
         core_eval in core_eval_strategy(),
     ) {
-        // 执行两轮
+        // Run both rounds
         let mut run1_payload = payload.clone();
         let mut run2_payload = payload.clone();
 
@@ -292,11 +292,11 @@ proptest! {
             match (r1, r2) {
                 (Ok(evorule_tcb::TransitionResult::State { new_payload: p1, .. }),
                  Ok(evorule_tcb::TransitionResult::State { new_payload: p2, .. })) => {
-                    assert_eq!(p1, p2, "串联执行失去确定性");
+                    assert_eq!(p1, p2, "sequential execution lost determinism");
                     run1_payload = p1;
                     run2_payload = p2;
                 }
-                _ => break, // IoRequired/Err 时停止串联
+                _ => break, // stop chaining on IoRequired/Err
             }
         }
     }

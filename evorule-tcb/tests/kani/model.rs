@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 结构化符号输入辅助（tests/kani/model.rs）
+//! Structured symbolic input helpers (tests/kani/model.rs)
 //!
-//! # 设计原则：固定结构 + 符号叶子
-//! 不整体 `kani::any::<JsonValue>()`（全符号 BTreeMap/Vec 会状态爆炸）；
-//! 改为构造**已知形状**的 `JsonValue`（固定键、固定结构），仅叶子值符号化
-//! （`kani::any::<i64>()` / `kani::any::<bool>()` 等），
-//! 兼顾"直接验证生产代码"与"控制展开成本"（见 verification/kani-formal-verification-design.md §3）。
+//! # Design principle: fixed shape + symbolic leaves
+//! Never `kani::any::<JsonValue>()` as a whole (fully symbolic BTreeMap/Vec explodes state);
+//! instead construct `JsonValue` values of **known shape** (fixed keys, fixed structure) with
+//! only leaf values symbolic (`kani::any::<i64>()` / `kani::any::<bool>()` etc.),
+//! balancing "verifying production code directly" against "bounding unrolling cost"
+//! (see verification/kani-formal-verification-design.md §3).
 
 #![cfg(kani)]
 
@@ -18,14 +19,16 @@ use alloc::vec::Vec;
 
 use evorule_tcb::{JsonValue, ObjectMap};
 
-/// 返回全部 6 种变体的具体实例（固定数组，每类 1 个代表，无堆分配）。
+/// Returns concrete instances of all 6 variants (fixed array, one representative per type, no heap allocation).
 ///
-/// 供 P1-P3 使用：用索引循环做两两比较（6×6=36 种组合），覆盖全部 match 分支。
-/// 相比 Vec<JsonValue>，`[JsonValue; 6]` 无堆分配，CBMC 按栈上数组展开，
-/// 无 Vec 迭代器/堆指针开销，展开成本显著降低。
+/// Used by P1-P3: index loop for pairwise comparison (6×6=36 combinations), covering all match
+/// branches. Compared to Vec<JsonValue>, `[JsonValue; 6]` has no heap allocation; CBMC unrolls
+/// it as a stack array, without Vec iterator/heap-pointer overhead, significantly reducing
+/// unrolling cost.
 ///
-/// ⚠️ 本函数不含符号值，CBMC 按具体常量计算，
-/// 求解路径仅覆盖 match 分支选择，不验证标准库内部（memcmp/映射容器遍历）。
+/// ⚠️ This function contains no symbolic values; CBMC computes on concrete constants,
+/// and the solving path only covers match branch selection, not stdlib internals
+/// (memcmp/map container traversal).
 pub(crate) fn all_variants() -> [JsonValue; 6] {
     [
         JsonValue::Null,
@@ -37,8 +40,8 @@ pub(crate) fn all_variants() -> [JsonValue; 6] {
     ]
 }
 
-/// 构造"已知形状、符号叶子"的 payload 对象。
-/// 键数固定（x/y/obj.flag）→ ObjectMap 大小确定；叶子值符号化 → 覆盖全部输入值。
+/// Constructs a payload object of "known shape, symbolic leaves".
+/// Fixed key count (x/y/obj.flag) → ObjectMap size determined; symbolic leaf values → covers all input values.
 pub(crate) fn any_payload() -> JsonValue {
     let mut map = ObjectMap::new();
     map.insert("x".to_string(), JsonValue::Integer(kani::any::<i64>()));
@@ -54,9 +57,9 @@ pub(crate) fn any_payload() -> JsonValue {
     JsonValue::Object(map)
 }
 
-/// 符号指令（type 取合法集合之一，0..=3 → set/push/branch/io_request）。
-/// ⚠️ 本函数仅提供"type 符号化、无 params"的最简形状；
-/// 需要具体 params 的证明（P13-P18）各自构造固定形状的指令。
+/// Symbolic instruction (type is one of the legal set, 0..=3 → set/push/branch/io_request).
+/// ⚠️ This function only provides the minimal shape of "symbolic type, no params";
+/// proofs needing concrete params (P13-P18) each construct fixed-shape instructions.
 pub(crate) fn any_instruction() -> JsonValue {
     let t = kani::any::<u8>() % 4;
     let mut instr = ObjectMap::new();
@@ -72,8 +75,8 @@ pub(crate) fn any_instruction() -> JsonValue {
     JsonValue::Object(instr)
 }
 
-/// 构造完整 exec_state：`__exec__` 下含 `instruction` + `payload` + `queue`。
-/// 供 `execute_meta_instruction`（P12/P13/P14）使用——它需要 `__exec__.payload` 与 `__exec__.queue`。
+/// Constructs a full exec_state: `__exec__` containing `instruction` + `payload` + `queue`.
+/// Used by `execute_meta_instruction` (P12/P13/P14) — it needs `__exec__.payload` and `__exec__.queue`.
 pub(crate) fn any_state() -> JsonValue {
     let mut exec = ObjectMap::new();
     exec.insert("instruction".to_string(), JsonValue::string("noop"));
@@ -84,11 +87,13 @@ pub(crate) fn any_state() -> JsonValue {
     JsonValue::Object(root)
 }
 
-/// 构造**完全具体**的 exec_state（无符号叶子，供 P8/P9/P10/P11 等层 3 证明使用）。
+/// Constructs a **fully concrete** exec_state (no symbolic leaves; used by the layer-3 proofs P8/P9/P10/P11 etc.).
 ///
-/// ⚠️ 本函数全部用具体常量（无符号叶子）：符号叶子会让映射比较 + 展开状态爆炸
-/// （P8 实测符号 exec_state + 具体域列表被 WSL 内存打断）。
-/// 仅验证 `evaluate_domain` 自身的 match 分支与路径解析逻辑，覆盖目标不变。
+/// ⚠️ This function uses concrete constants throughout (no symbolic leaves): symbolic leaves
+/// make map comparison + unrolled state explode (P8 measured: a symbolic exec_state + concrete
+/// domain list was interrupted by WSL memory).
+/// Only verifies `evaluate_domain`'s own match branches and path resolution logic; the coverage
+/// target is unchanged.
 pub(crate) fn concrete_exec_state() -> JsonValue {
     let mut payload = ObjectMap::new();
     payload.insert("x".to_string(), JsonValue::Integer(1));
@@ -116,12 +121,14 @@ pub(crate) fn concrete_exec_state() -> JsonValue {
     JsonValue::Object(root)
 }
 
-/// 构造**单键最简** exec_state：`{ __exec__: { payload: { x: 1 } } }`（每层 ObjectMap 仅 1 键）。
+/// Constructs a **single-key minimal** exec_state: `{ __exec__: { payload: { x: 1 } } }` (each ObjectMap level has only 1 key).
 ///
-/// 历史教训：Kani 对 BTreeMap（红黑树）展开成本极高（键越多、树越深，CBMC 查找路径越多），
-/// P8 系列实测多键 `concrete_exec_state()`（4+ 键 × 3 层）展开 ≥3GB 不收敛。
-/// 2026-09-13 起 kani 构建下 ObjectMap 已切换为 KaniMap（有序 Vec，见 value.rs），
-/// 多键不再爆炸；本函数保留单键最小状态以进一步压低展开规模。
+/// Historical lesson: Kani's unrolling cost for BTreeMap (red-black tree) is extremely high
+/// (more keys / deeper tree → more CBMC lookup paths); the P8 series measured the multi-key
+/// `concrete_exec_state()` (4+ keys × 3 levels) unrolling at ≥3GB without converging.
+/// Since 2026-09-13, ObjectMap under the kani build has switched to KaniMap (ordered Vec, see
+/// value.rs); multi-key no longer explodes; this function keeps the single-key minimal state
+/// to further compress the unrolling scale.
 pub(crate) fn single_key_exec_state() -> JsonValue {
     let mut payload = ObjectMap::new();
     payload.insert("x".to_string(), JsonValue::Integer(1));
@@ -132,7 +139,7 @@ pub(crate) fn single_key_exec_state() -> JsonValue {
     JsonValue::Object(root)
 }
 
-/// 以给定 payload 内容构造完整 exec_state（供 P15/P16/P17/P18 传入具体 payload）。
+/// Constructs a full exec_state with the given payload content (for P15/P16/P17/P18 to pass concrete payloads).
 pub(crate) fn state_with_payload(payload: ObjectMap) -> JsonValue {
     let mut exec = ObjectMap::new();
     exec.insert("instruction".to_string(), JsonValue::string("noop"));
@@ -143,10 +150,12 @@ pub(crate) fn state_with_payload(payload: ObjectMap) -> JsonValue {
     JsonValue::Object(root)
 }
 
-// ===== P21 专用：ReAct 三条规则（口径与 src/transition.rs 单元测试一致） =====
-// TCB 零依赖、不内嵌 JSON 解析器，core_eval.json 由上层加载后传入 execute_transition，
-// 因此这里手工构造与 core_eval.json v0.3.1 ReAct 三条规则一一对应的规则列表。
-// 全部为具体常量（无符号值），Kani 按具体常量折叠，展开成本可控。
+// ===== P21-specific: ReAct three rules (same conventions as the src/transition.rs unit tests) =====
+// TCB is zero-dependency and embeds no JSON parser; core_eval.json is loaded by the upper layer
+// and passed into execute_transition, so the rule list here is hand-constructed to correspond
+// one-to-one with the core_eval.json v0.3.1 ReAct three rules.
+// All are concrete constants (no symbolic values); Kani folds them as concrete constants,
+// keeping the unrolling cost controllable.
 
 fn s(v: &str) -> JsonValue {
     JsonValue::string(v)
@@ -154,7 +163,7 @@ fn s(v: &str) -> JsonValue {
 fn iv(v: i64) -> JsonValue {
     JsonValue::Integer(v)
 }
-/// owned 构造（W3-3，G2：构造层与 Clone 实现解绑）——值 move 进 ObjectMap，零深克隆。
+/// Owned construction (W3-3, G2: construction decoupled from the Clone implementation) — values move into the ObjectMap, zero deep clones.
 pub(crate) fn obj(pairs: Vec<(&str, JsonValue)>) -> JsonValue {
     JsonValue::object_from_pairs_owned(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
 }
@@ -214,11 +223,12 @@ fn push_noop() -> JsonValue {
     ])
 }
 
-/// 与 core_eval.json v0.3.1 的 ReAct 三条规则一一对应
-/// （self_init / call_external / call_service；工具扇出/结果合并的循环编排
-/// 职责在应用层 runner，collect/merge 原语已退役（历史批次），终止统一 push noop）。
+/// One-to-one correspondence with the core_eval.json v0.3.1 ReAct three rules
+/// (self_init / call_external / call_service; the loop orchestration duty of tool fan-out /
+/// result merging lives in the application-layer runner; collect/merge primitives retired
+/// (historical batches); termination is uniformly push noop).
 pub(crate) fn react_core_eval() -> Vec<JsonValue> {
-    // 1) react_iteration 自初始化（缺失时置 0，否则跳过）
+    // 1) react_iteration self-initialization (set to 0 when missing, otherwise skip)
     let self_init = branch(
         obj(vec![
             ("type", s("all")),
@@ -237,8 +247,9 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
         vec![],
     );
 
-    // 2) call_external：消费 LLM 结果（工具扇出编排在应用层 runner，
-    //    collect 已退役，消费轮统一 push noop 终止）
+    // 2) call_external: consume the LLM result (tool fan-out orchestration lives in the
+    //    application-layer runner; collect retired; the consuming round uniformly terminates
+    //    with push noop)
     let call_external = branch(
         instr_domain("call_external"),
         vec![branch(
@@ -263,7 +274,7 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
                     "set",
                     JsonValue::Null,
                 ),
-                // 循环终止（工具扇出编排在应用层 runner，collect 已退役）
+                // Loop termination (tool fan-out orchestration lives in the application-layer runner; collect retired)
                 push_noop(),
             ],
             vec![obj(vec![
@@ -281,8 +292,9 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
         vec![],
     );
 
-    // 3) call_service：消费工具结果 → lt 检查（结果合并与下一条 LLM 调用的生成
-    //    由应用层 runner 编排，merge 已退役，消费轮统一 push noop 终止）
+    // 3) call_service: consume tool results → lt check (result merging and the generation of the
+    //    next LLM call are orchestrated by the application-layer runner; merge retired; the
+    //    consuming round uniformly terminates with push noop)
     let call_service = branch(
         instr_domain("call_service"),
         vec![branch(
@@ -300,7 +312,7 @@ pub(crate) fn react_core_eval() -> Vec<JsonValue> {
                 ),
                 branch(
                     lt_domain("__exec__.payload.react_iteration", 10),
-                    // 循环终止（结果合并与下一条 LLM 调用编排在应用层 runner，merge 已退役）
+                    // Loop termination (result merging and next-LLM-call orchestration live in the application-layer runner; merge retired)
                     vec![set_instr("react_iteration", "add", iv(1)), push_noop()],
                     vec![push_noop()],
                 ),

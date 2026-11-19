@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 载体同一性 · 差分验证 harness（DEV-6 证据形态 B · T1/T2）
+//! Carrier identity · differential verification harness (DEV-6 evidence form B · T1/T2)
 //!
-//! 在生产载体（`cfg(not(kani))`：真实 `BTreeMap`、`MAX_DOMAIN_DEPTH=64`）上，
-//! 以有界代表域实证「Kani 替身上验证的属性同样成立于生产载体」，弥补
-//! [build-config-comparison.md](../verification/carrier-identity/build-config-comparison.md)
-//! 所列 D1–D3（T1）与 D4（T2）的行为级偏差。
+//! On the production carrier (`cfg(not(kani))`: real `BTreeMap`, `MAX_DOMAIN_DEPTH=64`),
+//! bounded representative scopes empirically confirm "properties verified on the Kani
+//! stand-in also hold on the production carrier", closing the behavioral gaps
+//! D1–D3 (T1) and D4 (T2) listed in
+//! [build-config-comparison.md](../verification/carrier-identity/build-config-comparison.md).
 //!
-//! 载体说明：tests/ 仅在 `cargo test` 下编译；`kani` cfg 仅由 Kani 工具链注入，
-//! stable `cargo test` 天然不进入 Kani 翻译层，无需额外 cfg 旗标。
+//! Carrier note: tests/ compiles only under `cargo test`; the `kani` cfg is injected
+//! solely by the Kani toolchain, so stable `cargo test` never enters the Kani
+//! translation layer and needs no extra cfg flags.
 //!
-//! 界声明（R2）：T1 键数 ≤ 64（对齐 D1 替身验证键量级），值字符串长度 ≤ 16；
-//! T2 嵌套深度 ≤ 65（恰好跨过生产上界 64 的两侧）。
+//! Bound declaration (R2): T1 key count ≤ 64 (aligned with the D1 stand-in verification
+//! key scale), value string length ≤ 16; T2 nesting depth ≤ 65 (exactly straddling
+//! both sides of the production bound 64).
 
 #![allow(
     clippy::unwrap_used,
@@ -24,17 +27,19 @@
 use evorule_tcb::domain::evaluate_domain;
 use evorule_tcb::{JsonValue, ObjectMap};
 
-// ===== T1：JsonValue / ObjectMap（对应 D1–D3）=====
+// ===== T1: JsonValue / ObjectMap (corresponds to D1–D3) =====
 
-/// `BTreeMap` 后端在乱序插入下迭代序确定（字典序），两次独立构造完全一致。
-/// 实证 D1 论证「`ObjectMap` 迭代序与 `BTreeMap` 一致」在生产载体成立。
+/// The `BTreeMap` backend iterates deterministically (lexicographic order) under
+/// out-of-order insertion; two independent constructions are fully identical.
+/// Empirically confirms on the production carrier that D1's claim
+/// "`ObjectMap` iteration order matches `BTreeMap`" holds.
 #[test]
 fn t1a_objectmap_iter_order_deterministic() {
     let keys: Vec<String> = (0..64).map(|i| format!("k{i:03}")).collect();
 
     let build = || {
         let mut obj = ObjectMap::new();
-        // 逆序插入：迭代序只能由 BTreeMap 字典序保证，与插入序无关
+        // Insert in reverse: iteration order can only be guaranteed by BTreeMap lexicographic order, independent of insertion order
         for (n, key) in keys.iter().enumerate().rev() {
             obj.insert(key.clone(), JsonValue::string(format!("v{n:03}")));
         }
@@ -44,20 +49,20 @@ fn t1a_objectmap_iter_order_deterministic() {
     let a = build();
     let b = build();
 
-    // ⚠️ 不可改用 .keys()：`cargo kani --tests` 在 kani cfg 下 ObjectMap=KaniMap（无 keys 方法），
-    // iter().map 取 key 为三闸（stable test / clippy / kani）兼容写法；iter_kv_map 由文件头 allow 豁免。
+    // ⚠️ Do not switch to .keys(): under `cargo kani --tests` with the kani cfg, ObjectMap=KaniMap (no keys method);
+    // iter().map key extraction is the form compatible with all three gates (stable test / clippy / kani); iter_kv_map is exempted via the file-header allow.
     let seq_a: Vec<&String> = a.iter().map(|(k, _)| k).collect();
     let seq_b: Vec<&String> = b.iter().map(|(k, _)| k).collect();
-    assert_eq!(seq_a, seq_b, "两次独立构造的迭代序必须一致（确定性）");
+    assert_eq!(seq_a, seq_b, "iteration order of two independent constructions must match (determinism)");
     assert_eq!(
         seq_a,
         keys.iter().collect::<Vec<_>>(),
-        "迭代序必须为字典序（BTreeMap 生产语义）"
+        "iteration order must be lexicographic (BTreeMap production semantics)"
     );
 }
 
-/// `JsonValue` object 构造 → 访问往返 no-panic 且值稳定；
-/// 嵌套对象（含 null）访问正常（对应 D2/D3 的 null 路径）。
+/// `JsonValue` object construct → access roundtrip is no-panic with stable values;
+/// nested object (including null) access works (the null paths of D2/D3).
 #[test]
 fn t1b_jsonvalue_construct_access_roundtrip() {
     let mut inner = JsonValue::empty_object();
@@ -69,15 +74,15 @@ fn t1b_jsonvalue_construct_access_roundtrip() {
     root.insert("inner".to_string(), inner);
 
     assert_eq!(root.get("name"), Some(&JsonValue::string("probe")));
-    let inner_back = root.get("inner").expect("inner 必须可读回");
+    let inner_back = root.get("inner").expect("inner must be readable back");
     assert_eq!(inner_back.get("flag"), Some(&JsonValue::Integer(1)));
     assert_eq!(inner_back.get("empty"), Some(&JsonValue::Null));
-    assert_eq!(root.get("missing"), None, "缺失键必须返回 None 而非 panic");
+    assert_eq!(root.get("missing"), None, "missing key must return None instead of panicking");
 }
 
-// ===== T2：域求值（对应 D4）=====
+// ===== T2: domain evaluation (corresponds to D4) =====
 
-/// 构造执行状态 `{"__exec__": {"instruction": {"type": "noop"}, "payload": {"x": 10}}}`
+/// Build the execution state `{"__exec__": {"instruction": {"type": "noop"}, "payload": {"x": 10}}}`
 fn exec_state() -> JsonValue {
     let mut payload = ObjectMap::new();
     payload.insert("x".to_string(), JsonValue::Integer(10));
@@ -99,25 +104,25 @@ fn eq_x10() -> JsonValue {
     ])
 }
 
-/// 深度 ≤ 64（生产上界）内有界、no-panic、结果正确。
-/// 直接实证 D4 边界化所要求的「深度 64 下域求值仍成立」。
+/// Bounded within depth ≤ 64 (production bound), no-panic, correct result.
+/// Directly demonstrates what D4 bounding requires: "domain evaluation still holds at depth 64".
 #[test]
 fn t2a_domain_eval_bounded_depth64_ok() {
     let state = exec_state();
-    // 恰好 64 层 not 包裹（最内 eq 处于 depth=64，不超界）
+    // Exactly 64 not layers wrapped (the innermost eq sits at depth=64, within the bound)
     let mut domain = eq_x10();
     for _ in 0..64 {
         domain =
             JsonValue::object_from_pairs(&[("type", JsonValue::string("not")), ("inner", domain)]);
     }
-    // 64 层 not 为偶数次取反：eq(x,10)=true → 结果仍 true，且必须是 Ok 而非 Err/panic
+    // 64 not layers = an even number of negations: eq(x,10)=true → result still true, and it must be Ok rather than Err/panic
     assert!(
-        evaluate_domain(&domain, &state).expect("深度 64 不得超界报错"),
-        "64 层 not（偶数次取反）后应仍为 true"
+        evaluate_domain(&domain, &state).expect("depth 64 must not exceed the bound with an error"),
+        "after 64 not layers (even number of negations) it should still be true"
     );
 }
 
-/// 深度 > 64 显式拒绝（`NestingTooDeep`），绝不静默求值。
+/// Depth > 64 is explicitly rejected (`NestingTooDeep`), never silently evaluated.
 #[test]
 fn t2b_domain_eval_over_limit_explicit_reject() {
     let state = exec_state();
@@ -131,6 +136,6 @@ fn t2b_domain_eval_over_limit_explicit_reject() {
             evaluate_domain(&domain, &state),
             Err(evorule_tcb::TcbError::NestingTooDeep { limit: 64 })
         ),
-        "深度 65 必须显式拒绝（fail-closed），不得静默通过"
+        "depth 65 must be explicitly rejected (fail-closed), never silently accepted"
     );
 }

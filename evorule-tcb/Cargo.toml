@@ -4,43 +4,45 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "EvoRule TCB Core - 纯计算内核，零依赖，确定性状态转换"
+description = "EvoRule TCB Core - pure computation kernel, zero dependencies, deterministic state transitions"
 repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/evorule-tcb"
 readme = "README.md"
 keywords = ["tcb", "deterministic", "state-machine", "no-std"]
 categories = ["no-std", "data-structures"]
-# 发布到 crates.io 时排除开发产物/验证脚本（下游依赖消费者不需要）
-# 与 evorule-reactor / evorule-governance 风格对齐
+# Exclude dev artifacts / verification scripts when publishing to crates.io (downstream dependency consumers don't need them)
+# Aligned with the evorule-reactor / evorule-governance style
 exclude = [
-    "verification/",          # Kani 形式化验证 + 差分测试源码 (dev-only)
-    "benches/",               # Criterion 性能基准源码 (dev-only)
-    "scripts/",               # Kani 验证脚本 (dev-only)
-    "rust-toolchain.toml",    # 开发工具链固定
-    "**/*.log",               # 各类运行日志
-    "install_log.txt",        # 工具安装日志
+    "verification/",          # Kani formal verification + differential test sources (dev-only)
+    "benches/",               # Criterion performance benchmark sources (dev-only)
+    "scripts/",               # Kani verification scripts (dev-only)
+    "rust-toolchain.toml",    # Dev toolchain pinning
+    "**/*.log",               # Various runtime logs
+    "install_log.txt",        # Tool installation log
 ]
 
 [dependencies]
-# 无外部依赖（#![no_std] 兼容）
-# alloc 由 Rust 标准库提供
+# No external dependencies (#![no_std] compatible)
+# alloc provided by the Rust standard library
 
 [dev-dependencies]
-# 确定性属性测试：随机输入下验证「相同输入 → 相同输出」
-# 仅 dev 依赖，不进入发布产物（与零依赖核心隔离）
+# Deterministic property testing: verify "same input → same output" under random inputs
+# Dev-only dependency; not part of published artifacts (isolated from the zero-dependency core)
 proptest = "1.4"
-# 性能基准测试
+# Performance benchmarks
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [features]
 default = ["std"]
-# std 特性：启用标准库支持（用于测试和错误处理）
+# std feature: enables standard library support (for tests and error handling)
 std = []
 
-# lints 统一继承 workspace (四仓 lint 统一收敛整改): 旧本地 [lints.rust]/[lints.clippy]
-# 与 workspace 定义逐条同值但双份维护, 曾造成「四仓统一继承」文档声明失实。
-# 单一真值源 = 根 Cargo.toml [workspace.lints], 其余三仓同此。
+# lints uniformly inherited from workspace (four-repo lint unification consolidation): the old
+# local [lints.rust]/[lints.clippy] matched the workspace definitions value-for-value but were
+# maintained in duplicate, once making the "four-repo unified inheritance" documentation claim
+# false. Single source of truth = root Cargo.toml [workspace.lints]; the other three repos do
+# the same.
 [lints]
 workspace = true
 

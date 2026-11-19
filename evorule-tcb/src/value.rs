@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! JSON 值类型 - 确定性数据模型
+//! JSON value types - deterministic data model
 //!
-//! # 设计原则
-//! - 零克隆优先（使用 `Cow` 减少不必要的复制）
-//! - 确定性迭代（`BTreeMap`）
-//! - 类型安全（所有转换返回 `Option`）
-//! - 永不 panic
+//! # Design principles
+//! - Zero-clone first (uses `Cow` to avoid unnecessary copies)
+//! - Deterministic iteration (`BTreeMap`)
+//! - Type safety (all conversions return `Option`)
+//! - Never panics
 
 use alloc::borrow::Cow;
 use alloc::string::{String, ToString};
@@ -18,32 +18,38 @@ use core::fmt;
 #[cfg(not(kani))]
 use alloc::collections::BTreeMap;
 
-/// Kani 验证专用 Object 后端：有序 `Vec` 模拟 `BTreeMap`（`cfg(kani)` 下启用）
+/// Kani-only Object backend: an ordered `Vec` emulating `BTreeMap` (enabled under `cfg(kani)`)
 ///
-/// # 根因（2026-09-13 探针实测，B 档 23 个 proof 超时定位）
+/// # Root cause (measured 2026-09-13 via probes; located from 23 tier-B proof timeouts)
 ///
-/// Kani 0.67 的 CBMC 后端对 `BTreeMap` 红黑树建模：插入 ≥2 键即状态爆炸
-/// （90s+ 不收敛，加大 unwind 无改善）；有序 `Vec` 3 键 insert + get 仅 2-3s。
-/// `Vec` 无指针追踪、无递归树遍历，CBMC 线性展开即可覆盖。
+/// The CBMC backend of Kani 0.67 models `BTreeMap` as a red-black tree: inserting
+/// ≥2 keys causes state explosion (90s+ without convergence; a larger unwind does
+/// not help); the ordered `Vec` needs only 2-3s for a 3-key insert + get. A `Vec`
+/// has no pointer tracking and no recursive tree traversal, so CBMC's linear
+/// unrolling covers it.
 ///
-/// # 语义等价保证
+/// # Semantic equivalence guarantees
 ///
-/// - 条目始终按键字典序排列（`insert` 线性定位 + 位置插入维护不变式），
-///   `iter()` 迭代顺序与 `BTreeMap` 一致；
-/// - API 与 `BTreeMap<String, JsonValue>` 的 TCB/reactor 在用方法签名兼容
-///   （`get`/`get_mut`/`insert`/`remove`/`contains_key`/`values`/`iter` 等）；
-/// - 生产构建（`cfg(not(kani))`）零影响，`ObjectMap` 仍为 `BTreeMap`。
+/// - Entries are always ordered by key lexicographically (`insert` locates the slot
+///   linearly and maintains the invariant by positional insertion); `iter()` yields
+///   the same order as `BTreeMap`;
+/// - API signatures are compatible with the `BTreeMap<String, JsonValue>` methods
+///   the TCB/reactor uses (`get`/`get_mut`/`insert`/`remove`/`contains_key`/
+///   `values`/`iter`, etc.);
+/// - Production builds (`cfg(not(kani))`) are unaffected; `ObjectMap` stays `BTreeMap`.
 #[cfg(kani)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KaniMap {
-    /// 有序条目（键字典序，`insert` 维护）
+    /// Ordered entries (key lexicographic order, maintained by `insert`)
     entries: Vec<(String, JsonValue)>,
 }
 
-/// Kani 验证专用 no-op Drop（同 JsonValue 的 no-op Drop，根因见其文档注释）：
-/// 阻止编译器合成 entries 字段的递归析构（Vec → slice 逐元素 → String 的
-/// RawVec::deallocate），后者在 CBMC 中逐迭代展开（实测 verify_evaluate_domain_eq
-/// 11GB+ OOM，unwind 日志见 Vec<(String, JsonValue)>/KaniMap drop 链迭代 10-13 层）。
+/// Kani-only no-op Drop (same pattern as the JsonValue no-op Drop; root cause in its
+/// doc comment): prevents the compiler-synthesized recursive destruction of the
+/// entries field (Vec → per-element slice → String RawVec::deallocate), which CBMC
+/// unrolls iteration by iteration (measured: verify_evaluate_domain_eq 11GB+ OOM;
+/// unwind logs show the Vec<(String, JsonValue)>/KaniMap drop chain iterating 10-13
+/// levels).
 #[cfg(kani)]
 impl Drop for KaniMap {
     fn drop(&mut self) {
@@ -57,7 +63,7 @@ impl Drop for KaniMap {
 
 #[cfg(kani)]
 impl KaniMap {
-    /// 键定位：命中返回 `Ok(下标)`；未命中返回 `Err(插入点)`（首个大于 key 的位置）
+    /// Key location: returns `Ok(index)` on hit; `Err(insertion point)` on miss (the first position whose key is greater)
     fn locate(&self, key: &str) -> Result<usize, usize> {
         for (i, (k, _)) in self.entries.iter().enumerate() {
             if k.as_str() == key {
@@ -70,14 +76,14 @@ impl KaniMap {
         Err(self.entries.len())
     }
 
-    /// 构造空映射
+    /// Constructs an empty map
     pub fn new() -> Self {
         KaniMap {
             entries: Vec::new(),
         }
     }
 
-    /// 插入或更新，返回旧值（语义与 `BTreeMap::insert` 一致）
+    /// Inserts or updates, returning the old value (semantics match `BTreeMap::insert`)
     pub fn insert(&mut self, key: String, value: JsonValue) -> Option<JsonValue> {
         match self.locate(&key) {
             Ok(i) => self
@@ -91,7 +97,7 @@ impl KaniMap {
         }
     }
 
-    /// 查找（语义与 `BTreeMap::get` 一致）
+    /// Lookup (semantics match `BTreeMap::get`)
     pub fn get(&self, key: &str) -> Option<&JsonValue> {
         match self.locate(key) {
             Ok(i) => self.entries.get(i).map(|(_, v)| v),
@@ -99,7 +105,7 @@ impl KaniMap {
         }
     }
 
-    /// 可变查找（语义与 `BTreeMap::get_mut` 一致）
+    /// Mutable lookup (semantics match `BTreeMap::get_mut`)
     pub fn get_mut(&mut self, key: &str) -> Option<&mut JsonValue> {
         match self.locate(key) {
             Ok(i) => match self.entries.get_mut(i) {
@@ -110,7 +116,7 @@ impl KaniMap {
         }
     }
 
-    /// 移除并返回旧值（语义与 `BTreeMap::remove` 一致）
+    /// Removes and returns the old value (semantics match `BTreeMap::remove`)
     pub fn remove(&mut self, key: &str) -> Option<JsonValue> {
         match self.locate(key) {
             Ok(i) => {
@@ -121,32 +127,32 @@ impl KaniMap {
         }
     }
 
-    /// 键存在性检查（语义与 `BTreeMap::contains_key` 一致）
+    /// Key existence check (semantics match `BTreeMap::contains_key`)
     pub fn contains_key(&self, key: &str) -> bool {
         self.locate(key).is_ok()
     }
 
-    /// 值迭代器（语义与 `BTreeMap::values` 一致）
+    /// Value iterator (semantics match `BTreeMap::values`)
     pub fn values(&self) -> impl Iterator<Item = &JsonValue> {
         self.entries.iter().map(|(_, v)| v)
     }
 
-    /// 有序条目迭代器（迭代顺序与 `BTreeMap::iter` 一致，键字典序）
+    /// Ordered entry iterator (iteration order matches `BTreeMap::iter`; keys lexicographic)
     pub fn iter(&self) -> core::slice::Iter<'_, (String, JsonValue)> {
         self.entries.iter()
     }
 
-    /// 条目数
+    /// Number of entries
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
-    /// 是否为空
+    /// Whether the map is empty
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    /// 清空全部条目
+    /// Clears all entries
     pub fn clear(&mut self) {
         self.entries.clear();
     }
@@ -191,52 +197,54 @@ impl<const N: usize> From<[(String, JsonValue); N]> for KaniMap {
     }
 }
 
-/// Object 后端类型（BTreeMap 保证确定性迭代）
+/// Object backend type (BTreeMap guarantees deterministic iteration)
 ///
-/// Kani 构建（`cfg(kani)`）下切换为 [`KaniMap`]：CBMC 对 `BTreeMap` 红黑树
-/// 插入 ≥2 键即状态爆炸（B 档 23 个 proof 超时根因，见 `KaniMap` 文档），
-/// 有序 `Vec` 后端 API 兼容、迭代序一致、生产行为零影响。
+/// Under Kani builds (`cfg(kani)`) this switches to [`KaniMap`]: CBMC state-explodes
+/// on `BTreeMap` red-black tree insertion of ≥2 keys (root cause of the 23 tier-B
+/// proof timeouts, see the `KaniMap` docs); the ordered `Vec` backend keeps API
+/// compatibility, an identical iteration order, and zero production impact.
 #[cfg(not(kani))]
 pub type ObjectMap = BTreeMap<String, JsonValue>;
-/// Kani 构建下的 `ObjectMap`（见上方文档）。
+/// `ObjectMap` under Kani builds (see the docs above).
 #[cfg(kani)]
 pub type ObjectMap = KaniMap;
 
-/// JSON 值类型（确定性实现）
+/// JSON value type (deterministic implementation)
 ///
-/// # 设计决策
-/// - 无 `Float` 类型（形式化验证障碍）
-/// - 使用 `BTreeMap` 保证确定性迭代顺序
-/// - 使用 `Vec` 而非 `im::Vector`
-/// - `Integer` 为 `i64`（Kani 友好）
-/// - `U64` 为 `u64` 全域通道（v0.9.0）：`Integer` 无法无损承载 u64 高位值
-///   （如审计链规则集锚定事实的 `FactId(u64::MAX-1)` 哨兵），凡值域可能
-///   超出 `i64` 的来源一律走 `U64`，禁止 `as i64` cast 回绕
-/// - 使用 `Cow` 减少克隆开销
+/// # Design decisions
+/// - No `Float` type (an obstacle to formal verification)
+/// - `BTreeMap` guarantees deterministic iteration order
+/// - `Vec` instead of `im::Vector`
+/// - `Integer` is `i64` (Kani-friendly)
+/// - `U64` is the full-range u64 channel (v0.9.0): `Integer` cannot losslessly carry
+///   high u64 values (e.g. the `FactId(u64::MAX-1)` sentinel of audit-chain rule-set
+///   anchored facts); any source whose value range may exceed `i64` must go through
+///   `U64`, and `as i64` cast wraparound is banned
+/// - `Cow` reduces cloning overhead
 ///
-/// # 不实现 `PartialEq` 的自动派生
-/// 手动实现以保证跨语言一致性
+/// # `PartialEq` is not auto-derived
+/// Manually implemented for cross-language consistency
 ///
-/// # 示例
+/// # Examples
 ///
 /// ```
 /// extern crate alloc;
 /// use evorule_tcb::JsonValue;
 /// use alloc::collections::BTreeMap;
 ///
-/// // 通过构造函数构造
+/// // Construct via constructors
 /// let name = JsonValue::string("Alice");
 /// let age = JsonValue::Integer(30);
 /// assert!(name.is_string());
 /// assert_eq!(age.as_i64(), Some(30));
 ///
-/// // 通过 From trait 构造
+/// // Construct via From impls
 /// let from_str: JsonValue = "hello".into();
 /// let from_int: JsonValue = 42i64.into();
 /// assert_eq!(from_str.as_str(), Some("hello"));
 /// assert_eq!(from_int.as_i64(), Some(42));
 ///
-/// // 构造嵌套对象
+/// // Construct a nested object
 /// let mut map = BTreeMap::new();
 /// map.insert("items".to_string(), JsonValue::array(vec![JsonValue::Integer(1), JsonValue::Integer(2)]));
 /// let v = JsonValue::object(map);
@@ -246,29 +254,31 @@ pub type ObjectMap = KaniMap;
 pub enum JsonValue {
     /// JSON null
     Null,
-    /// 布尔值
+    /// Boolean value
     Bool(bool),
-    /// 整数（i64）
+    /// Integer (i64)
     Integer(i64),
-    /// 无符号整数（u64 全域；与 [`JsonValue::Integer`] 形态严格区分，
-    /// 不做跨形态数值相等——见 [`PartialEq`] / [`Ord`] 实现）
+    /// Unsigned integer (full-range u64; strictly distinct form from [`JsonValue::Integer`],
+    /// no cross-form numeric equality — see the [`PartialEq`] / [`Ord`] impls)
     U64(u64),
-    /// 字符串（使用 `Cow` 减少克隆）
+    /// String (uses `Cow` to reduce cloning)
     String(Cow<'static, str>),
-    /// 数组（有序列表）
+    /// Array (ordered list)
     Array(Vec<JsonValue>),
-    /// 对象（键值对，使用 `BTreeMap` 保证确定性顺序）
+    /// Object (key-value pairs, `BTreeMap` guarantees deterministic order)
     Object(ObjectMap),
 }
 
-/// Kani 验证专用 no-op Drop：跳过 JsonValue 递归析构建模
+/// Kani-only no-op Drop: skips modeling JsonValue's recursive destruction
 ///
-/// 根因（2026-09-13 探针实测）：JsonValue 默认 Drop 递归释放 Vec/ObjectMap，
-/// CBMC 对每层析构做全路径展开，即使输入全为具体常量，中间临时对象
-/// （to_string 产物、object_from_pairs 层间值、evaluate_domain 内部临时值）
-/// 的析构仍会状态爆炸（verify_evaluate_domain_eq 11GB+ 不收敛）。
-/// Kani 构建无真实释放需求（验证进程退出即回收），
-/// no-op Drop 使 CBMC 跳过析构展开；生产构建（cfg(not(kani))）保持默认 Drop，零影响。
+/// Root cause (measured 2026-09-13 via probes): JsonValue's default Drop recursively
+/// frees Vec/ObjectMap; CBMC unrolls every destruction level along all paths, so
+/// even with fully concrete inputs the destruction of intermediate temporaries
+/// (to_string products, object_from_pairs inter-layer values, evaluate_domain
+/// internal temporaries) still state-explodes (verify_evaluate_domain_eq 11GB+
+/// without convergence). Kani builds have no real need to free (memory is reclaimed
+/// when the verification process exits); the no-op Drop makes CBMC skip destruction
+/// unrolling. Production builds (cfg(not(kani))) keep the default Drop, zero impact.
 #[cfg(kani)]
 impl Drop for JsonValue {
     fn drop(&mut self) {
@@ -297,7 +307,7 @@ fn null_ref() -> &'static JsonValue {
     &NULL_VALUE
 }
 
-// 手动实现 PartialEq 以保证跨语言一致性
+// Manual PartialEq impl for cross-language consistency
 impl PartialEq for JsonValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -305,8 +315,10 @@ impl PartialEq for JsonValue {
             (JsonValue::Bool(a), JsonValue::Bool(b)) => a == b,
             (JsonValue::Integer(a), JsonValue::Integer(b)) => a == b,
             (JsonValue::U64(a), JsonValue::U64(b)) => a == b,
-            // 跨形态（Integer vs U64）有意不相等：形态严格与 Ord 类型分组一致，
-            // 避免相等/排序语义分叉（需要数值比较时调用方显式转换形态）。
+            // Cross-form (Integer vs U64) is intentionally unequal: form strictness
+            // matches the Ord type grouping, avoiding a fork between equality and
+            // ordering semantics (callers convert forms explicitly when numeric
+            // comparison is needed).
             (JsonValue::String(a), JsonValue::String(b)) => a == b,
             (JsonValue::Array(a), JsonValue::Array(b)) => a == b,
             (JsonValue::Object(a), JsonValue::Object(b)) => {
@@ -331,11 +343,11 @@ impl PartialEq for JsonValue {
 
 impl Eq for JsonValue {}
 
-// 手动实现 Ord 以支持 BTreeMap 中的排序
+// Manual Ord impl to support ordering inside BTreeMap
 impl Ord for JsonValue {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            // 按类型分组顺序：Null < Bool < Integer < U64 < String < Array < Object
+            // Type group order: Null < Bool < Integer < U64 < String < Array < Object
             (JsonValue::Null, JsonValue::Null) => Ordering::Equal,
             (JsonValue::Null, _) => Ordering::Less,
             (_, JsonValue::Null) => Ordering::Greater,
@@ -361,7 +373,7 @@ impl Ord for JsonValue {
             (_, JsonValue::Array(_)) => Ordering::Greater,
 
             (JsonValue::Object(a), JsonValue::Object(b)) => {
-                // 按字典序比较键值对
+                // Compare key-value pairs lexicographically
                 let mut a_iter = a.iter();
                 let mut b_iter = b.iter();
                 loop {
@@ -390,46 +402,46 @@ impl PartialOrd for JsonValue {
 }
 
 impl JsonValue {
-    // ===== 类型检查 =====
+    // ===== Type checks =====
 
-    /// 检查是否为对象类型
+    /// Checks whether the value is an object
     pub fn is_object(&self) -> bool {
         matches!(self, JsonValue::Object(_))
     }
 
-    /// 检查是否为数组类型
+    /// Checks whether the value is an array
     pub fn is_array(&self) -> bool {
         matches!(self, JsonValue::Array(_))
     }
 
-    /// 检查是否为整数类型
+    /// Checks whether the value is an integer
     pub fn is_integer(&self) -> bool {
         matches!(self, JsonValue::Integer(_))
     }
 
-    /// 检查是否为无符号整数类型（u64 全域通道）
+    /// Checks whether the value is an unsigned integer (full-range u64 channel)
     pub fn is_u64(&self) -> bool {
         matches!(self, JsonValue::U64(_))
     }
 
-    /// 检查是否为字符串类型
+    /// Checks whether the value is a string
     pub fn is_string(&self) -> bool {
         matches!(self, JsonValue::String(_))
     }
 
-    /// 检查是否为布尔类型
+    /// Checks whether the value is a boolean
     pub fn is_bool(&self) -> bool {
         matches!(self, JsonValue::Bool(_))
     }
 
-    /// 检查是否为 null
+    /// Checks whether the value is null
     pub fn is_null(&self) -> bool {
         matches!(self, JsonValue::Null)
     }
 
-    /// 获取值的长度（数组元素个数或对象键值对数）
+    /// Returns the value's length (array element count or object pair count)
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// use evorule_tcb::JsonValue;
@@ -451,7 +463,7 @@ impl JsonValue {
         }
     }
 
-    /// 检查是否为空（数组或对象）
+    /// Checks whether the value is empty (array or object)
     pub fn is_empty(&self) -> bool {
         match self {
             JsonValue::Array(arr) => arr.is_empty(),
@@ -460,9 +472,9 @@ impl JsonValue {
         }
     }
 
-    // ===== 类型转换 =====
+    // ===== Type conversions =====
 
-    /// 尝试转换为 i64
+    /// Attempts conversion to i64
     pub fn as_i64(&self) -> Option<i64> {
         match self {
             JsonValue::Integer(v) => Some(*v),
@@ -470,7 +482,7 @@ impl JsonValue {
         }
     }
 
-    /// 尝试转换为 u64（仅 [`JsonValue::U64`] 命中；与 `as_i64` 形态严格对称）
+    /// Attempts conversion to u64 (only [`JsonValue::U64`] matches; strictly form-symmetric with `as_i64`)
     pub fn as_u64(&self) -> Option<u64> {
         match self {
             JsonValue::U64(v) => Some(*v),
@@ -478,7 +490,7 @@ impl JsonValue {
         }
     }
 
-    /// 尝试转换为 &str
+    /// Attempts conversion to &str
     pub fn as_str(&self) -> Option<&str> {
         match self {
             JsonValue::String(s) => Some(s.as_ref()),
@@ -486,7 +498,7 @@ impl JsonValue {
         }
     }
 
-    /// 尝试转换为 bool
+    /// Attempts conversion to bool
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             JsonValue::Bool(b) => Some(*b),
@@ -494,7 +506,7 @@ impl JsonValue {
         }
     }
 
-    /// 尝试转换为 &[JsonValue]
+    /// Attempts conversion to &[JsonValue]
     pub fn as_array(&self) -> Option<&[JsonValue]> {
         match self {
             JsonValue::Array(arr) => Some(arr.as_slice()),
@@ -502,7 +514,7 @@ impl JsonValue {
         }
     }
 
-    /// 尝试转换为 &mut [JsonValue]
+    /// Attempts conversion to &mut [JsonValue]
     pub fn as_array_mut(&mut self) -> Option<&mut [JsonValue]> {
         match self {
             JsonValue::Array(arr) => Some(arr.as_mut_slice()),
@@ -510,7 +522,7 @@ impl JsonValue {
         }
     }
 
-    /// 尝试转换为 &ObjectMap
+    /// Attempts conversion to &ObjectMap
     pub fn as_object(&self) -> Option<&ObjectMap> {
         match self {
             JsonValue::Object(map) => Some(map),
@@ -518,7 +530,7 @@ impl JsonValue {
         }
     }
 
-    /// 尝试转换为 &mut ObjectMap
+    /// Attempts conversion to &mut ObjectMap
     pub fn as_object_mut(&mut self) -> Option<&mut ObjectMap> {
         match self {
             JsonValue::Object(map) => Some(map),
@@ -526,11 +538,11 @@ impl JsonValue {
         }
     }
 
-    // ===== 对象操作 =====
+    // ===== Object operations =====
 
-    /// 获取对象字段（若存在）
+    /// Gets an object field (if present)
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// extern crate alloc;
@@ -544,7 +556,7 @@ impl JsonValue {
     /// assert_eq!(obj.get("a").and_then(|v| v.as_i64()), Some(1));
     /// assert_eq!(obj.get("missing"), None);
     ///
-    /// // 在非对象上调用总是返回 None（不会 panic）
+    /// // Calling on a non-object always returns None (never panics)
     /// let n = JsonValue::Null;
     /// assert_eq!(n.get("anything"), None);
     /// ```
@@ -555,7 +567,7 @@ impl JsonValue {
         }
     }
 
-    /// 获取对象字段（可变）
+    /// Gets an object field (mutable)
     pub fn get_mut(&mut self, key: &str) -> Option<&mut JsonValue> {
         match self {
             JsonValue::Object(map) => map.get_mut(key),
@@ -563,9 +575,9 @@ impl JsonValue {
         }
     }
 
-    /// 插入或更新对象字段
+    /// Inserts or updates an object field
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// use evorule_tcb::JsonValue;
@@ -585,9 +597,9 @@ impl JsonValue {
         }
     }
 
-    /// 尝试插入（如果 key 已存在则返回错误）
+    /// Attempts insertion (returns an error if the key already exists)
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// use evorule_tcb::JsonValue;
@@ -596,26 +608,29 @@ impl JsonValue {
     /// assert!(obj.try_insert("k".to_string(), JsonValue::Integer(1)).is_ok());
     /// assert!(obj.try_insert("k".to_string(), JsonValue::Integer(2)).is_err());
     /// ```
-    /// # 为什么显式 `allow(clippy::map_entry)` 而不是改用 Entry API
+    /// # Why an explicit `allow(clippy::map_entry)` instead of the Entry API
     ///
-    /// Clippy 的 `map_entry` 建议改写为 `BTreeMap::entry`，但**本函数的类型
-    /// 由 cfg 决定**（见 [`ObjectMap`]）：
+    /// Clippy's `map_entry` suggests rewriting with `BTreeMap::entry`, but **this
+    /// function's map type is cfg-dependent** (see [`ObjectMap`]):
     ///
-    /// - `cfg(not(kani))` → `BTreeMap`，**有** `Entry` API；
-    /// - `cfg(kani)` → [`KaniMap`]（有序 `Vec`），**没有** `Entry` API——
-    ///   它的存在正是为了绕开 CBMC 对红黑树插入的状态爆炸。
+    /// - `cfg(not(kani))` → `BTreeMap`, which **has** the `Entry` API;
+    /// - `cfg(kani)` → [`KaniMap`] (ordered `Vec`), which **has no** `Entry` API —
+    ///   its very purpose is to sidestep CBMC state explosion on red-black tree
+    ///   insertion.
     ///
-    /// 两条分支都必须编译同一份源码，所以**不能**使用任一后端专有的 API。
-    /// 这里保留 `contains_key` + `get`/`insert` 是**唯一后端无关**的写法，
-    /// 且零性能代价（`contains_key` 与 `get` 走的是同一个 `BTreeMap` 查找路径，
-    /// 差别仅在返回类型）。**不要"修好"它。**
+    /// Both branches must compile the same source, so **no** backend-specific API
+    /// can be used. Keeping `contains_key` + `get`/`insert` here is the **only
+    /// backend-agnostic** formulation, with zero performance cost (`contains_key`
+    /// and `get` traverse the same `BTreeMap` lookup path; only the return type
+    /// differs). **Do not "fix" this.**
     #[allow(clippy::map_entry)]
     pub fn try_insert(&mut self, key: String, value: JsonValue) -> Result<(), &JsonValue> {
-        // 后端无关实现（BTreeMap / KaniMap 通用）：命中返回既有值的引用，
-        // 未命中插入。不使用 BTreeMap 专有的 Entry API，保证 cfg(kani) 下
-        // ObjectMap 切换为 KaniMap 后同一份源码可直接编译。
-        // contains_key 先行判定（返回 bool 不持有借用），get 借用与
-        // insert 可变借用分离，满足 NLL。
+        // Backend-agnostic implementation (works for both BTreeMap / KaniMap): on
+        // hit, returns a reference to the existing value; on miss, inserts. No
+        // BTreeMap-specific Entry API, so the same source compiles directly after
+        // ObjectMap switches to KaniMap under cfg(kani).
+        // contains_key decides first (returns bool, holds no borrow); the get
+        // borrow and the insert mutable borrow are separated to satisfy NLL.
         match self {
             JsonValue::Object(map) => {
                 if map.contains_key(&key) {
@@ -632,7 +647,7 @@ impl JsonValue {
         }
     }
 
-    /// 从对象中移除字段
+    /// Removes a field from the object
     pub fn remove(&mut self, key: &str) -> Option<JsonValue> {
         match self {
             JsonValue::Object(map) => map.remove(key),
@@ -640,9 +655,9 @@ impl JsonValue {
         }
     }
 
-    /// 清空对象或数组的所有内容
+    /// Clears all content of an object or array
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// use evorule_tcb::JsonValue;
@@ -651,7 +666,7 @@ impl JsonValue {
     /// arr.clear();
     /// assert_eq!(arr.len(), Some(0));
     ///
-    /// // 对非容器类型调用是 no-op
+    /// // Calling on a non-container type is a no-op
     /// let mut null = JsonValue::Null;
     /// null.clear();
     /// ```
@@ -664,7 +679,7 @@ impl JsonValue {
     }
 }
 
-// ===== Display 实现 =====
+// ===== Display impl =====
 
 impl fmt::Display for JsonValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -699,10 +714,10 @@ impl fmt::Display for JsonValue {
     }
 }
 
-/// JSON 字符串转义辅助函数
+/// JSON string escaping helper
 ///
-/// 将字符串按 JSON 标准转义后写入 Formatter。
-/// 同时用于字符串值和对象键。
+/// Writes the string to the Formatter with JSON-standard escaping.
+/// Used for both string values and object keys.
 fn escape_json_string(s: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "\"")?;
     for c in s.chars() {
@@ -721,27 +736,27 @@ fn escape_json_string(s: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "\"")
 }
 
-// ===== 构造函数 =====
+// ===== Constructors =====
 
 impl JsonValue {
-    /// 构造 null
+    /// Constructs null
     pub const fn null() -> Self {
         JsonValue::Null
     }
 
-    /// 构造布尔值
+    /// Constructs a boolean
     pub const fn bool(b: bool) -> Self {
         JsonValue::Bool(b)
     }
 
-    /// 构造整数
+    /// Constructs an integer
     pub const fn integer(i: i64) -> Self {
         JsonValue::Integer(i)
     }
 
-    /// 构造无符号整数（u64 全域通道）
+    /// Constructs an unsigned integer (full-range u64 channel)
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// use evorule_tcb::JsonValue;
@@ -749,16 +764,16 @@ impl JsonValue {
     /// let v = JsonValue::u64(u64::MAX - 1);
     /// assert!(v.is_u64());
     /// assert_eq!(v.as_u64(), Some(u64::MAX - 1));
-    /// // 形态严格：U64 与 Integer 不做跨形态相等
+    /// // Form-strict: U64 and Integer are never cross-form equal
     /// assert_ne!(JsonValue::u64(5), JsonValue::Integer(5));
     /// ```
     pub const fn u64(v: u64) -> Self {
         JsonValue::U64(v)
     }
 
-    /// 构造字符串
+    /// Constructs a string
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// use evorule_tcb::JsonValue;
@@ -770,9 +785,9 @@ impl JsonValue {
         JsonValue::String(Cow::Owned(s.into()))
     }
 
-    /// 构造数组
+    /// Constructs an array
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// use evorule_tcb::JsonValue;
@@ -785,9 +800,9 @@ impl JsonValue {
         JsonValue::Array(v)
     }
 
-    /// 构造对象
+    /// Constructs an object
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// extern crate alloc;
@@ -804,11 +819,11 @@ impl JsonValue {
         JsonValue::Object(map)
     }
 
-    /// 从键值对构造对象（转移所有权版本）
+    /// Constructs an object from key-value pairs (ownership-taking version)
     ///
-    /// 比 `object_from_pairs` 更高效，因为不需要克隆值。
+    /// More efficient than `object_from_pairs` because values are not cloned.
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// use evorule_tcb::JsonValue;
@@ -828,11 +843,12 @@ impl JsonValue {
         JsonValue::Object(map)
     }
 
-    /// 从键值对构造对象（借用版本，会克隆值）
+    /// Constructs an object from key-value pairs (borrowing version, clones values)
     ///
-    /// 注意：此方法会克隆所有值。如需避免克隆，请使用 `object_from_pairs_owned`。
+    /// Note: this method clones all values. Use `object_from_pairs_owned` to avoid
+    /// cloning.
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// use evorule_tcb::JsonValue;
@@ -851,9 +867,9 @@ impl JsonValue {
         JsonValue::Object(map)
     }
 
-    /// 构造空对象
+    /// Constructs an empty object
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// use evorule_tcb::JsonValue;
@@ -866,9 +882,9 @@ impl JsonValue {
         JsonValue::Object(ObjectMap::new())
     }
 
-    /// 构造空数组
+    /// Constructs an empty array
     ///
-    /// # 示例
+    /// # Examples
     ///
     /// ```
     /// use evorule_tcb::JsonValue;
@@ -882,58 +898,58 @@ impl JsonValue {
     }
 }
 
-// ===== From trait 实现 =====
+// ===== From impls =====
 
-/// 从 BTreeMap 快捷构造对象
+/// Convenience From impl: object from BTreeMap
 impl From<ObjectMap> for JsonValue {
     fn from(map: ObjectMap) -> Self {
         JsonValue::Object(map)
     }
 }
 
-/// 从 Vec 快捷构造数组
+/// Convenience From impl: array from Vec
 impl From<Vec<JsonValue>> for JsonValue {
     fn from(v: Vec<JsonValue>) -> Self {
         JsonValue::Array(v)
     }
 }
 
-/// 从 &str 快捷构造字符串
+/// Convenience From impl: string from &str
 impl From<&str> for JsonValue {
     fn from(s: &str) -> Self {
         JsonValue::String(Cow::Owned(s.to_string()))
     }
 }
 
-/// 从 String 快捷构造字符串
+/// Convenience From impl: string from String
 impl From<String> for JsonValue {
     fn from(s: String) -> Self {
         JsonValue::String(Cow::Owned(s))
     }
 }
 
-/// 从 Cow<'static, str> 快捷构造字符串
+/// Convenience From impl: string from Cow<'static, str>
 impl From<Cow<'static, str>> for JsonValue {
     fn from(s: Cow<'static, str>) -> Self {
         JsonValue::String(s)
     }
 }
 
-/// 从 i64 快捷构造整数
+/// Convenience From impl: integer from i64
 impl From<i64> for JsonValue {
     fn from(i: i64) -> Self {
         JsonValue::Integer(i)
     }
 }
 
-/// 从 u64 快捷构造无符号整数（u64 全域通道，无 i64 cast 回绕）
+/// Convenience From impl: unsigned integer from u64 (full-range u64 channel, no i64 cast wraparound)
 impl From<u64> for JsonValue {
     fn from(v: u64) -> Self {
         JsonValue::U64(v)
     }
 }
 
-/// 从 bool 快捷构造布尔
+/// Convenience From impl: boolean from bool
 impl From<bool> for JsonValue {
     fn from(b: bool) -> Self {
         JsonValue::Bool(b)
@@ -952,7 +968,7 @@ mod tests {
     use alloc::vec;
     use core::cmp::Ordering;
 
-    // ===== 构造函数测试 =====
+    // ===== Constructor tests =====
 
     #[test]
     fn test_const_constructors() {
@@ -994,7 +1010,7 @@ mod tests {
         assert_eq!(obj.get("b").and_then(|v| v.as_i64()), Some(2));
     }
 
-    // ===== 类型检查测试 =====
+    // ===== Type check tests =====
 
     #[test]
     fn test_is_methods_match_correct_type() {
@@ -1016,7 +1032,7 @@ mod tests {
         assert!(!JsonValue::Bool(false).is_null());
     }
 
-    // ===== len() 和 is_empty() 测试 =====
+    // ===== len() and is_empty() tests =====
 
     #[test]
     fn test_len_and_is_empty() {
@@ -1039,7 +1055,7 @@ mod tests {
         assert!(JsonValue::empty_object().is_empty());
     }
 
-    // ===== 类型转换测试 =====
+    // ===== Type conversion tests =====
 
     #[test]
     fn test_as_methods_success_paths() {
@@ -1075,7 +1091,7 @@ mod tests {
         assert!(obj.as_object_mut().is_some());
     }
 
-    // ===== 对象操作测试 =====
+    // ===== Object operation tests =====
 
     #[test]
     fn test_object_accessors_on_non_object() {
@@ -1151,7 +1167,7 @@ mod tests {
         assert!(null.is_null());
     }
 
-    // ===== PartialEq 测试 =====
+    // ===== PartialEq tests =====
 
     #[test]
     fn test_partial_eq_same_type() {
@@ -1199,7 +1215,7 @@ mod tests {
         assert_ne!(JsonValue::object(a), JsonValue::object(e));
     }
 
-    // ===== Ord 测试 =====
+    // ===== Ord tests =====
 
     #[test]
     fn test_ord_type_order() {
@@ -1224,7 +1240,7 @@ mod tests {
         assert!(JsonValue::object(short) < JsonValue::object(long));
     }
 
-    // ===== Display 测试 =====
+    // ===== Display tests =====
 
     #[test]
     fn test_display_simple_types() {
@@ -1265,7 +1281,7 @@ mod tests {
         assert_eq!(format!("{obj}"), "{\"a\": 2, \"z\": 1}");
     }
 
-    // ===== From trait 测试 =====
+    // ===== From trait tests =====
 
     #[test]
     fn test_from_traits() {
@@ -1282,29 +1298,30 @@ mod tests {
         assert_eq!(v.len(), Some(2));
     }
 
-    // ===== JSON 字符串转义边界（Display 面输出合法性）=====
+    // ===== JSON string escaping boundaries (Display output validity) =====
 
-    /// 控制字符（< 0x20 且非专用转义字符）必须走 \u00XX 通道，
-    /// 原样输出会产生非法 JSON（消费方解析即崩）
+    /// Control characters (< 0x20 and not dedicated escape chars) must go through
+    /// the \u00XX channel; verbatim output would produce invalid JSON (consumers
+    /// crash on parse)
     #[test]
     fn test_display_escapes_control_chars() {
         let v = JsonValue::string("a\u{1}b");
         assert_eq!(v.to_string(), "\"a\\u0001b\"");
 
-        // \x1f 是 < 0x20 边界的最后一个非专用控制字符
+        // \x1f is the last non-dedicated control character below the 0x20 boundary
         let v = JsonValue::string("\u{1f}");
         assert_eq!(v.to_string(), "\"\\u001f\"");
     }
 
-    /// 空格（0x20）是可打印字符，不属于转义区间——
-    /// 转义上界写成 <= 会把空格错误转义为 \u0020
+    /// Space (0x20) is a printable character, outside the escape range —
+    /// writing the escape bound as <= would wrongly escape space as \u0020
     #[test]
     fn test_display_space_verbatim() {
         let v = JsonValue::string("a b");
         assert_eq!(v.to_string(), "\"a b\"");
     }
 
-    // ===== U64（u64 全域通道）=====
+    // ===== U64 (full-range u64 channel) =====
 
     #[test]
     fn test_u64_construct_and_access() {
@@ -1312,9 +1329,11 @@ mod tests {
         assert!(v.is_u64());
         assert!(!v.is_integer());
         assert_eq!(v.as_u64(), Some(u64::MAX - 1));
-        // 形态严格对称：as_i64 只认 Integer，as_u64 只认 U64；
-        // is_u64 同样只认 U64——Integer/Bool 等 non-U64 一律 false
-        // （is_u64 恒 true 突变的负向杀灭断言，o01 批补）
+        // Form-strict symmetry: as_i64 only matches Integer, as_u64 only matches U64;
+        // is_u64 likewise only matches U64 — Integer/Bool and other non-U64 are
+        // always false
+        // (negative-kill assertion against an is_u64-always-true mutation,
+        // added in an earlier internal batch)
         assert_eq!(v.as_i64(), None);
         assert_eq!(JsonValue::Integer(5).as_u64(), None);
         assert!(!JsonValue::Integer(5).is_u64());
@@ -1327,7 +1346,7 @@ mod tests {
 
     #[test]
     fn test_u64_partial_eq_strict_shape() {
-        // 跨形态有意不相等（与 Ord 类型分组一致）
+        // Cross-form is intentionally unequal (consistent with the Ord type grouping)
         assert_ne!(JsonValue::u64(5), JsonValue::Integer(5));
         assert_ne!(JsonValue::Integer(5), JsonValue::u64(5));
         assert_eq!(JsonValue::u64(5), JsonValue::u64(5));
@@ -1336,12 +1355,12 @@ mod tests {
 
     #[test]
     fn test_u64_ord_group_order() {
-        // 组序：Integer < U64 < String（类型分组优先于数值）
+        // Group order: Integer < U64 < String (type grouping takes precedence over numeric value)
         assert!(JsonValue::Integer(0) < JsonValue::u64(0));
         assert!(JsonValue::u64(0) < JsonValue::string(""));
         assert!(JsonValue::u64(0) < JsonValue::u64(1));
         assert!(JsonValue::u64(u64::MAX - 1) < JsonValue::u64(u64::MAX));
-        // 整数组仍小于 U64 组内任意值（组间判定优先）
+        // The Integer group still orders below any value in the U64 group (inter-group comparison takes precedence)
         assert!(JsonValue::Integer(i64::MAX) < JsonValue::u64(0));
     }
 

@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-// 测试代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 GATE_REFERENCE.md §六(豁免索引)
+// Test code is exempt from L2 clippy (the L1 build.rs gate already guards panic-prone code). See GATE_REFERENCE.md §6 (exemption index)
 #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 //! evorule-tcb v0.2.0 -- Property tests (proptest)
 //!
-//! ## 目的
+//! ## Purpose
 //!
-//! 补充单元测试的有限 case 覆盖, 用随机化输入验证 TCB 的核心不变量:
-//! - `JsonValue` 构造/访问 roundtrip 一致
-//! - 路径解析确定性
-//! - 域比较对称性 (eq 自身对称, lt/gt 互逆)
-//! - 状态转换幂等性 (相同输入两次 → 相同输出)
-//! - set 元指令数学律 (+0 不变, -0 不变)
+//! Complements the finite case coverage of unit tests by validating the TCB's core
+//! invariants with randomized inputs:
+//! - `JsonValue` construction/access roundtrip consistency
+//! - Path resolution determinism
+//! - Domain comparison symmetry (eq symmetric with itself, lt/gt mutually inverse)
+//! - Transition idempotence (same input twice → same output)
+//! - set meta instruction math laws (+0 no-op, -0 no-op)
 //!
-//! ## 跑法
+//! ## How to run
 //!
 //! ```bash
 //! cargo test --test proptest_props
@@ -23,12 +24,13 @@
 //! ## Hygiene
 //!
 //! - `ProptestConfig { cases: 200, failure_persistence:
-//!   Some(Box::new(FileFailurePersistence::Off)), ... }` 限制每属性 case 数
-//!   (200 个) + 关闭 `FileFailurePersistence`(避免 19 行 "FileFailurePersistence
-//!   set, but failed to find lib.rs or main.rs" 红色报警)
-//! - 不依赖 `*.proptest-regressions` 文件回放 (`FileFailurePersistence`
-//!   会永久重放旧反例, 掩盖真实 assertion bug -- 已 .gitignore)
-//! - 所有 proptest 用 fresh config, 不读取 .proptest-regressions
+//!   Some(Box::new(FileFailurePersistence::Off)), ... }` caps the case count per
+//!   property (200) + turns off `FileFailurePersistence` (avoiding the 19-line
+//!   "FileFailurePersistence set, but failed to find lib.rs or main.rs" red warning)
+//! - No reliance on `*.proptest-regressions` file replay (`FileFailurePersistence`
+//!   permanently replays old counterexamples, masking real assertion bugs --
+//!   already .gitignore'd)
+//! - All proptests use a fresh config; .proptest-regressions is never read
 
 use evorule_tcb::domain::evaluate_domain;
 use evorule_tcb::path::resolve_path;
@@ -41,22 +43,22 @@ use proptest::test_runner::FileFailurePersistence;
 // =============================================================================
 
 fn arb_small_i64() -> impl Strategy<Value = i64> {
-    // 普通范围, 用于 roundtrip / path / domain 测试 (不会触发 set 溢出)
+    // Ordinary range for roundtrip / path / domain tests (never triggers set overflow)
     -1_000_000i64..1_000_000i64
 }
 
 fn arb_safe_i64() -> impl Strategy<Value = i64> {
-    // 用于 set add/sub 仍不溢出 i64 的范围 (任意两数相加不溢出)
-    // i64::MAX / 2 是保守上界, 给一些 headroom
+    // Range where set add/sub still cannot overflow i64 (no two values sum out of range)
+    // i64::MAX / 2 is a conservative upper bound, leaving some headroom
     -4_000_000_000_000_000_000i64..4_000_000_000_000_000_000i64
 }
 
 fn arb_delta() -> impl Strategy<Value = i64> {
-    // increment delta, 小范围避免 a + delta 溢出
+    // increment delta; small range avoids a + delta overflow
     -10_000i64..10_000i64
 }
 
-/// 构造 increment 业务的 `core_eval`: `branch(instruction_type=increment)` -> set(add)
+/// Build the `core_eval` for the increment business instruction: `branch(instruction_type=increment)` -> set(add)
 fn build_increment_core_eval() -> Vec<JsonValue> {
     vec![JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("branch")),
@@ -95,16 +97,16 @@ fn build_increment_core_eval() -> Vec<JsonValue> {
 proptest! {
     #![proptest_config(ProptestConfig {
         cases: 200,
-        // evorule-tcb 是 lib crate (无 main.rs), proptest 默认的 SourceParallel
-        // 找不到 lib.rs/main.rs 会刷 "FileFailurePersistence::SourceParallel set,
-        // but failed to find lib.rs or main.rs" 红色警告。
-        // 我们已有 .gitignore 排除 *.proptest-regressions, 不需要存盘反例, 直接关掉。
+        // evorule-tcb is a lib crate (no main.rs); proptest's default SourceParallel
+        // cannot find lib.rs/main.rs and spams the "FileFailurePersistence::SourceParallel set,
+        // but failed to find lib.rs or main.rs" red warning.
+        // We already exclude *.proptest-regressions via .gitignore; no need to persist counterexamples, so just turn it off.
         failure_persistence: Some(Box::new(FileFailurePersistence::Off)),
         ..ProptestConfig::default()
     })]
 
     // -------------------------------------------------------------------------
-    // 1. JsonValue 构造/访问 roundtrip 一致
+    // 1. JsonValue construction/access roundtrip consistency
     // -------------------------------------------------------------------------
 
     #[test]
@@ -156,7 +158,7 @@ proptest! {
     }
 
     // -------------------------------------------------------------------------
-    // 2. 路径解析确定性 + 不变性
+    // 2. Path resolution determinism + invariance
     // -------------------------------------------------------------------------
 
     #[test]
@@ -188,14 +190,14 @@ proptest! {
     #[test]
     fn resolve_path_missing_returns_none(key in "[a-z]{1,3}") {
         let obj = JsonValue::object_from_pairs(&[("present", JsonValue::Integer(1))]);
-        // 任何不存在 key 应返回 None (我们的 key 空间不含 "present")
+        // Any absent key should return None (our key space does not contain "present")
         if key != "present" {
             prop_assert!(resolve_path(&obj, &key).is_none());
         }
     }
 
     // -------------------------------------------------------------------------
-    // 3. 域比较对称性
+    // 3. Domain comparison symmetry
     // -------------------------------------------------------------------------
 
     #[test]
@@ -217,11 +219,11 @@ proptest! {
 
     #[test]
     fn domain_lt_gt_inverse(a in arb_small_i64(), b in arb_small_i64()) {
-        // NOTE: domain.rs 实际只有 eq/lt/exists/instruction/all/not 6 个原始域
-        // 派生域 gt/ge/le/ne/or 由 core_eval.json 嵌套组合实现
-        // 注释 (domain.rs L21-25) 承诺可作顶层 type, 但实现走 _ => false
-        // → proptest 发现: 直接用 type="gt" 永远返回 false
-        // 这里用 gt = all([not(lt), not(eq)]) 嵌套形式
+        // NOTE: domain.rs actually only has 6 primitive domains: eq/lt/exists/instruction/all/not
+        // The derived domains gt/ge/le/ne/or are implemented as nested compositions in core_eval.json
+        // The comment (domain.rs L21-25) promises top-level types, but the implementation falls to _ => false
+        // → proptest finding: type="gt" used directly always returns false
+        // Here we use the nested form gt = all([not(lt), not(eq)])
         let state = JsonValue::object_from_pairs(&[(
             "__exec__",
             JsonValue::object_from_pairs(&[(
@@ -260,7 +262,7 @@ proptest! {
         ]);
         prop_assert_eq!(evaluate_domain(&lt, &state).unwrap(), a < b);
         prop_assert_eq!(evaluate_domain(&gt, &state).unwrap(), a > b);
-        // 互斥: lt 和 gt 不可能同时为真
+        // Mutual exclusion: lt and gt cannot both be true
         prop_assert!(!(evaluate_domain(&lt, &state).unwrap() && evaluate_domain(&gt, &state).unwrap()));
     }
 
@@ -289,7 +291,7 @@ proptest! {
     }
 
     // -------------------------------------------------------------------------
-    // 4. 状态转换幂等性 + increment 数学律
+    // 4. Transition idempotence + increment math laws
     // -------------------------------------------------------------------------
 
     #[test]
@@ -371,17 +373,19 @@ proptest! {
     }
 
     // -------------------------------------------------------------------------
-    // 5. 健壮性：任意输入不 panic（替代 Kani 无法验证的 proof）
-    //    路径解析 / 域评估 / 状态转换 —— 因 String / BTreeMap 建模开销 Kani TIMEOUT，
-    //    改用 proptest 随机验证，不受 unwind bound 限制
+    // 5. Robustness: arbitrary inputs never panic (replacing proofs Kani cannot verify)
+    //    Path resolution / domain evaluation / state transition — Kani TIMEOUT due to
+    //    String / BTreeMap modeling cost; switched to proptest randomized validation,
+    //    not bounded by the unwind limit
     // -------------------------------------------------------------------------
 
-    /// 验证 `resolve_path` 对任意 path 字符串不 panic
+    /// Verify `resolve_path` never panics on arbitrary path strings
     ///
-    /// 覆盖原 Kani proof `verify_path_no_panic` 的目标（保底方案）：
-    /// - 任意 path 组合（含畸形：空串、双点号、前导/尾随点号等）
-    /// - Object state（字段访问）+ Array state（索引访问）
-    /// - 不 panic 即通过（返回值由 path 和 state 结构决定）
+    /// Covers the goal of the original Kani proof `verify_path_no_panic` (fallback plan):
+    /// - Arbitrary path combinations (including malformed: empty string, double dots,
+    ///   leading/trailing dots, etc.)
+    /// - Object state (field access) + Array state (index access)
+    /// - Passing = no panic (the return value is determined by path and state structure)
     #[test]
     fn resolve_path_never_panics_arbitrary_path(
         x in arb_small_i64(),
@@ -393,12 +397,12 @@ proptest! {
         let _ = resolve_path(&state_arr, &path);
     }
 
-    /// 验证 `evaluate_domain` 对任意 domain 类型 + 字段缺失 + 两种 state 不 panic
+    /// Verify `evaluate_domain` never panics on arbitrary domain types + missing fields + two state shapes
     ///
-    /// 覆盖原 Kani proof `verify_domain_boolean` 的目标：
-    /// - 任意 type 字符串（含未知类型，如 "xyz"）→ 走 `_ => false` 分支
-    /// - 字段随机缺失（path/value 有无组合）→ 走各 evaluate_* 的 fallthrough
-    /// - 两种 state：Object（正常）+ Array（path 必然失败）
+    /// Covers the goal of the original Kani proof `verify_domain_boolean`:
+    /// - Arbitrary type strings (including unknown types like "xyz") → the `_ => false` branch
+    /// - Randomly missing fields (path/value presence combinations) → each evaluate_* fallthrough
+    /// - Two state shapes: Object (normal) + Array (path necessarily fails)
     #[test]
     fn domain_eval_never_panics_arbitrary_type(
         x in arb_small_i64(),
@@ -426,19 +430,19 @@ proptest! {
         )]);
         let state_arr = JsonValue::array(vec![JsonValue::Integer(x)]);
 
-        // 关键不变量：对任意 domain + state，evaluate_domain 不 panic
+        // Key invariant: evaluate_domain does not panic for any domain + state
         let r1 = evaluate_domain(&domain, &state_obj);
         let r2 = evaluate_domain(&domain, &state_arr);
-        // 返回值必为 Result<bool, TcbError>（签名保证，此处显式断言强化语义）
+        // The return value must be Result<bool, TcbError> (guaranteed by the signature; asserted explicitly here to reinforce the semantics)
         let _: Result<bool, _> = r1;
         let _: Result<bool, _> = r2;
     }
 
-    /// 验证 `evaluate_domain` 对嵌套 domain（not 递归）不 panic 且不栈溢出
+    /// Verify `evaluate_domain` on nested domains (not recursion) never panics or stack-overflows
     ///
-    /// 覆盖 domain.rs L76-78 的 `MAX_DOMAIN_DEPTH` 深度限制：
-    /// - 0..20 层嵌套 Not（在深度限制内），正常求值
-    /// - 奇偶层翻转结果，但不 panic
+    /// Covers the `MAX_DOMAIN_DEPTH` depth limit at domain.rs L76-78:
+    /// - 0..20 nested Not layers (within the depth limit) evaluate normally
+    /// - Odd/even layer counts flip the result, but no panic
     #[test]
     fn domain_eval_nested_never_panics(
         x in arb_small_i64(),
@@ -462,16 +466,17 @@ proptest! {
                 JsonValue::object_from_pairs(&[("x", JsonValue::Integer(x))]),
             )]),
         )]);
-        // 嵌套 domain 求值不 panic
+        // Nested domain evaluation does not panic
         let _: Result<bool, _> = evaluate_domain(&domain, &state);
     }
 
-    /// 验证 `execute_transition` 对任意指令类型不 panic
+    /// Verify `execute_transition` never panics on arbitrary instruction types
     ///
-    /// 现有 proptest 只测 increment，此测试覆盖任意指令类型（含未知类型）：
-    /// - 已知类型（increment）走对应规则
-    /// - 未知类型走 catch-all 或无匹配（返回原 state）
-    /// - 任意情况都不 panic（返回 Ok 或 Err，不 abort）
+    /// Existing proptests only cover increment; this test covers arbitrary instruction
+    /// types (including unknown types):
+    /// - Known types (increment) go through the matching rule
+    /// - Unknown types fall to catch-all or no match (original state returned)
+    /// - No panic in any case (returns Ok or Err, never aborts)
     #[test]
     fn execute_transition_arbitrary_type_no_panic(
         instr_type in "[a-z]{1,10}",
@@ -486,12 +491,12 @@ proptest! {
         let _ = execute_transition(&core_eval, &instruction, &payload, &[]);
     }
 
-    /// 验证 `execute_transition` 对畸形 instruction 不 panic
+    /// Verify `execute_transition` never panics on malformed instructions
     ///
-    /// 覆盖 instruction 的各种畸形组合：
-    /// - 缺 type 字段 / type 不是字符串
-    /// - 缺 params 字段 / params 不是 Object
-    /// - 任意畸形组合都不 panic（返回 Err 或原 state）
+    /// Covers various malformed instruction combinations:
+    /// - Missing type field / type not a string
+    /// - Missing params field / params not an Object
+    /// - No panic for any malformed combination (returns Err or the original state)
     #[test]
     fn execute_transition_malformed_instruction_no_panic(
         x in arb_small_i64(),
@@ -524,13 +529,13 @@ proptest! {
     }
 
     // -------------------------------------------------------------------------
-    // 6. Phase 2 T2-1 补充：push / set sub / branch on_false / io_request /
-    //    空 core_eval / 任意 core_eval 长度（补充到 26 个 proptest）
+    // 6. Phase 2 T2-1 additions: push / set sub / branch on_false / io_request /
+    //    empty core_eval / arbitrary core_eval length (bringing the total to 26 proptests)
     // -------------------------------------------------------------------------
 
-    /// set(sub) 操作正确性：x - delta
+    /// set(sub) operation correctness: x - delta
     ///
-    /// 验证 set 元指令的 sub 操作与 i64::checked_sub 语义一致
+    /// Verifies the set meta instruction's sub operation matches i64::checked_sub semantics
     #[test]
     fn execute_transition_set_sub_correctness(
         x in arb_safe_i64(),
@@ -574,9 +579,9 @@ proptest! {
         }
     }
 
-    /// set 幂等性：set(attr, val) 两次等于 set(attr, val) 一次
+    /// set idempotence: set(attr, val) twice equals set(attr, val) once
     ///
-    /// 验证 set(set) 操作的幂等性 —— 同一值设置多次结果不变
+    /// Verifies idempotence of the set(set) operation — setting the same value repeatedly leaves the result unchanged
     #[test]
     fn execute_transition_set_idempotent(
         x in arb_small_i64(),
@@ -604,10 +609,10 @@ proptest! {
         }
     }
 
-    /// push 指令确定性：相同输入两次执行产生相同队列
+    /// push instruction determinism: two executions with the same input produce the same queue
     ///
-    /// 验证 push 元指令的确定性 —— 相同 core_eval + instruction + payload
-    /// 两次执行产生完全相同的 new_queue
+    /// Verifies determinism of the push meta instruction — the same core_eval + instruction + payload
+    /// executed twice produces exactly the same new_queue
     #[test]
     fn execute_transition_push_deterministic(
         x in arb_small_i64(),
@@ -642,9 +647,9 @@ proptest! {
         }
     }
 
-    /// 空 core_eval 不 panic：空规则列表应返回 State（payload 不变）
+    /// Empty core_eval never panics: an empty rule list should return State (payload unchanged)
     ///
-    /// 验证 execute_transition 对空 core_eval 的处理 —— 不 panic，返回原 payload
+    /// Verifies execute_transition's handling of an empty core_eval — no panic, original payload returned
     #[test]
     fn execute_transition_empty_core_eval_no_panic(
         x in arb_small_i64(),
@@ -663,10 +668,10 @@ proptest! {
         }
     }
 
-    /// branch on_false 分支：不匹配的指令走 on_false
+    /// branch on_false branch: unmatched instructions take on_false
     ///
-    /// 验证 branch 元指令的 on_false 分支 —— 当 domain 条件为 false 时
-    /// 执行 on_false 子指令列表而非 on_true
+    /// Verifies the branch meta instruction's on_false branch — when the domain condition
+    /// is false the on_false sub-instruction list executes instead of on_true
     #[test]
     fn execute_transition_branch_on_false(
         x in arb_small_i64(),
@@ -697,7 +702,7 @@ proptest! {
             ])),
         ])];
 
-        // 发送 decrement 指令 → 不匹配 increment → 走 on_false → x - 1
+        // Send a decrement instruction → no match on increment → on_false → x - 1
         let instruction = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("decrement")),
             ("params", JsonValue::object_from_pairs(&[])),
@@ -711,10 +716,10 @@ proptest! {
         }
     }
 
-    /// io_request 不修改 payload/queue，返回 IoRequired
+    /// io_request does not modify payload/queue and returns IoRequired
     ///
-    /// 验证 io_request 元指令的语义 —— 只产生 IoRequired 信号，
-    /// 不修改 payload 或 queue（TCB 纯函数语义保留）
+    /// Verifies the io_request meta instruction's semantics — it only produces an IoRequired
+    /// signal and modifies neither payload nor queue (TCB pure-function semantics preserved)
     #[test]
     fn execute_transition_io_request_returns_io_required(
         x in arb_small_i64(),
@@ -739,19 +744,19 @@ proptest! {
                 prop_assert_eq!(io_type, "call_external");
             }
             Ok(TransitionResult::State { .. }) => {
-                // 某些路径可能不触发 io_request，接受 State 结果
+                // Some paths may not fire io_request; accept the State result
             }
             Ok(TransitionResult::Halted { .. }) | Ok(TransitionResult::Ignored { .. }) => {
-                // halt/ignored 同样不触发 io_request，接受
+                // halt/ignored likewise do not fire io_request; accept
             }
             Err(_) => {}
         }
     }
 
-    /// 任意 core_eval 长度（0..10 条规则）不 panic
+    /// Arbitrary core_eval length (0..10 rules) never panics
     ///
-    /// 验证 execute_transition 对不同长度 core_eval 的健壮性
-    /// （0..10 条 set 规则，远在 MAX_TRANSFORM_RULES=128 之内）
+    /// Verifies execute_transition's robustness across different core_eval lengths
+    /// (0..10 set rules, far within MAX_TRANSFORM_RULES=128)
     #[test]
     fn execute_transition_arbitrary_core_eval_length_no_panic(
         n in 0u8..10,

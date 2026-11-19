@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 状态转换核心 - 执行 `core_eval` transform 列表，产生新状态或 I/O 请求
+//! State transition core - executes the `core_eval` transform list,
+//! producing a new state or an I/O request
 //!
-//! # 核心概念
-//! - `core_eval`：transform 规则列表，由 `core_eval.json` 编译生成
-//! - `instruction`：当前指令（由队列弹出）
-//! - `payload`：业务状态
-//! - `queue`：待执行指令队列
+//! # Core concepts
+//! - `core_eval`: the transform rule list, compiled from `core_eval.json`
+//! - `instruction`: the current instruction (popped from the queue)
+//! - `payload`: business state
+//! - `queue`: the instruction queue awaiting execution
 //!
-//! # 设计原则
-//! - 纯函数：相同输入 → 相同输出
-//! - 永不 panic：所有错误返回 `TcbError`
-//! - I/O 请求通过 `core_eval` 中的 `io_request` 元指令触发
+//! # Design principles
+//! - Pure function: same input → same output
+//! - Never panics: all errors are returned as `TcbError`
+//! - I/O requests are triggered by the `io_request` meta instruction in
+//!   `core_eval`
 
 use crate::domain::DomainAttribution;
 use crate::envelope::EnvelopeLimits;
@@ -23,109 +25,149 @@ use crate::value::{JsonValue, ObjectMap};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// `core_eval` transform 规则数量上限
+/// Upper bound on the number of `core_eval` transform rules
 ///
-/// 终止性保证：防止恶意或误构造的超长 `core_eval` 导致
-/// `execute_transition` 迭代时间不可控。
+/// Termination guarantee: prevents a malicious or accidentally oversized
+/// `core_eval` from making the `execute_transition` iteration time
+/// unbounded.
 pub const MAX_TRANSFORM_RULES: usize = 128;
 
-/// 单条 transform 规则的命中归因
+/// Hit attribution for a single transform rule
 ///
-/// 记录一次 `execute_transition` 中第 `index` 条规则（对输入列表的下标）
-/// 是否**结构命中**。口径与字段语义见 [`executor` 模块]
-/// （`execute_meta_instruction_budgeted` 的命中归因小节）：
-/// 直接指令执行成功即命中；`branch` 所选分支存在且非空即命中。
+/// Records whether rule `index` (an index into the input list) counted as a
+/// **structural hit** during one `execute_transition`. For the criteria and
+/// field semantics see the [`executor` module] (the hit-attribution section
+/// of `execute_meta_instruction_budgeted`): a direct instruction counts as
+/// hit once it executes successfully; a `branch` counts as hit when its
+/// selected branch exists and is non-empty.
 ///
-/// 归因标识：引擎只产出列表下标（引擎无来源知识）；来源标签
-/// （core_eval / rules/<相对路径>）由装载层按合并分段映射——
-/// 见 server 侧 `RulesetLayout`。
+/// Attribution identity: the engine only produces list indices (the engine
+/// has no origin knowledge); origin labels (core_eval / rules/<relative
+/// path>) are mapped by the load layer per merged segment — see the
+/// server-side `RulesetLayout`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuleHit {
-    /// 规则在输入 `core_eval` 列表中的下标
+    /// Index of the rule in the input `core_eval` list
     pub index: usize,
-    /// 规则顶层指令类型（如 "branch"、"set"；缺失记 "unknown"）
+    /// Top-level instruction type of the rule (e.g. "branch", "set";
+    /// recorded as "unknown" when missing)
     pub instr_type: String,
-    /// 是否结构命中
+    /// Whether the rule is a structural hit
     pub hit: bool,
-    /// 域判定归因（branch/enforce 专属；其余指令类型为 `None`）
+    /// Domain evaluation attribution (exclusive to branch/enforce; `None`
+    /// for other instruction types)
     ///
-    /// 专项-20261001 方案 2' v4：eq/lt 域遇到状态侧缺失/不可比/引用歧义时，
-    /// 二态投影压平为 false 的信息由本字段还原，供 FactsLog 落账与消费面
-    /// 审计「为什么走了 on_false / 为什么没拦住」（含 on_missing 声明值）。
-    /// - **R1 归因不回灌执行**：branch 走向 / enforce 命中仅由投影 bool +
-    ///   规则文本 `on_missing` 静态声明决定，本字段不参与执行；
-    /// - **R2 半成品纪律**：`IoRequired`/`Halted` 不携带 `rule_hits`，
-    ///   中途归因不随半成品交付，以收敛后的重放结果为准。
+    /// internal special project, plan 2' v4: when eq/lt domains encounter a state-side
+    /// missing/incomparable/reference-ambiguous outcome, this field restores
+    /// the information flattened away by the binary false projection, for
+    /// FactsLog accounting and consumer-side audit of "why on_false was
+    /// taken / why the violation was not blocked" (including the declared
+    /// `on_missing` value).
+    /// - **R1 attribution never feeds back into execution**: the branch
+    ///   direction / enforce hit is decided solely by the projected bool +
+    ///   the rule text's static `on_missing` declaration; this field never
+    ///   participates in execution;
+    /// - **R2 partial-result discipline**: `IoRequired`/`Halted` carry no
+    ///   `rule_hits`; mid-way attribution is not delivered with partial
+    ///   results — the converged replay result is authoritative.
     pub domain_attr: Option<DomainAttribution>,
 }
 
-/// 状态转换结果
+/// State transition result
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransitionResult {
-    /// 正常状态转换：新 payload 和新 queue
+    /// Normal state transition: new payload and new queue
     State {
-        /// 新的业务状态
+        /// New business state
         new_payload: JsonValue,
-        /// 新的指令队列
+        /// New instruction queue
         new_queue: Vec<JsonValue>,
-        /// 本步各 transform 规则的命中归因（按执行顺序，与输入列表等长）
+        /// Hit attribution for each transform rule of this step (in
+        /// execution order, same length as the input list)
         rule_hits: Vec<RuleHit>,
     },
-    /// I/O 请求：需要上层反应器执行 I/O
+    /// I/O request: the upper reactor must perform the I/O
     ///
-    /// # 重放契约（D11，v0.3.2 审计治理）
+    /// # Replay contract (D11, v0.3.2 audit governance)
     ///
-    /// `IoRequired` 是**纯信号**——返回值不携带新状态，调用方无法获得半成品 payload/queue。
-    /// 首次执行中 core_eval 前序规则产生的状态修改**全部丢弃**（不提交），
-    /// 反应器收到 I/O 结果后必须**从原始输入整体重放** `execute_transition`：
+    /// `IoRequired` is a **pure signal** — the return value carries no new
+    /// state, so the caller can never obtain a partial payload/queue. State
+    /// modifications produced by earlier core_eval rules during the first
+    /// execution are **entirely discarded** (not committed); after receiving
+    /// the I/O result the reactor must **replay `execute_transition` from
+    /// the original input as a whole**:
     ///
-    /// 1. **纯信号语义** — 仅含 `io_type` 与 `params`（路径引用已解析为具体值）。
-    /// 2. **部分修改丢弃** — 首次执行到 `io_request` 前的状态变更不返回；正确性由 D5（`io_request` 必须是叶子）保证。
-    /// 3. **重放确定性** — 重放 = 以相同 `(core_eval, instruction, payload, queue)` 再次调用；TCB 纯函数性质保证路径一致。
-    /// 4. **传播即停** — `IoRequired` 立即向上传播，其后 transform 规则不执行。
+    /// 1. **Pure-signal semantics** — carries only `io_type` and `params`
+    ///    (path references already resolved to concrete values).
+    /// 2. **Partial modifications discarded** — state changes made before
+    ///    `io_request` in the first execution are not returned; correctness
+    ///    is guaranteed by D5 (`io_request` must be a leaf).
+    /// 3. **Replay determinism** — replay = calling again with the same
+    ///    `(core_eval, instruction, payload, queue)`; the pure-function
+    ///    property of the TCB guarantees the path converges.
+    /// 4. **Propagation stops everything** — `IoRequired` propagates
+    ///    upward immediately; subsequent transform rules do not execute.
     ///
-    /// **错误实现代价**：若反应器错误地持久化中间 payload 再增量续跑，
-    /// `io_request` 之前的 `add` / `sub` 会被应用两次（state 污染）。
-    /// 跨层协议详见 `TCB_SPEC.md` §四 D11。
+    /// **Cost of a wrong implementation**: if the reactor wrongly persists
+    /// the intermediate payload and resumes incrementally, the `add` / `sub`
+    /// before `io_request` would be applied twice (state pollution). See
+    /// `TCB_SPEC.md` §4 D11 for the cross-layer protocol.
     ///
-    /// **命中归因**：`IoRequired` **不携带** `rule_hits`——中途
-    /// 命中属于"半成品"（同状态修改一并丢弃），以收敛后的重放结果为准，
-    /// 避免重放导致重复计数。归因只随 `State` / `Ignored` 收敛变体交付。
+    /// **Hit attribution**: `IoRequired` **carries no** `rule_hits` —
+    /// mid-way hits are "partial results" (discarded together with the
+    /// state modifications); the converged replay result is authoritative,
+    /// avoiding double counting caused by replay. Attribution is delivered
+    /// only with the converged `State` / `Ignored` variants.
     IoRequired {
-        /// I/O 类型（如 "call_external"、"query_db" 等）
+        /// I/O type (e.g. "call_external", "query_db" etc.)
         io_type: String,
-        /// I/O 请求参数（路径引用已解析为具体值）
+        /// I/O request parameters (path references already resolved to
+        /// concrete values)
         params: JsonValue,
     },
-    /// `enforce` 强制原语命中（回归验证）：违规指令被拒绝执行
+    /// `enforce` enforcement primitive hit (regression-verified): the
+    /// violating instruction is rejected from execution
     ///
-    /// # 语义（与 `IoRequired` 同构的纯信号）
+    /// # Semantics (a pure signal isomorphic to `IoRequired`)
     ///
-    /// - **传播即停** — 命中 enforce 规则后立即返回，剩余 transform 不执行；
-    /// - **半成品丢弃** — 此前规则的状态修改全部丢弃（不返回 payload/queue），
-    ///   违规动作不得"执行一半"；
-    /// - **指令被拒** — 反应器据此不执行该指令、不推回队列（动作被阻止而非
-    ///   仅留痕），并系统独占发射 `Fact::Violation` 全链留痕（三权分立：
-    ///   阻止权/记录权在系统，LLM/规则零通道伪造）；
-    /// - **归因** — 不携带 `rule_hits`（半成品纪律）；`rule_index` 为命中的
-    ///   enforce 规则下标（由转换层填入），`reason` 透传 params.reason；
-    /// - **重放确定性** — 相同输入必产生相同 `Halted`（纯函数性质）。
+    /// - **Propagation stops everything** — returns immediately after an
+    ///   enforce rule hits; remaining transforms do not execute;
+    /// - **Partial results discarded** — state modifications made by prior
+    ///   rules are entirely discarded (no payload/queue returned); a
+    ///   violating action must never "half-execute";
+    /// - **Instruction rejected** — the reactor accordingly does not execute
+    ///   the instruction and does not push it back onto the queue (the
+    ///   action is blocked, not merely recorded), and the system exclusively
+    ///   emits `Fact::Violation` leaving a full-chain audit trail
+    ///   (separation of powers: blocking/recording authority rests with the
+    ///   system; LLM/rules have zero channels to forge it);
+    /// - **Attribution** — carries no `rule_hits` (partial-result
+    ///   discipline); `rule_index` is the index of the hit enforce rule
+    ///   (filled in by the transition layer), `reason` passes through
+    ///   params.reason;
+    /// - **Replay determinism** — identical input always produces the same
+    ///   `Halted` (pure-function property).
     Halted {
-        /// 命中的 enforce 规则在输入 `core_eval` 列表中的下标
+        /// Index of the hit enforce rule in the input `core_eval` list
         rule_index: usize,
-        /// 违规说明（enforce params.reason）
+        /// Violation description (enforce params.reason)
         reason: String,
     },
-    /// 指令被忽略（没有匹配的 transform 规则，或规则产生 noop 效果）
+    /// Instruction ignored (no matching transform rule, or the rule
+    /// produced a noop effect)
     ///
-    /// 显式暴露“静默失败”情况，方便上层（reactor/治理层）记录告警或产生 Error
+    /// Makes the "silent failure" case explicit so the upper layer
+    /// (reactor/governance) can record alerts or raise an Error
     Ignored {
-        /// 被忽略的指令类型（用于日志/审计）
+        /// Type of the ignored instruction (for logging/audit)
         instruction_type: String,
-        /// 说明：通常为 "no matching transform rule" 或 "rule matched but produced no effect"
+        /// Description: usually "no matching transform rule" or
+        /// "rule matched but produced no effect"
         reason: String,
-        /// 本步各 transform 规则的命中归因（本步无副作用；命中归因照实
-        /// 承载，可含结构命中，死规则判定以 hit 聚合为准）
+        /// Hit attribution for each transform rule of this step (no side
+        /// effects this step; attribution is still reported faithfully and
+        /// may contain structural hits — dead-rule detection aggregates on
+        /// `hit`)
         rule_hits: Vec<RuleHit>,
     },
 }
@@ -166,40 +208,43 @@ pub fn execute_transition(
 ///   `InvalidState` — no guessing, no silent fallback)
 ///
 /// # Returns
-/// - `Ok(State { new_payload, new_queue })`：正常转换
-/// - `Ok(IoRequired { io_type, params })`：`core_eval` 中遇到 `io_request` 元指令
-/// - `Err(TcbError)`：执行错误
+/// - `Ok(State { new_payload, new_queue })`: normal transition
+/// - `Ok(IoRequired { io_type, params })`: an `io_request` meta
+///   instruction was encountered in `core_eval`
+/// - `Err(TcbError)`: execution error
 ///
-/// # 保证
-/// - 纯函数（无副作用）
-/// - 永不 panic（所有错误返回 `TcbError`）
-/// - 确定性（相同输入 → 相同输出）
+/// # Guarantees
+/// - Pure function (no side effects)
+/// - Never panics (all errors are returned as `TcbError`)
+/// - Deterministic (same input → same output)
 ///
 /// # Errors
 ///
 /// - `TcbError::TooManyTransformRules`: `core_eval` rule count exceeds the
 ///   envelope rule cap (default envelope = `MAX_TRANSFORM_RULES`, 128)
-/// - `TcbError::InvalidState`：状态结构异常（`__exec__.payload` 不存在）
-/// - `TcbError::PathResolutionFailed`：`core_eval` 中路径解析失败
+/// - `TcbError::InvalidState`: abnormal state structure
+///   (`__exec__.payload` missing)
+/// - `TcbError::PathResolutionFailed`: path resolution failed in
+///   `core_eval`
 ///
-/// # 代码示例
+/// # Code example
 ///
 /// ```
 /// extern crate alloc;
 /// use evorule_tcb::{JsonValue, execute_transition, TransitionResult};
 /// use alloc::collections::BTreeMap;
 ///
-/// // 业务 payload: { x: 10 }
+/// // business payload: { x: 10 }
 /// let mut p = BTreeMap::new();
 /// p.insert("x".to_string(), JsonValue::Integer(10));
 /// let payload = JsonValue::object(p);
 ///
-/// // 当前指令: noop
+/// // current instruction: noop
 /// let mut instr = BTreeMap::new();
 /// instr.insert("type".to_string(), JsonValue::string("noop"));
 /// let instruction = JsonValue::object(instr);
 ///
-/// // core_eval 规则: set(x, set, 42)
+/// // core_eval rule: set(x, set, 42)
 /// let mut set_params = BTreeMap::new();
 /// set_params.insert("attr".to_string(), JsonValue::string("x"));
 /// set_params.insert("operation".to_string(), JsonValue::string("set"));
@@ -209,19 +254,21 @@ pub fn execute_transition(
 /// set_rule.insert("params".to_string(), JsonValue::object(set_params));
 /// let core_eval = vec![JsonValue::object(set_rule)];
 ///
-/// // 执行
+/// // execute
 /// let result = execute_transition(&core_eval, &instruction, &payload, &[]);
 /// match result {
 ///     Ok(TransitionResult::State { new_payload, .. }) => {
-///         // x 应该被改成 42
+///         // x should have been changed to 42
 ///         assert_eq!(new_payload.get("x").and_then(|v| v.as_i64()), Some(42));
 ///     }
 ///     Ok(_) => panic!("expected State result"),
 ///     Err(e) => panic!("unexpected error: {:?}", e),
 /// }
 /// ```
-// 119 行: 约束前置门(BUG-P0-005) + transform 主循环 + 归因合并必须单函数原子语义,
-// 拆函数需共享 budget 与 rule_hits 中间状态; 豁免登记见 GATE_REFERENCE.md §6.3
+// 119 lines: constraint pre-gate (BUG-P0-005) + transform main loop +
+// attribution merge must stay atomic within a single function; splitting
+// would need to share budget and rule_hits intermediate state; exemption
+// registered in GATE_REFERENCE.md §6.3
 #[allow(clippy::too_many_lines)]
 pub fn execute_transition_with_limits(
     core_eval: &[JsonValue],
@@ -243,36 +290,52 @@ pub fn execute_transition_with_limits(
         });
     }
 
-    // 1. 构造 __exec__ 上下文
+    // 1. Build the __exec__ context
     let exec_state = build_exec_state(instruction, payload, queue);
 
-    // 2. 执行 core_eval transform 列表（整棵规则树共享单一执行预算，
-    //    M6 终止性宽度防线：约束 branch 子指令列表的宽度）
-    //    同步收集每条规则的结构命中（命中口径见 RuleHit / executor 文档）。
+    // 2. Execute the core_eval transform list (the whole rule tree shares a
+    //    single execution budget — the M6 termination width defense: bounds
+    //    the width of branch sub-instruction lists).
+    //    Collect each rule's structural hit synchronously (hit criteria see
+    //    RuleHit / executor docs).
     let mut state = exec_state.clone();
     let mut budget = limits.max_total_meta_instructions;
     let mut rule_hits: Vec<RuleHit> = Vec::with_capacity(core_eval.len());
 
-    // 2.0 【约束前置门】enforce 约束先于任何状态变换 / IO 路由求值
-    //     （2026-09-23 P0 修复：L2 约束层被 L1 规则遮蔽导致守卫静默失效）
+    // 2.0 [Constraint pre-gate] enforce constraints are evaluated before any
+    //     state transform / IO routing
+    //     (2026-09-23 P0 fix: the L2 constraint layer was shadowed by L1
+    //     rules, making the guard silently ineffective)
     //
-    //     根因：原实现按列表顺序单趟求值，任一条更早的规则产生 `IoRequired`
-    //     即"传播即停"立即返回，其后的 `enforce` 规则**永不求值**。而 server
-    //     的合并装载顺序是"L1 core_eval 在前、L2/L3 在后"（`load_merged_with_layout`），
-    //     L1 覆盖 set/increment/call_external 等核心原语，凡 L1 已处理的指令类型，
-    //     其上的 L2 enforce 约束全部成为死规则——动作未被拦且无 Violation 留痕。
+    //     Root cause: the original implementation evaluated in a single pass
+    //     in list order; as soon as any earlier rule produced `IoRequired`
+    //     it returned immediately ("propagation stops everything"), and the
+    //     `enforce` rules after it were **never evaluated**. Meanwhile the
+    //     server's merged load order is "L1 core_eval first, L2/L3 after"
+    //     (`load_merged_with_layout`); L1 covers core primitives such as
+    //     set/increment/call_external, so for any instruction type already
+    //     handled by L1, its L2 enforce constraints all became dead rules —
+    //     the action went unblocked with no Violation trail.
     //
-    //     语义裁决：**约束不是状态变换**。enforce 必须在所有 transform 之前求值：
-    //     - 不可被更早规则的 `IoRequired` 早退遮蔽；
-    //     - 判定上下文固定为**转换前输入状态**（exec_state），不随规则在列表中的
-    //       位置或前序半成品状态漂移，杜绝"靠调整规则加载顺序绕过约束"这一通道。
+    //     Semantic ruling: **constraints are not state transforms**. enforce
+    //     must be evaluated before all transforms:
+    //     - it must not be shadowed by an earlier rule's `IoRequired` early
+    //       return;
+    //     - the judgment context is pinned to the **pre-transition input
+    //       state** (exec_state), not drifting with the rule's position in
+    //       the list or prior partial state, closing the "reorder rule
+    //       loading to bypass constraints" channel.
     //
-    //     求值顺序仍按列表下标升序（确定性保持）；命中首个 enforce 即返回
-    //     `Halted { rule_index }`，**下标契约不变**（= 合并规则列表下标，
-    //     hit-stats 归因与重放确定性依赖此契约）。
+    //     Evaluation order still follows ascending list index (determinism
+    //     preserved); the first hit enforce returns
+    //     `Halted { rule_index }` immediately, and the **index contract is
+    //     unchanged** (= index in the merged rule list; hit-stats
+    //     attribution and replay determinism depend on this contract).
     //
-    //     已知边界：本门只覆盖**顶层** `type == "enforce"` 规则；嵌在 branch
-    //     子指令内的 enforce 仍受"传播即停"影响（残留风险，见 P0 bug 报告）。
+    //     Known boundary: this gate only covers **top-level**
+    //     `type == "enforce"` rules; enforce nested inside branch
+    //     sub-instructions is still subject to "propagation stops
+    //     everything" (residual risk, see the P0 bug report).
     let mut enforce_hits: Vec<RuleHit> = Vec::new();
     for (index, rule) in core_eval.iter().enumerate() {
         let instr_type = rule
@@ -300,7 +363,8 @@ pub fn execute_transition_with_limits(
             domain_attr,
         });
         if let MetaInstructionResult::Halted { reason } = result {
-            // 半成品纪律同 IoRequired：不携带 rule_hits，状态修改随丢弃
+            // Partial-result discipline, same as IoRequired: no rule_hits
+            // carried; state modifications are discarded along with it
             return Ok(TransitionResult::Halted {
                 rule_index: index,
                 reason,
@@ -314,7 +378,8 @@ pub fn execute_transition_with_limits(
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string();
-        // 约束门已求值过的 enforce 不重复执行：预算与命中归因均只计一次
+        // enforce rules already evaluated by the pre-gate are not executed
+        // again: budget and hit attribution are each counted exactly once
         if instr_type == "enforce" {
             continue;
         }
@@ -338,16 +403,21 @@ pub fn execute_transition_with_limits(
 
         match result {
             MetaInstructionResult::State(new_state) => state = new_state,
-            // I/O 请求信号：立即返回，不继续执行后续 transform。
-            // 不携带 rule_hits（D11 重放契约：中途命中随半成品状态一并丢弃，
-            // 归因以收敛后的重放结果为准，避免重复计数）。
+            // I/O request signal: return immediately; subsequent transforms
+            // do not execute. No rule_hits carried (D11 replay contract:
+            // mid-way hits are discarded together with the partial state;
+            // the converged replay result is authoritative, avoiding double
+            // counting).
             MetaInstructionResult::IoRequired { io_type, params } => {
                 return Ok(TransitionResult::IoRequired { io_type, params });
             }
-            // enforce 强制原语命中（回归验证）：立即返回 Halted 纯信号，
-            // 不继续执行后续 transform；此前状态修改随半成品一并丢弃，
-            // 不携带 rule_hits（半成品纪律同 IoRequired）。
-            // rule_index 由转换层填入（此处即为命中规则下标，确定性成立）。
+            // enforce enforcement primitive hit (regression-verified):
+            // return the Halted pure signal immediately; subsequent
+            // transforms do not execute; prior state modifications are
+            // discarded with the partial result and no rule_hits carried
+            // (partial-result discipline, same as IoRequired).
+            // rule_index is filled by the transition layer (here it is the
+            // index of the hit rule; determinism holds).
             MetaInstructionResult::Halted { reason } => {
                 return Ok(TransitionResult::Halted {
                     rule_index: index,
@@ -357,36 +427,43 @@ pub fn execute_transition_with_limits(
         }
     }
 
-    // 2.1 归因合并：enforce 命中在约束门阶段收集，此处按下标归并回全序。
-    //     对外口径不变：按 index 升序、与输入列表等长（IoRequired/Halted
-    //     早退路径不携带 rule_hits 的既有契约不变）。
+    // 2.1 Attribution merge: enforce hits were collected during the
+    //     pre-gate phase; merge them back into the total order by index
+    //     here. The external contract is unchanged: ascending by index,
+    //     same length as the input list (the existing contract that
+    //     IoRequired/Halted early-return paths carry no rule_hits is
+    //     unchanged).
     rule_hits.extend(enforce_hits);
     rule_hits.sort_by_key(|h| h.index);
 
-    // 3. 静默失败检测：检查是否存在匹配当前指令的宪法规则
-    //    规则分类（参见 docs/rule_taxonomy.md）：
-    //    - 宪法规则 (Constitution Rules): core_eval.json 中定义的规则
-    //      * instruction domain: 精确匹配 instruction_type
-    //      * all domain: 兜底机制，不视为业务规则
-    //      * 动态 domain (eq/lt/gt 等): 通用规则，可处理任何指令
-    //      * 直接规则 (set/increment 等): 检查 rule_type 是否匹配 instruction_type
+    // 3. Silent-failure detection: check whether a constitution rule
+    //    matching the current instruction exists.
+    //    Rule taxonomy (see docs/rule_taxonomy.md):
+    //    - Constitution rules: rules defined in core_eval.json
+    //      * instruction domain: exact match on instruction_type
+    //      * all domain: fallback mechanism, not counted as a business rule
+    //      * dynamic domains (eq/lt/gt etc.): general rules, can handle any
+    //        instruction
+    //      * direct rules (set/increment etc.): check whether rule_type
+    //        matches instruction_type
     //
-    //    检测逻辑：
-    //    1. 优先检查是否有实际副作用（payload/queue 变化）
-    //    2. 检查是否存在匹配当前指令的宪法规则
-    //    3. 无副作用且无匹配规则 → 返回 Ignored
+    //    Detection logic:
+    //    1. First check for actual side effects (payload/queue changes)
+    //    2. Check whether a constitution rule matching the current
+    //       instruction exists
+    //    3. No side effects and no matching rule → return Ignored
     let instruction_type = instruction
         .get("type")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
-    // 3.1 检查是否存在匹配当前指令的宪法规则
+    // 3.1 Check whether a constitution rule matching the current instruction exists
     let has_matching_constitution_rule = core_eval.iter().any(|rule| {
         if let Some(params) = rule.get("params").and_then(|p| p.as_object()) {
             if let Some(domain) = params.get("domain").and_then(|d| d.as_object()) {
                 if let Some(domain_type) = domain.get("type").and_then(|t| t.as_str()) {
                     if domain_type == "instruction" {
-                        // 精确匹配 instruction_type
+                        // exact match on instruction_type
                         if let Some(expected_type) =
                             domain.get("instruction_type").and_then(|t| t.as_str())
                         {
@@ -394,16 +471,18 @@ pub fn execute_transition_with_limits(
                         }
                         return false;
                     } else if domain_type == "all" {
-                        return false; // all 兜底不是业务规则
+                        return false; // the all fallback is not a business rule
                     } else {
-                        // 动态 domain（eq, lt, gt, ge, not, exists, has_fields 等）
-                        // 视为通用规则，可处理任何指令
+                        // dynamic domains (eq, lt, gt, ge, not, exists,
+                        // has_fields etc.) count as general rules and can
+                        // handle any instruction
                         return true;
                     }
                 }
             }
         } else if let Some(rule_type) = rule.get("type").and_then(|t| t.as_str()) {
-            // 直接规则（如 set, increment），检查 rule_type 是否匹配 instruction_type
+            // direct rules (set, increment etc.): check whether rule_type
+            // matches instruction_type
             if matches!(rule_type, "set" | "increment" | "decrement" | "branch") {
                 return rule_type == instruction_type;
             }
@@ -411,7 +490,7 @@ pub fn execute_transition_with_limits(
         false
     });
 
-    // 4. 提取结果
+    // 4. Extract the results
     let new_payload = resolve_path(&state, "__exec__.payload")
         .cloned()
         .ok_or_else(|| TcbError::InvalidState {
@@ -425,13 +504,16 @@ pub fn execute_transition_with_limits(
                 .to_string(),
         })?;
 
-    // 5. 检查是否有实际副作用（优先）
+    // 5. Check for actual side effects (takes precedence)
     let has_side_effect = &new_payload != payload || new_queue != queue;
 
-    // 6. 组合判断：
-    //    - 规则匹配 + 有/无副作用 → 返回 State（合法操作）
-    //    - 规则不匹配 + 有副作用 → 返回 State（不应发生，但保守处理）
-    //    - 规则不匹配 + 无副作用 → 返回 Ignored（真正的指令未被处理）
+    // 6. Combined decision:
+    //    - rule matched + side effects present/absent → return State
+    //      (legitimate operation)
+    //    - rule unmatched + side effects present → return State (should not
+    //      happen, but handled conservatively)
+    //    - rule unmatched + no side effects → return Ignored (the
+    //      instruction was genuinely not handled)
     if !has_matching_constitution_rule && !has_side_effect {
         return Ok(TransitionResult::Ignored {
             instruction_type: instruction_type.to_string(),
@@ -447,7 +529,7 @@ pub fn execute_transition_with_limits(
     })
 }
 
-/// 构建 `__exec__` 上下文
+/// Build the `__exec__` context
 fn build_exec_state(
     instruction: &JsonValue,
     payload: &JsonValue,
@@ -476,7 +558,7 @@ mod tests {
     use crate::value::JsonValue;
     use alloc::vec;
 
-    // ===== 辅助函数 =====
+    // ===== Helper functions =====
 
     fn make_payload(x: i64) -> JsonValue {
         JsonValue::object_from_pairs(&[("x", JsonValue::Integer(x))])
@@ -489,7 +571,7 @@ mod tests {
         ])
     }
 
-    /// 构造 `call_llm` 流程测试用的 `core_eval`
+    /// Build the `core_eval` used by the `call_llm` flow tests
     fn call_llm_core_eval() -> Vec<JsonValue> {
         vec![JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
@@ -566,10 +648,10 @@ mod tests {
         ])]
     }
 
-    /// 构造多轮模拟测试用的 `core_eval`
+    /// Build the `core_eval` used by the multi-round simulation tests
     fn multi_round_core_eval() -> Vec<JsonValue> {
         vec![
-            // spawn 映射：push 两个 increment
+            // spawn mapping: push two increments
             JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("branch")),
                 (
@@ -607,7 +689,7 @@ mod tests {
                     ]),
                 ),
             ]),
-            // increment 映射：set x = x + delta
+            // increment mapping: set x = x + delta
             JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("branch")),
                 (
@@ -643,7 +725,7 @@ mod tests {
         ]
     }
 
-    // ===== build_exec_state 测试 =====
+    // ===== build_exec_state tests =====
 
     #[test]
     fn test_build_exec_state() {
@@ -662,7 +744,7 @@ mod tests {
         );
     }
 
-    // ===== 正常状态转换测试 =====
+    // ===== Normal state transition tests =====
 
     #[test]
     fn test_execute_transition_empty_core_eval() {
@@ -820,7 +902,7 @@ mod tests {
         }
     }
 
-    // ===== push 测试 =====
+    // ===== push tests =====
 
     #[test]
     fn test_execute_transition_push_returns_new_queue() {
@@ -878,7 +960,7 @@ mod tests {
         }
     }
 
-    // ===== I/O 请求测试 =====
+    // ===== I/O request tests =====
 
     #[test]
     fn test_execute_transition_io_request() {
@@ -1021,12 +1103,13 @@ mod tests {
         assert!(matches!(result, TransitionResult::State { .. }));
     }
 
-    // ===== tool_trace 轨迹记录通道测试 =====
+    // ===== tool_trace trace-recording channel tests =====
 
-    /// `tool_trace` 规则（内联构造，不加载任何规则集文件；与部署面
-    /// server_eval.json 的 tool_trace transform 同构：branch(tool_trace) →
-    /// set(attr=params.attr, value=params.value)；该规则自 v0.6.0 起属
-    /// 部署面规则集，主仓宪法已迁出应用层策略规则）
+    /// `tool_trace` rule (built inline, no rule-set file loaded; isomorphic
+    /// to the deployed server_eval.json tool_trace transform:
+    /// branch(tool_trace) → set(attr=params.attr, value=params.value); this
+    /// rule belongs to the deployed rule set since v0.6.0 — the main repo's
+    /// constitution has migrated application-layer policy rules out)
     fn tool_trace_rule() -> JsonValue {
         JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
@@ -1065,9 +1148,11 @@ mod tests {
         ])
     }
 
-    /// tool_trace 指令（轨迹形态）：attr=meta_tool.tool_traces.<seq>（序号由
-    /// 应用层控制实现 payload 累积），value=轨迹全文（tool_name/args/ok/duration/seq）
-    /// TCB 零依赖（无 std），attr 由调用方以字面量给出。
+    /// tool_trace instruction (trace shape): attr=meta_tool.tool_traces.<seq>
+    /// (the sequence number is controlled by the application layer to
+    /// accumulate into the payload); value=the full trace
+    /// (tool_name/args/ok/duration/seq). The TCB has zero dependencies
+    /// (no std); attr is given by the caller as a literal.
     fn tool_trace_instr(attr: &'static str, seq: i64, tool: &str) -> JsonValue {
         make_instruction(
             "tool_trace",
@@ -1095,9 +1180,12 @@ mod tests {
 
     #[test]
     fn test_tool_trace_writes_value_into_payload() {
-        // tool_trace 指令 → 部署面规则集 transform set 入 payload（meta_tool 缺失时中间路径自动创建）
-        // 关键：payload 必须变化——noop 效果会被判 Ignored（反应器产生 Error 事实），
-        // 本测试即 tool_trace「Ignored 陷阱」的回归验证。
+        // tool_trace instruction → the deployed rule set's transform writes
+        // it into the payload (auto-vivification creates the missing
+        // meta_tool intermediate path). Key point: the payload must change —
+        // a noop effect would be judged Ignored (the reactor raises an Error
+        // fact); this test is the regression anchor for the tool_trace
+        // "Ignored trap".
         let instruction = tool_trace_instr("meta_tool.tool_traces.0", 0, "shell_exec");
         let payload = JsonValue::object_from_pairs(&[]);
 
@@ -1117,7 +1205,9 @@ mod tests {
 
     #[test]
     fn test_tool_trace_accumulates_two_entries() {
-        // 两条轨迹（seq 0/1）先后转换：第二条以第一条输出为输入，验证按序号累积互不覆盖
+        // Two traces (seq 0/1) transitioned in sequence: the second takes
+        // the first's output as input, verifying accumulation by sequence
+        // number without overwriting each other
         let first = tool_trace_instr("meta_tool.tool_traces.0", 0, "file_read");
         let second = tool_trace_instr("meta_tool.tool_traces.1", 1, "shell_exec");
         let payload = JsonValue::object_from_pairs(&[]);
@@ -1150,9 +1240,11 @@ mod tests {
 
     #[test]
     fn test_tool_trace_enforce_halts_on_violation() {
-        // 约束前置门对 instruction_type=tool_trace 精确求值：违规轨迹在约束门拦截
-        // （Halted→反应器派生 Violation 留痕），合法轨迹才落 StateTransition——
-        // 两类留痕互补（部署面 server_eval.json constraints 契约）。
+        // The constraint pre-gate evaluates instruction_type=tool_trace
+        // exactly: violating traces are blocked at the pre-gate
+        // (Halted → the reactor derives a Violation fact), while legitimate
+        // traces land as StateTransition — the two trails complement each
+        // other (deployed server_eval.json constraints contract).
         let instruction = tool_trace_instr("meta_tool.tool_traces.0", 0, "shell_exec");
         let payload = JsonValue::object_from_pairs(&[]);
         let core_eval = vec![
@@ -1161,7 +1253,7 @@ mod tests {
                     ("type", JsonValue::string("instruction")),
                     ("instruction_type", JsonValue::string("tool_trace")),
                 ]),
-                Some("违规：工具轨迹命中危险命令黑名单"),
+                Some("Violation: tool trace hit the dangerous-command blocklist"),
             ),
             tool_trace_rule(),
         ];
@@ -1169,13 +1261,13 @@ mod tests {
         match execute_transition(&core_eval, &instruction, &payload, &[]).unwrap() {
             TransitionResult::Halted { rule_index, reason } => {
                 assert_eq!(rule_index, 0);
-                assert_eq!(reason, "违规：工具轨迹命中危险命令黑名单");
+                assert_eq!(reason, "Violation: tool trace hit the dangerous-command blocklist");
             }
             other => panic!("expected Halted, got {:?}", other),
         }
     }
 
-    // ===== enforce 强制原语测试（回归验证）=====
+    // ===== enforce enforcement primitive tests (regression verification) =====
 
     fn enforce_rule(domain: JsonValue, reason: Option<&str>) -> JsonValue {
         let mut params = vec![("domain", domain)];
@@ -1190,9 +1282,10 @@ mod tests {
 
     #[test]
     fn test_execute_transition_enforce_halts() {
-        // 规则序列：set(改 x) → enforce(命中) → set(永不执行)
-        // 预期：Halted{rule_index:1}；后续规则不执行（半成品不返回，
-        // payload 丢弃由构造保证——Halted 不携带状态）
+        // Rule sequence: set (changes x) → enforce (hits) → set (never
+        // executes). Expected: Halted{rule_index:1}; subsequent rules do
+        // not execute (no partial result returned; payload discard is
+        // guaranteed by construction — Halted carries no state)
         let instruction = make_instruction("delete_all", &[]);
         let payload = make_payload(1);
         let core_eval = vec![
@@ -1212,7 +1305,7 @@ mod tests {
                     ("type", JsonValue::string("instruction")),
                     ("instruction_type", JsonValue::string("delete_all")),
                 ]),
-                Some("违规：禁删数据集"),
+                Some("Violation: dataset deletion is forbidden"),
             ),
             JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("set")),
@@ -1230,15 +1323,17 @@ mod tests {
         match execute_transition(&core_eval, &instruction, &payload, &[]).unwrap() {
             TransitionResult::Halted { rule_index, reason } => {
                 assert_eq!(rule_index, 1);
-                assert_eq!(reason, "违规：禁删数据集");
+                assert_eq!(reason, "Violation: dataset deletion is forbidden");
             }
             other => panic!("expected Halted, got {:?}", other),
         }
     }
 
-    // ===== 约束前置门回归（2026-09-23 P0：L2 enforce 被 L1 IoRequired 遮蔽）=====
+    // ===== Constraint pre-gate regression (2026-09-23 P0: L2 enforce
+    // ===== shadowed by L1 IoRequired) =====
 
-    /// L1 风格规则：`call_external` → `io_request`（命中即产生 IoRequired 早退）
+    /// L1-style rule: `call_external` → `io_request` (when hit, produces an
+    /// IoRequired early return)
     fn call_external_io_rule() -> JsonValue {
         JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
@@ -1270,7 +1365,8 @@ mod tests {
         ])
     }
 
-    /// L2 风格规则：模型白名单 `enforce`（顶层 `type=enforce`，治理链晋升写入）
+    /// L2-style rule: model allowlist `enforce` (top-level `type=enforce`,
+    /// written via governance-chain promotion)
     fn model_allowlist_rule(banned: &str) -> JsonValue {
         enforce_rule(
             JsonValue::object_from_pairs(&[
@@ -1290,16 +1386,19 @@ mod tests {
                     ]),
                 ),
             ]),
-            Some("模型不在白名单"),
+            Some("model is not in the allowlist"),
         )
     }
 
     #[test]
     fn test_enforce_not_shadowed_by_earlier_io_required() {
-        // 修复前：L1（branch→io_request）在 index 0 命中 → IoRequired 立即返回，
-        // index 1 的 enforce 永不求值 → 违规指令拿到 IoRequest 而非被拦
-        // （守卫静默失效：无 Violation 事实、调用方视为正常）。
-        // 修复后：约束门前置求值 → Halted{rule_index:1}。
+        // Before the fix: L1 (branch→io_request) hit at index 0 →
+        // IoRequired returned immediately; the enforce at index 1 was never
+        // evaluated → the violating instruction got an IoRequest instead of
+        // being blocked (guard silently ineffective: no Violation fact, the
+        // caller saw a normal flow).
+        // After the fix: the constraint pre-gate evaluates first →
+        // Halted{rule_index:1}.
         let instruction = make_instruction(
             "call_external",
             &[("model", JsonValue::string("banned-model"))],
@@ -1312,17 +1411,18 @@ mod tests {
 
         match execute_transition(&core_eval, &instruction, &payload, &[]).unwrap() {
             TransitionResult::Halted { rule_index, reason } => {
-                assert_eq!(rule_index, 1, "rule_index 必须仍是合并列表中的原始下标");
-                assert_eq!(reason, "模型不在白名单");
+                assert_eq!(rule_index, 1, "rule_index must remain the original index in the merged list");
+                assert_eq!(reason, "model is not in the allowlist");
             }
-            other => panic!("expected Halted（约束门前置）, got {:?}", other),
+            other => panic!("expected Halted (constraint pre-gate evaluates first), got {:?}", other),
         }
     }
 
     #[test]
     fn test_enforce_pass_through_preserves_io_required() {
-        // 反向回归：enforce 未命中时 IO 路由语义不变（仍为 IoRequired），
-        // 证明修复只改变"违规"路径，不侵扰正常路径。
+        // Reverse regression: when enforce does not hit, the IO routing
+        // semantics are unchanged (still IoRequired), proving the fix only
+        // changes the "violation" path and leaves the normal path intact.
         let instruction = make_instruction(
             "call_external",
             &[("model", JsonValue::string("allowed-model"))],
@@ -1343,11 +1443,16 @@ mod tests {
 
     #[test]
     fn test_enforce_judged_on_pre_transform_input_state() {
-        // 语义变更断言：约束判定基于**转换前输入状态**，前序 set 改写的 payload
-        // 不得进入 enforce 判定——否则"调整规则顺序"即可操纵约束是否被满足。
-        // 规则：set(x=1) → enforce(eq payload.x == 1 → 违规)
-        // 修复前（enforce 在 set 之后、基于半成品求值）→ 命中 Halted；
-        // 修复后（约束门基于输入状态 x=0）→ 不命中，正常收敛。
+        // Semantic-change assertion: the constraint is judged on the
+        // **pre-transition input state**; payload rewritten by a prior set
+        // must not enter the enforce judgment — otherwise "reordering the
+        // rules" would be enough to manipulate whether the constraint is
+        // satisfied. Rules: set(x=1) → enforce(eq payload.x == 1 →
+        // violation).
+        // Before the fix (enforce ran after set, on partial state) → hit,
+        // Halted;
+        // after the fix (pre-gate judges on input state x=0) → no hit,
+        // converges normally.
         let instruction = make_instruction("noop", &[]);
         let payload = make_payload(0);
         let core_eval = vec![
@@ -1368,7 +1473,7 @@ mod tests {
                     ("path", JsonValue::string("payload.x")),
                     ("value", JsonValue::Integer(1)),
                 ]),
-                Some("x 被置 1"),
+                Some("x was set to 1"),
             ),
         ];
 
@@ -1379,18 +1484,20 @@ mod tests {
                 ..
             } => {
                 assert_eq!(new_payload.get("x").and_then(|v| v.as_i64()), Some(1));
-                // 归因口径不变：按下标升序、与输入列表等长
+                // Attribution contract unchanged: ascending by index, same
+                // length as the input list
                 assert_eq!(rule_hits.len(), 2);
                 assert_eq!(rule_hits[0].index, 0);
                 assert_eq!(rule_hits[1].index, 1);
             }
-            other => panic!("expected State（约束基于输入状态求值）, got {:?}", other),
+            other => panic!("expected State (constraint judged on input state), got {:?}", other),
         }
     }
 
     #[test]
     fn test_execute_transition_enforce_domain_false_continues() {
-        // enforce domain 求值为假 → noop 继续，后续规则正常生效
+        // enforce domain evaluates to false → noop continues; subsequent
+        // rules take effect normally
         let instruction = make_instruction("increment", &[("delta", JsonValue::Integer(1))]);
         let payload = make_payload(5);
         let core_eval = vec![
@@ -1400,7 +1507,7 @@ mod tests {
                     ("path", JsonValue::string("payload.forbidden_mode")),
                     ("value", JsonValue::Bool(true)),
                 ]),
-                Some("禁用模式"),
+                Some("forbidden mode"),
             ),
             JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("branch")),
@@ -1443,7 +1550,8 @@ mod tests {
 
     #[test]
     fn test_execute_transition_enforce_missing_reason_errors() {
-        // domain 命中但缺 reason：结构错误显式报错（不允许静默强制）
+        // domain hits but reason is missing: structural error, explicit
+        // error (silent enforcement not allowed)
         let instruction = make_instruction("delete_all", &[]);
         let core_eval = vec![enforce_rule(
             JsonValue::object_from_pairs(&[
@@ -1463,7 +1571,8 @@ mod tests {
 
     #[test]
     fn test_execute_transition_enforce_structural_domain_error() {
-        // 未知域类型 = 规则结构错误：fail-fast 显式报错（同 branch 语义）
+        // Unknown domain type = rule structural error: fail-fast explicit
+        // error (same semantics as branch)
         let instruction = make_instruction("delete_all", &[]);
         let core_eval = vec![enforce_rule(
             JsonValue::object_from_pairs(&[("type", JsonValue::string("nonexistent_domain"))]),
@@ -1478,13 +1587,17 @@ mod tests {
         );
     }
 
-    // ===== 域判定归因透传（专项-20261001 方案 2' v4，R1/R2 纪律）=====
+    // ===== Domain-evaluation attribution passthrough
+    // ===== (internal special project, plan 2' v4, R1/R2 discipline) =====
 
     #[test]
     fn test_execute_transition_branch_missing_projects_false_with_attr() {
-        // eq 域路径缺失 + 缺省（on_missing 未声明 = unsat 兼容缺省）：
-        // 走向 = 投影 false → on_false（R1：归因不回灌执行）；
-        // 归因 = Missing(PathNotFound) 透传出 RuleHit（审计「为什么走 on_false」）
+        // eq domain path missing + default (on_missing undeclared = unsat
+        // compatibility default):
+        // direction = projected false → on_false (R1: attribution never
+        // feeds back into execution);
+        // attribution = Missing(PathNotFound) passed out through RuleHit
+        // (audit answer to "why on_false was taken")
         let instruction = make_instruction("noop", &[]);
         let core_eval = vec![make_instruction(
             "branch",
@@ -1520,7 +1633,7 @@ mod tests {
             } => {
                 assert_eq!(new_payload.get("x"), Some(&JsonValue::Integer(9)));
                 assert_eq!(rule_hits.len(), 1);
-                assert!(rule_hits[0].hit, "on_false 非空 = 结构命中");
+                assert!(rule_hits[0].hit, "non-empty on_false = structural hit");
                 assert_eq!(
                     rule_hits[0].domain_attr,
                     Some(DomainAttribution {
@@ -1535,8 +1648,8 @@ mod tests {
 
     #[test]
     fn test_execute_transition_branch_missing_on_missing_error_rejects() {
-        // eq 域路径缺失 + on_missing=error：拒绝执行（MissingRejected），
-        // 静默通道从根上铲除
+        // eq domain path missing + on_missing=error: execution rejected
+        // (MissingRejected); the silent channel is eradicated at the root
         let instruction = make_instruction("noop", &[]);
         let core_eval = vec![make_instruction(
             "branch",
@@ -1565,8 +1678,10 @@ mod tests {
 
     #[test]
     fn test_execute_transition_enforce_missing_unsat_no_halt_with_attr() {
-        // enforce 域路径缺失 + 缺省：投影 false = 不命中不拦截（不 Halted）；
-        // 归因 Missing(PathNotFound) 留痕——「为什么没拦住」的审计答案
+        // enforce domain path missing + default: projected false = no hit,
+        // no block (no Halted);
+        // attribution Missing(PathNotFound) recorded — the audit answer to
+        // "why it was not blocked"
         let instruction = make_instruction("risky_op", &[]);
         let core_eval = vec![enforce_rule(
             JsonValue::object_from_pairs(&[
@@ -1595,8 +1710,10 @@ mod tests {
 
     #[test]
     fn test_execute_transition_domain_attr_carries_declared_on_missing() {
-        // 声明值透传：on_missing="unsat" 显式声明 → 归因含声明标签；
-        // Missing 场景走 on_false（声明下的 false，非静默）
+        // Declared value passthrough: explicit on_missing="unsat"
+        // declaration → attribution carries the declaration label;
+        // the Missing case goes to on_false (false under an explicit
+        // declaration, not silent)
         let instruction = make_instruction("noop", &[]);
         let core_eval = vec![make_instruction(
             "branch",
@@ -1632,7 +1749,8 @@ mod tests {
 
     #[test]
     fn test_execute_transition_enforce_missing_on_missing_error_rejects() {
-        // enforce 域路径缺失 + on_missing=error：拒绝执行（MissingRejected）
+        // enforce domain path missing + on_missing=error: execution
+        // rejected (MissingRejected)
         let instruction = make_instruction("risky_op", &[]);
         let core_eval = vec![enforce_rule(
             JsonValue::object_from_pairs(&[
@@ -1654,8 +1772,10 @@ mod tests {
 
     #[test]
     fn test_execute_transition_enforce_sat_halted_rule_hits_not_delivered() {
-        // R2 半成品纪律：enforce 命中（Halted）不携带 rule_hits——
-        // 归因不随半成品交付（返回变体层面无 rule_hits 字段，此处验证外层口径）
+        // R2 partial-result discipline: enforce hit (Halted) carries no
+        // rule_hits — attribution is not delivered with partial results
+        // (the return variant has no rule_hits field at all; this verifies
+        // the outer-level contract)
         let instruction = make_instruction("risky_op", &[]);
         let core_eval = vec![enforce_rule(
             JsonValue::object_from_pairs(&[
@@ -1677,7 +1797,8 @@ mod tests {
 
     #[test]
     fn test_execute_transition_non_domain_rule_has_no_domain_attr() {
-        // 非域消费指令（set）：domain_attr = None（branch/enforce 专属归因）
+        // Non-domain-consuming instruction (set): domain_attr = None
+        // (attribution is exclusive to branch/enforce)
         let instruction = make_instruction("set", &[]);
         let core_eval = vec![make_instruction(
             "set",
@@ -1700,7 +1821,8 @@ mod tests {
 
     #[test]
     fn test_execute_transition_enforce_in_branch_propagates() {
-        // branch 子指令内的 enforce 命中：传播即停，中断整个转换
+        // enforce hit inside branch sub-instructions: propagation stops
+        // everything, interrupting the whole transition
         let instruction = make_instruction("risky_op", &[]);
         let core_eval = vec![JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
@@ -1717,8 +1839,9 @@ mod tests {
                     (
                         "on_true",
                         JsonValue::array(vec![
-                            // 子指令 set 先改 payload，随后 enforce 命中——
-                            // 半成品丢弃，整体 Halted
+                            // The sub-instruction set modifies the payload
+                            // first, then enforce hits — the partial result
+                            // is discarded; the whole thing Halts
                             JsonValue::object_from_pairs(&[
                                 ("type", JsonValue::string("set")),
                                 (
@@ -1736,7 +1859,7 @@ mod tests {
                                     ("path", JsonValue::string("payload.x")),
                                     ("value", JsonValue::Integer(1)),
                                 ]),
-                                Some("子指令拦截"),
+                                Some("sub-instruction blocked"),
                             ),
                         ]),
                     ),
@@ -1747,7 +1870,7 @@ mod tests {
         match execute_transition(&core_eval, &instruction, &make_payload(0), &[]).unwrap() {
             TransitionResult::Halted { rule_index, reason } => {
                 assert_eq!(rule_index, 0);
-                assert_eq!(reason, "子指令拦截");
+                assert_eq!(reason, "sub-instruction blocked");
             }
             other => panic!("expected Halted, got {:?}", other),
         }
@@ -1755,7 +1878,8 @@ mod tests {
 
     #[test]
     fn test_execute_transition_enforce_deterministic() {
-        // 重放确定性：相同输入 → 相同 Halted（纯函数性质）
+        // Replay determinism: identical input → identical Halted
+        // (pure-function property)
         let instruction = make_instruction("delete_all", &[]);
         let payload = make_payload(1);
         let core_eval = vec![enforce_rule(
@@ -1771,7 +1895,7 @@ mod tests {
         assert_eq!(a, b);
     }
 
-    // ===== 端到端测试 =====
+    // ===== End-to-end tests =====
 
     #[test]
     fn test_end_to_end_call_llm_flow() {
@@ -1781,7 +1905,7 @@ mod tests {
         );
         let core_eval = call_llm_core_eval();
 
-        // === 第一阶段：首次执行，触发 io_request ===
+        // === Phase 1: first execution, triggering io_request ===
         let payload_phase1 = make_payload(0);
         let result_phase1 =
             execute_transition(&core_eval, &instruction, &payload_phase1, &[]).unwrap();
@@ -1797,7 +1921,8 @@ mod tests {
             _ => panic!("phase 1: expected IoRequired"),
         }
 
-        // === 第二阶段：模拟反应器注入 __io_result__ 后重新执行 ===
+        // === Phase 2: simulate the reactor injecting __io_result__ and
+        // re-executing ===
         let payload_phase2 = JsonValue::object_from_pairs(&[
             ("x", JsonValue::Integer(0)),
             ("__io_result__", JsonValue::string("Summary: Hello world")),
@@ -1864,7 +1989,7 @@ mod tests {
         }
     }
 
-    // ===== MAX_TRANSFORM_RULES 测试 =====
+    // ===== MAX_TRANSFORM_RULES tests =====
 
     #[test]
     fn test_execute_transition_rejects_too_many_transform_rules() {
@@ -1943,12 +2068,14 @@ mod tests {
         }
     }
 
-    // ===== M6 元指令执行总数预算测试（transition 层接线） =====
+    // ===== M6 total meta-instruction execution budget tests (transition
+    // ===== layer wiring) =====
 
     #[test]
     fn test_execute_transition_branch_width_budget_enforced() {
-        // 单条 branch 规则（不违反 MAX_TRANSFORM_RULES=128），
-        // 但 on_true 子指令宽度爆炸：branch(1) + 2048 子指令 = 2049 > 2048 预算
+        // A single branch rule (does not violate MAX_TRANSFORM_RULES=128),
+        // but with an exploding on_true sub-instruction width:
+        // branch(1) + 2048 sub-instructions = 2049 > the 2048 budget
         let instruction = make_instruction("noop", &[]);
         let payload = make_payload(0);
 
@@ -1984,7 +2111,8 @@ mod tests {
             ),
         ]);
 
-        // 顶层仅 1 条规则：规则数防线无法拦截宽度爆炸，由预算防线兜底
+        // Only 1 top-level rule: the rule-count defense cannot intercept the
+        // width explosion; the budget defense is the backstop
         let core_eval = vec![branch];
 
         let result = execute_transition(&core_eval, &instruction, &payload, &[]);
@@ -1996,7 +2124,8 @@ mod tests {
 
     #[test]
     fn test_execute_transition_branch_width_within_budget_succeeds() {
-        // 对照组：branch(1) + 2047 子指令 = 2048 = 恰好满额预算，应成功
+        // Control group: branch(1) + 2047 sub-instructions = 2048 = exactly
+        // the full budget; should succeed
         let instruction = make_instruction("noop", &[]);
         let payload = make_payload(0);
 
@@ -2012,7 +2141,7 @@ mod tests {
             ),
         ]);
 
-        let width = MAX_TOTAL_META_INSTRUCTIONS - 1; // 2047：加上 branch 自身恰好 2048
+        let width = MAX_TOTAL_META_INSTRUCTIONS - 1; // 2047: plus the branch itself, exactly 2048
         let on_true: Vec<JsonValue> = (0..width).map(|_| sub.clone()).collect();
 
         let branch = JsonValue::object_from_pairs(&[
@@ -2037,14 +2166,14 @@ mod tests {
         let result = execute_transition(&core_eval, &instruction, &payload, &[]).unwrap();
         match result {
             TransitionResult::State { new_payload, .. } => {
-                // 1023 次 set(1)，最终 x = 1
+                // 1023 × set(1); final x = 1
                 assert_eq!(new_payload.get("x"), Some(&JsonValue::Integer(1)));
             }
             _ => panic!("expected State"),
         }
     }
 
-    // ===== 兜底规则测试 =====
+    // ===== Fallback rule tests =====
 
     #[test]
     fn test_catch_all_rule_matches_unknown_instruction() {
@@ -2079,13 +2208,13 @@ mod tests {
         }
     }
 
-    // ===== 多轮模拟测试 =====
+    // ===== Multi-round simulation tests =====
 
     #[test]
     fn test_execute_transition_multi_round_simulation() {
         let core_eval = multi_round_core_eval();
 
-        // === 第 1 轮：执行 spawn ===
+        // === Round 1: execute spawn ===
         let spawn_instr = make_instruction("spawn", &[]);
         let payload_round1 = make_payload(0);
 
@@ -2104,7 +2233,7 @@ mod tests {
         assert_eq!(queue_round2.len(), 2);
         assert_eq!(payload_round2.get("x"), Some(&JsonValue::Integer(0)));
 
-        // === 第 2 轮：执行第 1 个 increment (delta=5) ===
+        // === Round 2: execute the first increment (delta=5) ===
         let instr_round2 = &queue_round2[0];
         let queue_round2_remaining = &queue_round2[1..];
 
@@ -2128,7 +2257,7 @@ mod tests {
         assert_eq!(payload_round3.get("x"), Some(&JsonValue::Integer(5)));
         assert_eq!(queue_round3.len(), 1);
 
-        // === 第 3 轮：执行第 2 个 increment (delta=10) ===
+        // === Round 3: execute the second increment (delta=10) ===
         let instr_round3 = &queue_round3[0];
         let result_round3 =
             execute_transition(&core_eval, instr_round3, &payload_round3, &[]).unwrap();
@@ -2146,9 +2275,10 @@ mod tests {
         }
     }
 
-    // ===== while_loop 死循环防护专项单元测试（2026-08-18 显式警告改造回归） =====
+    // ===== while_loop infinite-loop protection dedicated unit tests
+    // ===== (2026-08-18 explicit-warning rework regression) =====
 
-    // 辅助函数：构造 domain 规则
+    // Helper: build a domain rule
     fn instruction_domain(instr_type: &str) -> JsonValue {
         JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("instruction")),
@@ -2192,25 +2322,31 @@ mod tests {
         ])
     }
 
-    /// 专项回归：while_loop 指令在 condition 为 false 时不应被报告为 Ignored
+    /// Dedicated regression: a while_loop instruction must not be reported
+    /// as Ignored when its condition is false
     ///
-    /// # 背景
+    /// # Background
     ///
-    /// 在添加 `TransitionResult::Ignored` 机制后，while_loop 指令在 condition 为 false 时
-    /// 不会执行 body（payload/queue 无变化），但这是合法的空操作，不应被误判为"指令被忽略"。
+    /// After the `TransitionResult::Ignored` mechanism was added, a
+    /// while_loop instruction with a false condition does not execute the
+    /// body (payload/queue unchanged) — but this is a legitimate no-op and
+    /// must not be misjudged as "instruction ignored".
     ///
-    /// # 测试场景
+    /// # Test scenario
     ///
-    /// 1. while_loop 指令被 `rule_while_loop` 匹配（has_matching_business_rule = true）
-    /// 2. condition 为 false（counter >= 3）
-    /// 3. 规则的 on_false 为空（payload/queue 无变化）
-    /// 4. 期望返回 State（合法空操作），而非 Ignored
+    /// 1. The while_loop instruction is matched by `rule_while_loop`
+    ///    (has_matching_business_rule = true)
+    /// 2. The condition is false (counter >= 3)
+    /// 3. The rule's on_false is empty (payload/queue unchanged)
+    /// 4. Expected return is State (legitimate no-op), not Ignored
     #[test]
-    // 102 行: while_loop 规则构造 + on_false 验证 + 多个不变量断言, 拆函数会让 fixture
-    // 上下文散落, 不利于阅读; test fixture 故意复杂
+    // 102 lines: while_loop rule construction + on_false verification +
+    // several invariant assertions; splitting would scatter the fixture
+    // context and hurt readability; the test fixture is intentionally
+    // complex
     #[allow(clippy::too_many_lines)]
     fn test_while_loop_condition_false_returns_state_not_ignored() {
-        // 构造 while_loop 规则
+        // Build the while_loop rule
         let rule_while_loop = branch_rule(
             instruction_domain("while_loop"),
             vec![branch_rule(
@@ -2236,7 +2372,7 @@ mod tests {
             vec![],
         );
 
-        // 构造 increment 规则（用于 while_loop body）
+        // Build the increment rule (used as the while_loop body)
         let rule_increment = branch_rule(
             instruction_domain("increment"),
             vec![JsonValue::object_from_pairs(&[
@@ -2259,7 +2395,7 @@ mod tests {
             vec![],
         );
 
-        // 构造 all 兜底规则
+        // Build the all fallback rule
         let rule_catch_all = branch_rule(
             JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("all")),
@@ -2271,7 +2407,8 @@ mod tests {
 
         let core_eval = vec![rule_increment, rule_while_loop, rule_catch_all];
 
-        // 真实的 while_loop 指令结构: {type: "while_loop", params: {condition: ..., body: ...}}
+        // Real while_loop instruction structure:
+        // {type: "while_loop", params: {condition: ..., body: ...}}
         let actual_while_loop_instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("while_loop")),
             (
@@ -2292,28 +2429,29 @@ mod tests {
             ),
         ]);
 
-        // counter = 5，条件 counter < 3 为 false
+        // counter = 5, so the condition counter < 3 is false
         let payload_counter_5 = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(5))]);
 
-        // 执行 while_loop 指令
+        // Execute the while_loop instruction
         let result = execute_transition(
             &core_eval,
             &actual_while_loop_instr,
             &payload_counter_5,
             &[],
         )
-        .expect("执行应成功");
+        .expect("execution should succeed");
 
-        // 期望返回 State（合法空操作），而非 Ignored
+        // Expected return is State (legitimate no-op), not Ignored
         match result {
             TransitionResult::State {
                 new_payload,
                 new_queue,
                 ..
             } => {
-                // payload 保持不变（counter 仍为 5，因为条件为 false 不执行 body）
+                // payload unchanged (counter still 5, since the false
+                // condition skips the body)
                 assert_eq!(new_payload.get("counter"), Some(&JsonValue::Integer(5)));
-                // 队列保持不变
+                // queue unchanged
                 assert!(new_queue.is_empty());
             }
             TransitionResult::Ignored {
@@ -2322,25 +2460,27 @@ mod tests {
                 ..
             } => {
                 panic!(
-                    "while_loop 指令不应被标记为 Ignored (type={}, reason={})。\n\
-                     这是合法的空操作：while_loop 规则匹配了此指令（instruction domain 匹配），\n\
-                     但 condition 为 false 时不执行 body。",
+                    "the while_loop instruction must not be marked Ignored (type={}, reason={}).\n\
+                     This is a legitimate no-op: the while_loop rule matched this instruction \
+                     (instruction domain matched),\n\
+                     but the body is not executed when the condition is false.",
                     instruction_type, reason
                 );
             }
-            _ => panic!("应返回 State 或 Ignored"),
+            _ => panic!("expected State or Ignored"),
         }
     }
 
-    /// 专项回归：while_loop 指令在 condition 为 true 时正常执行 body
+    /// Dedicated regression: a while_loop instruction executes its body
+    /// normally when the condition is true
     ///
-    /// # 验证点
+    /// # Verification points
     ///
-    /// 当 condition 为 true 时，while_loop 应该 push body 和自身到队列中，
-    /// 以便下一轮继续执行循环。
+    /// When the condition is true, while_loop should push the body and
+    /// itself onto the queue so the next round continues the loop.
     #[test]
     fn test_while_loop_condition_true_executes_body() {
-        // 构造 while_loop 规则
+        // Build the while_loop rule
         let rule_while_loop = branch_rule(
             instruction_domain("while_loop"),
             vec![branch_rule(
@@ -2362,7 +2502,8 @@ mod tests {
 
         let core_eval = vec![rule_while_loop];
 
-        // while_loop 指令：condition = counter < 3，body = increment counter
+        // while_loop instruction: condition = counter < 3,
+        // body = increment counter
         let while_loop_instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("while_loop")),
             (
@@ -2383,38 +2524,41 @@ mod tests {
             ),
         ]);
 
-        // counter = 0，条件 counter < 3 为 true
+        // counter = 0, so the condition counter < 3 is true
         let payload_counter_0 = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
         let result = execute_transition(&core_eval, &while_loop_instr, &payload_counter_0, &[])
-            .expect("执行应成功");
+            .expect("execution should succeed");
 
-        // 期望返回 State，且队列中有 body 和自身
+        // Expected return is State, with the body and itself in the queue
         match result {
             TransitionResult::State { new_queue, .. } => {
-                // 队列中应有 2 个指令：body 和 while_loop 自身
+                // The queue should hold 2 instructions: the body and the
+                // while_loop itself
                 assert_eq!(
                     new_queue.len(),
                     2,
-                    "while_loop condition 为 true 时应 push body 和自身到队列"
+                    "when the while_loop condition is true, the body and itself should be pushed onto the queue"
                 );
             }
-            _ => panic!("while_loop condition 为 true 时应返回 State 并 push 指令"),
+            _ => panic!("when the while_loop condition is true, State should be returned with the instructions pushed"),
         }
     }
 
-    /// 专项回归：while_loop 指令无匹配规则时应被报告为 Ignored
+    /// Dedicated regression: a while_loop instruction with no matching rule
+    /// should be reported as Ignored
     ///
-    /// # 验证点
+    /// # Verification points
     ///
-    /// 当 core_eval 中没有匹配 while_loop 的规则时，
-    /// while_loop 指令应被正确识别为 Ignored，便于审计和调试。
+    /// When no rule in core_eval matches while_loop, the while_loop
+    /// instruction should be correctly identified as Ignored, easing audit
+    /// and debugging.
     #[test]
     fn test_while_loop_no_matching_rule_returns_ignored() {
-        // 空的 core_eval（无规则）
+        // Empty core_eval (no rules)
         let core_eval: Vec<JsonValue> = vec![];
 
-        // while_loop 指令
+        // while_loop instruction
         let while_loop_instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("while_loop")),
             (
@@ -2438,9 +2582,9 @@ mod tests {
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
         let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
 
-        // 期望返回 Ignored（无匹配规则）
+        // Expected return is Ignored (no matching rule)
         match result {
             TransitionResult::Ignored {
                 instruction_type,
@@ -2448,38 +2592,48 @@ mod tests {
                 ..
             } => {
                 assert_eq!(instruction_type, "while_loop");
-                assert!(reason.contains("not matched"), "reason 应说明指令未被匹配");
+                assert!(reason.contains("not matched"), "reason should indicate the instruction was not matched");
             }
             TransitionResult::State { .. } => {
-                panic!("无匹配规则的 while_loop 指令应返回 Ignored，而非 State");
+                panic!("a while_loop instruction with no matching rule should return Ignored, not State");
             }
-            _ => panic!("应返回 Ignored"),
+            _ => panic!("expected Ignored"),
         }
     }
 
-    // ===== P0 级高风险边界测试（2026-08-18 补充） =====
+    // ===== P0-level high-risk boundary tests (added 2026-08-18) =====
 
-    /// 可达性哨兵：无 params 的直接规则在执行阶段即失败，静默失败检测的
-    /// 直接规则分支（`rule_type == instruction_type`）对此形态不可达。
+    /// Reachability sentinel: a bare direct rule without params fails at the
+    /// execution stage, so the direct-rule branch of silent-failure
+    /// detection (`rule_type == instruction_type`) is unreachable for that
+    /// shape.
     ///
-    /// # 背景（o01 残留 MISSED 突变归因）
+    /// # Background (residual MISSED mutation attribution from an earlier internal batch)
     ///
-    /// 静默失败检测含一条直接规则分支：规则无 params（或 params 非对象）且
-    /// type ∈ {set, increment, decrement, branch} 时，按
-    /// `rule_type == instruction_type` 判定宪法规则匹配。该分支的
-    /// `==`→`!=` 突变在 cargo-mutants 中存活（等价突变）——归因：
-    /// 执行器 dispatch 只认 5 种元指令类型（set/push/branch/io_request/
-    /// enforce），increment/decrement 属用户指令类型；而无 params 的
-    /// set/branch 在 exec 层即报缺字段错误。任何能通过执行阶段到达
-    /// 匹配检测的规则必然带 params 对象（进 domain 分支）——直接规则
-    /// 分支在当前执行器语义下不可触达，突变无法用行为测试杀灭。
+    /// Silent-failure detection contains a direct-rule branch: when a rule
+    /// has no params (or params is not an object) and its type is in
+    /// {set, increment, decrement, branch}, constitution-rule matching is
+    /// decided by `rule_type == instruction_type`. The `==`→`!=` mutation of
+    /// that branch survives cargo-mutants (an equivalent mutation) —
+    /// attribution: the executor dispatch only recognizes the 5 meta
+    /// instruction types (set/push/branch/io_request/enforce);
+    /// increment/decrement are user instruction types, and set/branch
+    /// without params already fail with a missing-field error at the exec
+    /// layer. Any rule that can pass the execution stage and reach match
+    /// detection necessarily carries a params object (entering the domain
+    /// branch) — the direct-rule branch is unreachable under the current
+    /// executor semantics, so the mutation cannot be killed by behavioral
+    /// tests.
     ///
-    /// # 本测试锁定的契约
+    /// # Contract locked by this test
     ///
-    /// 四种白名单类型的无 params 裸规则在执行阶段一律 Err——未来若执行器
-    /// 放宽（如 increment/decrement 收编为元指令，或 exec 容忍缺 params），
-    /// 本测试红，维护者须回到匹配检测分支补对应匹配/不匹配行为测试
-    /// （届时该分支变为可达，`==` 突变可杀）。
+    /// Bare rules of the four whitelisted types without params always fail
+    /// with Err at the execution stage — if the executor ever relaxes (e.g.
+    /// increment/decrement are absorbed as meta instructions, or exec
+    /// tolerates missing params), this test goes red and maintainers must
+    /// return to the match-detection branch and add the corresponding
+    /// match/no-match behavioral tests (at that point the branch becomes
+    /// reachable and the `==` mutation killable).
     #[test]
     fn test_bare_direct_rules_fail_before_match_detection() {
         let instr = make_instruction(
@@ -2496,22 +2650,25 @@ mod tests {
             let result = execute_transition(&[rule], &instr, &payload, &[]);
             assert!(
                 result.is_err(),
-                "无 params 的裸 '{bare_type}' 规则应在执行阶段报错（静默失败检测的\
-                 直接规则分支对其不可达的前提）；实际: {:?}",
+                "bare '{bare_type}' rule without params should error at the execution stage \
+                 (the premise under which the direct-rule branch of silent-failure detection \
+                 is unreachable for it); got: {:?}",
                 result
             );
         }
     }
 
-    /// B3 场景：all 兜底规则不应被视为业务规则
+    /// B3 scenario: the all fallback rule must not be treated as a business
+    /// rule
     ///
-    /// # 风险说明
+    /// # Risk note
     ///
-    /// all([]) 是兜底机制，不应被误判为业务规则。
-    /// 如果 all 兜底被误判为业务规则，真正的指令不匹配将被静默忽略。
+    /// all([]) is a fallback mechanism and must not be misjudged as a
+    /// business rule. If the all fallback were misjudged as a business
+    /// rule, genuine instruction non-matches would be silently ignored.
     #[test]
     fn test_while_loop_all_fallback_rule_returns_ignored() {
-        // 仅包含 all 兜底规则的 core_eval
+        // core_eval containing only the all fallback rule
         let rule_catch_all = branch_rule(
             JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("all")),
@@ -2523,7 +2680,7 @@ mod tests {
 
         let core_eval = vec![rule_catch_all];
 
-        // while_loop 指令
+        // while_loop instruction
         let while_loop_instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("while_loop")),
             (
@@ -2547,9 +2704,10 @@ mod tests {
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
         let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
 
-        // 期望返回 Ignored（all 兜底不是业务规则）
+        // Expected return is Ignored (the all fallback is not a business
+        // rule)
         match result {
             TransitionResult::Ignored {
                 instruction_type,
@@ -2561,36 +2719,41 @@ mod tests {
             }
             TransitionResult::State { .. } => {
                 panic!(
-                    "all 兜底规则不应被视为业务规则。\n\
-                     如果此测试失败，说明 all 兜底被误判为业务规则，\n\
-                     可能导致真正的指令不匹配被静默忽略。"
+                    "the all fallback rule must not be treated as a business rule.\n\
+                     If this test fails, the all fallback was misjudged as a business rule,\n\
+                     which could let genuine instruction non-matches be silently ignored."
                 );
             }
-            _ => panic!("应返回 Ignored"),
+            _ => panic!("expected Ignored"),
         }
     }
 
-    /// 语义验证：未知指令类型在"全部规则未命中 → 兜底规则无操作"下返回 Ignored
+    /// Semantic verification: an unknown instruction type returns Ignored
+    /// under "all rules miss → fallback rule no-ops"
     ///
-    /// # 背景
+    /// # Background
     ///
-    /// 规则集为应用剧本形态的 I/O 循环组合（同名测试曾称 ReAct 宪法；
-    /// 资产自 T8 迁出后，此类剧本不再属于核心仓），本用例守护的是
-    /// transition 层第三态语义：所有规则都未产生效果且无副作用时返回 Ignored。
+    /// The rule set is an application-playbook-shaped I/O loop combination
+    /// (a same-named test once called it the ReAct constitution; after the
+    /// assets were migrated out at T8, such playbooks no longer belong to
+    /// the core repo). What this case guards is the transition layer's
+    /// third-state semantics: when all rules produce no effect and there
+    /// are no side effects, return Ignored.
     ///
-    /// # 边界澄清
+    /// # Boundary clarification
     ///
-    /// 元指令层未知类型走 executor 硬拒绝（UnknownMetaInstruction），
-    /// 本用例针对的是指令层类型（如 query_db）未被任何 transform 规则命中的情形，
-    /// 两者正交。
+    /// Unknown types at the meta-instruction layer go through the executor's
+    /// hard rejection (UnknownMetaInstruction); this case targets
+    /// instruction-layer types (e.g. query_db) hit by no transform rule —
+    /// the two are orthogonal.
     ///
-    /// # 验证点
+    /// # Verification points
     ///
-    /// 未知指令类型应被正确识别为 Ignored，
-    /// 即使存在动态 domain 规则的嵌套。
+    /// An unknown instruction type should be correctly identified as
+    /// Ignored, even with dynamic-domain rules nested inside.
     #[test]
     fn test_unknown_instruction_unmatched_by_all_rules_returns_ignored() {
-        // 构造简化的 I/O 循环规则集
+        // Build a simplified I/O loop rule set
         let rule_noop = branch_rule(instruction_domain("noop"), vec![], vec![]);
 
         let rule_catch_all = branch_rule(
@@ -2606,8 +2769,9 @@ mod tests {
 
         let rule_call_service = branch_rule(instruction_domain("call_service"), vec![], vec![]);
 
-        // 注意：rule_self_init 使用 all domain，不是动态 domain
-        // 动态 domain 规则（exists, has_fields）嵌套在 on_true 分支中
+        // Note: rule_self_init uses an all domain, not a dynamic domain;
+        // dynamic-domain rules (exists, has_fields) are nested inside the
+        // on_true branch
         let core_eval = vec![
             rule_noop,
             rule_call_external,
@@ -2615,15 +2779,15 @@ mod tests {
             rule_catch_all,
         ];
 
-        // 未知指令类型（如旧版的 query_db）
+        // Unknown instruction type (e.g. the legacy query_db)
         let unknown_instr = make_instruction("query_db", &[]);
 
         let payload = JsonValue::object_from_pairs(&[("x", JsonValue::Integer(42))]);
 
         let result =
-            execute_transition(&core_eval, &unknown_instr, &payload, &[]).expect("执行应成功");
+            execute_transition(&core_eval, &unknown_instr, &payload, &[]).expect("execution should succeed");
 
-        // 验证返回 Ignored
+        // Verify the return is Ignored
         match result {
             TransitionResult::Ignored {
                 instruction_type,
@@ -2635,35 +2799,39 @@ mod tests {
             }
             TransitionResult::State { .. } => {
                 panic!(
-                    "未知指令类型应返回 Ignored，而非 State。\n\
-                     这说明 Ignored 检测逻辑可能有问题——\n\
-                     请检查是否有动态 domain 规则在顶层被误判为通用规则。"
+                    "an unknown instruction type should return Ignored, not State.\n\
+                     This suggests the Ignored detection logic may be flawed —\n\
+                     check whether a dynamic-domain rule was misjudged as a general rule \
+                     at the top level."
                 );
             }
-            _ => panic!("应返回 Ignored 或 State"),
+            _ => panic!("expected Ignored or State"),
         }
     }
 
-    /// B4 场景：动态 domain 规则（lt/eq）视为通用规则，可处理任何指令
+    /// B4 scenario: dynamic-domain rules (lt/eq) count as general rules and
+    /// can handle any instruction
     ///
-    /// # 规则分类（docs/rule_taxonomy.md）
+    /// # Rule taxonomy (docs/rule_taxonomy.md)
     ///
-    /// 动态 domain（eq, lt, gt 等）基于 payload 内容决策，
-    /// 视为通用规则，可处理任何指令。
+    /// Dynamic domains (eq, lt, gt etc.) decide based on payload content
+    /// and count as general rules, able to handle any instruction.
     ///
-    /// # 验证点
+    /// # Verification points
     ///
-    /// lt 规则是通用规则，可以处理 while_loop 指令，
-    /// 但由于 while_loop 指令本身没有副作用（只是条件检查），
-    /// 如果 lt 条件不满足，可能会返回 State（合法空操作）。
+    /// An lt rule is a general rule and can handle the while_loop
+    /// instruction; since the while_loop instruction itself has no side
+    /// effects (it is only a condition check), if the lt condition is not
+    /// satisfied the result may be State (a legitimate no-op).
     #[test]
     fn test_while_loop_dynamic_domain_rule_returns_state() {
-        // 仅包含 lt 规则的 core_eval（动态 domain，通用规则）
+        // core_eval containing only the lt rule (dynamic domain, general
+        // rule)
         let rule_lt = branch_rule(lt_domain("__exec__.payload.counter", 3), vec![], vec![]);
 
         let core_eval = vec![rule_lt];
 
-        // while_loop 指令
+        // while_loop instruction
         let while_loop_instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("while_loop")),
             (
@@ -2684,42 +2852,50 @@ mod tests {
             ),
         ]);
 
-        // counter = 0，lt 条件满足，但 on_true 为空，无副作用
+        // counter = 0, the lt condition is satisfied, but on_true is empty —
+        // no side effects
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
         let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
 
-        // 动态 domain 规则是通用规则，可以处理 while_loop 指令
+        // Dynamic-domain rules are general rules and can handle the
+        // while_loop instruction
         match result {
             TransitionResult::State { .. } => {
-                // ✅ 正确：动态 domain 规则是通用规则，匹配 while_loop 指令
-                // 即使没有副作用，也应该返回 State（规则匹配了）
+                // ✅ Correct: dynamic-domain rules are general rules that
+                // match the while_loop instruction
+                // even with no side effects, the result should be State
+                // (the rule matched)
             }
             TransitionResult::Ignored { .. } => {
                 panic!(
-                    "动态 domain 规则（lt）是通用规则，应匹配 while_loop 指令。\n\
-                     如果此测试失败，说明动态 domain 规则的匹配逻辑有问题。"
+                    "the dynamic-domain rule (lt) is a general rule and should match the \
+                     while_loop instruction.\n\
+                     If this test fails, the dynamic-domain rule matching logic is flawed."
                 );
             }
-            _ => panic!("应返回 State 或 Ignored"),
+            _ => panic!("expected State or Ignored"),
         }
     }
 
-    /// B5 场景：直接规则（set）不匹配 while_loop 指令，但会产生副作用
+    /// B5 scenario: a direct rule (set) does not match the while_loop
+    /// instruction, but produces side effects
     ///
-    /// # 规则分类（docs/rule_taxonomy.md）
+    /// # Rule taxonomy (docs/rule_taxonomy.md)
     ///
-    /// 直接规则（set, increment 等）只有在 rule_type 匹配 instruction_type 时
-    /// 才视为宪法规则匹配。
+    /// Direct rules (set, increment etc.) count as constitution-rule
+    /// matches only when rule_type matches instruction_type.
     ///
-    /// # 验证点
+    /// # Verification points
     ///
-    /// set 规则不匹配 while_loop 指令，但会改变 payload（副作用），
-    /// 因此返回 State（而非 Ignored）。这是正确的行为，因为确实发生了副作用。
+    /// The set rule does not match the while_loop instruction, but it
+    /// changes the payload (side effects), so the result is State (not
+    /// Ignored). This is correct behavior, because a side effect genuinely
+    /// occurred.
     #[test]
     fn test_while_loop_direct_rule_mismatch_has_side_effect() {
-        // 仅包含 set 直接规则的 core_eval（无 domain）
+        // core_eval containing only the set direct rule (no domain)
         let rule_set = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("set")),
             (
@@ -2734,7 +2910,7 @@ mod tests {
 
         let core_eval = vec![rule_set];
 
-        // while_loop 指令
+        // while_loop instruction
         let while_loop_instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("while_loop")),
             (
@@ -2758,36 +2934,40 @@ mod tests {
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
         let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
 
-        // 改进后行为：set 规则不匹配 while_loop，但会改变 payload
+        // Post-improvement behavior: the set rule does not match
+        // while_loop, but it does change the payload
         match result {
             TransitionResult::State { new_payload, .. } => {
-                // ✅ 正确：虽然规则不匹配，但确实改变了 payload
+                // ✅ Correct: although the rule did not match, the payload
+                // was genuinely changed
                 assert_eq!(
                     new_payload.get("counter"),
                     Some(&JsonValue::Integer(10)),
-                    "set 规则应将 counter 设置为 10"
+                    "the set rule should set counter to 10"
                 );
             }
             TransitionResult::Ignored { .. } => {
                 panic!(
-                    "set 规则改变了 payload，不应返回 Ignored。\n\
-                     直接规则虽然不匹配 while_loop 指令，但确实产生了副作用。"
+                    "the set rule changed the payload, so Ignored must not be returned.\n\
+                     The direct rule does not match the while_loop instruction, but it did \
+                     produce a side effect."
                 );
             }
-            _ => panic!("应返回 State 或 Ignored"),
+            _ => panic!("expected State or Ignored"),
         }
     }
 
-    /// B5b 场景：直接规则匹配时应正确识别
+    /// B5b scenario: direct-rule matches should be correctly identified
     ///
-    /// # 验证点
+    /// # Verification points
     ///
-    /// set 直接规则匹配 set 指令时，应正确识别为宪法规则匹配。
+    /// When the set direct rule matches a set instruction, it should be
+    /// correctly identified as a constitution-rule match.
     #[test]
     fn test_set_direct_rule_matches_set_instruction() {
-        // 仅包含 set 直接规则的 core_eval
+        // core_eval containing only the set direct rule
         let rule_set = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("set")),
             (
@@ -2802,7 +2982,7 @@ mod tests {
 
         let core_eval = vec![rule_set];
 
-        // set 指令
+        // set instruction
         let set_instr = make_instruction(
             "set",
             &[
@@ -2814,39 +2994,41 @@ mod tests {
 
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
-        let result = execute_transition(&core_eval, &set_instr, &payload, &[]).expect("执行应成功");
+        let result = execute_transition(&core_eval, &set_instr, &payload, &[]).expect("execution should succeed");
 
-        // set 规则匹配 set 指令，且产生了副作用
+        // The set rule matches the set instruction and produces side effects
         match result {
             TransitionResult::State { new_payload, .. } => {
                 assert_eq!(
                     new_payload.get("counter"),
                     Some(&JsonValue::Integer(10)),
-                    "set 规则应正确执行"
+                    "the set rule should execute correctly"
                 );
             }
-            _ => panic!("应返回 State"),
+            _ => panic!("expected State"),
         }
     }
 
-    /// E2 场景：规则匹配但 on_true 分支为空时仍应返回 State
+    /// E2 scenario: a matched rule with an empty on_true branch should still
+    /// return State
     ///
-    /// # 风险说明
+    /// # Risk note
     ///
-    /// 当规则匹配但执行结果为空（on_true/on_false 都为空）时，
-    /// 不应误判为 Ignored。这是合法的空操作场景。
+    /// When a rule matches but the execution result is empty (both
+    /// on_true/on_false empty), it must not be misjudged as Ignored. This is
+    /// a legitimate no-op scenario.
     #[test]
     fn test_while_loop_matched_rule_empty_on_true_returns_state() {
-        // while_loop 规则：on_true 和 on_false 都为空
+        // while_loop rule: both on_true and on_false are empty
         let rule_while_loop = branch_rule(
             instruction_domain("while_loop"),
-            vec![], // on_true 为空
-            vec![], // on_false 为空
+            vec![], // on_true is empty
+            vec![], // on_false is empty
         );
 
         let core_eval = vec![rule_while_loop];
 
-        // while_loop 指令
+        // while_loop instruction
         let while_loop_instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("while_loop")),
             (
@@ -2870,16 +3052,17 @@ mod tests {
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
         let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
 
-        // 期望返回 State（规则匹配，即使无操作也应视为合法空操作）
+        // Expected return is State (the rule matched; even a no-op counts
+        // as a legitimate no-op)
         match result {
             TransitionResult::State {
                 new_payload,
                 new_queue,
                 ..
             } => {
-                // payload 和 queue 保持不变
+                // payload and queue unchanged
                 assert_eq!(new_payload.get("counter"), Some(&JsonValue::Integer(0)));
                 assert!(new_queue.is_empty());
             }
@@ -2889,24 +3072,27 @@ mod tests {
                 ..
             } => {
                 panic!(
-                    "规则匹配但 on_true 为空时不应返回 Ignored。\n\
+                    "a matched rule with an empty on_true must not return Ignored.\n\
                      instruction_type: {}, reason: {}\n\
-                     这表明空操作检测逻辑需要改进：应先检查规则是否匹配，\n\
-                     而非仅依赖 payload/queue 是否变化。",
+                     This shows the no-op detection logic needs improvement: it should first \
+                     check whether the rule matched,\n\
+                     rather than relying only on whether payload/queue changed.",
                     instruction_type, reason
                 );
             }
-            _ => panic!("应返回 State 或 Ignored"),
+            _ => panic!("expected State or Ignored"),
         }
     }
 
-    // ===== P1 级补充测试（B1, B2, I1） =====
+    // ===== P1-level supplementary tests (B1, B2, I1) =====
 
-    /// B1: instruction domain 指向其他指令类型（increment 规则，while_loop 指令）
-    /// 验证 instruction domain 的精确匹配逻辑
+    /// B1: the instruction domain points at another instruction type
+    /// (increment rule, while_loop instruction) — verifies the exact-match
+    /// logic of the instruction domain
     #[test]
     fn test_while_loop_instruction_domain_mismatch_returns_ignored() {
-        // 规则用 instruction("increment") domain，但指令是 while_loop
+        // The rule uses an instruction("increment") domain, but the
+        // instruction is while_loop
         let rule_increment = branch_rule(
             instruction_domain("increment"),
             vec![JsonValue::object_from_pairs(&[
@@ -2924,7 +3110,7 @@ mod tests {
 
         let core_eval = vec![rule_increment];
 
-        // while_loop 指令
+        // while_loop instruction
         let while_loop_instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("while_loop")),
             (
@@ -2948,9 +3134,10 @@ mod tests {
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
         let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
 
-        // 期望返回 Ignored（instruction domain 精确匹配失败）
+        // Expected return is Ignored (the instruction domain's exact match
+        // fails)
         match result {
             TransitionResult::Ignored {
                 instruction_type,
@@ -2965,19 +3152,23 @@ mod tests {
                 );
             }
             other => panic!(
-                "期望返回 Ignored（instruction domain 不匹配），实际返回: {:?}",
+                "expected Ignored (instruction domain mismatch), got: {:?}",
                 other
             ),
         }
     }
 
-    /// B2: all 域 with 非空子域返回 false
-    /// 验证边界条件：all 域中有子域返回 false → on_false 执行但无副作用 → Ignored
+    /// B2: an all domain with a non-empty inner returning false
+    /// Verifies the boundary condition: a sub-domain inside the all domain
+    /// returns false → on_false executes but has no side effects → Ignored
     #[test]
     fn test_while_loop_instruction_domain_missing_type_returns_ignored() {
-        // all 域中有一个子域 (counter == 100)，由于 counter=0，子域返回 false
-        // 因此 all 域整体返回 false，on_false 分支被选中
-        // on_false 为空，无副作用，且 all 不是业务规则 → Ignored
+        // The all domain has one sub-domain (counter == 100); since
+        // counter=0, the sub-domain returns false.
+        // Therefore the all domain returns false overall and the on_false
+        // branch is selected.
+        // on_false is empty — no side effects — and all is not a business
+        // rule → Ignored.
         let rule_all = branch_rule(
             JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("all")),
@@ -3000,8 +3191,8 @@ mod tests {
                         ("value", JsonValue::Integer(1)),
                     ]),
                 ),
-            ])], // on_true: 有操作但不会被执行
-            vec![], // on_false: 空（无副作用）
+            ])], // on_true: has an operation but it will not execute
+            vec![], // on_false: empty (no side effects)
         );
 
         let core_eval = vec![rule_all];
@@ -3029,9 +3220,10 @@ mod tests {
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
         let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
 
-        // 期望返回 Ignored（all 子域返回 false → on_false 空 → 无副作用 → Ignored）
+        // Expected return is Ignored (all sub-domain false → on_false empty
+        // → no side effects → Ignored)
         match result {
             TransitionResult::Ignored {
                 instruction_type,
@@ -3046,21 +3238,21 @@ mod tests {
                 );
             }
             other => panic!(
-                "期望返回 Ignored（all 子域 false → on_false 空），实际返回: {:?}",
+                "expected Ignored (all sub-domain false → empty on_false), got: {:?}",
                 other
             ),
         }
     }
 
-    /// I1: 指令无 type 字段
-    /// 验证 instruction_type 回退到 "unknown" 的逻辑
+    /// I1: the instruction has no type field
+    /// Verifies the fallback of instruction_type to "unknown"
     #[test]
     fn test_while_loop_instruction_missing_type_returns_ignored() {
         let rule_while_loop = branch_rule(instruction_domain("while_loop"), vec![], vec![]);
 
         let core_eval = vec![rule_while_loop];
 
-        // 指令结构缺少 type 字段
+        // Instruction structure missing the type field
         let instr_no_type = JsonValue::object_from_pairs(&[(
             "params",
             JsonValue::object_from_pairs(&[
@@ -3081,9 +3273,10 @@ mod tests {
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
         let result =
-            execute_transition(&core_eval, &instr_no_type, &payload, &[]).expect("执行应成功");
+            execute_transition(&core_eval, &instr_no_type, &payload, &[]).expect("execution should succeed");
 
-        // 期望返回 Ignored（instruction_type 回退到 "unknown"，规则无匹配）
+        // Expected return is Ignored (instruction_type falls back to
+        // "unknown"; no rule matches)
         match result {
             TransitionResult::Ignored {
                 instruction_type,
@@ -3098,22 +3291,22 @@ mod tests {
                 );
             }
             other => panic!(
-                "期望返回 Ignored（指令缺少 type 字段），实际返回: {:?}",
+                "expected Ignored (instruction missing the type field), got: {:?}",
                 other
             ),
         }
     }
 
-    // ===== P2 级补充测试（B6, I2, E1） =====
+    // ===== P2-level supplementary tests (B6, I2, E1) =====
 
-    /// B6: 混合规则场景（第一条不匹配，第二条匹配）
-    /// 验证多条规则时的匹配逻辑
+    /// B6: mixed-rule scenario (the first rule does not match, the second
+    /// does) — verifies the matching logic across multiple rules
     #[test]
     fn test_while_loop_mixed_rules_second_matches_returns_state() {
-        // 第一条规则：increment domain（不匹配 while_loop）
+        // First rule: increment domain (does not match while_loop)
         let rule_increment = branch_rule(instruction_domain("increment"), vec![], vec![]);
 
-        // 第二条规则：while_loop domain（匹配）
+        // Second rule: while_loop domain (matches)
         let rule_while_loop = branch_rule(instruction_domain("while_loop"), vec![], vec![]);
 
         let core_eval = vec![rule_increment, rule_while_loop];
@@ -3141,27 +3334,27 @@ mod tests {
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
         let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
 
-        // 期望返回 State（第二条规则匹配）
+        // Expected return is State (the second rule matches)
         match result {
             TransitionResult::State { .. } => { /* OK */ }
             other => panic!(
-                "期望返回 State（混合规则中第二条匹配），实际返回: {:?}",
+                "expected State (the second of the mixed rules matched), got: {:?}",
                 other
             ),
         }
     }
 
-    /// I2: 指令 type 为 null
-    /// 验证 type 为 null 时的处理
+    /// I2: the instruction type is null
+    /// Verifies handling when type is null
     #[test]
     fn test_while_loop_instruction_null_type_returns_ignored() {
         let rule_while_loop = branch_rule(instruction_domain("while_loop"), vec![], vec![]);
 
         let core_eval = vec![rule_while_loop];
 
-        // 指令 type 为 null
+        // Instruction type is null
         let instr_null_type = JsonValue::object_from_pairs(&[
             ("type", JsonValue::Null),
             (
@@ -3185,9 +3378,10 @@ mod tests {
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
         let result =
-            execute_transition(&core_eval, &instr_null_type, &payload, &[]).expect("执行应成功");
+            execute_transition(&core_eval, &instr_null_type, &payload, &[]).expect("execution should succeed");
 
-        // 期望返回 Ignored（type 为 null 时 instruction_type 回退到 "unknown"）
+        // Expected return is Ignored (with a null type, instruction_type
+        // falls back to "unknown")
         match result {
             TransitionResult::Ignored {
                 instruction_type,
@@ -3201,21 +3395,24 @@ mod tests {
                     reason
                 );
             }
-            other => panic!("期望返回 Ignored（type 为 null 时），实际返回: {:?}", other),
+            other => panic!("expected Ignored (type is null), got: {:?}", other),
         }
     }
 
-    /// E1: on_false 分支有操作
-    /// 验证 on_false 分支的执行：内层 branch 检查 condition，false 时执行 on_false
+    /// E1: the on_false branch has operations
+    /// Verifies on_false branch execution: the inner branch checks the
+    /// condition, and on false executes on_false
     #[test]
     fn test_while_loop_on_false_executes_operations() {
-        // while_loop 规则：外层匹配 while_loop 指令，内层检查 condition
-        // 当 condition=false (counter >= 3) 时，执行 on_false 中的 set 操作
+        // while_loop rule: the outer layer matches the while_loop
+        // instruction; the inner layer checks the condition.
+        // When condition=false (counter >= 3), the set operation inside
+        // on_false executes.
         let rule_while_loop = branch_rule(
             instruction_domain("while_loop"),
             vec![branch_rule(
                 lt_domain("__exec__.payload.counter", 3),
-                vec![], // condition=true (on_true): 空操作
+                vec![], // condition=true (on_true): no-op
                 vec![JsonValue::object_from_pairs(&[
                     ("type", JsonValue::string("set")),
                     (
@@ -3226,14 +3423,14 @@ mod tests {
                             ("value", JsonValue::Integer(1)),
                         ]),
                     ),
-                ])], // condition=false (on_false): 设置 flag=1
+                ])], // condition=false (on_false): sets flag=1
             )],
             vec![],
         );
 
         let core_eval = vec![rule_while_loop];
 
-        // while_loop 指令，condition=false（counter >= 3）
+        // while_loop instruction, condition=false (counter >= 3)
         let while_loop_instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("while_loop")),
             (
@@ -3254,38 +3451,46 @@ mod tests {
             ),
         ]);
 
-        // counter 初始值为 5，condition (5 < 3) = false
+        // counter starts at 5, so condition (5 < 3) = false
         let payload = JsonValue::object_from_pairs(&[
             ("counter", JsonValue::Integer(5)),
             ("flag", JsonValue::Integer(0)),
         ]);
 
         let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("执行应成功");
+            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
 
-        // 期望返回 State（内层 branch 的 on_false 分支被执行）
+        // Expected return is State (the inner branch's on_false branch
+        // executed)
         match result {
             TransitionResult::State { new_payload, .. } => {
-                // on_false 中的 set 操作应被执行，flag 变为 1
+                // The set operation inside on_false should have executed;
+                // flag becomes 1
                 assert_eq!(
                     new_payload.get("flag"),
                     Some(&JsonValue::Integer(1)),
-                    "on_false 中的 set 操作应被执行，flag 应变为 1"
+                    "the set operation inside on_false should execute, flag should become 1"
                 );
             }
             other => panic!(
-                "期望返回 State（on_false 分支有操作），实际返回: {:?}",
+                "expected State (the on_false branch has operations), got: {:?}",
                 other
             ),
         }
     }
 
-    // ===== I/O 循环组合语义端到端测试（io_request 的语言层组合回归） =====
-    // 规则集为内联构造的应用剧本形态：1) 计数器自初始化；2) call_external；3) call_service。
-    // 核心仓最小评估集不再携带此类剧本（T8 迁出）；此模块守护的是元指令组合的执行语义，
-    // 工具扇出/结果合并等循环编排职责在应用层 runner（collect/merge 原语已退役，历史批次）。
-    // 嵌套子 mod（不写 `#[cfg(test)]`，继承父 mod 的 cfg(test)，
-    // build.rs L1 门禁的 strip_test_mod 会把整个 mod tests 块一起剥掉）
+    // ===== I/O loop composition-semantics end-to-end tests (language-level
+    // ===== composition regression for io_request) =====
+    // The rule set is an inline-built application-playbook shape:
+    // 1) counter self-initialization; 2) call_external; 3) call_service.
+    // The core repo's minimal evaluation set no longer carries such
+    // playbooks (migrated out at T8); this module guards the execution
+    // semantics of meta-instruction composition. Loop orchestration duties
+    // such as tool fan-out / result merging belong to the application-layer
+    // runner (the collect/merge primitives are retired, historical batch).
+    // Nested sub-mod (no `#[cfg(test)]` — it inherits the parent mod's
+    // cfg(test); build.rs's L1-gate strip_test_mod strips the whole mod
+    // tests block together)
     mod io_loop_e2e_tests {
         use super::*;
         use alloc::vec;
@@ -3345,10 +3550,13 @@ mod tests {
             ])
         }
 
-        /// 应用剧本式 I/O 循环规则集（与 io_loop 组合语义测试配套；工具扇出与
-        // 结果合并的循环编排在应用层 runner，此处只守护 io_request 请求/消费组合）
+        /// Application-playbook-style I/O loop rule set (paired with the
+        /// io_loop composition-semantics tests; tool fan-out and result
+        // merging loop orchestration live in the application-layer runner;
+        // this only guards the io_request request/consume composition)
         fn io_loop_rules() -> Vec<JsonValue> {
-            // 1) 计数器自初始化（缺失时置 0，否则跳过）
+            // 1) Counter self-initialization (set to 0 when missing;
+            // otherwise skip)
             let self_init = branch(
                 obj(&[
                     ("type", s("all")),
@@ -3367,8 +3575,10 @@ mod tests {
                 vec![],
             );
 
-            // 2) call_external：消费 LLM 结果（无 tool_calls 时 push noop 终止；
-            //    工具扇出循环的编排职责在应用层 runner，不再使用 collect）
+            // 2) call_external: consume the LLM result (push a noop to
+            //    terminate when there are no tool_calls;
+            //    the tool fan-out loop's orchestration duty lives in the
+            //    application-layer runner; collect is no longer used)
             let call_external = branch(
                 instr_domain("call_external"),
                 vec![branch(
@@ -3410,8 +3620,11 @@ mod tests {
                 vec![],
             );
 
-            // 3) call_service：消费工具结果（结果落 payload 后 push noop 终止；
-            //    结果合并与下一条 LLM 调用的生成由应用层 runner 编排，不再使用 merge）
+            // 3) call_service: consume the tool result (push a noop to
+            //    terminate once the result lands in the payload;
+            //    result merging and the next LLM call generation are
+            //    orchestrated by the application-layer runner; merge is no
+            //    longer used)
             let call_service = branch(
                 instr_domain("call_service"),
                 vec![branch(
@@ -3478,11 +3691,12 @@ mod tests {
             ])
         }
 
-        /// 轮次 1：无 I/O 结果 → 发起第一次 call_external（LLM）请求
+        /// Round 1: no I/O result → fire the first call_external (LLM)
+        /// request
         #[test]
         fn test_io_loop_round1_first_llm_io_request_fires() {
             let instruction = call_external_instr(user_messages(), tools_def());
-            let payload = obj(&[]); // 空 payload：react_iteration 尚未初始化
+            let payload = obj(&[]); // empty payload: react_iteration not yet initialized
 
             let result = execute_transition(&io_loop_rules(), &instruction, &payload, &[]).unwrap();
             match result {
@@ -3495,8 +3709,11 @@ mod tests {
             }
         }
 
-        /// 轮次 4：上一轮 I/O 结果已用 null 清除 → exists 判定不存在 → 发起第二次 LLM 请求。
-        /// 回归：修复前 null 被视为"存在"，陈旧结果被消费，第二次 LLM 调用永远无法发起。
+        /// Round 4: the previous round's I/O result was already cleared with
+        /// null → exists judges it absent → fire the second LLM request.
+        /// Regression: before the fix, null was treated as "present", the
+        /// stale result was consumed, and the second LLM call could never
+        /// fire.
         #[test]
         fn test_io_loop_round4_second_llm_io_request_fires_after_null_clear() {
             let payload = obj(&[
@@ -3529,7 +3746,9 @@ mod tests {
             }
         }
 
-        /// 迭代上限：call_service 消费轮结果落 payload 后 push noop 终止循环（react_iteration 保持不变）
+        /// Iteration cap: after the call_service consume round lands the
+        /// result in the payload, push a noop to terminate the loop
+        /// (react_iteration stays unchanged)
         #[test]
         fn test_io_loop_iteration_cap_terminates_with_noop() {
             let payload = obj(&[
@@ -3557,21 +3776,24 @@ mod tests {
                 new_queue[0].get("type").and_then(|v| v.as_str()),
                 Some("noop")
             );
-            // 循环终止：计数不再增长，也无 updated_messages
+            // Loop terminates: the counter no longer grows and there is no
+            // updated_messages
             assert_eq!(new_payload.get("react_iteration"), Some(&iv(10)));
             assert!(new_payload.get("updated_messages").is_none());
         }
 
-        /// 终止轮：LLM 最终回答不含 tool_calls → push noop，且 react_iteration 被自动初始化
+        /// Terminal round: the LLM's final answer contains no tool_calls →
+        /// push a noop, and react_iteration gets auto-initialized
         #[test]
         fn test_io_loop_final_round_without_tool_calls_terminates() {
-            let final_response = obj(&[("messages", user_messages())]); // 无 tool_calls
+            let final_response = obj(&[("messages", user_messages())]); // no tool_calls
             let payload = obj(&[
                 (
                     "__io_results__",
                     obj(&[("call_external", final_response.clone())]),
                 ),
-                // 故意不带 react_iteration：验证自初始化规则
+                // Deliberately without react_iteration: verifies the
+                // self-initialization rule
             ]);
             let instruction = call_external_instr(user_messages(), tools_def());
 
@@ -3591,7 +3813,8 @@ mod tests {
                 Some("noop")
             );
             assert_eq!(new_payload.get("llm_response"), Some(&final_response));
-            // 自初始化规则生效：react_iteration 从缺失变为 0
+            // Self-initialization rule took effect: react_iteration went
+            // from missing to 0
             assert_eq!(new_payload.get("react_iteration"), Some(&iv(0)));
         }
     }
