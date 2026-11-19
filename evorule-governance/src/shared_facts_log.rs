@@ -371,8 +371,8 @@ impl SharedFactsLog {
         // fact_sources is written into metadata later) produces an orphan fact of "a PayloadUpdate
         // present in the WAL but unmapped in fact_sources" — that audit-chain segment cannot be
         // attributed. Do not fabricate mappings automatically (the source cannot be recovered
-        /// from the fact content; fabricating is lying, consistent with the P4-O2 one-way trust
-        /// principle for consumption relations); only detect + warn explicitly.
+        // from the fact content; fabricating is lying, consistent with the P4-O2 one-way trust
+        // principle for consumption relations); only detect + warn explicitly.
         let orphans = match detect_orphan_facts(&facts_log, &fact_sources) {
             Ok(v) => v,
             Err(e) => {
