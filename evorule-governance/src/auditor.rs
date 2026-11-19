@@ -361,7 +361,7 @@ impl Auditor {
         let start = self.entries.len();
         if start >= history_len {
             self.last_audited_version = self.facts_log.version();
-            tracing::debug!(version = self.last_audited_version, "audit_new: no new facts");
+            tracing::debug!(version = self.last_audited_version, "audit_new: no facts");
             return 0;
         }
 
@@ -454,7 +454,7 @@ impl Auditor {
                         self.anchors.push(anchor);
                     }
                     Err(e) => {
-                        tracing::error!(error = %e, "audit_new: anchor sealing failed (skipped; the chain remains intact)");
+                        tracing::error!(error = %e, "audit_new: anchor seal failed (chain intact)");
                     }
                 }
             }
