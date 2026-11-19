@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 论文评估 harness（R1–R4）共享库
+//! Paper-evaluation harness (R1–R4) shared library
 //!
-//! # 定位
-//! 只用真实现役规则集与真实历史违规样本，不构造合成 fixture：
-//! - 宪法 core_eval.json（190 行解释器语义层，CC0）
-//! - L2 纪律规则集 discipline/core_eval.json
-//! - wasm-demo 合并规则集 rules_merged.json（含 io 两阶段规则）
-//! - server 现役 6 个 bundle（含 ds-yuanze-01-v3）
-//! - R-B1 修复前 bundle（git 历史 `df6a16d^` 提取，6 处 D5 真阳性）
+//! # Positioning
+//! Uses only real in-service rulesets and real historical violation samples;
+//! no synthetic fixtures:
+//! - the constitution core_eval.json (190-line interpreter semantics layer, CC0)
+//! - the L2 discipline ruleset discipline/core_eval.json
+//! - the merged ruleset rules_merged.json (with two-phase io rules)
+//! - the server's 6 in-service bundles (including ds-yuanze-01-v3)
+//! - the pre-fix bundle (extracted from pre-fix git history; 6 real D5 positives)
 //!
-//! # 执行语义
-//! harness 循环对齐 CLI executor（FIFO / max_steps 先检后 pop / Ignored→Error /
-//! Halted→Violation 继续）+ reactor io 两阶段（IoRequest → 注入
-//! `payload.__io_results__.{io_type}` → 原指令回队重执行 → 收敛后清除容器）。
+//! # Execution semantics
+//! The harness loop aligns with the CLI executor (FIFO / max_steps checked
+//! before pop / Ignored→Error / Halted→Violation and continue) plus the
+//! reactor's two-phase io (IoRequest → inject `payload.__io_results__.{io_type}`
+//! → re-queue the original instruction for re-execution → clear the container after convergence).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -22,41 +24,41 @@ use std::time::Duration;
 use evorule_reactor::{Fact, FactId, FactIdGenerator, IoType};
 use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 
-/// 真实素材根（evorule 主仓）
+/// Real-material root (the evorule repo)
 pub const REPO_ROOT: &str = r"D:\evorule";
-/// 真实素材根（server 仓，现役 bundle）
+/// Real-material root (the server repo, in-service bundles)
 pub const SERVER_ROOT: &str = r"D:\evorule-server";
 
-/// 评估素材根（默认相对当前目录；可用 env `EVORULE_EVAL_SAMPLES` 覆盖）
+/// Evaluation material root (relative to the current directory by default; override with env `EVORULE_EVAL_SAMPLES`)
 pub fn samples_root() -> PathBuf {
     std::env::var("EVORULE_EVAL_SAMPLES")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("eval-samples"))
 }
 
-/// 评估结果输出根（默认相对当前目录；可用 env `EVORULE_EVAL_OUT` 覆盖）
+/// Evaluation result output root (relative to the current directory by default; override with env `EVORULE_EVAL_OUT`)
 pub fn results_root() -> PathBuf {
     std::env::var("EVORULE_EVAL_OUT")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("eval-results"))
 }
 
-/// 默认步数上界（与 CLI DEFAULT_MAX_STEPS 一致量级）
+/// Default step upper bound (same magnitude as the CLI DEFAULT_MAX_STEPS)
 pub const MAX_STEPS: usize = 10_000;
 
-/// 一次运行结果
+/// One run's result
 pub struct RunResult {
     pub facts: Vec<Fact>,
     pub final_payload: JsonValue,
     pub steps: usize,
     pub io_rounds: usize,
-    /// 是否命中规则链（至少一次 State 收敛或 io 请求）
+    /// Whether the rule chain was hit (at least one State convergence or io request)
     pub matched: bool,
-    /// 每步 execute_transition 耗时（ns），仅 timed 模式收集
+    /// Per-step execute_transition duration (ns), collected only in timed mode
     pub step_nanos: Vec<u128>,
 }
 
-/// 规则集装载来源
+/// Ruleset loading source
 pub struct Workload {
     pub name: &'static str,
     pub rules: Vec<JsonValue>,
@@ -72,12 +74,12 @@ fn parse_json(text: &str) -> Result<serde_json::Value, String> {
     serde_json::from_str(text).map_err(|e| format!("parse json: {e}"))
 }
 
-/// 装载一个 JSON 文件为规则列表
+/// Load a JSON file as a rule list
 ///
-/// 兼容三种形态（与 console-cloud rules-loader 同口径）：
-/// 1. 纯数组：逐元素
-/// 2. `{"transform": [...]}` 包装：解包 transform 数组
-/// 3. 单对象：包装为单元素
+/// Accepts three shapes (same scheme as the console-cloud rules loader):
+/// 1. a bare array: element by element
+/// 2. a `{"transform": [...]}` wrapper: unwrap the transform array
+/// 3. a single object: wrap as a single element
 pub fn load_rules_file(path: &Path) -> Result<Vec<JsonValue>, String> {
     let text = read_to_string(path)?;
     let value = parse_json(&text)?;
@@ -118,11 +120,11 @@ fn dir_json_files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// 装载全部真实工作负载（串行、无并发）
+/// Load all real workloads (serial, no concurrency)
 pub fn load_workloads() -> Result<Vec<Workload>, String> {
     let mut out = Vec::new();
 
-    // 1. 宪法（解释器语义层）
+    // 1. The constitution (interpreter semantics layer)
     let p = Path::new(REPO_ROOT)
         .join("evorule-tcb")
         .join("core_eval.json");
@@ -133,7 +135,7 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
         has_io_rules: false,
     });
 
-    // 2. L2 纪律规则集
+    // 2. The L2 discipline ruleset
     let p = Path::new(REPO_ROOT)
         .join("evorule-tcb")
         .join("discipline")
@@ -145,7 +147,7 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
         has_io_rules: false,
     });
 
-    // 3. 合并规则集（含 io 规则；固件收编自原 wasm-demo 目录，见 fixtures/README）
+    // 3. The merged ruleset (with io rules; absorbed from the original wasm-demo directory, see fixtures/README)
     let p = Path::new(REPO_ROOT)
         .join("evorule-eval")
         .join("fixtures")
@@ -157,7 +159,7 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
         has_io_rules: true,
     });
 
-    // 4-8. server 现役 bundle（每个 bundle 一个工作负载，manifest 不参与执行）
+    // 4-8. The server's in-service bundles (one workload per bundle; the manifest does not participate in execution)
     let bundles_dir = Path::new(SERVER_ROOT).join("rules").join("bundles");
     if let Ok(entries) = std::fs::read_dir(&bundles_dir) {
         let mut dirs: Vec<PathBuf> = entries
@@ -195,7 +197,7 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
         }
     }
 
-    // 9-12. console-cloud 五件套中的业务规则集（真实种子可命中的独立规则集）
+    // 9-12. The business rulesets of the console-cloud set (independent rulesets the real seeds can hit)
     let cc_rules = Path::new(r"D:\evorule-console-cloud")
         .join("static")
         .join("rules");
@@ -222,10 +224,11 @@ pub fn load_workloads() -> Result<Vec<Workload>, String> {
     Ok(out)
 }
 
-/// 从 plan.json 装载真实种子指令（16 规则 × pass/fail + 3 序列）
+/// Load real seed instructions from plan.json (16 rules × pass/fail + 3 sequences)
 ///
-/// 这些种子是 determinism_run.js 已验证可命中的真实业务指令；
-/// 固件收编自原 wasm-demo 目录（随该目录移出内核仓，fixtures/ 落库）。
+/// These seeds are real business instructions verified as hitting by
+/// determinism_run.js; absorbed from the original wasm-demo directory (moved
+/// out of the kernel repo with that directory, now in fixtures/).
 pub fn load_plan_seeds() -> Result<Vec<(String, JsonValue)>, String> {
     let plan_path = Path::new(REPO_ROOT)
         .join("evorule-eval")
@@ -252,10 +255,10 @@ pub fn load_plan_seeds() -> Result<Vec<(String, JsonValue)>, String> {
     Ok(seeds)
 }
 
-/// 为工作负载选择产生最多转换的种子（真实命中，拒绝空跑）
+/// Pick the seed producing the most transitions for a workload (real hits only; empty runs refused)
 ///
-/// 返回 `(seed_id, instruction, probe_run)`；probe_run 即选中种子的试跑结果，
-/// 调用方可直接复用其事实链。
+/// Returns `(seed_id, instruction, probe_run)`; probe_run is the selected
+/// seed's trial-run result — callers may reuse its fact chain directly.
 pub fn select_seed(
     wl: &Workload,
     seeds: &[(String, JsonValue)],
@@ -286,7 +289,7 @@ pub fn select_seed(
     Ok(best)
 }
 
-/// 确定性 io 应答（固定常量，保证重放位级一致）
+/// Deterministic io response (fixed constants, guaranteeing bit-level replay consistency)
 fn canned_io_response() -> JsonValue {
     JsonValue::object_from_pairs(&[
         ("status", JsonValue::string("ok")),
@@ -294,7 +297,7 @@ fn canned_io_response() -> JsonValue {
     ])
 }
 
-/// 向 payload 注入 `__io_results__.{io_type}`（嵌套路径自动创建，对齐 reactor）
+/// Inject `__io_results__.{io_type}` into the payload (nested paths auto-created, aligned with the reactor)
 fn inject_io_result(payload: &mut JsonValue, io_type: &str, result: JsonValue) {
     if payload.as_object_mut().is_none() {
         *payload = JsonValue::empty_object();
@@ -313,16 +316,16 @@ fn inject_io_result(payload: &mut JsonValue, io_type: &str, result: JsonValue) {
     }
 }
 
-/// 清除 `__io_results__` 容器（对齐 reactor 恢复后整体移除）
+/// Clear the `__io_results__` container (aligned with the reactor's removal after recovery)
 fn clear_io_results(payload: &mut JsonValue) {
     if let Some(obj) = payload.as_object_mut() {
         let _ = obj.remove("__io_results__");
     }
 }
 
-/// harness 执行循环（单次完整运行）
+/// The harness execution loop (one full run)
 ///
-/// `emit_facts = false` 时跳过事实构造（R2 裸执行基线），语义不受影响。
+/// With `emit_facts = false`, fact construction is skipped (the R2 bare-execution baseline); semantics unaffected.
 pub fn run_once(
     rules: &[JsonValue],
     initial_payload: JsonValue,
@@ -410,7 +413,7 @@ pub fn run_once(
                 io_rounds += 1;
                 matched = true;
                 if io_rounds > 100 {
-                    // 防御：应答不满足规则时避免无限 io 循环
+                    // Defense: avoid an infinite io loop when responses never satisfy the rules
                     if emit_facts {
                         let err_id = id_gen.next_id();
                         facts.push(Fact::Error {
@@ -438,7 +441,7 @@ pub fn run_once(
                         error: None,
                     });
                 }
-                // 注入结果 → 原指令回队 → 下次收敛后清除容器
+                // Inject the result → re-queue the original instruction → clear the container after the next convergence
                 inject_io_result(&mut payload, io.as_str(), response);
                 queue.push_front(instruction);
                 recovering = true;
@@ -500,10 +503,12 @@ pub fn run_once(
     }
 }
 
-/// 批量会话：顺序执行多条指令，payload 跨指令延续（模拟真实多命令会话）
+/// Batch session: execute multiple instructions in order, payload persisting across instructions (simulating a real multi-command session)
 ///
-/// 每条指令独立成段（Command → transitions → Stable），段间 payload 接续。
-/// 末尾对事实链整体重编号，保证 FactId 全局单调、cause/request_id 引用有效。
+/// Each instruction forms its own segment (Command → transitions → Stable);
+/// payload continues between segments. The fact chain is renumbered as a whole
+/// at the end, keeping FactIds globally monotone and cause/request_id
+/// references valid.
 pub fn run_batch(
     rules: &[JsonValue],
     instructions: &[JsonValue],
@@ -549,10 +554,12 @@ pub fn run_batch(
     }
 }
 
-/// 事实链全局重编号：FactId 重排为 1..n，cause/request_id 引用同步修正
+/// Renumber the fact chain globally: FactIds rearranged to 1..n, cause/request_id references corrected in sync
 ///
-/// 多段会话（run_batch）中各段 id 独立从 1 起，按段维护映射：
-/// 每遇 Command 开新段，段内引用（cause/request_id）必指向同段早前事实。
+/// In a multi-segment session (run_batch), each segment's ids start from 1
+/// independently; a per-segment map is maintained: every Command opens a new
+/// segment, and references within a segment (cause/request_id) must point to
+/// earlier facts of the same segment.
 pub fn renumber_facts(facts: Vec<Fact>) -> Vec<Fact> {
     use std::collections::HashMap;
     let mut id_map: HashMap<u64, u64> = HashMap::new();
@@ -560,7 +567,7 @@ pub fn renumber_facts(facts: Vec<Fact>) -> Vec<Fact> {
     let mut out: Vec<Fact> = Vec::with_capacity(facts.len());
 
     for fact in facts {
-        // 每段以 Command 开头：清空段内映射
+        // Each segment starts with a Command: clear the per-segment map
         if matches!(fact, Fact::Command { .. }) {
             id_map.clear();
         }
@@ -646,12 +653,12 @@ pub fn renumber_facts(facts: Vec<Fact>) -> Vec<Fact> {
     out
 }
 
-/// 前一个事实的 id（cause 链：harness 内事实连续生成，取 facts 尾部 id）
+/// The id of the previous fact (cause chain: facts are generated consecutively within the harness; take the tail id)
 fn prev_fact_id(facts: &[Fact]) -> FactId {
     facts.last().map(|f| f.id()).unwrap_or(FactId(0))
 }
 
-/// 事实序列规范哈希（逐条 fact_to_json → 拼接 → blake3）
+/// Canonical hash of a fact sequence (per-fact fact_to_json → join → blake3)
 pub fn facts_chain_hash(facts: &[Fact]) -> Result<String, String> {
     let mut hasher = blake3::Hasher::new();
     for fact in facts {
@@ -663,27 +670,27 @@ pub fn facts_chain_hash(facts: &[Fact]) -> Result<String, String> {
     Ok(hasher.finalize().to_hex().to_string())
 }
 
-/// 终态 payload 规范哈希
+/// Canonical hash of the final payload
 pub fn payload_hash(payload: &JsonValue) -> Result<String, String> {
     let value = evorule_reactor::tcb_to_serde(payload);
     let line = serde_json::to_string(&value).map_err(|e| format!("serialize payload: {e}"))?;
     Ok(blake3::hash(line.as_bytes()).to_hex().to_string())
 }
 
-/// 输出目录（可用 env `EVORULE_EVAL_OUT` 覆盖，默认 `results_root()/bin`）
+/// Output directory (override with env `EVORULE_EVAL_OUT`; default `results_root()/bin`)
 pub fn out_dir(bin: &str) -> PathBuf {
     let dir = results_root().join(bin);
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
 
-/// 写结果 JSON（带中文说明字段的顶层包装）
+/// Write the result JSON (a top-level wrapper with explanatory note fields)
 pub fn write_json(path: &Path, value: &serde_json::Value) -> Result<(), String> {
     let text = serde_json::to_string_pretty(value).map_err(|e| format!("to_string: {e}"))?;
     std::fs::write(path, text).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
-/// 纳秒 → 可读时长
+/// Nanoseconds → human-readable duration
 pub fn fmt_nanos(nanos: u128) -> String {
     let d = Duration::from_nanos(nanos as u64);
     if nanos < 1_000 {
@@ -697,7 +704,7 @@ pub fn fmt_nanos(nanos: u128) -> String {
     }
 }
 
-/// 百分位数（输入须已排序）
+/// Percentile (input must be sorted)
 pub fn percentile(sorted: &[u128], p: f64) -> u128 {
     if sorted.is_empty() {
         return 0;

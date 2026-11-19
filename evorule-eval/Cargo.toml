@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 publish = false
-description = "论文评估 harness：R1 重放位精确率 / R2 执行开销 / R3 审计复核吞吐 / R4 违规拦截率"
+description = "Paper-evaluation harness: R1 replay bit-precision / R2 execution overhead / R3 audit re-verification throughput / R4 violation interception"
 
 [dependencies]
 evorule-tcb = { path = "../evorule-tcb", version = "0.13.0" }
