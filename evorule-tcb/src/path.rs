@@ -7,8 +7,12 @@
 //! ```text
 //! path           = segment *( "." segment )
 //! segment        = identifier [ "[" index "]" ]
-//! identifier     = 1*(ALPHA / DIGIT / "_" / "-")
+//! identifier     = 1*( char - reserved )
+//! char-reserved  = "." / "[" / "\"   （`]` 在索引段之外是普通字符）
 //! index          = 1*DIGIT
+//!
+//! 注：identifier 不限字符集（字段名可含任意非保留字符），与
+//! `is_root_segment_dot_path` 的歧义谓词严格字符集判定是两回事。
 //! ```
 //!
 //! # 转义规则
