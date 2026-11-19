@@ -6,7 +6,7 @@ EvoRule is a deterministic-first rule governance engine: **provable, replayable,
 
 [![CI][badge-ci]][ci-link]
 [![License: AGPL-3.0-or-later][badge-license]][license-link]
-[![Kani: 48 proofs (19 verified)][badge-kani]][kani-link]
+[![Kani: 49 proofs (19 verified)][badge-kani]][kani-link]
 
 **License**: [AGPL-3.0-or-later](LICENSE) with [dual licensing](DUAL_LICENSE.md) · the constitution [`core_eval.json`](evorule-tcb/core_eval.json) is [CC0-1.0 public domain](LICENSES/core_eval-CC0-1.0.txt)
 

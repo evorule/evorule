@@ -81,7 +81,7 @@ verification/
 
 | 资产                                        | 位置                                                              | 关联属性          |
 | ------------------------------------------- | ----------------------------------------------------------------- | ----------------- |
-| TCB Kani proof（34 个，A/B 档分档见 STATUS.md 附录 B） | `evorule-tcb/tests/kani/kani_proofs.rs`                | P0-1~P0-8        |
+| TCB Kani proof（38 个，A/B 档分档见 STATUS.md 附录 B） | `evorule-tcb/tests/kani/kani_proofs.rs`                | P0-1~P0-8        |
 | TCB Kani 验证设计（P1–P21，历史文档，编号已作废见 STATUS.md 附录 A） | `evorule-tcb/verification/kani-formal-verification-design.md` | P0-1~P0-8 |
 | Reactor Kani proof（11 个，CI 状态见 STATUS.md 附录 C） | `evorule-reactor/verification/kani_proofs.rs`       | P0-11 / P1-1~P1-6 |
 | Kani 运行脚本（reactor）                    | `evorule-reactor/run_kani_proofs.sh`                              | —                 |
