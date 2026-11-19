@@ -663,7 +663,6 @@ fn evaluate_has_fields(domain: &JsonValue, exec_state: &JsonValue) -> Result<boo
     };
 
     for field_name in field_names {
-
         // 状态侧：字段必须存在
         let value = match obj.get(field_name) {
             Some(v) => v,

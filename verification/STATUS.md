@@ -134,7 +134,7 @@
 | —（无编号） | — | `verify_exec_enforce_permutation_equivalence` | B | P0-5（约束前置门排列等价补充，2026-09-24） |
 | —（无编号） | — | `verify_evaluate_domain_outcome_eq_never_panics` | B | P0-4（三态域评估不 panic，2026-10-01） |
 | —（无编号） | — | `verify_evaluate_domain_outcome_missing_rejected_never_panics` | B | P0-4（on_missing=error 拒绝路径不 panic，2026-10-01） |
-| —（无编号） | — | `verify_evaluate_domain_in_never_panics` | B | P0-4（in 型三态求值不 panic，o40 补验，2026-11-19） |
+| — | — | `verify_evaluate_domain_in_never_panics` | B | P0-4 (in-type three-state eval never panics, o40 backfill, 2026-11-19) |
 
 > 注：旧 P4/P6 的 proof 拆分按 proof 语义重构（无效输入返回 None 的归 P6，其余不 panic 归 P4），旧设计稿未逐一对应。A 档 14 个 = 旧 P1/P2/P3/P5 各 1 + 旧 P4/P6 拆 9 个 resolve_path 变体 + 旧 P7；B 档 21 个 = 旧 P8/P9 的 8 个 evaluate_domain + 旧 P10–P14/P18–P21 各 1 + 无编号 enforce 4 个（旧 P15/P16/P17 随规则清理退役，2026-09-14；排列等价新增，2026-09-24）；2026-10-01 三态域评估新增 2 个（B 档 21→23）；2026-11-19 o40 补验新增 1 个（B 档 23→24）。
 
