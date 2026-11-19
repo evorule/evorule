@@ -1,27 +1,27 @@
 # Summary
 
-[介绍](introduction.md)
+[Introduction](introduction.md)
 
-# 项目方指南
+# Project Owner Guide
 
-- [教程](tutorial/README.md)
-  - [五分钟跑通 core_eval](tutorial/01-五分钟跑通-core-eval.md)
-  - [反应器循环示例](tutorial/02-反应器循环示例.md)
-  - [写一条业务规则](tutorial/03-写一条业务规则.md)
-- [任务式指南](how-to/README.md)
-- [参考手册](reference/README.md)
-- [原理与设计](explanation/README.md)
-  - [立场总纲:有所得必有所失](explanation/00-有所得必有所失-EvoRule的取舍立场.md)
-  - [立场篇:智能时代选择不智能](explanation/01-智能时代选择不智能-什么是确定性智能.md)
-  - [立场篇:哥德尔不自证与逼近真相](explanation/02-哥德尔不自证与逼近真相-EvoRule对正确的诚实立场.md)
+- [Tutorials](tutorial/README.md)
+  - [Run core_eval in Five Minutes](tutorial/01-五分钟跑通-core-eval.md)
+  - [Reactor Loop Example](tutorial/02-反应器循环示例.md)
+  - [Writing a Business Rule](tutorial/03-写一条业务规则.md)
+- [Task-Oriented Guides](how-to/README.md)
+- [Reference](reference/README.md)
+- [Principles and Design](explanation/README.md)
+  - [Position charter: every gain comes with a loss](explanation/00-有所得必有所失-EvoRule的取舍立场.md)
+  - [Position: choosing non-intelligence in the age of intelligence](explanation/01-智能时代选择不智能-什么是确定性智能.md)
+  - [Position: Gödel's incompleteness and approaching truth](explanation/02-哥德尔不自证与逼近真相-EvoRule对正确的诚实立场.md)
 
-# 项目
+# Project
 
-- [架构决策记录(ADR)](adr/README.md)
-  - [ADR 模板](adr/template.md)
-- [运维与发布](operations/README.md)
-- [v0.3.1 性能基准](PERFORMANCE_BASELINE_V0.3.1.md)
+- [Architecture Decision Records (ADR)](adr/README.md)
+  - [ADR template](adr/template.md)
+- [Operations and Releases](operations/README.md)
+- [v0.3.1 Performance Baseline](PERFORMANCE_BASELINE_V0.3.1.md)
 
 ---
 
-[文档约定与边界](explanation/doc-boundaries.md)
+[Documentation Conventions and Boundaries](explanation/doc-boundaries.md)

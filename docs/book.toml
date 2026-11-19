@@ -1,8 +1,8 @@
 [book]
-title = "evorule 文档"
-description = "evorule 规则引擎:确定性智能 + BLAKE3 不可篡改审计链 + 应用自持剧本的 I/O 循环"
+title = "evorule Documentation"
+description = "evorule rule engine: deterministic intelligence + BLAKE3 tamper-proof audit chain + an I/O loop where the application owns the scripts"
 authors = ["EvoRule Project"]
-language = "zh"
+language = "en"
 src = "."
 
 [build]
