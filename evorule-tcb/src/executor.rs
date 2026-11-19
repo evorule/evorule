@@ -302,10 +302,12 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
                 if resolved.starts_with("payload.") {
                     return Err(TcbError::PathResolutionFailed {
                         path: resolved,
-                        reason: "写侧 attr 禁止以 payload. 开头：attr 相对 __exec__.payload \
-                                 解析，带前缀会双重嵌套写入 payload.payload.*。请直接写 \
-                                 payload 内相对路径（如 meta_guard.cleared_for_move），\
-                                 真需写 payload 内同名子字段时用 __exec__.payload. 显式全形式"
+                        reason: "write-side attr must not start with `payload.`: attr is \
+                                 resolved relative to __exec__.payload, so a `payload.` prefix \
+                                 would double-nest the write into payload.payload.*. Write the \
+                                 path relative to the payload instead (e.g. \
+                                 meta_guard.cleared_for_move); to write a same-named subfield \
+                                 inside the payload, use the explicit full form __exec__.payload."
                             .to_string(),
                     });
                 }
@@ -317,10 +319,12 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
             if resolved.starts_with("payload.") {
                 return Err(TcbError::PathResolutionFailed {
                     path: resolved,
-                    reason: "写侧 attr 禁止以 payload. 开头：attr 相对 __exec__.payload 解析，\
-                             带前缀会双重嵌套写入 payload.payload.*。请直接写 \
-                             payload 内相对路径（如 meta_guard.cleared_for_move），\
-                             真需写 payload 内同名子字段时用 __exec__.payload. 显式全形式"
+                    reason: "write-side attr must not start with `payload.`: attr is resolved \
+                             relative to __exec__.payload, so a `payload.` prefix would \
+                             double-nest the write into payload.payload.*. Write the path \
+                             relative to the payload instead (e.g. meta_guard.cleared_for_move); \
+                             to write a same-named subfield inside the payload, use the explicit \
+                             full form __exec__.payload."
                         .to_string(),
                 });
             }
@@ -1067,8 +1071,8 @@ mod tests {
             TcbError::PathResolutionFailed { path, reason } => {
                 assert_eq!(path, "payload.meta_guard.cleared");
                 assert!(
-                    reason.contains("payload.") && reason.contains("双重嵌套"),
-                    "错误原因应含双重嵌套指引: {reason}"
+                    reason.contains("payload.") && reason.contains("double-nest"),
+                    "error reason should point to double nesting: {reason}"
                 );
             }
             other => panic!("expected PathResolutionFailed, got: {other:?}"),
