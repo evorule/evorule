@@ -401,6 +401,27 @@ fn verify_evaluate_domain_outcome_missing_rejected_never_panics() {
     core::mem::forget(domain);
 }
 
+/// P8j: evaluate_domain_outcome `in` never panics (o40 backfill)
+#[kani::proof]
+#[kani::unwind(24)]
+fn verify_evaluate_domain_in_never_panics() {
+    // o40 backfill (2026-11-19): the in-type previously had zero Kani
+    // coverage (the 7-way leaf enumeration omitted it); this harness closes
+    // the gap (same shape as P8h).
+    let exec_state = model::single_key_exec_state();
+    let domain = model::obj(vec![
+        ("type", JsonValue::string("in")),
+        ("path", JsonValue::string("payload.x")),
+        (
+            "values",
+            JsonValue::array(vec![JsonValue::Integer(1), JsonValue::Integer(2)]),
+        ),
+    ]);
+    let _ = evaluate_domain_outcome(&domain, &exec_state);
+    core::mem::forget(exec_state);
+    core::mem::forget(domain);
+}
+
 /// P8b: evaluate_domain lt 永不 panic
 #[kani::proof]
 #[kani::unwind(24)]
@@ -826,7 +847,7 @@ fn verify_io_request_safe() {
 
 // ⚠️ 实测教训（沿用 P8 系列经验，见 model.rs 注释）：符号叶子 exec_state + 域求值
 // 会让 CBMC/SAT 展开状态爆炸（P18a 首版实测 2.5h 不收敛）。因此：
-// - P18a（永不 panic）：叶子**全部具体化**，仅结构选择符号化（7 域类型 7 选 1、
+// - P18a（永不 panic）：叶子**全部具体化**，仅结构选择符号化（8 域类型 8 选 1、
 //   形态/缺字段开关）——panic 自由只依赖代码路径覆盖，具体值不影响覆盖面；
 // - P18b/P18c（语义属性）：使用**单键最小状态**（仅 payload.x，1 键 payload，
 //   同 P13 已验证收敛的规模），语义属性需要符号值驱动真假两分支。
@@ -863,17 +884,17 @@ fn concrete_enforce_state() -> JsonValue {
     state
 }
 
-/// P18a 专用：7 域类型 7 选 1 的**具体形状** domain（值取 2，对 x=1 eq/lt 恒假），
+/// P18a 专用：8 域类型 8 选 1 的**具体形状** domain（值取 2，对 x=1 eq/lt 恒假），
 /// 或 `__` 路径引用形态（指向 payload.d 的 exists 域，恒真）。
-/// 真假两分支均可达：exists/instruction/all/has_fields/路径引用 → 真（达 reason 检查与
-/// Halted 构造）；eq/lt/not → 假（达 State 返回）。
+/// 真假两分支均可达：exists/instruction/all/has_fields/in/路径引用 → 真（达 reason
+/// 检查与 Halted 构造）；eq/lt/not → 假（达 State 返回）。
 fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
     if use_path_ref {
         let s = JsonValue::string("__exec__.payload.d");
         shape_str(&s, "domain(path_ref)", "__exec__.payload.d");
         return s;
     }
-    match t % 7 {
+    match t % 8 {
         0 => {
             let d = model::obj(vec![
                 ("type", JsonValue::string("eq")),
@@ -998,6 +1019,28 @@ fn concrete_domain(t: u8, use_path_ref: bool) -> JsonValue {
             );
             d
         }
+        7 => {
+            let d = model::obj(vec![
+                ("type", JsonValue::string("in")),
+                ("path", JsonValue::string("payload.x")),
+                (
+                    "values",
+                    JsonValue::array(vec![JsonValue::Integer(1), JsonValue::Integer(2)]),
+                ),
+            ]);
+            shape_str(
+                shape_field(&d, "domain[in]", "type"),
+                "domain[in].type",
+                "in",
+            );
+            shape_str(
+                shape_field(&d, "domain[in]", "path"),
+                "domain[in].path",
+                "payload.x",
+            );
+            shape_field(&d, "domain[in]", "values");
+            d
+        }
         _ => {
             let d = model::obj(vec![
                 ("type", JsonValue::string("has_fields")),
@@ -1051,7 +1094,7 @@ fn enforce_instruction(domain: JsonValue, with_domain: bool, with_reason: bool) 
 }
 
 /// P18a: exec_enforce 永不 panic（经公开 execute_meta_instruction 间接覆盖私有 exec_enforce）
-/// 覆盖：7 域类型 × 字面对象/`__` 路径引用两种 domain 形态 × domain/reason 缺失错误路径
+/// 覆盖：8 域类型 × 字面对象/`__` 路径引用两种 domain 形态 × domain/reason 缺失错误路径
 /// × 真假两求值分支（叶子具体化，结构选择符号化——见本节头部实测教训）。
 #[kani::proof]
 fn verify_exec_enforce_never_panics() {
