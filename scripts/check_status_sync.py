@@ -52,6 +52,7 @@
 # =============================================================================
 
 import argparse
+import datetime
 import fnmatch
 import json
 import re
@@ -641,6 +642,12 @@ S9_ANCHORS = [
     ("evorule-reactor/docs/KANI.md", re.compile(r"CI 子集（(\d+) 个"), ("rc_ci",), False),
     ("evorule-reactor/docs/KANI.md", re.compile(r"完整验证（(\d+) 个"), ("rc_nonci",), False),
     ("evorule-reactor/docs/KANI.md", re.compile(r"\*\*(\d+) 个 CI proof\*\*"), ("rc_ci",), False),
+    # 2026-11-19 盲区补全四锚（badge alt 文本 / 附录标题计数——实测曾漂移：
+    # badge URL=49 而 alt 文本=48、附录 B 标题漏改、verification/README TCB 总数 34≠38）
+    ("README.md", re.compile(r"Kani: (\d+) proofs \((\d+) verified"), ("total", "verified"), True),
+    ("verification/README.md", re.compile(r"TCB Kani proof（(\d+) 个"), ("tcb",), True),
+    ("verification/STATUS.md", re.compile(r"附录 B：TCB (\d+) 个 proof 分档清单"), ("tcb",), True),
+    ("verification/STATUS.md", re.compile(r"附录 C：reactor (\d+) 个 proof 清单"), ("reactor",), True),
 ]
 
 
@@ -726,6 +733,441 @@ def rule_s11(git, rep):
 
 
 # ---------------------------------------------------------------------------
+# --fix 模式：proof 清单同步自动收敛
+#
+# 设计（design-111，2026-11-19）：以 proof 源码枚举为 SSOT，自动收敛六面——
+#   ① STATUS.md 附录 B 标题计数+递进史  ② 附录 B A/B 档标题计数
+#   ③ 附录 B 内联清单（字母序重建）    ④ kani.yml a 档 for 块 / b 档 case LIST
+#   ⑤ README 徽章 URL+alt 文本         ⑥ ROADMAP / verification/README 等锚点计数
+# reactor 面（附录 C 行/kani-reactor job/Cargo metadata）因行内带人工注记，
+# 仅报数不改写（guidance 输出）。DISCLOSURE_LOG 只打印草稿不落盘（S11 成对纪律
+# 由人工保留）。缺省 dry-run（仅打印 diff 预览），--apply 才写盘。
+# ---------------------------------------------------------------------------
+
+APP_B_LIST_LINE_RE = re.compile(r'^\s*`[A-Za-z0-9_]+`(?:、`[A-Za-z0-9_]+`)*\s*$', re.M)
+APP_B_HEAD_A_RE = re.compile(r"\*\*A 档 (\d+) 个\*\*")
+APP_B_HEAD_B_RE = re.compile(r"\*\*B 档 (\d+) 个\*\*")
+APP_C_CI_COUNT_RE = re.compile(r"入 kani\.yml PR 闸门（(\d+) 个）")
+APP_C_NONCI_COUNT_RE = re.compile(r"未入 CI（(\d+) 个）")
+YML_FOR_BLOCK_START_RE = re.compile(r"^\s*for h in \\\s*$")
+YML_FOR_NAME_RE = re.compile(r"^\s+([A-Za-z_]\w*)\s*\\\s*$")
+YML_CASE_LINE_RE = re.compile(r'^(\s+)(\d+)\) LIST="([A-Za-z0-9_ ]*)"\s*;;\s*')
+YML_MATRIX_RE = re.compile(r"^(\s*batch: \[)([0-9, ]+)(\]\s*)$")
+
+# 新 proof 分档归属 → derived 键（同时限定了合法目标清单）
+ASSIGN_TARGETS = {
+    "a": ("a", "附录 B A 档（kani.yml kani-tcb-a-tier）"),
+    "b": ("b", "附录 B B 档（kani.yml kani-tcb-b-tier LIST）"),
+    "ci": ("rc_ci", "附录 C 入闸行（reactor，含人工注记——本工具不改写）"),
+    "nonci": ("rc_nonci", "附录 C 未入 CI 行（reactor，含人工注记——本工具不改写）"),
+}
+
+
+def _rewrite_anchor_numbers(text, derived, rel):
+    """按 S9_ANCHORS 重写 rel 命中的计数。返回 (new_text, [(line_no, old, new)])。"""
+    edits = []
+    for a_rel, pattern, keys, _required in S9_ANCHORS:
+        if a_rel != rel:
+            continue
+        out, last = [], 0
+        for m in pattern.finditer(text):
+            seg = m.group(0)
+            new_seg = seg
+            subs = []
+            for gi, key in enumerate(keys, 1):
+                g = m.group(gi)
+                if g is not None and int(g) != derived[key]:
+                    subs.append((m.start(gi) - m.start(), m.end(gi) - m.start(),
+                                 str(derived[key])))
+            if subs:
+                for s_in, e_in, v in sorted(subs, reverse=True):
+                    new_seg = new_seg[:s_in] + v + new_seg[e_in:]
+                edits.append((text.count("\n", 0, m.start()) + 1, seg, new_seg))
+                out.append(text[last:m.start()])
+                out.append(new_seg)
+                last = m.end()
+        out.append(text[last:])
+        text = "".join(out)
+    return text, edits
+
+
+def _rebuild_appendix_b_lists(text, a_names, b_names):
+    """附录 B 内联清单增删（最小 diff：成员不变则不动；增删时保序插入/删除，
+    新名按字母序插位——与既有递进史先例一致）。返回 (new_text, n_changed)。"""
+    lines = text.split("\n")
+    idx_appb = idx_appc = idx_a = idx_b = None
+    for i, l in enumerate(lines):
+        if l.startswith("## 附录 B"):
+            idx_appb = i
+        elif l.startswith("## 附录 C"):
+            idx_appc = i
+        elif idx_appb is not None and idx_appc is None:
+            if APP_B_HEAD_A_RE.search(l):
+                idx_a = i
+            elif APP_B_HEAD_B_RE.search(l):
+                idx_b = i
+    if None in (idx_appb, idx_appc, idx_a, idx_b):
+        return text, 0
+
+    changed = 0
+    for head_idx, names in ((idx_a, a_names), (idx_b, b_names)):
+        span_end = idx_b if head_idx == idx_a else idx_appc
+        list_idxs = [i for i in range(head_idx + 1, span_end)
+                     if APP_B_LIST_LINE_RE.match(lines[i])]
+        if not list_idxs:
+            continue  # 无内联清单行（形态变更）→ 交由 S8 报告，不猜测落点
+        ordered = []
+        for i in list_idxs:
+            ordered += re.findall(r"`(\w+)`", lines[i])
+        if set(ordered) == names:
+            continue
+        for n in [x for x in ordered if x not in names]:
+            ordered.remove(n)
+        for n in sorted(names - set(ordered)):
+            pos = next((k for k, ex in enumerate(ordered) if ex > n), len(ordered))
+            ordered.insert(pos, n)
+        crlf = "\r" if lines[list_idxs[0]].endswith("\r") else ""
+        lines[list_idxs[0]] = "、".join(f"`{n}`" for n in ordered) + crlf
+        changed += 1
+        for i in list_idxs[1:]:
+            lines[i] = None
+            changed += 1
+    return "\n".join(l for l in lines if l is not None), changed
+
+
+def _bump_appendix_headings(text, a_len, b_len, ci_len, nonci_len):
+    """附录 B/C 行内标题计数重写。返回 (new_text, edits)。"""
+    edits = []
+    for pattern, target in (
+        (APP_B_HEAD_A_RE, a_len), (APP_B_HEAD_B_RE, b_len),
+        (APP_C_CI_COUNT_RE, ci_len), (APP_C_NONCI_COUNT_RE, nonci_len),
+    ):
+        out, last = [], 0
+        for m in pattern.finditer(text):
+            if int(m.group(1)) != target:
+                new_seg = m.group(0).replace(m.group(1), str(target), 1)
+                edits.append((text.count("\n", 0, m.start()) + 1, m.group(0), new_seg))
+                out.append(text[last:m.start()])
+                out.append(new_seg)
+                last = m.end()
+        out.append(text[last:])
+        text = "".join(out)
+    return text, edits
+
+
+def _append_progress_history(text, reason, total, today):
+    """附录 B 标题尾追加递进史（中性措辞：日期+事由+新增/退役→N）。返回 (new_text, edit|None)。"""
+    for i, l in enumerate(text.split("\n")):
+        if l.startswith("## 附录 B") and l.rstrip().endswith("）"):
+            crlf = l.endswith("\r")
+            body = l.rstrip("\r")
+            new_body = body[:-1] + f"，{today} {reason}→{total}）"
+            return text.replace(l, new_body + ("\r" if crlf else ""), 1), (i + 1, body, new_body)
+    return text, None
+
+
+def _split_yml_jobs(text):
+    """kani.yml job 段切分。返回 (lines, {job: (start, end)})。"""
+    lines = text.split("\n")
+    marks = []
+    for i, l in enumerate(lines):
+        m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", l)
+        if m:
+            marks.append((i, m.group(1)))
+    sections = {}
+    for idx, (i, name) in enumerate(marks):
+        end = marks[idx + 1][0] if idx + 1 < len(marks) else len(lines)
+        sections[name] = (i, end)
+    return lines, sections
+
+
+def _rebuild_for_block(lines, start, end, desired):
+    """重建 'for h in \\ ... ; do' 名单块（段内首个命中）。保留现序+新增按字母序追加；
+    块行数随名单增减伸缩（切片拼接）。返回 (changed_bool, added, removed)。"""
+    for i in range(start, end):
+        if YML_FOR_BLOCK_START_RE.match(lines[i]):
+            j = i + 1
+            names = []
+            while j < end:
+                m = YML_FOR_NAME_RE.match(lines[j])
+                if not m:
+                    break
+                names.append(m.group(1))
+                j += 1
+            if j < end and re.match(r"^\s*;\s*do\b", lines[j]):
+                if set(names) == desired and len(names) == len(desired):
+                    return False, set(), set()
+                kept = [n for n in names if n in desired]
+                added = sorted(desired - set(names))
+                removed = sorted(set(names) - desired)
+                new_names = kept + added
+                template = lines[i + 1] if names else lines[i]
+                indent = template[:len(template) - len(template.lstrip())]
+                crlf = "\r" if template.endswith("\r") else ""
+                lines[i + 1:j] = [f"{indent}{n} \\{crlf}" for n in new_names]
+                return True, set(added), set(removed)
+            break
+    return False, set(), set()
+
+
+def _fix_b_tier_section(lines, start, end, desired):
+    """kani-tcb-b-tier 段：case LIST 增删 + matrix 扩容（就地变异 lines）。
+    返回 (changed_bool, added, removed, notes)。"""
+    changed = False
+    notes = []
+    batches = []  # [(line_idx, num, [names])]
+    matrix_idx = None
+    for i in range(start, end):
+        m = YML_CASE_LINE_RE.match(lines[i])
+        if m:
+            batches.append((i, int(m.group(2)), m.group(3).split()))
+        if YML_MATRIX_RE.match(lines[i]):
+            matrix_idx = i
+    all_current = [n for _, _, ns in batches for n in ns]
+    removed = sorted(set(all_current) - desired)
+    added = sorted(desired - set(all_current))
+    if not added and not removed:
+        return False, set(), set(), notes
+
+    # 删除：从所在 case 行移除（保序）
+    if removed:
+        for i, num, ns in batches:
+            kept = [n for n in ns if n not in removed]
+            if kept != ns:
+                indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+                crlf = "\r" if lines[i].endswith("\r") else ""
+                lines[i] = f'{indent}{num}) LIST="{" ".join(kept)}" ;;{crlf}'
+                changed = True
+                notes.append(f"batch {num}: removed {' '.join(removed)}")
+
+    # 新增：字母域匹配批次插入，否则追加新批（case 行 insert + matrix 扩容）
+    for name in added:
+        target = None
+        for i, num, ns in batches:
+            if ns and min(ns) <= name <= max(ns):
+                target = (i, num, ns)
+                break
+        if target:
+            i, num, ns = target
+            indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+            crlf = "\r" if lines[i].endswith("\r") else ""
+            lines[i] = f'{indent}{num}) LIST="{" ".join(sorted(set(ns) | {name}))}" ;;{crlf}'
+            changed = True
+            notes.append(f"batch {num}: added {name}")
+        else:
+            new_num = (max((num for _, num, _ in batches), default=0)) + 1
+            insert_at = max(i for i, _, _ in batches) + 1 if batches else end
+            indent = " " * 12
+            lines.insert(insert_at, f'{indent}{new_num}) LIST="{name}" ;;\r')
+            changed = True
+            notes.append(f"batch {new_num} (new): added {name}")
+            # matrix 扩容（matrix 行在 case 行之前，insert 不影响其索引）
+            if matrix_idx is not None:
+                mm = YML_MATRIX_RE.match(lines[matrix_idx])
+                nums = sorted(int(x) for x in mm.group(2).replace(" ", "").split(",") if x)
+                if new_num not in nums:
+                    lines[matrix_idx] = (mm.group(1)
+                                         + ", ".join(str(x) for x in nums + [new_num])
+                                         + mm.group(3))
+                    notes.append(f"matrix extended to {new_num}")
+    return changed, added, removed, notes
+
+
+def _print_diff(title, old_text, new_text):
+    import difflib
+    diff = list(difflib.unified_diff(
+        old_text.splitlines(), new_text.splitlines(),
+        fromfile=title + " (before)", tofile=title + " (after)", lineterm=""))
+    for d in diff:
+        print(d)
+
+
+def _read_raw(path):
+    """读取且不做换行归一（read_text 的 universal-newline 会把 CRLF 归一成 LF，
+    --fix 写回时将悄悄改写全文件行尾——autocrlf=false 的仓会整文件 diff）。"""
+    with path.open("r", encoding="utf-8", errors="replace", newline="") as f:
+        return f.read()
+
+
+def cmd_fix(args):
+    """--fix 主流程：proof 源为 SSOT → 清单/数字六面收敛。"""
+    status_path = REPO_ROOT / "verification" / "STATUS.md"
+    yml_path = REPO_ROOT / ".github" / "workflows" / "kani.yml"
+    if not status_path.exists() or not yml_path.exists():
+        print("[ENV] STATUS.md / kani.yml 缺失", file=sys.stderr)
+        return 2
+    status_text = _read_raw(status_path)
+    yml_text = _read_raw(yml_path)
+
+    # --- 现状解析（复用 check 侧解析器，单一解析源）---
+    rows, sections = parse_status(status_text)
+    a_decl, a_names, b_decl, b_names = parse_appendix_b(sections["appB"])
+    ci_decl, ci_names, nonci_decl, nonci_names = parse_appendix_c(sections["appC"])
+    known_tcb = parse_proof_source(TCB_PROOF_SRC)
+    known_reactor = parse_proof_source(REACTOR_PROOF_SRC)
+    a_names, b_names, ci_names, nonci_names = (
+        set(a_names), set(b_names), set(ci_names), set(nonci_names))
+
+    # --- 分档归属裁决（--assign）---
+    tcb_changed = reactor_changed = False
+    for spec in args.assign:
+        name, _, tier = spec.partition("=")
+        name, tier = name.strip(), tier.strip().lower()
+        if tier not in ASSIGN_TARGETS:
+            print(f"[FIX] --assign {spec}：非法档位（合法：a/b/ci/nonci）", file=sys.stderr)
+            return 1
+        if name not in known_tcb and name not in known_reactor:
+            print(f"[FIX] --assign {spec}：proof 源码中不存在该函数", file=sys.stderr)
+            return 1
+        is_tcb = name in known_tcb
+        if is_tcb and tier not in ("a", "b"):
+            print(f"[FIX] {name}：TCB proof 只能归 a/b 档", file=sys.stderr)
+            return 1
+        if not is_tcb and tier not in ("ci", "nonci"):
+            print(f"[FIX] {name}：reactor proof 只能归 ci/nonci", file=sys.stderr)
+            return 1
+        target = {"a": a_names, "b": b_names, "ci": ci_names, "nonci": nonci_names}[tier]
+        for other in (a_names, b_names, ci_names, nonci_names):
+            other.discard(name)
+        if name not in target:
+            target.add(name)
+        if is_tcb:
+            tcb_changed = True
+        else:
+            reactor_changed = True
+        print(f"[FIX] --assign {name} -> {tier}")
+
+    # --- 未登记 proof：无 --assign 指引即停（不猜测档位）---
+    un_tcb = known_tcb - (a_names | b_names)
+    un_rc = known_reactor - (ci_names | nonci_names)
+    if un_tcb or un_rc:
+        for n in sorted(un_tcb):
+            print(f"[FIX] TCB proof 未登记：{n}（用 --assign {n}=a 或 =b 指定档位）", file=sys.stderr)
+        for n in sorted(un_rc):
+            print(f"[FIX] reactor proof 未登记：{n}（用 --assign {n}=ci 或 =nonci 指定）", file=sys.stderr)
+        return 1
+    prior_tcb_count = len(a_names | b_names)
+    stale_tcb = (a_names | b_names) - known_tcb
+    stale_rc = (ci_names | nonci_names) - known_reactor
+    if stale_tcb:
+        tcb_changed = True
+        for n in stale_tcb:
+            a_names.discard(n)
+            b_names.discard(n)
+        print(f"[FIX] 源码已删除的 TCB proof 将从清单移除：{sorted(stale_tcb)}")
+    if stale_rc:
+        reactor_changed = True
+        print(f"[FIX] 源码已删除的 reactor proof 待人工从附录 C 移除：{sorted(stale_rc)}"
+              "（本工具不改写注记行——附录 C 修正前 S8 维持红）")
+
+    # --- 推导数字（清单收敛后）---
+    derived = {
+        "a": len(a_names), "b": len(b_names),
+        "rc_ci": len(ci_names), "rc_nonci": len(nonci_names),
+        "tcb": len(a_names) + len(b_names),
+        "reactor": len(ci_names) + len(nonci_names),
+        "total": len(a_names) + len(b_names) + len(ci_names) + len(nonci_names),
+        "verified": len(a_names) + len(ci_names),
+    }
+    today = datetime.date.today().isoformat()
+    grew_tcb = tcb_changed and len(a_names | b_names) > prior_tcb_count
+
+    plans = []  # (rel, old_text, new_text, label)
+
+    # --- ① STATUS.md ---
+    new_status = status_text
+    if tcb_changed:
+        if not args.reason:
+            print("[FIX] 清单增删须 --reason \"...\"（写入附录 B 递进史，中性措辞）", file=sys.stderr)
+            return 1
+        new_status, hist_edit = _append_progress_history(
+            new_status, f"{args.reason}{'新增' if grew_tcb else '退役'}", derived["tcb"], today)
+        if hist_edit:
+            print(f"[FIX] STATUS.md L{hist_edit[0]}：递进史追加「…{hist_edit[2][-40:]}」")
+    new_status, n = _rebuild_appendix_b_lists(new_status, a_names, b_names)
+    if n:
+        print(f"[FIX] STATUS.md：附录 B 内联清单重建（{n} 行变更）")
+    new_status, edits = _bump_appendix_headings(
+        new_status, len(a_names), len(b_names), len(ci_names), len(nonci_names))
+    for ln, old, new in edits:
+        print(f"[FIX] STATUS.md L{ln}：{old[:30]}… → {new[:30]}…")
+    new_status, edits = _rewrite_anchor_numbers(new_status, derived, "verification/STATUS.md")
+    for ln, old, new in edits:
+        print(f"[FIX] STATUS.md L{ln}：{old[:40]}… → {new[:40]}…")
+    if new_status != status_text:
+        plans.append(("verification/STATUS.md", status_text, new_status, "附录 B 计数/清单/递进史"))
+
+    # --- ④ kani.yml（TCB 面；reactor 段不动）---
+    # 段边界在 splice 后会漂移：b-tier 段先处理（文件后部），a-tier 段后处理（文件
+    # 前部，其 splice 不影响 b-tier 已消费的边界）。
+    lines, sections_y = _split_yml_jobs(yml_text)
+    yml_changed = False
+    if "kani-tcb-b-tier" in sections_y:
+        s, e = sections_y["kani-tcb-b-tier"]
+        changed, added, removed, notes = _fix_b_tier_section(lines, s, min(e, len(lines)), b_names)
+        if changed:
+            yml_changed = True
+        for n in notes:
+            print(f"[FIX] kani.yml b-tier：{n}")
+    if "kani-tcb-a-tier" in sections_y:
+        s, e = sections_y["kani-tcb-a-tier"]
+        changed, added, removed = _rebuild_for_block(lines, s, min(e, len(lines)), a_names)
+        if changed:
+            yml_changed = True
+        if added or removed:
+            print(f"[FIX] kani.yml a-tier：+{sorted(added)} -{sorted(removed)}")
+    if reactor_changed:
+        ci_assigned = any(s.strip().lower().endswith("=ci") for s in args.assign)
+        extra = "、kani.yml kani-reactor job、evorule-reactor/Cargo.toml metadata.kani" if ci_assigned else ""
+        print("[FIX] reactor 清单变更属人工注记面，本工具不改写——请手工同步："
+              "STATUS.md 附录 C 行（含注记）" + extra)
+    new_yml = "\n".join(lines)
+    if new_yml != yml_text:
+        plans.append((".github/workflows/kani.yml", yml_text, new_yml, "LIST/matrix 同步"))
+
+    # --- ⑤⑥ 其余锚点文件 ---
+    for rel in ("README.md", "ROADMAP.md", "verification/README.md",
+                "verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md",
+                "evorule-reactor/docs/KANI.md"):
+        p = REPO_ROOT / rel
+        if not p.exists():
+            continue
+        old = _read_raw(p)
+        new, edits = _rewrite_anchor_numbers(old, derived, rel)
+        for ln, o, nw in edits:
+            print(f"[FIX] {rel} L{ln}：{o[:36]}… → {nw[:36]}…")
+        if new != old:
+            plans.append((rel, old, new, "锚点计数"))
+
+    if not plans:
+        print("[FIX] 六面已对齐，无需变更。")
+        return 0
+
+    # --- 输出/落盘 ---
+    if args.apply:
+        for rel, _old, new, label in plans:
+            (REPO_ROOT / rel).write_text(new, encoding="utf-8", newline="")
+            print(f"[FIX] 已写入 {rel}（{label}）")
+    else:
+        print("\n===== dry-run 预览（--apply 落盘）=====")
+        for rel, old, new, label in plans:
+            print(f"\n--- {rel}（{label}）---")
+            _print_diff(rel, old, new)
+
+    # --- DISCLOSURE_LOG 草稿（不落盘，S11 成对纪律由人工保留）---
+    if tcb_changed or reactor_changed:
+        print("\n===== DISCLOSURE_LOG.md 草稿条目（请人工并入后同 commit 提交）=====")
+        print(f"- {today} proof 清单同步："
+              + ("，".join(
+                  f"{n}（{t} 档）" for s in args.assign for n, _, t in [s.partition("=")])
+                 or "清单修正")
+              + f"；TCB A 档 {len(a_names)}/B 档 {len(b_names)}，reactor 入闸 {len(ci_names)}"
+              f"/未入 {len(nonci_names)}；对外数字 total={derived['total']} verified={derived['verified']}；"
+              "事由：" + (args.reason or "（补填）"))
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
 
@@ -754,10 +1196,19 @@ def main():
     parser.add_argument("--skip-git", action="store_true", help="跳过 S7/S11（非 git 环境）")
     parser.add_argument("--json", action="store_true", help="JSON 输出（CI 消费）")
     parser.add_argument("--repo", default=None, help="仓库根目录（默认：脚本所在 scripts/ 的上级；仓外运行时指定）")
+    parser.add_argument("--fix", action="store_true",
+                        help="proof 清单同步自动收敛（缺省 dry-run 预览，--apply 落盘）")
+    parser.add_argument("--apply", action="store_true", help="配合 --fix：真正写盘")
+    parser.add_argument("--assign", action="append", default=[], metavar="NAME=a|b|ci|nonci",
+                        help="新 proof 的分档归属（可多次；缺省对未登记 proof 报错并指引）")
+    parser.add_argument("--reason", default=None, help="清单增删事由（写入附录 B 递进史，中性措辞）")
     args = parser.parse_args()
 
     if args.repo:
         REPO_ROOT = Path(args.repo).resolve()
+
+    if args.fix:
+        return cmd_fix(args)
 
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
