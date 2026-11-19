@@ -1,14 +1,18 @@
 # =============================================================================
-# Rust toolchain 锁定
+# Rust toolchain pin
 #
-# 目的:
-# - 锁 1.98.1(本机 stable 通道;2026-07 出 1.97.1,但 1.97.1 对 evorule-reactor
-#   存在稳定触发的 ICE(rmeta/encoder no entry found for key,见 report-006 R-T1),
-#   1.98.1 实测全仓 821 测试通过,故最低可用锁定 = 1.98.1)
-# - 与 Cargo.toml `[workspace.package].rust-version = "1.74"` 兼容(MSRV 是下限)
-# - CI / 本地 / 贡献者使用相同版本,避免 stable 漂移
-# - clippy + rustfmt 组件必须装(clippy 是 1.0 升门条件之一)
-# - Kani 用自带工具链,不依赖此文件(evorule-tcb/ 下另有 nightly pin)
+# Purpose:
+# - Pin 1.98.1 (local stable channel; 1.97.1 shipped in 2026-07 but has a
+#   stably reproducible ICE on evorule-reactor (rmeta/encoder no entry found
+#   for key, see an earlier internal report), while 1.98.1 passes the full
+#   workspace's 821 tests in practice, so the minimum usable pin = 1.98.1)
+# - Compatible with Cargo.toml `[workspace.package].rust-version = "1.74"`
+#   (MSRV is a floor)
+# - CI / local / contributors use the same version to avoid stable drift
+# - clippy + rustfmt components must be installed (clippy is one of the 1.0
+#   gate-promotion conditions)
+# - Kani uses its own toolchain and does not depend on this file
+#   (evorule-tcb/ has its own nightly pin)
 # =============================================================================
 [toolchain]
 channel = "1.98.1"
