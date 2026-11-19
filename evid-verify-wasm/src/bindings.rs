@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! route B：`#[wasm_bindgen]` 绑定面（wasm-pack / npm 生态）
+//! route B: `#[wasm_bindgen]` binding surface (wasm-pack / npm ecosystem)
 //!
-//! 以 `--features bindgen` 启用（不进默认构建——wasm-bindgen 会往模块里
-//! 挂宿主 import，破坏 route A 的零 import 免安装实例化）。宿主（非
-//! wasm32）目标同样可编译可测；判定逻辑同 [`crate::handlers`]，字符串进出。
+//! Enabled with `--features bindgen` (not in the default build —
+//! wasm-bindgen attaches host imports into the module, breaking route A's
+//! zero-import install-free instantiation). Host (non-wasm32) targets compile
+//! and test equally; verdict logic identical to [`crate::handlers`], strings
+//! in and out.
 
 use serde_json::{json, Value as Jv};
 use wasm_bindgen::prelude::*;
@@ -15,23 +17,23 @@ use crate::handlers;
 fn run(input: &str, f: impl Fn(&Jv) -> Jv) -> String {
     match serde_json::from_str::<Jv>(input) {
         Ok(v) => f(&v).to_string(),
-        Err(e) => json!({ "ok": false, "error": format!("输入非法 JSON: {e}") }).to_string(),
+        Err(e) => json!({ "ok": false, "error": format!("invalid input JSON: {e}") }).to_string(),
     }
 }
 
-/// 导出面判定（JSON 字符串进出）
+/// Export-surface verdict (JSON strings in and out)
 #[wasm_bindgen]
 pub fn verify_export_json(input: &str) -> String {
     run(input, handlers::handle_export)
 }
 
-/// WAL 面判定（JSON 字符串进出）
+/// WAL-surface verdict (JSON strings in and out)
 #[wasm_bindgen]
 pub fn verify_wal_json(input: &str) -> String {
     run(input, handlers::handle_wal)
 }
 
-/// 锚点面判定（JSON 字符串进出）
+/// Anchor-surface verdict (JSON strings in and out)
 #[wasm_bindgen]
 pub fn verify_seals_json(input: &str) -> String {
     run(input, handlers::handle_seals)

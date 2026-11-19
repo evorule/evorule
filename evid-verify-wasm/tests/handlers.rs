@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! handler 宿主测试（route A/B 共享层）+ 浏览器实测 fixture dump
+//! Handler host tests (route A/B shared layer) + browser real-test fixture dump
 //!
-//! 正例链以 g5 向量前 3 条折叠构造（与 core tests 同源同式，解析器忠实性
-//! 已由 golden.rs 向量闸先证）；`EVID_WASM_FIXTURE_DIR` 置位时落 6 份
-//! fixture（正例 + 篡改负例 × 三面）供单文件 HTML 验证器 Edge 实测。
+//! Positive chains are folded from the first 3 g5-vector facts (same source
+//! and scheme as the core tests; parser faithfulness already proven by the
+//! golden.rs vector gate); when `EVID_WASM_FIXTURE_DIR` is set, 6 fixtures
+//! (positives + tamper negatives × three surfaces) are written for the
+//! single-file HTML verifier's Edge real-test.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -30,15 +32,15 @@ struct Vector {
 }
 
 fn vectors() -> Vec<Vector> {
-    serde_json::from_str(VECTORS).expect("向量文件应可解析")
+    serde_json::from_str(VECTORS).expect("vector file must parse")
 }
 
-/// 向量 → S1 导出条目 JSON（返回条目 + 折叠后链尾）
+/// Vector → S1 export entry JSON (returns the entry + the folded chain tail)
 fn entry_json(v: &Vector, prev: &str) -> (Jv, String) {
-    let fact = fact_from_json(&v.stable_json).expect("向量解析失败");
-    let content_hash = fact_hash(&fact).expect("fact_hash 失败");
-    let stable_str = serde_json::to_string(&fact_to_stable_json(&fact).expect("stable 失败"))
-        .expect("stable 序列化失败");
+    let fact = fact_from_json(&v.stable_json).expect("vector parse failed");
+    let content_hash = fact_hash(&fact).expect("fact_hash failed");
+    let stable_str = serde_json::to_string(&fact_to_stable_json(&fact).expect("stable failed"))
+        .expect("stable serialization failed");
     let entry = json!({
         "cause": Jv::Null,
         "content_hash": content_hash,
@@ -123,7 +125,7 @@ fn seals_input(tamper: bool) -> Jv {
     let s0 = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
     let mut s1 = make_seal(1, 3, 7, &s0.anchor_hash, "bb22");
     if tamper {
-        // 签名自洽性破坏：载荷字段被改，anchor_hash / signature 未重算
+        // Break signature self-consistency: a payload field altered without recomputing anchor_hash / signature
         s1.session_id = String::from("forged");
     }
     json!({ "seals": [s0, s1], "keys": keys })
@@ -149,7 +151,7 @@ fn export_rejects_unknown_version() {
     doc["version"] = json!("2.0");
     let v = handlers::handle_export(&doc);
     assert_eq!(v["ok"], Jv::Bool(false));
-    let err = v["error"].as_str().expect("error 应为字符串");
+    let err = v["error"].as_str().expect("error must be a string");
     assert!(err.contains("fail-closed"), "{err}");
 }
 
@@ -158,8 +160,8 @@ fn wal_positive_and_tampered() {
     let lines = wal_lines_json(3, None);
     assert_eq!(handlers::handle_wal(&lines)["ok"], Jv::Bool(true));
 
-    // 裸数组形态同判
-    let bare = Jv::Array(lines["lines"].as_array().expect("lines 应为数组").clone());
+    // The bare-array shape gets the same verdict
+    let bare = Jv::Array(lines["lines"].as_array().expect("lines must be an array").clone());
     assert_eq!(handlers::handle_wal(&bare)["ok"], Jv::Bool(true));
 
     let v = handlers::handle_wal(&wal_lines_json(3, Some(2)));
@@ -176,79 +178,79 @@ fn seals_positive_tampered_and_missing_key() {
 
     let v = handlers::handle_seals(&seals_input(true));
     assert_eq!(v["ok"], Jv::Bool(false));
-    let err = v["error"].as_str().expect("error 应为字符串");
-    assert!(err.contains("载荷哈希不匹配"), "{err}");
+    let err = v["error"].as_str().expect("error must be a string");
+    assert!(err.contains("载荷哈希不匹配"), "{err}"); // cross-file anchor on the seal.rs Display message — kept verbatim
 
     let mut input = seals_input(false);
     input["keys"] = json!({});
     let v = handlers::handle_seals(&input);
     assert_eq!(v["ok"], Jv::Bool(false));
-    let err = v["error"].as_str().expect("error 应为字符串");
-    assert!(err.contains("无对应公钥"), "{err}");
+    let err = v["error"].as_str().expect("error must be a string");
+    assert!(err.contains("无对应公钥"), "{err}"); // cross-file anchor on the seal.rs Display message — kept verbatim
 }
 
 #[test]
 fn abi_package_roundtrip() {
-    // route A 出包契约：[u32 LE 长度][JSON 字节]（宿主上同式演练 wasm 调用序）
+    // route A output-package contract: [u32 LE length][JSON bytes] (drills the wasm call sequence on the host)
     use evid_verify_wasm::abi;
 
     let doc = export_doc_json(1, None);
-    let input = serde_json::to_vec(&doc).expect("序列化失败");
+    let input = serde_json::to_vec(&doc).expect("serialization failed");
     let in_ptr = abi::wasm_alloc(input.len() as u32);
     assert!(!in_ptr.is_null());
-    // SAFETY: in_ptr 由 wasm_alloc 分配，容量恰 input.len()
+    // SAFETY: in_ptr is allocated by wasm_alloc with capacity exactly input.len()
     unsafe { core::ptr::copy_nonoverlapping(input.as_ptr(), in_ptr, input.len()) };
-    // SAFETY: in_ptr 由 wasm_alloc 分配且已写入合法 JSON 字节（契约见 abi.rs）
+    // SAFETY: in_ptr is allocated by wasm_alloc and valid JSON bytes have been written (contract in abi.rs)
     let out_ptr = unsafe { abi::verify_export_wasm(in_ptr, input.len() as u32) };
-    // SAFETY: in_ptr 来自 wasm_alloc 且 len 与分配值一致
+    // SAFETY: in_ptr comes from wasm_alloc and len matches the allocation
     unsafe { abi::wasm_free(in_ptr, input.len() as u32) };
     assert!(!out_ptr.is_null());
-    // SAFETY: out_ptr 由 package 分配，首 4 字节为 LE 长度
+    // SAFETY: out_ptr is allocated by package; the first 4 bytes are the LE length
     let out = unsafe {
         let len = core::ptr::read(out_ptr as *const u32);
         core::slice::from_raw_parts(out_ptr.add(4), len as usize).to_vec()
     };
-    // SAFETY: out_ptr 来自 package 分配，4+len 与分配值一致
+    // SAFETY: out_ptr comes from the package allocation; 4+len matches the allocation
     unsafe { abi::wasm_free(out_ptr, 4 + out.len() as u32) };
-    let v: Jv = serde_json::from_slice(&out).expect("出包应可解析");
+    let v: Jv = serde_json::from_slice(&out).expect("output package must parse");
     assert_eq!(v["ok"], Jv::Bool(true));
 
-    // 空指针入参 → 结构化错误包（不 panic）
-    // SAFETY: 空指针是 ABI 契约内的显式拒收路径
+    // Null-pointer input → structured error package (no panic)
+    // SAFETY: the null pointer is an explicit rejection path within the ABI contract
     let out_ptr = unsafe { abi::verify_wal_wasm(core::ptr::null(), 0) };
     assert!(!out_ptr.is_null());
-    // SAFETY: 同上
+    // SAFETY: same as above
     let out = unsafe {
         let len = core::ptr::read(out_ptr as *const u32);
         core::slice::from_raw_parts(out_ptr.add(4), len as usize).to_vec()
     };
-    // SAFETY: out_ptr 来自 package 分配，4+len 与分配值一致
+    // SAFETY: out_ptr comes from the package allocation; 4+len matches the allocation
     unsafe { abi::wasm_free(out_ptr, 4 + out.len() as u32) };
-    let v: Jv = serde_json::from_slice(&out).expect("出包应可解析");
+    let v: Jv = serde_json::from_slice(&out).expect("output package must parse");
     assert_eq!(v["ok"], Jv::Bool(false));
 }
 
 #[test]
 fn dump_browser_fixtures() {
     let Some(dir) = std::env::var_os("EVID_WASM_FIXTURE_DIR") else {
-        return; // 默认无操作（CI 常态），置位才落 fixture
+        return; // no-op by default (CI normal); fixtures written only when set
     };
     let dir = std::path::PathBuf::from(dir);
-    std::fs::create_dir_all(&dir).expect("fixture 目录应可创建");
+    std::fs::create_dir_all(&dir).expect("fixture directory must be creatable");
     let write = |name: &str, v: &Jv| {
         let path = dir.join(format!("{name}.json"));
-        std::fs::write(&path, serde_json::to_string_pretty(v).expect("序列化失败"))
-            .expect("fixture 写入失败");
+        std::fs::write(&path, serde_json::to_string_pretty(v).expect("serialization failed"))
+            .expect("fixture write failed");
     };
     write("export_valid", &export_doc_json(3, None));
     write("export_tampered", &export_doc_json(3, Some(1)));
-    // 微型自检向量（1 条目，内嵌 HTML 自检模式用：一键自证内核未被裁剪）
+    // Miniature self-check vector (1 entry, for the embedded HTML self-check mode: one click proving the kernel is not stripped)
     write("self_check", &export_doc_json(1, None));
     write("wal_valid", &wal_lines_json(3, None));
     write("wal_tampered", &wal_lines_json(3, Some(2)));
     write("seals_valid", &seals_input(false));
     write("seals_tampered", &seals_input(true));
-    // 自校验：落档的同时证 fixture 可信（正例绿 / 篡改红）
+    // Self-verification: while writing, prove the fixtures are trustworthy (positives green / tampers red)
     assert_eq!(
         handlers::handle_export(&export_doc_json(3, None))["ok"],
         Jv::Bool(true)
