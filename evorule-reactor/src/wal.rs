@@ -1711,7 +1711,8 @@ mod tests {
         .unwrap();
         drop(w);
 
-        let records = read_wal(&path).expect("sentinel-id WAL must be readable (must not report InvalidFact)");
+        let records = read_wal(&path)
+            .expect("sentinel-id WAL must be readable (must not report InvalidFact)");
         assert_eq!(records.len(), 1);
         match &records[0].1 {
             Fact::PayloadUpdate { id, .. } => assert_eq!(id.0, u64::MAX - 1),
@@ -1791,7 +1792,8 @@ mod tests {
 
         for fact in &samples {
             let wal_json = fact_to_json(fact);
-            let stable_json = fact_to_stable_json(fact).expect("SSOT stable serialization must not fail");
+            let stable_json =
+                fact_to_stable_json(fact).expect("SSOT stable serialization must not fail");
             assert_eq!(
                 wal_json,
                 stable_json,
@@ -1799,7 +1801,10 @@ mod tests {
                 fact.type_name()
             );
             let round = fact_from_json(&wal_json).unwrap_or_else(|e| {
-                panic!("contract sample read-back failed ({}): {e}", fact.type_name())
+                panic!(
+                    "contract sample read-back failed ({}): {e}",
+                    fact.type_name()
+                )
             });
             assert_eq!(
                 &round,
@@ -1855,7 +1860,10 @@ mod tests {
         match records.first().map(|(_, f)| f) {
             Some(Fact::Stable { id, version }) => {
                 assert_eq!(id.0, 3);
-                assert_eq!(*version, 7, "an explicit new-format version must not be overwritten by version_before");
+                assert_eq!(
+                    *version, 7,
+                    "an explicit new-format version must not be overwritten by version_before"
+                );
             }
             other => panic!("expected Stable, got {other:?}"),
         }

@@ -1559,7 +1559,10 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        assert!(saw_pending, "pending I/O must appear in the snapshot list (intervention visibility surface)");
+        assert!(
+            saw_pending,
+            "pending I/O must appear in the snapshot list (intervention visibility surface)"
+        );
 
         // Cancel → pending cleared to zero
         handle.cancel_all_pending();
@@ -1590,11 +1593,20 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(cancelled.len(), 1, "exactly one cancellation Error fact: {cancelled:?}");
+        assert_eq!(
+            cancelled.len(),
+            1,
+            "exactly one cancellation Error fact: {cancelled:?}"
+        );
 
         // The invariant scan report is available and clean
-        let report = handle.latest_invariant_scan().expect("scan report available");
-        assert!(report.violations.is_empty(), "a normal cancellation produces no violations");
+        let report = handle
+            .latest_invariant_scan()
+            .expect("scan report available");
+        assert!(
+            report.violations.is_empty(),
+            "a normal cancellation produces no violations"
+        );
     }
 
     #[test]
@@ -1708,7 +1720,10 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // The reactor should have finished
-        assert!(handle.is_finished(), "the reactor should finish after command_tx is dropped");
+        assert!(
+            handle.is_finished(),
+            "the reactor should finish after command_tx is dropped"
+        );
 
         // "Current state" APIs should return None (finished=true)
         assert_eq!(
@@ -1742,6 +1757,9 @@ mod tests {
         // snapshot() still returns the last snapshot (with finished=true)
         let snap = handle.snapshot();
         assert!(snap.is_some(), "snapshot stays readable after finish");
-        assert!(snap.unwrap().finished, "the snapshot should be flagged finished=true");
+        assert!(
+            snap.unwrap().finished,
+            "the snapshot should be flagged finished=true"
+        );
     }
 }

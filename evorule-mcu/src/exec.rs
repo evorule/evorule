@@ -1297,7 +1297,10 @@ mod tests {
                 media_bytes.push(b);
             }
         }
-        assert_eq!(flash_stream, media_bytes, "medium line stream matches the line ledger byte-for-byte");
+        assert_eq!(
+            flash_stream, media_bytes,
+            "medium line stream matches the line ledger byte-for-byte"
+        );
     }
 
     /// native `WalWriter` direct-read parity: the native JSONL file byte
@@ -1435,8 +1438,15 @@ mod tests {
         // and consumed → container cleared → Stable
         let canned = canned_llm_result();
         let report = mcu.resume_io(2, Ok(canned.clone())).unwrap();
-        assert_eq!(report.steps_executed, 1, "the recovery drain only executes the re-queued original instruction");
-        assert_eq!(mcu.version(), 2, "IoResponse consumption bump + recovery-step ST bump");
+        assert_eq!(
+            report.steps_executed, 1,
+            "the recovery drain only executes the re-queued original instruction"
+        );
+        assert_eq!(
+            mcu.version(),
+            2,
+            "IoResponse consumption bump + recovery-step ST bump"
+        );
         assert_eq!(
             mcu.payload()
                 .get("llm_response")
@@ -1496,7 +1506,11 @@ mod tests {
         );
         assert_eq!(report.steps_executed, 0);
         assert!(mcu.payload().get("llm_response").is_none());
-        assert_eq!(mcu.version(), 0, "the unknown path does not bump the version");
+        assert_eq!(
+            mcu.version(),
+            0,
+            "the unknown path does not bump the version"
+        );
         // The pending request was not consumed: it can still be answered by its real request_id
         assert_eq!(mcu.pending_ios()[0].request_id, real_id);
         mcu.resume_io(real_id, Ok(canned_llm_result())).unwrap();
@@ -1525,7 +1539,11 @@ mod tests {
             .unwrap();
         assert_eq!(fact_kinds(&mcu), ["Command", "IoRequest", "IoResponse"]);
         assert_eq!(report.steps_executed, 0, "no re-queued execution");
-        assert_eq!(mcu.version(), 1, "the drop-instruction path only bumps for IoResponse consumption");
+        assert_eq!(
+            mcu.version(),
+            1,
+            "the drop-instruction path only bumps for IoResponse consumption"
+        );
         assert!(mcu.payload().get("llm_response").is_none());
         assert!(mcu.pending_ios().is_empty(), "pending request consumed");
         // The on-chain IoResponse carries error and a null result
@@ -1606,7 +1624,11 @@ mod tests {
             other => panic!("expected IoPaused, got {other:?}"),
         };
         assert_eq!(id2, id1 + 2, "two rounds of Command+IoRequest");
-        assert_eq!(mcu.pending_ios().len(), 2, "multiple pendings coexist without displacing each other");
+        assert_eq!(
+            mcu.pending_ios().len(),
+            2,
+            "multiple pendings coexist without displacing each other"
+        );
 
         let canned_a = canned_llm_result();
         let canned_b = JsonValue::object_from_pairs(&[

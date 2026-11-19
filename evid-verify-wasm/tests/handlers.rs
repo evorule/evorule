@@ -161,7 +161,12 @@ fn wal_positive_and_tampered() {
     assert_eq!(handlers::handle_wal(&lines)["ok"], Jv::Bool(true));
 
     // The bare-array shape gets the same verdict
-    let bare = Jv::Array(lines["lines"].as_array().expect("lines must be an array").clone());
+    let bare = Jv::Array(
+        lines["lines"]
+            .as_array()
+            .expect("lines must be an array")
+            .clone(),
+    );
     assert_eq!(handlers::handle_wal(&bare)["ok"], Jv::Bool(true));
 
     let v = handlers::handle_wal(&wal_lines_json(3, Some(2)));
@@ -239,8 +244,11 @@ fn dump_browser_fixtures() {
     std::fs::create_dir_all(&dir).expect("fixture directory must be creatable");
     let write = |name: &str, v: &Jv| {
         let path = dir.join(format!("{name}.json"));
-        std::fs::write(&path, serde_json::to_string_pretty(v).expect("serialization failed"))
-            .expect("fixture write failed");
+        std::fs::write(
+            &path,
+            serde_json::to_string_pretty(v).expect("serialization failed"),
+        )
+        .expect("fixture write failed");
     };
     write("export_valid", &export_doc_json(3, None));
     write("export_tampered", &export_doc_json(3, Some(1)));

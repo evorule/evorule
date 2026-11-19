@@ -172,7 +172,10 @@ mod tests {
         // postcard; same input, same bytes
         let bytes_a = pack.to_evopack().unwrap();
         let bytes_b = pack.to_evopack().unwrap();
-        assert_eq!(bytes_a, bytes_b, "encoding must be deterministic (same input, same bytes)");
+        assert_eq!(
+            bytes_a, bytes_b,
+            "encoding must be deterministic (same input, same bytes)"
+        );
 
         let decoded = RulePack::from_evopack(&bytes_a).unwrap();
         assert_eq!(decoded.rules(), expected.as_slice());

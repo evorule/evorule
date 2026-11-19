@@ -554,7 +554,10 @@ mod tests {
         let report = check(&ruleset(GOOD)).unwrap();
         let v = report.violations;
         assert!(report.scanned > 0, "must actually scan nodes");
-        assert!(v.is_empty(), "a compliant ruleset must not be rejected: {v:?}");
+        assert!(
+            v.is_empty(),
+            "a compliant ruleset must not be rejected: {v:?}"
+        );
     }
 
     #[test]
@@ -562,7 +565,11 @@ mod tests {
         let v = check(&ruleset(r#"[{"type":"while_loop","params":{}}]"#))
             .unwrap()
             .violations;
-        assert_eq!(codes(&v), vec!["DC-01"], "unknown meta instruction must hit DC-01");
+        assert_eq!(
+            codes(&v),
+            vec!["DC-01"],
+            "unknown meta instruction must hit DC-01"
+        );
     }
 
     #[test]
@@ -608,7 +615,10 @@ mod tests {
             "on_true":[{"type":"io_request","params":{"io_type":"call_service"}}]}}
         ]"#;
         let v = check(&ruleset(json)).unwrap().violations;
-        assert!(v.is_empty(), "mutually exclusive rules must not be judged as shadowing: {v:?}");
+        assert!(
+            v.is_empty(),
+            "mutually exclusive rules must not be judged as shadowing: {v:?}"
+        );
     }
 
     #[test]
@@ -703,7 +713,11 @@ mod tests {
     #[test]
     fn missing_type_field_is_rejected() {
         let v = check(&ruleset(r#"[{"params":{}}]"#)).unwrap().violations;
-        assert_eq!(codes(&v), vec!["DC-01"], "a missing type field must hit DC-01");
+        assert_eq!(
+            codes(&v),
+            vec!["DC-01"],
+            "a missing type field must hit DC-01"
+        );
     }
 
     /// Real misreport retrospective: an early wasm-side demo used `set value: null` to clear I/O results.
@@ -713,7 +727,10 @@ mod tests {
     fn set_with_null_value_is_accepted() {
         let json = r#"[{"type":"set","params":{"attr":"__io_results__.demo","operation":"set","value":null}}]"#;
         let v = check(&ruleset(json)).unwrap().violations;
-        assert!(v.is_empty(), "a set with value=null must not be rejected: {v:?}");
+        assert!(
+            v.is_empty(),
+            "a set with value=null must not be rejected: {v:?}"
+        );
     }
 
     #[test]
@@ -721,7 +738,11 @@ mod tests {
         let v = check(&ruleset(r#"[{"type":"set","params":{"attr":"x"}}]"#))
             .unwrap()
             .violations;
-        assert_eq!(codes(&v), vec!["DC-06"], "a missing value field must hit DC-06");
+        assert_eq!(
+            codes(&v),
+            vec!["DC-06"],
+            "a missing value field must hit DC-06"
+        );
     }
 
     /// Integration regression lock (design doc §11): the embedded discipline data itself must pass the gate —

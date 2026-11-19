@@ -44,12 +44,17 @@ fn dump_host_expected_outputs() {
     let dir = std::path::PathBuf::from(dir);
     std::fs::create_dir_all(&dir).expect("output directory must be creatable");
     for (name, face) in FACES {
-        let raw = std::fs::read(format!("{FIXTURES}/{name}.json")).expect("frozen vector must exist");
+        let raw =
+            std::fs::read(format!("{FIXTURES}/{name}.json")).expect("frozen vector must exist");
         let input: Jv = serde_json::from_slice(&raw).expect("frozen vector must parse");
         let verdict = run_face(*face, &input);
         // Polarity self-proof: valid/self_check must be green, tampered must be red (fixtures themselves proven trustworthy first)
         let expect_ok = !name.contains("tampered");
-        assert_eq!(verdict["ok"], Jv::Bool(expect_ok), "{name} polarity mismatch");
+        assert_eq!(
+            verdict["ok"],
+            Jv::Bool(expect_ok),
+            "{name} polarity mismatch"
+        );
         // Compact serialization written byte-exactly (same scheme as the abi.rs package output: verdict.to_string())
         std::fs::write(dir.join(format!("{name}.out.json")), verdict.to_string())
             .expect("expected output write failed");

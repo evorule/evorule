@@ -70,10 +70,16 @@ impl core::fmt::Display for AnchorError {
             AnchorError::Hash(msg) => write!(f, "audit anchor: payload hash failed: {msg}"),
             AnchorError::Sign(e) => write!(f, "audit anchor: {e}"),
             AnchorError::ChainBroken { index, reason } => {
-                write!(f, "audit anchor: anchor chain broken at [{index}]: {reason}")
+                write!(
+                    f,
+                    "audit anchor: anchor chain broken at [{index}]: {reason}"
+                )
             }
             AnchorError::SignatureInvalid { index } => {
-                write!(f, "audit anchor: signature verification failed at [{index}]")
+                write!(
+                    f,
+                    "audit anchor: signature verification failed at [{index}]"
+                )
             }
         }
     }
@@ -438,7 +444,10 @@ pub fn verify_anchor_chain(
             .get(&a.key_id)
             .ok_or_else(|| AnchorError::ChainBroken {
                 index: i,
-                reason: format!("unknown key_id: {} (missing from the public-key table)", a.key_id),
+                reason: format!(
+                    "unknown key_id: {} (missing from the public-key table)",
+                    a.key_id
+                ),
             })?;
         a.verify_one(&prev_hash, key)?;
         prev_hash = a.anchor_hash.clone();

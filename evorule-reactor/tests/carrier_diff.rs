@@ -39,7 +39,10 @@ fn t5a_content_hash_deterministic_and_discriminating() {
         for j in (i + 1)..samples.len() {
             let hi = content_hash(&JsonValue::string(samples[i])).expect("ok");
             let hj = content_hash(&JsonValue::string(samples[j])).expect("ok");
-            assert_ne!(hi, hj, "different inputs {i}/{j} must produce different hashes");
+            assert_ne!(
+                hi, hj,
+                "different inputs {i}/{j} must produce different hashes"
+            );
         }
     }
 }
@@ -54,10 +57,17 @@ fn t5b_chain_step_injective_and_idempotent() {
     // Previous-link injectivity: h1 ≠ h2 ⇒ chain_step(h1,c) ≠ chain_step(h2,c)
     let h1 = chain_step("hash-A", &c);
     let h2 = chain_step("hash-B", &c);
-    assert_ne!(h1, h2, "different previous links must produce different chain hashes");
+    assert_ne!(
+        h1, h2,
+        "different previous links must produce different chain hashes"
+    );
     // Content injectivity: c1 ≠ c2 ⇒ chain_step(h,c1) ≠ chain_step(h,c2)
     let c2 = content_hash(&JsonValue::string("tampered")).expect("ok");
-    assert_ne!(h1, chain_step("hash-A", &c2), "different content must produce a different chain hash");
+    assert_ne!(
+        h1,
+        chain_step("hash-A", &c2),
+        "different content must produce a different chain hash"
+    );
     // Idempotence (determinism)
     assert_eq!(h1, chain_step("hash-A", &c));
 }
@@ -101,7 +111,10 @@ fn t6a_append_version_monotonic_and_snapshot_consistent() {
         assert_eq!(v, prev + 1, "version must strictly increase by +1");
         prev = v;
         let (_, _, snap_v) = log.snapshot();
-        assert_eq!(snap_v, v, "snapshot version must match the append return value");
+        assert_eq!(
+            snap_v, v,
+            "snapshot version must match the append return value"
+        );
     }
     assert_eq!(log.version(), 8);
 }
@@ -133,5 +146,9 @@ fn t6b_append_only_history_preserved() {
             _ => panic!("all facts should be PayloadUpdate"),
         })
         .collect();
-    assert_eq!(values, vec![1, 2, 3, 4], "history order must match write order");
+    assert_eq!(
+        values,
+        vec![1, 2, 3, 4],
+        "history order must match write order"
+    );
 }

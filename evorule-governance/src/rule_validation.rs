@@ -290,7 +290,11 @@ fn check_transform_count(transforms: &[JsonValue]) -> ValidationCheck {
             "Transform count: {} (limit: {}, {})",
             transforms.len(),
             MAX_TRANSFORM_RULES,
-            if passed { "within limit" } else { "over the limit" }
+            if passed {
+                "within limit"
+            } else {
+                "over the limit"
+            }
         ),
         transform_index: -1,
     }
@@ -320,7 +324,10 @@ fn check_type_valid(type_str: &str, idx: i32) -> ValidationCheck {
         passed: valid,
         level: if valid { "info" } else { "error" },
         message: if valid {
-            format!("transform[{}] type '{}' is a legal meta instruction", idx, type_str)
+            format!(
+                "transform[{}] type '{}' is a legal meta instruction",
+                idx, type_str
+            )
         } else {
             format!(
                 "transform[{}] type '{}' is not in the allowlist (legal values: {})",
@@ -345,7 +352,10 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
                 name: "params_complete",
                 passed: true,
                 level: "info",
-                message: format!("transform[{}] type '{}' requires no parameter validation", idx, type_str),
+                message: format!(
+                    "transform[{}] type '{}' requires no parameter validation",
+                    idx, type_str
+                ),
                 transform_index: idx,
             }
         }
@@ -437,7 +447,10 @@ fn check_branch_nested(t: &JsonValue, idx: i32, depth: usize) -> Vec<ValidationC
             name: "nesting_depth",
             passed: false,
             level: "error",
-            message: format!("transform[{}] nesting depth exceeds {} levels", idx, MAX_NESTING_DEPTH),
+            message: format!(
+                "transform[{}] nesting depth exceeds {} levels",
+                idx, MAX_NESTING_DEPTH
+            ),
             transform_index: idx,
         });
         return checks;
@@ -593,7 +606,10 @@ fn check_recursive_nesting(transforms: &[JsonValue]) -> ValidationCheck {
             "max nesting depth: {} level(s){}",
             max_depth,
             if risk {
-                format!(" (over threshold {}; consider splitting)", INFINITE_LOOP_DEPTH_THRESHOLD)
+                format!(
+                    " (over threshold {}; consider splitting)",
+                    INFINITE_LOOP_DEPTH_THRESHOLD
+                )
             } else {
                 String::new()
             }
@@ -995,7 +1011,10 @@ mod tests {
             .checks
             .iter()
             .find(|c| c.name == "infinite_loop");
-        assert!(infinite_loop.is_some(), "a nested while_loop must still produce a check item");
+        assert!(
+            infinite_loop.is_some(),
+            "a nested while_loop must still produce a check item"
+        );
         assert!(
             !infinite_loop.unwrap().passed,
             "a while_loop inside a nested branch without state changes must warn"

@@ -81,7 +81,9 @@ impl IoType {
     /// `ReactorBuilder::known_io_types`). The method name is kept only for
     /// backward compatibility of old call sites; behavior changed from
     /// "return None on unknown" to "always return Some" to avoid silent breakage.
-    #[deprecated(note = "since v0.2.0 use IoType::new; parse no longer validates and is kept only for backward compatibility")]
+    #[deprecated(
+        note = "since v0.2.0 use IoType::new; parse no longer validates and is kept only for backward compatibility"
+    )]
     pub fn parse(s: &str) -> Option<Self> {
         Some(Self::new(s))
     }
@@ -783,7 +785,9 @@ mod tests {
         assert_eq!(json.get("rule_index"), Some(&JsonValue::U64(2)));
         assert_eq!(
             json.get("reason"),
-            Some(&JsonValue::string("violation: deleting the dataset is forbidden"))
+            Some(&JsonValue::string(
+                "violation: deleting the dataset is forbidden"
+            ))
         );
         assert_eq!(
             json.get("instruction").and_then(|v| v.get("type")),

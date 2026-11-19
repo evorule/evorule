@@ -64,7 +64,11 @@ fn parse_golden() -> Vec<serde_json::Value> {
 #[test]
 fn golden_vector_byte_stable() {
     let signer = AuditSigner::from_bytes([0xabu8; 32]);
-    assert_eq!(signer.verifying_hex(), GOLDEN_PK, "public key must be deterministically derived");
+    assert_eq!(
+        signer.verifying_hex(),
+        GOLDEN_PK,
+        "public key must be deterministically derived"
+    );
 
     let mut builder = AnchorChainBuilder::new(
         signer,

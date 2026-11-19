@@ -63,7 +63,11 @@ fn hex_roundtrip() {
     assert_eq!(hex, "000fa5ff");
     assert_eq!(hex_decode(&hex).expect("should decode"), bytes.to_vec());
     assert_eq!(hex_decode("0"), None, "odd length must be rejected");
-    assert_eq!(hex_decode("zz"), None, "invalid characters must be rejected");
+    assert_eq!(
+        hex_decode("zz"),
+        None,
+        "invalid characters must be rejected"
+    );
 }
 
 #[test]
@@ -86,7 +90,8 @@ fn seal_detects_payload_tamper() {
     let seal = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
     let mut tampered = seal.clone();
     tampered.session_id = String::from("forged");
-    let err = verify_seal(&tampered, ANCHOR_GENESIS, &vk_hex()).expect_err("payload tamper must be rejected");
+    let err = verify_seal(&tampered, ANCHOR_GENESIS, &vk_hex())
+        .expect_err("payload tamper must be rejected");
     assert!(
         matches!(
             err,
@@ -102,7 +107,8 @@ fn seal_detects_wrong_key() {
     let other_seed = [7u8; 32];
     let sk = SigningKey::from_bytes(&other_seed);
     let wrong_vk = hex_encode(sk.verifying_key().as_bytes());
-    let err = verify_seal(&seal, ANCHOR_GENESIS, &wrong_vk).expect_err("swapped public key must be rejected");
+    let err = verify_seal(&seal, ANCHOR_GENESIS, &wrong_vk)
+        .expect_err("swapped public key must be rejected");
     assert!(
         matches!(
             err,
@@ -120,7 +126,8 @@ fn seal_detects_signature_swap() {
     let mut forged = seal.clone();
     forged.logical_time = 99;
     forged.signature = sign_payload(&forged); // signature self-consistent but anchor_hash not recomputed
-    let err = verify_seal(&forged, ANCHOR_GENESIS, &vk_hex()).expect_err("unrecomputed hash must be rejected");
+    let err = verify_seal(&forged, ANCHOR_GENESIS, &vk_hex())
+        .expect_err("unrecomputed hash must be rejected");
     assert!(
         matches!(
             err,
@@ -186,7 +193,8 @@ fn seal_chain_detects_broken_hash_link() {
     // s1 scenario, directly alter anchor_hash to trigger PayloadHashMismatch
     forged.anchor_hash =
         String::from("0000000000000000000000000000000000000000000000000000000000000000");
-    let err = verify_seal_chain(&[s0, forged], &keys).expect_err("broken anchor_hash link must be rejected");
+    let err = verify_seal_chain(&[s0, forged], &keys)
+        .expect_err("broken anchor_hash link must be rejected");
     assert!(
         matches!(
             err,
@@ -199,14 +207,16 @@ fn seal_chain_detects_broken_hash_link() {
 #[test]
 fn seal_rejects_malformed_hex() {
     let seal = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
-    let err = verify_seal(&seal, ANCHOR_GENESIS, "nothex").expect_err("invalid public key hex must be rejected");
+    let err = verify_seal(&seal, ANCHOR_GENESIS, "nothex")
+        .expect_err("invalid public key hex must be rejected");
     assert!(
         matches!(err, evid_verify_core::seal::SealError::HexInvalid { .. }),
         "{err}"
     );
     let mut bad_sig = seal.clone();
     bad_sig.signature = String::from("abcd"); // length != 64 bytes
-    let err = verify_seal(&bad_sig, ANCHOR_GENESIS, &vk_hex()).expect_err("short signature must be rejected");
+    let err = verify_seal(&bad_sig, ANCHOR_GENESIS, &vk_hex())
+        .expect_err("short signature must be rejected");
     assert!(
         matches!(err, evid_verify_core::seal::SealError::HexInvalid { .. }),
         "{err}"

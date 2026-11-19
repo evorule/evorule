@@ -338,7 +338,10 @@ mod tests {
             let first_serde = serde_json::to_string(&first).unwrap();
             for _ in 0..3 {
                 let again = p.decide(role, io, tgt);
-                assert_eq!(again, first, "decide must be deterministic: {role}/{io}/{tgt}");
+                assert_eq!(
+                    again, first,
+                    "decide must be deterministic: {role}/{io}/{tgt}"
+                );
                 assert_eq!(
                     serde_json::to_string(&again).unwrap(),
                     first_serde,

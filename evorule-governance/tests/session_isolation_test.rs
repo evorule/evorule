@@ -137,8 +137,12 @@ async fn concurrent_sessions_state_isolation() {
     for (idx, &sid) in session_ids.iter().enumerate() {
         let session = mgr.get_session(sid).expect("get session after run");
         let (payload, _queue, version) = session.facts_log.snapshot();
-        let x = payload_x(&payload)
-            .unwrap_or_else(|| panic!("session {} payload is missing the x field: {}", sid, payload));
+        let x = payload_x(&payload).unwrap_or_else(|| {
+            panic!(
+                "session {} payload is missing the x field: {}",
+                sid, payload
+            )
+        });
         assert_eq!(
             x, expected[idx],
             "session {} (idx {}) state cross-talk: x={} expected={} (concurrent isolation broken)",
@@ -183,7 +187,12 @@ async fn concurrent_create_close_no_deadlock() {
         t.await.expect("task join");
     }
 
-    assert_eq!(mgr.len(), 0, "count should be zero after all sessions are closed, got {}", mgr.len());
+    assert_eq!(
+        mgr.len(),
+        0,
+        "count should be zero after all sessions are closed, got {}",
+        mgr.len()
+    );
 }
 
 /// Session IDs created concurrently must be unique.

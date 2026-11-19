@@ -754,7 +754,10 @@ mod tests {
         assert!(result.is_ok());
         // key assertion: the command channel has no IoResponse at all (the external executor's
         // io_response is never raced away)
-        assert!(rx.try_recv().is_err(), "no IoResponse should be written back on a skip hit");
+        assert!(
+            rx.try_recv().is_err(),
+            "no IoResponse should be written back on a skip hit"
+        );
     }
 
     /// Control group: default (no skip) → dispatch fails → an error IoResponse is written back
@@ -779,7 +782,10 @@ mod tests {
                 request_id, error, ..
             }) => {
                 assert_eq!(request_id, FactId(2));
-                assert!(error.is_some(), "an unregistered type should write back an error IoResponse");
+                assert!(
+                    error.is_some(),
+                    "an unregistered type should write back an error IoResponse"
+                );
             }
             other => panic!("an error IoResponse should have been written back, got: {other:?}"),
         }
@@ -1032,13 +1038,16 @@ mod tests {
                 request_id, error, ..
             }) => {
                 assert_eq!(request_id, FactId(21));
-                let err = error.expect("the unattended ask fallback must write back an error IoResponse");
+                let err =
+                    error.expect("the unattended ask fallback must write back an error IoResponse");
                 assert!(
                     err.contains("route=ask-fallback"),
                     "J-SG2: the ask fallback must carry ask-fallback semantics, got: {err}"
                 );
             }
-            other => panic!("the ask fallback should write back an error IoResponse, got: {other:?}"),
+            other => {
+                panic!("the ask fallback should write back an error IoResponse, got: {other:?}")
+            }
         }
     }
 
@@ -1128,7 +1137,9 @@ mod tests {
                     "threshold 1: the first deny trips and submits the circuit-breaker signal, got: {s}"
                 );
             }
-            other => panic!("the first output must be the circuit-breaker signal Command, got: {other:?}"),
+            other => panic!(
+                "the first output must be the circuit-breaker signal Command, got: {other:?}"
+            ),
         }
         match rx.try_recv() {
             Ok(Fact::IoResponse { error, .. }) => {
@@ -1140,7 +1151,10 @@ mod tests {
             }
             other => panic!("the next output must be a deny IoResponse, got: {other:?}"),
         }
-        assert!(rx.try_recv().is_err(), "the 1st request should produce exactly the two Facts above");
+        assert!(
+            rx.try_recv().is_err(),
+            "the 1st request should produce exactly the two Facts above"
+        );
 
         // 2nd (the same fixed instant, the 300s window not expired): is_tripped must be true →
         // a wholesale-rejection write-back without a route segment (the trip branch precedes the

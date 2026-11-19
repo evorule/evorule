@@ -2048,7 +2048,10 @@ mod tests {
             instruction: JsonValue::object_from_pairs(&[("type", JsonValue::string("increment"))]),
         })
         .unwrap();
-        assert!(log.rotate_wal().unwrap(), "file-backend rotation must return true");
+        assert!(
+            log.rotate_wal().unwrap(),
+            "file-backend rotation must return true"
+        );
         // Continue appending after rotation: the new shard continues the write, the old shard
         // stays intact; a full replay loses no content
         log.append(Fact::Command {
@@ -2059,7 +2062,11 @@ mod tests {
         drop(log);
 
         let recovered = FactsLog::recover(&path).unwrap();
-        assert_eq!(recovered.history().len(), 2, "old-shard content must remain replayable after rotation");
+        assert_eq!(
+            recovered.history().len(),
+            2,
+            "old-shard content must remain replayable after rotation"
+        );
     }
 
     #[cfg(feature = "persistence")]
@@ -2889,7 +2896,10 @@ mod tests {
 
         // split_point=4999 (the 5000th entry has version_before=1667 > 1666)
         // compacted_count=4999, ratio=4999/5000≈0.9998 >> 0.4
-        assert!(ratio >= 0.4, "compaction ratio {ratio:.4} should be >= 0.4 (40%)");
+        assert!(
+            ratio >= 0.4,
+            "compaction ratio {ratio:.4} should be >= 0.4 (40%)"
+        );
 
         // After compaction history keeps only 1 entry
         assert_eq!(log.history_len(), 1);
@@ -2902,7 +2912,9 @@ mod tests {
         assert_eq!(log.last_hash(), last_hash_before);
 
         // compacted_info should have a value
-        let (compacted_version, compacted_count) = log.compacted_info().expect("compacted snapshot should exist");
+        let (compacted_version, compacted_count) = log
+            .compacted_info()
+            .expect("compacted snapshot should exist");
         assert_eq!(compacted_count, 4999);
         assert_eq!(compacted_version, 1666);
     }
@@ -2963,10 +2975,18 @@ mod tests {
                 compacted_count,
             }) => {
                 assert_eq!(from_version, 5);
-                assert_eq!(compacted_version, 10, "compaction-point version should be last_stable_version");
-                assert!(compacted_count > 0, "the number of facts dropped by compaction should be reported");
+                assert_eq!(
+                    compacted_version, 10,
+                    "compaction-point version should be last_stable_version"
+                );
+                assert!(
+                    compacted_count > 0,
+                    "the number of facts dropped by compaction should be reported"
+                );
             }
-            other => panic!("reading before the compaction point should return CompactedRead, got {other:?}"),
+            other => panic!(
+                "reading before the compaction point should return CompactedRead, got {other:?}"
+            ),
         }
 
         // Reading after the compaction point still works normally

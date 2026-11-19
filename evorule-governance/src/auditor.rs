@@ -297,7 +297,10 @@ impl Auditor {
     }
 
     /// Serializes a single audit entry as a JSONL line (deprecated, backward compatibility only)
-    #[deprecated(since = "0.2.0", note = "two-WAL merge: the auditor no longer writes its own WAL")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "two-WAL merge: the auditor no longer writes its own WAL"
+    )]
     #[allow(dead_code)]
     fn entry_to_json_line(entry: &AuditEntry) -> String {
         serde_json::json!({
@@ -358,7 +361,10 @@ impl Auditor {
         let start = self.entries.len();
         if start >= history_len {
             self.last_audited_version = self.facts_log.version();
-            tracing::debug!(version = self.last_audited_version, "audit_new: no new facts");
+            tracing::debug!(
+                version = self.last_audited_version,
+                "audit_new: no new facts"
+            );
             return 0;
         }
 
@@ -473,7 +479,10 @@ impl Auditor {
                     "audit_new: live audit verification failed; the audit chain may have been tampered with or corrupted"
                 );
             } else {
-                tracing::debug!(entries = self.entries.len(), "audit_new: live audit verification passed");
+                tracing::debug!(
+                    entries = self.entries.len(),
+                    "audit_new: live audit verification passed"
+                );
             }
         }
 
@@ -764,7 +773,9 @@ impl Auditor {
         self.anchors.push(anchor);
         // Right after push the list is non-empty; no expect (F11 gate) - a failure here would be a programming error and returns Err
         self.anchors.last().cloned().ok_or_else(|| {
-            crate::anchor::AnchorError::Hash("anchor list unexpectedly empty (unreachable right after a push)".to_string())
+            crate::anchor::AnchorError::Hash(
+                "anchor list unexpectedly empty (unreachable right after a push)".to_string(),
+            )
         })
     }
 
@@ -879,7 +890,10 @@ impl Auditor {
                     chain.push(entry);
                 }
                 None => {
-                    tracing::warn!(fact_id = cur_id.0, "causal_chain: traversal interrupted; audit entry not found");
+                    tracing::warn!(
+                        fact_id = cur_id.0,
+                        "causal_chain: traversal interrupted; audit entry not found"
+                    );
                     break;
                 }
             }
@@ -1559,7 +1573,11 @@ mod tests {
         // interval=3: 6 facts → 2 anchors (one per 3 facts)
         let mut a = anchor_auditor(3);
         append_facts(&mut a, 6, 1);
-        assert_eq!(a.anchors().len(), 2, "6 facts with interval=3 must seal 2 anchors");
+        assert_eq!(
+            a.anchors().len(),
+            2,
+            "6 facts with interval=3 must seal 2 anchors"
+        );
         assert_eq!(
             a.anchors()[0].fact_range,
             crate::anchor::FactRange { lo: 0, hi: 3 }
@@ -1586,7 +1604,10 @@ mod tests {
         let mut a = Auditor::new(make_facts_log());
         append_facts(&mut a, 5, 1);
         assert!(a.anchors().is_empty(), "off by default: zero anchors");
-        assert!(a.verify(), "fact chain verify is unaffected by the anchor mechanism");
+        assert!(
+            a.verify(),
+            "fact chain verify is unaffected by the anchor mechanism"
+        );
         assert_eq!(a.entries().len(), 5);
     }
 
@@ -1992,7 +2013,9 @@ mod tests {
         let mut auditor = Auditor::new(log);
         auditor.audit_new();
 
-        let report = auditor.report().expect("report serialization must not fail");
+        let report = auditor
+            .report()
+            .expect("report serialization must not fail");
         let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
         assert_eq!(parsed["entry_count"], 1);
         assert_eq!(parsed["entries"].as_array().unwrap().len(), 1);
@@ -2044,7 +2067,9 @@ mod tests {
         let auditor = Auditor::new(log);
         // Initial last_hash is "genesis"
         // Verified indirectly via report
-        let report = auditor.report().expect("report serialization must not fail");
+        let report = auditor
+            .report()
+            .expect("report serialization must not fail");
         let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
         assert_eq!(parsed["last_hash"], "genesis");
     }
@@ -2080,7 +2105,10 @@ mod tests {
             msg.contains("EVO-AUDIT-WAL-CORRUPT"),
             "error message must contain the [EVO-AUDIT-WAL-CORRUPT] marker: {msg}"
         );
-        assert!(msg.contains("Line: 1"), "error message must contain the corrupt line number: {msg}");
+        assert!(
+            msg.contains("Line: 1"),
+            "error message must contain the corrupt line number: {msg}"
+        );
         assert!(
             auditor.entries().is_empty(),
             "after refusal no partial entries may remain (all or nothing)"
@@ -2295,7 +2323,9 @@ mod tests {
     #[test]
     fn test_export_format() {
         let auditor = build_auditor_with_entries();
-        let json_str = auditor.export().expect("export serialization must not fail");
+        let json_str = auditor
+            .export()
+            .expect("export serialization must not fail");
 
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed["version"], "1.0");
@@ -2317,7 +2347,9 @@ mod tests {
     fn test_export_empty_auditor() {
         let log = make_facts_log();
         let auditor = Auditor::new(log);
-        let json_str = auditor.export().expect("export serialization must not fail");
+        let json_str = auditor
+            .export()
+            .expect("export serialization must not fail");
 
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed["version"], "1.0");
@@ -2329,7 +2361,9 @@ mod tests {
     #[test]
     fn test_import_export_roundtrip() {
         let auditor = build_auditor_with_entries();
-        let export_str = auditor.export().expect("export serialization must not fail");
+        let export_str = auditor
+            .export()
+            .expect("export serialization must not fail");
         let original_verify = auditor.verify();
         assert!(original_verify);
 
@@ -2486,7 +2520,9 @@ mod tests {
     #[test]
     fn test_import_preserves_causal_chain() {
         let auditor = build_auditor_with_entries();
-        let export_str = auditor.export().expect("export serialization must not fail");
+        let export_str = auditor
+            .export()
+            .expect("export serialization must not fail");
 
         // Verify the original auditor's causal chain
         let original_chain = auditor.causal_chain(FactId(11));
@@ -2512,7 +2548,9 @@ mod tests {
         assert_eq!(auditor.audit_new_count, 2);
 
         // Import must reset audit_new_count
-        let export_str = auditor.export().expect("export serialization must not fail");
+        let export_str = auditor
+            .export()
+            .expect("export serialization must not fail");
         let log2 = make_facts_log();
         let mut imported = Auditor::new(log2);
         imported.import(&export_str).unwrap();
@@ -2546,7 +2584,10 @@ mod tests {
         let mut auditor = Auditor::new(log);
         auditor.audit_new();
 
-        let json_size = auditor.export().expect("export serialization must not fail").len();
+        let json_size = auditor
+            .export()
+            .expect("export serialization must not fail")
+            .len();
         let compressed = auditor.export_compressed().unwrap();
         let compressed_size = compressed.len();
 
@@ -2781,7 +2822,11 @@ mod tests {
             2,
             log_path.clone(),
         );
-        assert_eq!(auditor2.anchors().len(), 1, "anchors must be read back after restart (G1 acceptance)");
+        assert_eq!(
+            auditor2.anchors().len(),
+            1,
+            "anchors must be read back after restart (G1 acceptance)"
+        );
         // After restore, replay the audit first (anchor fact_hi=4 can only be bound once entries are rebuilt) -
         // exactly the P0-1 operational semantics: restart = restore anchors + replay audit + continue sealing
         auditor2.audit_new();

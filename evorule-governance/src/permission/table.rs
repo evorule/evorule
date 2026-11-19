@@ -402,7 +402,11 @@ mod tests {
 
         // (a) the change has landed in the raw ledger-fact layer: queryable by path prefix and complete in content
         let raw: Vec<_> = log.facts_by_path_prefix(ENTRY_PREFIX);
-        assert_eq!(raw.len(), 1, "store_entry must append exactly one fact to the ledger");
+        assert_eq!(
+            raw.len(),
+            1,
+            "store_entry must append exactly one fact to the ledger"
+        );
         assert_eq!(
             raw[0].path,
             format!("{ENTRY_PREFIX}io-allow-human"),
@@ -412,7 +416,9 @@ mod tests {
         // (b) the derived snapshot agrees with the ledger: the permission table is a projection
         // of the ledger, not an independent in-memory copy
         let table = PermissionTable::snapshot_at(&log, stored_version).expect("snapshot_at");
-        let back = table.get("io-allow-human").expect("the entry must appear in the snapshot");
+        let back = table
+            .get("io-allow-human")
+            .expect("the entry must appear in the snapshot");
         assert_eq!(back.effect, Effect::Allow);
         assert_eq!(back.state, PermissionState::Active);
 
@@ -487,7 +493,10 @@ mod tests {
         // at v1: only p-a (p-b's version > v1, must be excluded)
         let snap1 = PermissionTable::snapshot_at(&log, v1).unwrap();
         assert!(snap1.get("p-a").is_some(), "v1 must contain p-a");
-        assert!(snap1.get("p-b").is_none(), "v1 must exclude p-b whose version > v1");
+        assert!(
+            snap1.get("p-b").is_none(),
+            "v1 must exclude p-b whose version > v1"
+        );
 
         // at v2: both p-a and p-b present
         let snap2 = PermissionTable::snapshot_at(&log, v2).unwrap();

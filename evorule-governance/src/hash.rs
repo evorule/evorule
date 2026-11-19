@@ -342,6 +342,9 @@ mod tests {
 
         let chain1 = compute_chain_hash(&[fact1.clone(), fact2.clone()]).unwrap();
         let chain2 = compute_chain_hash(&[fact2, fact1]).unwrap();
-        assert_ne!(chain1, chain2, "chain hash should be order-sensitive over Facts");
+        assert_ne!(
+            chain1, chain2,
+            "chain hash should be order-sensitive over Facts"
+        );
     }
 }

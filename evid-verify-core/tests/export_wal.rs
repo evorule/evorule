@@ -34,9 +34,10 @@ fn build_entries(n: usize) -> Vec<ExportEntry> {
         let fact = fact_from_json(&v.stable_json).expect("vector parse failed");
         let fact_id = fact.id().0;
         let fact_type = fact.type_name().to_string();
-        let stable_str =
-            serde_json::to_string(&fact_to_stable_json(&fact).expect("stable recomputation failed"))
-                .expect("stable serialization failed");
+        let stable_str = serde_json::to_string(
+            &fact_to_stable_json(&fact).expect("stable recomputation failed"),
+        )
+        .expect("stable serialization failed");
         let content_hash = fact_hash(&fact).expect("fact_hash failed");
         entries.push(ExportEntry {
             content_hash: content_hash.clone(),
@@ -97,7 +98,11 @@ fn doc_to_json(doc: &ExportDoc) -> serde_json::Value {
 fn export_doc_positive() {
     let doc = build_doc(3);
     let report = verify_export(&doc);
-    assert!(report.all_ok(), "positive must be all green: {:?}", report.verdicts);
+    assert!(
+        report.all_ok(),
+        "positive must be all green: {:?}",
+        report.verdicts
+    );
     assert_eq!(report.verdicts.len(), 3);
     assert_eq!(report.stopped_at, None);
 }
@@ -173,7 +178,11 @@ fn export_detects_tampered_fact_field() {
     assert!(!report.all_ok(), "tampered fact field must be detected");
     assert_eq!(report.stopped_at, Some(1));
     let rej = report.verdicts[1].reject.as_ref().expect("must reject");
-    assert_eq!(rej.step, ExportStep::Content, "fact field tamper must be detected at the content step");
+    assert_eq!(
+        rej.step,
+        ExportStep::Content,
+        "fact field tamper must be detected at the content step"
+    );
 }
 
 #[test]
@@ -181,10 +190,17 @@ fn export_detects_tampered_stable_original() {
     let mut doc = build_doc(3);
     doc.entries[2].fact_json_stable.insert(2, ' '); // original altered (fact field untouched)
     let report = verify_export(&doc);
-    assert!(!report.all_ok(), "tampered stable original must be detected");
+    assert!(
+        !report.all_ok(),
+        "tampered stable original must be detected"
+    );
     assert_eq!(report.stopped_at, Some(2));
     let rej = report.verdicts[2].reject.as_ref().expect("must reject");
-    assert_eq!(rej.step, ExportStep::Stable, "original tamper must be detected at the deep-compare step");
+    assert_eq!(
+        rej.step,
+        ExportStep::Stable,
+        "original tamper must be detected at the deep-compare step"
+    );
 }
 
 #[test]
@@ -196,7 +212,11 @@ fn export_detects_broken_link() {
     assert!(!report.all_ok(), "broken link must be detected");
     assert_eq!(report.stopped_at, Some(1));
     let rej = report.verdicts[1].reject.as_ref().expect("must reject");
-    assert_eq!(rej.step, ExportStep::Link, "broken link must be detected at the link step");
+    assert_eq!(
+        rej.step,
+        ExportStep::Link,
+        "broken link must be detected at the link step"
+    );
 }
 
 #[test]
@@ -206,7 +226,10 @@ fn export_detects_tail_mismatch() {
         String::from("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
     let report = verify_export(&doc);
     assert!(!report.all_ok(), "chain tail mismatch must be detected");
-    assert_eq!(report.stopped_at, None, "all entries green but the tail reconciliation failed");
+    assert_eq!(
+        report.stopped_at, None,
+        "all entries green but the tail reconciliation failed"
+    );
     assert!(!report.last_hash_matches);
 }
 
@@ -216,7 +239,10 @@ fn export_rejects_float_field() {
         "type": "PayloadUpdate", "id": 1u64, "path": "p", "value": 1.5,
     });
     let err = fact_from_json(&json).expect_err("float must be rejected");
-    assert!(err.reason().contains("浮点"), "must report the float rejection: {err}"); // cross-file anchor on the parse.rs message — kept verbatim
+    assert!(
+        err.reason().contains("浮点"),
+        "must report the float rejection: {err}"
+    ); // cross-file anchor on the parse.rs message — kept verbatim
 }
 
 #[test]
@@ -263,7 +289,11 @@ fn wal_lines_positive_and_negative() {
         prev = chain_hash;
     }
     let report = verify_wal_lines(&lines);
-    assert!(report.all_ok(), "WAL positive must be all green: {:?}", report.verdicts);
+    assert!(
+        report.all_ok(),
+        "WAL positive must be all green: {:?}",
+        report.verdicts
+    );
 
     // Negative 1: tampered chain_hash → detected at the folding step
     let mut tampered = lines.clone();
@@ -272,7 +302,14 @@ fn wal_lines_positive_and_negative() {
     let report = verify_wal_lines(&tampered);
     assert!(!report.all_ok());
     assert_eq!(report.stopped_at, Some(2));
-    assert_eq!(report.verdicts[2].reject.as_ref().expect("must reject").step, 3);
+    assert_eq!(
+        report.verdicts[2]
+            .reject
+            .as_ref()
+            .expect("must reject")
+            .step,
+        3
+    );
 
     // Negative 2: tampered fact field → detected at the content step
     let mut tampered = lines.clone();
@@ -282,7 +319,14 @@ fn wal_lines_positive_and_negative() {
     let report = verify_wal_lines(&tampered);
     assert!(!report.all_ok());
     assert_eq!(report.stopped_at, Some(1));
-    assert_eq!(report.verdicts[1].reject.as_ref().expect("must reject").step, 2);
+    assert_eq!(
+        report.verdicts[1]
+            .reject
+            .as_ref()
+            .expect("must reject")
+            .step,
+        2
+    );
 
     // Negative 3: broken link → detected at the link step
     let mut tampered = lines;
@@ -291,7 +335,14 @@ fn wal_lines_positive_and_negative() {
     let report = verify_wal_lines(&tampered);
     assert!(!report.all_ok());
     assert_eq!(report.stopped_at, Some(0));
-    assert_eq!(report.verdicts[0].reject.as_ref().expect("must reject").step, 1);
+    assert_eq!(
+        report.verdicts[0]
+            .reject
+            .as_ref()
+            .expect("must reject")
+            .step,
+        1
+    );
 }
 
 #[test]

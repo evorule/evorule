@@ -110,8 +110,11 @@ fn req<'a>(
 
 fn req_u64(obj: &serde_json::Map<String, Jv>, key: &str, ctx: &str) -> Result<u64, ParseError> {
     let v = req(obj, key, ctx)?;
-    v.as_u64()
-        .ok_or_else(|| ParseError::new(alloc::format!("{ctx}.{key} must be a non-negative integer (full u64 range)")))
+    v.as_u64().ok_or_else(|| {
+        ParseError::new(alloc::format!(
+            "{ctx}.{key} must be a non-negative integer (full u64 range)"
+        ))
+    })
 }
 
 fn req_str<'a>(

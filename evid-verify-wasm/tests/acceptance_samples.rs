@@ -72,7 +72,9 @@ fn derive_acceptance_samples() {
     let seals = load("seals_valid");
     let swapped_sig = {
         let mut d = seals.clone();
-        let sig = d["seals"][1]["signature"].as_str().expect("signature must be a string");
+        let sig = d["seals"][1]["signature"]
+            .as_str()
+            .expect("signature must be a string");
         d["seals"][1]["signature"] = json!(flip_hex(sig));
         d
     };
@@ -124,10 +126,18 @@ fn derive_acceptance_samples() {
             _ => handlers::handle_seals(&sample),
         };
         // Polarity self-proof (authoritative verdicts; the factual baseline for acceptance comparison)
-        assert_eq!(verdict["ok"], Jv::Bool(expect_ok), "{name} polarity mismatch");
+        assert_eq!(
+            verdict["ok"],
+            Jv::Bool(expect_ok),
+            "{name} polarity mismatch"
+        );
         match &expect {
             Expect::Step(stopped, step) => {
-                assert_eq!(verdict["stopped_at"], json!(stopped), "{name} stop point mismatch");
+                assert_eq!(
+                    verdict["stopped_at"],
+                    json!(stopped),
+                    "{name} stop point mismatch"
+                );
                 assert_eq!(
                     verdict["verdicts"][stopped]["step"],
                     json!(step),
@@ -141,7 +151,10 @@ fn derive_acceptance_samples() {
             }
             Expect::ErrContains(s) => {
                 let err = verdict["error"].as_str().expect("error must be a string");
-                assert!(err.contains(s), "{name}: expected to contain \"{s}\", got {err}");
+                assert!(
+                    err.contains(s),
+                    "{name}: expected to contain \"{s}\", got {err}"
+                );
             }
             Expect::None => {}
         }

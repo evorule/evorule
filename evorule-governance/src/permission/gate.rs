@@ -361,7 +361,10 @@ mod tests {
                 let mut ctx2 = IoCallContext::new(FactId(1), 0, None);
                 ctx2.caller_role = role;
                 let second = gate.check(&mut ctx2, io, None);
-                assert_eq!(first, second, "verdict must be deterministic: {role:?}/{io}");
+                assert_eq!(
+                    first, second,
+                    "verdict must be deterministic: {role:?}/{io}"
+                );
 
                 // 3)+4) default-deny direction + seed precision
                 match role {
@@ -436,7 +439,11 @@ mod tests {
         // human + query_db: dynamic-table seed Allow, static deny tightens → final Deny
         let (verdict, route) = gate.check_routed(&mut ctx, "query_db", None);
         assert_eq!(verdict, Verdict::Deny);
-        assert_eq!(route, Some("deny"), "static deny must yield route semantics");
+        assert_eq!(
+            route,
+            Some("deny"),
+            "static deny must yield route semantics"
+        );
     }
 
     /// Verdict order 2: ask + llm (unattended) → fallback Deny + ask-fallback semantics
@@ -473,7 +480,10 @@ mod tests {
             Verdict::Allow,
             "ask+human must fall to the dynamic table (seed Allow admits)"
         );
-        assert_eq!(route, None, "decisions falling to the dynamic table carry no static route semantics");
+        assert_eq!(
+            route, None,
+            "decisions falling to the dynamic table carry no static route semantics"
+        );
     }
 
     /// Verdict order 4: static allow grants no admission power — llm missing the tightening

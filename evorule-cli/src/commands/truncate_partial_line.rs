@@ -36,10 +36,9 @@ pub fn run(cmd: &TruncatePartialLine) -> Result<(), CliError> {
     let path = &cmd.wal_file;
     let data = std::fs::read(path).map_err(|e| CliError::other(format!("read: {e}")))?;
 
-    let last_nl = data
-        .iter()
-        .rposition(|&b| b == b'\n')
-        .ok_or_else(|| CliError::other("file has no complete line (no newline), refusing to process"))?;
+    let last_nl = data.iter().rposition(|&b| b == b'\n').ok_or_else(|| {
+        CliError::other("file has no complete line (no newline), refusing to process")
+    })?;
     let trailing = &data[last_nl + 1..];
     if trailing.iter().all(|&b| b.is_ascii_whitespace()) || trailing.is_empty() {
         println!(

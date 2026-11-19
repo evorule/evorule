@@ -53,7 +53,10 @@ fn t1a_objectmap_iter_order_deterministic() {
     // iter().map key extraction is the form compatible with all three gates (stable test / clippy / kani); iter_kv_map is exempted via the file-header allow.
     let seq_a: Vec<&String> = a.iter().map(|(k, _)| k).collect();
     let seq_b: Vec<&String> = b.iter().map(|(k, _)| k).collect();
-    assert_eq!(seq_a, seq_b, "iteration order of two independent constructions must match (determinism)");
+    assert_eq!(
+        seq_a, seq_b,
+        "iteration order of two independent constructions must match (determinism)"
+    );
     assert_eq!(
         seq_a,
         keys.iter().collect::<Vec<_>>(),
@@ -77,7 +80,11 @@ fn t1b_jsonvalue_construct_access_roundtrip() {
     let inner_back = root.get("inner").expect("inner must be readable back");
     assert_eq!(inner_back.get("flag"), Some(&JsonValue::Integer(1)));
     assert_eq!(inner_back.get("empty"), Some(&JsonValue::Null));
-    assert_eq!(root.get("missing"), None, "missing key must return None instead of panicking");
+    assert_eq!(
+        root.get("missing"),
+        None,
+        "missing key must return None instead of panicking"
+    );
 }
 
 // ===== T2: domain evaluation (corresponds to D4) =====

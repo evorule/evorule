@@ -221,7 +221,8 @@ fn test_run_with_payload() {
 fn test_run_with_payload_file() {
     let tmp = test_tmp_dir();
     let payload_file = tmp.join("payload.json");
-    std::fs::write(&payload_file, r#"{"x": 100, "y": "hello"}"#).expect("failed to write the payload file");
+    std::fs::write(&payload_file, r#"{"x": 100, "y": "hello"}"#)
+        .expect("failed to write the payload file");
     let dir = fixtures_dir().join("valid");
     let payload_arg = format!("--payload-file={}", payload_file.to_string_lossy());
     assert_stdout_contains(
@@ -241,7 +242,11 @@ fn test_run_with_output_file() {
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_arg]);
     assert_eq!(code, 0, "run -o failed: exit={code}\noutput: {combined}");
     // Verify the output file exists and is non-empty
-    assert!(out_file.exists(), "output file not created: {}", out_file.display());
+    assert!(
+        out_file.exists(),
+        "output file not created: {}",
+        out_file.display()
+    );
     let content = std::fs::read_to_string(&out_file).expect("failed to read the output file");
     assert!(!content.is_empty(), "output file is empty");
     // Verify the first line is valid JSON and contains Command
@@ -277,7 +282,10 @@ fn test_replay_valid() {
     let dir = fixtures_dir().join("valid");
     let out_arg = format!("-o={}", fact_log.to_string_lossy());
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_arg]);
-    assert_eq!(code, 0, "failed to create the fact log with run: {combined}");
+    assert_eq!(
+        code, 0,
+        "failed to create the fact log with run: {combined}"
+    );
 
     assert_stdout_contains(
         "replay valid fact log",
@@ -367,7 +375,10 @@ fn test_verify_chain_valid() {
     let dir = fixtures_dir().join("valid");
     let out_arg = format!("-o={}", fact_log.to_string_lossy());
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_arg]);
-    assert_eq!(code, 0, "failed to create the fact log with run: {combined}");
+    assert_eq!(
+        code, 0,
+        "failed to create the fact log with run: {combined}"
+    );
 
     assert_stdout_contains(
         "verify-chain valid",
@@ -384,7 +395,10 @@ fn test_verify_chain_tampered() {
     let dir = fixtures_dir().join("valid");
     let out_arg = format!("-o={}", fact_log.to_string_lossy());
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_arg]);
-    assert_eq!(code, 0, "failed to create the fact log with run: {combined}");
+    assert_eq!(
+        code, 0,
+        "failed to create the fact log with run: {combined}"
+    );
 
     // Tamper: change id:2 to id:99 (breaks FactId monotonicity)
     let tampered = tmp.join("tampered.log");
@@ -448,7 +462,10 @@ fn test_deterministic_loading() {
 
     let content_a = std::fs::read_to_string(&a).expect("failed to read multi A");
     let content_b = std::fs::read_to_string(&b).expect("failed to read multi B");
-    assert_eq!(content_a, content_b, "two runs should produce identical output");
+    assert_eq!(
+        content_a, content_b,
+        "two runs should produce identical output"
+    );
 
     // Verify all three fields are set: a=1, b=2, c=3
     assert!(content_a.contains(r#""a":1"#), "missing field a=1");

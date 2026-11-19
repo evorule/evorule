@@ -233,7 +233,10 @@ mod tests {
     fn trip_auto_resets_after_window() {
         let mut s = CircuitState::new(config(1, 60));
         let t0 = Instant::now();
-        assert!(s.record_deny(t0).is_some(), "with threshold 1 the first deny trips");
+        assert!(
+            s.record_deny(t0).is_some(),
+            "with threshold 1 the first deny trips"
+        );
         assert!(s.is_tripped(t0 + Duration::from_secs(1)));
         assert!(
             !s.is_tripped(t0 + Duration::from_secs(61)),

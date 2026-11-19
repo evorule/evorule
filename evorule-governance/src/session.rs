@@ -733,7 +733,10 @@ impl SessionManager {
             .filter_map(|entry| entry.file_name().into_string().ok());
         let max = Self::max_session_id_from_names(names);
         if max > 0 {
-            tracing::info!(max_session_wal_id = max, "session ID counter restored from the WAL directory");
+            tracing::info!(
+                max_session_wal_id = max,
+                "session ID counter restored from the WAL directory"
+            );
         }
         max
     }
@@ -1571,7 +1574,10 @@ mod tests {
 
         // The first new session must be 8 (= max+1), never reusing any of 1..7
         let id = mgr.create_session().unwrap();
-        assert_eq!(id, 8, "after restart the first session ID must continue from the max existing WAL sequence");
+        assert_eq!(
+            id, 8,
+            "after restart the first session ID must continue from the max existing WAL sequence"
+        );
 
         // The old audit chain files must be preserved verbatim
         assert_eq!(
@@ -1597,7 +1603,10 @@ mod tests {
             1,
         );
         let id2 = mgr2.create_session().unwrap();
-        assert_eq!(id2, 9, "after the second restart the counter must keep continuing");
+        assert_eq!(
+            id2, 9,
+            "after the second restart the counter must keep continuing"
+        );
 
         let _handle = mgr2.close_session(id2).unwrap();
         std::fs::remove_dir_all(&dir).ok();
@@ -2234,8 +2243,14 @@ mod tests {
             serde_json::json!(15),
             "the child must continue from the fork initial state x=10 (core_eval: x += 5)"
         );
-        assert!(snap_version >= 6, "the child version must continue from initial version 5");
-        assert!(child.facts_log.history().len() >= 2, "the child's audit chain is persisted independently");
+        assert!(
+            snap_version >= 6,
+            "the child version must continue from initial version 5"
+        );
+        assert!(
+            child.facts_log.history().len() >= 2,
+            "the child's audit chain is persisted independently"
+        );
 
         let _ = mgr.close_session(child_id);
         std::fs::remove_dir_all(&dir).ok();
@@ -2357,7 +2372,10 @@ mod tests {
                         message.contains("timed out"),
                         "the first Fact::Error must be the timeout error, not another failure: {message}"
                     );
-                    assert!(saw_io_request, "a pending I/O must be registered before the timeout Error");
+                    assert!(
+                        saw_io_request,
+                        "a pending I/O must be registered before the timeout Error"
+                    );
                     return message;
                 }
                 Ok(Ok(_)) => {}
@@ -2379,7 +2397,10 @@ mod tests {
         );
         let id = mgr.create_session().unwrap();
         let msg = expect_timeout_error(&mgr, id, Duration::from_secs(2)).await;
-        assert!(msg.contains("after"), "the timeout message must carry the actual budget: {msg}");
+        assert!(
+            msg.contains("after"),
+            "the timeout message must carry the actual budget: {msg}"
+        );
         let _ = mgr.close_session(id);
     }
 

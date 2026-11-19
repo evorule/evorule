@@ -507,7 +507,10 @@ mod tests {
         let err = m.program(0, &[0b0100]).unwrap_err();
         assert!(matches!(err, McuError::FlashProgramViolated { offset: 0 }));
         m.read(0, &mut out).unwrap();
-        assert_eq!(out[0], 0b1000, "a violating program must not modify the medium");
+        assert_eq!(
+            out[0], 0b1000,
+            "a violating program must not modify the medium"
+        );
     }
 
     #[test]
@@ -655,9 +658,16 @@ mod tests {
         drop(store);
 
         let reopened = FlashWalStore::open(m).unwrap();
-        assert_eq!(reopened.len(), 2, "a half line does not constitute a record");
+        assert_eq!(
+            reopened.len(),
+            2,
+            "a half line does not constitute a record"
+        );
         assert_eq!(reopened.chain_tail_hash(), "t-1");
-        assert!(reopened.is_polluted(), "the active page should be marked polluted");
+        assert!(
+            reopened.is_polluted(),
+            "the active page should be marked polluted"
+        );
     }
 
     #[test]

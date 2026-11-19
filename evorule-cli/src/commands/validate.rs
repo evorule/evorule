@@ -59,7 +59,10 @@ pub fn run(rules_dir: &Path) -> Result<(), CliError> {
 
     let report = super::discipline_gate::check(&transforms)?;
 
-    println!("Nodes:       {} (including branch-nested sub-instructions)", report.scanned);
+    println!(
+        "Nodes:       {} (including branch-nested sub-instructions)",
+        report.scanned
+    );
     println!();
 
     if report.violations.is_empty() {

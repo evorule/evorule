@@ -1261,7 +1261,10 @@ mod tests {
         match execute_transition(&core_eval, &instruction, &payload, &[]).unwrap() {
             TransitionResult::Halted { rule_index, reason } => {
                 assert_eq!(rule_index, 0);
-                assert_eq!(reason, "Violation: tool trace hit the dangerous-command blocklist");
+                assert_eq!(
+                    reason,
+                    "Violation: tool trace hit the dangerous-command blocklist"
+                );
             }
             other => panic!("expected Halted, got {:?}", other),
         }
@@ -1411,10 +1414,16 @@ mod tests {
 
         match execute_transition(&core_eval, &instruction, &payload, &[]).unwrap() {
             TransitionResult::Halted { rule_index, reason } => {
-                assert_eq!(rule_index, 1, "rule_index must remain the original index in the merged list");
+                assert_eq!(
+                    rule_index, 1,
+                    "rule_index must remain the original index in the merged list"
+                );
                 assert_eq!(reason, "model is not in the allowlist");
             }
-            other => panic!("expected Halted (constraint pre-gate evaluates first), got {:?}", other),
+            other => panic!(
+                "expected Halted (constraint pre-gate evaluates first), got {:?}",
+                other
+            ),
         }
     }
 
@@ -1490,7 +1499,10 @@ mod tests {
                 assert_eq!(rule_hits[0].index, 0);
                 assert_eq!(rule_hits[1].index, 1);
             }
-            other => panic!("expected State (constraint judged on input state), got {:?}", other),
+            other => panic!(
+                "expected State (constraint judged on input state), got {:?}",
+                other
+            ),
         }
     }
 
@@ -2581,8 +2593,8 @@ mod tests {
 
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
-        let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &while_loop_instr, &payload, &[])
+            .expect("execution should succeed");
 
         // Expected return is Ignored (no matching rule)
         match result {
@@ -2592,7 +2604,10 @@ mod tests {
                 ..
             } => {
                 assert_eq!(instruction_type, "while_loop");
-                assert!(reason.contains("not matched"), "reason should indicate the instruction was not matched");
+                assert!(
+                    reason.contains("not matched"),
+                    "reason should indicate the instruction was not matched"
+                );
             }
             TransitionResult::State { .. } => {
                 panic!("a while_loop instruction with no matching rule should return Ignored, not State");
@@ -2703,8 +2718,8 @@ mod tests {
 
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
-        let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &while_loop_instr, &payload, &[])
+            .expect("execution should succeed");
 
         // Expected return is Ignored (the all fallback is not a business
         // rule)
@@ -2784,8 +2799,8 @@ mod tests {
 
         let payload = JsonValue::object_from_pairs(&[("x", JsonValue::Integer(42))]);
 
-        let result =
-            execute_transition(&core_eval, &unknown_instr, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &unknown_instr, &payload, &[])
+            .expect("execution should succeed");
 
         // Verify the return is Ignored
         match result {
@@ -2856,8 +2871,8 @@ mod tests {
         // no side effects
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
-        let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &while_loop_instr, &payload, &[])
+            .expect("execution should succeed");
 
         // Dynamic-domain rules are general rules and can handle the
         // while_loop instruction
@@ -2933,8 +2948,8 @@ mod tests {
 
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
-        let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &while_loop_instr, &payload, &[])
+            .expect("execution should succeed");
 
         // Post-improvement behavior: the set rule does not match
         // while_loop, but it does change the payload
@@ -2994,7 +3009,8 @@ mod tests {
 
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
-        let result = execute_transition(&core_eval, &set_instr, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &set_instr, &payload, &[])
+            .expect("execution should succeed");
 
         // The set rule matches the set instruction and produces side effects
         match result {
@@ -3051,8 +3067,8 @@ mod tests {
 
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
-        let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &while_loop_instr, &payload, &[])
+            .expect("execution should succeed");
 
         // Expected return is State (the rule matched; even a no-op counts
         // as a legitimate no-op)
@@ -3133,8 +3149,8 @@ mod tests {
 
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
-        let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &while_loop_instr, &payload, &[])
+            .expect("execution should succeed");
 
         // Expected return is Ignored (the instruction domain's exact match
         // fails)
@@ -3219,8 +3235,8 @@ mod tests {
 
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
-        let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &while_loop_instr, &payload, &[])
+            .expect("execution should succeed");
 
         // Expected return is Ignored (all sub-domain false → on_false empty
         // → no side effects → Ignored)
@@ -3272,8 +3288,8 @@ mod tests {
 
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
-        let result =
-            execute_transition(&core_eval, &instr_no_type, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &instr_no_type, &payload, &[])
+            .expect("execution should succeed");
 
         // Expected return is Ignored (instruction_type falls back to
         // "unknown"; no rule matches)
@@ -3333,8 +3349,8 @@ mod tests {
 
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
-        let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &while_loop_instr, &payload, &[])
+            .expect("execution should succeed");
 
         // Expected return is State (the second rule matches)
         match result {
@@ -3377,8 +3393,8 @@ mod tests {
 
         let payload = JsonValue::object_from_pairs(&[("counter", JsonValue::Integer(0))]);
 
-        let result =
-            execute_transition(&core_eval, &instr_null_type, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &instr_null_type, &payload, &[])
+            .expect("execution should succeed");
 
         // Expected return is Ignored (with a null type, instruction_type
         // falls back to "unknown")
@@ -3457,8 +3473,8 @@ mod tests {
             ("flag", JsonValue::Integer(0)),
         ]);
 
-        let result =
-            execute_transition(&core_eval, &while_loop_instr, &payload, &[]).expect("execution should succeed");
+        let result = execute_transition(&core_eval, &while_loop_instr, &payload, &[])
+            .expect("execution should succeed");
 
         // Expected return is State (the inner branch's on_false branch
         // executed)

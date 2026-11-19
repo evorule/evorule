@@ -678,7 +678,10 @@ fn test_unknown_instruction_falls_to_catch_all() {
             assert_eq!(instruction_type, "unknown_instruction");
             assert!(reason.contains("not matched"));
         }
-        _ => panic!("unknown instruction should return Ignored, actual: {:?}", result),
+        _ => panic!(
+            "unknown instruction should return Ignored, actual: {:?}",
+            result
+        ),
     }
 }
 
@@ -767,7 +770,10 @@ fn test_empty_queue_input() {
             ..
         } => {
             assert_eq!(new_payload.get("x"), Some(&iv(1)));
-            assert!(new_queue.is_empty(), "empty queue input should return an empty queue");
+            assert!(
+                new_queue.is_empty(),
+                "empty queue input should return an empty queue"
+            );
         }
         _ => panic!("should return State"),
     }
@@ -1105,8 +1111,14 @@ fn test_while_loop_set_add_body_deadloop_regression() {
         vec![deadloop_instr],
         1000,
     );
-    assert_eq!(steps, 1000, "deadloop scenario must exhaust the step limit (queue never drains)");
-    assert!(!queue.is_empty(), "deadloop shape: queue still non-empty after reaching the limit");
+    assert_eq!(
+        steps, 1000,
+        "deadloop scenario must exhaust the step limit (queue never drains)"
+    );
+    assert!(
+        !queue.is_empty(),
+        "deadloop shape: queue still non-empty after reaching the limit"
+    );
     assert_eq!(
         payload.get("counter"),
         Some(&iv(1)),
@@ -1125,8 +1137,14 @@ fn test_while_loop_set_add_body_deadloop_regression() {
         vec![good_instr],
         1000,
     );
-    assert!(queue.is_empty(), "increment body: queue drained (normal termination)");
-    assert!(steps < 1000, "increment body: steps should be far below the limit");
+    assert!(
+        queue.is_empty(),
+        "increment body: queue drained (normal termination)"
+    );
+    assert!(
+        steps < 1000,
+        "increment body: steps should be far below the limit"
+    );
     assert_eq!(
         payload.get("counter"),
         Some(&iv(3)),

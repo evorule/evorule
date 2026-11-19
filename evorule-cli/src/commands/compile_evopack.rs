@@ -88,7 +88,10 @@ mod tests {
         let bytes_a = fs::read(&out_a).unwrap();
         let bytes_b = fs::read(&out_b).unwrap();
         assert!(!bytes_a.is_empty());
-        assert_eq!(bytes_a, bytes_b, "same input must produce identical bytes (determinism)");
+        assert_eq!(
+            bytes_a, bytes_b,
+            "same input must produce identical bytes (determinism)"
+        );
 
         // The artifact is decodable by the MCU kernel loading side (host compiler and kernel loader are duals)
         let pack = RulePack::from_evopack(&bytes_a).unwrap();

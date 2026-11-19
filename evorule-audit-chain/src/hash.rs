@@ -299,8 +299,9 @@ pub fn content_hash(value: &JsonValue) -> Result<String, HashError> {
     #[cfg(not(kani))]
     {
         let serde_value = tcb_to_serde(value);
-        let serialized = serde_json::to_string(&serde_value)
-            .map_err(|e| HashError::new(alloc::format!("content hash serialization failed: {}", e)))?;
+        let serialized = serde_json::to_string(&serde_value).map_err(|e| {
+            HashError::new(alloc::format!("content hash serialization failed: {}", e))
+        })?;
         let hash = blake3::hash(serialized.as_bytes()).to_hex().to_string();
 
         Ok(hash)
@@ -750,7 +751,10 @@ mod tests {
 
         let chain1 = compute_chain_hash(&[fact1.clone(), fact2.clone()]).unwrap();
         let chain2 = compute_chain_hash(&[fact2, fact1]).unwrap();
-        assert_ne!(chain1, chain2, "chain hash must be order-sensitive over facts");
+        assert_ne!(
+            chain1, chain2,
+            "chain hash must be order-sensitive over facts"
+        );
     }
 
     /// Cross-validation test: compares against the evorule-governance/src/hash.rs snapshot

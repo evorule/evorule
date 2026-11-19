@@ -81,7 +81,7 @@ pub struct SharedFactsMetadata {
     /// The set of fact_ids marked as rollup (filtered in `facts_by_path_prefix` queries)
     pub rolled_up: BTreeSet<u64>,
     /// The shared-ledger anchor chain (same-origin mechanism as G-A2; persisted into metadata so
-/// the anchor chain survives restarts)
+    /// the anchor chain survives restarts)
     #[serde(default)]
     pub anchors: Vec<SharedLedgerAnchor>,
 }
@@ -159,7 +159,7 @@ pub struct SharedAnchorReport {
     /// Total anchor count
     pub anchor_count: usize,
     /// The last anchor's chain tail matches the current ledger chain tail (mismatch if the ledger
-/// was recomputed)
+    /// was recomputed)
     pub binding_chain_head_match: bool,
     /// The last anchor's digest matches the current metadata digest (mismatch if metadata was tampered)
     pub binding_metadata_match: bool,
@@ -327,7 +327,9 @@ impl SharedFactsLog {
         let tmp_path = metadata_path.as_ref().with_extension("tmp");
         if tmp_path.exists() {
             match std::fs::remove_file(&tmp_path) {
-                Ok(()) => tracing::info!(tmp = %tmp_path.display(), "orphan metadata.tmp cleaned up"),
+                Ok(()) => {
+                    tracing::info!(tmp = %tmp_path.display(), "orphan metadata.tmp cleaned up")
+                }
                 Err(e) => {
                     tracing::warn!(tmp = %tmp_path.display(), error = %e, "failed to clean up the orphan metadata.tmp")
                 }
@@ -680,7 +682,7 @@ impl SharedFactsLog {
                 report.binding_chain_head_match = last.chain_head == inner.facts_log.last_hash();
                 let digest_now = Self::metadata_digest_locked(&inner);
                 // when no new records were added after the last anchor, metadata must not have
-            // changed (anchors unchanged)
+                // changed (anchors unchanged)
                 report.binding_metadata_match = last.metadata_digest == digest_now;
             }
         }
@@ -1367,13 +1369,29 @@ mod tests {
 
         let facts = log.facts_by_path_prefix("shared.ns.");
         assert_eq!(facts.len(), 1);
-        assert_eq!(facts[0].origin_fact_id, Some(53), "the prefix query should carry the origin");
+        assert_eq!(
+            facts[0].origin_fact_id,
+            Some(53),
+            "the prefix query should carry the origin"
+        );
 
         let by_id = log.fact_by_id(FactId(1)).unwrap();
-        assert_eq!(by_id.origin_fact_id, Some(53), "fact_by_id should carry the origin");
+        assert_eq!(
+            by_id.origin_fact_id,
+            Some(53),
+            "fact_by_id should carry the origin"
+        );
 
-        assert_eq!(log.origin_fact_id(FactId(1)), Some(53), "the standalone query should hit");
-        assert_eq!(log.origin_fact_id(FactId(999)), None, "an unknown id should return None");
+        assert_eq!(
+            log.origin_fact_id(FactId(1)),
+            Some(53),
+            "the standalone query should hit"
+        );
+        assert_eq!(
+            log.origin_fact_id(FactId(999)),
+            None,
+            "an unknown id should return None"
+        );
     }
 
     /// old-signature append (no origin channel) → origin always None (backward-compatible semantics)
@@ -1386,7 +1404,10 @@ mod tests {
 
         let facts = log.facts_by_path_prefix("shared.ns.");
         assert_eq!(facts.len(), 1);
-        assert_eq!(facts[0].origin_fact_id, None, "old-signature writes must not fabricate an origin");
+        assert_eq!(
+            facts[0].origin_fact_id, None,
+            "old-signature writes must not fabricate an origin"
+        );
         assert_eq!(log.origin_fact_id(FactId(1)), None);
     }
 
@@ -1491,7 +1512,10 @@ mod tests {
         log.seal_anchor_now().unwrap();
         let report = log.verify_shared_anchors(&anchor_keys(), true).unwrap();
         assert_eq!(report.anchor_count, 1);
-        assert!(report.binding_chain_head_match, "the last anchor's chain tail should match the ledger chain tail");
+        assert!(
+            report.binding_chain_head_match,
+            "the last anchor's chain tail should match the ledger chain tail"
+        );
         assert!(
             report.binding_metadata_match,
             "the last anchor's digest should match the current metadata"
@@ -1580,10 +1604,18 @@ mod tests {
         );
         log.append_with_origin("shared.a", JsonValue::Integer(1), 1, None)
             .unwrap();
-        assert_eq!(log.anchors().len(), 0, "below the interval no anchor is sealed");
+        assert_eq!(
+            log.anchors().len(),
+            0,
+            "below the interval no anchor is sealed"
+        );
         log.append_with_origin("shared.b", JsonValue::Integer(2), 1, None)
             .unwrap();
-        assert_eq!(log.anchors().len(), 1, "reaching the interval seals an anchor automatically");
+        assert_eq!(
+            log.anchors().len(),
+            1,
+            "reaching the interval seals an anchor automatically"
+        );
         log.append_with_origin("shared.c", JsonValue::Integer(3), 1, None)
             .unwrap();
         log.append_with_origin("shared.d", JsonValue::Integer(4), 1, None)

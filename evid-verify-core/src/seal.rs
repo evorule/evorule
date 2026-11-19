@@ -124,7 +124,9 @@ impl fmt::Display for SealError {
                 write!(f, "anchor chain broken at [{seq}]: {reason}")
             }
             SealError::KeyMissing { key_id } => write!(f, "密钥标识 \"{key_id}\" 无对应公钥"),
-            SealError::HexInvalid { seq, reason } => write!(f, "anchor [{seq}] invalid hex: {reason}"),
+            SealError::HexInvalid { seq, reason } => {
+                write!(f, "anchor [{seq}] invalid hex: {reason}")
+            }
         }
     }
 }

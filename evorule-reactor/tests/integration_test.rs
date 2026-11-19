@@ -456,7 +456,10 @@ async fn test_unknown_io_response_records_error_fact() {
     .unwrap();
 
     assert!(result.is_some());
-    assert!(seen_error, "did not observe the Error fact for the unknown IoResponse");
+    assert!(
+        seen_error,
+        "did not observe the Error fact for the unknown IoResponse"
+    );
     let (snapshot, _, _) = facts_log.snapshot();
     // The state is unaffected by the spurious response
     assert_eq!(snapshot.get("x"), Some(&JsonValue::Integer(5)));

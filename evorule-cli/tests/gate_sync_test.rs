@@ -96,7 +96,9 @@ fn four_repo_shared_gate_fns_are_in_sync() {
         .chain(LOCKED_FNS_TCB_REACTOR.iter())
     {
         let Some(baseline) = extract_fn(baseline_src, fn_name) else {
-            drifts.push(format!("[{baseline_name}] baseline missing shared function `{fn_name}`"));
+            drifts.push(format!(
+                "[{baseline_name}] baseline missing shared function `{fn_name}`"
+            ));
             continue;
         };
         // Functions locked only for tcb/reactor do not exist in governance/cli — skip instead of reporting missing

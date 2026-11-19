@@ -44,7 +44,9 @@ impl core::fmt::Display for SignError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             SignError::Invalid(msg) => write!(f, "audit signature: invalid input: {}", msg),
-            SignError::Randomness(src) => write!(f, "audit signature: random seed generation failed: {}", src),
+            SignError::Randomness(src) => {
+                write!(f, "audit signature: random seed generation failed: {}", src)
+            }
         }
     }
 }
@@ -92,7 +94,8 @@ impl AuditSigner {
     /// (YAGNI; file a separate item if embedded P6 later needs real entropy injection).
     pub fn generate_keys() -> Result<(String, String), SignError> {
         let mut seed = [0u8; 32];
-        getrandom::getrandom(&mut seed).map_err(|_| SignError::Randomness("OS entropy source unavailable"))?;
+        getrandom::getrandom(&mut seed)
+            .map_err(|_| SignError::Randomness("OS entropy source unavailable"))?;
         let signer = Self::from_bytes(seed);
         Ok((hex_encode(&seed), hex_encode(&signer.verifying_bytes())))
     }
@@ -172,7 +175,11 @@ pub fn hex_decode(hex: &str) -> Result<Vec<u8>, SignError> {
         let lo = (bytes[i + 1] as char).to_digit(16);
         match (hi, lo) {
             (Some(h), Some(l)) => out.push(((h << 4) | l) as u8),
-            _ => return Err(SignError::Invalid("hex contains non-hexadecimal characters".into())),
+            _ => {
+                return Err(SignError::Invalid(
+                    "hex contains non-hexadecimal characters".into(),
+                ))
+            }
         }
     }
     Ok(out)

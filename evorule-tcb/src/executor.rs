@@ -1479,8 +1479,14 @@ mod tests {
         assert_eq!(arr.len(), 2, "array length unchanged (no append)");
         // Confirm no "items[0]" malformed key appears at the payload top level
         let payload_obj = resolve_path(&result, "__exec__.payload").unwrap();
-        assert!(payload_obj.get("items[0]").is_none(), "malformed field names must not be created");
-        assert!(payload_obj.get("items[1]").is_none(), "malformed field names must not be created");
+        assert!(
+            payload_obj.get("items[0]").is_none(),
+            "malformed field names must not be created"
+        );
+        assert!(
+            payload_obj.get("items[1]").is_none(),
+            "malformed field names must not be created"
+        );
     }
 
     #[test]
