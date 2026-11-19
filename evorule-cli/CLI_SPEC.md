@@ -36,26 +36,26 @@
 
 ---
 
-## 模块架构
+## Module architecture
 
-| 模块 | 职责 | 关键 API |
+| Module | Responsibility | Key APIs |
 |---|---|---|
-| `main.rs` | 入口:tracing 初始化 + 子命令分发 + 退出码 | `main() -> ExitCode` |
-| `cli.rs` | clap derive 参数定义(7 个子命令) | `Cli`, `Command` |
-| `error.rs` | 统一错误枚举 + 退出码映射(0/1/2) | `CliError`, `exit_code()` |
-| `executor.rs` | 同步反应器循环(FIFO + max_steps + I/O 两阶段) | `execute()` |
-| `fact_log.rs` | JSONL 读写(tier1 WAL 格式) | `write_facts()`, `read_facts()` |
-| `hash.rs` | blake3 哈希链(复制自 evorule-governance) | `compute_chain_hash()`, `fact_hash()` |
-| `io_util.rs` | 规则加载(确定性排序)+ payload 解析 | `load_rules()`, `parse_initial_payload()` |
-| `output.rs` | human-readable 格式化 + diff 前缀 | `fact_to_human()`, `facts_to_human()` |
-| `signing.rs` | G-A1 审计锚点签名(复制自 evorule-governance,ed25519 确定性签名) | `AuditSigner`, `verify_signature()` |
-| `commands/validate.rs` | validate 子命令:规则集形态门禁(判定条款=`evorule-tcb/discipline/core_eval.json`,机制=`commands/discipline_gate.rs`) | `run()` |
-| `commands/run.rs` | run 子命令:加载→执行→输出 fact log | `run()` |
-| `commands/replay.rs` | replay 子命令:读 fact log → pretty-print | `run()` |
-| `commands/diff.rs` | diff 子命令:按 FactId 数组下标对齐 | `run()` |
-| `commands/verify_chain.rs` | verify-chain 子命令:哈希链 + 结构不变量 | `run()` |
-| `commands/anchor_keygen.rs` | anchor-keygen 子命令:生成 G-A1 签名密钥对(一次性运维) | `run()` |
-| `commands/verify_anchors.rs` | verify-anchors 子命令:离线校验审计锚点真实性 | `run()` |
+| `main.rs` | Entry: tracing init + subcommand dispatch + exit code | `main() -> ExitCode` |
+| `cli.rs` | clap derive argument definitions (7 subcommands) | `Cli`, `Command` |
+| `error.rs` | Unified error enum + exit code mapping (0/1/2) | `CliError`, `exit_code()` |
+| `executor.rs` | Sync reactor loop (FIFO + max_steps + two-phase I/O) | `execute()` |
+| `fact_log.rs` | JSONL read/write (tier1 WAL format) | `write_facts()`, `read_facts()` |
+| `hash.rs` | blake3 hash chain (copied from evorule-governance) | `compute_chain_hash()`, `fact_hash()` |
+| `io_util.rs` | Rule loading (deterministic ordering) + payload parsing | `load_rules()`, `parse_initial_payload()` |
+| `output.rs` | Human-readable formatting + diff prefixes | `fact_to_human()`, `facts_to_human()` |
+| `signing.rs` | G-A1 audit anchor signing (copied from evorule-governance; ed25519 deterministic signatures) | `AuditSigner`, `verify_signature()` |
+| `commands/validate.rs` | validate subcommand: rule-set shape gate (decision clauses = `evorule-tcb/discipline/core_eval.json`, mechanism = `commands/discipline_gate.rs`) | `run()` |
+| `commands/run.rs` | run subcommand: load → execute → output fact log | `run()` |
+| `commands/replay.rs` | replay subcommand: read fact log → pretty-print | `run()` |
+| `commands/diff.rs` | diff subcommand: align by FactId array index | `run()` |
+| `commands/verify_chain.rs` | verify-chain subcommand: hash chain + structural invariants | `run()` |
+| `commands/anchor_keygen.rs` | anchor-keygen subcommand: generate the G-A1 signing keypair (one-off ops) | `run()` |
+| `commands/verify_anchors.rs` | verify-anchors subcommand: verify audit anchor authenticity offline | `run()` |
 
 ---
 
@@ -66,22 +66,22 @@
 | **G8** | CLI may not expand control-flow primitives | Control flow lives in `core_eval.json`. If `evorule-cli` ever hard-codes `conditional` / `while_loop` / `sequence`, it is doing the layer's job from outside the layer — a major architectural violation | `"conditional"`, `"while_loop"`, `"sequence"` as string literals in `*.rs` outside comments |
 | **F11** | CLI main code path may not panic | A panicking CLI corrupts audit log + leaves the user with a stack trace instead of a clear error. All main-path errors must be `Result` + `?` | `debug_assert!`, `.unwrap(`, `.expect(`, `panic!(` in non-test code |
 
-### 扫描范围
+### Scan scope
 
-递归扫描 `src/**/*.rs`(含 `src/commands/*.rs` 等子模块)。模块化后单文件扫描会漏掉子模块后门,故必须递归。
+Recursively scans `src/**/*.rs` (including submodules like `src/commands/*.rs`). After modularization, a single-file scan would miss submodule back doors, hence recursion is mandatory.
 
-### 豁免
+### Exemptions
 
-- `#[cfg(test)] mod tests { ... }` 测试模块体(通过 `strip_test_mod` 剥离)
-- `//` 开头的注释行(含 `///`、`//!`)
+- `#[cfg(test)] mod tests { ... }` test module bodies (stripped via `strip_test_mod`)
+- Comment lines starting with `//` (including `///`, `//!`)
 
-**零豁免原则**:G8/F11 对 `src/**/*.rs`(非测试)零容忍,无任何业务字面量豁免。
+**Zero-exemption principle**: G8/F11 show zero tolerance for `src/**/*.rs` (non-test), with no business-literal exemptions.
 
 ### Emergency skip
 
 ```bash
-EVORULE_SKIP_GATE=1 cargo build       # 阀值仅 1/true 生效 (0/空/其他值 = 门禁照常执行, fail-closed)
-EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 warning)
+EVORULE_SKIP_GATE=1 cargo build       # only the value 1/true activates the valve (0/empty/other = gate runs as usual, fail-closed)
+EVORULE_SKIP_REASON="reason"          # register the skip reason (unregistered skips emit a warning)
 ```
 
 Skip must be temporary and have a written justification. **Never
@@ -89,66 +89,66 @@ disable permanently.**
 
 ---
 
-## 关键不变量
+## Key invariants
 
-### executor.rs(FIFO + max_steps + I/O 两阶段)
+### executor.rs (FIFO + max_steps + two-phase I/O)
 
-1. **FIFO 队列**:用 `VecDeque::pop_front()`,不能用 `Vec::pop()`(那是 LIFO)
-   - tier0 `exec_push` 用 `new_queue.append(queue)` 把新指令前置(插队语义)
-   - 必须从前端取才能保证 push 的指令先执行
-2. **max_steps 先检后 pop**:超限发 `Fact::Error` + break(对齐 evorule-reactor BUG-3 修复)
-3. **I/O 两阶段架构**:`pending_io: HashMap<FactId, JsonValue>` 缓存 orig 指令
-   - 0.2.0 无 handler 时发 `Fact::Error` 退出,但架构正确
-   - 后续加 handler 时只需在 IoRequest 分支注入 IoResponse + push_front(orig) 即可
+1. **FIFO queue**: use `VecDeque::pop_front()`, not `Vec::pop()` (that is LIFO)
+   - tier0 `exec_push` uses `new_queue.append(queue)` to prepend new instructions (queue-jumping semantics)
+   - Only taking from the front guarantees pushed instructions execute first
+2. **max_steps checked before pop**: on exceeding the limit, emit `Fact::Error` + break (aligned with the corresponding evorule-reactor fix)
+3. **Two-phase I/O architecture**: `pending_io: HashMap<FactId, JsonValue>` caches the original instruction
+   - In 0.2.0 with no handler, emit `Fact::Error` and exit, but the architecture is correct
+   - When handlers arrive later, only the IoRequest branch needs to inject IoResponse + push_front(orig)
 
-### fact_log.rs(tier1 WAL 格式)
+### fact_log.rs (tier1 WAL format)
 
-- `write_facts` 必须用 `evorule_reactor::wal::fact_to_json`,不能手写序列化
-- `read_facts` 必须用 `evorule_reactor::wal::fact_from_json`,不能手写反序列化
-- fact.log 可被 tier1 reactor `read_wal` 直接读取,反之亦然
+- `write_facts` must use `evorule_reactor::wal::fact_to_json`, never hand-written serialization
+- `read_facts` must use `evorule_reactor::wal::fact_from_json`, never hand-written deserialization
+- fact.log can be read directly by the tier1 reactor's `read_wal`, and vice versa
 
-### hash.rs(blake3 哈希链)
+### hash.rs (blake3 hash chain)
 
-- **COPIED FROM evorule-governance/src/hash.rs** — 任何修改必须同步双边
-- 4 个公开函数算法体与 evorule-governance 字节级一致
-- `HashError` 简化:去掉 `Backtrace`(避免引入 backtrace 依赖),哈希值不变
-- 交叉验证测试 `test_cross_validate_with_tier2` 通过 `include_str!` 编译期强制双边同步
+- **COPIED FROM evorule-governance/src/hash.rs** — any modification must be synced on both sides
+- The algorithm bodies of the 4 public functions are byte-identical with evorule-governance
+- `HashError` simplified: dropped `Backtrace` (avoiding the backtrace dependency); hash values unchanged
+- The cross-validation test `test_cross_validate_with_tier2` enforces two-way sync at compile time via `include_str!`
 
-### io_util.rs(确定性加载)
+### io_util.rs (deterministic loading)
 
-- `load_rules` 按 `file_name()` 字典序排序后加载
-- 消除 `fs::read_dir` 顺序差异(Windows NTFS 字典序 vs Linux ext4 hash 序)
-- 保证同目录规则在不同平台执行结果一致
+- `load_rules` sorts by `file_name()` lexicographically before loading
+- Eliminates `fs::read_dir` ordering differences (Windows NTFS lexicographic order vs Linux ext4 hash order)
+- Guarantees the same directory of rules yields identical execution results across platforms
 
-### verify_chain.rs(三层验证)
+### verify_chain.rs (three-layer verification)
 
-1. **哈希链**:`hash::verify_hash_chain`(blake3,与 evorule-governance 字节级一致)
-2. **FactId 单调递增**:每个 Fact 的 id 必须严格大于前一个
-3. **cause 引用有效性**:`StateTransition.cause` / `IoRequest.cause` 必须指向已存在的 FactId
+1. **Hash chain**: `hash::verify_hash_chain` (blake3, byte-identical with evorule-governance)
+2. **FactId monotonic increase**: each Fact's id must be strictly greater than the previous one
+3. **cause reference validity**: `StateTransition.cause` / `IoRequest.cause` must point to existing FactIds
 
-### signing.rs / anchor_keygen.rs / verify_anchors.rs(G-A1 审计锚点)
+### signing.rs / anchor_keygen.rs / verify_anchors.rs (G-A1 audit anchors)
 
-G-A1 在 blake3 哈希链之上引入**密钥签名锚点**,提供"真实性/防抵赖"(哈希链只能证明完整性/被动篡改,不能证明来源)。
+G-A1 introduces **key-signature anchors** on top of the blake3 hash chain, providing "authenticity/non-repudiation" (a hash chain can only prove integrity/passive tamper-evidence, not origin).
 
-1. **确定性签名**:ed25519(RFC 8032)确定性 nonce,无 RNG,同一私钥 + 同一载荷 → 同一签名,与 evorule 确定性执行纪律兼容
-2. **私钥供给**:不落盘于审计资产/规则库,由调用方注入 32 字节种子;`anchor-keygen` 仅作一次性运维生成
-3. **`anchor-keygen`**:生成密钥对,`--output` 将私钥种子写入文件,公钥打印到 stdout(可公开分发)
-4. **`verify-anchors`**:校验 `Auditor::export()` 导出物——锚点链式链接(首锚为 `genesis`,防截断)+ 用公钥重算规范化载荷验签(防抵赖)
+1. **Deterministic signatures**: ed25519 (RFC 8032) deterministic nonce, no RNG; the same private key + the same payload → the same signature, compatible with evorule's deterministic-execution discipline
+2. **Private-key supply**: never persisted into audit assets/rule repositories; the caller injects a 32-byte seed; `anchor-keygen` is a one-off ops generator only
+3. **`anchor-keygen`**: generates the keypair; `--output` writes the private-key seed to a file and prints the public key to stdout (publicly distributable)
+4. **`verify-anchors`**: verifies the `Auditor::export()` output — anchor chain linkage (first anchor `genesis`, truncation-proof) + signature verification by recomputing the canonical payload with the public key (non-repudiation)
 
 ---
 
-## 退出码约定
+## Exit code convention
 
-> P1-01 裁定（error-as-fact 哲学）：**Error 是事实（Fact），不是进程失败**。
-> `evorule run` 执行过程中产生 `Error` fact（TCB 报错 / 超时）时，事实已进入审计链，
-> 进程仍以退出码 0 正常退出——保持幂等、可观测、可重放。只有**执行器基础设施错误**
-> （如规则文件读取失败）才以退出码 1 返回。
+> Settled ruling (the error-as-fact philosophy): **an Error is a Fact, not a process failure**.
+> When `evorule run` produces an `Error` fact during execution (TCB error / timeout), the fact has already entered the audit chain,
+> and the process still exits normally with exit code 0 — staying idempotent, observable, and replayable. Only **executor infrastructure errors**
+> (e.g. rule file read failure) return exit code 1.
 
-| 退出码 | 含义 | 触发场景 |
+| Exit code | Meaning | Trigger scenarios |
 |---|---|---|
-| 0 | 成功 | 所有子命令正常完成；`run` 执行中产生 Error fact 时也返回 0（Error 是事实而非进程失败） |
-| 1 | 通用错误 | validate 有 error / run 执行器基础设施错误 / replay/diff/verify-chain 文件读取失败 / verify-chain 验证失败 |
-| 2 | 规则目录错误 | validate/run 的 `rules_dir` 不存在或无 .json 文件 |
+| 0 | Success | All subcommands complete normally; `run` also returns 0 when an Error fact is produced during execution (an Error is a Fact, not a process failure) |
+| 1 | Generic error | validate has errors / run executor infrastructure error / replay/diff/verify-chain file read failure / verify-chain verification failure |
+| 2 | Rules directory error | validate/run `rules_dir` missing or contains no .json files |
 
 ---
 
@@ -190,8 +190,8 @@ If a build is failing and you believe the gate is wrong, the question
 to ask is not "can I bypass it" but "does the spec need updating". If
 the spec needs updating, update it **first**, then update `build.rs`.
 
-**L1b 策略层检测 (v0.3.2 新增; 门禁语义整改)**: 除 L1a 字面量门禁外, `build.rs` 还执行策略层反模式检测（无阀常开）。旧 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已移出公开仓, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。
+**L1b policy-layer detection (added in v0.3.2; gate semantics rework)**: beyond the L1a literal gate, `build.rs` also runs policy-layer anti-pattern detection (always on, no bypass valve). The old CHANGE_REQUEST.md build check was an engineering-quality self-review discipline, never an anti-forgery review mechanism; it has been moved out of the public repo and `EVORULE_SKIP_CR_GATE` removed with it; self-review is carried by the maintainers' local git pre-commit hooks (not published with the repo/releases).
 
-**`verify_hash_chain` 已删除 (v0.3.2)**: 原函数始终返回 `true` 是"假验证"陷阱,已彻底删除。替代方案:用 `compute_chain_hash` 重算后与存储的链哈希比对,或用 `verify-chain` 命令读取带哈希字段的 WAL 并逐一校验。
+**`verify_hash_chain` removed (v0.3.2)**: the old function always returned `true` — a "fake verification" trap — and has been deleted outright. Replacement: recompute with `compute_chain_hash` and compare against the stored chain hash, or use the `verify-chain` command to read the WAL with its hash fields and verify each one.
 
-**validate 规则集形态门禁 (2026-09-23 起)**: validate 从「顶层元指令白名单」升级为「规则集形态门禁」——判定条款数据化于 `evorule-tcb/discipline/core_eval.json`(DC-01..DC-NN, 可版本化/可 diff/可评审), 机制在 `commands/discipline_gate.rs`(把内核看不见的列表级事实标注进 `instruction._ctx` 后交 `execute_transition` 求值), 作用域覆盖含 branch 内嵌子指令的全部节点。条款含: 未知元指令(DC-01, 即旧白名单职责, SSOT 仍为 `META_INSTRUCTION_TYPES` 且由 tcb 测试双向锁定)/enforce 必须顶层声明(DC-02)/enforce 必须携带 params.reason(DC-03)/io_request 必须携带 params.io_type(DC-04)/遮蔽检测(DC-05)等。元指令类型总集不变(5 种真元指令; `noop` / `increment` / `decrement` 是**指令层**类型; `collect` / `merge` 已退役, 规则文件使用将加载即拒)。首次在存量规则仓跑出新违规属预期——违规历史上一直存在, 只是此前无检查。
+**validate rule-set shape gate (since 2026-09-23)**: validate was upgraded from a "top-level meta-instruction whitelist" to a "rule-set shape gate" — decision clauses are data in `evorule-tcb/discipline/core_eval.json` (DC-01..DC-NN, versionable/diffable/reviewable), the mechanism lives in `commands/discipline_gate.rs` (annotating the list-level facts the kernel cannot see into `instruction._ctx`, then handing them to `execute_transition` for evaluation), and scope covers every node containing branch-nested sub-instructions. Clauses include: unknown meta instruction (DC-01, the old whitelist's duty; SSOT remains `META_INSTRUCTION_TYPES`, two-way locked by a tcb test) / enforce must be declared at the top level (DC-02) / enforce must carry params.reason (DC-03) / io_request must carry params.io_type (DC-04) / shadowing detection (DC-05), etc. The meta-instruction type inventory is unchanged (5 real meta instructions; `noop` / `increment` / `decrement` are **instruction-layer** types; `collect` / `merge` are retired — rule files using them are rejected at load). First-time new violations on existing rule repos are expected — the violations have always been there; there was simply no check before.

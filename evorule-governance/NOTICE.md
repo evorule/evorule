@@ -17,10 +17,10 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# EvoRule Governance — 声明
+# EvoRule Governance — Notice
 
-本 crate（`evorule-governance`）是 EvoRule 项目的一部分。
+This crate (`evorule-governance`) is part of the EvoRule project.
 
-**完整项目声明（版权 / 协议分离 / 设计原则 / 联系信息）见根目录 [NOTICE.md](../NOTICE.md)。**
+**For the complete project notice (copyright / license separation / design principles / contact information), see the root [NOTICE.md](../NOTICE.md).**
 
-为避免多份 NOTICE 维护漂移，本文件不再重复完整声明内容；任何版权或协议疑问以根 [NOTICE.md](../NOTICE.md) 为准。
+To avoid maintenance drift across multiple NOTICE files, this file no longer duplicates the full notice; any copyright or licensing question defers to the root [NOTICE.md](../NOTICE.md).

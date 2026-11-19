@@ -6,148 +6,148 @@
   This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 -->
 
-# Tier 2 (Governance) — 形式化规范
+# Tier 2 (Governance) — Formal Specification
 
-> **适用范围**: evorule-governance
-> **协议**: AGPL-3.0-or-later
-> **状态**: 权威 (本文档是 `build.rs` 编译时门禁的依据)
-> **跨模块设计**: 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)
-
----
-
-## 核心原则
-
-> **如果业务需求变了, 你必须改 Rust 代码才能满足它, 那这段代码就是策略, 应该放在 JSON 里, 不是 Rust 里。**
-
-治理层 (Governance) = **机制**: 暴露 HTTP/SSE + 审计链 + I/O 路由的脚手架。
-它不得包含任何业务逻辑或领域词汇。新增业务规则应放入 `core_eval.json` (宪法),
-而非 `evorule-governance/` 源码。
+> **Scope**: evorule-governance
+> **License**: AGPL-3.0-or-later
+> **Status**: authoritative (this document is the basis of the `build.rs` compile-time gates)
+> **Cross-module design**: see [GATE_REFERENCE.md](../GATE_REFERENCE.md) §4 (cross-module gate map) + §5 (SPEC section-number mapping)
 
 ---
 
-## 一、build.rs 强制执行的约束
+## Core principle
 
-| 编号           | 约束                                   | 理由                                                                                                                                                             | 禁止模式                                                                                                                                                           |
+> **If a business requirement changes and you must modify Rust code to satisfy it, that code is policy and belongs in JSON, not in Rust.**
+
+The governance layer (Governance) = **mechanism**: the scaffolding that exposes HTTP/SSE + audit chain + I/O routing.
+It must not contain any business logic or domain vocabulary. New business rules belong in `core_eval.json` (the constitution),
+not in the `evorule-governance/` source.
+
+---
+
+## 1. Constraints enforced by build.rs
+
+| ID             | Constraint                             | Rationale                                                                                                                                                         | Forbidden pattern                                                                                                                                                  |
 | :------------- | :------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **G7/G8**      | 反应器/治理层不得展开控制流原语        | 控制流属于 `core_eval.json`。Rust 中硬编码 `conditional` / `while_loop` / `sequence` 等于新增第 4 个元指令, 违反 evorule-tcb T1 红线 (指令集有限性 = 确定性来源) | `"conditional"`, `"while_loop"`, `"sequence"` 作为字符串字面量出现在 `*.rs` 中 (非 `#[cfg(test)]` 内)                                                              |
-| **G1** (= F11) | 非测试代码不得 panic                   | evorule 是可审计系统; 管道中途 panic 会破坏 fact log。evorule-tcb 是唯一允许用 `Result` 处理不变量违规的层                                                       | `debug_assert!`, `.unwrap(`, `.expect(` 在非测试代码中                                                                                                             |
-| **§5.2**       | 业务术语字符串字面量不得出现在 Rust 中 | 领域词汇属于 `core_eval.json`。Rust 中硬编码 `math_rule` / `call_external` / `teacher` 等于策略泄漏到机制, 违反"机制-策略分离"原则                               | `"math_rule"`, `"physics_rule"`, `"summarize"`, `"admin"`, `"teacher"`, `"call_external"`, `"call_service"` 作为字符串字面量 (非 `#[cfg(test)]` 且非 `fact.rs` 内) |
+| **G7/G8**      | reactor/governance may not expand control-flow primitives | Control flow belongs in `core_eval.json`. Hard-coding `conditional` / `while_loop` / `sequence` in Rust equals adding a 4th meta instruction, violating the evorule-tcb T1 redline (finite instruction set = source of determinism) | `"conditional"`, `"while_loop"`, `"sequence"` as string literals in `*.rs` (outside `#[cfg(test)]`)                                                               |
+| **G1** (= F11) | non-test code may not panic            | evorule is an auditable system; a mid-pipeline panic corrupts the fact log. evorule-tcb is the only layer allowed to handle invariant violations with `Result`   | `debug_assert!`, `.unwrap(`, `.expect(` in non-test code                                                                                                           |
+| **§5.2**       | business-term string literals may not appear in Rust | Domain vocabulary belongs in `core_eval.json`. Hard-coding `math_rule` / `call_external` / `teacher` in Rust equals policy leaking into mechanism, violating the "mechanism-policy separation" principle | `"math_rule"`, `"physics_rule"`, `"summarize"`, `"admin"`, `"teacher"`, `"call_external"`, `"call_service"` as string literals (outside `#[cfg(test)]` and outside `fact.rs`) |
 
-### 豁免 (build.rs 内置)
+### Exemptions (built into build.rs)
 
-- `#[cfg(test)] mod tests { ... }` 测试模块 — 测试 fixture 可构造这些字符串驱动门控
-- 注释 (`//`, `///`, `//!`, `/* */`) — 文档可自由提及
-- `src/fact.rs` (G8/§5.2 模式) — IoType 内置字符串值 / ControlFlowType 枚举映射的**唯一**真值来源（注：`fact.rs` 在 `evorule-reactor`；governance 通过 re-export 使用 `IoType`，自身不定义 io_type 字符串值）
+- `#[cfg(test)] mod tests { ... }` test modules — test fixtures may construct these strings to drive the gates
+- Comments (`//`, `///`, `//!`, `/* */`) — documentation may mention them freely
+- `src/fact.rs` (G8/§5.2 patterns) — the **sole** source of truth for the built-in `IoType` string values / the `ControlFlowType` enum mapping (note: `fact.rs` lives in `evorule-reactor`; governance consumes `IoType` via re-export and does not define io_type string values itself)
 
-> **重要**: evorule-governance/build.rs 必须包含 `fact.rs` 豁免逻辑, 与 evorule-reactor/build.rs 保持一致。
-> 这是 tier1/tier2 双层一致性的要求 (见 `00-design.md` §6 统一模板)。
+> **Important**: evorule-governance/build.rs must contain the `fact.rs` exemption logic, consistent with evorule-reactor/build.rs.
+> This is required by tier1/tier2 two-layer consistency (see `00-design.md` §6 unified template).
 
-### 紧急跳过
+### Emergency skip
 
 ```bash
-EVORULE_SKIP_GATE=1 cargo build       # 跳过 L1a 字面量门禁
-EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 warning)
+EVORULE_SKIP_GATE=1 cargo build       # skip the L1a literal gate
+EVORULE_SKIP_REASON="reason"          # register the skip reason (unregistered skips emit a warning)
 ```
 
-阀值仅 `1`/`true` 生效 (`0`/空/其他值 = 门禁照常执行, fail-closed)。跳过必须临时且有书面理由。**永不永久禁用。** 当门控触发时, 正确做法几乎总是:
-将违规字面量移入 `core_eval.json` 并通过元指令层引用, 或重命名它。
+The valve value takes effect only for `1`/`true` (`0`/empty/other values = the gate runs as usual, fail-closed). Skips must be temporary and carry a written justification. **Never disable permanently.** When the gate fires, the correct response is almost always:
+move the offending literal into `core_eval.json` and reference it through the meta-instruction layer, or rename it.
 
-### L1b 策略层检测 (v0.3.2 新增; 门禁语义整改)
+### L1b policy-layer detection (added in v0.3.2; gate semantics rework)
 
-除上述 L1a 字面量门禁外, `build.rs` 还执行:
+Beyond the L1a literal gate above, `build.rs` also runs:
 
-- **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块, 测试豁免已撤), 禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。检测到违规时构建失败。**无阀常开**——机制-策略分离是设计不变量, 不设旁路环境变量。
-- **CR 自查已移出公开仓 (既定裁定)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已从 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。CHANGE_REQUEST.md 登记纪律本身不变。
-- **四仓同步**: `evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli` 的 build.rs 共享函数保持同一份内联副本实现, 任何修改必须四仓同步; 同步纪律已机器化 (`evorule-cli/tests/gate_sync_test.rs`)。
-
----
-
-## 二、允许在 Rust (治理层) 中做的事情 ("机制")
-
-### 2.1 I/O 路由与 Handler (`io_subscriber.rs` + `io_dispatcher.rs` / `io_handler.rs` re-export)
-
-- `io_subscriber.rs` — I/O 订阅者：消费 `Fact::IoRequest` → 按 `IoType` 路由到注入的 `IoHandler` 实现 → 回写 `Fact::IoResponse`（路由是机制，路由目标是策略）
-- `io_dispatcher.rs` / `io_handler.rs` — **v0.2.0 起为 re-export**，`IoDispatcher` / `IoHandler` trait 定义已下沉至 `evorule-reactor`（机制层基座统一，agent 可直接依赖 reactor）；本 crate 保留 re-export 向后兼容
-- 具体 I/O Handler 实现（db / http / memory）属应用层，已迁出本 crate（见 §2.5）
-
-### 2.2 审计与哈希 (`auditor.rs`, `hash.rs`, `clock.rs`, `signing.rs`)
-
-- 记录 TCB 返回的 `before`/`after` 快照 (只记录, 不判断内容)
-- 计算 BLAKE3 哈希、维护逻辑时钟 (审计工具是机制)
-- `hash.rs` 为 re-export（单一真相源在 `evorule-reactor::hash`）
-- `signing.rs` — **v0.3.2 新增** G-A1 审计锚点签名（`AuditSigner` / `verify_signature`），ed25519（RFC 8032）确定性签名，在哈希链之上提供真实性/防抵赖；私钥不落盘审计资产，由调用方注入 32 字节种子（未配置签名器时审计行为与旧版完全一致）
-
-### 2.3 共享状态 (`shared_facts_log.rs`)
-
-- 共享 fact log（跨会话审计）
-- **使用约束（B10，report-002 声明）**：`reset()` 仅限**纯内存实例**调用——底层 `FactsLog::reset` 不删除磁盘 WAL，持久化实例调用后旧事实会在重启后复活形成孤儿
-- **已知局限**：`detect_orphan_facts` 基于内存投影；发生过压缩（compact）后历史前缀已丢弃，孤儿会**漏检但不误报**；孤儿只检测 + 告警，不自动伪造映射
-
-### 2.4 会话 / 规则验证 / 时间机器 / 指标 / 权限 (`session.rs`, `rule_validation.rs`, `time_machine.rs`, `metrics.rs`, `permission.rs`)
-
-- `session.rs` — SessionManager（多反应器实例生命周期管理）
-- `rule_validation.rs` — 基于 tier0 `core_eval.json` 的 JSON Schema 规则验证（RuleValidator）
-- `time_machine.rs` — replay / rewind / fork / diff 4 个 API（机制层能力；仅"可视化调试器 UI"在应用层）；**（v0.4.1：B8b，report-002）：`diff` 对 rewind 不可达版本显式返回 `Err(TimeMachineError)`，不再静默回退空 payload
-- `metrics.rs` — IoMetrics trait（机制层接口，Prometheus 实现由应用层提供）
-- `permission.rs` — **v0.3.2 新增** 权限门控模块（PermissionGate / PermissionTable / PermissionEntry / Verdict / ConditionEvaluator / DefaultPolicy / PermissionState / PermissionError），机制层权限原语，具体权限策略由应用层注入；**v0.4.1**（B6，report-002）：`IoSubscriber::with_permission_gate` 装配点落地——注入后 IoRequest 分派前经 `PermissionGate::check` 入口仲裁，拒绝回写错误 IoResponse 且不分派；未装配时行为与历史版本一致（默认不做权限判定）
-
-### 2.5 已迁出（H5/H6 边界清理 + v0.2.0 下沉）
-
-以下模块原属 governance，已迁至应用层或下沉至 reactor（本 crate 不再包含）：
-
-- `api/` 目录（portal / session / server / auth / hot_reload）— HTTP API / SSE / Bearer 认证 / 热重载 → 应用层
-- `io_handlers/` 目录（db / http / memory handler）— 具体 I/O 实现 → 应用层
-- `cluster.rs` — 多 reactor 协作原语 → 应用层
-- `object_pool.rs` — FactsLog 对象复用 → 应用层
-- `io_dispatcher.rs` / `io_handler.rs` 的**定义** — v0.2.0 下沉至 `evorule-reactor`（本 crate 保留 re-export）
+- **Policy-layer anti-pattern detection**: scans **all files** under `src/` (including test modules; the test exemption has been withdrawn) and forbids policy-layer code (conditional / while_loop / sequence and other control-flow instructions) from entering the mechanism layer. The build fails on detection. **Always on, no bypass valve** — mechanism-policy separation is a design invariant, with no bypass environment variable.
+- **CR self-review moved out of the public repo (settled decision)**: the old L1b CHANGE_REQUEST.md build check was an engineering-quality self-review discipline, never an anti-forgery review mechanism; it has been removed from build.rs and `EVORULE_SKIP_CR_GATE` removed with it. Self-review is carried by the maintainers' local git pre-commit hooks (not published with the repo/releases). The CHANGE_REQUEST.md registration discipline itself is unchanged.
+- **Four-repo sync**: the shared functions in the build.rs of `evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli` are kept as the same inline copy; any modification must be synced across the four repos. The sync discipline is machine-enforced (`evorule-cli/tests/gate_sync_test.rs`).
 
 ---
 
-## 三、绝对禁止在 Rust 治理层做的事情 ("策略")
+## 2. What is allowed in Rust (the governance layer) ("mechanism")
 
-与 evorule-reactor 完全相同, 见 `../evorule-reactor/REACTOR_SPEC.md` §二。
+### 2.1 I/O routing and handlers (`io_subscriber.rs` + `io_dispatcher.rs` / `io_handler.rs` re-exports)
 
----
+- `io_subscriber.rs` — I/O subscriber: consumes `Fact::IoRequest` → routes by `IoType` to the injected `IoHandler` implementation → writes back `Fact::IoResponse` (routing is mechanism; the routing target is policy)
+- `io_dispatcher.rs` / `io_handler.rs` — **re-exports since v0.2.0**: the `IoDispatcher` / `IoHandler` trait definitions have moved down to `evorule-reactor` (unifying the mechanism-layer foundation; agents can depend on reactor directly); this crate keeps the re-exports for backward compatibility
+- Concrete I/O handler implementations (db / http / memory) belong to the application layer and have been migrated out of this crate (see §2.5)
 
-## 四、跨模块引用
+### 2.2 Audit and hashing (`auditor.rs`, `hash.rs`, `clock.rs`, `signing.rs`)
 
-- **G1-G8** (全局门): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四
-- **F1-F11** (模块门): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §二.2 + §五.3
-- **D1-D10** (数据流约束): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四
-- **T1** (tier0 指令集有限性): 见 `../evorule-tcb/TCB_SPEC.md` §一
-- **tier1 双层一致**: 见 `../evorule-reactor/REACTOR_SPEC.md`
+- Records the `before`/`after` snapshots returned by the TCB (records only, never judges content)
+- Computes BLAKE3 hashes and maintains the logical clock (audit tooling is mechanism)
+- `hash.rs` is a re-export (the single source of truth lives in `evorule-reactor::hash`)
+- `signing.rs` — **added in v0.3.2**: G-A1 audit anchor signing (`AuditSigner` / `verify_signature`), ed25519 (RFC 8032) deterministic signatures providing authenticity/non-repudiation on top of the hash chain; the private key is never written to audit assets — the caller injects a 32-byte seed (without a signer configured, audit behavior is identical to previous versions)
 
----
+### 2.3 Shared state (`shared_facts_log.rs`)
 
-## 五、build.rs 一致性
+- Shared fact log (cross-session audit)
+- **Usage constraint (documented limitation)**: `reset()` may be called only on **pure in-memory instances** — the underlying `FactsLog::reset` does not delete the on-disk WAL, so calling it on a persistent instance leaves stale facts that resurrect after restart as orphans
+- **Known limitation**: `detect_orphan_facts` works on the in-memory projection; once compaction has run, the historical prefix is dropped, so orphans may be **missed but never falsely reported**; orphans are detected + warned only, never fabricated into mappings automatically
 
-evorule-governance/build.rs 跟 evorule-reactor/build.rs **结构相同** (共享函数同一份内联副本),
-这是有意的双层一致 (避免 tier1/tier2 走偏)。字面量门禁模式为 reactor 的 14/15 子集——
-governance 不设 T10 `unsafe` 模式 (该仓 `#![deny(unsafe_code)]` 由 rustc 直接兜底)。
+### 2.4 Sessions / rule validation / time machine / metrics / permissions (`session.rs`, `rule_validation.rs`, `time_machine.rs`, `metrics.rs`, `permission.rs`)
 
-**关键一致性要求**:
+- `session.rs` — SessionManager (lifecycle management of multiple reactor instances)
+- `rule_validation.rs` — JSON Schema rule validation based on the tier0 `core_eval.json` (RuleValidator)
+- `time_machine.rs` — the 4 APIs replay / rewind / fork / diff (mechanism-layer capability; only the "visual debugger UI" is in the application layer); **(v0.4.1)**: `diff` explicitly returns `Err(TimeMachineError)` for versions unreachable by rewind, no longer silently falling back to an empty payload
+- `metrics.rs` — IoMetrics trait (mechanism-layer interface; Prometheus implementation provided by the application layer)
+- `permission.rs` — **added in v0.3.2**: permission gating module (PermissionGate / PermissionTable / PermissionEntry / Verdict / ConditionEvaluator / DefaultPolicy / PermissionState / PermissionError), mechanism-layer permission primitives, concrete permission policy injected by the application layer; **v0.4.1**: the `IoSubscriber::with_permission_gate` assembly point landed — once injected, IoRequest dispatch goes through the `PermissionGate::check` entry arbitration first; a denial writes back an error IoResponse and does not dispatch; without injection, behavior is identical to previous versions (no permission arbitration by default)
 
-- FORBIDDEN 数组: governance 14 模式为 reactor 15 模式去掉 T10 的子集
-- `strip_test_mod` 函数: 实现方式相同
-- `fact.rs` 豁免: **两者都必须包含** (G8/§5.2 模式在 fact.rs 中豁免)
-- **L1b 策略层检测 (v0.3.2 新增; 门禁语义整改)**: `detect_strategy_patterns` 函数必须四仓(evorule-tcb / evorule-reactor / evorule-governance / evorule-cli)同步, 防止四个模块的检测标准走偏; 同步已机器化 (`evorule-cli/tests/gate_sync_test.rs` 逐函数比对, 四仓同步整改)。旧 `validate_change_request_gate` 已移出公开仓 (自查本地化), 不再要求同步
+### 2.5 Already migrated out (application-layer boundary cleanup + v0.2.0 sinking)
 
----
+The following modules used to belong to governance and have been moved to the application layer or sunk into reactor (this crate no longer contains them):
 
-## 如何新增约束
-
-1. 在上方 **build.rs 强制执行的约束** 表中加一行: 编号、约束文本、理由、禁止模式
-2. 在 `build.rs` 的 `FORBIDDEN` 数组中加对应的 `(label, needle)` 条目
-3. 如果约束需要比字节子串匹配更复杂的扫描 (如 AST 感知), 在此处文档说明
-4. 运行 `cargo build -p evorule-governance` 确认门控在干净树上仍 PASS
-
----
-
-## 总结口诀
-
-> **治理层 = 管道 + 审计 + 路由。业务决策全部放 core_eval.json, Rust 只写"怎么跑"。**
+- `api/` directory (portal / session / server / auth / hot_reload) — HTTP API / SSE / Bearer auth / hot reload → application layer
+- `io_handlers/` directory (db / http / memory handlers) — concrete I/O implementations → application layer
+- `cluster.rs` — multi-reactor collaboration primitives → application layer
+- `object_pool.rs` — FactsLog object reuse → application layer
+- the **definitions** of `io_dispatcher.rs` / `io_handler.rs` — sunk into `evorule-reactor` in v0.2.0 (this crate keeps the re-exports)
 
 ---
 
-**这份规范是 evorule-governance 代码的权威标准。如果构建失败且你认为门控有误,
-要问的不是"能否绕过", 而是"规范是否需要更新"。规范需要更新时, 先更新规范, 再更新 build.rs。**
+## 3. What is absolutely forbidden in the Rust governance layer ("policy")
+
+Exactly the same as evorule-reactor; see `../evorule-reactor/REACTOR_SPEC.md` §2.
+
+---
+
+## 4. Cross-module references
+
+- **G1-G8** (global gates): see [GATE_REFERENCE.md](../GATE_REFERENCE.md) §4
+- **F1-F11** (module gates): see [GATE_REFERENCE.md](../GATE_REFERENCE.md) §2.2 + §5.3
+- **D1-D10** (data-flow constraints): see [GATE_REFERENCE.md](../GATE_REFERENCE.md) §4
+- **T1** (tier0 finite instruction set): see `../evorule-tcb/TCB_SPEC.md` §1
+- **tier1 two-layer consistency**: see `../evorule-reactor/REACTOR_SPEC.md`
+
+---
+
+## 5. build.rs consistency
+
+evorule-governance/build.rs is **structurally identical** to evorule-reactor/build.rs (the shared functions are the same inline copy).
+This is intentional two-layer consistency (preventing tier1/tier2 drift). The literal gate pattern set is the 14/15 subset of reactor's —
+governance has no T10 `unsafe` pattern (that repo's `#![deny(unsafe_code)]` is enforced directly by rustc).
+
+**Key consistency requirements**:
+
+- FORBIDDEN array: governance's 14 patterns are reactor's 15 patterns minus T10
+- `strip_test_mod` function: implemented the same way
+- `fact.rs` exemption: **both must include it** (the G8/§5.2 patterns are exempt inside fact.rs)
+- **L1b policy-layer detection (added in v0.3.2; gate semantics rework)**: the `detect_strategy_patterns` function must stay in sync across the four repos (evorule-tcb / evorule-reactor / evorule-governance / evorule-cli) to prevent the four modules' detection standards from drifting; sync is machine-enforced (`evorule-cli/tests/gate_sync_test.rs` function-by-function comparison, four-repo synced rework). The old `validate_change_request_gate` has been moved out of the public repo (self-review localized) and is no longer required to be synced
+
+---
+
+## How to add a constraint
+
+1. Add a row to the **Constraints enforced by build.rs** table above: ID, constraint text, rationale, forbidden pattern
+2. Add the corresponding `(label, needle)` entry to the `FORBIDDEN` array in `build.rs`
+3. If the constraint needs scanning more complex than byte-substring matching (e.g. AST-aware), document it here
+4. Run `cargo build -p evorule-governance` to confirm the gate still PASSES on a clean tree
+
+---
+
+## Summary motto
+
+> **The governance layer = pipeline + audit + routing. Put every business decision in core_eval.json; Rust only writes "how to run".**
+
+---
+
+**This spec is the authoritative standard for the evorule-governance code. If a build fails and you believe the gate is wrong,
+the question to ask is not "can I bypass it" but "does the spec need updating". When the spec needs updating, update the spec first, then update build.rs.**
