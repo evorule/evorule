@@ -130,7 +130,7 @@ fn trace_attr_to_json(attr: &crate::fact::TraceDomainAttribution) -> serde_json:
 /// - `Ok(serde_json::Value)`: the serialized JSON value
 /// - `Err(HashError)`: serialization failure
 // A flat match over 7 Fact variants + nesting; splitting the function would require
-// sharing intermediate variables. See GATE_REFERENCE.md §六 (exemption index).
+// sharing intermediate variables. See GATE_REFERENCE.md §6 (exemption index).
 #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
 pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> {
     let mut obj = serde_json::Map::new();

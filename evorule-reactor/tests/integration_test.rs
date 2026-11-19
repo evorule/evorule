@@ -2,7 +2,7 @@
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 // Test code L2 clippy exemption (the L1 build.rs gate already guards panic-prone code).
-// See GATE_REFERENCE.md §六 (exemption index)
+// See GATE_REFERENCE.md §6 (exemption index)
 // too_many_lines: test fixture (long JSON rule literals) exemption
 #![allow(
     clippy::unwrap_used,
@@ -1835,7 +1835,7 @@ async fn test_inspect_returns_pending_io() {
 // === D11 REPLAY TEST START (DELETE_RANGE: the whole block from the next line to D11 REPLAY TEST END) ===
 // D11 IoRequired replay-contract differential test
 //
-// Verifies the cross-layer invariant "replay equivalence" (TCB_SPEC.md §四 D11):
+// Verifies the cross-layer invariant "replay equivalence" (TCB_SPEC.md §4 D11):
 //   - Path A (first execution): submit Command -> receive IoRequest -> submit IoResponse ->
 //     Stable
 //   - Path B (replay execution): submit PayloadUpdate (pre-injecting __io_results__) ->

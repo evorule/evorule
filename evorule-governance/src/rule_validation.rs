@@ -24,7 +24,9 @@
 //! # References
 //! - `evorule-cli/src/commands/validate.rs`: the CLI-side meta-instruction allowlist validation
 //! - `evorule-tcb/src/executor.rs`: the legal instruction types of `execute_meta_instruction`
-//! - `evorule-reactor/src/特别规范.md`: the mechanism-policy separation principle
+//! - the mechanism-policy separation principle (historical design note; the cited
+//!   in-repo design doc has been retired — see `GATE_REFERENCE.md` §1, the
+//!   intentional-differences table)
 
 use evorule_tcb::JsonValue;
 use serde::Serialize;

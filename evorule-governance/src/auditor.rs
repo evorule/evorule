@@ -348,7 +348,7 @@ impl Auditor {
     ///
     /// # Returns
     /// The number of audit entries added by this call.
-    // Audit traversal + hashing + append form one chained multi-step sequence; splitting would require sharing self state. See GATE_REFERENCE.md §六 (exemption index)
+    // Audit traversal + hashing + append form one chained multi-step sequence; splitting would require sharing self state. See GATE_REFERENCE.md §6 (exemption index)
     #[allow(clippy::cognitive_complexity)]
     pub fn audit_new(&mut self) -> usize {
         // P06: the counter always increments (per call, not per new fact), used for auto-verify interval control

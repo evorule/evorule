@@ -8,7 +8,7 @@
 //! 2. Execute instructions through the reactor
 
 // Test code L2 clippy exemption (the L1 build.rs gate already guards panic-prone code).
-// See GATE_REFERENCE.md §六 (exemption index)
+// See GATE_REFERENCE.md §6 (exemption index)
 #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 //! 3. Check the Fact records in the audit chain
 //! 4. Verify the execution result
@@ -58,7 +58,7 @@ fn load_json_rule(json_str: &str) -> Vec<JsonValue> {
 /// Test scenario 1: VIP customer order processing
 #[tokio::test]
 // End-to-end test scenario, 161-line fixture (rules + execution + assertions). See
-// GATE_REFERENCE.md §六 (exemption index)
+// GATE_REFERENCE.md §6 (exemption index)
 #[allow(clippy::too_many_lines)]
 async fn test_vip_order_processing() {
     // JSON rules: e-commerce order processing (following the TCB's two-phase I/O pattern)

@@ -22,7 +22,7 @@
 //!    three repos; any missing/inconsistent function fails the test.
 //!
 //! Intentional differences (excluded from comparison) are listed in
-//! GATE_REFERENCE.md §一 "intentional differences table": the FORBIDDEN
+//! GATE_REFERENCE.md §1 "intentional differences table": the FORBIDDEN
 //! pattern lists differ per SPEC, the BOM check is tcb-only, the T15 wildcard
 //! and T10_FILE_EXEMPT are reactor-only, `strip_leading_attr` is
 //! tcb/reactor-only, etc. Adding a shared function requires adding it to the
@@ -117,7 +117,7 @@ fn four_repo_shared_gate_fns_are_in_sync() {
 
     assert!(
         drifts.is_empty(),
-        "four-repo build.rs shared-function drift (remediation already decided; sync declaration in GATE_REFERENCE.md §一):\n{}",
+        "four-repo build.rs shared-function drift (remediation already decided; sync declaration in GATE_REFERENCE.md §1):\n{}",
         drifts.join("\n")
     );
 }

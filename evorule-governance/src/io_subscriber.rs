@@ -382,7 +382,7 @@ impl IoSubscriber {
     /// After retries are exhausted, the final error `IoResponse` is written back so the reactor
     /// resumes instead of blocking forever.
     // IO dispatch + retry + error write-back have many branches sharing self/cmd state; splitting
-    // the function would need that shared state. See GATE_REFERENCE.md §六 (exemption index)
+    // the function would need that shared state. See GATE_REFERENCE.md §6 (exemption index)
     #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
     async fn dispatch_and_respond(
         &mut self,
