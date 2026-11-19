@@ -352,3 +352,9 @@
 - **依据**：主仓 workspace 全量测试实测绿（48 目标 1045+ 用例，含新增 cancel-all 全链测试：挂起→快照清单可见→取消→清零→Error 入链→扫描干净）；crates.io 发布按依赖序本机手工执行（v0.8.1 起惯例，CI publish-crates 幂等跳过兜底）。
 - **影响**：① 新增公开 API：`ReactorHandle::cancel_all_pending`/`ReactorHandle::latest_invariant_scan`/`InvariantScanReport`/`ReactorStateSnapshot::pending_io`（新增能力，非破坏）；② Kani 证明面：增量=共享标志+槽位，不动既有证明路径，kani-reactor CI 实跑复核，A 档证据基线维持 `a3d728f`；③ 对外计数零变更。
 - **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行）。
+
+## 2026-11-19: STATUS progressive-history wording neutralized in three spots (registry-token removal, S11-paired with the English-translation batch)
+
+| # | Fact | Evidence | Impact | Remedy |
+| - | ---- | -------- | ------ | ------- |
+| 1 | During the repo-wide English-translation batch, three lines in `verification/STATUS.md` that carried a private registry-number token in their progressive-history notes were neutralized by removing the token: the appendix-A P0-4 in-type backfill row, the appendix-A closing note, and the appendix-B heading. The descriptive wording ("scheduled-verification backfill" / "backfill addition") and all counts and dates were kept unchanged. The rest of the STATUS.md stock text remains frozen per batch discipline (T2) | Direct diff of the three lines; en-only scan CJK-count parity check (neutralization changes no CJK count — ratchet-equivalent edit) | None — wording-only change to a status document; no behavior, API, or evidence-anchor change | This entry is the disclosure record; `verification/STATUS.md` (the three lines) edited in the same commit (S11 pairing) |
