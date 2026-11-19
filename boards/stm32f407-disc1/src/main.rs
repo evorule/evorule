@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! STM32F407G-DISC1 板级二进制——bring-up 骨架（实机批扩展）
+//! STM32F407G-DISC1 board binary — bring-up skeleton (extended at
+//! real-hardware bring-up)
 //!
-//! # 布局约定（memory.x 同步）
-//! - Flash WAL 区段：sector0-3 = 4×16KB = 64KB @ `0x0800_0000..0x0801_0000`，
-//!   不入任何链接 REGION；代码 REGION_FLASH 从 sector4（`0x0801_0000`）起
-//! - RAM：主 SRAM 128KB（CCM 64KB 不用，DMA 不可达）
-//! - 堆：TLSF 静态池 8192 字 = 32KB（[`TlsfGlobal`]）
+//! # Layout conventions (kept in sync with memory.x)
+//! - Flash WAL region: sectors 0-3 = 4×16KB = 64KB @
+//!   `0x0800_0000..0x0801_0000`, not part of any link REGION; the code
+//!   REGION_FLASH starts at sector 4 (`0x0801_0000`)
+//! - RAM: main SRAM 128KB (the 64KB CCM is unused, unreachable by DMA)
+//! - Heap: TLSF static pool 8192 words = 32KB ([`TlsfGlobal`])
 //!
-//! # 运行通道
-//! probe-rs + defmt-rtt（RTT 日志）/ panic-probe（panic 打印 + halt）。
+//! # Run channel
+//! probe-rs + defmt-rtt (RTT logs) / panic-probe (panic printing + halt).
 
 #![no_std]
 #![no_main]
@@ -21,20 +23,24 @@ use evorule_mcu::alloc_tlsf::TlsfGlobal;
 use panic_probe as _;
 use stm32f4xx_hal::{pac, prelude::*, rcc};
 
-/// 内核堆（TLSF 静态池，8192 字 = 32 KiB）
+/// Kernel heap (TLSF static pool, 8192 words = 32 KiB)
 #[global_allocator]
 static HEAP: TlsfGlobal<8192> = TlsfGlobal::new();
 
-/// Flash WAL 区段（sector0-3，64KB）：write-ahead 事实账本落点。
-/// 编程只 1→0，整区段擦除粒度 = 16KB 扇区（Flash WAL 后端消费）。
+/// Flash WAL region (sectors 0-3, 64KB): the landing zone of the write-ahead
+/// fact ledger. Programming is 1→0 only; the erase granularity for the whole
+/// region is the 16KB sector (consumed by the Flash WAL backend).
 const WAL_REGION: core::ops::Range<usize> = 0x0800_0000..0x0801_0000;
 
-// 无时基期固定 0（实机批接 DWT/tick 时钟后替换）；defmt 1.x 起为模块级函数式宏
+// Fixed at 0 until there is a time base (replaced once the DWT/tick clock is
+// wired up at real-hardware bring-up); defmt 1.x makes this a module-level
+// function-style macro
 defmt::timestamp!("{=u64}", 0);
 
 #[entry]
 fn main() -> ! {
-    // SAFETY: 静态独占分配器，entry 单入口恰一次初始化，先于任何分配
+    // SAFETY: static exclusive allocator; initialized exactly once at the
+    // single entry point, before any allocation
     unsafe { HEAP.init() };
     defmt::info!(
         "evorule f407-disc1 boot: tlsf ready (pool 32KiB), wal {:#08x}..{:#08x}",

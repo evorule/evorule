@@ -1,15 +1,21 @@
-# EvoRule 板级二进制（独立于主 workspace，由父 Cargo.toml exclude）——STM32F407G-DISC1
+# EvoRule board binary (independent of the main workspace, excluded by the
+# parent Cargo.toml) — STM32F407G-DISC1
 #
-# 覆盖:
-# - bring-up 骨架：TLSF 全局分配器 + RTT 日志 + HSE 8MHz freeze（probe-rs + defmt-rtt 通道）
-# - Flash WAL 区段占位：sector0-3（4×16KB=64KB @ 0x08000000），代码 REGION 从 sector4 起
-#   （memory.x），WAL 区不经链接器分配，Flash WAL 后端以固定地址访问
+# Coverage:
+# - bring-up skeleton: TLSF global allocator + RTT logs + HSE 8MHz freeze
+#   (the probe-rs + defmt-rtt channel)
+# - Flash WAL region placeholder: sectors 0-3 (4×16KB=64KB @ 0x08000000); the
+#   code REGION starts at sector 4 (memory.x); the WAL region is not assigned
+#   by the linker, and the Flash WAL backend accesses it at fixed addresses
 #
-# 构建（板到货后实机扩展使用，当前仅编译门禁）:
+# Build (extended on real hardware once the board arrives; currently only a
+# compile gate):
 #   cargo build --release --target thumbv7em-none-eabihf
 #   probe-rs run --chip STM32F407VGTx target/thumbv7em-none-eabihf/release/evorule-board-stm32f407-disc1
 #
-# 注意: 板级 crate 不进主 workspace（hal 依赖零进主依赖图，CI 依赖图扫描门执法）。
+# Note: board crates do not join the main workspace (the hal dependency stays
+# fully out of the main dependency graph, enforced by the CI dependency-graph
+# scan gate).
 
 [package]
 name = "evorule-board-stm32f407-disc1"
@@ -20,7 +26,7 @@ authors = ["EvoRule Project"]
 publish = false
 
 [dependencies]
-# no_std 内核（tlsf-alloc 门控拉入分配器包装）
+# no_std kernel (the tlsf-alloc gate pulls in the allocator wrapper)
 evorule-mcu = { path = "../../evorule-mcu", features = ["tlsf-alloc"] }
 cortex-m = "0.7"
 cortex-m-rt = "0.7"
