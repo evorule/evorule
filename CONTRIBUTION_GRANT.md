@@ -17,110 +17,87 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# EvoRule 社区贡献授权（Contribution Grant, 通道 D）
+# EvoRule Community Contribution Grant (Channel D)
 
-**版本**: 1.0
-**生效日期**: 2026-10-11
-**签发人**: Mr. DAMU ZHENG（EvoRule Project 创始人、唯一版权人）
+**Version**: 1.0
+**Effective date**: 2026-10-11
+**Issuer**: Mr. DAMU ZHENG (founder of the EvoRule Project, sole copyright holder)
 
 ---
 
-## 一、目的
+## 1. Purpose
 
-开源社区与学术科研生态（评测基准、研究框架、学术会议 artifact、教育项目等）常要求
-贡献物以宽松开源协议（如 Apache-2.0）进入其代码仓。EvoRule 基础许可证为
-AGPL-3.0-or-later，两者的**协议传染性不兼容**：AGPL 源码或其编译产物进入 Apache-2.0
-仓会阻断该仓的协议合规。
+Open-source community and academic research ecosystems (evaluation benchmarks, research frameworks, academic conference artifacts, educational projects, etc.) often require contributions to enter their code repositories under permissive open-source licenses (e.g. Apache-2.0). The base license of EvoRule is AGPL-3.0-or-later, and the two are **license-incompatible by contagion**: AGPL source code, or compiled artifacts derived from it, entering an Apache-2.0 repository would block that repository's license compliance.
 
-本通道由版权人**主动签发再授权**，使 EvoRule 贡献物可以宽松协议进入合格的目标社区，
-**同时 EvoRule 主仓与其生态的 AGPL 主线完全不变**。这不是给单个项目特权，而是生态级
-机制：凡符合本许可资格的目标，均按同一程序获得同类授权。
+Under this channel, the copyright holder **proactively issues a re-license grant**, allowing EvoRule contributions to enter eligible target communities under a permissive license, **while the AGPL mainline of the EvoRule main repository and its ecosystem remains entirely unchanged**. This is not a privilege for a single project but an ecosystem-level mechanism: any target that qualifies under this license receives the same kind of grant through the same procedure.
 
-## 二、资格（目标社区须满足其一）
+## 2. Eligibility (target communities must satisfy one)
 
-1. **开源社区项目**：以公认开源协议（OSI 认定）发布、公开运作的社区项目（含评测基准、
-   开发者工具、公益基础设施）；
-2. **学术科研项目**：高校、科研院所主导或深度参与的研究项目（含学术会议 artifact、
-   期刊附属代码、竞赛评测框架）；
-3. **教育与非营利项目**：教育机构课程项目、非政府非营利组织项目。
+1. **Open-source community projects**: publicly operated community projects released under a recognized open-source license (OSI-approved), including evaluation benchmarks, developer tools, and public-interest infrastructure;
+2. **Academic research projects**: research projects led by, or with deep involvement of, universities and research institutions (including academic conference artifacts, journal-companion code, and competition evaluation frameworks);
+3. **Educational and non-profit projects**: course projects of educational institutions and projects of non-governmental non-profit organizations.
 
-**排除**：不符合上述资格的商业实体（含年营收 ≥ ¥1 亿企业）不适用本通道；其需求由
-[FCL](FREE_COMMERCIAL_LICENSE.md) 或 [商业许可](COMMERCIAL_LICENSE.md) 承接。
+**Excluded**: commercial entities that do not meet the above eligibility (including enterprises with annual revenue ≥ CNY 100 million) are not covered by this channel; their needs are served by the [FCL](FREE_COMMERCIAL_LICENSE.md) or the [Commercial License](COMMERCIAL_LICENSE.md).
 
-## 三、授权物（Grant Object）
+## 3. Grant Object
 
-一次签发针对一份**明确列明的贡献物清单**。清单中的每一项称为「授权物」，包括：
+One issuance covers a **clearly enumerated list of contributions**. Each item in the list is called a "Grant Object", including:
 
-1. **贡献物本体**：由 EvoRule Project 向目标社区提交的代码、文档、规则集、构建产物；
-2. **内含生态代码子集**：贡献物编译产物中静态或动态包含的 EvoRule 生态源码子集
-  （如 wasm 二进制内含的 `evorule-tcb` / `evorule-reactor` / `evorule-governance`
-   编译产物）——**此口径为签发完整性所必需**：仅授权贡献物本体而漏掉其内含的上游
-   代码，会在目标仓合规审查中留下协议断链；
-3. **不含**：未列入清单的一切（EvoRule 全仓其余部分、商标、"EvoRule" 名号的
-   商品化使用——后者见 [TRADEMARK.md](TRADEMARK.md)）。
+1. **The contribution itself**: code, documentation, rule sets, and build artifacts submitted by the EvoRule Project to the target community;
+2. **Embedded ecosystem code subsets**: subsets of EvoRule ecosystem source code statically or dynamically included in the compiled artifacts of the contribution (e.g. compiled artifacts of `evorule-tcb` / `evorule-reactor` / `evorule-governance` embedded in a wasm binary) — **this scope is necessary for issuance integrity**: granting only the contribution itself while omitting the embedded upstream code would leave a broken license chain in the target repository's compliance review;
+3. **Not included**: everything not listed in the list (all other parts of the EvoRule repositories, trademarks, and the commercialized use of the "EvoRule" name — the latter is governed by [TRADEMARK.md](TRADEMARK.md)).
 
-## 四、授予
+## 4. Grant
 
-对每份签发的授权物清单，版权人授予目标社区一项**全球、非独占、免版税、永久、
-不可撤销**的许可：将该授权物以 **Apache-2.0**（或版权人事先认可的更宽松协议，
-如 MIT）再许可、分发、修改与再分发。
+For each issued list of Grant Objects, the copyright holder grants the target community a **worldwide, non-exclusive, royalty-free, perpetual, irrevocable** license: to re-license, distribute, modify, and redistribute the Grant Objects under **Apache-2.0** (or a more permissive license pre-approved by the copyright holder, such as MIT).
 
-- **主仓不变原则**：本授予是 EvoRule 侧的局部再授权；EvoRule 主仓及全部生态仓的
-  AGPL-3.0-or-later 许可证**不受影响、不降级、不废止**；
-- **不可撤销性边界**：授予不可撤销，但依第六节义务的重大违约可终止**后续**授权
-  （已依 Apache-2.0 分发的副本不受影响——与 Apache-2.0 §4 一致）；
-- `core_eval.json`（宪法）本身为 CC0 1.0 公共领域，任何人可自由实现兼容引擎，
-  无需本通道。
+- **Main-repository-unchanged principle**: this grant is a partial re-license on the EvoRule side; the AGPL-3.0-or-later license of the EvoRule main repository and all ecosystem repositories is **unaffected, not downgraded, and not repealed**;
+- **Boundary of irrevocability**: the grant is irrevocable, but a material breach of the obligations in Section 5 may terminate **future** grants (copies already distributed under Apache-2.0 are unaffected — consistent with Apache-2.0 §4);
+- `core_eval.json` (the constitution) is itself CC0 1.0 public domain; anyone may freely implement a compatible engine without this channel.
 
-## 五、义务
+## 5. Obligations
 
-被授权社区（及其下游分发者）须：
+The granted community (and its downstream distributors) must:
 
-1. **署名保留**：在授权物的分发中保留 EvoRule 版权声明与 NOTICE 署名（Apache-2.0
-   §4 本有此要求，此处重申）；
-2. **源指针**：授权物中保留指向 EvoRule 主仓的源代码指针（源码 URL 或 commit 锚），
-   使下游使用者可溯源；
-3. **非背书声明**：不得以 EvoRule 名义暗示 EvoRule Project 背书目标社区或其观点
-   （商标使用守 [TRADEMARK.md](TRADEMARK.md)——描述性使用与兼容性声明允许）；
-4. **范围诚实**：不得宣称授权范围超出签发清单（例如把「wasm 判卷组件」说成
-  「EvoRule 全仓已 Apache 化」）。
+1. **Retain attribution**: retain the EvoRule copyright notice and NOTICE attribution in distributions of the Grant Objects (Apache-2.0 §4 already requires this; restated here);
+2. **Source pointer**: retain in the Grant Objects a source code pointer to the EvoRule main repository (a source URL or commit anchor) so downstream users can trace the origin;
+3. **Non-endorsement statement**: must not use the EvoRule name to imply that the EvoRule Project endorses the target community or its views (trademark use must follow [TRADEMARK.md](TRADEMARK.md) — descriptive use and compatibility statements are allowed);
+4. **Honesty about scope**: must not claim a grant scope beyond the issued list (e.g. describing a "wasm grading component" as "the whole EvoRule repository has been Apache-licensed").
 
-## 六、终止
+## 6. Termination
 
-- 一般违约：收到书面通知 15 日内纠正，授权继续；
-- 重大违约（移除版权声明并拒绝恢复 / 恶意伪造授权范围声明）：该份签发终止，
-  但终止前已依 Apache-2.0 分发的副本不受影响；
-- 本通道整体停用仅影响**后续签发**，已签发的授权物授权不变。
+- Ordinary breach: correction within 15 days of written notice preserves the grant;
+- Material breach (removal of copyright notices and refusal to restore them / malicious falsification of grant-scope statements): that issuance is terminated, but copies already distributed under Apache-2.0 before termination are unaffected;
+- Deactivating the channel as a whole affects only **future issuances**; grants of already-issued Grant Objects are unchanged.
 
-## 七、签发程序（Grant Procedure)
+## 7. Grant Procedure
 
-1. **清单起草**：贡献物清单（逐文件/逐产物列明+BLAKE3 或 commit 锚定版本）；
-2. **版权人签发**：唯一版权人（Mr. DAMU ZHENG）签字批准——单签即生效
-  （依据 [AUTHORS.md](AUTHORS.md)：唯一作者；[GOVERNANCE.md](GOVERNANCE.md) §一：
-   创始人对许可证拥有最终拍板权）；
-3. **落锚**：签发记录（清单+日期+签字）存于本仓 `docs/grants/` 目录，随主仓
-   git 历史锚定；目标社区提交包附授权书副本。
+1. **List drafting**: the list of contributions (file-by-file / artifact-by-artifact enumeration + a BLAKE3 digest or a commit-anchored version);
+2. **Issuance by the copyright holder**: signed approval by the sole copyright holder (Mr. DAMU ZHENG) — a single signature makes it effective
+   (per [AUTHORS.md](AUTHORS.md): sole author; [GOVERNANCE.md](GOVERNANCE.md) §1:
+   the founder holds final sign-off authority on licensing);
+3. **Anchoring**: the issuance record (list + date + signature) is stored in this repository's `docs/grants/` directory, anchored in the main repository's git history; the target community's submission package includes a copy of the grant.
 
-## 八、与既有通道的关系
+## 8. Relationship to Existing Channels
 
-| 通道 | 给谁 | 给什么 | 生态主线 |
+| Channel | Who it serves | What it provides | Ecosystem mainline |
 |---|---|---|---|
-| A. AGPL | 任何人 | 开源使用，修改版须开源 | 基础 |
-| B. FCL | 合格实体（政府/高校/科研/非营利/中小企业/个人） | 免 AGPL 义务的闭源使用+分发 | 免费豁免 |
-| C. Commercial | 不合格实体（大厂） | 付费买断 copyleft 义务 | 付费 |
-| **D. Contribution Grant** | **开源社区/学术科研/教育非营利** | **贡献物以宽松协议（Apache-2.0）进入其仓** | **局部再授权** |
+| A. AGPL | Anyone | Open-source use; modified versions must be open-sourced | Foundation |
+| B. FCL | Eligible entities (government / universities / research / non-profits / SMEs / individuals) | Closed-source use and distribution free of AGPL obligations | Free exemption |
+| C. Commercial | Ineligible entities (large vendors) | Paid buyout of copyleft obligations | Paid |
+| **D. Contribution Grant** | **Open-source communities / academic research / education and non-profits** | **Contributions enter their repositories under a permissive license (Apache-2.0)** | **Partial re-license** |
 
-## 九、法律声明
+## 9. Legal Notice
 
-本文档不构成法律建议。EvoRule 的知识产权归 EvoRule Project 所有。
+This document does not constitute legal advice. The intellectual property of EvoRule is owned by the EvoRule Project.
 
 ---
 
-**签发人签字**：__________________　Mr. DAMU ZHENG
-**日期**：2026 年 10 月 11 日
+**Issuer's signature**: ____________________  Mr. DAMU ZHENG
+**Date**: October 11, 2026
 
-## 版本历史
+## Version History
 
-| 版本 | 日期 | 变更说明 |
+| Version | Date | Change |
 |---|---|---|
-| 1.0 | 2026-10-11 | 首建：通道 D 社区贡献授权（首例签发对象=ALE 可验证判卷组件） |
+| 1.0 | 2026-10-11 | Established: the Channel D community contribution grant (first issuance targeted a verifiable grading component for an evaluation benchmark) |

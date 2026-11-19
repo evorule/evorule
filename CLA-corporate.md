@@ -4,211 +4,211 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# EvoRule 企业贡献者许可协议 (Corporate CLA)
+# EvoRule Corporate Contributor License Agreement (Corporate CLA)
 
-**版本**: 1.0
-**生效日期**: 2026-09-08
+**Version**: 1.0
+**Effective date**: 2026-09-08
 
-> ⚠️ **重要提示**: 本协议是法律文件，影响贵公司的版权与专利权。签署前请仔细阅读。如有疑问，请咨询专业律师。
-> 贡献者也可联系 <evorulelab@gmail.com> 获取澄清。
-
----
-
-## 1. 定义
-
-- **"项目"** 指 **EvoRule**（反应式执行引擎）及其所有相关代码仓库，包括但不限于：
-  - `evorule`（主仓库，本仓库）
-  - EvoRule 生态的全部关联开源仓库（仓库清单以项目公开文档为准）
-  - 未来可能增加的关联仓库
-- **"贡献"** 指贵公司（或通过贵公司雇佣关系行事的个人）提交给项目的任何源代码、文档、测试用例、补丁、翻译、示例或其他材料，通过 Pull Request / Merge Request / Issue / Email / 任何其他渠道提交。
-- **"版权人"** 指 EvoRule Project（项目版权所有者）。
-- **"版权"** 指根据适用法律对贡献享有的所有知识产权，包括但不限于著作权、专利权和商标权。
-- **"贡献者"** 指代表贵公司签署本协议、并提交或授权提交贡献的法律实体（公司 / 组织）。
-
-## 2. 授权与代表
-
-贵公司的授权代表签署本协议，即声明并保证：
-
-1. 该代表有权约束贵公司接受本协议条款；
-2. 贵公司对其员工在雇佣范围内提交给项目的所有贡献拥有充分权利，并代表贵公司及其员工作出本协议项下的全部授予；
-3. 本协议覆盖**贵公司所有在职及未来员工**在雇佣范围内提交给项目的贡献，无需每位员工单独签署。
-
-> 个人开发者仍须签署 [CLA-individual.md](CLA-individual.md)；本 Corporate CLA 与 Individual CLA **互为补充**，不互相替代。
-
-## 3. 版权许可授予
-
-贵公司 hereby 授予 EvoRule Project 一项**永久的、全球的、非独占的、免版税的、可再许可的、不可撤销的**版权许可，允许版权人：
-
-1. **复制、修改、改编、转换、翻译**贵公司的贡献
-2. **将贵公司的贡献合并到项目**及其衍生作品中
-3. **以 AGPL-3.0-or-later 许可证**分发项目及包含贵公司贡献的版本
-4. **以其他许可证分发**项目，包括但不限于商业许可证、商业豁免协议（详见 [DUAL_LICENSE.md](DUAL_LICENSE.md)）
-5. **创建和分发**基于贵公司贡献的衍生作品
-6. **公开展示和表演**含贵公司贡献的项目
-
-## 4. 专利授权
-
-如果贵公司的贡献包含可专利的内容，或贵公司的贡献导致任何专利权利要求被侵犯，贵公司 hereby 授予版权人及其被许可人一项**永久的、全球的、非独占的、免版税的、不可撤销的**专利许可，允许其：
-
-- **制造**含贵公司贡献的产品
-- **使用**含贵公司贡献的产品
-- **销售或许诺销售**含贵公司贡献的产品
-- **进口**含贵公司贡献的产品
-- **分许可**他人行使上述权利
-
-**专利诉讼触发条款**:
-
-如果贵公司就贵公司的贡献对版权人或其被许可人提起专利侵权诉讼（包括交叉诉讼），本协议授予贵公司的专利许可将自动终止。
-
-## 5. 陈述与保证
-
-贵公司在此声明并保证：
-
-1. **原创性与权利**：贵公司的贡献是贵公司员工在雇佣范围内的原创作品，或贵公司拥有充分合法权利将其提交给项目并授予本协议。
-2. **无第三方权利冲突**：贵公司的贡献不侵犯任何第三方的知识产权、版权、专利权、商标权、商业秘密、隐私权或其他合法权利。
-3. **第三方代码**：如果贵公司的贡献包含第三方代码：
-   - 该第三方代码采用与 AGPL-3.0-or-later 兼容的许可证
-   - 贵公司已保留所有必要的版权声明、许可证声明和归属声明
-   - 贵公司已遵守所有相关许可证的要求
-4. **授权能力**：贵公司的签署人有权约束贵公司并接受本协议义务。
-5. **无利益冲突**：贵公司没有未披露的、可能影响本协议履行的重大利益冲突。
-
-## 6. 道德权利
-
-在适用法律允许的范围内，贵公司**放弃**其员工对贡献的任何道德权利（moral rights），包括但不限于署名权、完整权、反对修改权、公开权。
-
-如法律不允许放弃上述权利，贵公司同意**不行使**上述权利，以便版权人可以自由使用、修改、分发贵公司的贡献。
-
-## 7. 通知义务
-
-如果贵公司发现以下任一情况，必须**立即**书面通知版权人：
-
-- 贵公司的贡献可能侵犯第三方权利
-- 贵公司对贡献的权利发生变化（如版权转让）
-- 贵公司员工对贡献的所有权发生变化（如员工离职、公司重组）
-
-通知方式：<evorulelab@gmail.com>（主题加 `[CLA Notice]`）
-
-## 8. 协议性质与变更
-
-### 8.1 协议性质
-
-本协议是贵公司与版权人之间的**法律协议**。通过向项目提交贡献，贵公司表示已阅读、理解并同意受本协议条款约束。
-
-### 8.2 协议终止
-
-- 贵公司可随时**终止**本协议，但终止仅对**未来**的贡献有效，已提交的贡献许可保持有效。
-- 如果贵公司违反本协议的任何条款，贵公司的协议和授予的许可将自动终止，但已分发的代码不受影响。
-
-### 8.3 协议变更
-
-版权人可随时更新本协议（通过发布新版本号）。新版本仅对**未来**的贡献有效，已提交的贡献适用提交时生效的版本。
-
-## 9. 适用法律与争议解决
-
-### 9.1 适用法律
-
-本协议受**中华人民共和国法律**管辖，并按其解释，不适用法律冲突规则。
-
-### 9.2 争议解决
-
-因本协议引起的或与本协议有关的任何争议，双方应首先通过**友好协商**解决；协商不成的，任何一方可提交版权人所在地有管辖权的人民法院通过诉讼解决。
-
-## 10. 其他条款
-
-- **可分割性**：本协议任何条款被认定为无效或不可执行，不影响其他条款的效力。
-- **完整协议**：本协议构成贵公司与版权人之间关于贡献许可的完整协议，取代任何先前的口头或书面协议。
-- **放弃**：任何一方未行使本协议项下的权利，不构成对该权利的放弃。
+> ⚠️ **Important**: this agreement is a legal document that affects your company's copyright and patent rights. Read it carefully before signing. If in doubt, consult a qualified attorney.
+> Contributors may also contact <evorulelab@gmail.com> for clarification.
 
 ---
 
-## 签署
+## 1. Definitions
 
-通过签署本协议，贵公司确认已阅读、理解并同意受本协议所有条款约束。
+- **"Project"** means **EvoRule** (the reactive execution engine) and all of its associated code repositories, including but not limited to:
+  - `evorule` (the main repository, this repository)
+  - All associated open-source repositories of the EvoRule ecosystem (the repository list is governed by the project's public documentation)
+  - Associated repositories that may be added in the future
+- **"Contribution"** means any source code, documentation, test cases, patches, translations, examples, or other materials that your company (or an individual acting through the employment relationship with your company) submits to the Project, via Pull Request / Merge Request / Issue / Email / any other channel.
+- **"Copyright Holder"** means EvoRule Project (the owner of the project's copyright).
+- **"Copyright"** means all intellectual property rights in a Contribution under applicable law, including but not limited to copyright, patent, and trademark rights.
+- **"Contributor"** means the legal entity (company / organization) that signs this agreement on behalf of your company and submits, or authorizes the submission of, Contributions.
 
-| 字段 | 填写内容 |
+## 2. Authorization and Representation
+
+By having your company's authorized representative sign this agreement, that representative declares and warrants that:
+
+1. The representative has the authority to bind your company to the terms of this agreement;
+2. Your company has full rights to all Contributions submitted to the Project by its employees within the scope of employment, and makes all grants under this agreement on behalf of your company and those employees;
+3. This agreement covers Contributions submitted to the Project by **all of your company's current and future employees** within the scope of employment, without each employee needing to sign separately.
+
+> Individual developers must still sign [CLA-individual.md](CLA-individual.md); this Corporate CLA and the Individual CLA are **complementary to each other** and do not replace one another.
+
+## 3. Copyright License Grant
+
+Your company hereby grants EvoRule Project a **perpetual, worldwide, non-exclusive, royalty-free, sublicensable, irrevocable** copyright license, allowing the Copyright Holder to:
+
+1. **Reproduce, modify, adapt, transform, and translate** your company's Contributions
+2. **Incorporate your company's Contributions into the Project** and derivative works thereof
+3. **Distribute the Project and versions containing your company's Contributions under the AGPL-3.0-or-later license**
+4. **Distribute the Project under other licenses**, including but not limited to commercial licenses and commercial exemption agreements (see [DUAL_LICENSE.md](DUAL_LICENSE.md) for details)
+5. **Create and distribute** derivative works based on your company's Contributions
+6. **Publicly display and publicly perform** the Project containing your company's Contributions
+
+## 4. Patent Grant
+
+If your company's Contribution includes patentable subject matter, or your company's Contribution causes any patent claim to be infringed, your company hereby grants the Copyright Holder and its licensees a **perpetual, worldwide, non-exclusive, royalty-free, irrevocable** patent license, allowing them to:
+
+- **Make** products containing your company's Contributions
+- **Use** products containing your company's Contributions
+- **Sell or offer to sell** products containing your company's Contributions
+- **Import** products containing your company's Contributions
+- **Sublicense** others to exercise the foregoing rights
+
+**Patent Litigation Termination Clause**:
+
+If your company initiates patent infringement litigation (including counterclaims and cross-claims) against the Copyright Holder or its licensees over your company's Contributions, the patent license granted to your company under this agreement terminates automatically.
+
+## 5. Representations and Warranties
+
+Your company represents and warrants that:
+
+1. **Originality and rights**: your company's Contributions are original works of your company's employees within the scope of employment, or your company has full legal rights to submit them to the Project and make the grants under this agreement.
+2. **No conflicts with third-party rights**: your company's Contributions do not infringe any third party's intellectual property rights, copyright, patent rights, trademark rights, trade secrets, privacy rights, or other lawful rights.
+3. **Third-party code**: if your company's Contributions contain third-party code:
+   - That third-party code is licensed under a license compatible with AGPL-3.0-or-later
+   - Your company has retained all required copyright notices, license notices, and attribution notices
+   - Your company has complied with the requirements of all relevant licenses
+4. **Authority to grant**: your company's signatory has the authority to bind your company and to accept the obligations of this agreement.
+5. **No conflict of interest**: your company has no undisclosed material conflict of interest that could affect the performance of this agreement.
+
+## 6. Moral Rights
+
+To the extent permitted by applicable law, your company **waives**, on behalf of its employees, any moral rights in the Contributions, including but not limited to the right of attribution, the right of integrity, the right to object to modification, and the right of disclosure.
+
+If the law does not permit waiver of the foregoing rights, your company agrees **not to exercise** those rights, so that the Copyright Holder may freely use, modify, and distribute your company's Contributions.
+
+## 7. Notification Obligation
+
+If your company becomes aware of any of the following, it must notify the Copyright Holder **immediately** in writing:
+
+- Your company's Contributions may infringe third-party rights
+- Your company's rights in a Contribution change (e.g. a copyright assignment)
+- Ownership of a Contribution by your company's employees changes (e.g. an employee departs, a corporate restructuring)
+
+Notification channel: <evorulelab@gmail.com> (add `[CLA Notice]` to the subject)
+
+## 8. Nature of the Agreement and Changes
+
+### 8.1 Nature of the Agreement
+
+This agreement is a **legal agreement** between your company and the Copyright Holder. By submitting a Contribution to the Project, your company declares that it has read, understood, and agreed to be bound by the terms of this agreement.
+
+### 8.2 Termination of the Agreement
+
+- Your company may **terminate** this agreement at any time, but termination applies only to **future** Contributions; licenses to already-submitted Contributions remain in effect.
+- If your company breaches any term of this agreement, the agreement and the licenses granted under it terminate automatically, without affecting already-distributed code.
+
+### 8.3 Changes to the Agreement
+
+The Copyright Holder may update this agreement at any time (by releasing a new version number). A new version applies only to **future** Contributions; already-submitted Contributions are governed by the version in effect at the time of submission.
+
+## 9. Governing Law and Dispute Resolution
+
+### 9.1 Governing Law
+
+This agreement is governed by and construed in accordance with **the laws of the People's Republic of China**, without regard to its conflict-of-laws rules.
+
+### 9.2 Dispute Resolution
+
+Any dispute arising out of or in connection with this agreement shall first be resolved through **friendly negotiation**; if negotiation fails, either party may bring a lawsuit before a people's court of competent jurisdiction at the place where the Copyright Holder is located.
+
+## 10. Miscellaneous
+
+- **Severability**: if any provision of this agreement is held invalid or unenforceable, the validity of the remaining provisions is unaffected.
+- **Entire agreement**: this agreement constitutes the entire agreement between your company and the Copyright Holder concerning the licensing of Contributions, superseding any prior oral or written agreements.
+- **Non-waiver**: a party's failure to exercise a right under this agreement does not constitute a waiver of that right.
+
+---
+
+## Signature
+
+By signing this agreement, your company confirms that it has read, understood, and agreed to be bound by all terms of this agreement.
+
+| Field | Value |
 |---|---|
-| **公司法定名称** | _________________________________ |
-| **统一社会信用代码 / 注册号** | _________________________________ |
-| **授权代表姓名** | _________________________________ |
-| **职务** | _________________________________ |
-| **公司注册国家 / 地区** | _________________________________ |
-| **官方邮箱** | _________________________________ |
-| **日期** | _________________________________ |
-| **公司盖章 / 授权代表签名** | _________________________________ |
+| **Company legal name** | _________________________________ |
+| **Unified social credit code / registration number** | _________________________________ |
+| **Authorized representative's name** | _________________________________ |
+| **Title** | _________________________________ |
+| **Country / region of company registration** | _________________________________ |
+| **Official email** | _________________________________ |
+| **Date** | _________________________________ |
+| **Company seal / authorized representative's signature** | _________________________________ |
 
 ---
 
-## 提交方式
+## Submission Methods
 
-**方式 1（推荐）：首次 PR 时声明**
+**Method 1 (recommended): declaration at the first PR**
 
-- 在首个 PR 的描述中包含：
+- Include the following in the description of the first PR:
   > "I have read and agree to the EvoRule Corporate CLA v1.0 on behalf of my company."
 
-**方式 2：邮件签署**
+**Method 2: signing by email**
 
-- 下载本文件，填写并加盖公司章 / 授权代表签名后发送至：
-  - **邮箱**：<evorulelab@gmail.com>（主题加 `[CLA Corporate]`）
+- Download this document, fill it in, affix the company seal / the authorized representative's signature, and send it to:
+  - **Email**: <evorulelab@gmail.com> (add `[CLA Corporate]` to the subject)
 
-**方式 3：GitHub 在线签署（仅个人 CLA 适用）**
+**Method 3: online signing on GitHub (available for the Individual CLA only)**
 
-- 个人贡献者可在 PR 的 CLA 提示下点击"我同意"完成**个人** CLA 签署。
-- ⚠️ **企业贡献者不可用此方式**：在线签署通道当前**仅支持个人签署，无企业入口**。企业贡献者**切勿**用个人 CLA 代替公司 CLA（否则公司层面的版权授予缺失，会直接削弱双许可模型对商业再许可的权利基础）。
-
----
-
-## ⚠️ 企业如何签署（重要）
-
-在线签署通道目前**没有企业（Corporate）签署入口**，只能签个人 CLA。因此企业贡献者**必须走人工流程**，不能依赖在线点击：
-
-1. **下载**本 `CLA-corporate.md`；
-2. **填写**文末"签署"表格（公司法定名称、统一社会信用代码 / 注册号、授权代表、职务、公司盖章 / 授权代表签名）；
-3. **发送**扫描件或填写版至 <evorulelab@gmail.com>（主题加 `[CLA Corporate]`）；
-4. 版权人（EvoRule Project）**人工审阅**并归档后，贵公司即受本协议约束——其在雇佣范围内提交的所有贡献均适用本协议。
-
-> 个人员工仍须另行签署 [CLA-individual.md](CLA-individual.md)；本 Corporate CLA 覆盖员工在雇佣范围内的贡献，两者互为补充，不互相替代。
-
-如对企业签署流程有疑问，联系 <evorulelab@gmail.com>。
+- Individual contributors may complete **individual** CLA signing by clicking "I agree" at the CLA prompt on a PR.
+- ⚠️ **Corporate contributors cannot use this method**: the online signing channel currently **supports individual signing only, with no corporate entry**. Corporate contributors must **never** substitute the individual CLA for the corporate CLA (otherwise the company-level copyright grant is missing, directly weakening the legal basis of the dual-licensing model for commercial re-licensing).
 
 ---
 
-## 关于 CLA 的常见问题
+## ⚠️ How Corporates Sign (Important)
 
-### Q1: 为什么 EvoRule 需要 Corporate CLA？
+The online signing channel currently **has no corporate (Corporate) signing entry**; only the individual CLA can be signed online. Corporate contributors must therefore **follow the manual process** and cannot rely on online clicking:
 
-**A**: AGPL-3.0 本身不禁止商业再许可，但要实现"开源 + 商业双轨"，需要每位贡献者（及其雇主）明确授权版权人有权再许可。否则商业许可存在法律风险。
+1. **Download** this `CLA-corporate.md`;
+2. **Fill in** the "Signature" table at the end of the document (company legal name, unified social credit code / registration number, authorized representative, title, company seal / authorized representative's signature);
+3. **Send** a scan or the completed version to <evorulelab@gmail.com> (add `[CLA Corporate]` to the subject);
+4. After the Copyright Holder (EvoRule Project) **reviews and archives it manually**, your company is bound by this agreement — it applies to all Contributions submitted by your company's employees within the scope of employment.
 
-### Q2: 员工个人还需要签 Individual CLA 吗？
+> Individual employees must still sign [CLA-individual.md](CLA-individual.md) separately; this Corporate CLA covers employees' Contributions within the scope of employment, and the two are complementary, not substitutes.
 
-**A**: Corporate CLA 覆盖员工在雇佣范围内的贡献；个人开发者（无雇主）须签 Individual CLA。两者互为补充。
-
-### Q3: 我们公司签署了 Corporate CLA，新员工还需要单独处理吗？
-
-**A**: 不需要。Corporate CLA 覆盖签署后在雇佣范围内提交的所有员工贡献。
-
-### Q4: 贡献的代码归属谁？
-
-**A**: 员工保留版权；本协议授予的是**使用许可**，不是版权转让。
+For questions about the corporate signing process, contact <evorulelab@gmail.com>.
 
 ---
 
-## 联系信息
+## FAQ about the CLA
 
-- **项目**: EvoRule
-- **版权人**: EvoRule Project
-- **邮箱**: <evorulelab@gmail.com>
+### Q1: Why does EvoRule need a Corporate CLA?
+
+**A**: AGPL-3.0 does not itself prohibit commercial re-licensing, but to implement the "open source + commercial dual track", every contributor (and their employer) must explicitly authorize the Copyright Holder to re-license. Otherwise, commercial licensing carries legal risk.
+
+### Q2: Do employees still need to sign the Individual CLA?
+
+**A**: The Corporate CLA covers employees' Contributions within the scope of employment; individual developers (without an employer) must sign the Individual CLA. The two are complementary.
+
+### Q3: Our company signed the Corporate CLA — do new employees need separate handling?
+
+**A**: No. The Corporate CLA covers all employee Contributions submitted within the scope of employment after signing.
+
+### Q4: Who owns contributed code?
+
+**A**: Employees retain copyright; what this agreement grants is a **license to use**, not a copyright assignment.
+
+---
+
+## Contact
+
+- **Project**: EvoRule
+- **Copyright Holder**: EvoRule Project
+- **Email**: <evorulelab@gmail.com>
 - **GitHub**: <https://github.com/evorule/evorule>
 
 ---
 
-## 协议历史
+## Agreement History
 
-| 版本 | 日期 | 主要变化 |
+| Version | Date | Key changes |
 |---|---|---|
-| 1.0 | 2026-09-08 | 初版，与 Individual CLA 互为补充，落实 DEC-2026-001 D-001-14 |
+| 1.0 | 2026-09-08 | Initial version, complementary to the Individual CLA, implementing the corresponding provision of the project's decision record |
 
 ---
 
-**本 CLA 遵循 EvoRule 发布原则，采用 Contributor License Agreement 标准结构。**
-**本文件不是法律建议。实际签署前，建议咨询专业律师。**
+**This CLA follows the EvoRule release principles and adopts the standard Contributor License Agreement structure.**
+**This document is not legal advice. Before actually signing, it is recommended to consult a qualified attorney.**

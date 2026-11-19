@@ -1,44 +1,44 @@
-# REPO_REGISTRY — EvoRule 生态仓库注册表
+# REPO_REGISTRY — EvoRule Ecosystem Repository Registry
 
-> **权威登记表**：EvoRule 生态全部仓库的定位、分支、License 与 CI 现状。
-> **拓扑基线**：2026-11-01 起 GitHub 单主——`github.com/evorule/*` 为唯一权威源；历史 Gitee 仓冻结（仅私仓 evorule-application / rpsm 与 evorule-agent 历史路径保留事实记录）。
-> **维护铁律**：新建 / 迁移 / 改名 / 变更默认分支或可见性，**必须同步更新本表**；本表与现状不一致即视为债务。
-> 最后更新：2026-11-02（GitHub 单主转换后全量核录）
+> **Authoritative registry**: the positioning, branches, licenses, and CI status of all repositories in the EvoRule ecosystem.
+> **Topology baseline**: since 2026-11-01, GitHub is the single primary host — `github.com/evorule/*` is the sole authoritative source; historical Gitee repositories are frozen (only the private repos evorule-application / rpsm and the historical evorule-agent path are retained as factual records).
+> **Maintenance iron rule**: when creating / migrating / renaming a repository or changing its default branch or visibility, **this registry must be updated in sync**; any mismatch between this registry and reality is treated as debt.
+> Last updated: 2026-11-02 (full re-verification after the GitHub single-primary conversion)
 
-## 命名空间速览
+## Namespace Overview
 
-| 命名空间 | 平台 | 性质 |
+| Namespace | Platform | Nature |
 |---|---|---|
-| `github.com/evorule/*` | GitHub 组织 evorule | 权威主仓（公开，除 agent 为私有） |
-| `gitee.com/evorulelab/*` | 历史私有路径（仅 evorule-agent，已冻结） | 私有仓事实记录 |
-| `gitee.com/evorule/*` | 历史公开仓（已冻结）+ 两个仍在役私仓（evorule-application / rpsm） | 事实记录 |
+| `github.com/evorule/*` | GitHub organization evorule | Authoritative primary repositories (public, except agent which is private) |
+| `gitee.com/evorulelab/*` | Historical private path (evorule-agent only, frozen) | Factual record of private repositories |
+| `gitee.com/evorule/*` | Historical public repositories (frozen) + two still-active private repositories (evorule-application / rpsm) | Factual record |
 
-## 主表
+## Main Table
 
-| 仓名 | 角色 | GitHub URL | 可见性 | 默认分支 | License | GitHub CI | 备注 |
+| Repository | Role | GitHub URL | Visibility | Default branch | License | GitHub CI | Notes |
 |---|---|---|---|---|---|---|---|
-| evorule | 核心引擎（TCB 唯一版本源） | github.com/evorule/evorule | 公开 | main | AGPL-3.0-or-later（双许可） | ci,cla,clippy,codeql,differential,fuzz,kani,mutants,release,scorecard,tla | 生态唯一版本源；工具链既定裁定（rust 1.97.1） |
-| evorule-server | 自托管服务端 | github.com/evorule/evorule-server | 公开 | main | AGPL-3.0-or-later | ci,cla,release | GitHub 权威源 |
-| evorule-rule | 业务规则集 | github.com/evorule/evorule-rule | 公开 | main | AGPL-3.0-or-later | ci,cla,release | GitHub 权威源 |
-| evorule-system-rules | 系统规则集 | github.com/evorule/evorule-system-rules | 公开 | main | AGPL-3.0-or-later | cla | 无独立构建 CI（cla） |
-| evorule-console-cloud | 云控制台 | github.com/evorule/evorule-console-cloud | 公开 | main | AGPL-3.0-or-later | ci,cla,deploy-demo,release | GitHub 权威源 |
-| evorule-console | 控制台前端 | github.com/evorule/evorule-console | 公开 | main | AGPL-3.0-or-later | — | **无独立 CI（T4 缺口，待补）** |
-| evorule-hash | 哈希链 | github.com/evorule/evorule-hash | 公开 | main | AGPL-3.0-or-later | ci,cla,release | GitHub 权威源 |
-| evorule-bundle | 规则包 | github.com/evorule/evorule-bundle | 公开 | main | AGPL-3.0-or-later | ci,cla,release | GitHub 权威源 |
-| evorule-sdk | 多语言 SDK | github.com/evorule/evorule-sdk | 公开 | main | **Apache-2.0（设计选择，非漂移）** | ci | License 政策见主仓 CONTRIBUTING |
-| evorule-dsh-skill | 安装器 Skill | github.com/evorule/evorule-dsh-skill | 公开 | main | AGPL-3.0-or-later | — | 无独立 CI（T4 缺口，待补） |
-| evo-agent | 应用层编排（可信 AI 工作站） | github.com/evorule/evo-agent | 公开 | **main**（2026-09-16 由 master 迁移） | AGPL-3.0-or-later | ci,cla | 与 evorule-agent **严格区分**（不同设计/功能） |
-| evorule-experience-pack | 本地体验包（消费者入口·真用层：双击启动真实引擎） | github.com/evorule/evorule-experience-pack | 公开 | main | AGPL-3.0-or-later（宪法 CC0） | — | **2026-09-16 建仓**（此前仅本地目录未登记，console-cloud README 曾指向 404）：16 条合规规则 + BLAKE3 审计链 + 热重载/Bundle/WAL；Release v0.6.0 附 zip（SHA256 见 Release 说明）；data/ 运行产物已 .gitignore |
-| evorule-agent | 大脑主控 agent 运行时（技术预览） | github.com/evorule/evorule-agent | 私有 | main | AGPL-3.0-or-later | ci | canonical 历史为 gitee.com/evorulelab/evorule-agent（私有，已冻结）；2026-11-01 起 GitHub 为权威源 |
-| evorule-application | 大众版应用层（等保2.0 门禁演示） | —（无 GitHub） | 私有 | main | AGPL-3.0-or-later | — | canonical 仍为 gitee.com/evorule/evorule-application（私有）；无镜像，仅备份链覆盖 |
-| rpsm | 实时物理仿真原型（内核纯净+PLA 审计验证，Rust） | —（无 GitHub） | 私有 | **main**（2026-09-16 由 master 迁移） | AGPL-3.0-or-later | — | canonical 仍为 gitee.com/evorule/rpsm（私有）；无镜像，仅备份链覆盖 |
-| evorule.github.io | GitHub Pages 站点 | github.com/evorule/evorule.github.io | 公开 | main | CC0-1.0 | — | 站点示例与 wasm demo |
-| .github | GitHub 组织健康文件 | github.com/evorule/.github | 公开 | main | CC0-1.0 | — | org profile/health 文件 |
+| evorule | Core engine (sole version source of the TCB) | github.com/evorule/evorule | Public | main | AGPL-3.0-or-later (dual-licensed) | ci,cla,clippy,codeql,differential,fuzz,kani,mutants,release,scorecard,tla | Sole version source of the ecosystem; settled toolchain ruling (rust 1.97.1) |
+| evorule-server | Self-hosted server | github.com/evorule/evorule-server | Public | main | AGPL-3.0-or-later | ci,cla,release | GitHub authoritative source |
+| evorule-rule | Business rule set | github.com/evorule/evorule-rule | Public | main | AGPL-3.0-or-later | ci,cla,release | GitHub authoritative source |
+| evorule-system-rules | System rule set | github.com/evorule/evorule-system-rules | Public | main | AGPL-3.0-or-later | cla | No standalone build CI (cla only) |
+| evorule-console-cloud | Cloud console | github.com/evorule/evorule-console-cloud | Public | main | AGPL-3.0-or-later | ci,cla,deploy-demo,release | GitHub authoritative source |
+| evorule-console | Console frontend | github.com/evorule/evorule-console | Public | main | AGPL-3.0-or-later | — | **No standalone CI (T4 gap, to be filled)** |
+| evorule-hash | Hash chain | github.com/evorule/evorule-hash | Public | main | AGPL-3.0-or-later | ci,cla,release | GitHub authoritative source |
+| evorule-bundle | Rule bundles | github.com/evorule/evorule-bundle | Public | main | AGPL-3.0-or-later | ci,cla,release | GitHub authoritative source |
+| evorule-sdk | Multi-language SDK | github.com/evorule/evorule-sdk | Public | main | **Apache-2.0 (deliberate design choice, not drift)** | ci | License policy: see the main repository's CONTRIBUTING |
+| evorule-dsh-skill | Installer Skill | github.com/evorule/evorule-dsh-skill | Public | main | AGPL-3.0-or-later | — | No standalone CI (T4 gap, to be filled) |
+| evo-agent | Application-layer orchestration (trusted AI workstation) | github.com/evorule/evo-agent | Public | **main** (migrated from master on 2026-09-16) | AGPL-3.0-or-later | ci,cla | **Strictly distinct** from evorule-agent (different design/functionality) |
+| evorule-experience-pack | Local experience pack (consumer entry point · hands-on layer: launch the real engine with a double-click) | github.com/evorule/evorule-experience-pack | Public | main | AGPL-3.0-or-later (constitution CC0) | — | **Repository created 2026-09-16** (previously only a local directory, unregistered; the console-cloud README once pointed to a 404): 16 compliant rules + BLAKE3 audit chain + hot reload/Bundle/WAL; Release v0.6.0 ships a zip (SHA256 in the Release notes); data/ runtime artifacts are .gitignore'd |
+| evorule-agent | Brain controller agent runtime (technical preview) | github.com/evorule/evorule-agent | Private | main | AGPL-3.0-or-later | ci | Canonical history: gitee.com/evorulelab/evorule-agent (private, frozen); since 2026-11-01 GitHub is the authoritative source |
+| evorule-application | Mass-market application layer (MLPS 2.0 compliance-gate demo) | — (no GitHub) | Private | main | AGPL-3.0-or-later | — | Canonical remains gitee.com/evorule/evorule-application (private); no mirror, covered only by the backup chain |
+| rpsm | Real-time physics simulation prototype (pure kernel + PLA audit verification, Rust) | — (no GitHub) | Private | **main** (migrated from master on 2026-09-16) | AGPL-3.0-or-later | — | Canonical remains gitee.com/evorule/rpsm (private); no mirror, covered only by the backup chain |
+| evorule.github.io | GitHub Pages site | github.com/evorule/evorule.github.io | Public | main | CC0-1.0 | — | Site examples and wasm demo |
+| .github | GitHub organization health files | github.com/evorule/.github | Public | main | CC0-1.0 | — | org profile/health files |
 
-## 维护规则
+## Maintenance Rules
 
-1. **新建仓**：按本表模板登记 → GitHub 建仓（唯一权威源）→ README → 提交本表。
-2. **变更**：迁移 / 改名 / 默认分支 / 可见性 / License 变化 → 先改本表再执行，执行后回填实际结果。
-3. **双 agent 红线**：`evo-agent` 与 `evorule-agent` 是两个独立项目，任何场景不得合并、不得将对方链接当作自身 canonical。
-4. **tag 例外规则**：`checkpoint-*` / `pre-*` 开发 checkpoint tag（主仓 evorule 现有 37 个）为开发痕迹，仅存历史 Gitee 仓（已冻结），不同步 GitHub；audit 门禁按此规则放行，其余版本 tag 以 GitHub 为准。
-5. **缺口跟踪**：`evorule-console`、`evorule-dsh-skill` 无独立 CI（T4）。
+1. **New repository**: register it per the template in this registry → create it on GitHub (the sole authoritative source) → README → update this registry.
+2. **Changes**: migration / rename / default branch / visibility / license change → update this registry first, then execute, and backfill the actual result afterwards.
+3. **Dual-agent red line**: `evo-agent` and `evorule-agent` are two independent projects; under no circumstances may they be merged, and neither may treat the other's links as its own canonical.
+4. **Tag exception rule**: `checkpoint-*` / `pre-*` development checkpoint tags (37 currently exist in the main repository evorule) are development artifacts that live only in the historical Gitee repositories (frozen) and are not synced to GitHub; the audit gate admits them under this rule, and all other version tags defer to GitHub.
+5. **Gap tracking**: `evorule-console` and `evorule-dsh-skill` have no standalone CI (T4).
