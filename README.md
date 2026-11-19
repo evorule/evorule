@@ -161,5 +161,5 @@ Beyond CI, dedicated workflows enforce:
 [ci-link]: https://github.com/evorule/evorule/actions/workflows/ci.yml
 [badge-license]: https://img.shields.io/badge/license-AGPL--3.0--or--later-blue?style=flat-square
 [license-link]: LICENSE
-[badge-kani]: https://img.shields.io/badge/Kani-48%20proofs%20%2819%20verified%29-blue?style=flat-square
+[badge-kani]: https://img.shields.io/badge/Kani-49%20proofs%20%2819%20verified%29-blue?style=flat-square
 [kani-link]: https://github.com/evorule/evorule/blob/main/verification/STATUS.md

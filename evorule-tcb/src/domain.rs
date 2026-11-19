@@ -635,6 +635,21 @@ fn evaluate_has_fields(domain: &JsonValue, exec_state: &JsonValue) -> Result<boo
         });
     }
 
+    // Eager structural pre-scan (aligned with evaluate_in_outcome): `fields`
+    // elements must all be strings, checked before the state-side lookups —
+    // structural errors of the rule text must not depend on state readiness
+    // order, keeping diagnostics stable and reproducible.
+    let field_names: alloc::vec::Vec<&str> = fields
+        .iter()
+        .map(|field_value| {
+            field_value.as_str().ok_or_else(|| TcbError::InvalidType {
+                expected: "string",
+                actual: json_type_name(field_value),
+                context: "has_fields.fields element".to_string(),
+            })
+        })
+        .collect::<Result<alloc::vec::Vec<&str>, TcbError>>()?;
+
     // 状态侧：目标对象未就位
     let target = match resolve_domain_path(exec_state, path) {
         Some(t) => t,
@@ -647,12 +662,7 @@ fn evaluate_has_fields(domain: &JsonValue, exec_state: &JsonValue) -> Result<boo
         None => return Ok(false),
     };
 
-    for field_value in fields {
-        let field_name = field_value.as_str().ok_or_else(|| TcbError::InvalidType {
-            expected: "string",
-            actual: json_type_name(field_value),
-            context: "has_fields.fields element".to_string(),
-        })?;
+    for field_name in field_names {
 
         // 状态侧：字段必须存在
         let value = match obj.get(field_name) {
@@ -2328,6 +2338,30 @@ mod tests {
         assert!(matches!(
             evaluate_domain(&domain, &state),
             Err(TcbError::NestingTooDeep { limit: 64 })
+        ));
+    }
+
+    // ===== has_fields eager structural pre-scan (o39(4)): non-string
+    // elements error before the state side =====
+
+    #[test]
+    fn test_has_fields_non_string_element_errors_before_state_side() {
+        // State-side target missing: before the fix, the state-side check ran
+        // first and returned Ok(false), masking the structural error behind
+        // state readiness order; now the eager pre-scan errors explicitly
+        // regardless of state.
+        let state = make_exec_state("noop", make_payload(10));
+        let domain = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("has_fields")),
+            ("path", JsonValue::string("__exec__.payload.nosuch")),
+            (
+                "fields",
+                JsonValue::array(vec![JsonValue::string("a"), JsonValue::Integer(1)]),
+            ),
+        ]);
+        assert!(matches!(
+            evaluate_has_fields(&domain, &state),
+            Err(TcbError::InvalidType { .. })
         ));
     }
 }

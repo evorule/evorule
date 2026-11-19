@@ -105,7 +105,9 @@ pub fn execute_meta_instruction(
 /// # 命中归因（结构命中口径）
 ///
 /// `hit_out` 在执行成功时写入该条指令是否**结构命中**：
-/// - 直接指令（set/push）：执行成功即命中；
+/// - 直接指令（set）：执行成功即命中；
+/// - `push`: hit only when the enqueued list is non-empty — an empty push
+///   is a no-effect path (aligned with the empty-branch rule);
 /// - `io_request`：产生信号即命中；
 /// - `branch`：所选分支（on_true/on_false）**存在且非空**即命中——
 ///   空数组或缺失分支不命中（无效果路径）。
@@ -155,9 +157,7 @@ pub(crate) fn execute_meta_instruction_budgeted(
         "set" => exec_set(instr, state)
             .map(MetaInstructionResult::State)
             .inspect(|_| *hit_out = true),
-        "push" => exec_push(instr, state)
-            .map(MetaInstructionResult::State)
-            .inspect(|_| *hit_out = true),
+        "push" => exec_push(instr, state, hit_out).map(MetaInstructionResult::State),
         "branch" => exec_branch(
             instr,
             state,
@@ -208,10 +208,13 @@ mod executor_ssot_tests {
 /// 解析路径或字面值
 ///
 /// 如果值是 `__` 开头的字符串，则视为路径并解析；
-/// 否则作为字面值返回。
+/// 否则作为字面值返回。`field` names the missing-value error so that
+/// `MissingField` reports the caller's parameter context instead of a
+/// blanket "value" misattribution.
 fn resolve_path_or_literal(
     state: &JsonValue,
     val: Option<&JsonValue>,
+    field: &str,
 ) -> Result<JsonValue, TcbError> {
     match val {
         Some(JsonValue::String(s)) if s.starts_with("__") => resolve_path(state, s)
@@ -222,7 +225,7 @@ fn resolve_path_or_literal(
             }),
         Some(v) => Ok(v.clone()),
         None => Err(TcbError::MissingField {
-            field: "value".to_string(),
+            field: field.to_string(),
         }),
     }
 }
@@ -271,7 +274,7 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
     })?;
 
     let resolve_attr_from_state = || -> Result<String, TcbError> {
-        let attr_value = resolve_path_or_literal(&state, Some(attr_raw))?;
+        let attr_value = resolve_path_or_literal(&state, Some(attr_raw), "attr")?;
         attr_value
             .as_str()
             .map(ToString::to_string)
@@ -333,7 +336,7 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
                 field: "operation".to_string(),
             })?;
 
-    let value = resolve_path_or_literal(&state, params.get("value"))?;
+    let value = resolve_path_or_literal(&state, params.get("value"), "value")?;
 
     // 解析 attr 路径为段序列（支持字段访问与数组索引，语法与 domain 读取路径一致）
     let segments = parse_path_segments(&attr).ok_or_else(|| TcbError::PathResolutionFailed {
@@ -369,12 +372,19 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
             })
             .unwrap_or(JsonValue::Integer(0)),
         WriteSlot::Index(arr, idx) => {
-            arr.get(*idx)
+            let element = arr
+                .get(*idx)
                 .cloned()
                 .ok_or_else(|| TcbError::PathResolutionFailed {
                     path: attr.to_string(),
                     reason: "array slot vanished".to_string(),
-                })?
+                })?;
+            // null elements align with field slots: null ≡ arithmetic origin 0
+            // (op=set discards `current`, semantics unchanged)
+            match element {
+                JsonValue::Null => JsonValue::Integer(0),
+                other => other,
+            }
         }
     };
 
@@ -640,8 +650,9 @@ fn descend_index_segment<'a>(
 fn resolve_instructions_list(
     state: &JsonValue,
     val: Option<&JsonValue>,
+    field: &str,
 ) -> Result<Vec<JsonValue>, TcbError> {
-    let val = resolve_path_or_literal(state, val)?;
+    let val = resolve_path_or_literal(state, val, field)?;
     let arr = val.as_array().ok_or_else(|| TcbError::InvalidType {
         expected: "array",
         actual: json_type_name(&val),
@@ -674,18 +685,27 @@ fn resolve_instructions_list(
 
 /// push 元指令：推指令到队列前端
 ///
-/// 空指令列表视为 no-op，不返回错误。
-fn exec_push(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbError> {
+/// 空指令列表视为 no-op，不返回错误（empty push also does **not** hit:
+/// a no-effect path, aligned with the empty-branch rule）。
+fn exec_push(
+    instr: &JsonValue,
+    mut state: JsonValue,
+    hit_out: &mut bool,
+) -> Result<JsonValue, TcbError> {
     let params = instr.get("params").ok_or(TcbError::MissingField {
         field: "params".to_string(),
     })?;
 
-    let instructions = resolve_instructions_list(&state, params.get("instructions"))?;
+    let instructions =
+        resolve_instructions_list(&state, params.get("instructions"), "instructions")?;
 
-    // 空指令列表 = no-op
+    // 空指令列表 = no-op（不命中）
     if instructions.is_empty() {
         return Ok(state);
     }
+
+    // non-empty push has enqueue effect: structural hit
+    *hit_out = true;
 
     // 获取当前队列切片
     let queue_slice = resolve_path_mut(&mut state, "__exec__.queue")
@@ -733,7 +753,7 @@ fn exec_branch(
         field: "params".to_string(),
     })?;
 
-    let domain = resolve_path_or_literal(&state, params.get("domain"))?;
+    let domain = resolve_path_or_literal(&state, params.get("domain"), "domain")?;
     // 域结构错误（未知类型/缺字段/超深/结构错误）显式报错，不在 TCB 层静默求值；
     // on_missing=error 声明的 Missing 同样显式报错（MissingRejected，专项-20261001）
     let outcome = evaluate_domain_outcome_with_limit(&domain, &state, limits.max_domain_depth)?;
@@ -812,7 +832,7 @@ fn exec_enforce(
         field: "params".to_string(),
     })?;
 
-    let domain = resolve_path_or_literal(&state, params.get("domain"))?;
+    let domain = resolve_path_or_literal(&state, params.get("domain"), "domain")?;
     // 域结构错误（未知类型/缺字段/超深/结构错误）显式报错，不在 TCB 层静默求值；
     // on_missing=error 声明的 Missing 同样显式报错（MissingRejected，专项-20261001）
     let outcome = evaluate_domain_outcome_with_limit(&domain, &state, limits.max_domain_depth)?;
@@ -879,7 +899,7 @@ fn exec_io_request(instr: &JsonValue, state: JsonValue) -> Result<MetaInstructio
                 Some(stripped) => (stripped, true),
                 None => (key.as_str(), false),
             };
-            match resolve_path_or_literal(&state, Some(value)) {
+            match resolve_path_or_literal(&state, Some(value), param_name) {
                 Ok(resolved) => {
                     request_params.insert(param_name.to_string(), resolved);
                 }
@@ -1615,7 +1635,8 @@ mod tests {
             ),
         ]);
 
-        let result = exec_push(&instr, state).unwrap();
+        let mut hit = false;
+        let result = exec_push(&instr, state, &mut hit).unwrap();
         let queue = resolve_path(&result, "__exec__.queue").unwrap();
         let arr = queue.as_array().unwrap();
         assert_eq!(arr.len(), 1);
@@ -1637,7 +1658,8 @@ mod tests {
             ),
         ]);
 
-        let result = exec_push(&instr, state).unwrap();
+        let mut hit = false;
+        let result = exec_push(&instr, state, &mut hit).unwrap();
         let queue = resolve_path(&result, "__exec__.queue").unwrap();
         let arr = queue.as_array().unwrap();
         assert_eq!(arr.len(), 2);
@@ -1657,7 +1679,8 @@ mod tests {
             ),
         ]);
 
-        let result = exec_push(&instr, state).unwrap();
+        let mut hit = false;
+        let result = exec_push(&instr, state, &mut hit).unwrap();
         let queue = resolve_path(&result, "__exec__.queue").unwrap();
         let arr = queue.as_array().unwrap();
         assert_eq!(arr.len(), 1);
@@ -1697,7 +1720,8 @@ mod tests {
             ),
         ]);
 
-        let result = exec_push(&push_instr, state).unwrap();
+        let mut hit = false;
+        let result = exec_push(&push_instr, state, &mut hit).unwrap();
         let queue = resolve_path(&result, "__exec__.queue").unwrap();
         let arr = queue.as_array().unwrap();
         assert_eq!(arr.len(), 1);
@@ -1762,7 +1786,8 @@ mod tests {
             ),
         ]);
 
-        let result = exec_push(&push_instr, state).unwrap();
+        let mut hit = false;
+        let result = exec_push(&push_instr, state, &mut hit).unwrap();
         let queue = resolve_path(&result, "__exec__.queue").unwrap();
         let arr = queue.as_array().unwrap();
         assert_eq!(arr.len(), 3);
@@ -2073,7 +2098,7 @@ mod tests {
             JsonValue::string("plain_literal"),
         ]);
 
-        let resolved = resolve_instructions_list(&state, Some(&instrs)).unwrap();
+        let resolved = resolve_instructions_list(&state, Some(&instrs), "instructions").unwrap();
         assert_eq!(
             resolved,
             vec![JsonValue::Integer(7), JsonValue::string("plain_literal"),]
@@ -2740,7 +2765,8 @@ mod tests {
             ),
         ]);
 
-        let result = exec_push(&push_instr, state).unwrap();
+        let mut hit = false;
+        let result = exec_push(&push_instr, state, &mut hit).unwrap();
         let queue = resolve_path(&result, "__exec__.queue").unwrap();
         let arr = queue.as_array().unwrap();
         assert_eq!(arr.len(), 1);
@@ -2773,6 +2799,129 @@ mod tests {
             }
             _ => panic!("expected IoRequired"),
         }
+    }
+
+    // ===== regression tests for stock-item o39 fixes (2026-11-19) =====
+
+    #[test]
+    fn test_push_empty_list_does_not_hit() {
+        let state = make_exec_state("noop", make_payload(0), vec![]);
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("push")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[("instructions", JsonValue::array(vec![]))]),
+            ),
+        ]);
+
+        let mut hit = false;
+        let mut attr = None;
+        let mut budget = 64usize;
+        let result = execute_meta_instruction_budgeted(
+            &instr,
+            state,
+            0,
+            &mut budget,
+            &mut hit,
+            &mut attr,
+            &EnvelopeLimits::default(),
+        )
+        .unwrap();
+        assert!(matches!(result, MetaInstructionResult::State(_)));
+        assert!(!hit, "empty push is a no-effect path and must not hit");
+    }
+
+    #[test]
+    fn test_push_nonempty_hits() {
+        let state = make_exec_state("noop", make_payload(0), vec![]);
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("push")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[(
+                    "instructions",
+                    JsonValue::array(vec![JsonValue::object_from_pairs(&[
+                        ("type", JsonValue::string("increment")),
+                        (
+                            "params",
+                            JsonValue::object_from_pairs(&[
+                                ("attr", JsonValue::string("x")),
+                                ("delta", JsonValue::Integer(1)),
+                            ]),
+                        ),
+                    ])]),
+                )]),
+            ),
+        ]);
+
+        let mut hit = false;
+        let mut attr = None;
+        let mut budget = 64usize;
+        let result = execute_meta_instruction_budgeted(
+            &instr,
+            state,
+            0,
+            &mut budget,
+            &mut hit,
+            &mut attr,
+            &EnvelopeLimits::default(),
+        )
+        .unwrap();
+        assert!(matches!(result, MetaInstructionResult::State(_)));
+        assert!(hit, "non-empty push has enqueue effect and must hit");
+    }
+
+    #[test]
+    fn test_branch_missing_domain_reports_field_name() {
+        // o39(2): a missing `domain` now reports field name "domain"
+        // (previously misattributed as "value")
+        let state = make_exec_state("noop", make_payload(0), vec![]);
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("branch")),
+            ("params", JsonValue::object_from_pairs(&[])),
+        ]);
+
+        let mut hit = false;
+        let mut attr = None;
+        let mut budget = 64usize;
+        let result = execute_meta_instruction_budgeted(
+            &instr,
+            state,
+            0,
+            &mut budget,
+            &mut hit,
+            &mut attr,
+            &EnvelopeLimits::default(),
+        );
+        assert!(matches!(result, Err(TcbError::MissingField { field }) if field == "domain"));
+    }
+
+    #[test]
+    fn test_set_array_null_element_adds_from_zero() {
+        // o39(3): null elements in array slots align with field slots —
+        // null ≡ arithmetic origin 0
+        let payload = JsonValue::object_from_pairs(&[(
+            "items",
+            JsonValue::array(vec![JsonValue::Null, JsonValue::Integer(1)]),
+        )]);
+        let state = make_exec_state("add_item", payload, vec![]);
+        let instr = JsonValue::object_from_pairs(&[
+            ("type", JsonValue::string("set")),
+            (
+                "params",
+                JsonValue::object_from_pairs(&[
+                    ("attr", JsonValue::string("items[0]")),
+                    ("operation", JsonValue::string("add")),
+                    ("value", JsonValue::Integer(5)),
+                ]),
+            ),
+        ]);
+
+        let result = exec_set(&instr, state).unwrap();
+        let items = resolve_path(&result, "__exec__.payload.items").unwrap();
+        let arr = items.as_array().unwrap();
+        assert_eq!(arr[0], JsonValue::Integer(5));
+        assert_eq!(arr[1], JsonValue::Integer(1));
     }
 
     mod react_tests {
