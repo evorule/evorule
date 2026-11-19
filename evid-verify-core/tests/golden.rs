@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! g5 黄金向量 self-test：先证尺子
+//! g5 golden-vector self-test: prove the ruler first
 //!
-//! 三重验证：解析器忠实性（stable Value 深比）→ fact_hash 公式对账 →
-//! 链步对账。解析器若错读任何字段，重算 stable 字节必变，哈希必失配。
+//! Triple verification: parser faithfulness (stable Value deep-compare) →
+//! fact_hash formula reconciliation → chain-step reconciliation. If the parser
+//! misreads any field, the recomputed stable bytes must change and the hash
+//! must mismatch.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -23,31 +25,31 @@ struct Vector {
 
 #[test]
 fn golden_vectors_parse_and_hash() {
-    let vs: Vec<Vector> = serde_json::from_str(VECTORS).expect("向量文件应可解析");
-    assert_eq!(vs.len(), 11, "向量数应与 g5 批一致");
+    let vs: Vec<Vector> = serde_json::from_str(VECTORS).expect("vector file must parse");
+    assert_eq!(vs.len(), 11, "vector count must match the g5 batch");
     for v in &vs {
         let fact = fact_from_json(&v.stable_json)
-            .unwrap_or_else(|e| panic!("向量 {}: 解析失败: {e}", v.name));
-        // 解析忠实性：重算 stable 与原文 Value 深比（键序无关）
+            .unwrap_or_else(|e| panic!("vector {}: parse failed: {e}", v.name));
+        // Parser faithfulness: deep-compare the recomputed stable with the original (key order independent)
         let stable = fact_to_stable_json(&fact)
-            .unwrap_or_else(|e| panic!("向量 {}: stable 重算失败: {e}", v.name));
+            .unwrap_or_else(|e| panic!("vector {}: stable recomputation failed: {e}", v.name));
         assert_eq!(
             &stable, &v.stable_json,
-            "向量 {}: 重算 stable 与原文不符（解析器字段错读）",
+            "vector {}: recomputed stable does not match the original (parser misread a field)",
             v.name
         );
-        // fact_hash 公式对账（字节级证）
+        // fact_hash formula reconciliation (byte-level proof)
         assert_eq!(
-            fact_hash(&fact).expect("向量哈希计算失败"),
+            fact_hash(&fact).expect("vector hash computation failed"),
             v.fact_hash,
-            "向量 {}: fact_hash 失配",
+            "vector {}: fact_hash mismatch",
             v.name
         );
-        // 链步对账
+        // Chain-step reconciliation
         assert_eq!(
             chain_step("genesis", &v.fact_hash),
             v.chain_from_genesis,
-            "向量 {}: 链步失配",
+            "vector {}: chain step mismatch",
             v.name
         );
     }

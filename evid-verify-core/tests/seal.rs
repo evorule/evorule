@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 锚点封条：正例（固定种子自签）+ 负例族
+//! Anchor seals: positives (fixed-seed self-signing) + negative families
 //!
-//! 正例以 ed25519 确定性种子自签 v2 载荷（与 server seal 同式）；负例
-//! 逐项验证四规则判形（载荷哈希篡改/验签失败/seq 跳跃/区间断裂/缺钥）。
+//! Positives self-sign the v2 payload with a deterministic ed25519 seed (same
+//! scheme as the server seal); negatives verify the four-rule verdict shapes
+//! item by item (payload hash tamper / signature failure / seq skip / range
+//! gap / missing key).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -59,15 +61,15 @@ fn hex_roundtrip() {
     let bytes = [0x00u8, 0x0f, 0xa5, 0xff];
     let hex = hex_encode(&bytes);
     assert_eq!(hex, "000fa5ff");
-    assert_eq!(hex_decode(&hex).expect("应可解码"), bytes.to_vec());
-    assert_eq!(hex_decode("0"), None, "奇数长度应拒");
-    assert_eq!(hex_decode("zz"), None, "非法字符应拒");
+    assert_eq!(hex_decode(&hex).expect("should decode"), bytes.to_vec());
+    assert_eq!(hex_decode("0"), None, "odd length must be rejected");
+    assert_eq!(hex_decode("zz"), None, "invalid characters must be rejected");
 }
 
 #[test]
 fn seal_single_positive() {
     let seal = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
-    verify_seal(&seal, ANCHOR_GENESIS, &vk_hex()).expect("单锚点正例应验过");
+    verify_seal(&seal, ANCHOR_GENESIS, &vk_hex()).expect("single-anchor positive must verify");
 }
 
 #[test]
@@ -76,7 +78,7 @@ fn seal_chain_positive() {
     let s0 = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
     let s1 = make_seal(1, 3, 7, &s0.anchor_hash, "bb22");
     let s2 = make_seal(2, 7, 9, &s1.anchor_hash, "cc33");
-    verify_seal_chain(&[s0, s1, s2], &keys).expect("锚点链正例应验过");
+    verify_seal_chain(&[s0, s1, s2], &keys).expect("anchor chain positive must verify");
 }
 
 #[test]
@@ -84,13 +86,13 @@ fn seal_detects_payload_tamper() {
     let seal = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
     let mut tampered = seal.clone();
     tampered.session_id = String::from("forged");
-    let err = verify_seal(&tampered, ANCHOR_GENESIS, &vk_hex()).expect_err("载荷篡改应拒");
+    let err = verify_seal(&tampered, ANCHOR_GENESIS, &vk_hex()).expect_err("payload tamper must be rejected");
     assert!(
         matches!(
             err,
             evid_verify_core::seal::SealError::PayloadHashMismatch { .. }
         ),
-        "应报载荷哈希不匹配: {err}"
+        "must report payload hash mismatch: {err}"
     );
 }
 
@@ -100,30 +102,31 @@ fn seal_detects_wrong_key() {
     let other_seed = [7u8; 32];
     let sk = SigningKey::from_bytes(&other_seed);
     let wrong_vk = hex_encode(sk.verifying_key().as_bytes());
-    let err = verify_seal(&seal, ANCHOR_GENESIS, &wrong_vk).expect_err("换公钥应拒");
+    let err = verify_seal(&seal, ANCHOR_GENESIS, &wrong_vk).expect_err("swapped public key must be rejected");
     assert!(
         matches!(
             err,
             evid_verify_core::seal::SealError::SignatureInvalid { .. }
         ),
-        "应报签名验证失败: {err}"
+        "must report signature verification failure: {err}"
     );
 }
 
 #[test]
 fn seal_detects_signature_swap() {
-    // 正例签名 + 篡改载荷后用同钥重签的另一锚点：anchor_hash 对账拒（载荷不在链上）
+    // A positive signature + a tampered payload re-signed with the same key:
+    // rejected by the anchor_hash reconciliation (payload not on the chain)
     let seal = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
     let mut forged = seal.clone();
     forged.logical_time = 99;
-    forged.signature = sign_payload(&forged); // 签名自洽但 anchor_hash 未重算
-    let err = verify_seal(&forged, ANCHOR_GENESIS, &vk_hex()).expect_err("哈希未重算应拒");
+    forged.signature = sign_payload(&forged); // signature self-consistent but anchor_hash not recomputed
+    let err = verify_seal(&forged, ANCHOR_GENESIS, &vk_hex()).expect_err("unrecomputed hash must be rejected");
     assert!(
         matches!(
             err,
             evid_verify_core::seal::SealError::PayloadHashMismatch { .. }
         ),
-        "应报载荷哈希不匹配: {err}"
+        "must report payload hash mismatch: {err}"
     );
 }
 
@@ -132,7 +135,7 @@ fn seal_chain_detects_seq_skip() {
     let keys = keys_map();
     let s0 = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
     let s2 = make_seal(2, 3, 7, &s0.anchor_hash, "bb22");
-    let err = verify_seal_chain(&[s0, s2], &keys).expect_err("seq 跳跃应拒");
+    let err = verify_seal_chain(&[s0, s2], &keys).expect_err("seq skip must be rejected");
     assert!(
         matches!(err, evid_verify_core::seal::SealError::ChainBroken { .. }),
         "{err}"
@@ -144,7 +147,7 @@ fn seal_chain_detects_range_gap() {
     let keys = keys_map();
     let s0 = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
     let s1 = make_seal(1, 4, 7, &s0.anchor_hash, "bb22"); // lo=4 != prev.hi=3
-    let err = verify_seal_chain(&[s0, s1], &keys).expect_err("区间断裂应拒");
+    let err = verify_seal_chain(&[s0, s1], &keys).expect_err("range gap must be rejected");
     assert!(
         matches!(err, evid_verify_core::seal::SealError::ChainBroken { .. }),
         "{err}"
@@ -154,8 +157,8 @@ fn seal_chain_detects_range_gap() {
 #[test]
 fn seal_chain_detects_first_lo_nonzero() {
     let keys = keys_map();
-    let s0 = make_seal(0, 1, 3, ANCHOR_GENESIS, "aa11"); // 首锚点 lo 必须 0
-    let err = verify_seal_chain(&[s0], &keys).expect_err("首锚点 lo≠0 应拒");
+    let s0 = make_seal(0, 1, 3, ANCHOR_GENESIS, "aa11"); // first anchor lo must be 0
+    let err = verify_seal_chain(&[s0], &keys).expect_err("first anchor lo != 0 must be rejected");
     assert!(
         matches!(err, evid_verify_core::seal::SealError::ChainBroken { .. }),
         "{err}"
@@ -165,7 +168,7 @@ fn seal_chain_detects_first_lo_nonzero() {
 #[test]
 fn seal_chain_detects_missing_key() {
     let s0 = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
-    let err = verify_seal_chain(&[s0], &BTreeMap::new()).expect_err("缺钥应拒");
+    let err = verify_seal_chain(&[s0], &BTreeMap::new()).expect_err("missing key must be rejected");
     assert!(
         matches!(err, evid_verify_core::seal::SealError::KeyMissing { .. }),
         "{err}"
@@ -178,31 +181,32 @@ fn seal_chain_detects_broken_hash_link() {
     let s0 = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
     let s1 = make_seal(1, 3, 7, &s0.anchor_hash, "bb22");
     let mut forged = s1.clone();
-    // prev 链接伪造：s1 的 anchor_hash 以 s0 为 prev 重算过，但链上传入不同 prev
-    // ——用 s2 冒充 s1 的 anchor_hash 场景：直接改 anchor_hash 触发 PayloadHashMismatch
+    // Forged prev link: s1's anchor_hash was computed with s0 as prev, but the
+    // chain is fed a different prev — instead of simulating an s2-impersonating
+    // s1 scenario, directly alter anchor_hash to trigger PayloadHashMismatch
     forged.anchor_hash =
         String::from("0000000000000000000000000000000000000000000000000000000000000000");
-    let err = verify_seal_chain(&[s0, forged], &keys).expect_err("anchor_hash 断链应拒");
+    let err = verify_seal_chain(&[s0, forged], &keys).expect_err("broken anchor_hash link must be rejected");
     assert!(
         matches!(
             err,
             evid_verify_core::seal::SealError::PayloadHashMismatch { seq: 1 }
         ),
-        "锚点[1] 应报载荷哈希不匹配: {err}"
+        "anchor [1] must report payload hash mismatch: {err}"
     );
 }
 
 #[test]
 fn seal_rejects_malformed_hex() {
     let seal = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
-    let err = verify_seal(&seal, ANCHOR_GENESIS, "nothex").expect_err("非法公钥 hex 应拒");
+    let err = verify_seal(&seal, ANCHOR_GENESIS, "nothex").expect_err("invalid public key hex must be rejected");
     assert!(
         matches!(err, evid_verify_core::seal::SealError::HexInvalid { .. }),
         "{err}"
     );
     let mut bad_sig = seal.clone();
-    bad_sig.signature = String::from("abcd"); // 长度 != 64 字节
-    let err = verify_seal(&bad_sig, ANCHOR_GENESIS, &vk_hex()).expect_err("短签名应拒");
+    bad_sig.signature = String::from("abcd"); // length != 64 bytes
+    let err = verify_seal(&bad_sig, ANCHOR_GENESIS, &vk_hex()).expect_err("short signature must be rejected");
     assert!(
         matches!(err, evid_verify_core::seal::SealError::HexInvalid { .. }),
         "{err}"
@@ -212,10 +216,10 @@ fn seal_rejects_malformed_hex() {
 #[test]
 fn seal_serde_roundtrip() {
     let seal = make_seal(0, 0, 3, ANCHOR_GENESIS, "aa11");
-    let json = serde_json::to_value(&seal).expect("序列化失败");
-    let back: AnchorSeal = serde_json::from_value(json).expect("反序列化失败");
+    let json = serde_json::to_value(&seal).expect("serialization failed");
+    let back: AnchorSeal = serde_json::from_value(json).expect("deserialization failed");
     assert_eq!(seal, back);
-    // server 同形字段名抽查
+    // spot-check server-identical field names
     let obj = serde_json::to_value(&seal).unwrap();
     assert!(obj.get("fact_range").and_then(|f| f.get("lo")).is_some());
     assert!(obj.get("anchor_hash").is_some());

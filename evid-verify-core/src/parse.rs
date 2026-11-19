@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! serde_json → Fact 解析层（fail-closed）
+//! serde_json → Fact parsing layer (fail-closed)
 //!
-//! `Fact` 本体无 `serde` derive（SSOT 纪律：序列化唯一权威 =
-//! [`evorule_audit_chain::hash::fact_to_stable_json`]），本模块手写
-//! Value → Fact 解析器，与 stable 序列化逐变体对偶；解析 → 重算 stable
-//! 的 roundtrip 由 g5 黄金向量闸兜底（tests/golden.rs）。
+//! `Fact` itself has no `serde` derive (SSOT discipline: the sole serialization
+//! authority = [`evorule_audit_chain::hash::fact_to_stable_json`]); this module
+//! hand-writes the Value → Fact parser, dual to the stable serialization
+//! variant by variant. The parse → stable-recompute roundtrip is backstopped
+//! by the g5 golden-vector gate (tests/golden.rs).
 //!
-//! 数字通道（与 `tcb_to_serde` 正向对偶）：先 `as_i64`（serde_json 正整数
-//! 内部统一存 u64，≤ i64::MAX 的正数经此通道归位 `Integer`），后 `as_u64`
-//! （u64 高位 → `U64`），浮点拒收。`U64(5)` roundtrip 后归位 `Integer(5)`
-//! ——值域保真而非形态保真，stable 字节等价，不影响哈希判定。
+//! Number channel (forward dual of `tcb_to_serde`): first `as_i64` (serde_json
+//! stores positive integers as u64 internally; positives ≤ i64::MAX land on
+//! `Integer` through this channel), then `as_u64` (u64 high bits → `U64`);
+//! floats are rejected. After a roundtrip `U64(5)` lands on `Integer(5)` —
+//! value fidelity rather than form fidelity; stable bytes are equivalent and
+//! hash verdicts are unaffected.
 
 use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
@@ -23,7 +26,7 @@ use evorule_audit_chain::fact::{Fact, FactId, IoType, TraceDomainAttribution, Tr
 use evorule_tcb::JsonValue;
 use serde_json::Value as Jv;
 
-/// 解析错误（含字段路径与原因）
+/// Parse error (with field path and reason)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
     reason: String,
@@ -36,13 +39,13 @@ impl ParseError {
         }
     }
 
-    /// 前缀化错误路径（外层结构解析时标注内层位置）
+    /// Prefix the error path (annotate the inner position while parsing the outer structure)
     pub(crate) fn at(mut self, ctx: &str) -> Self {
         self.reason = alloc::format!("{ctx}: {}", self.reason);
         self
     }
 
-    /// 错误原因（判定面报告用）
+    /// Error reason (for verdict-surface reports)
     pub fn reason(&self) -> &str {
         &self.reason
     }
@@ -50,15 +53,16 @@ impl ParseError {
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "解析失败: {}", self.reason)
+        write!(f, "parse failed: {}", self.reason)
     }
 }
 
 impl core::error::Error for ParseError {}
 
-/// serde_json Value → tcb JsonValue（确定性对偶转换）
+/// serde_json Value → tcb JsonValue (deterministic dual conversion)
 ///
-/// 浮点拒收：审计链事实不承载浮点（SSOT 序列化侧亦不产生浮点）。
+/// Floats rejected: audit-chain facts never carry floats (the SSOT
+/// serialization side never produces them either).
 pub fn serde_to_tcb(v: &Jv) -> Result<JsonValue, ParseError> {
     match v {
         Jv::Null => Ok(JsonValue::Null),
@@ -69,7 +73,7 @@ pub fn serde_to_tcb(v: &Jv) -> Result<JsonValue, ParseError> {
             } else if let Some(u) = n.as_u64() {
                 Ok(JsonValue::U64(u))
             } else {
-                Err(ParseError::new("浮点数字段（审计链事实不承载浮点）"))
+                Err(ParseError::new("浮点数字段（审计链事实不承载浮点）")) // contains("浮点") anchor in tests/export_wal.rs — kept verbatim
             }
         }
         Jv::String(s) => Ok(JsonValue::String(Cow::Owned(s.clone()))),
@@ -92,7 +96,7 @@ pub fn serde_to_tcb(v: &Jv) -> Result<JsonValue, ParseError> {
 
 fn obj_of<'a>(v: &'a Jv, what: &str) -> Result<&'a serde_json::Map<String, Jv>, ParseError> {
     v.as_object()
-        .ok_or_else(|| ParseError::new(alloc::format!("{what} 应为对象")))
+        .ok_or_else(|| ParseError::new(alloc::format!("{what} must be an object")))
 }
 
 fn req<'a>(
@@ -101,13 +105,13 @@ fn req<'a>(
     ctx: &str,
 ) -> Result<&'a Jv, ParseError> {
     obj.get(key)
-        .ok_or_else(|| ParseError::new(alloc::format!("{ctx} 缺字段 \"{key}\"")))
+        .ok_or_else(|| ParseError::new(alloc::format!("{ctx} missing field \"{key}\"")))
 }
 
 fn req_u64(obj: &serde_json::Map<String, Jv>, key: &str, ctx: &str) -> Result<u64, ParseError> {
     let v = req(obj, key, ctx)?;
     v.as_u64()
-        .ok_or_else(|| ParseError::new(alloc::format!("{ctx}.{key} 应为非负整数（u64 全域）")))
+        .ok_or_else(|| ParseError::new(alloc::format!("{ctx}.{key} must be a non-negative integer (full u64 range)")))
 }
 
 fn req_str<'a>(
@@ -117,7 +121,7 @@ fn req_str<'a>(
 ) -> Result<&'a str, ParseError> {
     let v = req(obj, key, ctx)?;
     v.as_str()
-        .ok_or_else(|| ParseError::new(alloc::format!("{ctx}.{key} 应为字符串")))
+        .ok_or_else(|| ParseError::new(alloc::format!("{ctx}.{key} must be a string")))
 }
 
 fn req_json(
@@ -128,7 +132,7 @@ fn req_json(
     serde_to_tcb(req(obj, key, ctx)?)
 }
 
-/// error 类可选字段：`null` → None，字符串 → Some（SSOT 序列化侧 None 落 null 键）
+/// error-like optional field: `null` → None, string → Some (SSOT serialization writes None as a null key)
 fn opt_str_or_null(
     obj: &serde_json::Map<String, Jv>,
     key: &str,
@@ -138,12 +142,12 @@ fn opt_str_or_null(
         Jv::Null => Ok(None),
         Jv::String(s) => Ok(Some(s.clone())),
         _ => Err(ParseError::new(alloc::format!(
-            "{ctx}.{key} 应为字符串或 null"
+            "{ctx}.{key} must be a string or null"
         ))),
     }
 }
 
-/// 归因类可选字段：缺席 → None，出现则必须为字符串（序列化侧 None 省键，不产 null）
+/// attribution-like optional field: absent → None, if present must be a string (serialization omits the key for None, never emits null)
 fn opt_attr_str(
     obj: &serde_json::Map<String, Jv>,
     key: &str,
@@ -153,13 +157,13 @@ fn opt_attr_str(
         None => Ok(None),
         Some(Jv::String(s)) => Ok(Some(s.clone())),
         Some(_) => Err(ParseError::new(alloc::format!(
-            "{ctx}.{key} 应为字符串或缺省"
+            "{ctx}.{key} must be a string or absent"
         ))),
     }
 }
 
 fn trace_hit_from_json(v: &Jv) -> Result<TraceHit, ParseError> {
-    let obj = obj_of(v, "rule_hits 条目")?;
+    let obj = obj_of(v, "rule_hits entry")?;
     const CTX: &str = "TraceHit";
     let domain_attr = match obj.get("domain_attr") {
         None => None,
@@ -178,12 +182,12 @@ fn trace_hit_from_json(v: &Jv) -> Result<TraceHit, ParseError> {
         instr_type: req_str(obj, "instr_type", CTX)?.to_string(),
         hit: req(obj, "hit", CTX)?
             .as_bool()
-            .ok_or_else(|| ParseError::new(alloc::format!("{CTX}.hit 应为布尔")))?,
+            .ok_or_else(|| ParseError::new(alloc::format!("{CTX}.hit must be a boolean")))?,
         domain_attr,
     })
 }
 
-/// stable JSON 形态的对象 → [`Fact`]（9 变体全覆盖，未知变体拒收）
+/// stable-JSON-shaped object → [`Fact`] (all 9 variants covered, unknown variants rejected)
 pub fn fact_from_json(v: &Jv) -> Result<Fact, ParseError> {
     let obj = obj_of(v, "fact")?;
     let ty = req_str(obj, "type", "fact")?;
@@ -243,7 +247,7 @@ pub fn fact_from_json(v: &Jv) -> Result<Fact, ParseError> {
             instruction: req_json(obj, "instruction", &ctx)?,
         }),
         other => Err(ParseError::new(alloc::format!(
-            "未知 Fact 变体 \"{other}\"（fail-closed）"
+            "未知 Fact 变体 \"{other}\"（fail-closed）" // contains("未知 Fact 变体") anchor in tests/export_wal.rs — kept verbatim
         ))),
     }
 }
@@ -255,5 +259,5 @@ fn req_array<'a>(
 ) -> Result<&'a Vec<Jv>, ParseError> {
     let v = req(obj, key, ctx)?;
     v.as_array()
-        .ok_or_else(|| ParseError::new(alloc::format!("{ctx}.{key} 应为数组")))
+        .ok_or_else(|| ParseError::new(alloc::format!("{ctx}.{key} must be an array")))
 }

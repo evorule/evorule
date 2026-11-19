@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 判定面：导出四步 / WAL 三步 + 链折叠
+//! Verdict surface: export four-step / WAL three-step + chain folding
 //!
-//! 报告式判定采用**首红即停**语义（与哨兵/独立验证器短路语义一致）：
-//! 断链后折叠链头失去锚，后续条目标记为未判定（`stopped_at`）。
-//! 全绿 = 无停止点 且 链尾与声明尾哈希对账成功。
+//! Report-style verdicts use **first-red-stop** semantics (consistent with the
+//! sentinel / independent verifier short-circuit semantics): once a link
+//! breaks, the folded chain head loses its anchor and subsequent entries are
+//! marked undetermined (`stopped_at`). All green = no stop point AND the chain
+//! tail reconciles with the declared tail hash.
 
 use alloc::format;
 use alloc::string::String;
@@ -14,7 +16,7 @@ use alloc::vec::Vec;
 use crate::record::{ExportDoc, WalLine, GENESIS};
 use evorule_audit_chain::hash::{chain_step, fact_hash, fact_to_stable_json};
 
-/// 哈希串短展示（前 16 字符）
+/// Short display of a hash string (first 16 characters)
 fn short(h: &str) -> String {
     if h.len() <= 16 {
         String::from(h)
@@ -23,27 +25,27 @@ fn short(h: &str) -> String {
     }
 }
 
-/// 导出条目判定步骤
+/// Export entry verdict step
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportStep {
-    /// ① prev 链接
+    /// ① prev link
     Link,
-    /// ② 内容哈希（fact_hash 公式重算）
+    /// ② content hash (fact_hash formula recomputation)
     Content,
-    /// ③ stable 深比（重算 stable 与原文对账 + 条目投影一致性）
+    /// ③ stable deep-compare (recomputed stable reconciled with the original + entry projection consistency)
     Stable,
-    /// 链尾对账（last_hash）
+    /// Tail reconciliation (last_hash)
     Tail,
 }
 
-/// 导出条目否决详情
+/// Export entry rejection details
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntryReject {
     pub step: ExportStep,
     pub reason: String,
 }
 
-/// 导出条目判定
+/// Export entry verdict
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntryVerdict {
     pub index: usize,
@@ -51,32 +53,32 @@ pub struct EntryVerdict {
     pub reject: Option<EntryReject>,
 }
 
-/// 导出面报告
+/// Export-surface report
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportReport {
-    /// 逐条判定（至首红为止：全绿条 + 首红条）
+    /// Per-entry verdicts (up to the first red: green entries + the first red entry)
     pub verdicts: Vec<EntryVerdict>,
-    /// 首红条下标（全绿为 None）
+    /// Index of the first red entry (None when all green)
     pub stopped_at: Option<usize>,
-    /// 折叠链尾（至停止点）
+    /// Folded chain tail (up to the stop point)
     pub tail_hash: String,
-    /// 链尾与 `last_hash` 对账结果
+    /// Whether the chain tail reconciles with `last_hash`
     pub last_hash_matches: bool,
 }
 
 impl ExportReport {
-    /// 全绿判定
+    /// All-green verdict
     pub fn all_ok(&self) -> bool {
         self.stopped_at.is_none() && self.last_hash_matches
     }
 }
 
-/// 导出面判定（四步/条 + 链尾对账）
+/// Export-surface verdict (four steps per entry + tail reconciliation)
 pub fn verify_export(doc: &ExportDoc) -> ExportReport {
     let mut prev = String::from(GENESIS);
     let mut verdicts = Vec::with_capacity(doc.entries.len());
     for (index, e) in doc.entries.iter().enumerate() {
-        // ① 链接完整性：声明 prev 必须等于折叠链头
+        // ① Link integrity: the declared prev must equal the folded chain head
         if e.prev_hash != prev {
             verdicts.push(EntryVerdict {
                 index,
@@ -92,7 +94,7 @@ pub fn verify_export(doc: &ExportDoc) -> ExportReport {
             });
             return finish(verdicts, Some(index), prev, doc);
         }
-        // ② 内容哈希：fact_hash 公式重算（蕴含 fact_json_stable 字节原文对账）
+        // ② Content hash: fact_hash formula recomputation (implies byte-level reconciliation of the fact_json_stable original)
         let recomputed = match fact_hash(&e.fact) {
             Ok(h) => h,
             Err(err) => {
@@ -101,7 +103,7 @@ pub fn verify_export(doc: &ExportDoc) -> ExportReport {
                     ok: false,
                     reject: Some(EntryReject {
                         step: ExportStep::Content,
-                        reason: format!("fact_hash 重算失败: {err}"),
+                        reason: format!("fact_hash recomputation failed: {err}"),
                     }),
                 });
                 return finish(verdicts, Some(index), prev, doc);
@@ -122,8 +124,9 @@ pub fn verify_export(doc: &ExportDoc) -> ExportReport {
             });
             return finish(verdicts, Some(index), prev, doc);
         }
-        // ③ stable 深比：重算 stable 与 fact_json_stable 原文 Value 级对账，
-        //    外加条目投影（fact_id / fact_type）一致性
+        // ③ Stable deep-compare: Value-level reconciliation of the recomputed
+        //    stable against the fact_json_stable original, plus entry projection
+        //    (fact_id / fact_type) consistency
         let stable_ok = (|| {
             let stable = fact_to_stable_json(&e.fact).ok()?;
             let original: serde_json::Value = serde_json::from_str(&e.fact_json_stable).ok()?;
@@ -136,7 +139,7 @@ pub fn verify_export(doc: &ExportDoc) -> ExportReport {
                 reject: Some(EntryReject {
                     step: ExportStep::Stable,
                     reason: String::from(
-                        "fact_json_stable 原文与 fact 字段重算结果不一致（或原文非法 JSON）",
+                        "fact_json_stable original does not match the recomputation of the fact field (or the original is invalid JSON)",
                     ),
                 }),
             });
@@ -149,14 +152,14 @@ pub fn verify_export(doc: &ExportDoc) -> ExportReport {
                 reject: Some(EntryReject {
                     step: ExportStep::Stable,
                     reason: format!(
-                        "条目投影不符: fact_id({})/fact_type({}) 与 fact 字段不一致",
+                        "entry projection mismatch: fact_id({})/fact_type({}) inconsistent with the fact field",
                         e.fact_id, e.fact_type
                     ),
                 }),
             });
             return finish(verdicts, Some(index), prev, doc);
         }
-        // ④ 链折叠
+        // ④ Chain folding
         prev = chain_step(&prev, &e.content_hash);
         verdicts.push(EntryVerdict {
             index,
@@ -182,15 +185,15 @@ fn finish(
     }
 }
 
-/// WAL 行否决详情
+/// WAL line rejection details
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WalReject {
-    /// 步骤序（1=链接 2=内容哈希 3=链折叠）
+    /// Step number (1=link 2=content hash 3=chain folding)
     pub step: u8,
     pub reason: String,
 }
 
-/// WAL 行判定
+/// WAL line verdict
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WalLineVerdict {
     pub index: usize,
@@ -198,7 +201,7 @@ pub struct WalLineVerdict {
     pub reject: Option<WalReject>,
 }
 
-/// WAL 面报告
+/// WAL-surface report
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WalReport {
     pub verdicts: Vec<WalLineVerdict>,
@@ -207,18 +210,18 @@ pub struct WalReport {
 }
 
 impl WalReport {
-    /// 全绿判定
+    /// All-green verdict
     pub fn all_ok(&self) -> bool {
         self.stopped_at.is_none()
     }
 }
 
-/// WAL 面判定（三步/行，首红即停）
+/// WAL-surface verdict (three steps per line, first-red-stop)
 pub fn verify_wal_lines(lines: &[WalLine]) -> WalReport {
     let mut prev = String::from(GENESIS);
     let mut verdicts = Vec::with_capacity(lines.len());
     for (index, line) in lines.iter().enumerate() {
-        // ① 链接完整性
+        // ① Link integrity
         if line.prev_hash != prev {
             verdicts.push(WalLineVerdict {
                 index,
@@ -226,7 +229,7 @@ pub fn verify_wal_lines(lines: &[WalLine]) -> WalReport {
                 reject: Some(WalReject {
                     step: 1,
                     reason: format!(
-                        "prev_hash={} 与链尾={} 不符（链接断裂）",
+                        "prev_hash={} does not match the chain tail={} (broken link)",
                         short(&line.prev_hash),
                         short(&prev)
                     ),
@@ -238,7 +241,7 @@ pub fn verify_wal_lines(lines: &[WalLine]) -> WalReport {
                 tail_hash: prev,
             };
         }
-        // ② 内容哈希：fact_hash 公式重算
+        // ② Content hash: fact_hash formula recomputation
         match fact_hash(&line.fact) {
             Ok(h) if h == line.content_hash => {}
             Ok(h) => {
@@ -248,7 +251,7 @@ pub fn verify_wal_lines(lines: &[WalLine]) -> WalReport {
                     reject: Some(WalReject {
                         step: 2,
                         reason: format!(
-                            "content_hash 失配: 声明={} 重算={}",
+                            "content_hash mismatch: declared={} recomputed={}",
                             short(&line.content_hash),
                             short(&h)
                         ),
@@ -266,7 +269,7 @@ pub fn verify_wal_lines(lines: &[WalLine]) -> WalReport {
                     ok: false,
                     reject: Some(WalReject {
                         step: 2,
-                        reason: format!("fact_hash 重算失败: {err}"),
+                        reason: format!("fact_hash recomputation failed: {err}"),
                     }),
                 });
                 return WalReport {
@@ -276,7 +279,7 @@ pub fn verify_wal_lines(lines: &[WalLine]) -> WalReport {
                 };
             }
         }
-        // ③ 链折叠完整性
+        // ③ Chain folding integrity
         let folded = chain_step(&line.prev_hash, &line.content_hash);
         if folded != line.chain_hash {
             verdicts.push(WalLineVerdict {
@@ -285,7 +288,7 @@ pub fn verify_wal_lines(lines: &[WalLine]) -> WalReport {
                 reject: Some(WalReject {
                     step: 3,
                     reason: format!(
-                        "chain_hash 失配: 声明={} 重算={}",
+                        "chain_hash mismatch: declared={} recomputed={}",
                         short(&line.chain_hash),
                         short(&folded)
                     ),

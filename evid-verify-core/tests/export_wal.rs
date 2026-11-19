@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 导出面 / WAL 面：正例 + 篡改负例族
+//! Export surface / WAL surface: positives + tamper negative families
 //!
-//! 正例链以 g5 向量前 3 条 fact 折叠构造（尺子同源，解析器忠实性已由
-//! golden.rs 向量闸先证）；负例逐项验证四步/三步判形的检出能力。
+//! Positive chains are folded from the first 3 g5-vector facts (same source as
+//! the ruler; parser faithfulness already proven by the golden.rs vector
+//! gate); negatives verify the detection capability of the four-step /
+//! three-step verdict shapes item by item.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -21,20 +23,21 @@ struct Vector {
     stable_json: serde_json::Value,
 }
 
-/// 以向量前 n 条构造合法导出条目（fact_json_stable 取规范序 to_string，
-/// 与 server 导出同式：to_string(fact_to_stable_json(fact))）
+/// Build valid export entries from the first n vectors (fact_json_stable uses
+/// the canonical-order to_string, same scheme as the server export:
+/// to_string(fact_to_stable_json(fact)))
 fn build_entries(n: usize) -> Vec<ExportEntry> {
-    let vs: Vec<Vector> = serde_json::from_str(VECTORS).expect("向量文件应可解析");
+    let vs: Vec<Vector> = serde_json::from_str(VECTORS).expect("vector file must parse");
     let mut prev = String::from("genesis");
     let mut entries = Vec::new();
     for v in &vs[..n] {
-        let fact = fact_from_json(&v.stable_json).expect("向量解析失败");
+        let fact = fact_from_json(&v.stable_json).expect("vector parse failed");
         let fact_id = fact.id().0;
         let fact_type = fact.type_name().to_string();
         let stable_str =
-            serde_json::to_string(&fact_to_stable_json(&fact).expect("stable 重算失败"))
-                .expect("stable 序列化失败");
-        let content_hash = fact_hash(&fact).expect("fact_hash 失败");
+            serde_json::to_string(&fact_to_stable_json(&fact).expect("stable recomputation failed"))
+                .expect("stable serialization failed");
+        let content_hash = fact_hash(&fact).expect("fact_hash failed");
         entries.push(ExportEntry {
             content_hash: content_hash.clone(),
             fact,
@@ -48,7 +51,7 @@ fn build_entries(n: usize) -> Vec<ExportEntry> {
     entries
 }
 
-/// 链尾折叠（正例构造的单一出口）
+/// Fold the chain tail (single exit for building positives)
 fn fold_tail(entries: &[ExportEntry]) -> String {
     let mut prev = String::from("genesis");
     for e in entries {
@@ -94,7 +97,7 @@ fn doc_to_json(doc: &ExportDoc) -> serde_json::Value {
 fn export_doc_positive() {
     let doc = build_doc(3);
     let report = verify_export(&doc);
-    assert!(report.all_ok(), "正例应全绿: {:?}", report.verdicts);
+    assert!(report.all_ok(), "positive must be all green: {:?}", report.verdicts);
     assert_eq!(report.verdicts.len(), 3);
     assert_eq!(report.stopped_at, None);
 }
@@ -102,11 +105,11 @@ fn export_doc_positive() {
 #[test]
 fn export_doc_parse_roundtrip() {
     let doc = build_doc(3);
-    let parsed = parse_export_doc(&doc_to_json(&doc)).expect("导出文档应可解析");
+    let parsed = parse_export_doc(&doc_to_json(&doc)).expect("export doc must parse");
     let report = verify_export(&parsed);
     assert!(
         report.all_ok(),
-        "解析 roundtrip 后应全绿: {:?}",
+        "must be all green after a parse roundtrip: {:?}",
         report.verdicts
     );
 }
@@ -118,15 +121,15 @@ fn export_parse_accepts_wrapped_form() {
         "contract": "fixture wrapper",
         "export": doc_to_json(&doc)["export"],
     });
-    // 裸形态直接可解析
-    let bare = parse_export_doc(&doc_to_json(&doc)).expect("裸形态应可解析");
+    // The bare shape parses directly
+    let bare = parse_export_doc(&doc_to_json(&doc)).expect("bare shape must parse");
     assert_eq!(bare.entry_count, 1);
-    // 包装形态：doc_to_json 是裸对象，包一层需要再造 export 键
+    // Wrapped shape: doc_to_json is the bare object; wrapping re-creates the export key
     let full = serde_json::json!({ "contract": "x", "export": {
         "version": "1.0", "entry_count": doc.entry_count, "last_hash": doc.last_hash,
         "entries": doc.entries.iter().map(entry_to_json).collect::<Vec<_>>(),
     }});
-    let parsed = parse_export_doc(&full).expect("包装形态应可解析");
+    let parsed = parse_export_doc(&full).expect("wrapped shape must parse");
     let _ = wrapped;
     let report = verify_export(&parsed);
     assert!(report.all_ok());
@@ -141,10 +144,10 @@ fn export_rejects_unknown_version() {
         "last_hash": doc.last_hash,
         "entries": [],
     });
-    let err = parse_export_doc(&json).expect_err("未知版本应拒收");
+    let err = parse_export_doc(&json).expect_err("unknown version must be rejected");
     assert!(
         err.reason().contains("fail-closed"),
-        "应标注 fail-closed: {err}"
+        "must be marked fail-closed: {err}"
     );
 }
 
@@ -153,10 +156,10 @@ fn export_rejects_entry_count_mismatch() {
     let doc = build_doc(2);
     let mut json = doc_to_json(&doc);
     json["entry_count"] = serde_json::json!(3u64);
-    let err = parse_export_doc(&json).expect_err("entry_count 不符应拒收");
+    let err = parse_export_doc(&json).expect_err("entry_count mismatch must be rejected");
     assert!(
-        err.reason().contains("不符"),
-        "应报 entry_count 不符: {err}"
+        err.reason().contains("不符"), // cross-file anchor on the record.rs message — kept verbatim
+        "must report the entry_count mismatch: {err}"
     );
 }
 
@@ -167,21 +170,21 @@ fn export_detects_tampered_fact_field() {
         *path = String::from("tampered.path");
     }
     let report = verify_export(&doc);
-    assert!(!report.all_ok(), "篡改 fact 字段应被检出");
+    assert!(!report.all_ok(), "tampered fact field must be detected");
     assert_eq!(report.stopped_at, Some(1));
-    let rej = report.verdicts[1].reject.as_ref().expect("应否决");
-    assert_eq!(rej.step, ExportStep::Content, "fact 字段篡改应在内容步检出");
+    let rej = report.verdicts[1].reject.as_ref().expect("must reject");
+    assert_eq!(rej.step, ExportStep::Content, "fact field tamper must be detected at the content step");
 }
 
 #[test]
 fn export_detects_tampered_stable_original() {
     let mut doc = build_doc(3);
-    doc.entries[2].fact_json_stable.insert(2, ' '); // 原文被改（fact 字段未动）
+    doc.entries[2].fact_json_stable.insert(2, ' '); // original altered (fact field untouched)
     let report = verify_export(&doc);
-    assert!(!report.all_ok(), "篡改 stable 原文应被检出");
+    assert!(!report.all_ok(), "tampered stable original must be detected");
     assert_eq!(report.stopped_at, Some(2));
-    let rej = report.verdicts[2].reject.as_ref().expect("应否决");
-    assert_eq!(rej.step, ExportStep::Stable, "原文篡改应在深比步检出");
+    let rej = report.verdicts[2].reject.as_ref().expect("must reject");
+    assert_eq!(rej.step, ExportStep::Stable, "original tamper must be detected at the deep-compare step");
 }
 
 #[test]
@@ -190,10 +193,10 @@ fn export_detects_broken_link() {
     doc.entries[1].prev_hash =
         String::from("0000000000000000000000000000000000000000000000000000000000000000");
     let report = verify_export(&doc);
-    assert!(!report.all_ok(), "断链应被检出");
+    assert!(!report.all_ok(), "broken link must be detected");
     assert_eq!(report.stopped_at, Some(1));
-    let rej = report.verdicts[1].reject.as_ref().expect("应否决");
-    assert_eq!(rej.step, ExportStep::Link, "断链应在链接步检出");
+    let rej = report.verdicts[1].reject.as_ref().expect("must reject");
+    assert_eq!(rej.step, ExportStep::Link, "broken link must be detected at the link step");
 }
 
 #[test]
@@ -202,8 +205,8 @@ fn export_detects_tail_mismatch() {
     doc.last_hash =
         String::from("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
     let report = verify_export(&doc);
-    assert!(!report.all_ok(), "链尾不符应被检出");
-    assert_eq!(report.stopped_at, None, "逐条全绿但尾对账失败");
+    assert!(!report.all_ok(), "chain tail mismatch must be detected");
+    assert_eq!(report.stopped_at, None, "all entries green but the tail reconciliation failed");
     assert!(!report.last_hash_matches);
 }
 
@@ -212,32 +215,32 @@ fn export_rejects_float_field() {
     let json = serde_json::json!({
         "type": "PayloadUpdate", "id": 1u64, "path": "p", "value": 1.5,
     });
-    let err = fact_from_json(&json).expect_err("浮点应拒收");
-    assert!(err.reason().contains("浮点"), "应报浮点拒收: {err}");
+    let err = fact_from_json(&json).expect_err("float must be rejected");
+    assert!(err.reason().contains("浮点"), "must report the float rejection: {err}"); // cross-file anchor on the parse.rs message — kept verbatim
 }
 
 #[test]
 fn export_rejects_unknown_fact_variant() {
     let json = serde_json::json!({"type": "Quantum", "id": 1u64});
-    let err = fact_from_json(&json).expect_err("未知变体应拒收");
+    let err = fact_from_json(&json).expect_err("unknown variant must be rejected");
     assert!(
-        err.reason().contains("未知 Fact 变体"),
-        "应报未知变体: {err}"
+        err.reason().contains("未知 Fact 变体"), // cross-file anchor on the parse.rs message — kept verbatim
+        "must report the unknown variant: {err}"
     );
 }
 
 #[test]
 fn export_u64_high_bit_roundtrip() {
-    // u64::MAX-1 哨兵 id（与 S1 导出 fixture 同量级）：u64 全域通道
+    // u64::MAX-1 sentinel id (same magnitude as the committed export fixtures): full-u64 channel
     let json = serde_json::json!({
         "type": "PayloadUpdate", "id": 18446744073709551614u64,
         "path": "__ruleset__.version", "value": "v",
     });
-    let fact = fact_from_json(&json).expect("高位 id 应可解析");
-    let h = fact_hash(&fact).expect("哈希失败");
+    let fact = fact_from_json(&json).expect("high-bit id must parse");
+    let h = fact_hash(&fact).expect("hash failed");
     assert_eq!(h.len(), 64);
-    // roundtrip：重算 stable 与规范序原文一致（U64 通道无回绕）
-    let stable = fact_to_stable_json(&fact).expect("stable 失败");
+    // Roundtrip: the recomputed stable matches the canonical-order original (no wraparound on the U64 channel)
+    let stable = fact_to_stable_json(&fact).expect("stable failed");
     assert_eq!(
         serde_json::to_string(&stable).unwrap(),
         "{\"id\":18446744073709551614,\"path\":\"__ruleset__.version\",\"type\":\"PayloadUpdate\",\"value\":\"v\"}"
@@ -260,18 +263,18 @@ fn wal_lines_positive_and_negative() {
         prev = chain_hash;
     }
     let report = verify_wal_lines(&lines);
-    assert!(report.all_ok(), "WAL 正例应全绿: {:?}", report.verdicts);
+    assert!(report.all_ok(), "WAL positive must be all green: {:?}", report.verdicts);
 
-    // 负例 1：改 chain_hash → 折叠步检出
+    // Negative 1: tampered chain_hash → detected at the folding step
     let mut tampered = lines.clone();
     tampered[2].chain_hash =
         String::from("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
     let report = verify_wal_lines(&tampered);
     assert!(!report.all_ok());
     assert_eq!(report.stopped_at, Some(2));
-    assert_eq!(report.verdicts[2].reject.as_ref().expect("应否决").step, 3);
+    assert_eq!(report.verdicts[2].reject.as_ref().expect("must reject").step, 3);
 
-    // 负例 2：改 fact 字段 → 内容步检出
+    // Negative 2: tampered fact field → detected at the content step
     let mut tampered = lines.clone();
     if let Fact::PayloadUpdate { path, .. } = &mut tampered[1].fact {
         *path = String::from("hacked");
@@ -279,16 +282,16 @@ fn wal_lines_positive_and_negative() {
     let report = verify_wal_lines(&tampered);
     assert!(!report.all_ok());
     assert_eq!(report.stopped_at, Some(1));
-    assert_eq!(report.verdicts[1].reject.as_ref().expect("应否决").step, 2);
+    assert_eq!(report.verdicts[1].reject.as_ref().expect("must reject").step, 2);
 
-    // 负例 3：断链 → 链接步检出
+    // Negative 3: broken link → detected at the link step
     let mut tampered = lines;
     tampered[0].prev_hash =
         String::from("0000000000000000000000000000000000000000000000000000000000000000");
     let report = verify_wal_lines(&tampered);
     assert!(!report.all_ok());
     assert_eq!(report.stopped_at, Some(0));
-    assert_eq!(report.verdicts[0].reject.as_ref().expect("应否决").step, 1);
+    assert_eq!(report.verdicts[0].reject.as_ref().expect("must reject").step, 1);
 }
 
 #[test]
@@ -303,11 +306,11 @@ fn wal_line_parse_roundtrip() {
         "fact_id": e.fact_id,
         "ts": 0u64,
     });
-    let line = parse_wal_line(&line_json).expect("WAL 行应可解析");
+    let line = parse_wal_line(&line_json).expect("WAL line must parse");
     let report = verify_wal_lines(&[line]);
     assert!(
         report.all_ok(),
-        "WAL roundtrip 应全绿: {:?}",
+        "WAL roundtrip must be all green: {:?}",
         report.verdicts
     );
 }
