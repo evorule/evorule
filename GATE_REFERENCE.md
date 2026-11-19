@@ -17,222 +17,222 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# GATE_REFERENCE (跨模块门控索引)
+# GATE_REFERENCE (cross-module gating index)
 
-> **适用范围**: evorule-tcb / evorule-reactor / evorule-governance / evorule-cli
-> **协议**: AGPL-3.0-or-later
-> **跨模块设计**: 详见 §一-§五(本文件即权威)
-> **状态**: 权威 (build.rs 编译时门禁 + clippy workspace lints 跨模块索引)
+> **Scope**: evorule-tcb / evorule-reactor / evorule-governance / evorule-cli
+> **License**: AGPL-3.0-or-later
+> **Cross-module design**: see §1-§5 for details (this file is the authority)
+> **Status**: authoritative (build.rs compile-time gates + clippy workspace lints cross-module index)
 
 ---
 
-## 一、门控总览
+## 1. Gate overview
 
-| 层                       | 机制                    | 强度 | 实施位置                                                  |
+| Layer                    | Mechanism                | Strength | Implementation location                                   |
 | ------------------------ | ----------------------- | ---- | --------------------------------------------------------- |
-| **L1a 编译时字面量门禁** | `build.rs` 字节子串扫描 | 高   | 各 crate 自己的 `build.rs` (扫描 `src/`)                  |
-| **L1b 编译时策略层检测** | `build.rs` 策略层反模式检测 (无阀常开) | 高 | 各 crate 自己的 `build.rs` (v0.3.2 新增; CR 校验面已移出公开仓) |
-| **L2 编译时 lint**       | clippy workspace lints  | 中   | 根 `Cargo.toml` `[workspace.lints]` + 4 crate `[lints]`   |
-| **L3 评审**              | code review (PR review) | 高   | 人工                                                      |
+| **L1a compile-time literal gate** | `build.rs` byte-substring scanning | High | each crate's own `build.rs` (scans `src/`)                |
+| **L1b compile-time policy-layer detection** | `build.rs` policy-layer anti-pattern detection (always-on, no valve) | High | each crate's own `build.rs` (added in v0.3.2; the CR verification surface has been moved out of the public repo) |
+| **L2 compile-time lints** | clippy workspace lints  | Medium | root `Cargo.toml` `[workspace.lints]` + 4 crate `[lints]` |
+| **L3 review**            | code review (PR review) | High | human                                                     |
 
-**协作关系**:
-- L1a 挡**字面量违规** (e.g. `.unwrap(` 在生产代码 = panic-prone 构造)
-- L1b 挡**策略层违规** (e.g. 控制流指令混入机制层; 无阀常开)
-- L2 挡**结构违规** (e.g. 认知复杂度 > 25 / 函数 > 100 行)
-- L3 挡**语义违规** (e.g. 业务规则 / API 设计 / 跨文件调用图)
-- 四层**独立兜底**: L1a 漏了 L1b 拦, L1b 漏了 L2 拦, L2 漏了 L3 拦
+**Cooperation**:
+- L1a blocks **literal violations** (e.g. `.unwrap(` in production code = panic-prone constructs)
+- L1b blocks **policy-layer violations** (e.g. control-flow instructions mixed into the mechanism layer; always-on, no valve)
+- L2 blocks **structural violations** (e.g. cognitive complexity > 25 / functions > 100 lines)
+- L3 blocks **semantic violations** (e.g. business rules / API design / cross-file call graphs)
+- The four layers are **independent backstops**: what L1a misses L1b catches, what L1b misses L2 catches, what L2 misses L3 catches
 
-**L1b 策略层检测 (v0.3.2 新增; 门禁语义整改)**:
-- **策略层反模式检测**: 扫描 `src/` 目录**全文件**(含测试模块——撤测试豁免整改: 测试代码同为机制层, 须守同一纪律; 旧「剥离 mod tests 再扫」既留注释伪装/`mod tests_foo` 误吞绕过面, 又给策略层留测试区藏身处),禁止策略层代码(conditional / while_loop / sequence 等控制流指令)进入机制层。**无阀常开**——机制-策略分离是设计不变量, 不设旁路环境变量
-- **CR 变更自查已移出公开仓 (既定裁定)**: 旧 L1b 的 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制; 为避免公开形态引发「伪门禁」质疑, 已从四仓 build.rs 移除, `EVORULE_SKIP_CR_GATE` 随之删除。自查职责由本地 git pre-commit hook 承接 (hook 不随仓库/发布公开); CHANGE_REQUEST.md 登记文件与登记纪律本身不变
-- **四仓同步 (同步纪律机器化整改)**: 四仓 build.rs 是**同一骨架的内联副本**——build.rs 必须零依赖, 共享逻辑只能逐份内联, 无法运行期复用。同步纪律已机器化: `evorule-cli/tests/gate_sync_test.rs` 按函数名提取共享函数体, 规范化 (字符串/字符字面量感知剥离注释+去空白) 后以 evorule-tcb 为基准逐函数比对四仓, 任何漂移即 `cargo test` 红。锁定函数: `skip_requested` / `squeeze_ws` / `strip_inline_block_comments` / `bare_word_hit` / `skip_to_mod_tests` / `strip_test_mod` / `char_lit_starts` / `skip_lifetime` / `find_inline_lbrace` / `match_brace` / `detect_strategy_patterns` / `collect_rs_files_for_strategy` (四仓) + `strip_leading_attr` (tcb/reactor)。**新增共享函数必须同批加入测试锁定清单**; 修改任何共享函数必须四仓同批提交
+**L1b policy-layer detection (added in v0.3.2; gate-semantics rectification)**:
+- **Policy-layer anti-pattern detection**: scans **entire files** under the `src/` directory (including test modules — test-exemption rectification withdrawn: test code is part of the mechanism layer too and must obey the same discipline; the old "strip `mod tests` before scanning" approach both left a comment-disguise / `mod tests_foo` prefix-swallow bypass surface and gave the policy layer a hiding place in test zones). Policy-layer code (conditional / while_loop / sequence and other control-flow instructions) is forbidden from entering the mechanism layer. **Always-on, no valve** — the mechanism-policy separation is a design invariant; no bypass environment variable is provided
+- **CR change self-check moved out of the public repo (settled ruling)**: the old L1b CHANGE_REQUEST.md build-time check was an engineering-quality self-check discipline, never an anti-forgery review mechanism; to avoid the public form raising "pseudo-gate" doubts, it has been removed from the four repos' build.rs, and `EVORULE_SKIP_CR_GATE` was deleted with it. The self-check duty is now carried by a local git pre-commit hook (the hook is not published with the repo/releases); the CHANGE_REQUEST.md registry file and registration discipline themselves are unchanged
+- **Four-repo sync (sync-discipline mechanization rectification)**: the four repos' build.rs files are **inline copies of the same skeleton** — build.rs must be zero-dependency, shared logic can only be inlined copy by copy, and cannot be reused at runtime. The sync discipline has been mechanized: `evorule-cli/tests/gate_sync_test.rs` extracts shared function bodies by function name, normalizes them (comment stripping aware of string/char literals + whitespace removal) and then compares the four repos function-by-function against evorule-tcb as the baseline; any drift turns `cargo test` red. Locked functions: `skip_requested` / `squeeze_ws` / `strip_inline_block_comments` / `bare_word_hit` / `skip_to_mod_tests` / `strip_test_mod` / `char_lit_starts` / `skip_lifetime` / `find_inline_lbrace` / `match_brace` / `detect_strategy_patterns` / `collect_rs_files_for_strategy` (four repos) + `strip_leading_attr` (tcb/reactor). **Any newly added shared function must join the test lock list in the same batch**; any modification to a shared function must be committed across the four repos in the same batch
 
-  **有意差异表** (以下为设计差异, 不参与同步比对, 变更须各自留痕):
+  **Intentional-differences table** (the following are design differences, excluded from the sync comparison; changes must be recorded individually):
 
-  | 维度               | tcb                      | reactor                          | governance     | cli            |
+  | Dimension               | tcb                      | reactor                          | governance     | cli            |
   | ------------------ | ------------------------ | -------------------------------- | -------------- | -------------- |
-  | FORBIDDEN 模式清单 | 24 (T 编号, §2.1)        | 15 (G8/F11/S5.2, §2.2)           | 14 (§2.3)      | 7 (§2.4)       |
-  | 豁免模型           | **标签级**: T8/T9/F11 经 L1 剥离测试模块后扫 (测试断言机制本体豁免); T10/T11 等其余标签扫原文——测试内同样强制 | 全模式剥离测试模块 (测试可构造指令 fixture) + `T10_FILE_EXEMPT` 文件级 (ffi.rs/facts_log.rs) | 全模式剥离测试模块 (测试可构造 fixture) | 全模式剥离测试模块 (测试内 unwrap/expect 不误报) |
-  | BOM 文件级检查     | 有 (L1a)                 | 无                               | 无             | 无             |
-  | T15 wildcard 检查  | 无                       | 有 (`T15_WHITELIST`)             | 无             | 无             |
-  | `strip_leading_attr` (unsafe 属性行剥离) | 有 | 有 | 无 (不扫 unsafe) | 无 (不扫 unsafe) |
+  | FORBIDDEN pattern list | 24 (T-numbered, §2.1)    | 15 (G8/F11/S5.2, §2.2)           | 14 (§2.3)      | 7 (§2.4)       |
+  | Exemption model    | **Tag-level**: T8/T9/F11 are scanned after L1 strips the test modules (test assertions of the mechanism itself are exempt); the remaining tags such as T10/T11 are scanned against the raw text — enforced inside tests too | all patterns strip test modules (tests may construct instruction fixtures) + `T10_FILE_EXEMPT` file-level (ffi.rs/facts_log.rs) | all patterns strip test modules (tests may construct fixtures) | all patterns strip test modules (unwrap/expect inside tests do not false-positive) |
+  | BOM file-level check | yes (L1a)              | none                             | none           | none           |
+  | T15 wildcard check | none                    | yes (`T15_WHITELIST`)            | none           | none           |
+  | `strip_leading_attr` (unsafe attribute-line stripping) | yes | yes | none (does not scan unsafe) | none (does not scan unsafe) |
 
 ---
 
-## 二、build.rs 模式索引
+## 2. build.rs pattern index
 
-> **门禁输出（大声原则）**：四仓 L1 门禁每次构建必须以可见输出收尾——通过时发 `cargo:warning={crate} 字面量门禁 PASSED - 已扫 N 文件 x M 模式, 0 违规`（文件数/模式数动态取自扫描实现，不硬编码）；紧急跳过时发 SKIPPED warning（理由登记）；违规时 stderr 逐条列明并使构建失败。零输出的通过无法与「build.rs 被删/被短路/未执行」区分——门禁存在性本身须每次构建自证。
+> **Gate output (loud principle)**: the four repos' L1 gates must end every build with visible output — on success emit `cargo:warning={crate} literal gate PASSED - scanned N files x M patterns, 0 violations` (file/pattern counts are taken dynamically from the scanning implementation, not hardcoded); on emergency skip emit a SKIPPED warning (reason registered); on violation list each one on stderr and fail the build. A silent pass cannot be distinguished from "build.rs deleted / short-circuited / not executed" — the gate's existence itself must be self-evidenced on every build.
 >
-> **匹配口径（既定整改）**：四仓 L1 字面量门禁对每行同时按**原文**与**去空白文本**匹配（`x.unwrap ()`、`Hash Map` 等插空写法同样拦截）；注释行豁免判定仍用原文。属性行对 `unsafe` 模式（tcb/reactor）不再整体豁免——剥离行首 `#![...]`/`#[...]` 语法（方括号深度感知，未闭合保守按原文匹配）后对余下内容匹配。行内**自闭合块注释**区段先剥离再匹配（含嵌套；字符串感知——常规/字节/原始字符串内的 `/*` 不作注释起点，防伪起点吃真代码构成漏报面；跨行未闭合保守整行，fail-closed）。`async`/`await` 裸词按**词界**匹配（命中前后须非 ASCII 字母——"asynchronous"/"awaiting" 等英文单词不再误命中；去空白口径的 `asyncfn` 合并词被词界检查自然拒绝，原文口径保证真关键字照常命中）。字符串字面量内凑巧命中的极小概率误报是设计接受（宁可误报不可漏报）。
+> **Matching semantics (settled rectification)**: the four repos' L1 literal gates match every line against both the **raw text** and the **whitespace-stripped text** (`x.unwrap ()`, `Hash Map` and other interleaved spellings are caught as well); the comment-line exemption decision still uses the raw text. Attribute lines are no longer exempted wholesale for `unsafe` patterns (tcb/reactor) — the leading `#![...]`/`#[...]` attribute syntax is stripped (bracket-depth aware; unclosed brackets conservatively match the raw text) and the remainder is matched. **Self-closing block-comment** segments within a line are stripped before matching (nesting included; string-aware — a `/*` inside regular/byte/raw strings is not treated as a comment start, preventing fake starts from swallowing real code and creating an under-reporting surface; a cross-line unclosed comment conservatively swallows the whole line, fail-closed). Bare `async`/`await` words are matched on **word boundaries** (the characters before and after a hit must be non-ASCII-letters — English words such as "asynchronous"/"awaiting" no longer false-hit; the merged word `asyncfn` under the whitespace-stripped semantics is naturally rejected by the word-boundary check, while the raw-text semantics still guarantees real keywords hit as usual). The tiny false-positive probability of an accidental hit inside a string literal is accepted by design (better a false positive than a miss).
 
-### 2.1 evorule-tcb — 27 模式 (T 编号) + 1 独立检测通道
+### 2.1 evorule-tcb — 27 patterns (T-numbered) + 1 standalone detection channel
 
-实施文件: `evorule-tcb\build.rs` (扫描 `src/` 全部 `.rs`)
+Implementation file: `evorule-tcb\build.rs` (scans all `.rs` under `src/`)
 
-| 编号       | 模式 (字节子串)            | 门控含义                |
+| ID         | Pattern (byte substring)   | Gate meaning            |
 | ---------- | --------------------------- | ----------------------- |
-| T8-HashMap | `HashMap`                   | T8 哈希容器 (非确定性)  |
-| T8-HashSet | `HashSet`                   | T8 哈希容器 (非确定性)  |
-| T9-unwrap-call | `.unwrap(`              | G1 panic-prone (T9 别名) |
-| T9-expect-call | `.expect(`              | G1 panic-prone (T9 别名) |
-| T11-debug_assert | `debug_assert!`      | G1 panic-prone (T11 别名) |
-| F11-panic | `panic!(`                    | G1 panic-prone (补齐整改) |
-| F11-assert | `assert!(`                  | G1 panic-prone (panic 路径宏收紧；与 T11 子串重叠双报，均为真实违规) |
-| F11-unreachable | `unreachable!(`        | G1 panic-prone (panic 路径宏收紧) |
-| F11-todo   | `todo!(`                    | G1 panic-prone (panic 路径宏收紧) |
-| T10-unsafe-keyword | `unsafe`           | G2 unsafe 关键字 (T10 别名) |
-| T12-f32    | `f32`                       | T12 浮点禁止            |
-| T12-f64    | `f64`                       | T12 浮点禁止            |
-| T12-Float  | `Float`                     | T12 浮点禁止            |
-| T5-SystemTime | `SystemTime`             | T5 系统时间禁止         |
-| T5-Instant | `Instant`                   | T5 系统时间禁止         |
-| T6-rand    | `rand::`                    | T6 随机数禁止           |
-| T6-random  | `random()`                  | T6 随机数禁止           |
-| T4-std-fs  | `std::fs::`                 | T4 文件 I/O 禁止       |
-| T4-std-net | `std::net::`                | T4 网络 I/O 禁止       |
-| T4-std-io  | `std::io::`                 | T4 标准 I/O 禁止        |
-| T4-File-open | `File::open`              | T4 文件 I/O 禁止       |
-| T4-std-process | `std::process::`        | T4 进程 I/O 禁止       |
-| T14-std-thread | `std::thread`           | T14 线程禁止            |
-| T14-tokio  | `tokio::`                   | T14 异步运行时禁止      |
-| T14-async  | `async`                     | T14 异步禁止            |
-| T14-await  | `await`                     | T14 异步禁止            |
-| T14-spawn  | `spawn(`                    | T14 异步生成禁止        |
+| T8-HashMap | `HashMap`                   | T8 hash container (non-deterministic) |
+| T8-HashSet | `HashSet`                   | T8 hash container (non-deterministic) |
+| T9-unwrap-call | `.unwrap(`              | G1 panic-prone (T9 alias) |
+| T9-expect-call | `.expect(`              | G1 panic-prone (T9 alias) |
+| T11-debug_assert | `debug_assert!`      | G1 panic-prone (T11 alias) |
+| F11-panic | `panic!(`                    | G1 panic-prone (gap-filling rectification) |
+| F11-assert | `assert!(`                  | G1 panic-prone (panic-path macro tightening; overlaps the T11 substring and reports twice, both real violations) |
+| F11-unreachable | `unreachable!(`        | G1 panic-prone (panic-path macro tightening) |
+| F11-todo   | `todo!(`                    | G1 panic-prone (panic-path macro tightening) |
+| T10-unsafe-keyword | `unsafe`           | G2 unsafe keyword (T10 alias) |
+| T12-f32    | `f32`                       | T12 floats forbidden    |
+| T12-f64    | `f64`                       | T12 floats forbidden    |
+| T12-Float  | `Float`                     | T12 floats forbidden    |
+| T5-SystemTime | `SystemTime`             | T5 system time forbidden |
+| T5-Instant | `Instant`                   | T5 system time forbidden |
+| T6-rand    | `rand::`                    | T6 random numbers forbidden |
+| T6-random  | `random()`                  | T6 random numbers forbidden |
+| T4-std-fs  | `std::fs::`                 | T4 file I/O forbidden   |
+| T4-std-net | `std::net::`                | T4 network I/O forbidden |
+| T4-std-io  | `std::io::`                 | T4 standard I/O forbidden |
+| T4-File-open | `File::open`              | T4 file I/O forbidden   |
+| T4-std-process | `std::process::`        | T4 process I/O forbidden |
+| T14-std-thread | `std::thread`           | T14 threads forbidden   |
+| T14-tokio  | `tokio::`                   | T14 async runtimes forbidden |
+| T14-async  | `async`                     | T14 async forbidden     |
+| T14-await  | `await`                     | T14 async forbidden     |
+| T14-spawn  | `spawn(`                    | T14 async spawning forbidden |
 
-**T12-float-lit 独立检测通道（2026-09-24 收紧）**：浮点字面量推断（`let x = 1.0;`，无类型注记，默认 `f64`）由独立检测通道拦截——非固定子串，不入 FORBIDDEN 表，对注释剥离+字符串内容掩码后的文本做「数字.数字」手工判定（零依赖）；版本号（`0.6.1`）/元组索引链（`x.0.1`）边界排除；测试模块豁免（与 T8/T9/F11 同口径）；跨行字符串保守跳过（已知诚实边界）。详见 TCB_SPEC.md T12 节。
+**T12-float-lit standalone detection channel (tightened 2026-09-24)**: float-literal inference (`let x = 1.0;`, no type annotation, defaults to `f64`) is caught by a standalone detection channel — not a fixed substring, not entered into the FORBIDDEN table; a hand-rolled "digit.digit" decision is applied to the text after comment stripping + string-content masking (zero-dependency); version numbers (`0.6.1`) / tuple-index chains (`x.0.1`) are excluded at the boundary; test modules are exempt (same semantics as T8/T9/F11); cross-line strings are conservatively skipped (known honest boundary). See the T12 section of TCB_SPEC.md for details.
 
-**豁免机制**:
-- `strip_test_mod()`: 剥离 `#[cfg(test)] mod <ident> { ... }` 测试模块块体 (任意命名——cfg(test) 限定的模块本就不进生产构建; 修复整改: 旧实现按 `"mod tests"` 字面子串定位, `mod executor_ssot_tests` 等非 tests 命名模块漏剥致测试内模式误报, `mod tests_foo` 借前缀误吞; 同批修复一文件多测试模块时第一个模块尾部被整段重复压入输出的存量缺陷), 不扫描测试代码
-- 属性行剥离匹配: unsafe 模式对 `#[`/`#!` 开头行剥离行首属性语法 (方括号深度感知) 后匹配余下内容——`#[forbid(unsafe_code)]` 剥离后为空不误报; `#[inline] unsafe fn` 借道逃逸被拦截; 属性未闭合保守按原文匹配 (fail-closed)
-  - **状态机生命周期判别（2026-08-30 修复）**: `char_lit_starts()` 在撇号处判别字符字面量与生命周期——`'` 后跟 `\` 或"单字符+`'`"是字面量（进入字符态），`'ident` 是生命周期（跳过标识符，不进入字符态）。旧实现把 `'static` 误判为字符态开头，吞掉直到下一个 `'` 之间的所有 `{}`，导致 match_brace 永不闭合、tests 模块整体不被剥离、门禁对测试代码全量误报。修复已同步五仓（tcb/reactor/governance/cli/server），每仓 build.rs 内含 3 个单元测试（cargo test 不运行 build script 测试，用探针 crate 以 lib.rs 方式加载真实 build.rs 运行）
-- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁, 编译警告 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由)
+**Exemption mechanisms**:
+- `strip_test_mod()`: strips the `#[cfg(test)] mod <ident> { ... }` test-module body (any name — cfg(test)-gated modules never enter production builds anyway; rectification fix: the old implementation located modules by the literal substring `"mod tests"`, so non-`tests`-named modules such as `mod executor_ssot_tests` were missed and in-test patterns false-positived, while `mod tests_foo` was swallowed by prefix; the same batch also fixed a pre-existing defect where, with multiple test modules in one file, the tail of the first module was pushed duplicated into the output), test code is not scanned
+- Attribute-line stripped matching: for unsafe patterns, lines starting with `#[`/`#!` have their leading attribute syntax stripped (bracket-depth aware) before the remainder is matched — `#[forbid(unsafe_code)]` becomes empty after stripping and does not false-positive; `#[inline] unsafe fn` escape attempts are caught; unclosed attributes conservatively match the raw text (fail-closed)
+  - **State-machine lifetime disambiguation (fixed 2026-08-30)**: `char_lit_starts()` decides at the apostrophe between char literals and lifetimes — `'` followed by `\` or "single character + `'`" is a literal (enter char state), `'ident` is a lifetime (skip the identifier, do not enter char state). The old implementation misjudged `'static` as entering char state, swallowing everything between it and the next `'`, so match_brace never closed, the tests module was never stripped, and the gate false-positived on all test code. The fix has been synced across five repos (tcb/reactor/governance/cli/server); each repo's build.rs carries 3 unit tests (cargo test does not run build-script tests; a probe crate loads the real build.rs as a lib.rs to run them)
+- `EVORULE_SKIP_GATE=1`: emergency skip of the L1a literal gate, emits a compile warning (only `1`/`true` take effect, fail-closed; a skip requires `EVORULE_SKIP_REASON` to register the reason)
 
-### 2.2 evorule-reactor — 15 模式 (G8 + F11 + S5.2 + T10)
+### 2.2 evorule-reactor — 15 patterns (G8 + F11 + S5.2 + T10)
 
-实施文件: `evorule-reactor/build.rs` (扫描 `src/` 全部 `.rs`)
+Implementation file: `evorule-reactor/build.rs` (scans all `.rs` under `src/`)
 
-| 编号              | 模式 (字节子串)       | 门控含义                |
+| ID                | Pattern (byte substring) | Gate meaning            |
 | ----------------- | ---------------------- | ----------------------- |
-| G8-conditional    | `"conditional"`       | G7 控制流硬编码 (G8 合并执行) |
-| G8-while_loop     | `"while_loop"`         | G7 控制流硬编码        |
-| G8-sequence       | `"sequence"`           | G7 控制流硬编码        |
-| F11-debug_assert  | `debug_assert!`        | G1 panic-prone (F11 别名) |
+| G8-conditional    | `"conditional"`       | G7 control-flow hardcoding (merged into G8 execution) |
+| G8-while_loop     | `"while_loop"`         | G7 control-flow hardcoding |
+| G8-sequence       | `"sequence"`           | G7 control-flow hardcoding |
+| F11-debug_assert  | `debug_assert!`        | G1 panic-prone (F11 alias) |
 | F11-unwrap        | `.unwrap(`             | G1 panic-prone          |
 | F11-expect        | `.expect(`             | G1 panic-prone          |
 | F11-panic         | `panic!(`              | G1 panic-prone          |
-| S5.2-math_rule    | `"math_rule"`          | §5.2 业务术语硬编码    |
-| S5.2-physics_rule | `"physics_rule"`       | §5.2 业务术语硬编码    |
-| S5.2-summarize    | `"summarize"`          | §5.2 业务术语硬编码    |
-| S5.2-admin        | `"admin"`              | §5.2 角色硬编码        |
-| S5.2-teacher      | `"teacher"`            | §5.2 角色硬编码        |
-| S5.2-call_external | `"call_external"`    | §5.2 I/O 指令硬编码    |
-| S5.2-call_service | `"call_service"`      | §5.2 I/O 指令硬编码    |
-| T10-unsafe-keyword | `unsafe`             | G2 unsafe 关键字 (T10) |
+| S5.2-math_rule    | `"math_rule"`          | §5.2 business-term hardcoding |
+| S5.2-physics_rule | `"physics_rule"`       | §5.2 business-term hardcoding |
+| S5.2-summarize    | `"summarize"`          | §5.2 business-term hardcoding |
+| S5.2-admin        | `"admin"`              | §5.2 role hardcoding    |
+| S5.2-teacher      | `"teacher"`            | §5.2 role hardcoding    |
+| S5.2-call_external | `"call_external"`    | §5.2 I/O instruction hardcoding |
+| S5.2-call_service | `"call_service"`      | §5.2 I/O instruction hardcoding |
+| T10-unsafe-keyword | `unsafe`             | G2 unsafe keyword (T10) |
 
-**豁免机制**:
-- `strip_test_mod()`: 剥离 `#[cfg(test)] mod <ident>` 任意命名测试模块 (既定整改)
-- 属性行剥离匹配: unsafe 模式对 `#[`/`#!` 开头行剥离行首属性语法 (方括号深度感知) 后匹配余下内容——`#![deny(unsafe_code)]` 等纯属性行剥离后为空不误报; `#[inline] unsafe fn` 借道逃逸被拦截; 属性未闭合保守按原文匹配 (fail-closed)
-- T10 文件级豁免 (`T10_FILE_EXEMPT`): `ffi.rs` (文件级 `#![allow(unsafe_code)]` + 仅 `feature="ffi"` 编译) / `facts_log.rs` (`unsafe impl Sync` 由 `#[cfg(kani)]` + `#[allow(unsafe_code)]` 单点保护)——其余 src 文件裸 `unsafe` 一律拦截
-- `fact.rs` 豁免: G8/S5.2 模式在 `fact.rs` 豁免 (IoType/ControlFlowType 字符串映射唯一真值来源)
-- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由)
+**Exemption mechanisms**:
+- `strip_test_mod()`: strips `#[cfg(test)] mod <ident>` test modules of any name (settled rectification)
+- Attribute-line stripped matching: for unsafe patterns, lines starting with `#[`/`#!` have their leading attribute syntax stripped (bracket-depth aware) before the remainder is matched — purely attribute lines such as `#![deny(unsafe_code)]` become empty after stripping and do not false-positive; `#[inline] unsafe fn` escape attempts are caught; unclosed attributes conservatively match the raw text (fail-closed)
+- T10 file-level exemption (`T10_FILE_EXEMPT`): `ffi.rs` (file-level `#![allow(unsafe_code)]` + compiled only under `feature="ffi"`) / `facts_log.rs` (`unsafe impl Sync` guarded at a single point by `#[cfg(kani)]` + `#[allow(unsafe_code)]`) — bare `unsafe` in all other src files is caught
+- `fact.rs` exemption: G8/S5.2 patterns are exempt in `fact.rs` (the single source of truth for the IoType/ControlFlowType string mappings)
+- `EVORULE_SKIP_GATE=1`: emergency skip of the L1a literal gate (only `1`/`true` take effect, fail-closed; a skip requires `EVORULE_SKIP_REASON` to register the reason)
 
-### 2.3 evorule-governance — 14 模式 (G8 + F11 + S5.2)
+### 2.3 evorule-governance — 14 patterns (G8 + F11 + S5.2)
 
-实施文件: `evorule-governance\build.rs` (扫描 `src/` 全部 `.rs`)
+Implementation file: `evorule-governance\build.rs` (scans all `.rs` under `src/`)
 
-**有意重复**: governance 取 reactor 同组模式 (3 G8 + 4 F11 + 7 S5.2 = 14), 保证反应器/治理层双层不走偏; reactor 在此之上另有 T10-unsafe-keyword 共 **15** 模式 (§2.2), governance 不扫 unsafe (该仓 `#![deny(unsafe_code)]` 由 rustc 直接兜底) 故为 14; 与 tcb (24 模式, 额外 T 编号扫描) 为有意差异, 见 §一 有意差异表。
+**Intentional duplication**: governance takes the same pattern group as reactor (3 G8 + 4 F11 + 7 S5.2 = 14), ensuring the reactor/governance layers do not drift apart; on top of this, reactor has one more pattern, T10-unsafe-keyword, for **15** patterns total (§2.2), while governance does not scan unsafe (that repo's `#![deny(unsafe_code)]` is backstopped directly by rustc), hence 14; versus tcb (24 patterns, extra T-numbered scanning) this is an intentional difference, see the §1 intentional-differences table.
 
-### 2.4 evorule-cli — 7 模式 (G8 + F11)
+### 2.4 evorule-cli — 7 patterns (G8 + F11)
 
-实施文件: `evorule-cli/build.rs`
+Implementation file: `evorule-cli/build.rs`
 
-| 编号              | 模式 (字节子串)       | 门控含义                |
+| ID                | Pattern (byte substring) | Gate meaning            |
 | ----------------- | ---------------------- | ----------------------- |
-| G8-conditional    | `"conditional"`       | G7 控制流硬编码        |
-| G8-while_loop     | `"while_loop"`         | G7 控制流硬编码        |
-| G8-sequence       | `"sequence"`           | G7 控制流硬编码        |
+| G8-conditional    | `"conditional"`       | G7 control-flow hardcoding |
+| G8-while_loop     | `"while_loop"`         | G7 control-flow hardcoding |
+| G8-sequence       | `"sequence"`           | G7 control-flow hardcoding |
 | F11-debug_assert  | `debug_assert!`        | G1 panic-prone          |
 | F11-unwrap        | `.unwrap(`             | G1 panic-prone          |
 | F11-expect        | `.expect(`             | G1 panic-prone          |
 | F11-panic         | `panic!(`              | G1 panic-prone          |
 
-**豁免**: 无业务字面量豁免 (阶段5 起零豁免——`VALID_TRANSFORM_TYPES` 已删除, 用 tier1 RuleValidator 替代; G8/F11 对 `src/**/*.rs` 非测试代码零容忍)
-- `EVORULE_SKIP_GATE=1`: 紧急跳过 L1a 字面量门禁 (仅 `1`/`true` 生效 fail-closed; 跳过须 `EVORULE_SKIP_REASON` 登记理由)
+**Exemptions**: no business-literal exemptions (zero exemptions since phase 5 — `VALID_TRANSFORM_TYPES` has been deleted, replaced by the tier1 RuleValidator; G8/F11 have zero tolerance for non-test code under `src/**/*.rs`)
+- `EVORULE_SKIP_GATE=1`: emergency skip of the L1a literal gate (only `1`/`true` take effect, fail-closed; a skip requires `EVORULE_SKIP_REASON` to register the reason)
 
-**注意**: cli 的 FORBIDDEN 清单**实有** `F11-panic` (如实化整改)——旧版本文档称「binary crate 不需要 F11-panic」与实现矛盾。lib crate 检测 `panic!(` 的理由 (panic 影响调用方) 对 binary 同样成立: CLI 主路径 panic-prone 构造一样破坏 `Result<>` 错误链纪律, 由 `cargo:warning` 门禁在编译期拦截。
+**Note**: cli's FORBIDDEN list **does** include `F11-panic` (honesty rectification) — the old version of this document claimed "a binary crate does not need F11-panic", contradicting the implementation. The reason for detecting `panic!(` in lib crates (panics affect callers) holds for binaries too: panic-prone constructs on the CLI main path break the `Result<>` error-chain discipline just the same, caught at compile time by the `cargo:warning` gate.
 
-### 2.5 panic-prone 门控的跨仓一致性
+### 2.5 Cross-repo consistency of the panic-prone gate
 
-> 跨仓说明:evorule-server 为**独立仓**, panic-prone 门控与本仓一致 (S1 = F11 = G1),
-> 其构建脚本实现与豁免细则见 evorule-server 仓自身文档, 本仓不承载兄弟仓内部细节。
-> 跨仓同步契约（跳过阀 fail-closed 解析器 / PASSED 横幅 / CI 门禁旁路断言的两侧同改清单与同步验证命令）落 evorule-server 仓 `GATE_REFERENCE.md` §十；本仓 CI 侧对应件 = `.github/workflows/release.yml` release-gate job 的 `EVORULE_SKIP_GATE` 存在即 fail 断言（2026-09-24 加）。
-> 历史教训: 跳过阀 fail-closed 化修复当年只覆盖本仓四 crate 未同步 server 仓，旧版 `is_ok()` fail-open 阀在 server 仓存活——同步靠人记忆不可靠，须按契约清单逐件核对。
+> Cross-repo note: evorule-server is an **independent repo**; its panic-prone gate matches this repo's (S1 = F11 = G1),
+> and its build-script implementation and exemption details are documented in the evorule-server repo itself; this repo does not carry the sibling repo's internal details.
+> The cross-repo sync contract (fail-closed skip-valve parser / PASSED banner / CI gate-bypass assertion — the both-sides co-change list and the sync verification commands) lives in §10 of the evorule-server repo's GATE_REFERENCE.md; the counterpart on this repo's CI side = the release-gate job in `.github/workflows/release.yml` asserting that the mere presence of `EVORULE_SKIP_GATE` fails the job (added 2026-09-24).
+> Historical lesson: the fail-closed skip-valve fix at the time covered only this repo's four crates and did not sync the server repo, so the old `is_ok()` fail-open valve survived in the server repo — sync by human memory is unreliable; verify item by item against the contract list.
 
 ---
 
-## 三、clippy workspace lints 配置
+## 3. clippy workspace lints configuration
 
-### 3.1 根 `Cargo.toml` 配置
+### 3.1 Root `Cargo.toml` configuration
 
 `Cargo.toml`:
 
 ```toml
 [workspace.lints.rust]
-# kani cfg 由 kani 工具链注入, Cargo 不识别, 显式声明以抑制 warning
+# the kani cfg is injected by the kani toolchain and unknown to Cargo; declare it explicitly to suppress the warning
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
 
 [workspace.lints.clippy]
-# G1: panic-prone (build.rs L1 已守, clippy L2 双保险)
+# G1: panic-prone (already guarded by build.rs L1; clippy L2 is the double backstop)
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
 panic_in_result_fn = "deny"
-# F7/F8: 嵌套复杂度 (守 cognitive_complexity, 阈值 25)
+# F7/F8: nesting complexity (guards cognitive_complexity, threshold 25)
 cognitive_complexity = { level = "warn", priority = -1 }
-# F9: 函数长度 (守 too_many_lines, 阈值 100)
+# F9: function length (guards too_many_lines, threshold 100)
 too_many_lines = { level = "warn", priority = -1 }
-# F10 部分: 类型复杂度
+# part of F10: type complexity
 type_complexity = { level = "warn", priority = -1 }
-# F6 部分: 模块导入图
+# part of F6: module import graph
 module_inception = "warn"
-# 通用代码质量 (warn 级, 不阻断 CI)
+# general code quality (warn level, does not block CI)
 all = { level = "warn", priority = -1 }
 ```
 
-### 3.2 各 crate 启用
+### 3.2 Per-crate enablement
 
-`evorule-tcb/Cargo.toml`, `evorule-reactor/Cargo.toml`, `evorule-governance/Cargo.toml`, `evorule-cli/Cargo.toml` 四仓统一（四仓 lint 统一收敛整改：tcb 旧本地 `[lints.rust]`/`[lints.clippy]` 与 workspace 同值但双份维护，已收敛为继承）：
+`evorule-tcb/Cargo.toml`, `evorule-reactor/Cargo.toml`, `evorule-governance/Cargo.toml`, `evorule-cli/Cargo.toml` — unified across the four repos (four-repo lint unification rectification: tcb's old local `[lints.rust]`/`[lints.clippy]` duplicated the workspace values with double maintenance; converged to inheritance):
 
 ```toml
 [lints]
 workspace = true
 ```
 
-### 3.3 L1 + L2 协作
+### 3.3 L1 + L2 cooperation
 
-| 规则类别             | L1 (build.rs) | L2 (clippy) |
+| Rule category        | L1 (build.rs) | L2 (clippy) |
 | -------------------- | ------------- | ----------- |
-| G1 (panic-prone)     | 字面量 deny   | **deny**    |
-| G2 (unsafe)          | 字面量 deny   | — (deny 同 L1) |
-| G4 (线程/异步)       | tier0 字面量 deny | — (tier0 守) |
-| G5 (时间/随机数)     | tier0 字面量 deny | — (tier0 守) |
-| G6 (HashMap)         | tier0 字面量 deny | — (tier0 守) |
-| G7 (控制流硬编码)    | tier1/tier2 字面量 deny | — (L1 守) |
-| G8 (业务术语)        | tier1/tier2 字面量 deny | — (L1 守) |
-| T12 (浮点)           | tier0 字面量 deny | — (tier0 守) |
-| T4-T6/T8-T11/T14     | tier0 字面量 deny | — (tier0 守) |
-| F7/F8 (认知复杂度)   | L1 不能查    | **warn**    |
-| F9 (函数长度)        | L1 不能查    | **warn**    |
+| G1 (panic-prone)     | literal deny  | **deny**    |
+| G2 (unsafe)          | literal deny  | — (deny, same as L1) |
+| G4 (threads/async)   | tier0 literal deny | — (tier0 guards) |
+| G5 (time/randomness) | tier0 literal deny | — (tier0 guards) |
+| G6 (HashMap)         | tier0 literal deny | — (tier0 guards) |
+| G7 (control-flow hardcoding) | tier1/tier2 literal deny | — (L1 guards) |
+| G8 (business terms)  | tier1/tier2 literal deny | — (L1 guards) |
+| T12 (floats)         | tier0 literal deny | — (tier0 guards) |
+| T4-T6/T8-T11/T14     | tier0 literal deny | — (tier0 guards) |
+| F7/F8 (cognitive complexity) | L1 cannot check | **warn** |
+| F9 (function length) | L1 cannot check | **warn** |
 
-**关键**: deny 类 (`unwrap`/`expect`/`panic`) 由 L1 + L2 双保险, 绝不允许在生产代码出现; warn 类 (认知复杂度/函数长度) 由 L2 静态分析 + L3 review 兜底。
+**Key point**: the deny class (`unwrap`/`expect`/`panic`) is double-backstopped by L1 + L2 and never allowed in production code; the warn class (cognitive complexity / function length) is backstopped by L2 static analysis + L3 review.
 
 ---
 
-## 四、跨模块门控图
+## 4. Cross-module gating diagram
 
 ```
-   根 Cargo.toml (L2 clippy 集中配置, 9 lints)
-   GATE_REFERENCE.md (本文档, 跨模块索引)
+   root Cargo.toml (L2 clippy centralized config, 9 lints)
+   GATE_REFERENCE.md (this document, cross-module index)
                               |
         +---------------------+---------------------+
         |                     |                     |
@@ -241,80 +241,80 @@ workspace = true
    (T1-T14 + G1/G2 + D1-D10)   (F1-F11 + G1/G7/G8)    (G1 + G7 + G8 + D1-D10)
         |                     |                     |
    build.rs (L1)          build.rs (L1)          build.rs (L1)
-   24 模式 (T 标签)       15 模式 (G8/F11/S5.2/T10)  14 模式 (G8/F11/S5.2)
+   24 patterns (T tags)   15 patterns (G8/F11/S5.2/T10)  14 patterns (G8/F11/S5.2)
         |                     |                     |
    [lints] workspace     [lints] workspace     [lints] workspace
-   (L2 clippy 继承根)    (L2 clippy 继承根)    (L2 clippy 继承根)
+   (L2 clippy inherits the root)    (L2 clippy inherits the root)    (L2 clippy inherits the root)
         |                     |                     |
    code review (L3)       code review (L3)       code review (L3)
    (T1-T3/T7/T13)        (F1-F6/F10)           (F1-F6/F10)
 ```
 
-**G1 跨 3 crate** = panic-prone (L1 + L2 双保险)
-**G8 跨 tier1+tier2** = 控制流/业务术语硬编码 (L1 守, G7 + G8 合并到 G8 标签)
-**F7-F9 跨 tier1+tier2** = 复杂度 (L2 守)
-**T1-T14 tier0 专属** = 指令集有限性 + 确定性 (L1 部分守, L3 review 兜底)
-**D1-D10 数据流约束** = cross-cutting (在 transition.rs / facts_log.rs / value.rs / path.rs / core_eval.json)
+**G1 spans 3 crates** = panic-prone (L1 + L2 double backstop)
+**G8 spans tier1+tier2** = control-flow / business-term hardcoding (L1 guards; G7 + G8 merged under the G8 tag)
+**F7-F9 span tier1+tier2** = complexity (L2 guards)
+**T1-T14 tier0-only** = instruction-set finiteness + determinism (partially guarded by L1, backstopped by L3 review)
+**D1-D10 data-flow constraints** = cross-cutting (in transition.rs / facts_log.rs / value.rs / path.rs / core_eval.json)
 
 ---
 
-## 五、SPEC.md 章节编号映射
+## 5. SPEC.md section-number mapping
 
 ### 5.1 evorule-tcb/TCB_SPEC.md
 
-| 章节                                | 覆盖编号                  | build.rs 引用  |
+| Section                             | Covered IDs               | build.rs reference |
 | ----------------------------------- | ------------------------- | -------------- |
-| 核心原则                             | —                          | —              |
-| 一、指令集约束 (T1, T2, T7)         | T1, T2, T7                 | L1 + L3 引用   |
-| 二、确定性约束 (T4-T6, T8, T12-T14) | T4, T5, T6, T8, T12, T13, T14 | L1 (24 模式)   |
-| 三、安全性约束 (G1, G2)              | G1 (= T9, T11), G2 (= T10) | L1 (T9, T10, T11) |
-| 四、数据流约束 (D1-D10)              | D1, D2, D6, D7, D8, D9, D10  | L3 引用        |
-| 五、编译时门禁 (build.rs)             | — (引用 L1)                | §5.1-5.4 配置  |
-| 六、形式化验证                       | 📊 状态见 [verification/STATUS.md](verification/STATUS.md)（唯一权威，五档词汇） | — (Kani 外部工具) |
-| 七、基础设施约束 (不可逾越)           | —                          | —              |
-| 八、代码量目标 vs 实际                | —                          | —              |
-| 总结口诀 / 编号映射                   | G/T 交叉引用              | —              |
+| Core principles                     | —                          | —              |
+| §1 Instruction-set constraints (T1, T2, T7) | T1, T2, T7                 | L1 + L3 reference |
+| §2 Determinism constraints (T4-T6, T8, T12-T14) | T4, T5, T6, T8, T12, T13, T14 | L1 (24 patterns) |
+| §3 Safety constraints (G1, G2)      | G1 (= T9, T11), G2 (= T10) | L1 (T9, T10, T11) |
+| §4 Data-flow constraints (D1-D10)   | D1, D2, D6, D7, D8, D9, D10 | L3 reference   |
+| §5 Compile-time gates (build.rs)    | — (references L1)          | §5.1-5.4 configuration |
+| §6 Formal verification              | 📊 status: see [verification/STATUS.md](verification/STATUS.md) (single authority, five-tier vocabulary) | — (external Kani tooling) |
+| §7 Infrastructure constraints (non-negotiable) | —               | —              |
+| §8 Code-size target vs actual       | —                          | —              |
+| Summary mnemonic / ID mapping       | G/T cross-references       | —              |
 
 ### 5.2 evorule-reactor/REACTOR_SPEC.md
 
-| 章节                                  | 覆盖编号            | build.rs 引用  |
+| Section                               | Covered IDs         | build.rs reference |
 | ------------------------------------- | ------------------- | -------------- |
-| 核心原则                              | —                    | —              |
-| 一、允许在 Rust 反应器中做的事情       | F1, F2, F3, F4, F5, F6 (反向) | L3 引用 |
-| 二、绝对禁止在 Rust 反应器做的事情     | F1, F2, F3, F4, F5, F6, G7, G8 | L1 引用 |
-| 三、§5.2 业务术语表                    | G8 (7 术语)         | L1 (S5.2 标签) |
-| 四、编译时门禁 (build.rs)              | G1 (F11) + G7 (G8 合并) + G8 + T10 | L1 (15 模式) |
-| 五、跨模块引用                         | G1-G8 + T1 redline  | 跨模块         |
-| 总结口诀                              | —                    | —              |
+| Core principles                       | —                    | —              |
+| §1 What is allowed in the Rust reactor | F1, F2, F3, F4, F5, F6 (inverse) | L3 reference |
+| §2 What is absolutely forbidden in the Rust reactor | F1, F2, F3, F4, F5, F6, G7, G8 | L1 reference |
+| §3 §5.2 business-term glossary        | G8 (7 terms)         | L1 (S5.2 tags) |
+| §4 Compile-time gates (build.rs)      | G1 (F11) + G7 (merged into G8) + G8 + T10 | L1 (15 patterns) |
+| §5 Cross-module references            | G1-G8 + T1 redline   | cross-module   |
+| Summary mnemonic                      | —                    | —              |
 
 ### 5.3 evorule-governance/GOVERNANCE_SPEC.md
 
-| 章节                                  | 覆盖编号                  | build.rs 引用  |
+| Section                               | Covered IDs               | build.rs reference |
 | ------------------------------------- | ------------------------- | -------------- |
-| 核心原则                              | —                          | —              |
-| 一、build.rs 强制执行的约束            | G1 (F11) + G7 (G8 合并) + G8 (S5.2) | L1 (14 模式) |
-| 二、允许在 Rust 治理层中做的事情       | F1-F6 (反向)              | L3 引用        |
-| 三、绝对禁止在 Rust 治理层做的事情     | F1-F6, G7, G8              | L1 引用        |
-| 四、跨模块引用                         | G1-G8 + F1-F10 + D1-D10 + T1 redline | 跨模块 |
-| 五、build.rs 一致性                    | 同 tier1 骨架, 模式取子集 (14, 无 T10) | L1 (14 模式)   |
-| 如何新增约束                          | §5.2 / FORBIDDEN / build.rs 验证 | — |
-| 总结口诀                              | —                          | —              |
+| Core principles                       | —                          | —              |
+| §1 Constraints enforced by build.rs   | G1 (F11) + G7 (merged into G8) + G8 (S5.2) | L1 (14 patterns) |
+| §2 What is allowed in the Rust governance layer | F1-F6 (inverse)  | L3 reference   |
+| §3 What is absolutely forbidden in the Rust governance layer | F1-F6, G7, G8 | L1 reference |
+| §4 Cross-module references            | G1-G8 + F1-F10 + D1-D10 + T1 redline | cross-module |
+| §5 build.rs consistency               | same tier1 skeleton, pattern subset (14, no T10) | L1 (14 patterns) |
+| How to add a new constraint           | §5.2 / FORBIDDEN / build.rs verification | — |
+| Summary mnemonic                      | —                          | —              |
 
 ---
 
-## 六、豁免索引 (L1 + L2 协同落地)
+## 6. Exemption index (L1 + L2 joint implementation)
 
-按以下豁免设计原则(deny 类永不豁免 + warn 类按"重构成本/收益"权衡 + 测试代码全豁免), 实际豁免 3 类:
+Following the exemption design principles below (deny-class never exempted + warn-class weighed by "refactor cost/benefit" + test code fully exempted), there are 3 actual exemption classes:
 
-### 6.1 tests/ + examples/ 文件级豁免 (8 文件)
+### 6.1 tests/ + examples/ file-level exemptions (8 files)
 
-测试代码 + examples 是 Cargo 演示代码, 允许 panic/expect (L1 build.rs 已守 panic-prone 关键路径)。
+Test code + examples are Cargo demonstration code; panic/expect are allowed (L1 build.rs already guards the panic-prone critical paths).
 
 **Tier 0** (1):
 - `evorule-tcb/tests/integration_test.rs`
 
 **Tier 1** (3):
-- `evorule-reactor/tests/complex_rule_test.rs` (额外 `#[allow(clippy::too_many_lines)]` 在 fixture 函数)
+- `evorule-reactor/tests/complex_rule_test.rs` (extra `#[allow(clippy::too_many_lines)]` on fixture functions)
 - `evorule-reactor/tests/integration_test.rs`
 - `evorule-reactor/examples/generate_hashed_wal.rs`
 
@@ -324,9 +324,9 @@ workspace = true
 - `evorule-governance/tests/session_isolation_test.rs`
 - `evorule-governance/examples/bench_blake3.rs`
 
-### 6.2 src/ mod tests 豁免 (27 文件)
+### 6.2 src/ mod tests exemptions (27 files)
 
-src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]`。
+`#[cfg(test)] mod tests { ... }` blocks inside src/ are test code; add `#![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]` at the top.
 
 **Tier 0** (6):
 - `evorule-tcb/src/value.rs`, `transition.rs`, `path.rs`, `executor.rs`, `error.rs`, `domain.rs`
@@ -334,47 +334,47 @@ src/ 内 `#[cfg(test)] mod tests { ... }` 块是测试代码, 顶部加 `#![allo
 **Tier 1** (13):
 - `evorule-reactor/src/wal.rs`, `state.rs`, `stable_detector.rs`, `invariants.rs`, `channel.rs`, `fact.rs`, `pure.rs`, `reactor.rs`, `facts_log.rs`, `ffi.rs`, `hash.rs`, `io_dispatcher.rs`, `phase.rs`
 
-> 注：v0.2.0 重构移除了 `time_machine.rs` / `io_timeout_policy.rs` / `debug_control.rs` / `metrics.rs` / `rule_validator.rs` / `rule_safety.rs` / `semantic_invariants.rs`（机制层精简，对应能力下沉或删除）。
+> Note: the v0.2.0 refactor removed `time_machine.rs` / `io_timeout_policy.rs` / `debug_control.rs` / `metrics.rs` / `rule_validator.rs` / `rule_safety.rs` / `semantic_invariants.rs` (mechanism-layer slimming; the corresponding capabilities were sunk downward or deleted).
 
 **Tier 2** (8):
 - `evorule-governance/src/shared_facts_log.rs`, `metrics.rs`, `auditor.rs`, `hash.rs`, `io_subscriber.rs`, `rule_validation.rs`, `session.rs`, `time_machine.rs`
 
-> 注：H5 + 走神 9 外迁后，`object_pool.rs` / `cluster.rs` / `api/{auth,session,server,hot_reload}.rs` / `io_handlers/{http,memory}_handler.rs` / `bin/evorule_server.rs` 均已迁出 evorule-governance（现位于 evorule-server 独立仓）；evorule-governance 现为纯机制层库。
+> Note: after the H5 boundary cleanup and the follow-up extraction batch, `object_pool.rs` / `cluster.rs` / `api/{auth,session,server,hot_reload}.rs` / `io_handlers/{http,memory}_handler.rs` / `bin/evorule_server.rs` have all been moved out of evorule-governance (now located in the independent evorule-server repo); evorule-governance is now a pure mechanism-layer library.
 
-### 6.3 src/ 函数级 cognitive_complexity / too_many_lines 豁免 (17 处)
+### 6.3 src/ function-level cognitive_complexity / too_many_lines exemptions (17 sites)
 
-按"重构成本/收益"权衡, 大型 dispatch / 拆函数影响接口稳定性的生产函数:
+Weighed by "refactor cost/benefit" — large dispatch / production functions where splitting would destabilize interfaces:
 
-| 文件:行 | 函数 | 复杂度/行数 | 理由 |
+| File:line | Function | Complexity/lines | Reason |
 | --- | --- | --- | --- |
-| `evorule-reactor/src/reactor.rs:385` | `async fn run` | 119/25, 285/100 | 反应器主循环, 拆函数影响接口 |
-| `evorule-reactor/src/reactor.rs:999` | `fn handle_fact` | 47/25 | 7 种 Fact 变体 match |
-| `evorule-reactor/src/wal.rs:232` | `pub fn fact_from_json` | 124/100 | 7 种 Fact 变体扁平 match |
-| `evorule-governance/src/auditor.rs:210` | `pub fn audit_new` | 41/25 | 审计遍历 + 哈希 + append |
-| `evorule-governance/src/auditor.rs:644` | `pub fn load_from_tier1_wal` | 106/100 (v0.3.1 新增) | tier1 WAL 加载 + 链式哈希验证必须单函数 |
-| `evorule-governance/src/hash.rs:101` | `pub fn fact_to_stable_json` | 65/25, 136/100 | 7 种 Fact 变体 + 嵌套 |
-| `evorule-governance/src/hash.rs:310` | `pub fn verify_hash_chain` | 52/25 | 链式哈希 + early return |
-| `evorule-governance/src/io_subscriber.rs:221` | `async fn dispatch_and_respond` | 43/25 | IO dispatch + 重试 + 回写 |
-| `evorule-governance/src/metrics.rs:79` | `pub fn new` | 102/100 | 多指标注册 |
-| `evorule-cli/src/main.rs:222` | `fn run_rules` | 57/25 | CLI 命令 dispatch |
-| `evorule-cli/src/main.rs:428` | `fn validate_rules` | 45/25 | 验证规则链 |
-| `evorule-cli/src/executor.rs:53` | `pub fn execute` | 108/100 (v0.3.1 新增) | CLI 主循环 + I/O 两阶段 + max_steps 门禁必须单函数 |
-| `evorule-tcb/src/transition.rs:1245` | `fn test_while_loop_condition_false_returns_state_not_ignored` | 102/100 (v0.3.1 新增) | test fixture 故意复杂, 拆函数让上下文散落 |
-| `evorule-tcb/src/transition.rs:1955` | `fn react_core_eval` | 149/100 (v0.3.1 新增) | 3 条 ReAct 规则必须在同一函数内构造完整 context |
-| `evorule-tcb/src/transition.rs:185` | `pub fn execute_transition` | 119/100 (2026-09-23 新增) | 约束前置门(BUG-P0-005) + transform 主循环 + 归因合并必须单函数原子语义, 拆函数需共享 budget 与 rule_hits 中间状态 |
+| `evorule-reactor/src/reactor.rs:385` | `async fn run` | 119/25, 285/100 | reactor main loop; splitting would destabilize the interface |
+| `evorule-reactor/src/reactor.rs:999` | `fn handle_fact` | 47/25 | match over 7 Fact variants |
+| `evorule-reactor/src/wal.rs:232` | `pub fn fact_from_json` | 124/100 | flat match over 7 Fact variants |
+| `evorule-governance/src/auditor.rs:210` | `pub fn audit_new` | 41/25 | audit traversal + hashing + append |
+| `evorule-governance/src/auditor.rs:644` | `pub fn load_from_tier1_wal` | 106/100 (added in v0.3.1) | tier1 WAL loading + chained-hash verification must stay a single function |
+| `evorule-governance/src/hash.rs:101` | `pub fn fact_to_stable_json` | 65/25, 136/100 | 7 Fact variants + nesting |
+| `evorule-governance/src/hash.rs:310` | `pub fn verify_hash_chain` | 52/25 | chained hashing + early returns |
+| `evorule-governance/src/io_subscriber.rs:221` | `async fn dispatch_and_respond` | 43/25 | IO dispatch + retries + write-back |
+| `evorule-governance/src/metrics.rs:79` | `pub fn new` | 102/100 | multi-metric registration |
+| `evorule-cli/src/main.rs:222` | `fn run_rules` | 57/25 | CLI command dispatch |
+| `evorule-cli/src/main.rs:428` | `fn validate_rules` | 45/25 | rule-validation chain |
+| `evorule-cli/src/executor.rs:53` | `pub fn execute` | 108/100 (added in v0.3.1) | CLI main loop + two-phase I/O + max_steps gate must stay a single function |
+| `evorule-tcb/src/transition.rs:1245` | `fn test_while_loop_condition_false_returns_state_not_ignored` | 102/100 (added in v0.3.1) | test fixture intentionally complex; splitting would scatter the context |
+| `evorule-tcb/src/transition.rs:1955` | `fn react_core_eval` | 149/100 (added in v0.3.1) | the 3 ReAct rules must construct the complete context within a single function |
+| `evorule-tcb/src/transition.rs:185` | `pub fn execute_transition` | 119/100 (added 2026-09-23) | constraint pre-gate (tracked defect record) + transform main loop + attribution merging must stay a single function for atomic semantics; splitting would require sharing the budget and rule_hits intermediate state |
 
-每处豁免都配 `// 豁免理由: ...` 注释, 说明豁免依据(deny 类永不豁免 / warn 类按"成本/收益"权衡)。
+Each exemption carries a `// Exemption reason: ...` comment stating the basis (deny-class never exempted / warn-class weighed by "cost/benefit").
 
 ---
 
-## 七、相关文件
+## 7. Related files
 
-- `evorule-tcb/TCB_SPEC.md` (权威)
-- `evorule-reactor/REACTOR_SPEC.md` (权威)
-- `evorule-governance/GOVERNANCE_SPEC.md` (权威)
-- `evorule-tcb/build.rs` (L1 字面量门禁, 24 模式)
-- `evorule-reactor/build.rs` (L1 字面量门禁, 15 模式)
-- `evorule-governance/build.rs` (L1 字面量门禁, 14 模式, 同 tier1 骨架减 T10)
-- `evorule-cli/build.rs` (L1 字面量门禁, 7 模式)
-- `Cargo.toml` (根 `[workspace.lints]` 集中配置)
-- `{evorule-tcb,evorule-reactor,evorule-governance,evorule-cli}/Cargo.toml` (各 crate `[lints] workspace = true`)
+- `evorule-tcb/TCB_SPEC.md` (authoritative)
+- `evorule-reactor/REACTOR_SPEC.md` (authoritative)
+- `evorule-governance/GOVERNANCE_SPEC.md` (authoritative)
+- `evorule-tcb/build.rs` (L1 literal gate, 24 patterns)
+- `evorule-reactor/build.rs` (L1 literal gate, 15 patterns)
+- `evorule-governance/build.rs` (L1 literal gate, 14 patterns, tier1 skeleton minus T10)
+- `evorule-cli/build.rs` (L1 literal gate, 7 patterns)
+- `Cargo.toml` (root `[workspace.lints]` centralized configuration)
+- `{evorule-tcb,evorule-reactor,evorule-governance,evorule-cli}/Cargo.toml` (per-crate `[lints] workspace = true`)
