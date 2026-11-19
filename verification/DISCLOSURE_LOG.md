@@ -12,6 +12,12 @@
 > **记录规范**：只记事实——什么变了、客观依据、影响、修正去向（M10）。
 > **条目格式**：事实 / 依据 / 影响 / 修正去向。
 
+## 2026-11-19: reactor CI-proof evidence refresh (5 harnesses) after comment-translation batch touched proof function bodies
+
+| # | Fact | Evidence | Impact | Remedy |
+| - | ---- | -------- | ------ | ------- |
+| 1 | The repo-wide English-translation batch edited comment lines inside the function bodies of the 5 reactor CI proofs (`invariant_cause_queue_sync`, `proof_hash_chain_back_link`, `invariant_version_monotonic`, `command_does_not_decrease_queue`, `max_rounds_termination`) in `evorule-reactor/verification/kani_proofs.rs`; proof names, assertions and harness structure untouched. Their M3.4 function-level baseline advanced to `4d13e21`, invalidating the archived PASS evidence (`a3d728f` batch for four, `2a3a392` for P0-14) | S7 (`check_status_sync.py`) flagged 5 logs after the translation commit landed | Zero semantic change to the proofs; evidence-freshness bookkeeping only | All 5 re-run under CI-identical conditions (P0-11 / P0-14 without `--default-unwind`, the other three with `--default-unwind 4`; 300s timeout) in WSL (Kani 0.67.0, Ubuntu 26.04): 5/5 SUCCESSFUL; new evidence archived as `<attr>.<harness>_PASS_4d13e21_20261119_125538` (log + stdout); superseded logs quarantined locally as batch 10 (out of repo, same convention); STATUS.md evidence cells updated in the same commit (M5 coupling) |
+
 ## 2026-11-19: P0-3 evidence refresh for two harnesses after comment-translation batch touched proof function bodies
 
 | # | Fact | Evidence | Impact | Remedy |

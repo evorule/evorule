@@ -1,0 +1,51 @@
+Verification evidence: P1-6.max_rounds_termination
+Status: PASS
+Exit code: 0
+# Evidence metadata
+- commit SHA: 4d13e218bd833d616e5806818426210da71f8913
+- rustc: rustc 1.98.1 (48a229cea 2026-09-01)
+- cargo: cargo 1.98.1 (797e8a9bc 2026-08-05)
+- timestamp: 2026-11-19 12:57:10 +08:00
+- platform: Microsoft Windows NT 10.0.26200.0 (proofs executed in WSL Ubuntu 26.04, Kani 0.67.0)
+- log: P1-6.max_rounds_termination_PASS_4d13e21_20261119_125538.stdout.txt
+--- captured output (see stdout file) ---
+877 |         if let Some(path) = path_opt {
+    |                     ^^^^ help: if this is intentional, prefix it with an underscore: `_path`
+
+warning: methods `is_empty` and `contains` are never used
+  --> evorule-reactor/src/state.rs:63:16
+   |
+41 |     impl KIdSet {
+   |     ----------- methods in this implementation
+...
+63 |         pub fn is_empty(&self) -> bool {
+   |                ^^^^^^^^
+...
+66 |         pub fn contains(&self, id: &FactId) -> bool {
+   |                ^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `is_empty` and `contains_key` are never used
+   --> evorule-reactor/src/state.rs:100:16
+    |
+ 78 |     impl<V> KIdMap<V> {
+    |     ----------------- methods in this implementation
+...
+100 |         pub fn is_empty(&self) -> bool {
+    |                ^^^^^^^^
+...
+103 |         pub fn contains_key(&self, id: &FactId) -> bool {
+    |                ^^^^^^^^^^^^
+
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.98s
+Checking harness pure::kani_proofs::max_rounds_termination...
+
+VERIFICATION RESULT:
+ ** 0 of 7 failed
+
+VERIFICATION:- SUCCESSFUL
+Verification Time: 0.034876823s
+
+Manual Harness Summary:
+Complete - 1 successfully verified harnesses, 0 failures, 1 total.
