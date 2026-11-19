@@ -1,6 +1,6 @@
-/* mps2-an386（QEMU Cortex-M4 仿真平台）存储布局
- * FLASH: ZBT SSRAM1 @ 0x00000000（4 MiB）——向量表 + 代码
- * RAM:   SRAM @ 0x20000000（4 MiB）——数据 / 堆
+/* mps2-an386 (QEMU Cortex-M4 emulation platform) memory layout
+ * FLASH: ZBT SSRAM1 @ 0x00000000 (4 MiB) — vector table + code
+ * RAM:   SRAM @ 0x20000000 (4 MiB) — data / heap
  */
 MEMORY
 {

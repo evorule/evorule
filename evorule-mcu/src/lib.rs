@@ -1,28 +1,35 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! EvoRule MCU no_std 内核——紧凑规则包 + RAM WAL + tick 时钟 + 同步执行器
+//! EvoRule MCU no_std kernel — compact rule pack + RAM WAL + tick clock +
+//! synchronous executor
 //!
-//! # 定位
-//! 嵌入式设备（Cortex-M / RISC-V）上的确定性规则引擎最小内核：
-//! - `no_std` + `alloc`，零 std 依赖
-//! - 审计链哈希经 [`evorule_audit_chain`] 单一真相源——与 std 宿主
-//!   （evorule-reactor）对同一事实流产出**逐字节一致**的 WAL 行与链尾哈希
-//! - 执行器事实发射语义与 reactor 主循环逐行同构（Command / StateTransition /
-//!   TransitionTrace / Stable / Error / Violation / IoRequest）
+//! # Positioning
+//! The minimal deterministic rule-engine kernel for embedded devices
+//! (Cortex-M / RISC-V):
+//! - `no_std` + `alloc`, zero std dependency
+//! - Audit-chain hashing goes through the [`evorule_audit_chain`] single
+//!   source of truth — for the same fact stream it produces WAL lines and
+//!   chain tail hashes **byte-identical** to the std host (evorule-reactor)
+//! - The executor's fact emission semantics are line-by-line isomorphic to
+//!   the reactor main loop (Command / StateTransition / TransitionTrace /
+//!   Stable / Error / Violation / IoRequest)
 //!
-//! # 模块
-//! - [`pack`]：紧凑规则包（postcard 编码的 core_eval 规则数组）加载
-//! - [`wal`]：WAL 后端接口（[`McuWalStore`]）与 RAM 后端（`FactWalStore`
-//!   同构语义：append-only、哈希字段原样保存、write-ahead 先于状态更新）
-//! - [`wal_flash`]：Flash WAL 纯逻辑层（介质抽象 + 环形页布局 + 断电
-//!   截断恢复；真板介质随实机批实现同一 [`wal_flash::FlashMedium`] trait）
-//! - [`clock`]：tick 时钟（确定性单调计数，替代 `Instant`）
-//! - [`exec`]：同步执行器 facade（事件 → `execute_transition` → 审计 → WAL；
-//!   I/O 暂停-恢复：IoRequest 入链后 `run` 返回 `IoPaused`，板侧经
-//!   [`io::IoBridge`] 执行后 `resume_io` 继续，镜像 reactor v0.3.1 语义）
-//! - [`alloc_tlsf`]（feature `tlsf-alloc`）：TLSF 全局分配器包装——板级
-//!   二进制的 `#[global_allocator]` 供给
+//! # Modules
+//! - [`pack`]: compact rule pack (postcard-encoded core_eval rules array) loading
+//! - [`wal`]: WAL backend interface ([`McuWalStore`]) and the RAM backend
+//!   (`FactWalStore`-isomorphic semantics: append-only, hash fields saved
+//!   verbatim, write-ahead before the state update)
+//! - [`wal_flash`]: Flash WAL pure-logic layer (medium abstraction + ring-of-
+//!   pages layout + power-cut truncation recovery; real board media implement
+//!   the same [`wal_flash::FlashMedium`] trait on real-hardware bring-up)
+//! - [`clock`]: tick clock (deterministic monotonic counting, replacing `Instant`)
+//! - [`exec`]: synchronous executor facade (event → `execute_transition` →
+//!   audit → WAL; I/O pause-resume: after the IoRequest is appended, `run`
+//!   returns `IoPaused`, the board performs the I/O via [`io::IoBridge`] and
+//!   `resume_io` continues, mirroring the reactor v0.3.1 semantics)
+//! - [`alloc_tlsf`] (feature `tlsf-alloc`): TLSF global allocator wrapper —
+//!   supplies `#[global_allocator]` for board binaries
 #![no_std]
 extern crate alloc;
 #[cfg(any(test, kani))]

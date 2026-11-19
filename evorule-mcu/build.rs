@@ -1,25 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 构建脚本：仅对嵌入式 none 目标接入 cortex-m-rt 链接脚本
+//! Build script: wires in the cortex-m-rt linker script only for embedded
+//! none targets
 //!
-//! - `-Tlink.x`：cortex-m-rt 启动段（向量表 / `_start` / section 布局），
-//!   由 cortex-m-rt 的 build 脚本暴露 link-search
-//! - `-Tmemory.x`：mps2-an386 存储布局（QEMU 仿真目标），由本包 memory.x
-//!   提供，link-search 指向本包根目录
+//! - `-Tlink.x`: cortex-m-rt startup sections (vector table / `_start` /
+//!   section layout); the link-search path is exposed by cortex-m-rt's
+//!   build script
+//! - `-Tmemory.x`: the mps2-an386 memory layout (QEMU simulation target),
+//!   provided by this package's memory.x; link-search points at this
+//!   package's root directory
 //!
-//! host（std）构建完全不受影响（TARGET 门控），link 参数仅作用于
-//! bins/examples（`rustc-link-arg-bins`），库目标零影响。
+//! host (std) builds are completely unaffected (TARGET gate); the link
+//! arguments apply only to bins/examples (`rustc-link-arg-bins`); library
+//! targets are untouched.
 
 use std::env;
 
 fn main() {
     let target = env::var("TARGET").unwrap_or_default();
-    // 覆盖 thumbv*-none-eabi(hf) / riscv*-none-elf 等 no_std 裸机目标
+    // Covers no_std bare-metal targets such as thumbv*-none-eabi(hf) / riscv*-none-elf
     if target.contains("-none") {
         let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
-        // link.x 内部 INCLUDE memory.x：经 link-search 命中本包 memory.x
-        //（mps2-an386 布局）；显式 -Tmemory.x 会与之重复定义 region
+        // link.x INCLUDEs memory.x internally: the link-search path hits this
+        // package's memory.x (the mps2-an386 layout); an explicit -Tmemory.x
+        // would redefine the regions
         println!("cargo:rustc-link-search=native={manifest_dir}");
         println!("cargo:rustc-link-arg=-Tlink.x");
     }
