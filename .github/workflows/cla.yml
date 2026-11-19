@@ -1,9 +1,9 @@
-# CLA Assistant（contributor-assistant/github-action）
-# 个人贡献者：PR 中评论以下语句即完成签署：
+# CLA Assistant (contributor-assistant/github-action)
+# Individual contributors: comment the statement below on a PR to sign:
 #   I have read the CLA Document and I hereby sign the CLA
-# 企业贡献者：先阅 CLA-corporate.md 并联系 evorulelab@gmail.com，再在 PR 签署。
-# 签名记录：signatures/version1/cla.json（进 git 历史，可审计）。
-# 文档：CLA-individual.md（AGPL-3.0 + 商业双重许可下的个人贡献者许可协议）。
+# Corporate contributors: read CLA-corporate.md and contact evorulelab@gmail.com first, then sign on the PR.
+# Signature record: signatures/version1/cla.json (kept in git history, auditable).
+# Document: CLA-individual.md (individual contributor license agreement under the AGPL-3.0 + commercial dual license).
 
 name: "CLA Assistant"
 
@@ -28,11 +28,11 @@ jobs:
         uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 若 main 启用分支保护导致签名提交被拒，需配置有写权限的 PAT 并取消下行注释：
+          # If branch protection on main rejects signature commits, configure a PAT with write access and uncomment the line below:
           # PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         with:
           path-to-signatures: 'signatures/version1/cla.json'
           path-to-document: 'https://github.com/evorule/evorule/blob/main/CLA-individual.md'
           branch: 'main'
-          # allowlist：免签账号（项目账号 + 常用 bot）。项目所有者个人账号请自行补充。
+          # allowlist: signing-exempt accounts (project accounts + common bots). Add the project owner's personal account as needed.
           allowlist: 'evorule, EvoRuleLab, dependabot[bot], renovate[bot]'

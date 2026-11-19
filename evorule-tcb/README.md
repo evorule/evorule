@@ -18,7 +18,7 @@
 - **build.rs compile-time gate**: 24 banned patterns (T-series + F11 panic-prone group) + BOM detection, enforced at compile time, PASSED
 - **License**: AGPL-3.0-or-later (code) + CC0-1.0 (`core_eval.json` constitution, public domain)
 
-> **Kani formal verification**: 34 `#[kani::proof]` harnesses split into tiers A/B. Tier A (14 harnesses) is wired into the CI gate and fully passing; tier B (20 harnesses) exceeds practical timeouts and is indirectly covered by property-based tests. See [`TCB_SPEC.md` §六](TCB_SPEC.md) and [`docs/KANI.md`](docs/KANI.md); the authoritative status is [`verification/STATUS.md`](../verification/STATUS.md).
+> **Kani formal verification**: 34 `#[kani::proof]` harnesses split into tiers A/B. Tier A (14 harnesses) is wired into the CI gate and fully passing; tier B (20 harnesses) exceeds practical timeouts and is indirectly covered by property-based tests. See [`TCB_SPEC.md` §6](TCB_SPEC.md) and [`docs/KANI.md`](docs/KANI.md); the authoritative status is [`verification/STATUS.md`](../verification/STATUS.md).
 
 > This crate is part of the [EvoRule](https://github.com/evorule) ecosystem: [main repo](https://github.com/evorule/evorule) | [online console demo](https://evorule.github.io/evorule-console-cloud/) | [evorule-server (application layer)](https://github.com/evorule/evorule-server)
 

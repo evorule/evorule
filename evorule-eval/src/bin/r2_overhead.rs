@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! R2 —— 执行开销（per-transition latency / throughput / 存储对比）
+//! R2 — execution overhead (per-transition latency / throughput / storage comparison)
 //!
-//! 三组测量（全部真实工作负载）：
-//! 1. **每步延迟**：timed 模式逐 transition 计时 → mean / p50 / p95 / max，
-//!    并给出吞吐（transitions/s）。
-//! 2. **观测开销**：裸执行（不构造 Fact）vs 带事实链执行，同负载整跑墙钟比。
-//! 3. **存储对比**：重放=重执行 ⇒ 除审计 WAL 外**零增量记录**。对照基线：
-//!    a) 逐状态快照流（每步全量 payload+queue 序列化字节，checkpoint 风格）；
-//!    b) 最小事件记录流（io 应答事件字节）。报告三者字节数。
+//! Three measurement groups (all on real workloads):
+//! 1. **Per-step latency**: timed mode measures each transition → mean / p50 /
+//!    p95 / max, plus throughput (transitions/s).
+//! 2. **Observation overhead**: bare execution (no Facts built) vs
+//!    fact-chain execution; whole-run wall-clock ratio on the same workload.
+//! 3. **Storage comparison**: replay = re-execution ⇒ **zero incremental
+//!    recording** beyond the audit WAL. Baselines:
+//!    a) a per-state snapshot stream (full payload+queue serialization bytes
+//!    per step, checkpoint style);
+//!    b) a minimal event-recording stream (io response event bytes).
+//!    Reports the byte counts of all three.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -24,7 +28,7 @@ const WARMUP: usize = 3;
 const REPS: usize = 30;
 
 fn snapshot_stream_bytes(facts: &[evorule_reactor::Fact]) -> usize {
-    // checkpoint 风格基线：每条 StateTransition 全量序列化（payload + queue）
+    // Checkpoint-style baseline: full serialization per StateTransition (payload + queue)
     facts
         .iter()
         .filter_map(|f| match f {
@@ -43,7 +47,7 @@ fn snapshot_stream_bytes(facts: &[evorule_reactor::Fact]) -> usize {
 }
 
 fn event_stream_bytes(facts: &[evorule_reactor::Fact]) -> usize {
-    // 最小记录-重放基线：只记录 io 请求/应答事件（重放需重执行全部状态）
+    // Minimal record-replay baseline: record only io request/response events (replay requires re-executing all state)
     facts
         .iter()
         .filter_map(|f| match f {
@@ -73,7 +77,7 @@ fn main() -> Result<(), String> {
     let mut rows: Vec<serde_json::Value> = Vec::new();
 
     for wl in &workloads {
-        // 选择真实命中的种子（拒绝 noop 空跑）
+        // Select a real-hitting seed (noop empty runs refused)
         let (seed_id, instruction) = match select_seed(wl, &seeds)? {
             Some((id, probe)) => {
                 let instr = probe.facts.iter().find_map(|f| match f {
@@ -92,7 +96,7 @@ fn main() -> Result<(), String> {
         };
         let empty = JsonValue::empty_object();
 
-        // 预跑一次确定规模
+        // One probe run to establish scale
         let probe = run_once(
             &wl.rules,
             empty.clone(),
@@ -104,7 +108,7 @@ fn main() -> Result<(), String> {
         let steps = probe.steps;
         let facts = probe.facts;
 
-        // 1) 裸执行（无事实构造）
+        // 1) Bare execution (no fact construction)
         let mut bare_nanos = Vec::new();
         for _ in 0..WARMUP {
             let _ = run_once(
@@ -129,7 +133,7 @@ fn main() -> Result<(), String> {
             bare_nanos.push(t.elapsed().as_nanos());
         }
 
-        // 2) 带事实链执行（timed，逐 transition）
+        // 2) Fact-chain execution (timed, per transition)
         let mut observed_nanos = Vec::new();
         let mut all_step_nanos: Vec<u128> = Vec::new();
         for _ in 0..WARMUP {
@@ -221,7 +225,7 @@ fn main() -> Result<(), String> {
         "metric": "R2 execution overhead",
         "reps": REPS,
         "warmup": WARMUP,
-        "note": "重放=重执行：增量记录 = 0（审计 WAL 兼作重放输入）；对照 checkpoint 快照流与最小事件流",
+        "note": "replay = re-execution: incremental recording = 0 (the audit WAL doubles as the replay input); compared against a checkpoint snapshot stream and a minimal event stream",
         "cases": rows,
     });
     write_json(&dir.join("summary.json"), &summary)?;

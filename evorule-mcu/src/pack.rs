@@ -1,23 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 紧凑规则包（`.evopack`）——postcard 编码的 core_eval 规则数组
+//! Compact rule pack (`.evopack`) — the postcard-encoded core_eval rules array
 //!
-//! # 格式
-//! 包体 = `postcard::to_allocvec(&WireRules)`：tier0 规则数组经
-//! `tcb_to_wire` 映射为线格式模型后 postcard 编码，同输入必得同字节
-//! （确定性）。
-//! - postcard 为非自描述格式，无法反序列化 `serde_json::Value` 任意形态，
-//!   故以 `WireValue` / `WireRules` serde derive 模型按 tier0 [`JsonValue`]
-//!   类型域一一同构建模（tier0 无 Float，`Int` 覆盖 i64 数值域，v0.9.0 起
-//!   `Uint` 尾部追加承载 u64 全域，编码无损）
-//! - `Object` 以键值对序列保序编码——上游由 BTreeMap 迭代产出，键序
-//!   字母序确定，跨目标一致
+//! # Format
+//! Pack body = `postcard::to_allocvec(&WireRules)`: the tier0 rules array is
+//! mapped to the wire-format model by `tcb_to_wire` and then postcard-encoded;
+//! the same input always yields the same bytes (deterministic).
+//! - postcard is a non-self-describing format and cannot deserialize arbitrary
+//!   `serde_json::Value` shapes, so the `WireValue` / `WireRules` serde derive
+//!   models mirror the tier0 [`JsonValue`] type domain one to one (tier0 has
+//!   no Float; `Int` covers the i64 numeric domain; since v0.9.0 a trailing
+//!   `Uint` variant carries the full u64 domain, losslessly encoded)
+//! - `Object` is encoded order-preservingly as a key-value pair sequence —
+//!   the upstream producer iterates a BTreeMap, so key order is alphabetical
+//!   and deterministic across targets
 //!
-//! # 加载
-//! [`RulePack::from_evopack`] 结构化解码 `WireRules` 后由 `wire_to_tcb`
-//! 还原为 tier0 [`JsonValue`] 规则数组；形状不符（含非法字节）在解码期
-//! 直接拒绝（fail-fast）。
+//! # Loading
+//! [`RulePack::from_evopack`] structurally decodes `WireRules` and then
+//! restores the tier0 [`JsonValue`] rules array via `wire_to_tcb`; shape
+//! mismatches (including illegal bytes) are rejected at decode time
+//! (fail-fast).
 
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -29,15 +32,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::McuError;
 
-/// 紧凑线格式值模型（postcard 编码专用）
+/// Compact wire-format value model (dedicated to postcard encoding)
 ///
-/// postcard 为非自描述格式，无法反序列化 `serde_json::Value` 的任意形态；
-/// 本模型按 tier0 [`JsonValue`] 的类型域一一同构建模（tier0 无 Float，
-/// `Int` 覆盖 i64 数值域；v0.9.0 起 tier0 增加 `U64` u64 全域通道，对应
-/// 尾部新增 `Uint`——postcard 按声明序编变体索引，尾部追加对存量包字节
-/// 双向兼容：旧固件解码含 `Uint` 的新包将报非法变体（fail-fast 拒载，
-/// 固件需升级），新固件解码旧包不受影响）。`Object` 以键值对序列保序编
-/// 码——上游由 BTreeMap 迭代产出，键序字母序确定（同输入同字节）。
+/// postcard is a non-self-describing format and cannot deserialize arbitrary
+/// `serde_json::Value` shapes; this model mirrors the tier0 [`JsonValue`]
+/// type domain one to one (tier0 has no Float, `Int` covers the i64 numeric
+/// domain; since v0.9.0 tier0 gained the `U64` full-range u64 channel,
+/// mirrored by the trailing new `Uint` variant — postcard encodes variant
+/// indices in declaration order, so a trailing append stays byte-compatible
+/// in both directions with existing packs: old firmware decoding a new pack
+/// containing `Uint` reports an invalid variant (fail-fast rejection; the
+/// firmware needs an upgrade), while new firmware decoding old packs is
+/// unaffected). `Object` is encoded order-preservingly as a key-value pair
+/// sequence — the upstream producer iterates a BTreeMap, so key order is
+/// alphabetical and deterministic (same input, same bytes).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum WireValue {
     Null,
@@ -46,17 +54,19 @@ pub(crate) enum WireValue {
     Str(String),
     Array(Vec<WireValue>),
     Object(Vec<(String, WireValue)>),
-    /// u64 全域通道（v0.9.0，尾部追加保兼容——勿移动位置或插中间）
+    /// u64 full-range channel (v0.9.0, trailing append for compatibility —
+    /// never move it or insert variants in the middle)
     Uint(u64),
 }
 
-/// 紧凑线格式包体
+/// Compact wire-format pack body
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct WireRules {
     pub rules: Vec<WireValue>,
 }
 
-/// tier0 `JsonValue` → 线格式（编码侧；BTreeMap 迭代序保证键序确定）
+/// tier0 `JsonValue` → wire format (encoding side; BTreeMap iteration order
+/// guarantees deterministic key order)
 pub(crate) fn tcb_to_wire(v: &JsonValue) -> WireValue {
     match v {
         JsonValue::Null => WireValue::Null,
@@ -73,7 +83,7 @@ pub(crate) fn tcb_to_wire(v: &JsonValue) -> WireValue {
     }
 }
 
-/// 线格式 → tier0 `JsonValue`
+/// Wire format → tier0 `JsonValue`
 fn wire_to_tcb(v: &WireValue) -> JsonValue {
     match v {
         WireValue::Null => JsonValue::Null,
@@ -92,17 +102,18 @@ fn wire_to_tcb(v: &WireValue) -> JsonValue {
     }
 }
 
-/// 已加载的规则包（core_eval transform 规则数组）
+/// A loaded rule pack (the core_eval transform rules array)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RulePack {
     rules: Vec<JsonValue>,
 }
 
 impl RulePack {
-    /// 从 tier0 规则数组直构（测试 / 内嵌规则形态）
+    /// Construct directly from a tier0 rules array (tests / embedded-rule form)
     ///
-    /// 规则数超过 TCB 上限（`MAX_TRANSFORM_RULES`）时拒绝，与
-    /// `execute_transition` 的终止性防线对齐（构造期即失败，不等到执行期）。
+    /// Rejects when the rule count exceeds the TCB cap (`MAX_TRANSFORM_RULES`),
+    /// aligned with the termination envelope of `execute_transition` (fails at
+    /// construction time, not at execution time).
     pub fn from_rules(rules: Vec<JsonValue>) -> Result<Self, McuError> {
         if rules.len() > MAX_TRANSFORM_RULES {
             return Err(McuError::Pack(format!(
@@ -113,10 +124,12 @@ impl RulePack {
         Ok(Self { rules })
     }
 
-    /// 编码为 `.evopack` 字节流（host 编译器与测试共用的正典编码路径）
+    /// Encode to an `.evopack` byte stream (the canonical encoding path shared
+    /// by the host compiler and tests)
     ///
-    /// 确定性：同输入规则数组必得同字节（线格式基于 BTreeMap 迭代序 +
-    /// postcard 变长整数编码，无随机因素）。
+    /// Deterministic: the same input rules array always yields the same bytes
+    /// (the wire format is based on BTreeMap iteration order + postcard
+    /// varint encoding, with no random factors).
     pub fn to_evopack(&self) -> Result<Vec<u8>, McuError> {
         let wire = WireRules {
             rules: self.rules.iter().map(tcb_to_wire).collect(),
@@ -125,10 +138,10 @@ impl RulePack {
             .map_err(|e| McuError::Pack(format!("postcard encode failed: {e}")))
     }
 
-    /// 从 `.evopack` 字节流加载
+    /// Load from an `.evopack` byte stream
     ///
-    /// 包体必须是 [`WireRules`] 形态（postcard 结构化解码，形状不符即
-    /// 拒绝，fail-fast）。
+    /// The pack body must be in the [`WireRules`] shape (postcard structural
+    /// decoding; shape mismatches are rejected, fail-fast).
     pub fn from_evopack(bytes: &[u8]) -> Result<Self, McuError> {
         let wire: WireRules = postcard::from_bytes(bytes)
             .map_err(|e| McuError::Pack(format!("postcard decode failed: {e}")))?;
@@ -136,7 +149,7 @@ impl RulePack {
         Self::from_rules(rules)
     }
 
-    /// transform 规则数组（供 `execute_transition` 消费）
+    /// The transform rules array (consumed by `execute_transition`)
     pub fn rules(&self) -> &[JsonValue] {
         &self.rules
     }
@@ -155,10 +168,14 @@ mod tests {
         let expected = parity_rules_tcb();
         let pack = RulePack::from_rules(expected.clone()).unwrap();
 
-        // host 编译器同款编码路径：规则数组 → 线格式 → postcard；同输入同字节
+        // Same encoding path as the host compiler: rules array → wire format →
+        // postcard; same input, same bytes
         let bytes_a = pack.to_evopack().unwrap();
         let bytes_b = pack.to_evopack().unwrap();
-        assert_eq!(bytes_a, bytes_b, "编码必须确定性（同输入同字节）");
+        assert_eq!(
+            bytes_a, bytes_b,
+            "encoding must be deterministic (same input, same bytes)"
+        );
 
         let decoded = RulePack::from_evopack(&bytes_a).unwrap();
         assert_eq!(decoded.rules(), expected.as_slice());
@@ -166,7 +183,8 @@ mod tests {
 
     #[test]
     fn test_pack_rejects_wrong_shape_bytes() {
-        // 合法 postcard 字节但非 WireRules 形态（Bool 变体）→ 解码期拒绝
+        // Valid postcard bytes but not in the WireRules shape (Bool variant) →
+        // rejected at decode time
         let bytes = postcard::to_allocvec(&WireValue::Bool(true)).unwrap();
         let err = RulePack::from_evopack(&bytes).unwrap_err();
         assert!(matches!(err, McuError::Pack(_)), "got: {err}");
@@ -180,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_pack_rejects_rule_count_over_limit() {
-        // TCB 上限 128：129 条直接 set 规则应在构造期被拒
+        // TCB cap of 128: 129 direct set rules must be rejected at construction time
         let rules: Vec<JsonValue> = (0..(MAX_TRANSFORM_RULES as i64 + 1))
             .map(|i| {
                 JsonValue::object_from_pairs(&[
@@ -202,9 +220,11 @@ mod tests {
 
     #[test]
     fn test_parity_fixture_matches_canonical_encoder() {
-        // 对拍 fixture 守卫：tests/fixtures/parity_rules.evopack 由 host 编译器
-        // （evorule-cli compile-evopack）生成，必须与本正典编码器逐字节一致——
-        // fixture 漂移即 host 编译器与内核编码路径失配，fail-fast。
+        // Parity fixture guard: tests/fixtures/parity_rules.evopack is
+        // generated by the host compiler (evorule-cli compile-evopack) and
+        // must be byte-identical to this canonical encoder — fixture drift
+        // means the host compiler and the kernel encoding paths have
+        // diverged, fail-fast.
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let json_path = manifest.join("tests/fixtures/parity_rules.json");
         let pack_path = manifest.join("tests/fixtures/parity_rules.evopack");
@@ -216,7 +236,7 @@ mod tests {
             panic!("fixture json must be a top-level rules array");
         };
 
-        // fixture 规则集必须与 parity_rules_tcb 同构（同为对拍基准）
+        // The fixture rule set must be isomorphic to parity_rules_tcb (both are parity baselines)
         assert_eq!(
             rules,
             crate::exec::parity_fixtures::parity_rules_tcb(),
@@ -233,10 +253,11 @@ mod tests {
 
     #[test]
     fn test_io_resume_fixture_matches_canonical_encoder() {
-        // I/O 对拍 fixture 守卫（与 parity fixture 同口径）：tests/fixtures/
-        // io_resume_rules.evopack 由 host 编译器（evorule-cli compile-evopack）
-        // 生成，必须与本正典编码器逐字节一致；json 与 io_resume_rules_tcb
-        // 同构（对拍基准双锚定）——fixture 漂移即 fail-fast。
+        // I/O parity fixture guard (same policy as the parity fixture):
+        // tests/fixtures/io_resume_rules.evopack is generated by the host
+        // compiler (evorule-cli compile-evopack) and must be byte-identical to
+        // this canonical encoder; the json is isomorphic to io_resume_rules_tcb
+        // (dual-anchored parity baselines) — fixture drift means fail-fast.
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let json_path = manifest.join("tests/fixtures/io_resume_rules.json");
         let pack_path = manifest.join("tests/fixtures/io_resume_rules.evopack");

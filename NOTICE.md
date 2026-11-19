@@ -17,60 +17,60 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# EvoRule — 声明
+# EvoRule — Notice
 
-**版权所有 (c) 2026 EvoRule Project**
+**Copyright (c) 2026 EvoRule Project**
 
-本项目包含由 EvoRule Project 开发的软件。
+This project contains software developed by the EvoRule Project.
 
-## 协议选择指引
+## License Selection Guide
 
-| 你是 | 走哪条路 | 链接 |
+| If you are | Which path to take | Link |
 |---|---|---|
-| 个人 / 自由职业者 / 开源项目 | **AGPL**（免费） | [LICENSE](LICENSE) |
-| 年营收 < ¥1 亿企业 / 政府 / 高校 / 非营利 | **FCL**（免费闭源豁免） | [FREE_COMMERCIAL_LICENSE.md](FREE_COMMERCIAL_LICENSE.md) |
-| 愿意开源修改版的任意实体 | **AGPL**（免费） | [LICENSE](LICENSE) |
-| 年营收 ≥ ¥1 亿且不愿开源 | **商业许可**（付费） | [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) · <evorulelab@gmail.com> |
+| Individual / freelancer / open-source project | **AGPL** (free) | [LICENSE](LICENSE) |
+| Enterprise with annual revenue < CNY 100 million / government / university / non-profit | **FCL** (free closed-source exemption) | [FREE_COMMERCIAL_LICENSE.md](FREE_COMMERCIAL_LICENSE.md) |
+| Any entity willing to open-source modified versions | **AGPL** (free) | [LICENSE](LICENSE) |
+| Enterprise with annual revenue ≥ CNY 100 million that does not wish to open-source | **Commercial License** (paid) | [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) · <evorulelab@gmail.com> |
 
-> 完整决策指引见 [DUAL_LICENSE.md](DUAL_LICENSE.md)。
+> For the complete decision guide, see [DUAL_LICENSE.md](DUAL_LICENSE.md).
 
-## 协议分离
+## License Separation
 
-| 资产 | 协议 | 说明 |
+| Asset | License | Notes |
 |---|---|---|
-| **代码** | AGPL-3.0-or-later | 详见 [LICENSE](LICENSE) |
-| **`core_eval.json`** | **CC0 1.0 公共领域** | EvoRule 宪法（解释器规范）—— 任何人都可以自由实现兼容的 EvoRule 引擎，无需保留版权声明。官方文本：<https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt> ；仓内副本：[LICENSES/core_eval-CC0-1.0.txt](LICENSES/core_eval-CC0-1.0.txt) |
+| **Code** | AGPL-3.0-or-later | See [LICENSE](LICENSE) |
+| **`core_eval.json`** | **CC0 1.0 public domain** | The EvoRule constitution (interpreter specification) — anyone may freely implement a compatible EvoRule engine, with no attribution requirement. Official text: <https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt> ; copy in this repository: [LICENSES/core_eval-CC0-1.0.txt](LICENSES/core_eval-CC0-1.0.txt) |
 
-**协议分离的战略意义**：
+**Strategic significance of the license separation**:
 
-- 代码（copyleft, AGPL-3.0）：保护 EvoRule 当前实现，阻止大厂"白嫖 fork 后卖闭源 SaaS"
-- 宪法（public domain, CC0-1.0）：鼓励广泛采用，任何人都可以基于宪法实现兼容引擎
-- 这把"标准"和"实现"分开，类似 HTTP 规范（W3C 公共）vs Apache HTTP Server（版权）
-- 社区贡献物可经**通道 D（Contribution Grant, CONTRIBUTION_GRANT.md）**以 Apache-2.0 局部再授权进入开源社区/学术仓；主仓 AGPL 主线不变；签发记录见 docs/grants/
+- Code (copyleft, AGPL-3.0): protects EvoRule's current implementation and prevents large vendors from "taking a free fork and selling closed-source SaaS"
+- Constitution (public domain, CC0-1.0): encourages broad adoption; anyone may implement a compatible engine based on the constitution
+- This separates the "standard" from the "implementation", similar to the HTTP specification (W3C, public) vs Apache HTTP Server (copyrighted)
+- Community contributions may, via **Channel D (Contribution Grant, CONTRIBUTION_GRANT.md)**, be partially re-licensed under Apache-2.0 into open-source community / academic repositories; the main repository's AGPL mainline is unchanged; grant records are kept in docs/grants/
 
-## 第三方组件声明
+## Third-Party Components
 
-本项目依赖的第三方组件（crates.io / npm 等）以其自身许可授权，义务边界与逐项清单见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)，许可证正文逐字归档于 [LICENSES/third-party/](LICENSES/third-party/)。分发本项目的任何产物时，须随附该声明与对应许可证正文（随附规范见 [SOURCE.md](SOURCE.md)）。
+Third-party components that this project depends on (crates.io / npm etc.) are licensed under their own licenses; the obligation boundaries and itemized list are given in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), and the verbatim license texts are archived in [LICENSES/third-party/](LICENSES/third-party/). When distributing any artifact of this project, you must accompany it with that notice and the corresponding license texts (see [SOURCE.md](SOURCE.md) for the accompanying-file specification).
 
-## 源码提供（AGPL §13）
+## Source Code Offer (AGPL §13)
 
-以网络服务形式交付本软件者，须向其用户提供对应源码。源码定位与完整性校验入口：[SOURCE.md](SOURCE.md)。
+Anyone who delivers this software in the form of a network service must provide the corresponding source code to their users. Source-code location and integrity-verification entry point: [SOURCE.md](SOURCE.md).
 
-## 设计原则
+## Design Principles
 
-EvoRule 的核心设计原则：
+The core design principles of EvoRule:
 
-- 规则即数据（可读、可审计、可序列化）
-- 自解释引擎（解释器本身也是可被审计的规则）
-- 完全可追溯（每次状态变化留下因果链）
-- 零隐藏逻辑（解释器可读 + 可审计）
-- 不可变状态（基于不可变数据结构）
-- 确定性执行（相同输入 = 永远相同输出）
+- Rules as data (readable, auditable, serializable)
+- Self-explanatory engine (the interpreter itself is an auditable set of rules)
+- Fully traceable (every state change leaves a causal chain)
+- Zero hidden logic (readable and auditable interpreter)
+- Immutable state (based on immutable data structures)
+- Deterministic execution (same input = always the same output)
 
-## 联系信息
+## Contact
 
-- **项目**: EvoRule — 反应式执行引擎
-- **作者**: EvoRule Project
-- **邮箱**: <evorulelab@gmail.com>
-- **组织**: [EvoRule](https://github.com/evorule)
+- **Project**: EvoRule — Reactive Execution Engine
+- **Author**: EvoRule Project
+- **Email**: <evorulelab@gmail.com>
+- **Organization**: [EvoRule](https://github.com/evorule)
 - **GitHub**: <https://github.com/evorule/evorule>

@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 元指令执行器 - 5 个元指令 + `io_request` 信号 + `enforce` 强制原语
+//! Meta instruction executor - 5 meta instructions + `io_request` signal + `enforce` enforcement primitive
 //!
-//! # 元指令列表
-//! - `set`：修改 payload 字段
-//! - `push`：推指令到队列前端
-//! - `branch`：条件执行子指令列表
-//! - `io_request`：产生 I/O 请求信号（不修改状态）
-//! - `enforce`：元规则强制原语（回归验证）——params.domain 匹配即返回 Halted 信号
+//! # Meta instruction list
+//! - `set`: modifies a payload field
+//! - `push`: prepends instructions to the queue front
+//! - `branch`: conditionally executes a sub-instruction list
+//! - `io_request`: emits an I/O request signal (no state modification)
+//! - `enforce`: meta-rule enforcement primitive (regression check) — returns the Halted signal when params.domain matches
 //!
-//! # 设计原则
-//! `io_request` 是"半元指令"——在执行器中硬编码识别，但行为完全由 JSON 参数驱动。
-//! 它不修改任何状态，仅返回 `MetaInstructionResult::IoRequired` 信号。
+//! # Design principle
+//! `io_request` is a "half meta instruction" — recognized by hardcoded dispatch in
+//! the executor, but its behavior is driven entirely by JSON parameters.
+//! It modifies no state and only returns the `MetaInstructionResult::IoRequired` signal.
 
 use crate::domain::{declared_on_missing, evaluate_domain_outcome_with_limit, DomainAttribution};
 use crate::envelope::EnvelopeLimits;
@@ -23,61 +24,69 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-/// 元指令执行器的最大嵌套深度
+/// Maximum nesting depth of the meta instruction executor
 pub const MAX_BRANCH_DEPTH: usize = 64;
 
-/// 单次状态转换允许执行的元指令总数上限（终止性宽度防线，M6）
+/// Upper bound on the total meta instructions executable in one state transition
+/// (termination width defense, M6)
 ///
-/// 与 `MAX_BRANCH_DEPTH`（深度防线）、`MAX_TRANSFORM_RULES`（规则数防线）、
-/// `MAX_DOMAIN_DEPTH`（域递归防线）共同构成完整的终止性保证：
-/// 深度限制无法约束**宽度**（单条 branch 的子指令列表长度无上界），
-/// 本上限补齐该缺口——任意 core_eval 的执行路径指令总数有界。
+/// Together with `MAX_BRANCH_DEPTH` (depth defense), `MAX_TRANSFORM_RULES` (rule
+/// count defense) and `MAX_DOMAIN_DEPTH` (domain recursion defense) it forms the
+/// complete termination guarantee: depth caps cannot bound **width** (a single
+/// branch's sub-instruction list is unbounded), and this cap closes that gap — the
+/// total instruction count along any core_eval execution path is bounded.
 ///
-/// 取值依据：`MAX_TRANSFORM_RULES`(128) × 单规则平均指令数(≤16) = 2048，
-/// 覆盖 ReAct 宪法的实际需求（每条规则 < 15 条指令）并留有余量。
+/// Sizing basis: `MAX_TRANSFORM_RULES`(128) × average instructions per rule(≤16)
+/// = 2048, covering the actual needs of the ReAct constitution (each rule < 15
+/// instructions) with headroom.
 pub const MAX_TOTAL_META_INSTRUCTIONS: usize = 2048;
 
-/// 合法 core_eval 元指令类型权威清单（SSOT / C2）
+/// Authoritative list of legal core_eval meta instruction types (SSOT / C2)
 ///
-/// 与下方 `execute_meta_instruction_budgeted` 的 dispatch 分支一一对应。
-/// 消费方（如 evorule-cli validate 的规则白名单）**必须引用本常量**，
-/// 禁止自行硬编码副本——防止 tcb 新增元指令时消费方误报合法规则。
+/// Corresponds one-to-one with the dispatch arms of `execute_meta_instruction_budgeted`
+/// below. Consumers (such as the evorule-cli validate rule whitelist) **must
+/// reference this constant**; hardcoding a private copy is forbidden — otherwise a
+/// new TCB meta instruction would make consumers falsely reject valid rules.
 ///
-/// # 漂移防线
-/// - 本表 → dispatch：`test_meta_instruction_types_ssot` 逐类型断言
-///   dispatch 不返回 `UnknownMetaInstruction`；
-/// - dispatch → 本表：新增 dispatch 分支时须同步更新本表并登记变更
-///   （该方向不可由枚举自动穷尽，靠 CR 门禁约束）。
+/// # Drift guards
+/// - This table → dispatch: `test_meta_instruction_types_ssot` asserts per type
+///   that dispatch does not return `UnknownMetaInstruction`;
+/// - dispatch → this table: when adding a dispatch arm, this table must be updated
+///   in the same change and registered (that direction cannot be exhaustively
+///   checked via the enum; it is enforced by the CR gate).
 pub const META_INSTRUCTION_TYPES: &[&str] = &["branch", "set", "push", "io_request", "enforce"];
 
-/// 元指令执行结果
+/// Meta instruction execution result
 #[derive(Debug, Clone, PartialEq)]
 pub enum MetaInstructionResult {
-    /// 正常执行，返回更新后的状态
+    /// Normal execution; returns the updated state
     State(JsonValue),
-    /// I/O 请求信号（立即传播，不继续执行后续指令）
+    /// I/O request signal (propagates immediately; subsequent instructions are not executed)
     IoRequired {
-        /// I/O 类型（如 "call_external"、"query_db"）
+        /// I/O type (e.g. "call_external", "query_db")
         io_type: String,
-        /// I/O 请求参数（路径引用已解析为具体值）
+        /// I/O request parameters (path references resolved to concrete values)
         params: JsonValue,
     },
-    /// 强制中断信号（`enforce` 原语命中，回归验证）
+    /// Enforcement stop signal (`enforce` primitive hit, regression check)
     ///
-    /// 纯信号：立即向上传播，不携带状态；状态转换层据此返回
-    /// `TransitionResult::Halted`（违规指令被拒，此前状态修改随
-    /// 半成品纪律一并丢弃）。与 `IoRequired` 同为传播即停语义。
+    /// Pure signal: propagates upward immediately and carries no state; on this
+    /// signal the transition layer returns `TransitionResult::Halted` (the
+    /// violating instruction is rejected, and prior state modifications are
+    /// discarded along with the partial-work discipline). Shares the
+    /// propagate-and-stop semantics of `IoRequired`.
     Halted {
-        /// 违规说明（enforce params.reason，供 Violation 事实审计回显）
+        /// Violation description (enforce params.reason, echoed by the Violation fact audit)
         reason: String,
     },
 }
 
-/// 执行一条元指令，返回执行结果
+/// Executes one meta instruction and returns the result
 ///
-/// 独立入口：每次调用获得满额执行预算（`MAX_TOTAL_META_INSTRUCTIONS`）。
-/// 状态转换层（`execute_transition`）使用 [`execute_meta_instruction_budgeted`]
-/// 在整棵规则树上共享单一预算。
+/// Standalone entry point: every call receives a full execution budget
+/// (`MAX_TOTAL_META_INSTRUCTIONS`). The transition layer (`execute_transition`)
+/// uses [`execute_meta_instruction_budgeted`] to share a single budget across the
+/// whole rule tree.
 pub fn execute_meta_instruction(
     instr: &JsonValue,
     state: JsonValue,
@@ -97,37 +106,44 @@ pub fn execute_meta_instruction(
     )
 }
 
-/// 执行一条元指令（受共享预算约束，M6 终止性宽度防线）
+/// Executes one meta instruction (bound by the shared budget; M6 termination width defense)
 ///
-/// 每执行一条指令（含 branch 的子指令递归）消耗 1 个预算单位；
-/// 预算耗尽返回 `TooManyExecutedInstructions`。
+/// Every executed instruction (including branch's sub-instruction recursion)
+/// consumes 1 budget unit; budget exhaustion returns `TooManyExecutedInstructions`.
 ///
-/// # 命中归因（结构命中口径）
+/// # Hit attribution (structural-hit semantics)
 ///
-/// `hit_out` 在执行成功时写入该条指令是否**结构命中**：
-/// - 直接指令（set）：执行成功即命中；
+/// On successful execution `hit_out` records whether this instruction was a
+/// **structural hit**:
+/// - Direct instruction (`set`): successful execution counts as a hit;
 /// - `push`: hit only when the enqueued list is non-empty — an empty push
 ///   is a no-effect path (aligned with the empty-branch rule);
-/// - `io_request`：产生信号即命中；
-/// - `branch`：所选分支（on_true/on_false）**存在且非空**即命中——
-///   空数组或缺失分支不命中（无效果路径）。
+/// - `io_request`: emitting the signal counts as a hit;
+/// - `branch`: a hit when the selected branch (on_true/on_false) **exists and is
+///   non-empty** — an empty array or missing branch does not hit (no-effect path).
 ///
-/// 口径为**结构命中**而非副作用命中：与值是否实际变化无关（幂等重放
-/// 如 `set` 同值仍算命中），判定稳定且零状态对比开销。调用方在
-/// `Err` 返回时不得采信 `hit_out`（未定义）。递归子指令的命中
-/// 不计入顶层规则（命中粒度 = 顶层规则级，见 `TransitionResult`）。
+/// The semantics are **structural hit**, not side-effect hit: whether the value
+/// actually changed is irrelevant (an idempotent replay such as `set` with the same
+/// value still hits); the verdict is stable with zero state-comparison overhead.
+/// Callers must not trust `hit_out` when `Err` is returned (undefined). Hits of
+/// recursive sub-instructions do not count toward the top-level rule (hit
+/// granularity = top-level rule, see `TransitionResult`).
 ///
-/// # 域判定归因（专项-20261001 方案 2' v4，R1/R2 纪律）
+/// # Domain-evaluation attribution (internal special project, plan 2' v4; R1/R2 discipline)
 ///
-/// `domain_attr_out` 在 branch/enforce 的域求值成功后写入三态归因
-/// （`DomainAttribution`：`DomainOutcome` 含 Missing 分类 + `on_missing`
-/// 声明值）；其余指令类型不写入（保持 `None`）。
-/// - **R1 归因不回灌执行**：branch 走向仅由投影 bool（`Sat → true`，其余
-///   `→ false`）+ 规则文本 `on_missing` 静态声明决定；归因仅作审计用途。
-/// - **R2 半成品纪律**：`IoRequired`/`Halted` 不携带 `rule_hits`（转换层
-///   既有契约），中途归因同样不随半成品交付，以收敛后的重放结果为准。
-/// - 调用方在 `Err` 返回时不得采信 `domain_attr_out`（未定义）。
-/// - 递归子指令的域归因不计入顶层规则（同命中粒度：顶层规则级）。
+/// After a successful domain evaluation in branch/enforce, `domain_attr_out` is
+/// written with the three-valued attribution (`DomainAttribution`: `DomainOutcome`
+/// with Missing classification + the declared `on_missing` value); other
+/// instruction types leave it untouched (stays `None`).
+/// - **R1 attribution does not feed back into execution**: the branch direction is
+///   decided solely by the projected bool (`Sat → true`, else `→ false`) plus the
+///   rule text's static `on_missing` declaration; attribution is audit-only.
+/// - **R2 partial-work discipline**: `IoRequired`/`Halted` carry no `rule_hits`
+///   (existing transition-layer contract); mid-flight attribution likewise does not
+///   ship with partial work — the converged replay result is authoritative.
+/// - Callers must not trust `domain_attr_out` when `Err` is returned (undefined).
+/// - Domain attribution of recursive sub-instructions does not count toward the
+///   top-level rule (same hit granularity: top-level rule).
 pub(crate) fn execute_meta_instruction_budgeted(
     instr: &JsonValue,
     state: JsonValue,
@@ -137,7 +153,8 @@ pub(crate) fn execute_meta_instruction_budgeted(
     domain_attr_out: &mut Option<DomainAttribution>,
     limits: &EnvelopeLimits,
 ) -> Result<MetaInstructionResult, TcbError> {
-    // 预算检查：先扣减后执行（失败指令同样计入，防止用错误路径消耗无界资源）
+    // Budget check: decrement first, then execute (failing instructions are charged
+    // too, so the error path cannot consume unbounded resources)
     if let Some(next) = budget.checked_sub(1) {
         *budget = next;
     } else {
@@ -169,8 +186,8 @@ pub(crate) fn execute_meta_instruction_budgeted(
         ),
         "io_request" => exec_io_request(instr, state).inspect(|_| *hit_out = true),
         "enforce" => exec_enforce(instr, state, domain_attr_out, limits).inspect(|result| {
-            // 结构命中口径：domain 求值为真（Halted 信号产生）即命中；
-            // 求值为假（noop 继续）不命中。
+            // Structural-hit semantics: a hit when the domain evaluates true (Halted
+            // signal emitted); a false evaluation (noop, continue) is not a hit.
             if matches!(result, MetaInstructionResult::Halted { .. }) {
                 *hit_out = true;
             }
@@ -186,10 +203,11 @@ mod executor_ssot_tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
     use super::*;
 
-    /// SSOT 漂移防线（ / C2）：
-    /// `META_INSTRUCTION_TYPES` 中每个类型都必须被 dispatch 实际处理
-    /// （不得返回 `UnknownMetaInstruction`）——防止白名单比执行器更严，
-    /// 导致消费方（evorule-cli validate）误报合法规则。
+    /// SSOT drift guard (/ C2):
+    /// every type in `META_INSTRUCTION_TYPES` must actually be handled by dispatch
+    /// (must not return `UnknownMetaInstruction`) — prevents the whitelist being
+    /// stricter than the executor, which would make consumers (evorule-cli
+    /// validate) falsely reject valid rules.
     #[test]
     fn test_meta_instruction_types_ssot() {
         assert_eq!(META_INSTRUCTION_TYPES.len(), 5);
@@ -198,17 +216,17 @@ mod executor_ssot_tests {
             if let Err(TcbError::UnknownMetaInstruction { .. }) =
                 execute_meta_instruction(&instr, JsonValue::Null, 0)
             {
-                panic!("META_INSTRUCTION_TYPES 含未实现类型 '{t}'——白名单与 dispatch 漂移");
+                panic!("META_INSTRUCTION_TYPES contains an unimplemented type '{t}' — whitelist drifted from dispatch");
             }
-            // Ok 或其他错误（如缺字段路径）均不算白名单漂移
+            // Ok or other errors (e.g. missing-field paths) do not count as whitelist drift
         }
     }
 }
 
-/// 解析路径或字面值
+/// Resolves a path or a literal value
 ///
-/// 如果值是 `__` 开头的字符串，则视为路径并解析；
-/// 否则作为字面值返回。`field` names the missing-value error so that
+/// If the value is a string starting with `__`, it is treated as a path and
+/// resolved; otherwise it is returned as a literal. `field` names the missing-value error so that
 /// `MissingField` reports the caller's parameter context instead of a
 /// blanket "value" misattribution.
 fn resolve_path_or_literal(
@@ -230,7 +248,7 @@ fn resolve_path_or_literal(
     }
 }
 
-/// 返回 `JsonValue` 的小写类型名，用于错误诊断。
+/// Returns the lowercase type name of a `JsonValue`, for error diagnostics.
 pub(crate) fn json_type_name(v: &JsonValue) -> &'static str {
     match v {
         JsonValue::Null => "null",
@@ -243,32 +261,40 @@ pub(crate) fn json_type_name(v: &JsonValue) -> &'static str {
     }
 }
 
-/// set 元指令：修改 payload 字段（attr 支持数组索引，v0.3.2 起）
+/// `set` meta instruction: modifies a payload field (attr supports array indexing, since v0.3.2)
 ///
-/// attr 的三种写法：
-/// 1. 普通 payload 字段路径（如 `"x"`、`"a.b"`、`"items[0].done"`）：相对
-///    `__exec__.payload` 解析，语法与 domain 读取路径一致（点号 + `[N]` 索引）
-/// 2. 状态路径引用（如 `"__exec__.instruction.params.attr"`）：先解析为字符串，
-///    再作为 payload 字段路径（间接寻址）
-/// 3. 显式 payload 相对路径（如 `"__exec__.payload.__io_results__.call_external"`）：
-///    前缀 `__exec__.payload.` 之后的后缀直接作为 payload 内相对路径，不做状态解析。
-///    用于引用 payload 内以 `__` 开头的字段（否则写法 2 会把它误判为状态根路径）
+/// Three forms of attr:
+/// 1. Ordinary payload field path (e.g. `"x"`, `"a.b"`, `"items[0].done"`): resolved
+///    relative to `__exec__.payload`, same syntax as domain read paths (dots +
+///    `[N]` indexes)
+/// 2. State path reference (e.g. `"__exec__.instruction.params.attr"`): first
+///    resolved to a string, then used as a payload field path (indirect addressing)
+/// 3. Explicit payload-relative path (e.g. `"__exec__.payload.__io_results__.call_external"`):
+///    the suffix after the `__exec__.payload.` prefix is used directly as a
+///    payload-relative path, with no state resolution.
+///    Used to reference fields inside the payload that start with `__` (form 2
+///    would otherwise misjudge them as state-root paths)
 ///
-/// # 索引写入语义（显式优先）
-/// - 中间对象段缺失/null：自动创建空对象（auto-vivification，既有行为）
-/// - 索引段：目标数组**必须已存在**（不隐式创建，数组长度无法从索引推断）；
-///   索引越界报错（不隐式追加，追加须由 push 显式完成）
+/// # Index-write semantics (explicit form takes precedence)
+/// - Missing/null intermediate object segments: an empty object is auto-created
+///   (auto-vivification, existing behavior)
+/// - Index segments: the target array **must already exist** (no implicit creation;
+///   array length cannot be inferred from an index); out-of-bounds indexes error
+///   (no implicit append; appending must be done explicitly via push)
 //
-// 注：本函数有意保持单一函数承载完整路径解析语义分支（三种 attr 写法 +
-// payload 前缀守卫 + 索引写入语义），便于审计路径解析行为；行数超出 clippy
-// 默认阈值（105/100），按 clippy 官方建议用函数级 allow 豁免。
+// Note: this function deliberately stays a single function carrying the complete
+// path-resolution semantic branches (three attr forms + payload prefix guard +
+// index-write semantics) for auditability of path-resolution behavior; its line
+// count exceeds the clippy default threshold (105/100), exempted via a
+// function-level allow per clippy's official guidance.
 #[allow(clippy::too_many_lines)]
 fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbError> {
     let params = instr.get("params").ok_or(TcbError::MissingField {
         field: "params".to_string(),
     })?;
 
-    // attr 支持路径引用；同时支持显式 payload 相对路径（见函数文档注释）
+    // attr supports path references; explicit payload-relative paths are also
+    // supported (see the fn doc comment)
     let attr_raw = params.get("attr").ok_or(TcbError::MissingField {
         field: "attr".to_string(),
     })?;
@@ -285,15 +311,21 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
             })
     };
 
-    // 写侧 attr 禁止 payload. 前缀（方案 a，引擎级运行时守卫）：
-    // attr 相对 __exec__.payload 解析，带 payload. 前缀会双重嵌套写入
-    // payload.payload.*（静默失败——不报错但写到错误位置，读者永远 miss，
-    // 实证：种子元规则哨兵自读不到自身状态标记恒违规）。
-    // schema 门禁（payload_attr_path）在加载/提交期已拒；此处兜底覆盖
-    // 状态引用间接产生的前缀与绕过门禁的执行入口。
-    // 豁免：__exec__.payload. 显式全形式剥离后的后缀不再守卫——作者显式锚定
-    // payload 根（如 __exec__.payload.payload.deep 写 payload 内同名子字段）
-    // 是意图明确的合法写法；schema 侧 not.pattern 只匹配裸串，与此一致。
+    // Write-side attr must not carry a `payload.` prefix (plan a, engine-level
+    // runtime guard):
+    // attr is resolved relative to __exec__.payload; a `payload.` prefix would
+    // double-nest the write into payload.payload.* (silent failure — no error, but
+    // written to the wrong location, which readers can never find; proven: a seed
+    // meta-rule sentinel could never read its own state flag and stayed perpetually
+    // in violation).
+    // The schema gate (payload_attr_path) already rejects this at load/commit time;
+    // this check is the backstop covering prefixes produced indirectly via state
+    // references and execution entry points that bypass the gate.
+    // Exemption: after the explicit full form __exec__.payload. is stripped, the
+    // suffix is no longer guarded — an author explicitly anchoring the payload root
+    // (e.g. __exec__.payload.payload.deep to write a same-named subfield inside the
+    // payload) is an intent-clear legal form; the schema-side not.pattern matches
+    // bare strings only, consistent with this.
     let attr: String = match attr_raw.as_str() {
         Some(raw) => match raw.strip_prefix("__exec__.payload.") {
             Some(suffix) => suffix.to_string(),
@@ -302,10 +334,12 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
                 if resolved.starts_with("payload.") {
                     return Err(TcbError::PathResolutionFailed {
                         path: resolved,
-                        reason: "写侧 attr 禁止以 payload. 开头：attr 相对 __exec__.payload \
-                                 解析，带前缀会双重嵌套写入 payload.payload.*。请直接写 \
-                                 payload 内相对路径（如 meta_guard.cleared_for_move），\
-                                 真需写 payload 内同名子字段时用 __exec__.payload. 显式全形式"
+                        reason: "write-side attr must not start with `payload.`: attr is \
+                                 resolved relative to __exec__.payload, so a `payload.` prefix \
+                                 would double-nest the write into payload.payload.*. Write the \
+                                 path relative to the payload instead (e.g. \
+                                 meta_guard.cleared_for_move); to write a same-named subfield \
+                                 inside the payload, use the explicit full form __exec__.payload."
                             .to_string(),
                     });
                 }
@@ -317,10 +351,12 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
             if resolved.starts_with("payload.") {
                 return Err(TcbError::PathResolutionFailed {
                     path: resolved,
-                    reason: "写侧 attr 禁止以 payload. 开头：attr 相对 __exec__.payload 解析，\
-                             带前缀会双重嵌套写入 payload.payload.*。请直接写 \
-                             payload 内相对路径（如 meta_guard.cleared_for_move），\
-                             真需写 payload 内同名子字段时用 __exec__.payload. 显式全形式"
+                    reason: "write-side attr must not start with `payload.`: attr is resolved \
+                             relative to __exec__.payload, so a `payload.` prefix would \
+                             double-nest the write into payload.payload.*. Write the path \
+                             relative to the payload instead (e.g. meta_guard.cleared_for_move); \
+                             to write a same-named subfield inside the payload, use the explicit \
+                             full form __exec__.payload."
                         .to_string(),
                 });
             }
@@ -338,7 +374,8 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
 
     let value = resolve_path_or_literal(&state, params.get("value"), "value")?;
 
-    // 解析 attr 路径为段序列（支持字段访问与数组索引，语法与 domain 读取路径一致）
+    // Parse the attr path into a segment list (field access and array indexes
+    // supported; same syntax as domain read paths)
     let segments = parse_path_segments(&attr).ok_or_else(|| TcbError::PathResolutionFailed {
         path: attr.to_string(),
         reason: "invalid path syntax (empty segment or malformed index)".to_string(),
@@ -350,7 +387,7 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
         });
     }
 
-    // 获取 __exec__.payload 根节点
+    // Get the __exec__.payload root node
     let payload = resolve_path_mut(&mut state, "__exec__.payload").ok_or_else(|| {
         TcbError::PathResolutionFailed {
             path: "__exec__.payload".to_string(),
@@ -364,8 +401,9 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
         WriteSlot::Field(obj, name) => obj
             .get(name.as_str())
             .cloned()
-            // null ≡ 已清除/不存在 ≡ 算术起点 0（L7：与缺失字段、
-            // domain.exists 的 null 哲学对齐；operation=set 时 current 被丢弃，不受影响）
+            // null ≡ cleared/absent ≡ arithmetic origin 0 (L7: aligned with the
+            // missing-field and domain.exists null philosophy; with operation=set
+            // `current` is discarded, unaffected)
             .map(|v| match v {
                 JsonValue::Null => JsonValue::Integer(0),
                 other => other,
@@ -403,18 +441,22 @@ fn exec_set(instr: &JsonValue, mut state: JsonValue) -> Result<JsonValue, TcbErr
     Ok(state)
 }
 
-/// 应用 set 运算：`set` 覆盖、`add`/`sub` checked 算术（溢出报 `IntegerOverflow`）
+/// Applies a `set` operation: `set` overwrite, `add`/`sub` checked arithmetic (overflow → `IntegerOverflow`)
 ///
-/// # 架构裁定（2026-10-19）：本枚举刻意不引入 `mul`/`div`
+/// # Architecture ruling (2026-10-19): this enum deliberately does not add `mul`/`div`
 ///
-/// 规则层词汇表止步于加减——加减服务步进语义（计数器/期限/循环推进），
-/// 乘除属计算语义，一律走服务面原生服务（黄金向量+双跑锁定，正确性
-/// 证明一次、处处受证）。比例/百分比类治理需求由带参数的通用服务
-/// 承担（如 ratio_split）；若某类场景高频出现，演化路径是立法一条
-/// 治理语义的新指令（乘除内化为指令实现并全程入审计），而非向本
-/// 函数追加算术操作码——词汇表每收一个算术词，规则作者就被迫在
-/// 立法文本里手写一段算术。校验面对应枚举：
-/// core/rule_schema/schemas/_shared/v1.0.json 的 operation 字段。
+/// The rule-layer vocabulary stops at add/subtract — add/subtract serves stepping
+/// semantics (counters/deadlines/loop advancement), while multiply/divide are
+/// computation semantics and always go through native services on the service plane
+/// (golden vectors + dual-run locking; correctness proven once, verified
+/// everywhere). Ratio/percentage governance needs are carried by parameterized
+/// general services (e.g. ratio_split); if a scenario class appears frequently, the
+/// evolution path is to legislate a new instruction of governance semantics
+/// (internalizing mul/div into the instruction implementation, fully audited), not
+/// to append arithmetic opcodes to this function — every arithmetic word the
+/// vocabulary admits forces rule authors to hand-write arithmetic in legislative
+/// text. Validation-side counterpart enum: the operation field of
+/// core/rule_schema/schemas/_shared/v1.0.json.
 fn apply_set_operation(
     operation: &str,
     current: JsonValue,
@@ -451,26 +493,29 @@ fn apply_set_operation(
     }
 }
 
-/// attr 下降后的可写位置：对象字段或数组元素槽位
+/// Writable position after descending through attr: an object field or an array element slot
 enum WriteSlot<'a> {
-    /// 对象字段（`&mut ObjectMap`，字段名）
+    /// Object field (`&mut ObjectMap`, field name)
     Field(&'a mut ObjectMap, String),
-    /// 数组元素槽位（`&mut [JsonValue]`，已验证索引）
+    /// Array element slot (`&mut [JsonValue]`, index already validated)
     Index(&'a mut [JsonValue], usize),
 }
 
-/// 沿段序列下降到可写位置（支持数组索引写入）
+/// Descends along the segment list to a writable position (array index writes supported)
 ///
-/// # 下降语义（结构错误显式报错）
+/// # Descent semantics (structural errors fail explicitly)
 ///
-/// - **中间字段段**：缺失或为 null 时自动创建空对象（auto-vivification，
-///   与既有行为一致）；存在但非对象 → 报错。
-///   例外：若下一段是索引段，则缺失/null **不**创建占位对象而是直接报错
-///   （数组长度无法从索引推断，隐式创建会制造语义陷阱）。
-/// - **索引段**：目标数组**必须已存在**（缺失/null → 报错，禁止隐式创建）；
-///   索引越界（`>= len`）→ 报错（禁止稀疏数组与隐式追加，追加须由
-///   push 等显式机制完成）；存在但非数组 → 报错。
-/// - **末段**：返回可写槽位（字段或元素）。
+/// - **Intermediate field segments**: missing or null → an empty object is
+///   auto-created (auto-vivification, consistent with existing behavior); present
+///   but not an object → error.
+///   Exception: if the next segment is an index segment, missing/null does **not**
+///   create a placeholder object but errors directly (array length cannot be
+///   inferred from an index; implicit creation would create a semantic trap).
+/// - **Index segments**: the target array **must already exist** (missing/null →
+///   error, implicit creation banned); an out-of-bounds index (`>= len`) → error
+///   (sparse arrays and implicit append banned; appending must go through explicit
+///   mechanisms such as push); present but not an array → error.
+/// - **Final segment**: returns the writable slot (field or element).
 fn descend_to_write_slot<'a>(
     payload: &'a mut JsonValue,
     segments: &[PathSegment],
@@ -508,15 +553,15 @@ fn descend_to_write_slot<'a>(
     })
 }
 
-/// 单段下降的结果：到达可写槽位，或取得继续下降的下一节点
+/// Result of a single-segment descent: either a writable slot, or the next node to continue descending into
 enum DescendStep<'a> {
-    /// 末段：返回可写槽位
+    /// Final segment: returns the writable slot
     Slot(WriteSlot<'a>),
-    /// 中间段：继续下降的下一节点
+    /// Intermediate segment: the next node to descend into
     Next(&'a mut JsonValue),
 }
 
-/// 处理字段段下降（auto-vivification 规则见 `descend_to_write_slot` 文档）
+/// Handles field-segment descent (auto-vivification rules in the `descend_to_write_slot` docs)
 fn descend_field_segment<'a>(
     current: &'a mut JsonValue,
     name: &str,
@@ -574,7 +619,7 @@ fn descend_field_segment<'a>(
     Ok(DescendStep::Next(next))
 }
 
-/// 处理索引段下降（数组必须已存在、越界报错，规则见 `descend_to_write_slot` 文档）
+/// Handles index-segment descent (arrays must already exist; out-of-bounds errors; rules in the `descend_to_write_slot` docs)
 fn descend_index_segment<'a>(
     current: &'a mut JsonValue,
     opt_field: &Option<String>,
@@ -642,11 +687,12 @@ fn descend_index_segment<'a>(
     Ok(DescendStep::Next(next))
 }
 
-/// 解析 instructions 列表，支持数组元素中的路径引用
+/// Resolves the instructions list, supporting path references inside array elements
 ///
-/// 顶层值如果是路径引用字符串，先解析为数组；
-/// 然后遍历数组元素，如果元素是 `__` 开头的字符串，解析为路径引用。
-/// 路径引用解析为数组时自动展平。
+/// If the top-level value is a path-reference string, it is first resolved to an
+/// array; then each array element is walked — elements that are strings starting
+/// with `__` are resolved as path references.
+/// A path reference resolving to an array is flattened automatically.
 fn resolve_instructions_list(
     state: &JsonValue,
     val: Option<&JsonValue>,
@@ -683,10 +729,10 @@ fn resolve_instructions_list(
     Ok(result)
 }
 
-/// push 元指令：推指令到队列前端
+/// `push` meta instruction: prepends instructions to the queue front
 ///
-/// 空指令列表视为 no-op，不返回错误（empty push also does **not** hit:
-/// a no-effect path, aligned with the empty-branch rule）。
+/// An empty instruction list is a no-op and returns no error (an empty push also
+/// does **not** hit: a no-effect path, aligned with the empty-branch rule).
 fn exec_push(
     instr: &JsonValue,
     mut state: JsonValue,
@@ -699,7 +745,7 @@ fn exec_push(
     let instructions =
         resolve_instructions_list(&state, params.get("instructions"), "instructions")?;
 
-    // 空指令列表 = no-op（不命中）
+    // Empty instruction list = no-op (no hit)
     if instructions.is_empty() {
         return Ok(state);
     }
@@ -707,19 +753,19 @@ fn exec_push(
     // non-empty push has enqueue effect: structural hit
     *hit_out = true;
 
-    // 获取当前队列切片
+    // Get the current queue slice
     let queue_slice = resolve_path_mut(&mut state, "__exec__.queue")
         .and_then(|v| v.as_array_mut())
         .ok_or_else(|| TcbError::InvalidState {
             reason: "__exec__.queue is missing or not an array".to_string(),
         })?;
 
-    // 构建新队列：新指令在前，旧队列在后
+    // Build the new queue: new instructions first, old queue after
     let mut new_queue = Vec::with_capacity(instructions.len() + queue_slice.len());
     new_queue.extend(instructions);
     new_queue.extend_from_slice(queue_slice);
 
-    // 替换回 state
+    // Write it back into state
     let queue =
         resolve_path_mut(&mut state, "__exec__.queue").ok_or_else(|| TcbError::InvalidState {
             reason: "__exec__.queue disappeared".to_string(),
@@ -730,10 +776,12 @@ fn exec_push(
     Ok(state)
 }
 
-/// branch 元指令：条件执行子指令列表
+/// `branch` meta instruction: conditionally executes a sub-instruction list
 ///
-/// 如果子指令返回 `IoRequired`，立即传播信号，不继续执行后续子指令。
-/// 子指令递归共享外层执行预算（终止性宽度防线）。
+/// If a sub-instruction returns `IoRequired`, the signal propagates immediately and
+/// remaining sub-instructions are not executed.
+/// Sub-instruction recursion shares the outer execution budget (termination width
+/// defense).
 fn exec_branch(
     instr: &JsonValue,
     mut state: JsonValue,
@@ -754,11 +802,15 @@ fn exec_branch(
     })?;
 
     let domain = resolve_path_or_literal(&state, params.get("domain"), "domain")?;
-    // 域结构错误（未知类型/缺字段/超深/结构错误）显式报错，不在 TCB 层静默求值；
-    // on_missing=error 声明的 Missing 同样显式报错（MissingRejected，专项-20261001）
+    // Domain structural errors (unknown type/missing field/too deep/structural
+    // error) fail explicitly; no silent evaluation at the TCB layer. A Missing
+    // declared with on_missing=error also fails explicitly (MissingRejected,
+    // internal special project)
     let outcome = evaluate_domain_outcome_with_limit(&domain, &state, limits.max_domain_depth)?;
 
-    // R1 归因不回灌执行：走向仅由投影 bool 决定，三态归因（含声明值）仅作审计透传
+    // R1 attribution does not feed back into execution: the direction is decided
+    // solely by the projected bool; three-valued attribution (incl. declared value)
+    // passes through for audit only
     let branch_key = if outcome.to_bool() {
         "on_true"
     } else {
@@ -772,14 +824,16 @@ fn exec_branch(
     let branch_instrs = params.get(branch_key).and_then(|v| v.as_array());
 
     if let Some(instrs) = branch_instrs {
-        // 结构命中：所选分支存在且非空即命中；子指令命中不细记
-        // （命中粒度 = 顶层规则级）。空数组/缺失分支 = 无效果路径，不命中。
+        // Structural hit: the selected branch existing and being non-empty is a
+        // hit; sub-instruction hits are not recorded in detail (hit granularity =
+        // top-level rule). Empty array/missing branch = no-effect path, no hit.
         if !instrs.is_empty() {
             *hit_out = true;
         }
         for sub_instr in instrs {
             let mut sub_hit = false;
-            // 子指令的域归因不细记（同命中粒度：顶层规则级），落本地变量丢弃
+            // Sub-instruction domain attribution is not recorded in detail (same
+            // hit granularity: top-level rule); dropped into a local variable
             let mut sub_attr = None;
             let result = execute_meta_instruction_budgeted(
                 sub_instr,
@@ -793,8 +847,9 @@ fn exec_branch(
             match result {
                 MetaInstructionResult::State(new_state) => state = new_state,
                 io_required @ MetaInstructionResult::IoRequired { .. } => return Ok(io_required),
-                // enforce 信号传播即停（回归验证）：branch 子指令内的 enforce
-                // 命中同样中断整个转换（半成品纪律与顶层一致）
+                // enforce signal propagates and stops (regression check): an
+                // enforce hit inside branch sub-instructions likewise aborts the
+                // whole transition (same partial-work discipline as the top level)
                 halted @ MetaInstructionResult::Halted { .. } => return Ok(halted),
             }
         }
@@ -803,25 +858,30 @@ fn exec_branch(
     Ok(MetaInstructionResult::State(state))
 }
 
-/// `enforce` 元指令：元规则强制原语（回归验证，纯机制不存策略）
+/// `enforce` meta instruction: meta-rule enforcement primitive (regression check; pure mechanism, holds no policy)
 ///
-/// # 参数（schema 门禁同口径：domain/reason 必填）
-/// - `domain`：域结构（8 基础域类型，与 branch 的 domain 同构；支持
-///   `__` 路径引用动态域，与 branch 范式一致）
-/// - `reason`：违规说明字符串——命中时随 Halted 信号透传，供反应器
-///   系统独占发射的 Violation 事实审计回显（必填：无 reason 的拦截
-///   不可审计，不允许静默强制）
+/// # Parameters (same criteria as the schema gate: domain/reason required)
+/// - `domain`: domain structure (the 8 basic domain types, isomorphic to branch's
+///   domain; `__` path references to dynamic domains supported, matching the
+///   branch paradigm)
+/// - `reason`: violation description string — passed through with the Halted
+///   signal on hit, for the Violation fact audit echoed by the reactor system's
+///   exclusive emitter (required: an interception without a reason is unauditable;
+///   silent enforcement is not allowed)
 ///
-/// # 语义
-/// - domain 求值 `Ok(true)` → `Halted { reason }`：状态转换层立即中断
-///   剩余 transform，违规指令被拒（此前状态修改随半成品一并丢弃）；
-/// - domain 求值 `Ok(false)` → `State(state)` noop 继续（不命中）；
-/// - domain 结构错误（未知类型/缺字段/超深）→ 显式 `TcbError`
-///   （fail-fast，与 branch 同语义：规则结构错误不允许静默求值）。
+/// # Semantics
+/// - domain evaluates `Ok(true)` → `Halted { reason }`: the transition layer
+///   immediately aborts the remaining transforms; the violating instruction is
+///   rejected (prior state modifications are discarded with the partial work);
+/// - domain evaluates `Ok(false)` → `State(state)` noop continues (no hit);
+/// - domain structural error (unknown type/missing field/too deep) → explicit
+///   `TcbError` (fail-fast, same semantics as branch: rule structural errors are
+///   never silently evaluated).
 ///
-/// # 层级边界（引擎无层级概念）
-/// 本原语不感知 tier——"enforce 仅允许出现在 L2 元规则文件"由 server
-/// 侧装载门禁强制（见 evorule-server tier gate / schema 门禁）。
+/// # Layer boundary (the engine has no tier concept)
+/// This primitive is tier-agnostic — "enforce may appear only in L2 meta-rule
+/// files" is enforced by the server-side load gate (see the evorule-server tier
+/// gate / schema gate).
 fn exec_enforce(
     instr: &JsonValue,
     state: JsonValue,
@@ -833,12 +893,16 @@ fn exec_enforce(
     })?;
 
     let domain = resolve_path_or_literal(&state, params.get("domain"), "domain")?;
-    // 域结构错误（未知类型/缺字段/超深/结构错误）显式报错，不在 TCB 层静默求值；
-    // on_missing=error 声明的 Missing 同样显式报错（MissingRejected，专项-20261001）
+    // Domain structural errors (unknown type/missing field/too deep/structural
+    // error) fail explicitly; no silent evaluation at the TCB layer. A Missing
+    // declared with on_missing=error also fails explicitly (MissingRejected,
+    // internal special project)
     let outcome = evaluate_domain_outcome_with_limit(&domain, &state, limits.max_domain_depth)?;
 
-    // R1 归因不回灌执行：命中与否仅由投影 bool 决定，三态归因（含声明值）仅作审计透传
-    // （Unsat/Missing 不命中也要留归因——「为什么没拦住」的审计答案）
+    // R1 attribution does not feed back into execution: hit or not is decided solely
+    // by the projected bool; three-valued attribution (incl. declared value) passes
+    // through for audit only (Unsat/Missing no-hits also leave attribution — the
+    // audit answer to "why was this not blocked")
     let domain_satisfied = outcome.to_bool();
     *domain_attr_out = Some(DomainAttribution {
         outcome,
@@ -861,19 +925,22 @@ fn exec_enforce(
     })
 }
 
-/// `io_request` 元指令：产生 I/O 请求信号（不修改状态）
+/// `io_request` meta instruction: emits an I/O request signal (no state modification)
 ///
-/// # 参数可选性（显式声明）
+/// # Parameter optionality (explicit declaration)
 ///
-/// - 键名**不带** `?` 后缀（如 `"messages"`）：必选参数。路径引用解析失败
-///   立即报错 `PathResolutionFailed`——拼写错误的路径在根因处暴露，
-///   不再静默吞掉。
-/// - 键名**带** `?` 后缀（如 `"tools?"`）：可选参数。路径引用解析失败时
-///   跳过该参数（业务性缺省），请求参数使用去掉 `?` 的键名（`"tools"`）。
+/// - Key names **without** a `?` suffix (e.g. `"messages"`): required parameters.
+///   A path-reference resolution failure errors immediately with
+///   `PathResolutionFailed` — a mistyped path is exposed at its root cause instead
+///   of being silently swallowed.
+/// - Key names **with** a `?` suffix (e.g. `"tools?"`): optional parameters. On
+///   path-reference resolution failure the parameter is skipped (business-level
+///   default), and the request parameter uses the key name without `?` (`"tools"`).
 ///
-/// 「可选」必须显式声明而非由解析失败隐式推断（审计决策）：
-/// 静默跳过会把拼写错误伪装成「参数未提供」，错误在远离根因的
-/// 上游（外部系统行为异常）才暴露。
+/// "Optional" must be declared explicitly rather than inferred implicitly from
+/// resolution failure (audit decision): silent skipping would disguise typos as
+/// "parameter not provided", and the error would surface only far from the root
+/// cause, upstream (external system behaving abnormally).
 fn exec_io_request(instr: &JsonValue, state: JsonValue) -> Result<MetaInstructionResult, TcbError> {
     let params = instr.get("params").ok_or(TcbError::MissingField {
         field: "params".to_string(),
@@ -887,8 +954,9 @@ fn exec_io_request(instr: &JsonValue, state: JsonValue) -> Result<MetaInstructio
         })?
         .to_string();
 
-    // 构造请求参数：解析所有路径引用
-    // 可选参数必须以 '?' 后缀显式声明；必选参数解析失败立即报错
+    // Build the request parameters: resolve all path references
+    // Optional parameters must be declared explicitly with a '?' suffix; required
+    // parameters error immediately on resolution failure
     let mut request_params = ObjectMap::new();
     if let Some(obj) = params.as_object() {
         for (key, value) in obj.iter() {
@@ -903,9 +971,11 @@ fn exec_io_request(instr: &JsonValue, state: JsonValue) -> Result<MetaInstructio
                 Ok(resolved) => {
                     request_params.insert(param_name.to_string(), resolved);
                 }
-                // 显式声明的可选参数：路径不存在时跳过（业务性缺省）
+                // Explicitly declared optional parameter: skipped when the path
+                // does not exist (business-level default)
                 Err(TcbError::PathResolutionFailed { .. }) if optional => {}
-                // 必选参数路径解析失败：显式报错，不静默吞掉拼写错误
+                // Required parameter path resolution failure: explicit error; typos
+                // are never silently swallowed
                 Err(e) => return Err(e),
             }
         }
@@ -932,7 +1002,7 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
 
-    // ===== 辅助函数 =====
+    // ===== Helpers =====
 
     fn make_exec_state(
         instruction_type: &str,
@@ -982,7 +1052,7 @@ mod tests {
         make_instruction(instr_type, &[("value", JsonValue::Integer(value))])
     }
 
-    // ===== set 测试 =====
+    // ===== set tests =====
 
     #[test]
     fn test_set_add() {
@@ -1044,9 +1114,9 @@ mod tests {
         assert_eq!(value, &JsonValue::string("hello"));
     }
 
-    // ===== 写侧 attr payload. 前缀守卫测试（方案 a）=====
+    // ===== Write-side attr `payload.` prefix guard tests (plan a) =====
 
-    /// 错误形态：attr 带 payload. 前缀 → 显式报错（拒绝双重嵌套静默写歪）
+    /// Error form: attr with a `payload.` prefix → explicit error (rejects silent double-nested miswrites)
     #[test]
     fn test_set_payload_prefix_attr_rejected() {
         let state = make_exec_state("set", make_payload(0), vec![]);
@@ -1067,15 +1137,15 @@ mod tests {
             TcbError::PathResolutionFailed { path, reason } => {
                 assert_eq!(path, "payload.meta_guard.cleared");
                 assert!(
-                    reason.contains("payload.") && reason.contains("双重嵌套"),
-                    "错误原因应含双重嵌套指引: {reason}"
+                    reason.contains("payload.") && reason.contains("double-nest"),
+                    "error reason should point to double nesting: {reason}"
                 );
             }
             other => panic!("expected PathResolutionFailed, got: {other:?}"),
         }
     }
 
-    /// 状态引用间接产生的 payload. 前缀同样被拒（守卫作用于解析后的最终 attr）
+    /// A `payload.` prefix produced indirectly via a state reference is rejected too (the guard applies to the final resolved attr)
     #[test]
     fn test_set_state_ref_attr_resolving_to_payload_prefix_rejected() {
         let mut params = ObjectMap::new();
@@ -1103,11 +1173,11 @@ mod tests {
         let err = exec_set(&instr, state).unwrap_err();
         assert!(
             matches!(err, TcbError::PathResolutionFailed { ref path, .. } if path == "payload.x"),
-            "运行时解析出 payload. 前缀 attr 应被拒: {err:?}"
+            "a runtime-resolved `payload.` prefix attr must be rejected: {err:?}"
         );
     }
 
-    /// 显式全形式 __exec__.payload.x 放行（剥离前缀后写 payload.x）
+    /// The explicit full form __exec__.payload.x passes (writes payload.x after stripping the prefix)
     #[test]
     fn test_set_exec_payload_full_form_ok() {
         let state = make_exec_state("set", make_payload(0), vec![]);
@@ -1128,7 +1198,7 @@ mod tests {
         assert_eq!(payload.get("x"), Some(&JsonValue::Integer(9)));
     }
 
-    /// 显式全形式 __exec__.payload.payload.deep 是写 payload.payload.* 的唯一合法途径
+    /// The explicit full form __exec__.payload.payload.deep is the only legal way to write payload.payload.*
     #[test]
     fn test_set_exec_payload_nested_full_form_ok() {
         let state = make_exec_state("set", make_payload(0), vec![]);
@@ -1149,7 +1219,7 @@ mod tests {
         assert_eq!(nested, &JsonValue::Integer(1));
     }
 
-    /// 裸简写嵌套路径（种子元规则正确形态）不受守卫影响
+    /// Bare shorthand nested paths (the correct form for seed meta-rules) are unaffected by the guard
     #[test]
     fn test_set_bare_shorthand_nested_path_ok() {
         let state = make_exec_state("set", make_payload(0), vec![]);
@@ -1279,7 +1349,7 @@ mod tests {
         assert_eq!(value, &JsonValue::Integer(42));
     }
 
-    // ── M2：attr 数组索引写入 ────────────────────────────────────────────
+    // ── M2: attr array index writes ──────────────────────────────────────────────
 
     fn make_payload_with_items() -> JsonValue {
         // payload.items = [ { done: false }, { done: false } ]
@@ -1304,7 +1374,7 @@ mod tests {
 
     #[test]
     fn test_set_array_index_field_write() {
-        // items[0].done：既有数组元素的字段写入（domain 读取同款路径语法）
+        // items[0].done: field write into an existing array element (same path syntax as domain reads)
         let state = make_exec_state("set", make_payload_with_items(), vec![]);
         let result = exec_set(
             &set_instr("items[0].done", "set", JsonValue::Bool(true)),
@@ -1315,7 +1385,7 @@ mod tests {
             resolve_path(&result, "__exec__.payload.items[0].done"),
             Some(&JsonValue::Bool(true))
         );
-        // 其余元素不受影响
+        // Other elements unaffected
         assert_eq!(
             resolve_path(&result, "__exec__.payload.items[1].done"),
             Some(&JsonValue::Bool(false))
@@ -1324,7 +1394,7 @@ mod tests {
 
     #[test]
     fn test_set_array_index_element_write() {
-        // items[1]：末段索引，替换整个数组元素
+        // items[1]: final-segment index, replaces the whole array element
         let state = make_exec_state("set", make_payload_with_items(), vec![]);
         let replacement = JsonValue::object_from_pairs(&[("done", JsonValue::Bool(true))]);
         let result = exec_set(&set_instr("items[1]", "set", replacement), state).unwrap();
@@ -1340,7 +1410,7 @@ mod tests {
 
     #[test]
     fn test_set_array_index_add_operation() {
-        // items[0].count = 5 + 3：索引槽位上的算术运算
+        // items[0].count = 5 + 3: arithmetic on an index slot
         let item0 = JsonValue::object_from_pairs(&[("count", JsonValue::Integer(5))]);
         let payload = JsonValue::object_from_pairs(&[("items", JsonValue::array(vec![item0]))]);
         let state = make_exec_state("set", payload, vec![]);
@@ -1357,7 +1427,7 @@ mod tests {
 
     #[test]
     fn test_set_array_missing_errors_no_auto_create() {
-        // 数组不存在 → 报错（数组长度无法从索引推断，禁止隐式创建）
+        // Array missing → error (array length cannot be inferred from an index; implicit creation banned)
         let payload = JsonValue::empty_object();
         let state = make_exec_state("set", payload, vec![]);
         let result = exec_set(
@@ -1378,7 +1448,7 @@ mod tests {
 
     #[test]
     fn test_set_array_index_out_of_bounds_errors() {
-        // 索引越界 → 报错（禁止稀疏数组与隐式追加）
+        // Index out of bounds → error (sparse arrays and implicit append banned)
         let state = make_exec_state("set", make_payload_with_items(), vec![]);
         let result = exec_set(
             &set_instr("items[2].done", "set", JsonValue::Bool(true)),
@@ -1395,8 +1465,9 @@ mod tests {
 
     #[test]
     fn test_set_array_index_no_malformed_field_created() {
-        // M2 回归核心：旧实现会把 "items[0]" 当字段名创建畸形键；
-        // 新实现要么成功写入元素、要么显式报错，绝不创建 "items[0]" 字面键
+        // M2 regression core: the old implementation treated "items[0]" as a field
+        // name and created a malformed key; the new implementation either writes the
+        // element or errors explicitly, and never creates the literal "items[0]" key
         let state = make_exec_state("set", make_payload_with_items(), vec![]);
         let result = exec_set(
             &set_instr("items[0].done", "set", JsonValue::Bool(true)),
@@ -1405,16 +1476,22 @@ mod tests {
         .unwrap();
         let items = resolve_path(&result, "__exec__.payload.items").unwrap();
         let arr = items.as_array().unwrap();
-        assert_eq!(arr.len(), 2, "数组长度不变（无追加）");
-        // 确认没有 "items[0]" 畸形键出现在 payload 顶层
+        assert_eq!(arr.len(), 2, "array length unchanged (no append)");
+        // Confirm no "items[0]" malformed key appears at the payload top level
         let payload_obj = resolve_path(&result, "__exec__.payload").unwrap();
-        assert!(payload_obj.get("items[0]").is_none(), "不得创建畸形字段名");
-        assert!(payload_obj.get("items[1]").is_none(), "不得创建畸形字段名");
+        assert!(
+            payload_obj.get("items[0]").is_none(),
+            "malformed field names must not be created"
+        );
+        assert!(
+            payload_obj.get("items[1]").is_none(),
+            "malformed field names must not be created"
+        );
     }
 
     #[test]
     fn test_set_array_index_on_non_array_errors() {
-        // 字段存在但非数组 → 显式报错
+        // Field present but not an array → explicit error
         let payload = JsonValue::object_from_pairs(&[("items", JsonValue::Integer(42))]);
         let state = make_exec_state("set", payload, vec![]);
         let result = exec_set(&set_instr("items[0]", "set", JsonValue::Bool(true)), state);
@@ -1429,8 +1506,9 @@ mod tests {
 
     #[test]
     fn test_set_arithmetic_null_field_treated_as_zero() {
-        // L7 回归：null ≡ 已清除/不存在 ≡ 算术起点 0，
-        // add/sub 不得对 null 字段报 InvalidType（与缺失字段行为对齐）
+        // L7 regression: null ≡ cleared/absent ≡ arithmetic origin 0,
+        // add/sub must not report InvalidType on a null field (aligned with
+        // missing-field behavior)
         let payload = JsonValue::object_from_pairs(&[("x", JsonValue::Null)]);
         let state = make_exec_state("set", payload, vec![]);
 
@@ -1443,7 +1521,8 @@ mod tests {
 
     #[test]
     fn test_set_arithmetic_missing_field_treated_as_zero() {
-        // 对照组：缺失字段 add 从 0 起算（既有行为，防止 L7 修改引入回归）
+        // Control group: add on a missing field starts from 0 (existing behavior;
+        // guards against an L7-change regression)
         let state = make_exec_state("set", JsonValue::empty_object(), vec![]);
         let result = exec_set(&set_instr("x", "sub", JsonValue::Integer(3)), state).unwrap();
         assert_eq!(
@@ -1610,7 +1689,7 @@ mod tests {
         );
     }
 
-    // ===== push 测试 =====
+    // ===== push tests =====
 
     #[test]
     fn test_push_basic() {
@@ -1802,7 +1881,7 @@ mod tests {
         );
     }
 
-    // ===== branch 测试 =====
+    // ===== branch tests =====
 
     #[test]
     fn test_branch_true() {
@@ -2015,7 +2094,7 @@ mod tests {
             ),
         ]);
 
-        // depth = 63 (MAX-1) 应该可以执行（预算充足）
+        // depth = 63 (MAX-1) should execute (budget sufficient)
         let mut budget = MAX_TOTAL_META_INSTRUCTIONS;
         let mut hit = false;
         let result = exec_branch(
@@ -2029,7 +2108,7 @@ mod tests {
         );
         assert!(result.is_ok());
 
-        // depth = 64 (MAX) 应该返回 NestingTooDeep（深度检查先于预算扣减）
+        // depth = 64 (MAX) should return NestingTooDeep (depth check precedes budget decrement)
         let mut budget2 = MAX_TOTAL_META_INSTRUCTIONS;
         let mut hit2 = false;
         let result = exec_branch(
@@ -2044,10 +2123,12 @@ mod tests {
         assert!(matches!(result, Err(TcbError::NestingTooDeep { .. })));
     }
 
-    /// branch 递归深度必须沿调用链逐层传递：65 层嵌套 branch（经
-    /// `depth + 1` 递归传入）在子层触顶报错。直接以 depth=MAX 调
-    /// `exec_branch` 只覆盖门检查本身，测不到传递链——若深度增量丢失
-    /// （恒为同层），超深嵌套会静默执行到底。
+    /// branch recursion depth must be threaded through the call chain: 65 levels of
+    /// nested branches (passed in via `depth + 1` recursion) must trip the depth cap
+    /// at a child level. Calling `exec_branch` directly with depth=MAX only covers
+    /// the gate check itself, not the propagation chain — if the depth increment
+    /// were lost (always the same level), over-deep nesting would silently run to
+    /// completion.
     #[test]
     fn test_branch_recursion_depth_via_nested_branches() {
         let domain = JsonValue::object_from_pairs(&[
@@ -2087,9 +2168,10 @@ mod tests {
         assert!(matches!(result, Err(TcbError::NestingTooDeep { .. })));
     }
 
-    /// `resolve_instructions_list` 元素级路径引用的形态判别：`__` 前缀
-    /// 字符串解析为状态引用，普通字符串必须原样保留（误当路径解析即
-    /// PathResolutionFailed，push 的字面指令清单从此无法携带普通字符串）
+    /// Shape discrimination of element-level path references in `resolve_instructions_list`:
+    /// `__`-prefixed strings resolve as state references; ordinary strings must be
+    /// kept verbatim (parsing them as paths yields PathResolutionFailed, and push's
+    /// literal instruction lists could then never carry ordinary strings)
     #[test]
     fn test_resolve_instructions_list_plain_strings_verbatim() {
         let state = make_exec_state("push", make_payload(7), vec![]);
@@ -2105,7 +2187,7 @@ mod tests {
         );
     }
 
-    // ===== M6 元指令执行总数预算测试 =====
+    // ===== M6 total meta instruction execution budget tests =====
 
     #[test]
     fn test_budget_zero_returns_error() {
@@ -2160,13 +2242,13 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(result, MetaInstructionResult::State(_)));
-        // 单条指令恰好耗尽预算
+        // The single instruction exactly exhausts the budget
         assert_eq!(budget, 0);
     }
 
     #[test]
     fn test_branch_sub_instructions_share_budget() {
-        // branch(1) + 2 个子指令 = 共 3 个预算单位
+        // branch(1) + 2 sub-instructions = 3 budget units in total
         let instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
             (
@@ -2205,7 +2287,8 @@ mod tests {
             ),
         ]);
 
-        // 预算 = 2（不足 3）：应报错，不允许部分执行后静默成功
+        // Budget = 2 (short of 3): must error; partial execution followed by silent
+        // success is not allowed
         let state = make_exec_state("branch", make_payload(0), vec![]);
         let mut budget = 2usize;
         let mut hit = false;
@@ -2223,7 +2306,7 @@ mod tests {
             Err(TcbError::TooManyExecutedInstructions { .. })
         ));
 
-        // 预算 = 3（恰好）：应成功
+        // Budget = 3 (exact): should succeed
         let state = make_exec_state("branch", make_payload(0), vec![]);
         let mut budget = 3usize;
         let mut hit2 = false;
@@ -2280,7 +2363,7 @@ mod tests {
         }
     }
 
-    // ===== io_request 测试 =====
+    // ===== io_request tests =====
 
     #[test]
     fn test_io_request_basic() {
@@ -2422,8 +2505,8 @@ mod tests {
         ]);
         let state = make_exec_state_with_instruction(instruction, make_payload(0), vec![]);
 
-        // messaegs 是拼写错误的必选参数（正确应为 messages）：
-        // 必须显式报错，不得静默跳过
+        // messaegs is a mistyped required parameter (the correct spelling is
+        // messages): it must error explicitly, never silently skip
         let io_instr = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("io_request")),
             (
@@ -2447,7 +2530,8 @@ mod tests {
 
     #[test]
     fn test_io_request_optional_param_key_stripped_when_present() {
-        // 带 '?' 后缀的可选参数在路径存在时：正常包含，且请求键名去掉 '?'
+        // An optional parameter with a '?' suffix, when the path exists: included
+        // normally, with the request key name stripped of '?'
         let instruction = JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("call_external")),
             (
@@ -2483,7 +2567,7 @@ mod tests {
             MetaInstructionResult::IoRequired { params, .. } => {
                 assert_eq!(params.get("prompt").and_then(|v| v.as_str()), Some("hello"));
                 assert_eq!(params.get("temperature"), Some(&JsonValue::Integer(7)));
-                // 键名不带 '?' 后缀
+                // Key name carries no '?' suffix
                 assert!(params.get("temperature?").is_none());
             }
             _ => panic!("expected IoRequired"),
@@ -2721,7 +2805,7 @@ mod tests {
         }
     }
 
-    // ===== 未知元指令测试 =====
+    // ===== Unknown meta instruction tests =====
 
     #[test]
     fn test_unknown_meta_instruction() {
@@ -2746,7 +2830,7 @@ mod tests {
         assert!(matches!(result, Err(TcbError::MissingField { field }) if field == "type"));
     }
 
-    // ===== 字面量指令测试 =====
+    // ===== Literal instruction tests =====
 
     #[test]
     fn test_push_with_literal_object() {
@@ -2801,7 +2885,7 @@ mod tests {
         }
     }
 
-    // ===== regression tests for stock-item o39 fixes (2026-11-19) =====
+    // ===== regression tests for recent stock-item fixes (2026-11-19) =====
 
     #[test]
     fn test_push_empty_list_does_not_hit() {
@@ -2873,7 +2957,7 @@ mod tests {
 
     #[test]
     fn test_branch_missing_domain_reports_field_name() {
-        // o39(2): a missing `domain` now reports field name "domain"
+        // A missing `domain` now reports field name "domain"
         // (previously misattributed as "value")
         let state = make_exec_state("noop", make_payload(0), vec![]);
         let instr = JsonValue::object_from_pairs(&[
@@ -2898,7 +2982,7 @@ mod tests {
 
     #[test]
     fn test_set_array_null_element_adds_from_zero() {
-        // o39(3): null elements in array slots align with field slots —
+        // Null elements in array slots align with field slots —
         // null ≡ arithmetic origin 0
         let payload = JsonValue::object_from_pairs(&[(
             "items",
@@ -2929,7 +3013,7 @@ mod tests {
         use crate::value::{JsonValue, ObjectMap};
         use alloc::vec;
 
-        /// 构建包含 tool_calls 的 llm_response 状态
+        /// Builds an llm_response state containing tool_calls
         fn make_state_with_tool_calls() -> JsonValue {
             let tool_call1 = JsonValue::object_from_pairs(&[
                 ("name", JsonValue::string("get_weather")),
@@ -2946,7 +3030,7 @@ mod tests {
             let tool_calls = JsonValue::array(vec![tool_call1, tool_call2]);
             let mut llm_response = ObjectMap::new();
             llm_response.insert("tool_calls".to_string(), tool_calls);
-            // 添加消息历史
+            // Add message history
             let messages = JsonValue::array(vec![JsonValue::object_from_pairs(&[
                 ("role", JsonValue::string("user")),
                 ("content", JsonValue::string("What's the weather?")),

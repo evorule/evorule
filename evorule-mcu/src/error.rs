@@ -1,57 +1,63 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! MCU 内核错误类型——no_std，所有错误不 panic
+//! MCU kernel error types — no_std, no error ever panics
 
 use alloc::string::String;
 
-/// MCU 内核错误
+/// MCU kernel errors
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McuError {
-    /// 规则包加载/解析失败（postcard 解码或根形状非规则数组）
+    /// Rule pack load/parse failure (postcard decoding or the root shape is
+    /// not a rules array)
     Pack(String),
-    /// JSON 序列化失败（WAL 行构建）
+    /// JSON serialization failure (WAL line construction)
     Serde(String),
-    /// 哈希计算失败（透传 SSOT `HashError` 消息）
+    /// Hash computation failure (passes through the SSOT `HashError` message)
     Hash(String),
-    /// WAL 记录下标越界
+    /// WAL record index out of range
     RecordIndex {
-        /// 请求的下标
+        /// The requested index
         index: usize,
-        /// 实际记录数
+        /// The actual record count
         len: usize,
     },
-    /// 规则触发 `io_request`，IoRequest 事实已入链，run 暂停返回；
-    /// 板侧经 [`crate::io::IoBridge`] 执行后调 `resume_io` 继续
+    /// A rule triggered `io_request`; the IoRequest fact is already on the
+    /// chain and run pauses with this error; the board performs the I/O via
+    /// [`crate::io::IoBridge`] and calls `resume_io` to continue
     IoPaused {
-        /// 已入链的 IoRequest 事实 id
+        /// The on-chain IoRequest fact id
         request_id: u64,
-        /// 请求的 io_type
+        /// The requested io_type
         io_type: String,
     },
-    /// 状态版本计数溢出（u64）
+    /// State version counter overflow (u64)
     VersionOverflow,
-    /// FactId 计数溢出（u64）
+    /// FactId counter overflow (u64)
     FactIdOverflow,
-    /// Flash WAL 环满（fail-visible：审计链不静默丢，等待外部导出/重擦）
+    /// Flash WAL ring full (fail-visible: the audit chain never silently
+    /// drops records; wait for external export/re-erase)
     WalFull,
-    /// Flash 编程违例（目标字节含 0→1 位——编程只允许 1→0）
+    /// Flash program violation (a target byte contains a 0→1 bit —
+    /// programming only allows 1→0)
     FlashProgramViolated {
-        /// 违例的介质偏移
+        /// The medium offset of the violated byte
         offset: usize,
     },
-    /// Flash 读写偏移越界
+    /// Flash read/write offset out of range
     FlashRange {
-        /// 越界的偏移
+        /// The out-of-range offset
         offset: usize,
     },
-    /// WAL 介质内容损坏（恢复扫描 fail-visible：链区出现非法形态）
+    /// WAL medium content corrupted (recovery scan fails visibly: an illegal
+    /// shape was found in the chain region)
     WalCorrupted(String),
-    /// 单条 WAL 行超出页容量（行不跨页，页是写入原子边界）
+    /// A single WAL line exceeds the page capacity (lines never span pages;
+    /// the page is the write atomicity boundary)
     WalRecordTooLarge {
-        /// 行字节数（含 \n）
+        /// Line size in bytes (including \n)
         line_len: usize,
-        /// 页容量
+        /// Page capacity
         page_size: usize,
     },
 }

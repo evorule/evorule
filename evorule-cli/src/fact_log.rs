@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! Fact log 读写（JSONL 格式）
+//! Fact log read/write (JSONL format)
 //!
-//! # 格式
-//! 每行一个 Fact 的 JSON 序列化，使用 `evorule_reactor::wal::fact_to_json`/`fact_from_json`
-//! 进行转换。格式与 tier1 reactor WAL 文件、tier2 auditor stable JSON 一致：
+//! # Format
+//! Each line is the JSON serialization of one Fact, converted via
+//! `evorule_reactor::wal::fact_to_json`/`fact_from_json`. The format matches the
+//! tier1 reactor WAL file and the tier2 auditor stable JSON:
 //!
 //! ```json
 //! {"type":"Command","id":1,"instruction":{"type":"noop"}}
@@ -13,15 +14,17 @@
 //! {"type":"Stable","id":3,"version":1}
 //! ```
 //!
-//! # 设计决策
-//! 不使用 `FactsLog::with_wal`（那是为长驻反应器设计的 `Arc<RwLock>` + WAL writer），
-//! CLI 是 one-shot 执行，用 `Vec<Fact>` + 顺序写更简单。但序列化格式必须用 tier1 wal，
-//! 保证与 tier1 reactor WAL 文件格式互换，与 tier2 auditor 哈希链互通。
+//! # Design decision
+//! Do not use `FactsLog::with_wal` (that is the `Arc<RwLock>` + WAL writer designed
+//! for a long-lived reactor). The CLI is one-shot execution, so `Vec<Fact>` +
+//! sequential writes are simpler. But the serialization format must be the tier1
+//! wal, keeping the format interchangeable with tier1 reactor WAL files and the
+//! hash chain interoperable with the tier2 auditor.
 //!
-//! # 不变量
-//! - `write_facts` 必须用 `evorule_reactor::wal::fact_to_json`，不能手写序列化
-//! - `read_facts` 必须用 `evorule_reactor::wal::fact_from_json`，不能手写反序列化
-//! - 这样 fact.log 可被 tier1 reactor `read_wal` 直接读取，反之亦然
+//! # Invariants
+//! - `write_facts` must use `evorule_reactor::wal::fact_to_json`, never hand-written serialization
+//! - `read_facts` must use `evorule_reactor::wal::fact_from_json`, never hand-written deserialization
+//! - This way fact.log can be read directly by the tier1 reactor `read_wal`, and vice versa
 
 use std::fs;
 use std::path::Path;
@@ -31,14 +34,14 @@ use evorule_reactor::{fact_from_json, fact_to_json, Fact};
 use crate::error::CliError;
 use crate::io_util::write_output;
 
-/// 将 Fact 列表写为 JSONL（每行一个 Fact）
+/// Write a Fact list as JSONL (one Fact per line)
 ///
-/// `output` 为 `None` 时打印到 stdout，为 `Some(path)` 时写入文件。
+/// `output` being `None` prints to stdout; `Some(path)` writes to the file.
 ///
-/// # 序列化路径
+/// # Serialization path
 /// `Fact → evorule_reactor::wal::fact_to_json → serde_json::Value → serde_json::to_string`
 ///
-/// 这样保证 fact.log 格式与 tier1 reactor WAL 文件格式互换。
+/// This keeps the fact.log format interchangeable with the tier1 reactor WAL file format.
 pub fn write_facts(output: Option<&Path>, facts: &[Fact]) -> Result<(), CliError> {
     let lines: Vec<String> = facts
         .iter()
@@ -52,24 +55,25 @@ pub fn write_facts(output: Option<&Path>, facts: &[Fact]) -> Result<(), CliError
     write_output(output, &content)
 }
 
-/// 从 JSONL 文件读取 Fact 列表
+/// Read a Fact list from a JSONL file
 ///
-/// 每行一个 Fact 的 JSON 序列化。空行跳过，非 JSON 行报错。
+/// Each line is the JSON serialization of one Fact. Empty lines are skipped;
+/// non-JSON lines are errors.
 ///
-/// # 反序列化路径
+/// # Deserialization path
 /// `serde_json::from_str → serde_json::Value → evorule_reactor::wal::fact_from_json → Fact`
 ///
-/// # 错误
-/// - `Io`：文件读取失败
-/// - `Json`：JSON 解析失败（行号通过 `FactLogParse` 携带）
-/// - `Wal`：`fact_from_json` 失败（字段缺失/类型不匹配/未知 fact type）
-/// - `FactLogParse`：行号 + 原因
+/// # Errors
+/// - `Io`: failed to read the file
+/// - `Json`: JSON parse failure (line number carried via `FactLogParse`)
+/// - `Wal`: `fact_from_json` failure (missing field / type mismatch / unknown fact type)
+/// - `FactLogParse`: line number + reason
 pub fn read_facts(path: &Path) -> Result<Vec<Fact>, CliError> {
     let content = fs::read_to_string(path)?;
     parse_facts(&content)
 }
 
-/// 解析 JSONL 字符串为 Fact 列表（内部函数，便于测试）
+/// Parse a JSONL string into a Fact list (internal function, for testability)
 fn parse_facts(content: &str) -> Result<Vec<Fact>, CliError> {
     let mut facts = Vec::new();
     for (idx, line) in content.lines().enumerate() {
@@ -117,14 +121,14 @@ mod tests {
             },
         ];
 
-        // 写入临时文件
+        // Write to a temporary file
         let tmp = std::env::temp_dir().join(format!(
             "evorule-cli-factlog-roundtrip-{}.jsonl",
             std::process::id()
         ));
         write_facts(Some(&tmp), &facts).unwrap();
 
-        // 读回验证
+        // Read back and verify
         let read_back = read_facts(&tmp).unwrap();
         assert_eq!(read_back.len(), facts.len());
         assert_eq!(read_back, facts);
@@ -138,15 +142,15 @@ mod tests {
             id: FactId(1),
             version: 1,
         }];
-        // stdout 写入应成功（None 路径）
+        // Writing to stdout should succeed (None path)
         let result = write_facts(None, &facts);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_read_facts_skips_empty_lines() {
-        // 旧格式（≤0.3.x 含 final_snapshot）字符串兼作向后兼容解析测试：
-        // fact_from_json 容错忽略 final_snapshot，version 兜底 0（）
+        // Old format (≤0.3.x with final_snapshot) string doubles as a backward-compatibility parsing test:
+        // fact_from_json tolerantly ignores final_snapshot, version falls back to 0
         let content = "{\"type\":\"Stable\",\"id\":1,\"final_snapshot\":{}}\n\n\n{\"type\":\"Stable\",\"id\":2,\"version\":1}\n";
         let facts = parse_facts(content).unwrap();
         assert_eq!(facts.len(), 2);
@@ -177,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_fact_log_format_matches_tier1_wal() {
-        // 验证 fact.log 首行格式与 tier1 reactor WAL 一致
+        // Verify the fact.log first-line format matches the tier1 reactor WAL
         let fact = Fact::Command {
             id: FactId(1),
             instruction: JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))]),

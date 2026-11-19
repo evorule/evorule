@@ -1,139 +1,139 @@
-# EvoRule 规则分类体系
+# EvoRule Rule Taxonomy
 
-> **版本**: v1.0
-> **最后更新**: 2026-08-18
-> **目标**: 明确区分不同层次的规则，消除术语混淆
-
----
-
-## 1. 问题背景
-
-EvoRule 生态中存在多种规则，但都模糊地称为"规则"：
-
-- `core_eval.json` 中的 transform 规则
-- `rules/*.json` 中的业务规则
-- Rust 代码中的硬编码规则
-- 运行时动态生成的规则
-
-这种模糊带来的问题：
-1. 设计时容易混淆不同类型规则的职责边界
-2. 实施时容易错误地将项目方规则当作系统规则处理
-3. 维护时难以理解规则的来源、用途和修改权限
-4. 检测逻辑中无法正确区分"规则结构定义了指令过滤"和"规则实际处理了当前指令"
+> **Version**: v1.0
+> **Last updated**: 2026-08-18
+> **Goal**: clearly distinguish rules at different layers and eliminate terminological confusion
 
 ---
 
-## 2. 规则分类体系
+## 1. Background
 
-### 2.1 四层规则架构
+Multiple kinds of rules exist in the EvoRule ecosystem, but they are all loosely called "rules":
+
+- transform rules in `core_eval.json`
+- business rules in `rules/*.json`
+- hardcoded rules in Rust code
+- rules dynamically generated at runtime
+
+This ambiguity causes problems:
+1. At design time it is easy to confuse the responsibility boundaries of different rule types
+2. At implementation time it is easy to mistakenly treat project-party rules as system rules
+3. At maintenance time it is hard to understand a rule's source, purpose and modification permission
+4. In detection logic it is impossible to correctly distinguish "the rule's structure defines instruction filtering" from "the rule actually processed the current instruction"
+
+---
+
+## 2. Rule Taxonomy
+
+### 2.1 Four-layer rule architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    应用层 (evorule-server)                    │
+│                    Application layer (evorule-server)        │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  项目方规则 (User Rules)                              │    │
-│  │  - 文件: rules/*.json                               │    │
-│  │  - 可热重载                                         │    │
-│  │  - 定义: 具体业务如何响应指令                        │    │
+│  │  Project-party rules (User Rules)                    │    │
+│  │  - file: rules/*.json                               │    │
+│  │  - hot-reloadable                                   │    │
+│  │  - defines: how concrete business responds to instructions  │    │
 │  └─────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
-                              │ 指令 + payload
+                              │ instruction + payload
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              内核层 (evorule-tcb + evorule-reactor)           │
+│              Kernel layer (evorule-tcb + evorule-reactor)    │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  业务规则 (Business Rules)                          │    │
-│  │  - 运行时动态生成                                   │    │
-│  │  - 来源: 项目方规则 + 指令参数 + payload               │    │
-│  │  - 作用: 动态决策 + 数据驱动                        │    │
+│  │  Business Rules                                     │    │
+│  │  - dynamically generated at runtime                 │    │
+│  │  - source: project-party rules + instruction params + payload    │    │
+│  │  - role: dynamic decision + data driven             │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                              │                              │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  宪法规则 (Constitution Rules)                      │    │
-│  │  - 文件: core_eval.json                             │    │
-│  │  - 不可热重载（TCB 启动时加载）                      │    │
-│  │  - 定义: 内核支持的基础指令处理逻辑                  │    │
-│  │  - 示例: increment, set, while_loop 等              │    │
+│  │  Constitution Rules                                 │    │
+│  │  - file: core_eval.json                             │    │
+│  │  - not hot-reloadable (loaded at TCB startup)       │    │
+│  │  - defines: basic instruction handling logic supported by the kernel │    │
+│  │  - examples: increment, set, while_loop, etc.       │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                              │                              │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  系统规则 (System Rules)                            │    │
-│  │  - 硬编码在 Rust 代码中                              │    │
-│  │  - 不可配置                                         │    │
-│  │  - 定义: TCB 的运行时约束和检测逻辑                 │    │
-│  │  - 示例: noop 豁免、max_transform_rules、Ignored 检测│    │
+│  │  System Rules                                       │    │
+│  │  - hardcoded in Rust code                           │    │
+│  │  - not configurable                                 │    │
+│  │  - defines: runtime constraints and detection logic of the TCB │    │
+│  │  - examples: noop exemption, max_transform_rules, Ignored detection │    │
 │  └─────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 各层规则详细定义
+### 2.2 Detailed definition of each layer
 
-#### 第一层：系统规则 (System Rules)
+#### Layer 1: System Rules
 
-**定义**：
-- 硬编码在 TCB Rust 代码中的运行时约束和检测逻辑
-- 不可配置，随 TCB 版本变化
-- 不属于"数据"，而是"行为约束"
+**Definition**:
+- runtime constraints and detection logic hardcoded in TCB Rust code
+- not configurable; changes with the TCB version
+- not "data", but "behavioral constraints"
 
-**示例**：
+**Examples**:
 ```rust
-// 系统规则 1: noop 指令豁免（不报告 Ignored）
-// transition.rs 中的检测逻辑
+// System rule 1: noop instruction exemption (does not report Ignored)
+// detection logic in transition.rs
 
-// 系统规则 2: max_transform_rules 约束（每条 transform 最多 N 条规则）
-// transition.rs 中的校验逻辑
+// System rule 2: max_transform_rules constraint (at most N rules per transform)
+// validation logic in transition.rs
 
-// 系统规则 3: Ignored 检测逻辑
-// transition.rs 中的 has_matching_business_rule 检测
+// System rule 3: Ignored detection logic
+// has_matching_business_rule detection in transition.rs
 ```
 
-**修改权限**：仅 TCB 核心开发者可修改
+**Modification permission**: only TCB core developers may modify
 
-**当前代码位置**：
-- `transition.rs` - `execute_transition()` 函数中的约束逻辑
-- `transition.rs` - `has_matching_business_rule` 检测逻辑
+**Current code location**:
+- `transition.rs` - constraint logic in the `execute_transition()` function
+- `transition.rs` - `has_matching_business_rule` detection logic
 
 ---
 
-#### 第二层：宪法规则 (Constitution Rules)
+#### Layer 2: Constitution Rules
 
-**定义**：
-- 存储在 `core_eval.json` 中的 JSON 规则
-- TCB 启动时加载，运行时不可热重载
-- 定义内核支持的所有基础指令处理逻辑
-- 具有系统约束力，项目方必须遵守
+**Definition**:
+- JSON rules stored in `core_eval.json`
+- loaded at TCB startup, not hot-reloadable at runtime
+- defines all basic instruction handling logic supported by the kernel
+- has system-level binding force; project parties must comply
 
-**当前定义的指令**：
-| 指令类型 | 处理逻辑 | 说明 |
+**Currently defined instructions**:
+| Instruction type | Handling logic | Description |
 |---------|---------|------|
-| `increment` | set(attr, "add", delta) | 原子累加 |
-| `decrement` | set(attr, "sub", delta) | 原子递减 |
-| `set` | set(attr, "set", value) | 覆盖赋值 |
-| `sequence` | push(instructions) | 顺序执行 |
-| `conditional` | branch(domain, then, else) | 条件分支 |
-| `while_loop` | branch(condition, [body, self]) | 循环执行 |
-| `call_external` | branch(exists, ...) / io_request | 外部调用 (ReAct) |
-| `call_service` | branch(exists, ...) / io_request | 服务调用 (ReAct；v0.6.0 起多轮编排归应用层) |
-| `all([])` | noop (空操作) | 兜底规则 |
+| `increment` | set(attr, "add", delta) | atomic increment |
+| `decrement` | set(attr, "sub", delta) | atomic decrement |
+| `set` | set(attr, "set", value) | overwrite assignment |
+| `sequence` | push(instructions) | sequential execution |
+| `conditional` | branch(domain, then, else) | conditional branch |
+| `while_loop` | branch(condition, [body, self]) | loop execution |
+| `call_external` | branch(exists, ...) / io_request | external call (ReAct) |
+| `call_service` | branch(exists, ...) / io_request | service call (ReAct; as of v0.6.0 multi-round orchestration moved to the application layer) |
+| `all([])` | noop (empty operation) | fallback rule |
 
-**修改权限**：TCB 核心开发者可修改（升级版本时）
+**Modification permission**: TCB core developers may modify (when upgrading the version)
 
-**当前文件位置**：
-- `evorule-tcb/core_eval.json` - `transform` 数组
+**Current file location**:
+- `evorule-tcb/core_eval.json` - the `transform` array
 
 ---
 
-#### 第三层：业务规则 (Business Rules)
+#### Layer 3: Business Rules
 
-**定义**：
-- 运行时动态生成的规则
-- 由项目方规则 + 指令参数 + payload 组合而成
-- 动态决策，数据驱动
-- TCB 执行这些规则，不关心它们的来源
+**Definition**:
+- rules dynamically generated at runtime
+- composed from project-party rules + instruction parameters + payload
+- dynamic decision-making, data-driven
+- the TCB executes these rules and does not care about their origin
 
-**示例**：
+**Example**:
 ```json
-// 运行时动态生成的业务规则（由应用层生成后提交给 TCB）
+// business rule dynamically generated at runtime (generated by the application layer and submitted to the TCB)
 {
   "type": "branch",
   "params": {
@@ -152,23 +152,23 @@ EvoRule 生态中存在多种规则，但都模糊地称为"规则"：
 }
 ```
 
-**修改权限**：应用层代码生成，项目方规则控制其结构
+**Modification permission**: generated by application-layer code; the project-party rules control its structure
 
-**当前涉及代码**：
-- `evorule-reactor/src/reactor.rs` - 接收业务规则并提交给 TCB
-- 应用层 - 生成业务规则的逻辑
+**Currently involved code**:
+- `evorule-reactor/src/reactor.rs` - receives business rules and submits them to the TCB
+- application layer - logic that generates business rules
 
 ---
 
-#### 第四层：项目方规则 (User Rules)
+#### Layer 4: Project-party Rules (User Rules)
 
-**定义**：
-- 存储在 `rules/*.json` 中的 JSON 规则
-- 可热重载，运行时可修改
-- 定义具体业务如何响应指令
-- 面向业务分析师，无需编程知识
+**Definition**:
+- JSON rules stored in `rules/*.json`
+- hot-reloadable, modifiable at runtime
+- defines how concrete business responds to instructions
+- aimed at business analysts, no programming knowledge required
 
-**示例**：
+**Example**:
 ```json
 // rules/counter.json
 {
@@ -188,216 +188,216 @@ EvoRule 生态中存在多种规则，但都模糊地称为"规则"：
 }
 ```
 
-**修改权限**：业务分析师可修改
+**Modification permission**: business analysts may modify
 
-**当前文件位置**：
+**Current file location**:
 - `evorule-server/resources/rules/*.json`
 
 ---
 
-## 3. 术语规范
+## 3. Terminology conventions
 
-### 3.1 术语对照表
+### 3.1 Terminology mapping table
 
-| 术语 | 英文 | 中文 | 使用场景 |
-|------|------|------|---------|
-| 系统规则 | System Rules | 系统规则 | 讨论 TCB 硬编码行为时使用 |
-| 宪法规则 | Constitution Rules | 宪法规则 | 讨论 core_eval.json 时使用 |
-| 业务规则 | Business Rules | 业务规则 | 讨论运行时动态规则时使用 |
-| 项目方规则 | User Rules | 项目方规则 | 讨论 rules/*.json 时使用 |
-| 指令 | Instruction | 指令 | 讨论 TCB 接收的命令时使用 |
-| 转换 | Transition | 转换 | 讨论 execute_transition() 时使用 |
+| Term | Usage context |
+|------|---------|
+| system rules | used when discussing TCB hardcoded behavior |
+| constitution rules | used when discussing core_eval.json |
+| business rules | used when discussing runtime dynamic rules |
+| project-party rules (user rules) | used when discussing rules/*.json |
+| instruction | used when discussing commands received by the TCB |
+| transition | used when discussing execute_transition() |
 
-### 3.2 命名建议
+### 3.2 Naming recommendations
 
-#### 代码变量命名
-
-```rust
-// ❌ 不清晰的命名
-let rule = ...;           // 哪个层的规则？
-let business_rule = ...;  // 不准确，可能是宪法规则
-
-// ✅ 清晰的命名
-let const_rule = ...;     // 宪法规则
-let sys_rule = ...;       // 系统规则（但通常不存在于规则变量中）
-let runtime_rule = ...;   // 运行时业务规则
-let user_rule = ...;      // 项目方规则
-```
-
-#### 函数命名
+#### Code variable naming
 
 ```rust
-// ❌ 不清晰的命名
-fn has_matching_business_rule(...) -> bool  // 实际检查的是宪法规则
+// ❌ unclear naming
+let rule = ...;           // which layer's rule?
+let business_rule = ...;  // inaccurate, could be a constitution rule
 
-// ✅ 清晰的命名
-fn has_matching_constitution_rule(...) -> bool  // 明确检查宪法规则
-fn has_side_effect(...) -> bool  // 检查是否有实际副作用
+// ✅ clear naming
+let const_rule = ...;     // constitution rule
+let sys_rule = ...;       // system rule (but usually not present in rule variables)
+let runtime_rule = ...;   // runtime business rule
+let user_rule = ...;      // project-party rule
 ```
 
-### 3.3 文档命名
+#### Function naming
 
-在文档和注释中明确标识规则层次：
+```rust
+// ❌ unclear naming
+fn has_matching_business_rule(...) -> bool  // actually checks constitution rules
+
+// ✅ clear naming
+fn has_matching_constitution_rule(...) -> bool  // explicitly checks constitution rules
+fn has_side_effect(...) -> bool  // checks whether there is an actual side effect
+```
+
+### 3.3 Documentation naming
+
+Explicitly identify the rule layer in docs and comments:
 
 ```markdown
-## 规则分类
+## Rule taxonomy
 
-### 宪法规则 (Constitution Rules)
-- 文件: core_eval.json
-- 说明: 定义内核支持的基础指令处理
+### Constitution Rules
+- file: core_eval.json
+- description: defines the basic instruction handling supported by the kernel
 
-### 业务规则 (Business Rules)
-- 来源: 运行时动态生成
-- 说明: 由项目方规则 + 指令参数 + payload 组合而成
+### Business Rules
+- source: dynamically generated at runtime
+- description: composed from project-party rules + instruction params + payload
 ```
 
 ---
 
-## 4. 问题诊断与解决方案
+## 4. Problem diagnosis and solution
 
-### 4.1 当前问题
+### 4.1 Current problems
 
-#### 问题 1：`has_matching_business_rule` 命名不准确
+#### Problem 1: `has_matching_business_rule` naming is inaccurate
 
 ```rust
 // transition.rs#L168-L192
 let has_matching_business_rule = core_eval.iter().any(|rule| {
-    // 这里检查的是 core_eval 中的规则 = 宪法规则
-    // 不是 "业务规则"
+    // what is checked here is the rules in core_eval = constitution rules
+    // not "business rules"
     ...
 });
 ```
 
-**问题**：变量名为 `business_rule`，但实际检查的是宪法规则。这导致：
-- B4 场景：动态 domain 规则（lt）被视为"业务规则"，即使它不匹配当前指令
-- B5 场景：直接规则（set）被视为"业务规则"，不区分指令类型
+**Problem**: the variable is named `business_rule`, but what is actually checked is constitution rules. This leads to:
+- Scenario B4: a dynamic domain rule (lt) is treated as a "business rule" even though it does not match the current instruction
+- Scenario B5: a direct rule (set) is treated as a "business rule", without distinguishing instruction type
 
-#### 问题 2：检测逻辑混淆了两个维度
+#### Problem 2: detection logic conflates two dimensions
 
-当前检测逻辑将两个独立问题混在一起：
-1. **规则是否匹配当前指令类型** → 检查宪法规则的 domain
-2. **执行是否有实际副作用** → 检查 payload/queue 是否变化
+The current detection logic mixes two independent questions:
+1. **Does the rule match the current instruction type** → check the constitution rule's domain
+2. **Does execution have an actual side effect** → check whether payload/queue changed
 
-这两个维度应该独立判断：
-- 规则匹配 + 无副作用 → 合法空操作（如 while_loop condition=false）
-- 规则不匹配 + 有副作用 → 不可能发生
-- 规则不匹配 + 无副作用 → 报告 Ignored
+These two dimensions should be judged independently:
+- rule matches + no side effect → legal no-op (e.g. while_loop condition=false)
+- rule does not match + has side effect → cannot happen
+- rule does not match + no side effect → report Ignored
 
-### 4.2 解决方案
+### 4.2 Solution
 
-#### 方案 1：重命名 + 拆分检测逻辑（已实施 ✅）
+#### Solution 1: rename + split detection logic (implemented ✅)
 
 ```rust
-// 第一步：检查是否存在匹配当前指令的宪法规则
+// Step 1: check whether a constitution rule matching the current instruction exists
 let has_matching_constitution_rule = core_eval.iter().any(|rule| {
     match domain_type {
         "instruction" => {
-            // 精确匹配 instruction_type
+            // exact match on instruction_type
             return expected_type == instruction_type;
         }
-        "all" => false, // all 兜底不是业务规则
+        "all" => false, // the all fallback is not a business rule
         _ => {
-            // 动态 domain（eq, lt, gt, ge, not, exists, has_fields 等）
-            // 视为通用规则，可处理任何指令
+            // dynamic domain (eq, lt, gt, ge, not, exists, has_fields, etc.)
+            // treated as a general rule, can handle any instruction
             return true;
         }
     }
-    // 直接规则（如 set, increment），检查 rule_type 是否匹配 instruction_type
+    // direct rule (e.g. set, increment), check whether rule_type matches instruction_type
     if matches!(rule_type, "set" | "increment" | ...) {
         return rule_type == instruction_type;
     }
 });
 
-// 第二步：执行转换后检查副作用
+// Step 2: check side effects after executing the transition
 let has_side_effect = new_payload != payload || new_queue != queue;
 
-// 第三步：组合判断
+// Step 3: combined judgement
 if !has_matching_constitution_rule && !has_side_effect {
-    // 规则不匹配且无副作用 → 报告 Ignored
+    // rule does not match and no side effect → report Ignored
     return Ok(TransitionResult::Ignored { ... });
 }
 
-// 其他情况都返回 State（包括规则匹配但无副作用的合法空操作）
+// all other cases return State (including legal no-ops where the rule matches but has no side effect)
 Ok(TransitionResult::State { new_payload, new_queue })
 ```
 
-#### 方案 2：已解决的问题分析
+#### Solution 2: analysis of resolved problems
 
-| 场景 | 规则类型 | 旧判定 | 新判定 | 说明 |
+| Scenario | Rule type | Old judgement | New judgement | Description |
 |------|---------|--------|--------|------|
-| B4: lt 规则 + while_loop 指令 | 动态 domain | ✅ 匹配 | ✅ 匹配 | 动态 domain 视为通用规则 |
-| B5: set 规则 + while_loop 指令 | 直接规则 | ✅ 匹配 | ❌ 不匹配 | 直接规则检查 rule_type |
-| B5b: set 规则 + set 指令 | 直接规则 | ✅ 匹配 | ✅ 匹配 | 直接规则精确匹配 |
-| E2: 规则匹配 + on_true 为空 | 宪法规则 | ❌ 可能误判 | ✅ 返回 State | 分离副作用检测 |
+| B4: lt rule + while_loop instruction | dynamic domain | ✅ matches | ✅ matches | dynamic domain treated as a general rule |
+| B5: set rule + while_loop instruction | direct rule | ✅ matches | ❌ does not match | direct rule checks rule_type |
+| B5b: set rule + set instruction | direct rule | ✅ matches | ✅ matches | direct rule exact match |
+| E2: rule matches + on_true empty | constitution rule | ❌ may misjudge | ✅ returns State | separated side-effect detection |
 
-**已解决的问题**：
-1. ✅ 变量名从 `has_matching_business_rule` 改为 `has_matching_constitution_rule`
-2. ✅ 动态 domain 规则视为通用规则（可处理任何指令）
-3. ✅ 直接规则检查 `rule_type == instruction_type`
-4. ✅ 分离"规则匹配"和"副作用检测"两个判断
-
----
-
-## 5. 后续实施计划
-
-### 阶段 1：文档规范（已完成 ✅）
-- [x] 创建规则分类体系文档 `rule_taxonomy.md`
-- [x] 明确系统规则、宪法规则、业务规则、项目方规则四层分类
-- [x] 定义术语规范和命名建议
-
-### 阶段 2：代码重构（已完成 ✅）
-- [x] 重命名 `has_matching_business_rule` → `has_matching_constitution_rule`
-- [x] 改进动态 domain 规则：视为通用规则，可处理任何指令
-- [x] 改进直接规则：检查 `rule_type == instruction_type`
-- [x] 分离"规则匹配"和"副作用检测"逻辑
-- [x] 添加 `has_side_effect` 变量
-
-### 阶段 3：测试更新（已完成 ✅）
-- [x] 更新 B4 场景测试：验证动态 domain 规则作为通用规则
-- [x] 更新 B5 场景测试：验证直接规则的精确匹配
-- [x] 添加 `test_set_direct_rule_matches_set_instruction` 测试
-- [x] 所有测试通过（220 单元测试 + 5 proptest + 21 集成测试）
-
-### 阶段 4：文档完善（进行中）
-- [ ] 在 core_eval.json 中明确标识"宪法规则"
-- [x] 在代码注释中明确规则层次
-- [x] 创建术语对照表（本文件第 3 节）
-
-### 阶段 5：代码审计（可选）
-- [ ] 审计 evorule-reactor 中 `StepOutcome` 枚举的命名
-- [ ] 审计 evorule-server 中业务规则的命名规范
-- [ ] 添加代码文档注释，明确规则层次
+**Resolved problems**:
+1. ✅ variable renamed from `has_matching_business_rule` to `has_matching_constitution_rule`
+2. ✅ dynamic domain rules treated as general rules (can handle any instruction)
+3. ✅ direct rules check `rule_type == instruction_type`
+4. ✅ separated the two judgements "rule match" and "side-effect detection"
 
 ---
 
-## 6. 相关文件
+## 5. Follow-up implementation plan
 
-### 核心定义
-- [README.md](../../README.md) - 项目关键概念定义
-- [core_eval.json](../core_eval.json) - 宪法规则定义
+### Phase 1: documentation conventions (completed ✅)
+- [x] create the rule taxonomy document `rule_taxonomy.md`
+- [x] clarify the four-layer classification: system rules, constitution rules, business rules, project-party rules
+- [x] define terminology conventions and naming recommendations
 
-### 代码实现
-- [transition.rs](../src/transition.rs) - TCB 转换逻辑
-- [pure.rs](../../evorule-reactor/src/pure.rs) - Reactor 纯函数
-- [reactor.rs](../../evorule-reactor/src/reactor.rs) - Reactor 主循环
+### Phase 2: code refactor (completed ✅)
+- [x] rename `has_matching_business_rule` → `has_matching_constitution_rule`
+- [x] improve dynamic domain rules: treat as general rules, can handle any instruction
+- [x] improve direct rules: check `rule_type == instruction_type`
+- [x] separate "rule match" and "side-effect detection" logic
+- [x] add the `has_side_effect` variable
 
-### 设计规范
-- [TCB_SPEC.md](../TCB_SPEC.md) - TCB 系统规范
-- [CLI_SPEC.md](../../evorule-cli/CLI_SPEC.md) - CLI 设计规范
+### Phase 3: test updates (completed ✅)
+- [x] update B4 scenario tests: verify dynamic domain rules as general rules
+- [x] update B5 scenario tests: verify exact matching of direct rules
+- [x] add `test_set_direct_rule_matches_set_instruction` test
+- [x] all tests pass (220 unit tests + 5 proptest + 21 integration tests)
+
+### Phase 4: documentation refinement (in progress)
+- [ ] explicitly mark "constitution rules" in core_eval.json
+- [x] explicitly identify rule layers in code comments
+- [x] create the terminology mapping table (section 3 of this file)
+
+### Phase 5: code audit (optional)
+- [ ] audit the naming of the `StepOutcome` enum in evorule-reactor
+- [ ] audit the naming conventions of business rules in evorule-server
+- [ ] add code documentation comments that explicitly identify rule layers
 
 ---
 
-## 7. 总结
+## 6. Related files
 
-当前 evorule 的规则体系存在分类模糊的问题，导致：
-1. 设计时混淆规则的职责边界
-2. 实施时出现检测逻辑的误判（B4/B5 场景）
-3. 维护时难以理解规则的来源和修改权限
+### Core definitions
+- [README.md](../../README.md) - key project concept definitions
+- [core_eval.json](../core_eval.json) - constitution rule definitions
 
-通过本分类体系，明确了：
-1. **系统规则**：硬编码行为，不可配置
-2. **宪法规则**：core_eval.json 定义的基础指令处理
-3. **业务规则**：运行时动态生成的规则
-4. **项目方规则**：rules/*.json 定义的业务响应
+### Code implementation
+- [transition.rs](../src/transition.rs) - TCB transition logic
+- [pure.rs](../../evorule-reactor/src/pure.rs) - Reactor pure functions
+- [reactor.rs](../../evorule-reactor/src/reactor.rs) - Reactor main loop
 
-建议按"文档规范 → 代码重构 → 测试更新"的顺序实施，将规则分类清晰化。
+### Design specs
+- [TCB_SPEC.md](../TCB_SPEC.md) - TCB system spec
+- [CLI_SPEC.md](../../evorule-cli/CLI_SPEC.md) - CLI design spec
+
+---
+
+## 7. Summary
+
+The current evorule rule system has a classification ambiguity problem, leading to:
+1. confusion over rule responsibility boundaries at design time
+2. misjudgement of detection logic at implementation time (B4/B5 scenarios)
+3. difficulty understanding rule sources and modification permissions at maintenance time
+
+Through this taxonomy, the following are made explicit:
+1. **System rules**: hardcoded behavior, not configurable
+2. **Constitution rules**: basic instruction handling defined by core_eval.json
+3. **Business rules**: rules dynamically generated at runtime
+4. **Project-party rules**: business responses defined by rules/*.json
+
+It is recommended to implement in the order "documentation conventions → code refactor → test updates" to make rule classification clear.

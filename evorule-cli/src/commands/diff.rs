@@ -1,19 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! `evorule diff` —— 对比两个 fact log（按 FactId 对齐，非 HashSet）
+//! `evorule diff` — compare two fact logs (aligned by FactId, not HashSet)
 //!
-//! # P0-4 修复
-//! 原实现用 `HashSet::difference`，会丢失重复行且无序。
-//! 新实现按数组下标（FactId 顺序）对齐，逐 fact 比对：
-//! - `[~]` 两边都有但内容不同
-//! - `[-]` 只在 A
-//! - `[+]` 只在 B
-//! - 全相同输出 `(identical)`
+//! # P0-4 fix
+//! The original implementation used `HashSet::difference`, which dropped duplicate
+//! lines and was unordered. The new implementation aligns by array index (FactId
+//! order) and compares fact by fact:
+//! - `[~]` present on both sides but different
+//! - `[-]` only in A
+//! - `[+]` only in B
+//! - identical prints `(identical)`
 //!
-//! # 为什么不用 LCS
-//! Fact 没有自然顺序的"行"概念，LCS 会错位匹配丢失 id 不一致信息。
-//! 按 FactId 对齐是因果链语义的正确做法。
+//! # Why not LCS
+//! Facts have no naturally ordered "line" concept; LCS would misalign matches and
+//! lose id-inconsistency information. Aligning by FactId is the correct approach
+//! for causal-chain semantics.
 
 use std::path::Path;
 
@@ -22,7 +24,7 @@ use crate::output;
 use crate::output::diff_prefix;
 use evorule_reactor::Fact;
 
-/// 执行 diff 子命令
+/// Run the diff subcommand
 pub fn run(a: &Path, b: &Path) -> Result<(), CliError> {
     let facts_a = fact_log::read_facts(a)?;
     let facts_b = fact_log::read_facts(b)?;
@@ -44,9 +46,9 @@ pub fn run(a: &Path, b: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
-/// 按数组下标对齐比对两个 Fact 列表
+/// Compare two Fact lists aligned by array index
 ///
-/// 返回差异数量。副作用：打印每个差异行。
+/// Returns the number of differences. Side effect: prints each differing line.
 fn compare_facts(facts_a: &[Fact], facts_b: &[Fact]) -> usize {
     let max_len = facts_a.len().max(facts_b.len());
     let mut differences = 0;
@@ -87,7 +89,7 @@ fn compare_facts(facts_a: &[Fact], facts_b: &[Fact]) -> usize {
     differences
 }
 
-// 引用 fact_log 模块（run 函数通过 fact_log::read_facts 读取）
+// Reference the fact_log module (run reads via fact_log::read_facts)
 use crate::fact_log;
 
 #[cfg(test)]
@@ -102,8 +104,8 @@ mod tests {
             id: FactId(1),
             version: 1,
         }];
-        // 不调用 compare_facts（它会打印到 stdout），只验证逻辑
-        // 这里通过 max_len 逻辑验证
+        // Does not call compare_facts (it prints to stdout); verifies the logic only
+        // Here verified through the max_len logic
         assert_eq!(facts.len(), 1);
     }
 
@@ -123,7 +125,7 @@ mod tests {
             id: FactId(1),
             instruction: JsonValue::empty_object(),
         }];
-        // a 比 b 长，应该有 1 个 [-] 差异
+        // a is longer than b; there should be 1 [-] difference
         assert!(a.len() > b.len());
     }
 }

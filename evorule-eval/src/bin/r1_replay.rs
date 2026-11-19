@@ -1,20 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! R1 —— 重放位精确率（replay bit-precision）
+//! R1 — replay bit-precision
 //!
-//! 方法：真实工作负载 × 真实种子指令 × K 次独立运行，比对以下三项。
-//! 种子指令来自 eval fixtures plan.json（16 规则 × pass/fail + 3 序列，原 wasm-demo determinism_run.js 已验证可命中）；
-//! 每次运行使用全新 FactIdGenerator、队列与状态。
+//! Method: real workloads × real seed instructions × K independent runs,
+//! comparing the three items below. Seed instructions come from the eval
+//! fixtures plan.json (16 rules × pass/fail + 3 sequences, verified as hitting
+//! by the original wasm-demo determinism_run.js); every run uses a fresh
+//! FactIdGenerator, queue, and state.
 //!
-//! 比对项：
+//! Compared items:
 //!
-//! 1. 事实序列规范哈希（逐条 fact_to_json 拼接 blake3）
-//! 2. 终态 payload 规范哈希
-//! 3. 步数 / io 轮次
+//! 1. the canonical fact-sequence hash (per-fact fact_to_json joined, blake3)
+//! 2. the canonical final-payload hash
+//! 3. steps / io rounds
 //!
-//! 只统计命中规则链的用例（steps>1 或发生 io）；未命中种子如实计入
-//! excluded_no_match。跨进程一致性由外层脚本跑本 bin 两次比对输出完成。
+//! Only cases hitting the rule chain are counted (steps>1 or an io occurred);
+//! non-hitting seeds are honestly counted as excluded_no_match. Cross-process
+//! consistency is completed by an outer script running this bin twice and
+//! comparing outputs.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 

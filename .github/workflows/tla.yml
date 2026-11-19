@@ -1,13 +1,13 @@
 # =============================================================================
-# GitHub Actions: TLA+ 形式化验证
+# GitHub Actions: TLA+ formal verification
 #
-# 使用 TLC 模型检测器验证 tier0 execute_transition 状态机规格
-#   - 模块: evorule-tcb/tla/ExecuteTransition.tla
-#   - 配置: evorule-tcb/tla/ExecuteTransition.cfg
-#   - 5 个不变式: Termination / Determinism / DepthEnforcement / IoEarlyReturn / LoopProgress
+# Uses the TLC model checker to verify the tier0 execute_transition state machine spec
+#   - module: evorule-tcb/tla/ExecuteTransition.tla
+#   - config: evorule-tcb/tla/ExecuteTransition.cfg
+#   - 5 invariants: Termination / Determinism / DepthEnforcement / IoEarlyReturn / LoopProgress
 #
-# 设计文档: verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md §3.2.2
-# 通过条件: "Model checking completed. No error has been found."
+# Design doc: verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md §3.2.2
+# Pass condition: "Model checking completed. No error has been found."
 # =============================================================================
 
 name: tla
@@ -28,14 +28,14 @@ on:
       - '.github/workflows/tla.yml'
   workflow_dispatch:
 
-# 显式最小权限 (Scorecard Token-Permissions): 模型检查仅需只读 (产物走 artifact 上传)
+# Explicit minimal permissions (Scorecard Token-Permissions): model checking only needs read (artifacts go through artifact upload)
 permissions: read-all
 
 jobs:
   tla-verify:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
-    continue-on-error: false  # 严格门禁（allow_failure:false）
+    continue-on-error: false  # strict gate (allow_failure:false)
 
     steps:
       - name: Checkout
@@ -58,7 +58,7 @@ jobs:
         if: steps.cache-tla.outputs.cache-hit != 'true'
         working-directory: evorule-tcb/tla
         run: |
-          # Pin v1.7.4 (TLC 2.19, 2024-08-08 build) —— 与 TLC_VERIFICATION_REPORT.md 实测版本一致
+          # Pin v1.7.4 (TLC 2.19, 2024-08-08 build) -- matches the version measured in TLC_VERIFICATION_REPORT.md
           wget -q https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
           java -jar tla2tools.jar TLC -help | head -3
 

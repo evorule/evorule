@@ -6,165 +6,165 @@
   This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 -->
 
-# EvoRule 形式化验证文档系统
+# EvoRule Formal Verification Documentation System
 
-> **版本对齐**：`Cargo.toml` workspace `version = "0.6.0"`（commit `25c0cc0`，2026-09-14）
-> **机制**：本目录文档体系受 [MECHANISM.md](MECHANISM.md)（M1–M11）约束。
-> **状态**：验证状态唯一权威是 [STATUS.md](STATUS.md)（M1）。本 README 只做导航与资产登记，不承载状态断言。
+> **Version alignment**: `Cargo.toml` workspace `version = "0.6.0"` (commit `25c0cc0`, 2026-09-14)
+> **Mechanism**: the documentation system in this directory is governed by [MECHANISM.md](MECHANISM.md) (M1–M11).
+> **Status**: the sole authority for verification status is [STATUS.md](STATUS.md) (M1). This README only provides navigation and asset registration; it carries no status assertions.
 
-## 一、这是什么
+## 1. What this is
 
-EvoRule 的形式化验证工作产生大量资产：**验证方案、证明源码、运行脚本、运行证据（PASS/FAIL 日志）、验证报告**。本系统把这些资产**按约定归位、纳入 git、集中登记**，目标是：
+EvoRule's formal verification work produces a large number of assets: **verification plans, proof source, run scripts, run evidence (PASS/FAIL logs), verification reports**. This system **files these assets by convention, commits them to git, and registers them centrally**, with the goals:
 
-1. **不丢失** —— 全部验证资产纳入 git 版本管理（含运行证据），历史可追溯；
-2. **不乱放** —— 每个资产有唯一归属位置（见 §三 目录约定）；
-3. **可查询** —— 本 README 是导航与资产登记入口；**验证状态查询一律去 [STATUS.md](STATUS.md)**；
-4. **不止 Kani** —— 覆盖白皮书 [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) 的完整七层验证体系（Coq / TLA+ / Kani / Verus / TLC / proptest / 差分测试 / 运行时验证 / 编译时门控）。
+1. **Nothing is lost** — all verification assets are put under git version control (including run evidence), history is traceable;
+2. **Nothing is misplaced** — each asset has a unique home location (see §3 directory conventions);
+3. **Queryable** — this README is the navigation and asset registration entry; **for verification status queries always go to [STATUS.md](STATUS.md)**;
+4. **Not just Kani** — covers the full seven-layer verification system of the white paper [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) (Coq / TLA+ / Kani / Verus / TLC / proptest / differential testing / runtime verification / compile-time gating).
 
-## 二、先读什么（场景导航）
+## 2. What to read first (scenario navigation)
 
-| 想做什么                       | 去哪里                                                                                          |
+| What you want to do | Where to go |
 | ------------------------------ | ----------------------------------------------------------------------------------------------- |
-| 查对外保证内容（**规范条款**） | [ASSURANCE.md](ASSURANCE.md)                                                                     |
-| 查某属性的验证状态（唯一权威） | [STATUS.md](STATUS.md)                                                                           |
-| 查保证声明的**当前达成等级**与**偏离登记** | [STATUS.md](STATUS.md) §三                                                             |
-| 查验证机制规则（状态/证据/披露）| [MECHANISM.md](MECHANISM.md)                                                                     |
-| 查历史变更与偏离披露           | [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md)                                                           |
-| 查七层方法论与属性目录        | [plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)         |
-| 查证据规范与收集方式           | [evidence/README.md](evidence/README.md)                                                         |
-| 收集某次实跑的 PASS 证据       | `scripts/collect-verification-evidence.ps1`（见 [evidence/README.md](evidence/README.md)）      |
-| 看某 crate 的 proof 源码       | 该 crate `verification/` 目录                                                                   |
-| 处理一次性散落日志             | 直接丢弃（可重跑复现）；**禁止**迁入公开 `verification/`（会随仓发布，见 §五 维护规则 5） |
+| Look up external guarantees (**normative clauses**) | [ASSURANCE.md](ASSURANCE.md) |
+| Look up the verification status of a property (sole authority) | [STATUS.md](STATUS.md) |
+| Look up the **current achieved level** and **deviation registry** of guarantee declarations | [STATUS.md](STATUS.md) §3 |
+| Look up verification mechanism rules (status/evidence/disclosure) | [MECHANISM.md](MECHANISM.md) |
+| Look up historical changes and deviation disclosures | [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md) |
+| Look up the seven-layer methodology and property catalog | [plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) |
+| Look up evidence conventions and collection methods | [evidence/README.md](evidence/README.md) |
+| Collect PASS evidence from an actual run | `scripts/collect-verification-evidence.ps1` (see [evidence/README.md](evidence/README.md)) |
+| View a crate's proof source | that crate's `verification/` directory |
+| Handle one-off scattered logs | discard directly (reproducible by rerunning); **forbidden** to move into the public `verification/` (it ships with the repo, see §5 maintenance rule 5) |
 
-> 原验证资产总索引 INDEX.md 已删除，其功能由 MECHANISM.md（规则）、STATUS.md（状态）、本 README（导航与登记）三方吸收，见 [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md) 资产处置记录①。
+> The former master index of verification assets, INDEX.md, has been deleted; its functions are absorbed by MECHANISM.md (rules), STATUS.md (status), and this README (navigation and registration), see the asset disposition record ① in [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md).
 
-## 三、目录约定
+## 3. Directory conventions
 
 ```text
 verification/
-├── README.md               ← 本文件（导航与资产登记）
-├── MECHANISM.md            ← 验证机制（M1–M11，宪法性文档）
-├── ASSURANCE.md            ← 保证声明（**规范性文件**：顶层声明、保证等级与判定规则、假设登记册、不保证事项、修订程序；**不含任何状态**）
-├── STATUS.md               ← 验证状态唯一权威（快照 + P0/P1 属性状态 + **保证声明达成状态与偏离登记** + proof 分档清单附录）
-├── DISCLOSURE_LOG.md       ← 变更与偏离披露日志
-├── plan/                   ← 验证方案与计划（指导性文档）
-│   └── EVORULE_FORMAL_VERIFICATION_PLAN_v3.md  ← 白皮书（七层验证体系，现行）
-├── evidence/               ← 证据规范（各 crate 实跑证据存于各 crate evidence/ 目录）
+├── README.md               ← this file (navigation and asset registration)
+├── MECHANISM.md            ← verification mechanism (M1–M11, constitutional document)
+├── ASSURANCE.md            ← guarantee declarations (**normative document**: top-level declarations, guarantee levels and judgement rules, assumption register, non-guarantees, revision procedure; **contains no status**)
+├── STATUS.md               ← sole authority for verification status (snapshot + P0/P1 property status + **guarantee-declaration achievement status and deviation registry** + proof tier inventory appendix)
+├── DISCLOSURE_LOG.md       ← change and deviation disclosure log
+├── plan/                   ← verification plans and schedules (guidance documents)
+│   └── EVORULE_FORMAL_VERIFICATION_PLAN_v3.md  ← white paper (seven-layer verification system, current)
+├── evidence/               ← evidence conventions (each crate's actual-run evidence lives in that crate's evidence/ directory)
 │   └── README.md
-└── scripts/                ← 跨 crate 验证工具（证据收集器）
+└── scripts/                ← cross-crate verification tools (evidence collector)
     └── collect-verification-evidence.ps1
 ```
 
-| 层         | 归属                                           | 说明                                             |
+| Layer | Home | Description |
 | ---------- | ---------------------------------------------- | ------------------------------------------------ |
-| 验证方案   | `verification/plan/` + 各 crate `verification/` | 跨 crate 白皮书 + 各 crate 专项验证设计          |
-| 证明源码   | 各 crate `verification/`（如 `kani_proofs.rs`）、`tests/` | 证明/差分测试代码随 crate 走，crate 自治         |
-| 运行脚本   | 各 crate 根 / `scripts/`                       | 单 crate 脚本随 crate；跨 crate 工具在 `scripts/` |
-| 运行证据   | 各 crate `verification/evidence/`              | 规范化实跑日志 + 元数据（[evidence/README.md](evidence/README.md)） |
-| 查询入口   | 本 README（资产）+ [STATUS.md](STATUS.md)（状态） | 状态断言只在 STATUS.md（M1）                     |
+| verification plans | `verification/plan/` + each crate's `verification/` | cross-crate white paper + each crate's dedicated verification design |
+| proof source | each crate's `verification/` (e.g. `kani_proofs.rs`), `tests/` | proof/differential-test code travels with the crate, crate autonomy |
+| run scripts | each crate root / `scripts/` | single-crate scripts travel with the crate; cross-crate tools in `scripts/` |
+| run evidence | each crate's `verification/evidence/` | normalized actual-run logs + metadata ([evidence/README.md](evidence/README.md)) |
+| query entry | this README (assets) + [STATUS.md](STATUS.md) (status) | status assertions live only in STATUS.md (M1) |
 
-## 四、验证资产登记
+## 4. Verification asset registration
 
-### 4.1 七层验证资产分布
+### 4.1 Seven-layer verification asset distribution
 
-各层资产位置与关联属性（**状态一律见 [STATUS.md](STATUS.md)**，此处不做状态断言）：
+Location and associated properties of each layer's assets (**status is always in [STATUS.md](STATUS.md)**, no status assertions here):
 
-**L1 数学形式化（Coq + TLA+ + TLAPS）**
+**L1 mathematical formalization (Coq + TLA+ + TLAPS)**
 
-| 资产                     | 位置                          | 关联属性       |
+| Asset | Location | Associated properties |
 | ------------------------ | ----------------------------- | -------------- |
-| ExecuteTransition.tla + TLC 报告 | `evorule-tcb/tla/`   | P0-5/7/8      |
-| Coq 形式化（JsonValue.v 等） | 规划中                    | P0-3~P0-8     |
-| TLAPS 数学归纳           | 计划中                        | P0 全部        |
+| ExecuteTransition.tla + TLC report | `evorule-tcb/tla/` | P0-5/7/8 |
+| Coq formalization (JsonValue.v etc.) | planned | P0-3~P0-8 |
+| TLAPS mathematical induction | planned | all P0 |
 
-**L2 代码级演绎验证（Kani + Verus）**
+**L2 code-level deductive verification (Kani + Verus)**
 
-| 资产                                        | 位置                                                              | 关联属性          |
+| Asset | Location | Associated properties |
 | ------------------------------------------- | ----------------------------------------------------------------- | ----------------- |
-| TCB Kani proof（38 个，A/B 档分档见 STATUS.md 附录 B） | `evorule-tcb/tests/kani/kani_proofs.rs`                | P0-1~P0-8        |
-| TCB Kani 验证设计（P1–P21，历史文档，编号已作废见 STATUS.md 附录 A） | `evorule-tcb/verification/kani-formal-verification-design.md` | P0-1~P0-8 |
-| Reactor Kani proof（11 个，CI 状态见 STATUS.md 附录 C） | `evorule-reactor/verification/kani_proofs.rs`       | P0-11 / P1-1~P1-6 |
-| Kani 运行脚本（reactor）                    | `evorule-reactor/run_kani_proofs.sh`                              | —                 |
-| Kani 产物收集脚本（reactor）                | `evorule-reactor/collect_kani_artifacts.sh`                       | —                 |
-| Kani 运行脚本（cli）                        | `evorule-cli/run_kani.sh`                                         | —                 |
-| Verus 规约                                  | 规划中                                                            | P0-5/12           |
+| TCB Kani proofs (38, A/B tier inventory see STATUS.md appendix B) | `evorule-tcb/tests/kani/kani_proofs.rs` | P0-1~P0-8 |
+| TCB Kani verification design (P1–P21, historical doc, numbering voided see STATUS.md appendix A) | `evorule-tcb/verification/kani-formal-verification-design.md` | P0-1~P0-8 |
+| Reactor Kani proofs (11, CI status see STATUS.md appendix C) | `evorule-reactor/verification/kani_proofs.rs` | P0-11 / P1-1~P1-6 |
+| Kani run script (reactor) | `evorule-reactor/run_kani_proofs.sh` | — |
+| Kani artifact collection script (reactor) | `evorule-reactor/collect_kani_artifacts.sh` | — |
+| Kani run script (cli) | `evorule-cli/run_kani.sh` | — |
+| Verus spec | planned | P0-5/12 |
 
-**L3 模型检测（TLA+ TLC + Kani bounded）**
+**L3 model checking (TLA+ TLC + Kani bounded)**
 
-| 资产                    | 位置                            | 关联属性 |
+| Asset | Location | Associated properties |
 | ----------------------- | ------------------------------- | -------- |
-| ExecuteTransition.tla   | `evorule-tcb/tla/`              | P0-5     |
-| ReactorStateMachine.tla | `evorule-reactor/tla/`（规划）  | P0-11    |
+| ExecuteTransition.tla | `evorule-tcb/tla/` | P0-5 |
+| ReactorStateMachine.tla | `evorule-reactor/tla/` (planned) | P0-11 |
 
-**L4 属性测试（proptest + cargo-fuzz）**
+**L4 property testing (proptest + cargo-fuzz)**
 
-| 资产                                | 位置                                                                 | 关联属性     |
+| Asset | Location | Associated properties |
 | ----------------------------------- | -------------------------------------------------------------------- | ------------ |
-| TCB 确定性属性测试（19 用例）       | `evorule-tcb/tests/determinism_proptest.rs`                          | P0-3/4/5/6   |
-| TCB 集成测试                        | `evorule-tcb/tests/integration_test.rs`                              | P1-8/9       |
-| Reactor 集成测试                    | `evorule-reactor/tests/integration_test.rs`                          | P1-3~P1-6    |
-| cargo-fuzz 模糊测试                 | 规划中                                                               | P0-3/4/5     |
+| TCB determinism property tests (19 cases) | `evorule-tcb/tests/determinism_proptest.rs` | P0-3/4/5/6 |
+| TCB integration tests | `evorule-tcb/tests/integration_test.rs` | P1-8/9 |
+| Reactor integration tests | `evorule-reactor/tests/integration_test.rs` | P1-3~P1-6 |
+| cargo-fuzz fuzz testing | planned | P0-3/4/5 |
 
-**L5 差分测试（differential testing）**
+**L5 differential testing**
 
-| 资产                                  | 位置                                                                         | 关联属性          |
+| Asset | Location | Associated properties |
 | ------------------------------------- | ---------------------------------------------------------------------------- | ----------------- |
-| Reactor 差分（diff_reactor_vs_pure）  | `evorule-reactor/verification/differential_test.rs`                          | P0-12             |
-| Governance 差分（diff_version_consistency / diff_rewind_vs_factslog） | `evorule-governance/verification/differential_test.rs` | P0-9/10           |
-| Governance 审计链端到端               | `evorule-governance/tests/end_to_end_audit_chain.rs`                         | P0-14             |
+| Reactor differential (diff_reactor_vs_pure) | `evorule-reactor/verification/differential_test.rs` | P0-12 |
+| Governance differential (diff_version_consistency / diff_rewind_vs_factslog) | `evorule-governance/verification/differential_test.rs` | P0-9/10 |
+| Governance audit chain end-to-end | `evorule-governance/tests/end_to_end_audit_chain.rs` | P0-14 |
 
-**L6 运行时验证（invariants + hash chain）**
+**L6 runtime verification (invariants + hash chain)**
 
-| 资产               | 位置                                            | 关联属性      |
+| Asset | Location | Associated properties |
 | ------------------ | ----------------------------------------------- | ------------- |
-| Reactor 不变式自检 | `evorule-reactor/src/invariants.rs`             | P1-1~P1-6     |
-| Governance 审计链 | `evorule-governance/src/auditor.rs`             | P0-14/15      |
+| Reactor invariant self-check | `evorule-reactor/src/invariants.rs` | P1-1~P1-6 |
+| Governance audit chain | `evorule-governance/src/auditor.rs` | P0-14/15 |
 
-**L7 编译时门控（build.rs + clippy）**
+**L7 compile-time gating (build.rs + clippy)**
 
-| 资产                    | 位置                                                                     | 关联属性               |
+| Asset | Location | Associated properties |
 | ----------------------- | ------------------------------------------------------------------------ | ---------------------- |
-| 各 crate build.rs 门禁  | `evorule-{tcb,reactor,governance,cli}/build.rs`                          | G8 / T4-T14 / T15 / T16 |
-| 门禁参考                | [GATE_REFERENCE.md](../GATE_REFERENCE.md)                                 | —                      |
+| each crate's build.rs gate | `evorule-{tcb,reactor,governance,cli}/build.rs` | G8 / T4-T14 / T15 / T16 |
+| gate reference | [GATE_REFERENCE.md](../GATE_REFERENCE.md) | — |
 
-### 4.2 各 crate 验证资产一览
+### 4.2 Each crate's verification assets at a glance
 
-| crate              | 主要资产（位置）                                                                                                            |
+| crate | Main assets (location) |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| evorule-tcb        | Kani proof 源码（`tests/kani/kani_proofs.rs`）；Kani 证据（`verification/evidence/kani/`，含 `_invalidated/`）；Kani 验证设计（历史文档）；确定性属性测试；集成测试；确定性报告（`DETERMINISM_REPORT.md`）；TLA+ 模型 |
-| evorule-reactor    | Kani proof 源码（`verification/kani_proofs.rs`）；Kani 证据（`verification/evidence/kani/`）；Kani 指南（`docs/KANI.md`）；差分测试；集成/复杂规则测试；Kani 脚本；差分证据（`verification/evidence/differential/`，含 `_invalidated/`） |
-| evorule-governance | 差分测试；差分证据（`verification/evidence/differential/`，含 `_invalidated/`）；审计链端到端测试；会话隔离测试                                                                                    |
-| evorule-cli        | Rust 集成测试；端到端测试（`tests/e2e.sh`）；Kani 运行脚本                                                                  |
+| evorule-tcb | Kani proof source (`tests/kani/kani_proofs.rs`); Kani evidence (`verification/evidence/kani/`, incl. `_invalidated/`); Kani verification design (historical doc); determinism property tests; integration tests; determinism report (`DETERMINISM_REPORT.md`); TLA+ model |
+| evorule-reactor | Kani proof source (`verification/kani_proofs.rs`); Kani evidence (`verification/evidence/kani/`); Kani guide (`docs/KANI.md`); differential tests; integration/complex-rule tests; Kani scripts; differential evidence (`verification/evidence/differential/`, incl. `_invalidated/`) |
+| evorule-governance | differential tests; differential evidence (`verification/evidence/differential/`, incl. `_invalidated/`); audit-chain end-to-end tests; session isolation tests |
+| evorule-cli | Rust integration tests; end-to-end tests (`tests/e2e.sh`); Kani run script |
 
-### 4.3 CI 验证工作流
+### 4.3 CI verification workflows
 
-| workflow                                  | 覆盖                                                                    |
+| workflow | Coverage |
 | ----------------------------------------- | ----------------------------------------------------------------------- |
-| `.github/workflows/kani.yml`              | TCB A 档 14 + reactor 5 个（PR/push 闸门）；B 档 24 个（仅手动触发，允许失败） |
-| `.github/workflows/differential.yml`      | reactor / governance 差分测试（PR/push 常驻）                             |
-| `.github/workflows/tla.yml`               | TLC 模型检测                                                             |
-| `.github/workflows/mutants.yml`           | 变异测试                                                                 |
+| `.github/workflows/kani.yml` | TCB Tier A 14 + reactor 5 (PR/push gate); Tier B 24 (manual trigger only, allowed to fail) |
+| `.github/workflows/differential.yml` | reactor / governance differential tests (always-on for PR/push) |
+| `.github/workflows/tla.yml` | TLC model checking |
+| `.github/workflows/mutants.yml` | mutation testing |
 
-> CI 行为以 yml 文件本身为真相源（M1.3）。
+> CI behavior takes the yml file itself as the source of truth (M1.3).
 
-### 4.4 保证声明
+### 4.4 Guarantee declarations
 
-| 资产                       | 位置                                 | 性质                                                                                                                                                                                                                                                                                                                              | 关联                                                                       |
+| Asset | Location | Nature | Association |
 | -------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| 保证声明（Assurance Case） | [ASSURANCE.md](ASSURANCE.md)         | **规范性文件**（"保证宪法"）：规定对外保证内容（C1–C7）、保证等级与判定规则（AL0–AL4 + R1–R4）、共享责任模型、假设登记册（H1–H6）、不保证事项（NC-1–16）、工具信任基登记、证据要求与失效规则（§8）、效力分层与修订程序（§0.3–§0.6）。**全文不含任何验证状态、缺口或进度表述** | 状态与偏离一律引用 [STATUS.md](STATUS.md) §三（M1）                          |
-| 保证达成状态与偏离登记     | [STATUS.md](STATUS.md) §三           | **状态事务**：各条声明的当前达成等级（由 §一/§二 属性状态按 AL 定义与 R1–R4 聚合的派生视图）+ 偏离登记（DEV-x，含受影响条款、判定依据、处置方向）                                                                                                                  | 规范条款由 [ASSURANCE.md](ASSURANCE.md) 定义；偏离登记义务见其 §4.3          |
+| Guarantee declarations (Assurance Case) | [ASSURANCE.md](ASSURANCE.md) | **Normative document** ("guarantee constitution"): specifies external guarantees (C1–C7), guarantee levels and judgement rules (AL0–AL4 + R1–R4), shared responsibility model, assumption register (H1–H6), non-guarantees (NC-1–16), tool trusted-base register, evidence requirements and invalidation rules (§8), efficacy layering and revision procedure (§0.3–§0.6). **The entire text contains no verification status, gap, or progress expression** | status and deviations always reference [STATUS.md](STATUS.md) §3 (M1) |
+| Guarantee achievement status and deviation registry | [STATUS.md](STATUS.md) §3 | **Status transaction**: each declaration's current achieved level (a derived view aggregated from §1/§2 property status per the AL definitions and R1–R4) + deviation registry (DEV-x, incl. affected clauses, judgement basis, disposition direction) | normative clauses are defined by [ASSURANCE.md](ASSURANCE.md); deviation registry obligations see its §4.3 |
 
-> **分工是强制的**：ASSURANCE.md 规定「**应**达到什么」（规范），STATUS.md §三 记录「**已**达到什么、尚未对齐什么」（状态）。二者不得互相混入（ASSURANCE.md §0.4）。
-> **对齐方向是单向的**：项目向 ASSURANCE.md 对齐，而非 ASSURANCE.md 向项目现状让步。项目取得进展、偏离被消除、证据被补足，**只改 STATUS.md**，不构成声明文件的修订理由（ASSURANCE.md §0.6）。
-> **条款准入**：任何拟写入 ASSURANCE.md 的条款须先过「时效不变量测试（TIT）」（ASSURANCE.md §0.5）；任一项不过者不得写入。
-> **修订规则**：仅因**自身缺陷**（内部矛盾 / 不可证伪 / 范围遗漏 / 与 MECHANISM.md 冲突）或**对外承诺实质变化**才修订；声明集合与目标等级变更属 B 类，按 M5 记入 [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md)。
+> **The division of labor is mandatory**: ASSURANCE.md specifies what **should** be achieved (norm), STATUS.md §3 records what **has** been achieved and what has not yet been aligned (status). The two must not bleed into each other (ASSURANCE.md §0.4).
+> **The alignment direction is one-way**: the project aligns to ASSURANCE.md, not ASSURANCE.md yielding to the project's current state. When the project makes progress, deviations are eliminated, and evidence is supplemented, **only STATUS.md changes** — this does not constitute grounds for revising the declaration file (ASSURANCE.md §0.6).
+> **Clause admission**: any clause proposed for inclusion in ASSURANCE.md must first pass the "time-invariant test (TIT)" (ASSURANCE.md §0.5); any that fails must not be written in.
+> **Revision rules**: revisions are made only due to **internal defects** (internal contradiction / non-falsifiability / scope omission / conflict with MECHANISM.md) or **substantive changes to external commitments**; changes to the declaration set and target levels are category B, recorded in [DISCLOSURE_LOG.md](DISCLOSURE_LOG.md) per M5.
 
-## 五、维护规则（强制）
+## 5. Maintenance rules (mandatory)
 
-1. **新资产必登记**：新增/迁移任何验证方案、脚本、证据、报告，必须登记到本 README §四；
-2. **状态唯一权威**：本 README 及一切文档不得独立断言验证状态、数量或结论（M1），状态表述一律引用 [STATUS.md](STATUS.md)；
-3. **证据必入库**：验证实跑的 PASS/FAIL 日志（含 commit / 工具链 / 时间戳元数据）必须保留在 `evidence/` 并纳入 git，命名遵循 [evidence/README.md](evidence/README.md)（M3）；禁止随手丢弃或放在 `.gitignore` 忽略区；
-4. **版本对齐**：本文件头部版本声明与 `Cargo.toml` 当前 workspace `version` 一致（M4）；`plan/` 下被取代的方案必须加 `[已废弃]` 横幅；
-5. **一次性散落日志不入库**：根目录/临时位置的一次性运行日志（`cargo test` 原始输出等）不迁入公开 `verification/`（会随仓发布且可能含本机路径）；需要时直接重跑复现，只有收集器产出的规范化证据才入库；
-6. **文档安全合规**：公开验证文档适用 `scripts/check_doc_safety.py` 的私有信息零泄露约束（M9）。
-7. **ASSURANCE 合规门禁**：规范自体、对外材料与 `verification/` 顶层文档适用 `scripts/check_assurance_compliance.py`（T 系：零状态词/零 SHA/内部信息零容忍、比较级禁令、等级冒领禁令、状态承载纪律；规范/状态分离见 [ASSURANCE.md](ASSURANCE.md) §0.4–§0.7）。本地一键串跑全部门禁：`scripts/run_doc_gates.ps1`；提交期快查（T 系文档增量 + S 系状态面触发）由维护者本地 pre-commit hook 承接（hook 为本地工具，不入仓）。
+1. **New assets must be registered**: any new/migrated verification plan, script, evidence, or report must be registered in §4 of this README;
+2. **Status sole authority**: this README and all documents must not independently assert verification status, count, or conclusion (M1); status expressions always reference [STATUS.md](STATUS.md);
+3. **Evidence must be committed to the repo**: actual-run PASS/FAIL logs of verification (including commit / toolchain / timestamp metadata) must be retained in `evidence/` and put under git, named per [evidence/README.md](evidence/README.md) (M3); casually discarding or placing in a `.gitignore`-ignored area is forbidden;
+4. **Version alignment**: the version declaration at the head of this file matches the current workspace `version` in `Cargo.toml` (M4); superseded plans under `plan/` must carry a `[DEPRECATED]` banner;
+5. **One-off scattered logs are not committed to the repo**: one-off run logs in the root/temporary locations (raw `cargo test` output etc.) are not moved into the public `verification/` (they ship with the repo and may contain local-machine paths); rerun to reproduce when needed, only normalized evidence produced by the collector is committed to the repo;
+6. **Document safety compliance**: public verification documents are subject to the zero-leakage constraint on private information in `scripts/check_doc_safety.py` (M9).
+7. **ASSURANCE compliance gate**: the normative corpus itself, external materials, and `verification/` top-level documents are subject to `scripts/check_assurance_compliance.py` (T-series: zero status words / zero SHA / zero tolerance for internal information, comparative-degree prohibition, level-claim prohibition, status-carrying discipline; norm/status separation see [ASSURANCE.md](ASSURANCE.md) §0.4–§0.7). One-click local run of all gates: `scripts/run_doc_gates.ps1`; commit-time quick checks (T-series doc incrementals + S-series status-surface triggers) are handled by the maintainer's local pre-commit hook (the hook is a local tool, not committed to the repo).

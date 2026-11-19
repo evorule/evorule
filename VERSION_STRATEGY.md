@@ -9,348 +9,348 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# EvoRule 版本策略
+# EvoRule Version Strategy
 
-**版本**: 1.2
-**生效日期**: 2026-08-02
-**适用范围**: evorule 仓
+**Version**: 1.2
+**Effective date**: 2026-08-02
+**Scope**: evorule repo
 
-> 变更历史见文末 §11。
+> Change history: see §11 at the end of this document.
 
-> 本文档是 evorule 仓的**版本号标准**，只规定本仓特定的版本规范。SemVer 2.0 通用定义见 [semver.org](https://semver.org/lang/zh-CN/)，不在此复制。
+> This document is the **version-number standard** of the evorule repo and only defines repo-specific versioning rules. The general SemVer 2.0 definition is at [semver.org](https://semver.org/lang/zh-CN/); it is not duplicated here.
 
 ---
 
-## 1. 核心原则
+## 1. Core principles
 
-| 原则         | 说明                                 |
+| Principle    | Meaning                              |
 | ------------ | ------------------------------------ |
-| **诚实**     | 版本号反映代码真实状态，不是营销数字 |
-| **可预测**   | 项目方能从版本号变化判断影响范围       |
-| **可回溯**   | 任何发布的版本都能从 git 找回并构建  |
-| **文档先行** | 升级指南 / CHANGELOG 必须先于发布    |
+| **Honest**   | the version number reflects the code's true state, not a marketing number |
+| **Predictable** | projects can judge the impact scope from version-number changes |
+| **Traceable** | any released version can be recovered from git and built |
+| **Documentation first** | upgrade guides / CHANGELOG must precede the release |
 
 ---
 
-## 2. 语义化版本控制
+## 2. Semantic versioning
 
-evorule 仓遵循 [SemVer 2.0.0](https://semver.org/lang/zh-CN/)。本节只规定项目特定补充。
+The evorule repo follows [SemVer 2.0.0](https://semver.org/lang/zh-CN/). This section only defines project-specific supplements.
 
-### 2.1 预发布标识使用约定
+### 2.1 Pre-release identifier conventions
 
-| 标识       | 含义     | 何时使用                         |
+| Identifier | Meaning  | When to use                      |
 | ---------- | -------- | -------------------------------- |
-| `-alpha.N` | 内部测试 | 未经外部验证的早期版本           |
-| `-rc.N`    | 候选发布 | API 已锁定，只修 bug，准备正式发 |
+| `-alpha.N` | internal testing | early versions not yet externally validated |
+| `-rc.N`    | release candidate | API locked, bug fixes only, preparing for the official release |
 
-> evorule 仓当前处于 **0.2.x** 正式发布阶段（无预发布标识）。具体版本号见 `Cargo.toml`。
+> The evorule repo is currently in the **0.2.x** official-release stage (no pre-release identifiers). For the concrete version number see `Cargo.toml`.
 
-### 2.2 0.x 阶段的 SemVer 变通
+### 2.2 SemVer accommodation for the 0.x phase
 
-SemVer 规定 0.x 阶段**任何 MINOR 升级都允许包含破坏性变更**，不需要升 MAJOR。evorule 采纳此规则：0.x 阶段 API 本来就不稳定，项目方不应锁定 0.x 版本。
+SemVer stipulates that in the 0.x phase **any MINOR upgrade may include breaking changes** and does not require a MAJOR bump. evorule adopts this rule: in the 0.x phase the API is unstable anyway, and projects should not pin 0.x versions.
 
 ---
 
-## 3. 仓内项目分类
+## 3. Project classification within the repo
 
-evorule 仓包含**机制层**与**工具**两类子 crate：
+The evorule repo contains two classes of sub-crates, **mechanism layer** and **tools**:
 
-| 类别       | 项目                                                     | 角色                        |
+| Category   | Projects                                                 | Role                        |
 | ---------- | -------------------------------------------------------- | --------------------------- |
-| **机制层** | `evorule-tcb` / `evorule-reactor` / `evorule-governance` | 提供底层确定性 / 可审计保证 |
-| **工具**   | `evorule-cli`                                            | 把机制层暴露给终端项目方      |
+| **Mechanism layer** | `evorule-tcb` / `evorule-reactor` / `evorule-governance` | provides the underlying determinism / auditability guarantees |
+| **Tools**  | `evorule-cli`                                            | exposes the mechanism layer to end projects |
 
-> 应用层（业务编排）、客户端 SDK 等不在本仓（见相应独立仓，其版本策略由各仓自行决定）。
+> The application layer (business orchestration), client SDKs, etc. are not in this repo (see the corresponding independent repos; their version strategies are decided by each repo).
 >
-> 版本号单一真相源为根 `Cargo.toml` 的 `version` 字段，子 crate 通过 `version.workspace = true` 继承。一致性由 `validate-version.ps1` 校验，不在本文档手写版本表（避免过期）。
+> The single source of truth for version numbers is the `version` field of the root `Cargo.toml`; sub-crates inherit via `version.workspace = true`. Consistency is checked by `validate-version.ps1`; no hand-written version table is kept in this document (to avoid staleness).
 
 ---
 
-## 4. 0.x 阶段
+## 4. 0.x phase
 
-### 4.1 0.x 阶段规则
+### 4.1 0.x phase rules
 
-- **0.1.0 = 公开起点**：代码初步可运行，核心 API 已定义，不承诺后向兼容
-- **MINOR 升级** = 一次明显的功能里程碑（允许破坏性变更，见 §2.2）
-- **PATCH 升级** = bug 修复，API 不变
-- **从 0.x 升到 1.0** = 跨过"production ready"门槛（见 §4.2）
+- **0.1.0 = the public starting point**: the code is initially runnable, the core API is defined, no backward-compatibility promise
+- **MINOR upgrade** = one visible feature milestone (breaking changes allowed, see §2.2)
+- **PATCH upgrade** = bug fixes, API unchanged
+- **from 0.x to 1.0** = crossing the "production ready" threshold (see §4.2)
 
-### 4.2 升 1.0.0 的"门"
+### 4.2 The gate to 1.0.0
 
-**1.0.0 = "production ready"**。evorule 是纯执行框架（无智能、不调用 LLM，只接受和运行 JSON 数据集），其 production ready 以**机制层成熟度**为衡量标准。需要**同时满足以下条件**:
+**1.0.0 = "production ready"**. evorule is a pure execution framework (no intelligence, no LLM calls; it only accepts and runs JSON datasets), so its production readiness is measured by **mechanism-layer maturity**. All of the following conditions must be met **simultaneously**:
 
-| 条件                    | 必须满足                                                                                                                    |
+| Condition               | Must meet                                                                                                                   |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **0 warnings**          | `cargo build` 0 warnings（包括 missing_docs / clippy）                                                                      |
-| **E2E 测试**            | 本仓 CLI + 机制层完整链路端到端测试通过                                                                                     |
-| **API 稳定性承诺**      | 公开 API 不再随便改（只有 MINOR 增 / PATCH 修）                                                                             |
-| **Kani 形式化验证**     | tier0 核心不变式被 Kani 证明（不止 stub）                                                                                   |
-| **完整文档**            | TECHNICAL_MANUAL / USER_GUIDE / API_REFERENCE 三件齐                                                                        |
-| **性能基准**            | PERFORMANCE_BENCHMARK.md                                                                                                    |
-| **安全审计**            | 内部 self-audit 文档化（`SECURITY_AUDIT.md`）+ 威胁模型（`THREAT_MODEL.md`）+ `cargo audit` 0 高危 + 至少 1 名独立 reviewer |
-| **1 个 reference 实现** | `examples/reactive_researcher` 完整跑通                                                                                     |
+| **0 warnings**          | `cargo build` with 0 warnings (including missing_docs / clippy)                                                             |
+| **E2E tests**           | End-to-end tests pass over the repo's full CLI + mechanism-layer chain                                                      |
+| **API stability pledge**| Public APIs no longer change arbitrarily (MINOR additions / PATCH fixes only)                                               |
+| **Kani formal verification** | tier0 core invariants proven by Kani (not just stubs)                                                                  |
+| **Complete documentation** | TECHNICAL_MANUAL / USER_GUIDE / API_REFERENCE, all three present                                                         |
+| **Performance benchmark** | PERFORMANCE_BENCHMARK.md                                                                                                  |
+| **Security audit**      | Internal self-audit documented (`SECURITY_AUDIT.md`) + threat model (`THREAT_MODEL.md`) + `cargo audit` with 0 high-severity findings + at least 1 independent reviewer |
+| **1 reference implementation** | `examples/reactive_researcher` runs through completely                                                                |
 
-**任意 1 项不满足** = 继续在 0.x 阶段。
+**Any 1 condition unmet** = stay in the 0.x phase.
 
-### 4.3 0.x 阶段的 CHANGELOG
+### 4.3 CHANGELOG for the 0.x phase
 
-每个 0.x 版本必须在 CHANGELOG 里有**独立的章节**，按 [Keep a Changelog](https://keepachangelog.com/) 格式：
+Every 0.x version must have an **independent section** in the CHANGELOG, following the [Keep a Changelog](https://keepachangelog.com/) format:
 
 ```markdown
 ## [X.Y.Z] - YYYY-MM-DD
 
-### 🆕 新增
+### 🆕 Added
 
 - ...
 
-### 🔄 变更
+### 🔄 Changed
 
 - ...
 
-### 🐛 修复
+### 🐛 Fixed
 
 - ...
 ```
 
-**绝不允许**用 `[Unreleased]` 占位发布版本。
+**Never** use a `[Unreleased]` placeholder for released versions.
 
 ---
 
-## 5. 1.x 阶段
+## 5. 1.x phase
 
-### 5.1 弃用策略（Deprecation）
+### 5.1 Deprecation policy
 
-任何**公开 API 弃用**必须经过：
+Any **public API deprecation** must go through:
 
-1. **标记**：`#[deprecated(since = "1.5.0", note = "Use new_method() instead")]`
-2. **CHANGELOG 记录**：在弃用版本的 CHANGELOG 明确说明
-3. **至少 1 个 MINOR 版本共存**：从 `1.5.0` 弃用，至少 `1.6.0` / `1.7.0` 仍可用，然后 `1.8.0` 删除
-4. **删除时**：CHANGELOG 写 "BREAKING: removed X"
+1. **Marking**: `#[deprecated(since = "1.5.0", note = "Use new_method() instead")]`
+2. **CHANGELOG entry**: stated explicitly in the CHANGELOG of the deprecating version
+3. **Coexistence for at least 1 MINOR version**: deprecated in `1.5.0`, still usable in at least `1.6.0` / `1.7.0`, removed in `1.8.0`
+4. **On removal**: the CHANGELOG states "BREAKING: removed X"
 
-### 5.2 支持窗口
+### 5.2 Support window
 
-| 版本类型     | 支持时长                   |
+| Version type | Support duration           |
 | ------------ | -------------------------- |
-| 当前 MAJOR   | 持续支持（到下一个 MAJOR） |
-| 前一个 MAJOR | 12 个月安全更新            |
-| 更早的 MAJOR | 不再支持                   |
+| Current MAJOR | continuously supported (until the next MAJOR) |
+| Previous MAJOR | 12 months of security updates |
+| Earlier MAJORs | no longer supported       |
 
-> 1.x 阶段有外部项目方时启用。
-
----
-
-## 6. 破坏性变更管理
-
-### 6.1 破坏性变更必须做
-
-1. **CHANGELOG 标注 `⚠️ BREAKING CHANGES`**
-2. **写迁移指南**（在 CHANGELOG 或独立 doc）
-3. **如果 1.x 阶段**：至少 1 个 MINOR 版本走 §5.1 弃用流程
-4. **写 commit message**：`feat!: change signature of foo()`
-
-### 6.2 不允许的破坏性变更
-
-- ❌ 删除公开 API 而无弃用预告
-- ❌ 改 JSON 字段名而无兼容层
-- ❌ 改默认行为而无 `--no-xxx` 兼容选项
-
-> 什么是破坏性变更的通用定义见 [SemVer FAQ](https://semver.org/lang/zh-CN/#spec-item-7)，不在此复制。
+> Applies once external projects exist in the 1.x phase.
 
 ---
 
-## 7. Cargo.lock 策略
+## 6. Breaking-change management
 
-| 项目                   | 类型                     | Cargo.lock    |
+### 6.1 Required for breaking changes
+
+1. **Mark `⚠️ BREAKING CHANGES` in the CHANGELOG**
+2. **Write a migration guide** (in the CHANGELOG or a standalone doc)
+3. **If in the 1.x phase**: at least 1 MINOR version must go through the §5.1 deprecation process
+4. **Write the commit message**: `feat!: change signature of foo()`
+
+### 6.2 Disallowed breaking changes
+
+- ❌ removing a public API without a deprecation notice
+- ❌ changing JSON field names without a compatibility layer
+- ❌ changing default behavior without a `--no-xxx` compatibility option
+
+> For the general definition of a breaking change see the [SemVer FAQ](https://semver.org/lang/zh-CN/#spec-item-7); it is not duplicated here.
+
+---
+
+## 7. Cargo.lock policy
+
+| Project                | Type                     | Cargo.lock    |
 | ---------------------- | ------------------------ | ------------- |
-| `evorule-tcb`          | lib                      | ❌ 不 commit  |
-| `evorule-reactor`      | lib（有 cbindgen FFI）   | ❌ 不 commit  |
-| `evorule-governance`   | lib（纯机制）            | ❌ 不 commit  |
-| `evorule-cli`          | binary（`evorule`）      | ✅ **commit** |
-| `evorule` workspace 根 | （有 binary 在子 crate） | ⚠️ **commit** |
+| `evorule-tcb`          | lib                      | ❌ not committed |
+| `evorule-reactor`      | lib (with cbindgen FFI)  | ❌ not committed |
+| `evorule-governance`   | lib (pure mechanism)     | ❌ not committed |
+| `evorule-cli`          | binary (`evorule`)       | ✅ **committed** |
+| `evorule` workspace root | (binary lives in a sub-crate) | ⚠️ **committed** |
 
-> 通用规则：lib crate 不 commit Cargo.lock（被依赖方决定），binary crate commit（锁定 build 确保可复现）。实际 .gitignore 配置见仓库根目录。
+> General rule: lib crates do not commit Cargo.lock (decided by dependents); binary crates commit it (locking the build for reproducibility). See the repo root for the actual .gitignore configuration.
 
 ---
 
-## 8. 发版流程
+## 8. Release process
 
-详细的发版操作可参考 `scripts/validate-release.ps1`、`scripts/validate-all.ps1`、`scripts/check_doc_safety.py` 等发布校验脚本，包含发版前 checklist、验证流程、tag 流程。
+For detailed release operations see the release-verification scripts such as `scripts/validate-release.ps1`, `scripts/validate-all.ps1`, and `scripts/check_doc_safety.py`, which cover the pre-release checklist, the verification flow, and the tagging flow.
 
-### 发布频率建议
+### Release-frequency guidance
 
-| 阶段                | 频率                              |
+| Stage               | Frequency                         |
 | ------------------- | --------------------------------- |
-| 0.x 早期（0.1-0.5） | 每 2-4 周一个 MINOR               |
-| 0.x 后期（0.6-0.9） | 每 1-2 个月一个 MINOR             |
-| 1.0 后              | 每 1-3 个月一个 MINOR，patch 随时 |
+| Early 0.x (0.1-0.5) | one MINOR every 2-4 weeks         |
+| Late 0.x (0.6-0.9)  | one MINOR every 1-2 months        |
+| After 1.0           | one MINOR every 1-3 months, patches anytime |
 
 ---
 
-## 9. 版本号标记
+## 9. Version tagging
 
-### 9.1 git tag 格式
+### 9.1 git tag format
 
-所有 tag 必须带 `v` 前缀：如 `v1.2.3`、`v1.2.3-rc.1`。
+All tags must carry the `v` prefix: e.g. `v1.2.3`, `v1.2.3-rc.1`.
 
-### 9.2 分支策略
+### 9.2 Branch strategy
 
-当前 EvoRule 只用 `main` 分支。1.x 阶段前不需要多分支。
+EvoRule currently uses only the `main` branch. Multiple branches are not needed before the 1.x phase.
 
-### 9.3 GitHub 标签发布
+### 9.3 GitHub tag releases
 
-推 v*.*.* tag → GitHub Actions (`.github/workflows/release.yml`) 自动构建并上传：
+Pushing a v*.*.* tag → GitHub Actions (`.github/workflows/release.yml`) builds and uploads automatically:
 
-| 平台       | Target                       | 二进制             | 备注                       |
-| ---------- | ---------------------------- | ------------------ | -------------------------- |
-| Linux x86_64   | `x86_64-unknown-linux-musl`   | `evorule-x86_64`       | musl 静态链接，1.8 MB     |
-| Linux aarch64  | `aarch64-unknown-linux-musl`  | `evorule-aarch64`      | musl 静态链接，1.4 MB，交叉编译 |
-| Windows x86_64 | `x86_64-pc-windows-msvc`      | `evorule-x86_64.exe`   | windows-latest runner      |
+| Platform       | Target                       | Binary                 | Notes                      |
+| -------------- | ---------------------------- | ---------------------- | -------------------------- |
+| Linux x86_64   | `x86_64-unknown-linux-musl`  | `evorule-x86_64`       | musl static linking, 1.8 MB |
+| Linux aarch64  | `aarch64-unknown-linux-musl` | `evorule-aarch64`      | musl static linking, 1.4 MB, cross-compiled |
+| Windows x86_64 | `x86_64-pc-windows-msvc`     | `evorule-x86_64.exe`   | windows-latest runner      |
 
-构建产物自动上传到 [GitHub release 页面](https://github.com/evorule/evorule/releases)，tag 与 git tag 一致。
+Build artifacts are uploaded automatically to the [GitHub release page](https://github.com/evorule/evorule/releases); the release tag matches the git tag.
 
-**macOS 二进制**：发版链无 macOS runner；macOS 二进制暂不发布。
+**macOS binaries**: the release chain has no macOS runner; macOS binaries are not published for now.
 
-**GitHub 关系**：本仓库即 GitHub 权威源（2026-11-01 单主转换，无镜像）。
+**GitHub relationship**: this repository is the authoritative GitHub source (single-master conversion on 2026-11-01, no mirror).
 
 ---
 
 ## 10. FAQ
 
-### Q1: 0.x 阶段每次 MINOR 都包含破坏性变更，项目方怎么跟踪?
+### Q1: Every MINOR in the 0.x phase contains breaking changes — how do projects keep track?
 
-**A**: 0.x 阶段项目方应**锁版本**（如 `evorule = "=0.9.0"`，**精确版本**）。`cargo update` 会自动跳到下一个 MINOR，这是项目方预期的（因为 0.x 不承诺兼容）。
+**A**: In the 0.x phase projects should **pin the version** (e.g. `evorule = "=0.9.0"`, **exact version**). `cargo update` will automatically jump to the next MINOR, which is what projects expect (because 0.x promises no compatibility).
 
-### Q2: 如果有紧急 hotfix 怎么办?
+### Q2: What about an urgent hotfix?
 
 **A**:
 
-- **0.x 阶段**：从 main 拉 hotfix 分支，改完直接发，版本号 PATCH
-- **1.x 阶段**：同样 PATCH，但必须从最新 stable tag 拉 hotfix 分支（不要从 dev 拉）
+- **0.x phase**: cut a hotfix branch from main, release directly after the fix, PATCH version bump
+- **1.x phase**: also PATCH, but the hotfix branch must be cut from the latest stable tag (never from dev)
 
 ---
 
-## 11. 版本历史
+## 11. Version history
 
-| 版本 | 日期       | 主要变化                                                                                                             |
-| ---- | ---------- | -------------------------------------------------------------------------------------------------------------------- |
-| 1.3  | 2026-08-20 | 新增 §12 发版版本号同步清单；将 evorule-tcb `version` 改为 `version.workspace = true` 消除 SSOT 硬编码；同步 4 处锁版本示例从 `0.2.0`/`0.2.4` 到 `0.3.1` |
-| 1.2  | 2026-08-02 | 瘦身重构：删除 SemVer/Rust 通用知识复制、重复 FAQ、商业敏感信息、内部路径；§4.2 重写 production ready 为机制层成熟度 |
-| 1.1  | 2026-07-20 | 校准安全审计门槛                                                                                                     |
-| 1.0  | 2026-07-20 | 初版                                                                                                                 |
+| Version | Date       | Major changes                                                                                                        |
+| ------- | ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| 1.3     | 2026-08-20 | added §12 release version-number sync checklist; changed evorule-tcb `version` to `version.workspace = true` to remove SSOT hardcoding; synced 4 version-pinning examples from `0.2.0`/`0.2.4` to `0.3.1` |
+| 1.2     | 2026-08-02 | slimming refactor: removed SemVer/Rust general-knowledge duplication, duplicate FAQ, commercially sensitive information, and internal paths; §4.2 rewritten to define production ready as mechanism-layer maturity |
+| 1.1     | 2026-07-20 | calibrated the security-audit gate                                                                                   |
+| 1.0     | 2026-07-20 | initial version                                                                                                      |
 
 ---
 
-## 12. 发版版本号同步清单
+## 12. Release version-number sync checklist
 
-**问题**: 历史发版时漏改 `CONTRIBUTING.md` / `README.md` banner / 锁版本示例等位置，导致仓内出现 `0.2.0` / `0.2.4` 与当前 `0.3.1` 并存。SSOT 已集中（`Cargo.toml` `[workspace.package].version`），但**派生位置**散落 L1 文档各处。
+**Problem**: historical releases missed updating spots such as `CONTRIBUTING.md` / the `README.md` banner / version-pinning examples, leaving `0.2.0` / `0.2.4` coexisting with the current `0.3.1` inside the repo. The SSOT has been centralized (`Cargo.toml` `[workspace.package].version`), but **derived locations** are scattered across the L1 documents.
 
-**本节目标**: 把"发版时需要同步的所有位置"列成清单，发版前按表打勾 → 不再漏。
+**Goal of this section**: turn "every location that must be synced at release time" into a checklist; tick through the table before a release → nothing gets missed.
 
-### 12.1 类别 A — 单一真相源（SSOT，改这一处就够）
+### 12.1 Category A — single source of truth (SSOT; change this one spot and it propagates)
 
-| # | 路径 | 字段 | 说明 |
-| - | ---- | ---- | ---- |
-| A1 | `Cargo.toml` | `[workspace.package].version` | **唯一手动改点**。所有子 crate 通过 `version.workspace = true` 自动继承。 |
+| #  | Path       | Field                                | Notes |
+| -- | ---------- | ------------------------------------ | ----- |
+| A1 | `Cargo.toml` | `[workspace.package].version`      | **the only manual change point**. All sub-crates inherit automatically via `version.workspace = true`. |
 
-> 改完 A1 后跑一次 `cargo build --workspace` 让 `Cargo.lock` 自动同步。
+> After changing A1, run `cargo build --workspace` once so `Cargo.lock` syncs automatically.
 
-### 12.2 类别 B — 自动传递（不需手动改，但要确认没硬编码）
+### 12.2 Category B — automatic propagation (no manual change needed, but confirm nothing is hardcoded)
 
-| # | 路径 | 字段 | 期望形式 |
-| - | ---- | ---- | -------- |
-| B1 | `evorule-tcb/Cargo.toml` | `[package].version` | `version.workspace = true` |
+| #  | Path                        | Field                | Expected form |
+| -- | --------------------------- | -------------------- | ------------- |
+| B1 | `evorule-tcb/Cargo.toml`    | `[package].version`  | `version.workspace = true` |
 | B2 | `evorule-reactor/Cargo.toml` | `[package].version` | `version.workspace = true` |
 | B3 | `evorule-governance/Cargo.toml` | `[package].version` | `version.workspace = true` |
-| B4 | `evorule-cli/Cargo.toml` | `[package].version` | `version.workspace = true` |
-| B5 | `Cargo.lock` | 所有 `evorule-*` 包的 `version` | 由 `cargo build` 自动重写 |
+| B4 | `evorule-cli/Cargo.toml`    | `[package].version`  | `version.workspace = true` |
+| B5 | `Cargo.lock`                | `version` of all `evorule-*` packages | rewritten automatically by `cargo build` |
 
-> **违规模式**: 任何子 crate 出现 `version = "0.X.Y"` 硬编码 = SSOT 违反。`validate-version.ps1` 自动检测。
+> **Violation pattern**: any sub-crate carrying a hardcoded `version = "0.X.Y"` = an SSOT violation. Detected automatically by `validate-version.ps1`.
 
-### 12.3 类别 C — 必改（文档内的版本号引用，SSOT 改了这些必须跟着改）
+### 12.3 Category C — must update (version-number references inside documents; once the SSOT changes these must follow)
 
-| # | 路径 | 行号近似 | 当前内容 | 改为什么 |
-| - | ---- | -------- | -------- | -------- |
-| C1 | `README.md` | 顶部 banner | `⚠️ v0.X.x — ... (当前 0.Y.Z, YYYY-MM-DD)` | 跟 SSOT 同步到当前 MINOR + 当前 PATCH + CHANGELOG 日期 |
-| C2 | `README.md` | 顶部段落 | `EvoRule **v0.X.x 公开基座**` | 跟 SSOT 同步 |
-| C3 | `README.md` | L26 附近 | badge `version-X.Y.Z-green` | 跟 SSOT 同步 |
-| C4 | `CONTRIBUTING.md` | L23 | `**Version**: X.Y.Z` | 跟 SSOT 同步 |
-| C5 | `CONTRIBUTING.md` | 报告模板 | `evorule version: [e.g. X.Y.Z]` | 跟 SSOT 同步 |
-| C6 | `CONTRIBUTING_ZH.md` | 报告模板 | `evorule 版本: [e.g. vX.Y.Z]` | 跟 SSOT 同步 |
-| C7 | `VERSION_STRATEGY.md` | §10 Q1 FAQ 锁版本示例 | `evorule = "=X.Y.Z"` | 跟 SSOT 同步 |
-| C8 | `DESIGN_PHILOSOPHY.md` | SemVer 章节锁版本示例 | `evorule = "=X.Y.Z"` | 跟 SSOT 同步 |
+| #  | Path                  | Approx. line | Current content | Change to |
+| -- | --------------------- | ------------ | --------------- | --------- |
+| C1 | `README.md`           | top banner   | `⚠️ v0.X.x — ... (current 0.Y.Z, YYYY-MM-DD)` | sync with the SSOT to the current MINOR + current PATCH + CHANGELOG date |
+| C2 | `README.md`           | top paragraph | `EvoRule **v0.X.x public base**` | sync with the SSOT |
+| C3 | `README.md`           | around L26   | badge `version-X.Y.Z-green` | sync with the SSOT |
+| C4 | `CONTRIBUTING.md`     | L23          | `**Version**: X.Y.Z` | sync with the SSOT |
+| C5 | `CONTRIBUTING.md`     | report template | `evorule version: [e.g. X.Y.Z]` | sync with the SSOT |
+| C6 | `CONTRIBUTING_ZH.md`  | report template | `evorule version: [e.g. vX.Y.Z]` (field label appears in Chinese in that file) | sync with the SSOT |
+| C7 | `VERSION_STRATEGY.md` | §10 Q1 FAQ version-pinning example | `evorule = "=X.Y.Z"` | sync with the SSOT |
+| C8 | `DESIGN_PHILOSOPHY.md` | SemVer section version-pinning example | `evorule = "=X.Y.Z"` | sync with the SSOT |
 
-> **白名单豁免**（这些位置故意保留旧版本号，**不要改**）：
-> - `CHANGELOG.md` 各历史段（多版本共存，合法）
-> - `GATE_REFERENCE.md` 表格里 `v0.X 新增` / `v0.Y 重构` 标记（历史变更记录）
-> - `DESIGN_PHILOSOPHY.md` 的"v0.2.0 边界再调整"段（历史变更记录）
-> - `evorule-cli/README.md` 等 I/O 协议对比表（`v0.2.0 不产生` / `v0.3.1 产生` 是历史对比）
-> - `SECURITY.md` / `SECURITY_AUDIT_v*.md` / `THREAT_MODEL_v*.md`（版本绑定审计批次）
-> - `MIGRATION_v*.md` / `RELEASE_PROCESS_v*.md`（讲特定版本迁移/发布流程）
-> - `DOCS_INDEX.md` 中 `SECURITY_AUDIT_v0.1.0.md` 引用（0.1.0 审计持续有效）
-> - 任何 `v\d+.\d+.\d+` 出现在路线图/未来版本表格
+> **Whitelist exemptions** (these locations intentionally keep old version numbers; **do not change them**):
+> - `CHANGELOG.md` historical sections (multiple versions coexist — legitimate)
+> - `GATE_REFERENCE.md` table markers like `v0.X added` / `v0.Y refactored` (historical change records)
+> - the "v0.2.0 boundary readjustment" section of `DESIGN_PHILOSOPHY.md` (historical change record)
+> - I/O protocol comparison tables in `evorule-cli/README.md` and similar (`v0.2.0 does not produce` / `v0.3.1 produces` is a historical comparison)
+> - `SECURITY.md` / `SECURITY_AUDIT_v*.md` / `THREAT_MODEL_v*.md` (audit batches bound to versions)
+> - `MIGRATION_v*.md` / `RELEASE_PROCESS_v*.md` (version-specific migration / release processes)
+> - the `SECURITY_AUDIT_v0.1.0.md` reference in `DOCS_INDEX.md` (the 0.1.0 audit remains valid)
+> - any `v\d+.\d+.\d+` appearing in roadmap / future-version tables
 
-### 12.4 类别 D — 必查（SSOT 改后，文档内提及的版本号是否仍然准确）
+### 12.4 Category D — must verify (after the SSOT changes, are the version numbers mentioned in documents still accurate)
 
-| # | 路径 | 检查什么 |
-| - | ---- | -------- |
-| D1 | `ROADMAP.md` | 路线图状态行（`✅ 0.X.1 已发布`）是否需要更新 |
-| D2 | `CHANGELOG.md` | 是否新增了当前版本的章节（按 §4.3 格式） |
-| D3 | `DOCS_INDEX.md` | "与 `Cargo.toml` 中 `version` 同步" 段是否仍准确 |
-| D4 | `examples/*/README.md` | example 自身的版本号与依赖版本号 |
+| #  | Path                    | What to check |
+| -- | ----------------------- | ------------- |
+| D1 | `ROADMAP.md`            | whether the roadmap status rows (`✅ 0.X.1 released`) need updating |
+| D2 | `CHANGELOG.md`          | whether a section for the current version was added (per the §4.3 format) |
+| D3 | `DOCS_INDEX.md`         | whether the "synced with the `version` in `Cargo.toml`" statement is still accurate |
+| D4 | `examples/*/README.md`  | the example's own version number and dependency version numbers |
 
-### 12.5 类别 E — 自动化校验（人工改完 C/D 后跑）
+### 12.5 Category E — automated checks (run after manually finishing C/D)
 
 ```powershell
-# Windows PowerShell 5.1 跑法（避免 UTF-8 解析坑）：
-#   PowerShell 5.1 + 中文 Windows 上 ps1 无 BOM 会按 GBK 读，破坏中文注释 → parse error
-#   临时方案：在 ps1 头部加 UTF-8 BOM (EF BB BF)，但 PowerShell 5.1 仍可能把 BOM 当字符
-#   推荐：先在 PowerShell 7 (pwsh) 环境跑，PowerShell 5.1 环境建议升级或用 docker
+# How to run on Windows PowerShell 5.1 (avoiding UTF-8 parsing pitfalls):
+#   On PowerShell 5.1 + Chinese-locale Windows, a BOM-less ps1 is read as GBK, which breaks Chinese comments -> parse error
+#   Workaround: add a UTF-8 BOM (EF BB BF) at the top of the ps1, but PowerShell 5.1 may still treat the BOM as characters
+#   Recommendation: run in a PowerShell 7 (pwsh) environment first; for PowerShell 5.1 environments, upgrade or use docker
 pwsh -NoProfile -File scripts/validate-version.ps1
 ```
 
-`validate-version.ps1` 覆盖：
-- A1 / B1-B4：所有 Cargo.toml `version` 与 workspace 一致
-- B5：`Cargo.lock` 与 workspace 一致
-- C1-C8：扫描 L1 文档（`*.md`）中所有 `v\d+\.\d+\.\d+` 字面量，与 canonical 不一致即 FAIL（自动应用 §12.3 白名单）
-- MAJOR 一致性：本仓所有项目 MAJOR 必须相同
-- 历史废弃模式扫描：`v6.x` / `v7.0` / `6.0.0` 等已退役模式
+`validate-version.ps1` covers:
+- A1 / B1-B4: all Cargo.toml `version` fields consistent with the workspace
+- B5: `Cargo.lock` consistent with the workspace
+- C1-C8: scans all `v\d+\.\d+\.\d+` literals in the L1 documents (`*.md`) and FAILs on any mismatch with the canonical value (the §12.3 whitelist is applied automatically)
+- MAJOR consistency: all projects in this repo must share the same MAJOR
+- historical deprecated-pattern scan: retired patterns such as `v6.x` / `v7.0` / `6.0.0`
 
-### 12.6 类别 F — git 操作
+### 12.6 Category F — git operations
 
-| # | 操作 | 说明 |
-| - | ---- | ---- |
-| F1 | `git add` 改完的文件 | 按 A-E 列表确认 |
-| F2 | `git commit -m "chore(release): vX.Y.Z"` | 遵循 §6.1 commit message 规范 |
-| F3 | `git tag vX.Y.Z` | 严格按 §9.1 格式（带 `v` 前缀） |
-| F4 | `git push origin main --tags` | 触发 GitHub Actions（§9.3）自动 release |
+| #  | Operation | Notes |
+| -- | --------- | ----- |
+| F1 | `git add` the changed files | confirm against the A-E list |
+| F2 | `git commit -m "chore(release): vX.Y.Z"` | follow the §6.1 commit-message convention |
+| F3 | `git tag vX.Y.Z` | strictly follow the §9.1 format (with the `v` prefix) |
+| F4 | `git push origin main --tags` | triggers the GitHub Actions (§9.3) automatic release |
 
-### 12.7 发版前 Checklist（按顺序打勾）
+### 12.7 Pre-release checklist (tick in order)
 
-- [ ] A1 改完 `Cargo.toml` workspace.package.version
-- [ ] 跑 `cargo build --workspace` 让 `Cargo.lock` 自动同步
-- [ ] 跑 `pwsh -NoProfile -File scripts/validate-version.ps1` 确认 A/B 全绿
-- [ ] 手动改 C1-C8（按 §12.3 表）
-- [ ] 复跑 `validate-version.ps1` 确认 C 全绿
-- [ ] 检查 D1-D4 派生文档
-- [ ] 按 §4.3 写新 `CHANGELOG.md` 段
-- [ ] commit + tag + push（按 §12.6）
-- [ ] GitHub release 页面核对 CI 上传的二进制（§9.3）
+- [ ] A1: `Cargo.toml` workspace.package.version updated
+- [ ] run `cargo build --workspace` so `Cargo.lock` syncs automatically
+- [ ] run `pwsh -NoProfile -File scripts/validate-version.ps1` and confirm A/B are all green
+- [ ] manually update C1-C8 (per the §12.3 table)
+- [ ] re-run `validate-version.ps1` and confirm C is all green
+- [ ] check the D1-D4 derived documents
+- [ ] write the new `CHANGELOG.md` section per §4.3
+- [ ] commit + tag + push (per §12.6)
+- [ ] verify the CI-uploaded binaries on the GitHub release page (§9.3)
 
-### 12.8 反模式（不要这样做）
+### 12.8 Anti-patterns (do not do these)
 
-- ❌ 改完 A1 不跑 `validate-version.ps1` — 历史已证明会漏
-- ❌ 直接 `git tag` 不 commit — tag 指向空 commit
-- ❌ tag 不带 `v` 前缀（违反 §9.1）
-- ❌ 在 C 类别用 sed/awk 全局替换 — 会破坏白名单豁免位置（CHANGELOG / GATE_REFERENCE 等）
+- ❌ updating A1 without running `validate-version.ps1` — history has proven this leads to misses
+- ❌ running `git tag` without committing — the tag points at an empty commit
+- ❌ tags without the `v` prefix (violates §9.1)
+- ❌ using sed/awk global replacement on Category C — it would break the whitelist-exempt locations (CHANGELOG / GATE_REFERENCE, etc.)
 
 ---
 
-**本版本策略基于 [SemVer 2.0](https://semver.org/lang/zh-CN/)、[Keep a Changelog](https://keepachangelog.com/)、[Conventional Commits](https://www.conventionalcommits.org/) 等社区最佳实践，结合 evorule 仓"机制 vs 应用分离"的设计原则定制。**
+**This version strategy is based on community best practices such as [SemVer 2.0](https://semver.org/lang/zh-CN/), [Keep a Changelog](https://keepachangelog.com/), and [Conventional Commits](https://www.conventionalcommits.org/), tailored to the evorule repo's "mechanism vs application separation" design principle.**
 
-**作者**: EvoRule Project
-**邮箱**: <evorulelab@gmail.com>
+**Author**: EvoRule Project
+**Email**: <evorulelab@gmail.com>
 **GitHub**: <https://github.com/evorule/evorule>
 
 ---
 
-_最后更新:2026-08-02_
+_Last updated: 2026-08-02_

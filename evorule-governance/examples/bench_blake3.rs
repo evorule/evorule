@@ -1,4 +1,4 @@
-// examples 演示代码豁免 L2 clippy (L1 build.rs 门禁已守 panic-prone)。详见 GATE_REFERENCE.md §六(豁免索引)
+// Example/demo code is exempt from L2 clippy (the L1 build.rs gate already guards panic-prone code). See GATE_REFERENCE.md §6 (exemption index)
 #![allow(
     clippy::unwrap_used,
     clippy::panic,
@@ -8,12 +8,12 @@
 )]
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
-// 阶段 1.3 性能基准: blake3 哈希链吞吐量
+// Performance benchmark: blake3 hash-chain throughput
 //
-// 用法:
+// Usage:
 //   cargo run --release --example bench_blake3 -- [entries] [warmup]
 //
-// 默认: 10000 entries × 1KB content × 1KB warmup
+// Defaults: 10000 entries × 1KB content × 1KB warmup
 
 use blake3::Hasher;
 use std::env;

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 事实（Fact）定义 —— re-export 壳
+//! Fact definitions — re-export shell
 //!
-//! 实现已随 2026-10-18 SC3-a 方案乙迁入 [`evorule_audit_chain`]（no_std 审计链内核），
-//! 本模块按既有三方 re-export 先例保持 `crate::fact` 路径与公开面零变化：
-//! reactor / governance / cli 的既有引用无需任何改动。
+//! The implementation was migrated into [`evorule_audit_chain`] (the no_std
+//! audit-chain kernel) in the 2026-10-18 SC3-a scheme-B consolidation; per the
+//! existing three-way re-export precedent this module keeps the `crate::fact`
+//! path and the public surface unchanged: existing references in
+//! reactor / governance / cli need no changes at all.
 
 pub use evorule_audit_chain::fact::*;

@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 生成带哈希链的 WAL 文件（用于 CLI verify-chain 端到端验证）
+//! Generates a WAL file with a hash chain (for CLI verify-chain end-to-end verification)
 //!
-//! # 关于 Clippy lint
-//! 本文件是示例/工具代码，允许 expect/panic 以简化错误处理。
-//! 这不是生产代码，不适用 workspace lint 的 deny 级限制。
+//! # About the Clippy lint
+//! This file is example/tool code; expect/panic are allowed to simplify error handling.
+//! This is not production code; the workspace lint's deny-level restrictions do not apply.
 #![allow(clippy::expect_used, clippy::panic)]
 //!
-//! # 用途
-//! 生成一个包含 7 条 Fact 的 WAL 文件，包含完整的哈希链字段
-//! （content_hash/prev_hash/chain_hash），供 `evorule verify-chain` 命令验证。
+//! # Purpose
+//! Generates a WAL file containing 7 Facts with complete hash-chain fields
+//! (content_hash/prev_hash/chain_hash), for verification by the `evorule verify-chain` command.
 //!
-//! # 用法
+//! # Usage
 //! ```bash
 //! cargo run -p evorule-reactor --example generate_hashed_wal -- <output_path>
 //! cargo run --bin evorule -- verify-chain <output_path>

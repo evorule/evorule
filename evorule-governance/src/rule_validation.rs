@@ -1,61 +1,66 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 规则校验 API —— 静态验证 + 安全分析
+//! Rule validation API — static validation + security analysis
 //!
-//! # 设计依据
+//! # Design basis
 //!
-//! 本模块为 evorule 核心对外暴露的规则校验接口，供：
-//! - **evorule-application/panels/rule-editor**：可视化编辑器在保存前实时校验
-//! - **evorule-cli**：`evorule validate` 子命令（未来可桥接到此 API）
-//! - **嵌入式场景**：设备通过 HTTP API 校验规则，无需集成 CLI
+//! This module is the rule-validation interface exposed outward by the evorule core, for:
+//! - **evorule-application/panels/rule-editor**: the visual editor validates in real time before saving
+//! - **evorule-cli**: the `evorule validate` subcommand (may bridge to this API in the future)
+//! - **embedded scenarios**: devices validate rules via the HTTP API without integrating the CLI
 //!
-//! # 机制-策略分离
+//! # Mechanism-policy separation
 //!
-//! 本模块**只验证机制层约束**，不涉及业务语义：
-//! - ✅ 结构完整性：type 字段存在、必填参数完备
-//! - ✅ 类型合法性：指令类型在白名单内
-//! - ✅ 安全风险：循环深度、I/O 频率、payload 增长边界
-//! - ❌ 不验证业务规则（如"库存扣减不能为负"）—— 那是业务语义校验层
-//!   （server 侧 `core/semantic_invariants` crate）的职责；governance 仓内
-//!   没有该模块，勿在本仓找
+//! This module **only validates mechanism-layer constraints**, never business semantics:
+//! - ✅ structural integrity: the type field exists, required params complete
+//! - ✅ type legality: the instruction type is within the allowlist
+//! - ✅ security risks: loop depth, I/O frequency, payload growth bounds
+//! - ❌ does not validate business rules (e.g. "inventory deduction must not go negative") — that
+//!   is the responsibility of the business-semantic validation layer (the server-side
+//!   `core/semantic_invariants` crate); that module does not exist in the governance repo, do not
+//!   look for it here
 //!
-//! # 参考
-//! - `evorule-cli/src/commands/validate.rs`：CLI 侧的元指令白名单校验
-//! - `evorule-tcb/src/executor.rs`：`execute_meta_instruction` 的合法指令类型
-//! - `evorule-reactor/src/特别规范.md`：机制-策略分离原则
+//! # References
+//! - `evorule-cli/src/commands/validate.rs`: the CLI-side meta-instruction allowlist validation
+//! - `evorule-tcb/src/executor.rs`: the legal instruction types of `execute_meta_instruction`
+//! - the mechanism-policy separation principle (historical design note; the cited
+//!   in-repo design doc has been retired — see `GATE_REFERENCE.md` §1, the
+//!   intentional-differences table)
 
 use evorule_tcb::JsonValue;
 use serde::Serialize;
 
 // ============================================================================
-// 元指令白名单
+// Meta-instruction allowlist
 // ============================================================================
 
-/// 合法元指令类型白名单（P0-01：对齐 executor.rs 元指令白名单）
+/// The legal meta-instruction type allowlist (P0-01: aligned with the executor.rs meta-instruction allowlist)
 ///
-/// 来源：evorule-tcb/src/executor.rs::META_INSTRUCTION_TYPES，
-/// 4 种：set / push / branch / io_request（enforce 由 tier 门禁控制不入选；
-/// collect/merge 已退役，规则清理方案 2026-09-14）。
-/// noop/increment/decrement 是**指令层（instruction）**类型，不是元指令层，不得混入本白名单
-/// （双层语言框架，records/75；P0-01 修前曾误混，导致假阳性/假阴性）。
-/// 不含 G8 禁止词（conditional/while_loop/sequence），故无需 build.rs 豁免。
+/// Source: evorule-tcb/src/executor.rs::META_INSTRUCTION_TYPES,
+/// 4 types: set / push / branch / io_request (enforce is gated by the tier gate and not included;
+/// collect/merge are retired, rule-cleanup plan 2026-09-14).
+/// noop/increment/decrement are **instruction-layer** types, not the meta-instruction layer, and
+/// must not be mixed into this allowlist
+/// (the two-layer language framework, records/75; before the P0-01 fix they were mistakenly
+/// mixed in, causing false positives/negatives).
+/// Contains no G8 forbidden words (conditional/while_loop/sequence), so no build.rs exemption is needed.
 const VALID_TRANSFORM_TYPES: &[&str] = &["branch", "set", "push", "io_request"];
 
-/// `branch` 指令的必填参数
+/// Required params of the `branch` instruction
 const BRANCH_REQUIRED: &[&str] = &["domain"];
-/// `set` 指令的必填参数
+/// Required params of the `set` instruction
 const SET_REQUIRED: &[&str] = &["attr", "operation", "value"];
-/// `push` 指令的必填参数
+/// Required params of the `push` instruction
 const PUSH_REQUIRED: &[&str] = &["instructions"];
-/// `io_request` 指令的必填参数
+/// Required params of the `io_request` instruction
 const IO_REQUEST_REQUIRED: &[&str] = &["io_type"];
 
-/// `set` 指令的合法 operation 值
+/// Legal operation values of the `set` instruction
 const VALID_OPERATIONS: &[&str] = &["set", "add", "sub"];
 
 // ============================================================================
-// 安全分析阈值
+// Security analysis thresholds
 // ============================================================================
 
 /// Maximum transform rule count (SSOT-sourced: references the evorule-tcb
@@ -69,96 +74,96 @@ const MAX_TRANSFORM_RULES: usize = evorule_tcb::MAX_TRANSFORM_RULES;
 /// (SSOT: one cap must not be defined in more than one place). Defensive
 /// recommended cap: see check_recursive_nesting.
 const MAX_NESTING_DEPTH: usize = evorule_tcb::executor::MAX_BRANCH_DEPTH;
-/// 单个 io_request 内最大参数大小（字节）
+/// Maximum params size within one io_request (bytes)
 const MAX_IO_PARAMS_SIZE: usize = 1024 * 10; // 10KB
-/// 安全分析中检测到的最大循环深度阈值
+/// Maximum loop-depth threshold detected in security analysis
 const INFINITE_LOOP_DEPTH_THRESHOLD: usize = 5;
 
 // ============================================================================
-// 返回类型
+// Return types
 // ============================================================================
 
-/// 校验结果
+/// Validation result
 #[derive(Debug, Clone, Serialize)]
 pub struct ValidationResult {
-    /// 是否通过（所有校验项均无 error）
+    /// Whether it passed (no check item has an error)
     pub passed: bool,
-    /// 静态校验项
+    /// Static validation items
     pub static_validation: StaticValidation,
-    /// 安全分析项
+    /// Security analysis items
     pub security_analysis: SecurityAnalysis,
-    /// 汇总
+    /// Summary
     pub summary: ValidationSummary,
 }
 
-/// 静态校验结果
+/// Static validation result
 #[derive(Debug, Clone, Serialize)]
 pub struct StaticValidation {
-    /// 校验项列表
+    /// List of check items
     pub checks: Vec<ValidationCheck>,
-    /// 错误计数
+    /// Error count
     pub error_count: usize,
-    /// 警告计数
+    /// Warning count
     pub warn_count: usize,
 }
 
-/// 单条校验项
+/// A single check item
 #[derive(Debug, Clone, Serialize)]
 pub struct ValidationCheck {
-    /// 校验项名称
+    /// Check item name
     pub name: &'static str,
-    /// 是否通过
+    /// Whether it passed
     pub passed: bool,
-    /// 严重级别：error / warn / info
+    /// Severity: error / warn / info
     pub level: &'static str,
-    /// 详细描述
+    /// Detailed description
     pub message: String,
-    /// 关联的 transform 索引（-1 表示全局）
+    /// The associated transform index (-1 means global)
     pub transform_index: i32,
 }
 
-/// 安全分析结果
+/// Security analysis result
 #[derive(Debug, Clone, Serialize)]
 pub struct SecurityAnalysis {
-    /// 分析项列表
+    /// List of analysis items
     pub checks: Vec<ValidationCheck>,
-    /// 风险计数
+    /// Risk count
     pub risk_count: usize,
-    /// 整体风险等级：low / medium / high
+    /// Overall risk level: low / medium / high
     pub risk_level: &'static str,
 }
 
-/// 校验汇总
+/// Validation summary
 #[derive(Debug, Clone, Serialize)]
 pub struct ValidationSummary {
-    /// 总规则数
+    /// Total rule count
     pub total_transforms: usize,
-    /// 总错误数
+    /// Total error count
     pub total_errors: usize,
-    /// 总警告数
+    /// Total warning count
     pub total_warnings: usize,
-    /// 总风险数
+    /// Total risk count
     pub total_risks: usize,
 }
 
 // ============================================================================
-// 入口函数
+// Entry function
 // ============================================================================
 
-/// 执行完整的规则校验（静态验证 + 安全分析）
+/// Runs the full rule validation (static validation + security analysis)
 ///
-/// # 参数
-/// - `transforms`: 规则 transform 列表（从 core_eval.json 或规则目录加载）
+/// # Arguments
+/// - `transforms`: the rule transform list (loaded from core_eval.json or the rule directory)
 ///
-/// # 返回值
-/// 包含全部校验项和汇总的 `ValidationResult`。
+/// # Returns
+/// A `ValidationResult` containing all check items and the summary.
 ///
-/// # 示例
+/// # Example
 /// ```
 /// use evorule_governance::rule_validation::validate_rules;
 /// use evorule_tcb::JsonValue;
 ///
-/// // 一条合法规则：无条件 set(x, 42)
+/// // one legal rule: an unconditional set(x, 42)
 /// let rule = JsonValue::object_from_pairs(&[
 ///     ("type", JsonValue::string("set")),
 ///     ("params", JsonValue::object_from_pairs(&[
@@ -169,27 +174,27 @@ pub struct ValidationSummary {
 /// ]);
 ///
 /// let result = validate_rules(&[rule]);
-/// assert!(result.passed, "合法规则应通过校验");
+/// assert!(result.passed, "a legal rule should pass validation");
 /// assert_eq!(result.summary.total_transforms, 1);
 /// assert_eq!(result.summary.total_errors, 0);
 /// ```
 pub fn validate_rules(transforms: &[JsonValue]) -> ValidationResult {
-    // === 阶段一：静态验证 ===
+    // === Phase one: static validation ===
     let static_checks = perform_static_validation(transforms);
     let static_error_count = static_checks.iter().filter(|c| c.level == "error").count();
     let static_warn_count = static_checks.iter().filter(|c| c.level == "warn").count();
 
-    // 如果静态验证有 error，安全分析仍然执行（但可能不完整）
-    // 安全分析需要结构正确的规则才能做有意义的分析
+    // If static validation has errors, security analysis still runs (but may be incomplete);
+    // security analysis needs structurally correct rules to do meaningful analysis
 
-    // === 阶段二：安全分析 ===
+    // === Phase two: security analysis ===
     let security_checks = perform_security_analysis(transforms);
     let risk_count = security_checks
         .iter()
         .filter(|c| c.level == "error" || c.level == "warn")
         .count();
 
-    // === 计算汇总 ===
+    // === Compute the summary ===
     let total_errors = static_error_count;
     let total_warnings =
         static_warn_count + security_checks.iter().filter(|c| c.level == "warn").count();
@@ -203,7 +208,7 @@ pub fn validate_rules(transforms: &[JsonValue]) -> ValidationResult {
         "low"
     };
 
-    // 静态验证的 error 才导致 passed=false（安全分析 warn 不阻断）
+    // Only static-validation errors cause passed=false (security-analysis warns do not block)
     let passed = static_error_count == 0;
 
     ValidationResult {
@@ -228,14 +233,14 @@ pub fn validate_rules(transforms: &[JsonValue]) -> ValidationResult {
 }
 
 // ============================================================================
-// 阶段一：静态验证
+// Phase one: static validation
 // ============================================================================
 
-/// 执行静态结构验证
+/// Performs static structural validation
 fn perform_static_validation(transforms: &[JsonValue]) -> Vec<ValidationCheck> {
     let mut checks = Vec::new();
 
-    // 1. 全局：transform 数量检查
+    // 1. global: transform count check
     checks.push(check_transform_count(transforms));
 
     if transforms.is_empty() {
@@ -243,7 +248,7 @@ fn perform_static_validation(transforms: &[JsonValue]) -> Vec<ValidationCheck> {
             name: "non_empty",
             passed: false,
             level: "error",
-            message: "Transform 列表为空，至少需要一条规则".to_string(),
+            message: "Transform list is empty; at least one rule is required".to_string(),
             transform_index: -1,
         });
         return checks;
@@ -252,18 +257,18 @@ fn perform_static_validation(transforms: &[JsonValue]) -> Vec<ValidationCheck> {
     for (i, t) in transforms.iter().enumerate() {
         let idx = i as i32;
 
-        // 2. type 字段存在性
+        // 2. existence of the type field
         checks.push(check_type_exists(t, idx));
 
-        // 如果 type 存在，检查合法性
+        // if the type exists, check its legality
         if let Some(type_str) = t.get("type").and_then(|v| v.as_str()) {
             checks.push(check_type_valid(type_str, idx));
 
-            // 3. 参数完备性（仅在 type 合法时检查）
+            // 3. param completeness (checked only when the type is legal)
             checks.push(check_params_complete(t, type_str, idx));
         }
 
-        // 4. 递归检查嵌套结构（branch 的 on_true/on_false）
+        // 4. recursively check nested structures (branch's on_true/on_false)
         if let Some(type_str) = t.get("type").and_then(|v| v.as_str()) {
             if type_str == "branch" {
                 checks.extend(check_branch_nested(t, idx, 0));
@@ -274,7 +279,7 @@ fn perform_static_validation(transforms: &[JsonValue]) -> Vec<ValidationCheck> {
     checks
 }
 
-/// 检查 transform 数量是否在限制内
+/// Checks whether the transform count is within the limit
 fn check_transform_count(transforms: &[JsonValue]) -> ValidationCheck {
     let passed = transforms.len() <= MAX_TRANSFORM_RULES;
     ValidationCheck {
@@ -282,16 +287,20 @@ fn check_transform_count(transforms: &[JsonValue]) -> ValidationCheck {
         passed,
         level: if passed { "info" } else { "error" },
         message: format!(
-            "Transform 数量: {} (上限: {}, {})",
+            "Transform count: {} (limit: {}, {})",
             transforms.len(),
             MAX_TRANSFORM_RULES,
-            if passed { "合规" } else { "超出限制" }
+            if passed {
+                "within limit"
+            } else {
+                "over the limit"
+            }
         ),
         transform_index: -1,
     }
 }
 
-/// 检查 type 字段是否存在
+/// Checks whether the type field exists
 fn check_type_exists(t: &JsonValue, idx: i32) -> ValidationCheck {
     let has_type = t.get("type").and_then(|v| v.as_str()).is_some();
     ValidationCheck {
@@ -299,15 +308,15 @@ fn check_type_exists(t: &JsonValue, idx: i32) -> ValidationCheck {
         passed: has_type,
         level: if has_type { "info" } else { "error" },
         message: if has_type {
-            format!("transform[{}] 的 type 字段存在", idx)
+            format!("transform[{}] has a 'type' field", idx)
         } else {
-            format!("transform[{}] 缺少 'type' 字段", idx)
+            format!("transform[{}] is missing the 'type' field", idx)
         },
         transform_index: idx,
     }
 }
 
-/// 检查 type 是否在白名单内
+/// Checks whether the type is within the allowlist
 fn check_type_valid(type_str: &str, idx: i32) -> ValidationCheck {
     let valid = VALID_TRANSFORM_TYPES.contains(&type_str);
     ValidationCheck {
@@ -315,10 +324,13 @@ fn check_type_valid(type_str: &str, idx: i32) -> ValidationCheck {
         passed: valid,
         level: if valid { "info" } else { "error" },
         message: if valid {
-            format!("transform[{}] 的 type '{}' 是合法元指令", idx, type_str)
+            format!(
+                "transform[{}] type '{}' is a legal meta instruction",
+                idx, type_str
+            )
         } else {
             format!(
-                "transform[{}] 的 type '{}' 不在白名单中 (合法值: {})",
+                "transform[{}] type '{}' is not in the allowlist (legal values: {})",
                 idx,
                 type_str,
                 VALID_TRANSFORM_TYPES.join(", ")
@@ -328,7 +340,7 @@ fn check_type_valid(type_str: &str, idx: i32) -> ValidationCheck {
     }
 }
 
-/// 检查参数完备性
+/// Checks param completeness
 fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationCheck {
     let required = match type_str {
         "branch" => BRANCH_REQUIRED,
@@ -340,7 +352,10 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
                 name: "params_complete",
                 passed: true,
                 level: "info",
-                message: format!("transform[{}] 的 type '{}' 无需校验参数", idx, type_str),
+                message: format!(
+                    "transform[{}] type '{}' requires no parameter validation",
+                    idx, type_str
+                ),
                 transform_index: idx,
             }
         }
@@ -355,8 +370,9 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
         }
     }
 
-    // 额外检查：set 的 operation 值（P1-02：非法 operation 提升为 error 阻断，
-    // 因 TCB exec_set 对未知 operation 硬失败 UnknownOperation，校验层不得降级为 warn）
+    // Extra check: set's operation value (P1-02: an illegal operation is elevated to a blocking
+    // error, because TCB exec_set hard-fails UnknownOperation on unknown operations; the
+    // validation layer must not downgrade it to warn)
     let mut operation_invalid = false;
     if type_str == "set" && missing.is_empty() {
         if let Some(op) = t
@@ -367,7 +383,7 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
             if !VALID_OPERATIONS.contains(&op) {
                 operation_invalid = true;
                 extra_checks.push(format!(
-                    "operation '{}' 不在合法值中 ({})",
+                    "operation '{}' is not among the legal values ({})",
                     op,
                     VALID_OPERATIONS.join(", ")
                 ));
@@ -375,15 +391,15 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
         }
     }
 
-    // 额外检查：io_request 的 params 大小
-    // 安全风险: params 过大可能导致 OOM/DoS,设为 error 级别(阻断验证)
+    // Extra check: io_request's params size
+    // Security risk: oversized params may cause OOM/DoS; set to error level (blocking validation)
     let mut params_too_large = false;
     if type_str == "io_request" && missing.is_empty() {
         if let Some(params) = t.get("params") {
             let params_str = format!("{:?}", params);
             if params_str.len() > MAX_IO_PARAMS_SIZE {
                 extra_checks.push(format!(
-                    "io_request 参数过大: {} 字节 (上限: {} 字节)",
+                    "io_request params too large: {} bytes (limit: {} bytes)",
                     params_str.len(),
                     MAX_IO_PARAMS_SIZE
                 ));
@@ -396,16 +412,16 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
     let level = if passed {
         "info"
     } else if !missing.is_empty() || params_too_large || operation_invalid {
-        // 缺失必填 / params 过大 / operation 非法 → error 级别（阻断）
+        // missing required / oversized params / illegal operation → error level (blocking)
         "error"
     } else {
-        // 其他额外检查 → warn 级别
+        // other extra checks → warn level
         "warn"
     };
 
     let mut msg_parts: Vec<String> = Vec::new();
     if !missing.is_empty() {
-        msg_parts.push(format!("缺少必填参数: {}", missing.join(", ")));
+        msg_parts.push(format!("missing required params: {}", missing.join(", ")));
     }
     msg_parts.extend(extra_checks);
 
@@ -414,7 +430,7 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
         passed,
         level,
         message: if msg_parts.is_empty() {
-            format!("transform[{}] 的 params 参数完备", idx)
+            format!("transform[{}] params are complete", idx)
         } else {
             format!("transform[{}]: {}", idx, msg_parts.join("; "))
         },
@@ -422,7 +438,7 @@ fn check_params_complete(t: &JsonValue, type_str: &str, idx: i32) -> ValidationC
     }
 }
 
-/// 递归检查 branch 的嵌套结构
+/// Recursively checks a branch's nested structure
 fn check_branch_nested(t: &JsonValue, idx: i32, depth: usize) -> Vec<ValidationCheck> {
     let mut checks = Vec::new();
 
@@ -431,13 +447,16 @@ fn check_branch_nested(t: &JsonValue, idx: i32, depth: usize) -> Vec<ValidationC
             name: "nesting_depth",
             passed: false,
             level: "error",
-            message: format!("transform[{}] 的嵌套深度超过 {} 层", idx, MAX_NESTING_DEPTH),
+            message: format!(
+                "transform[{}] nesting depth exceeds {} levels",
+                idx, MAX_NESTING_DEPTH
+            ),
             transform_index: idx,
         });
         return checks;
     }
 
-    // 检查 on_true
+    // check on_true
     if let Some(on_true) = t
         .get("params")
         .and_then(|p| p.get("on_true"))
@@ -452,7 +471,7 @@ fn check_branch_nested(t: &JsonValue, idx: i32, depth: usize) -> Vec<ValidationC
         }
     }
 
-    // 检查 on_false
+    // check on_false
     if let Some(on_false) = t
         .get("params")
         .and_then(|p| p.get("on_false"))
@@ -471,33 +490,33 @@ fn check_branch_nested(t: &JsonValue, idx: i32, depth: usize) -> Vec<ValidationC
 }
 
 // ============================================================================
-// 阶段二：安全分析
+// Phase two: security analysis
 // ============================================================================
 
-/// 执行安全分析
+/// Performs the security analysis
 fn perform_security_analysis(transforms: &[JsonValue]) -> Vec<ValidationCheck> {
     vec![
-        // 1. 无限循环检测：while_loop 在 domain 中，但 body 没有状态变更
+        // 1. infinite-loop detection: a while_loop in the domain, but the body has no state change
         check_infinite_loop_risk(transforms),
-        // 2. 递归嵌套风险：branch 嵌套过深
+        // 2. recursive-nesting risk: branches nested too deep
         check_recursive_nesting(transforms),
-        // 3. 无界 I/O 检测：io_request 在循环内
+        // 3. unbounded I/O detection: an io_request inside a loop
         check_unbounded_io(transforms),
-        // 4. payload 无界增长检测：重复 push 且无清理
+        // 4. unbounded payload growth detection: repeated pushes with no cleanup
         check_payload_growth(transforms),
-        // 5. 交叉引用检测：domain 引用自身
+        // 5. self-reference detection: a domain referencing itself
         check_self_reference(transforms),
     ]
 }
 
-/// 检测无限循环风险
+/// Detects the infinite-loop risk
 ///
-/// 检查 while_loop 类型的 domain 中是否包含条件判定，
-/// 以及 body 是否包含状态变更指令。
-/// B9（report-002）：递归遍历 branch 的 on_true/on_false 子节点，
-/// 嵌套在 branch 内的 while_loop / 状态变更不再漏检。
-/// 会话状态全局共享——任意层级的 set 均可为任意层级的
-/// while_loop 提供终止条件，故信号跨层级累加。
+/// Checks whether a while_loop-typed domain contains a condition decision, and whether the body
+/// contains state-change instructions.
+/// B9 (report-002): recursively walks branch's on_true/on_false child nodes, so while_loop /
+/// state changes nested inside branches are no longer missed.
+/// Session state is globally shared — a set at any level can provide the termination condition
+/// for a while_loop at any level, hence signals accumulate across levels.
 fn check_infinite_loop_risk(transforms: &[JsonValue]) -> ValidationCheck {
     let mut has_while_loop = false;
     let mut has_state_change = false;
@@ -509,17 +528,17 @@ fn check_infinite_loop_risk(transforms: &[JsonValue]) -> ValidationCheck {
         passed: !risk,
         level: if risk { "warn" } else { "info" },
         message: if risk {
-            "检测到 while_loop 但未找到状态变更指令 (set)，可能导致无限循环".to_string()
+            "while_loop detected but no state-change instruction (set) found; this may cause an infinite loop".to_string()
         } else if has_while_loop {
-            "while_loop 存在配套的状态变更指令，循环可终止".to_string()
+            "while_loop has a paired state-change instruction; the loop can terminate".to_string()
         } else {
-            "未检测到 while_loop 指令".to_string()
+            "no while_loop instruction detected".to_string()
         },
         transform_index: -1,
     }
 }
 
-/// 递归收集 while_loop 与状态变更信号（含 branch 子节点）
+/// Recursively collects while_loop and state-change signals (including branch child nodes)
 fn collect_loop_risk_signals(
     transforms: &[JsonValue],
     has_while_loop: &mut bool,
@@ -528,8 +547,8 @@ fn collect_loop_risk_signals(
     for t in transforms {
         if let Some(type_str) = t.get("type").and_then(|v| v.as_str()) {
             if type_str == "branch" {
-                // 检查 domain 是否引用控制流指令
-                // 使用 ControlFlowType::parse 而非字面量比较，满足 G8 门禁
+                // check whether the domain references a control-flow instruction
+                // uses ControlFlowType::parse instead of literal comparison, satisfying the G8 gate
                 if let Some(domain) = t.get("params").and_then(|p| p.get("domain")) {
                     if let Some(inner_type) = domain.get("type").and_then(|v| v.as_str()) {
                         if inner_type == "instruction" {
@@ -545,7 +564,7 @@ fn collect_loop_risk_signals(
                         }
                     }
                 }
-                // B9：递归 branch 子节点 on_true / on_false
+                // B9: recurse into branch child nodes on_true / on_false
                 if let Some(params) = t.get("params") {
                     for key in ["on_true", "on_false"] {
                         if let Some(sub) = params.get(key).and_then(|v| v.as_array()) {
@@ -555,8 +574,9 @@ fn collect_loop_risk_signals(
                 }
             }
 
-            // 检查是否有状态变更指令（P0-01：元指令层无 increment/decrement，
-            // 状态变更由 set 承担；指令层 increment/decrement 不在 transform 层）
+            // check for state-change instructions (P0-01: the meta-instruction layer has no
+            // increment/decrement; state changes are carried by set; instruction-layer
+            // increment/decrement never appears at the transform layer)
             if type_str == "set" {
                 *has_state_change = true;
             }
@@ -564,7 +584,7 @@ fn collect_loop_risk_signals(
     }
 }
 
-/// 检测递归嵌套风险
+/// Detects the recursive-nesting risk
 fn check_recursive_nesting(transforms: &[JsonValue]) -> ValidationCheck {
     let mut max_depth = 0usize;
 
@@ -583,10 +603,13 @@ fn check_recursive_nesting(transforms: &[JsonValue]) -> ValidationCheck {
         passed: !risk,
         level: if risk { "warn" } else { "info" },
         message: format!(
-            "最大嵌套深度: {} 层{}",
+            "max nesting depth: {} level(s){}",
             max_depth,
             if risk {
-                format!(" (超过阈值 {}，建议拆分)", INFINITE_LOOP_DEPTH_THRESHOLD)
+                format!(
+                    " (over threshold {}; consider splitting)",
+                    INFINITE_LOOP_DEPTH_THRESHOLD
+                )
             } else {
                 String::new()
             }
@@ -595,7 +618,7 @@ fn check_recursive_nesting(transforms: &[JsonValue]) -> ValidationCheck {
     }
 }
 
-/// 测量 branch 的嵌套深度
+/// Measures a branch's nesting depth
 fn measure_nesting_depth(t: &JsonValue, depth: usize) -> usize {
     let mut max_child_depth = depth;
 
@@ -619,9 +642,9 @@ fn measure_nesting_depth(t: &JsonValue, depth: usize) -> usize {
     max_child_depth
 }
 
-/// 检测无界 I/O 风险
+/// Detects the unbounded-I/O risk
 ///
-/// 检查 while_loop 内部是否包含 io_request（可能导致无限制的 I/O 调用）
+/// Checks whether a while_loop body contains io_request (potentially unbounded I/O calls)
 fn check_unbounded_io(transforms: &[JsonValue]) -> ValidationCheck {
     let mut unbounded_io_count = 0usize;
 
@@ -640,17 +663,17 @@ fn check_unbounded_io(transforms: &[JsonValue]) -> ValidationCheck {
         level: if risk { "warn" } else { "info" },
         message: if risk {
             format!(
-                "检测到 {} 处 io_request 可能在循环体内执行，可能导致无限制 I/O 调用",
+                "detected {} io_request(s) that may execute inside a loop body; this may cause unbounded I/O calls",
                 unbounded_io_count
             )
         } else {
-            "未检测到循环体内的 io_request".to_string()
+            "no io_request detected inside a loop body".to_string()
         },
         transform_index: -1,
     }
 }
 
-/// 统计 branch 体内 io_request 的数量（简化版：仅检查直接子节点）
+/// Counts io_request occurrences in a branch body (simplified: only direct children)
 fn count_io_in_loop_body(t: &JsonValue) -> usize {
     let mut count = 0usize;
 
@@ -675,9 +698,9 @@ fn count_io_in_loop_body(t: &JsonValue) -> usize {
     count
 }
 
-/// 检测 payload 无界增长风险
+/// Detects the unbounded payload-growth risk
 ///
-/// 检查 push 指令是否可能无限追加数据到 payload
+/// Checks whether push instructions could append data to the payload without bound
 fn check_payload_growth(transforms: &[JsonValue]) -> ValidationCheck {
     let mut push_count = 0usize;
     let mut has_cleanup = false;
@@ -687,7 +710,7 @@ fn check_payload_growth(transforms: &[JsonValue]) -> ValidationCheck {
             if type_str == "push" {
                 push_count += 1;
             }
-            // 检查是否有清理操作（set 到空数组/对象）
+            // check for cleanup operations (set to an empty array/object)
             if type_str == "set" {
                 if let Some(value) = t.get("params").and_then(|p| p.get("value")) {
                     if value.is_array() || value.is_null() {
@@ -705,15 +728,15 @@ fn check_payload_growth(transforms: &[JsonValue]) -> ValidationCheck {
         level: if risk { "warn" } else { "info" },
         message: if risk {
             format!(
-                "检测到 {} 处 push 指令但未找到清理操作，可能导致 payload 无界增长",
+                "detected {} push instruction(s) with no cleanup found; payload may grow unboundedly",
                 push_count
             )
         } else {
             format!(
-                "push 指令 {} 处{}",
+                "push instructions: {}{}",
                 push_count,
                 if has_cleanup {
-                    "，有配套清理操作"
+                    ", with a paired cleanup"
                 } else {
                     ""
                 }
@@ -723,9 +746,9 @@ fn check_payload_growth(transforms: &[JsonValue]) -> ValidationCheck {
     }
 }
 
-/// 检测自引用风险
+/// Detects the self-reference risk
 ///
-/// 检查 domain 是否引用自身（如 instruction_type 等于自身 type）
+/// Checks whether a domain references itself (e.g. instruction_type equal to its own type)
 fn check_self_reference(transforms: &[JsonValue]) -> ValidationCheck {
     let mut self_refs: Vec<String> = Vec::new();
 
@@ -738,7 +761,7 @@ fn check_self_reference(transforms: &[JsonValue]) -> ValidationCheck {
                             if let Some(inst_type) =
                                 domain.get("instruction_type").and_then(|v| v.as_str())
                             {
-                                // 检查 on_true 是否包含与 instruction_type 同类型的指令
+                                // check whether on_true contains an instruction of the same type as instruction_type
                                 if let Some(on_true) = t
                                     .get("params")
                                     .and_then(|p| p.get("on_true"))
@@ -750,7 +773,7 @@ fn check_self_reference(transforms: &[JsonValue]) -> ValidationCheck {
                                         {
                                             if child_type == inst_type || child_type == "branch" {
                                                 self_refs.push(format!(
-                                                    "transform[{}] 匹配 '{}' 但体内包含同类型指令",
+                                                    "transform[{}] matches '{}' but its body contains an instruction of the same type",
                                                     i, inst_type
                                                 ));
                                             }
@@ -771,34 +794,34 @@ fn check_self_reference(transforms: &[JsonValue]) -> ValidationCheck {
         passed: !risk,
         level: if risk { "warn" } else { "info" },
         message: if risk {
-            format!("检测到自引用风险: {}", self_refs.join("; "))
+            format!("self-reference risk detected: {}", self_refs.join("; "))
         } else {
-            "未检测到自引用".to_string()
+            "no self-reference detected".to_string()
         },
         transform_index: -1,
     }
 }
 
 // ============================================================================
-// 对外 API 函数（供 server.rs 路由调用）
+// Outward API functions (called by server.rs routing)
 // ============================================================================
 
-/// 从 JSON 字符串解析并校验规则
+/// Parses and validates rules from a JSON string
 ///
-/// # 参数
-/// - `json_str`: JSON 字符串，可以是以下格式：
-///   - `{"transform": [...]}` — 标准 core_eval 格式
-///   - `[{...}, {...}]` — 顶层数组
-///   - `{...}` — 单条 transform
+/// # Arguments
+/// - `json_str`: the JSON string; may be any of these formats:
+///   - `{"transform": [...]}` — the standard core_eval format
+///   - `[{...}, {...}]` — a top-level array
+///   - `{...}` — a single transform
 ///
-/// # 返回值
-/// 校验结果，包含静态验证和安全分析。
+/// # Returns
+/// The validation result, including static validation and security analysis.
 ///
-/// # 示例
+/// # Example
 /// ```
 /// use evorule_governance::rule_validation::validate_rules_from_json;
 ///
-/// // 标准 core_eval 格式（含 transform 数组）
+/// // the standard core_eval format (with a transform array)
 /// let json = r#"{
 ///   "transform": [
 ///     {
@@ -813,19 +836,19 @@ fn check_self_reference(transforms: &[JsonValue]) -> ValidationCheck {
 ///   ]
 /// }"#;
 ///
-/// let result = validate_rules_from_json(json).expect("JSON 应可解析");
+/// let result = validate_rules_from_json(json).expect("the JSON should parse");
 /// assert!(result.passed);
 ///
-/// // 非法 JSON 应返回 Err
+/// // illegal JSON should return Err
 /// assert!(validate_rules_from_json("{not valid json}").is_err());
 /// ```
 pub fn validate_rules_from_json(json_str: &str) -> Result<ValidationResult, String> {
     let parsed: serde_json::Value =
-        serde_json::from_str(json_str).map_err(|e| format!("JSON 解析失败: {}", e))?;
+        serde_json::from_str(json_str).map_err(|e| format!("JSON parse failed: {}", e))?;
 
     let transforms = extract_transforms(&parsed)?;
 
-    // 转换为 tier0 JsonValue
+    // convert to tier0 JsonValue
     let tcb_transforms: Vec<JsonValue> = transforms
         .iter()
         .map(evorule_reactor::serde_to_tcb)
@@ -834,7 +857,7 @@ pub fn validate_rules_from_json(json_str: &str) -> Result<ValidationResult, Stri
     Ok(validate_rules(&tcb_transforms))
 }
 
-/// 从 serde_json::Value 中提取 transform 列表
+/// Extracts the transform list from a serde_json::Value
 fn extract_transforms(json: &serde_json::Value) -> Result<Vec<serde_json::Value>, String> {
     match json {
         serde_json::Value::Object(map) => {
@@ -843,20 +866,20 @@ fn extract_transforms(json: &serde_json::Value) -> Result<Vec<serde_json::Value>
             } else if let Some(arr) = map.get("transforms").and_then(|v| v.as_array()) {
                 Ok(arr.clone())
             } else {
-                // 单对象视为单条 transform
+                // a single object is treated as one transform
                 Ok(vec![json.clone()])
             }
         }
         serde_json::Value::Array(arr) => Ok(arr.clone()),
-        _ => Err("JSON 必须是对象或数组".to_string()),
+        _ => Err("the JSON must be an object or an array".to_string()),
     }
 }
 
 // ============================================================================
-// 辅助函数：JSON 序列化（用于 HTTP 响应）
+// Helpers: JSON serialization (for HTTP responses)
 // ============================================================================
 
-/// 将校验结果序列化为 JSON 字符串
+/// Serializes the validation result into a JSON string
 pub fn validation_result_to_json(result: &ValidationResult) -> String {
     serde_json::to_string_pretty(result).unwrap_or_else(|_| "{}".to_string())
 }
@@ -867,7 +890,7 @@ mod tests {
     use super::*;
 
     // ====================================================================
-    // 静态验证测试
+    // Static validation tests
     // ====================================================================
 
     #[test]
@@ -898,7 +921,7 @@ mod tests {
         let transforms = vec![json_to_tcb(r#"{"type":"unknown_type"}"#)];
         let result = validate_rules(&transforms);
         assert!(!result.passed, "Unknown type should fail");
-        // 应该有 type_valid 错误
+        // there should be a type_valid error
         assert!(result.static_validation.error_count >= 1);
     }
 
@@ -923,8 +946,9 @@ mod tests {
             r#"{"type":"set","params":{"attr":"x","operation":"invalid_op","value":0}}"#,
         )];
         let result = validate_rules(&transforms);
-        // P1-02：非法 operation 提升为 error，阻断 passed
-        //（TCB exec_set 对未知 operation 硬失败 UnknownOperation，校验层不得降级为 warn）
+        // P1-02: an illegal operation is elevated to error, blocking passed
+        // (TCB exec_set hard-fails UnknownOperation on unknown operations; the validation layer
+        // must not downgrade it to warn)
         assert!(
             !result.passed,
             "Invalid operation should be error-level and block"
@@ -939,18 +963,19 @@ mod tests {
     }
 
     // ====================================================================
-    // 安全分析测试
+    // Security analysis tests
     // ====================================================================
 
     #[test]
     fn test_security_infinite_loop_detection() {
-        // while_loop 但没有状态变更指令
-        //（P0-01：on_true 用合法元指令 push——非状态变更，保持"无状态变更"检测场景）
+        // a while_loop with no state-change instruction
+        // (P0-01: on_true uses the legal meta-instruction push — not a state change, keeping the
+        // "no state change" detection scenario)
         let transforms = vec![json_to_tcb(
             r#"{"type":"branch","params":{"domain":{"type":"instruction","instruction_type":"while_loop"},"on_true":[{"type":"push","params":{"instructions":[]}}]}}"#,
         )];
         let result = validate_rules(&transforms);
-        // 应该有 infinite_loop 警告
+        // there should be an infinite_loop warning
         let infinite_loop = result
             .security_analysis
             .checks
@@ -962,9 +987,10 @@ mod tests {
 
     #[test]
     fn test_security_infinite_loop_nested_branch_detection() {
-        // B9（report-002）：嵌套在 branch 子节点内的 while_loop 不再漏检
-        // 外层 branch domain 为 comparison（非 while_loop），while_loop 藏在
-        // on_false 子数组的内层 branch domain 中——旧实现只扫顶层会漏检
+        // B9 (report-002): a while_loop nested in branch child nodes is no longer missed
+        // The outer branch domain is a comparison (not while_loop); the while_loop hides in the
+        // inner branch domain of the on_false sub-array — the old implementation scanned only the
+        // top level and would miss it
         let v = serde_json::json!({
             "type": "branch",
             "params": {
@@ -985,17 +1011,20 @@ mod tests {
             .checks
             .iter()
             .find(|c| c.name == "infinite_loop");
-        assert!(infinite_loop.is_some(), "嵌套 while_loop 仍须产出检查项");
+        assert!(
+            infinite_loop.is_some(),
+            "a nested while_loop must still produce a check item"
+        );
         assert!(
             !infinite_loop.unwrap().passed,
-            "嵌套 branch 内的 while_loop 无状态变更必须告警"
+            "a while_loop inside a nested branch without state changes must warn"
         );
     }
 
     #[test]
     fn test_security_infinite_loop_nested_state_change_covers() {
-        // B9 补充：嵌套 while_loop 存在时，任意层级的状态变更（含嵌套层级）
-        // 均提供终止条件 → 不告警
+        // B9 supplement: when a nested while_loop exists, a state change at any level (including
+        // nested levels) provides the termination condition → no warning
         let v = serde_json::json!({
             "type": "branch",
             "params": {
@@ -1018,13 +1047,13 @@ mod tests {
         assert!(infinite_loop.is_some());
         assert!(
             infinite_loop.unwrap().passed,
-            "嵌套层级的状态变更应覆盖嵌套 while_loop"
+            "a state change at the nested level should cover the nested while_loop"
         );
     }
 
     #[test]
     fn test_security_unbounded_io() {
-        // while_loop + io_request 在体内
+        // while_loop + io_request in the body
         let transforms = vec![json_to_tcb(
             r#"{"type":"branch","params":{"domain":{"type":"instruction","instruction_type":"while_loop"},"on_true":[{"type":"io_request","params":{"io_type":"http_get"}}]}}"#,
         )];
@@ -1040,7 +1069,7 @@ mod tests {
 
     #[test]
     fn test_security_payload_growth() {
-        // 多个 push 但无清理
+        // multiple pushes with no cleanup
         let transforms = vec![
             json_to_tcb(r#"{"type":"push","params":{"instructions":[]}}"#),
             json_to_tcb(r#"{"type":"push","params":{"instructions":[]}}"#),
@@ -1059,7 +1088,7 @@ mod tests {
 
     #[test]
     fn test_security_cleanup_detected() {
-        // push 有配套清理就不会告警
+        // with a paired cleanup, pushes do not warn
         let transforms = vec![
             json_to_tcb(r#"{"type":"push","params":{"instructions":[]}}"#),
             json_to_tcb(r#"{"type":"push","params":{"instructions":[]}}"#),
@@ -1080,7 +1109,7 @@ mod tests {
     }
 
     // ====================================================================
-    // 辅助函数
+    // Helpers
     // ====================================================================
 
     fn json_to_tcb(json_str: &str) -> JsonValue {
@@ -1110,7 +1139,7 @@ mod tests {
 
     #[test]
     fn test_transform_count_limit() {
-        // 超过 128 条规则应该报错
+        // more than 128 rules should error
         let mut transforms = Vec::new();
         for _ in 0..(MAX_TRANSFORM_RULES + 1) {
             transforms.push(json_to_tcb(

@@ -12,6 +12,18 @@
 > **记录规范**：只记事实——什么变了、客观依据、影响、修正去向（M10）。
 > **条目格式**：事实 / 依据 / 影响 / 修正去向。
 
+## 2026-11-19: reactor CI-proof evidence refresh (5 harnesses) after comment-translation batch touched proof function bodies
+
+| # | Fact | Evidence | Impact | Remedy |
+| - | ---- | -------- | ------ | ------- |
+| 1 | The repo-wide English-translation batch edited comment lines inside the function bodies of the 5 reactor CI proofs (`invariant_cause_queue_sync`, `proof_hash_chain_back_link`, `invariant_version_monotonic`, `command_does_not_decrease_queue`, `max_rounds_termination`) in `evorule-reactor/verification/kani_proofs.rs`; proof names, assertions and harness structure untouched. Their M3.4 function-level baseline advanced to `4d13e21`, invalidating the archived PASS evidence (`a3d728f` batch for four, `2a3a392` for P0-14) | S7 (`check_status_sync.py`) flagged 5 logs after the translation commit landed | Zero semantic change to the proofs; evidence-freshness bookkeeping only | All 5 re-run under CI-identical conditions (P0-11 / P0-14 without `--default-unwind`, the other three with `--default-unwind 4`; 300s timeout) in WSL (Kani 0.67.0, Ubuntu 26.04): 5/5 SUCCESSFUL; new evidence archived as `<attr>.<harness>_PASS_4d13e21_20261119_125538` (log + stdout); superseded logs quarantined locally as batch 10 (out of repo, same convention); STATUS.md evidence cells updated in the same commit (M5 coupling) |
+
+## 2026-11-19: P0-3 evidence refresh for two harnesses after comment-translation batch touched proof function bodies
+
+| # | Fact | Evidence | Impact | Remedy |
+| - | ---- | -------- | ------ | ------- |
+| 1 | The repo-wide English-translation batch edited comment lines inside the function bodies of two P0-3 A-tier harnesses (`verify_resolve_path_deterministic`, `verify_array_index_bounds`) in `evorule-tcb/tests/kani/kani_proofs.rs`; proof names, assertions and harness structure were untouched (translation-batch discipline). The M3.4 function-level freshness baseline for these two harnesses advanced to `3b77527`, invalidating the archived `a3d728f` evidence for exactly these two. The other 9 P0-3 harnesses and all 3 P0-6 harnesses were untouched inside their function bodies and keep baseline `a3d728f` | S7 (`check_status_sync.py`) flagged the two logs at the commit gate (function-level `git log -L`); diff review confirms comment-only changes inside the flagged ranges | Zero semantic change to the proofs; evidence-freshness bookkeeping only | Both harnesses re-run in WSL (Kani 0.67.0, Ubuntu 26.04 — distro differs from the historical Ubuntu-22.04 record, Kani version unchanged): 0 of 970 failed, SUCCESSFUL (~2s each); new evidence archived as `P0-3.<harness>_PASS_3b77527_20261119_125124` (log + stdout pairs); superseded `a3d728f` logs quarantined locally as batch 9 (kept out of the repo, same convention as batches 2-8); STATUS.md P0-3 evidence cell updated in the same commit (M5 coupling) |
+
 ## 2026-11-19: o40 in-type Kani harness backfill + o41 sizing-invariant claim corrected to sizing-basis framing
 
 | # | Fact | Evidence | Impact | Remedy |
@@ -85,7 +97,7 @@
 - 本日志建立于 2026-09-12；上述 12 项核对发现与 3 项处置为机制建立时的一次性补记，此后所有偏离按时间顺序追加于下方。
 - STATUS.md 初值快照为 v0.5.0（commit `5fac8bd`）；表中 ✅ 项的 v0.5.0 归档证据由整改阶段 2 重跑后落盘，届时同批更新证据列。
 - 机制文档（MECHANISM.md / STATUS.md / DISCLOSURE_LOG.md / verification/README.md 重写稿）以未提交状态起草，定稿后由仓库维护者提交。
-- 机制建立决策记录见 [docs/adr/ADR-0001-验证状态单一真相源与诚实披露机制.md](../docs/adr/ADR-0001-验证状态单一真相源与诚实披露机制.md)。
+- 机制建立决策记录见 [docs/adr/ADR-0001-verification-status-single-source-of-truth.md](../docs/adr/ADR-0001-verification-status-single-source-of-truth.md)。
 
 ## 追加区
 
@@ -217,7 +229,7 @@
 ### 2026-09-13：B 档 proof 攻坚立项与载体修订立项（ADR-0002）
 
 - **事实**：B 档 23 个超时 proof 攻坚立项（四梯队结构：可行性门 / 零侵入优化 / Kani 机制层 / 属性分流 / 治理登记，总预算 ≤60 次验证运行 × ≤600s，每阶段设停止准则）。载体修订立项（eq/clone 模型化）实施载体由 impl 级 `cfg(kani)` 双实现修订为 proof 层 `#[kani::stub(...)]`：value.rs 两处 impl 级覆写（Clone/PartialEq）回退（该立项代码尚未提交，无公开仓历史修正需求）。配套新增：B 档 harness 结构自检断言（Phase 1 硬前置）；cfg(kani) 偏差登记簿（K 系）"爆炸半径"列与补偿合规规则（爆炸半径全调用点映射 / 证据-实现绑定 / 补偿不得引用受该模型影响的 proof）；STATUS.md 属性表"模型偏差"列（Phase 1 随批落地）。
-- **依据**：[ADR-0002](../docs/adr/ADR-0002-B档proof模型载体与stub化验证策略.md)（M5.2 建模策略变更情形）：impl 级覆写在 kani 构建下影响全部调用点（含 harness 构造层 `object_from_pairs` 的 `v.clone()`——嵌套复合输入在深度 1 处被清空，proof 实际验证退化输入）；真实 trait impl 从 kani 构建产物中消失，使真实现侧证明补偿不可成立（循环引用）。三轮攻坚立项 rounds 1-12 探针记录（三层根因与乘积爆炸结论）。
+- **依据**：[ADR-0002](../docs/adr/ADR-0002-tier-b-proof-model-carrier-and-stub-verification-strategy.md)（M5.2 建模策略变更情形）：impl 级覆写在 kani 构建下影响全部调用点（含 harness 构造层 `object_from_pairs` 的 `v.clone()`——嵌套复合输入在深度 1 处被清空，proof 实际验证退化输入）；真实 trait impl 从 kani 构建产物中消失，使真实现侧证明补偿不可成立（循环引用）。三轮攻坚立项 rounds 1-12 探针记录（三层根因与乘积爆炸结论）。
 - **影响**：① A 档 14 个 proof 的归档证据（`bdfb8d4`）因被验证代码（value.rs）变更而 SHA 绑定失效——Batch 1 于 WSL 重跑 14 个补新 SHA 证据（P0-3/P0-6 证据列同批更新）；② reactor 4 个闸门 proof 在 stub 载体下零影响；③ B 档状态不变（❌），攻坚期间对外口径不变（M6）；④ kani.yml B 档 job 配置不变（不加大 timeout）。
 - **修正去向**：本条目即修正记录；载体修订立项记录见 [evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)（原文保留，M7）；STATUS.md 维护区登记攻坚计划。
 - **归档记录（同日）**：Batch 1 核心提交 `1c6ad84`（value.rs 载体回退 + 编译面配套适配 + 探针迁出 + 四文档）后，于 WSL（Kani 0.67.0 + nightly-2025-11-21）重跑 A 档 14 个：14/14 PASS（单 proof 0.3~4.2s），M3.1 证据对 28 个文件落盘 `P0-3/P0-6.<harness>_PASS_1c6ad84_20260913_*`（evorule-tcb/verification/evidence/kani/）；旧 `bdfb8d4` 14 对证据按 M3.4 `git mv` 至 `_invalidated/`（批次 2，作废判定与替代证据指引见该目录 README）；STATUS.md P0-3/P0-6 证据列、快照注记与维护区登记同批更新。提交前以暂存树（= 提交内容）预演 kani.yml 双 job：TCB A 档 14/14 + reactor 4/4 PASS。
@@ -340,3 +352,9 @@
 - **依据**：主仓 workspace 全量测试实测绿（48 目标 1045+ 用例，含新增 cancel-all 全链测试：挂起→快照清单可见→取消→清零→Error 入链→扫描干净）；crates.io 发布按依赖序本机手工执行（v0.8.1 起惯例，CI publish-crates 幂等跳过兜底）。
 - **影响**：① 新增公开 API：`ReactorHandle::cancel_all_pending`/`ReactorHandle::latest_invariant_scan`/`InvariantScanReport`/`ReactorStateSnapshot::pending_io`（新增能力，非破坏）；② Kani 证明面：增量=共享标志+槽位，不动既有证明路径，kani-reactor CI 实跑复核，A 档证据基线维持 `a3d728f`；③ 对外计数零变更。
 - **修正去向**：本条目即披露记录；`verification/STATUS.md`（快照行）。
+
+## 2026-11-19: STATUS progressive-history wording neutralized in three spots (registry-token removal, S11-paired with the English-translation batch)
+
+| # | Fact | Evidence | Impact | Remedy |
+| - | ---- | -------- | ------ | ------- |
+| 1 | During the repo-wide English-translation batch, three lines in `verification/STATUS.md` that carried a private registry-number token in their progressive-history notes were neutralized by removing the token: the appendix-A P0-4 in-type backfill row, the appendix-A closing note, and the appendix-B heading. The descriptive wording ("scheduled-verification backfill" / "backfill addition") and all counts and dates were kept unchanged. The rest of the STATUS.md stock text remains frozen per batch discipline (T2) | Direct diff of the three lines; en-only scan CJK-count parity check (neutralization changes no CJK count — ratchet-equivalent edit) | None — wording-only change to a status document; no behavior, API, or evidence-anchor change | This entry is the disclosure record; `verification/STATUS.md` (the three lines) edited in the same commit (S11 pairing) |

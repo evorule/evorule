@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 条件评估器 —— 复用 TCB `evaluate_domain`
+//! Condition evaluator — reuses TCB `evaluate_domain`
 //!
-//! 将权限条目的 `conditions`（TCB domain 表达式）投影到一个由
-//! [调用上下文](evorule_reactor::IoCallContext)和载荷构造的 exec_state 上求值。
+//! Projects a permission entry's `conditions` (TCB domain expression) onto an exec_state
+//! built from the [call context](evorule_reactor::IoCallContext) and the payload, for evaluation.
 
 use evorule_reactor::IoCallContext;
 use evorule_tcb::domain::evaluate_domain;
@@ -12,21 +12,21 @@ use evorule_tcb::JsonValue;
 
 use super::entry::PermissionError;
 
-/// 权限条件评估器（无状态，直接复用 TCB 域求值器）
+/// Permission condition evaluator (stateless; directly reuses the TCB domain evaluator)
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ConditionEvaluator;
 
 impl ConditionEvaluator {
-    /// 评估一个条件表达式
+    /// Evaluates a condition expression
     ///
-    /// # 参数
-    /// - `conditions`: TCB domain 表达式（serde JSON）。例：
+    /// # Arguments
+    /// - `conditions`: a TCB domain expression (serde JSON). Example:
     ///   `{ "type": "all", "inner": [{ "type":"eq", "path":"__exec__.ctx.caller_role", "value":"human" }] }`
-    /// - `ctx`: I/O 调用上下文（写入 exec_state 的 `__exec__.ctx` 命名空间）
-    /// - `payload`: 本次 I/O 载荷（写入 exec_state 的 `__exec__.payload`）
+    /// - `ctx`: the I/O call context (written into the `__exec__.ctx` namespace of exec_state)
+    /// - `payload`: the payload of this I/O (written into `__exec__.payload` of exec_state)
     ///
-    /// # 返回
-    /// 空对象/空表达式视为"无约束"，返回 `Ok(true)`。
+    /// # Returns
+    /// An empty object / empty expression counts as "unconstrained" and returns `Ok(true)`.
     pub fn evaluate(
         &self,
         conditions: &serde_json::Value,
@@ -44,11 +44,11 @@ impl ConditionEvaluator {
     }
 }
 
-/// 构造供 `evaluate_domain` 使用的 exec_state
+/// Builds the exec_state used by `evaluate_domain`
 ///
-/// 结构为 `{ "__exec__": { "ctx": {...}, "payload": <payload> } }`，
-/// 与 TCB 路径解析（自动补全 `__exec__.` 前缀）对齐，
-/// 因此条件可写 `__exec__.ctx.caller_role` 或相对路径 `ctx.caller_role`。
+/// The structure is `{ "__exec__": { "ctx": {...}, "payload": <payload> } }`,
+/// aligned with TCB path resolution (which auto-completes the `__exec__.` prefix),
+/// so conditions may use `__exec__.ctx.caller_role` or the relative path `ctx.caller_role`.
 fn build_conditions_exec_state(ctx: &IoCallContext, payload: &JsonValue) -> JsonValue {
     let mut exec = JsonValue::empty_object();
     let mut exec_inner = JsonValue::empty_object();

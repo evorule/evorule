@@ -1,29 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! `evorule` CLI 库入口 —— 本地 JSON 规则执行工具(圈 2 合规刚需)
+//! `evorule` CLI library entry — local JSON rule execution tool (compliance-driven)
 //!
-//! # 定位
-//! 本 crate 同时构建为**库 + 二进制**（lib + bin）：
-//! - 库形式暴露内部模块，使文档示例（doc-tests）可编译执行，保证文档与实现一致
-//! - 二进制入口见 `main.rs`（`evorule` 命令）
+//! # Positioning
+//! This crate builds as both **library + binary** (lib + bin):
+//! - The library form exposes internal modules so that documentation examples
+//!   (doc-tests) compile and run, keeping docs and implementation in sync
+//! - The binary entry is in `main.rs` (the `evorule` command)
 //!
-//! # 模块
-//! - `cli` — clap 参数定义（子命令解析）
-//! - `commands` — 各子命令实现（validate / run / replay / diff / verify-chain / anchor-keygen / verify-anchors）
-//! - `error` — `CliError` 统一错误类型与退出码映射
-//! - `executor` — 规则执行（调 evorule-tcb 纯函数）
-//! - `fact_log` — fact log 读写
-//! - `hash` — BLAKE3 哈希（re-export evorule-reactor 单一真相源）
-//! - `io_util` — I/O 工具
-//! - `output` — 人类可读输出格式化
-//! - `signing` — G-A1 审计锚点签名（ed25519 确定性签名，anchor-keygen / verify-anchors 依赖）
+//! # Modules
+//! - `cli` — clap argument definitions (subcommand parsing)
+//! - `commands` — subcommand implementations (validate / run / replay / diff / verify-chain / anchor-keygen / verify-anchors)
+//! - `error` — the unified `CliError` type and exit code mapping
+//! - `executor` — rule execution (calls the evorule-tcb pure function)
+//! - `fact_log` — fact log read/write
+//! - `hash` — BLAKE3 hashing (re-exports the evorule-reactor single source of truth)
+//! - `io_util` — I/O utilities
+//! - `output` — human-readable output formatting
+//! - `signing` — G-A1 audit anchor signing (ed25519 deterministic signatures; used by anchor-keygen / verify-anchors)
 //!
-//! # 设计原则
-//! - **零网络**：任何外联必须显式 opt-in（本版本无网络调用）
-//! - **零遥测**：无任何隐式上报
-//! - **零系统依赖**：musl 静态链接（目标: 单一可执行文件）
-//! - **审计友好**：每条 fact 含 blake3 哈希链（与 evorule-governance 互通,可验真）
+//! # Design principles
+//! - **Zero network**: any outbound call must be explicitly opted in (this version makes no network calls)
+//! - **Zero telemetry**: no implicit reporting of any kind
+//! - **Zero system dependencies**: musl static linking (goal: a single executable)
+//! - **Audit friendly**: every fact carries a blake3 hash chain (interoperable with evorule-governance, verifiable)
 
 #![forbid(unsafe_code)]
 
@@ -37,5 +38,5 @@ pub mod io_util;
 pub mod output;
 pub mod signing;
 
-// 顶层 re-export：doc-tests 使用 `use evorule_cli::CliError;`
+// Top-level re-export: doc-tests use `use evorule_cli::CliError;`
 pub use error::CliError;

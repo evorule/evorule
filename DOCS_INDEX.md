@@ -6,208 +6,208 @@
   This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 -->
 
-# EvoRule 文档总索引（L1 公开层）
+# EvoRule Documentation Master Index (L1 Public Layer)
 
-> **最后更新**：2026-10-13
-> **版本对齐**：与 `Cargo.toml` 中 `version = "0.12.1"` 同步
-> **索引性质**：L1 公开层（公开可发布）。不含**仓内共享文档**（团队内部实施/设计记录，不发布）和**本地私有文档**（开发者本地机器私有集合，不进入 git、不对外）。若需要访问非公开文档，请联系项目维护者
-
----
-
-## 一、入门必读
-
-| 文档                                                                   | 用途     | 一句话说明                                                                       |
-| :--------------------------------------------------------------------- | :------- | :------------------------------------------------------------------------------- |
-| [README.md](README.md)                                                 | 项目总览 | EvoRule 是什么、快速开始、架构概览 — **新项目方首读**                      |
-| [docs/explanation/00-有所得必有所失-EvoRule的取舍立场.md](docs/explanation/00-有所得必有所失-EvoRule的取舍立场.md) | 立场篇 01 | 为什么 EvoRule 敢于做减法——"有所得必有所失"的取舍立场 |
-| [docs/explanation/01-智能时代选择不智能-什么是确定性智能.md](docs/explanation/01-智能时代选择不智能-什么是确定性智能.md) | 立场篇 02 | "确定性智能"——智能负责方向，EvoRule 负责确定性可信 |
-| [docs/explanation/02-哥德尔不自证与逼近真相-EvoRule对正确的诚实立场.md](docs/explanation/02-哥德尔不自证与逼近真相-EvoRule对正确的诚实立场.md) | 立场篇 03 | 不声称绝对正确，而是在现有技术条件下最大化逼近事实真相 |
+> **Last updated**: 2026-10-13
+> **Version alignment**: in sync with `version = "0.12.1"` in `Cargo.toml`
+> **Index scope**: L1 public layer (publicly publishable). Excludes **in-repo shared documents** (team-internal implementation/design records, not published) and **local private documents** (developers' private local collections, not in git, not public). To access non-public documents, contact the project maintainers
 
 ---
 
-## 二、项目级正式文档
+## 1. Must-Read for Getting Started
 
-### 2.1 版本、路线、承诺
-
-| 文档                                                                             | 主题              | 说明                                                                                            |
-| :------------------------------------------------------------------------------- | :---------------- | :---------------------------------------------------------------------------------------------- |
-| [VERSION_STRATEGY.md](VERSION_STRATEGY.md)                                       | 版本策略          | 语义化版本规则、升 1.0 条件、第三方安全审计触发条件（VERSION_STRATEGY v1.1）                    |
-| [ROADMAP.md](ROADMAP.md)                                                         | 路线图            | 版本方向、升 1.0 条件、形式化验证阶段、功能规划、治理过渡、许可证变更（未来计划单一真相源）      |
-| [CHANGELOG.md](CHANGELOG.md)                                                     | 更新日志          | Keep a Changelog v1.0 格式；每版所有重大变更                                                    |
-| MIGRATION_v0.2.0.md（待发布） | 迁移指南          | v0.1.x → v0.2.0 破坏性变更迁移指南（IoType 重构 / IoHandler 下沉）；破坏性变更发布时必需        |
-| [GATE_REFERENCE.md](GATE_REFERENCE.md)                                           | build.rs 门控参考 | 所有 tier0/1/2 build.rs 编译时门禁（T4/T5/T6/T8/T9/T10/T11/T12/T14 + G8 架构原则）              |
-| [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) | 形式化验证白皮书  | 七层验证体系方法论（属性状态已剥离，一律见 verification/STATUS.md）— **当前有效版本** |
-| [verification/MECHANISM.md](verification/MECHANISM.md)                                         | 验证机制         | 状态/证据/披露规则（M1–M11，宪法性文档）                                                 |
-| [verification/STATUS.md](verification/STATUS.md)                                               | 验证状态         | 验证状态唯一权威（P0/P1 属性五档状态表 + proof 分档清单）                                |
-| [verification/DISCLOSURE_LOG.md](verification/DISCLOSURE_LOG.md)                               | 披露日志         | 计划偏离与历史状态修正记录                                                               |
-| [verification/README.md](verification/README.md)                                               | 验证文档系统说明  | 导航与资产登记（受 MECHANISM.md 约束）                                                   |
-
-### 2.2 法律、协议、贡献
-
-| 文档                                                                          | 主题            | 说明                                               |
-| :---------------------------------------------------------------------------- | :-------------- | :------------------------------------------------- |
-| [LICENSE](LICENSE)                                                            | AGPL-3.0 主协议 | 主仓 AGPL-3.0-or-later 协议全文                    |
-| [DUAL_LICENSE.md](DUAL_LICENSE.md)                                            | 双许可说明      | AGPL + 商业许可的双许可规则                        |
-| [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)                                | 商业许可        | 不希望开源派生的商业场景购买方式                   |
-| [FREE_COMMERCIAL_LICENSE.md](FREE_COMMERCIAL_LICENSE.md)                      | 免费商用许可    | 个人/小团队年收入门槛以下免费商用                  |
-| [CLA-individual.md](CLA-individual.md)                                        | 个人 CLA        | 贡献者许可协议（个人版）                           |
-| [CLA-corporate.md](CLA-corporate.md)                                        | 企业 CLA        | 贡献者许可协议（企业版，与 Individual 互补）       |
-| [NOTICE.md](NOTICE.md)                                                              | 通知文件        | 第三方版权通知                                     |
-| [LICENSES/core_eval-CC0-1.0.txt](LICENSES/core_eval-CC0-1.0.txt)                  | CC0 文本        | 宪法 core_eval.json 的 CC0-1.0 公共领域全文        |
-| [AUTHORS.md](AUTHORS.md)                                                      | 作者列表        | 核心贡献者名单                                     |
-| [TRADEMARK.md](TRADEMARK.md)                                                  | 商标政策        | "EvoRule"、"元则"、"则灵"商标使用规范              |
-| [CONTRIBUTION_GRANT.md](CONTRIBUTION_GRANT.md)                              | 社区贡献授权    | 通道 D：开源社区/学术项目以宽松协议接纳贡献物      |
-| [docs/grants/](docs/grants/)                                                | 签发记录        | 通道 D 历次签发清单（追加制存档）                  |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)                                      | 行为准则        | 贡献者行为守则（Contributor Covenant 2.1）         |
-| [CONTRIBUTING.md](CONTRIBUTING.md) / [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md) | 贡献指南        | 如何提交 issue / PR / 编译 / 测试 / 提 PR 检查清单 |
-| [SECURITY.md](SECURITY.md)                                                    | 安全报告        | 漏洞披露流程 + 安全联系人                          |
+| Document                                                                   | Purpose             | One-line description                                                                     |
+| :------------------------------------------------------------------------- | :------------------ | :--------------------------------------------------------------------------------------- |
+| [README.md](README.md)                                                     | Project overview    | What EvoRule is, quick start, architecture overview — **first read for new project owners** |
+| [Position charter: every gain comes with a loss](docs/explanation/00-no-gain-without-loss-the-evorule-tradeoff-stance.md) | Position paper 01 | Why EvoRule dares to do less — the "every gain comes with a loss" trade-off position |
+| [Position: choosing non-intelligence in the age of intelligence](docs/explanation/01-what-is-deterministic-intelligence.md) | Position paper 02 | "Deterministic intelligence" — intelligence owns the direction; EvoRule provides deterministic trustworthiness |
+| [Position: Gödel's incompleteness and approaching truth](docs/explanation/02-godel-incompleteness-and-the-honest-pursuit-of-truth.md) | Position paper 03 | Does not claim absolute correctness; instead maximally approaches factual truth under current technical conditions |
 
 ---
 
-## 三、发布文档（`docs/` 目录）
+## 2. Project-Level Formal Documents
 
-### 3.1 安全与审计
+### 2.1 Version, Roadmap, Commitments
 
-> 安全审计文档（SECURITY_AUDIT / DEPENDENCY_AUDIT / THREAT_MODEL）按版本策略在 1.0 升门时正式发布（见 `VERSION_STRATEGY.md` §4.2）。当前 v0.3.x 阶段仅提供 `SECURITY.md`（漏洞披露流程）。正式审计报告发布后将在此处登记。
+| Document                                                                             | Topic                        | Description                                                                                    |
+| :----------------------------------------------------------------------------------- | :--------------------------- | :---------------------------------------------------------------------------------------------- |
+| [VERSION_STRATEGY.md](VERSION_STRATEGY.md)                                           | Version strategy             | Semantic versioning rules, 1.0 promotion conditions, third-party security audit trigger conditions (VERSION_STRATEGY v1.1) |
+| [ROADMAP.md](ROADMAP.md)                                                             | Roadmap                      | Version direction, 1.0 promotion conditions, formal-verification phases, feature planning, governance transition, license changes (single source of truth for future plans) |
+| [CHANGELOG.md](CHANGELOG.md)                                                         | Changelog                    | Keep a Changelog v1.0 format; all notable changes per version                                    |
+| MIGRATION_v0.2.0.md (to be published) | Migration guide              | Migration guide for breaking changes v0.1.x → v0.2.0 (IoType rework / IoHandler relocation); required when breaking changes ship |
+| [GATE_REFERENCE.md](GATE_REFERENCE.md)                                               | build.rs gate reference      | All tier0/1/2 build.rs compile-time gates (T4/T5/T6/T8/T9/T10/T11/T12/T14 + G8 architecture principles) |
+| [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) | Formal-verification whitepaper | Seven-layer verification methodology (property statuses stripped; always see verification/STATUS.md) — **currently effective version** |
+| [verification/MECHANISM.md](verification/MECHANISM.md)                               | Verification mechanism       | Status/evidence/disclosure rules (M1–M11, constitutional document)                               |
+| [verification/STATUS.md](verification/STATUS.md)                                    | Verification status          | Single authority for verification status (P0/P1 property five-tier status table + proof tier list) |
+| [verification/DISCLOSURE_LOG.md](verification/DISCLOSURE_LOG.md)                    | Disclosure log               | Records of plan deviations and historical status corrections                                      |
+| [verification/README.md](verification/README.md)                                    | Verification document system | Navigation and asset registry (bound by MECHANISM.md)                                            |
 
-### 3.2 发布流程
+### 2.2 Legal, Licenses, Contribution
 
-> 发布流程文档（RELEASE_PROCESS）按版本策略在对应版本发布时同步提供。当前可参考 `scripts/validate-release.ps1`、`scripts/validate-all.ps1` 等发布校验脚本。
+| Document                                                                      | Topic                      | Description                                        |
+| :---------------------------------------------------------------------------- | :------------------------- | :------------------------------------------------- |
+| [LICENSE](LICENSE)                                                            | AGPL-3.0 main license      | Full text of the main repository's AGPL-3.0-or-later license |
+| [DUAL_LICENSE.md](DUAL_LICENSE.md)                                            | Dual licensing             | Dual-license rules for AGPL + commercial licensing  |
+| [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)                                | Commercial license         | Purchase route for commercial scenarios that do not want open-source derivative obligations |
+| [FREE_COMMERCIAL_LICENSE.md](FREE_COMMERCIAL_LICENSE.md)                      | Free commercial license    | Free commercial use below the annual-revenue threshold for individuals / small teams |
+| [CLA-individual.md](CLA-individual.md)                                        | Individual CLA             | Contributor License Agreement (individual version) |
+| [CLA-corporate.md](CLA-corporate.md)                                          | Corporate CLA              | Contributor License Agreement (corporate version, complementary to the individual CLA) |
+| [NOTICE.md](NOTICE.md)                                                        | Notice file                | Third-party copyright notices                       |
+| [LICENSES/core_eval-CC0-1.0.txt](LICENSES/core_eval-CC0-1.0.txt)              | CC0 text                   | Full CC0-1.0 public-domain text of the constitution core_eval.json |
+| [AUTHORS.md](AUTHORS.md)                                                      | Authors                    | Core contributor list                               |
+| [TRADEMARK.md](TRADEMARK.md)                                                  | Trademark policy           | Trademark usage rules for the "EvoRule" trademarks  |
+| [CONTRIBUTION_GRANT.md](CONTRIBUTION_GRANT.md)                                | Community contribution grant | Channel D: open-source communities / academic projects accept contributions under permissive licenses |
+| [docs/grants/](docs/grants/)                                                  | Issuance records           | List of past Channel D issuances (append-only archive) |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)                                      | Code of conduct            | Contributor code of conduct (Contributor Covenant 2.1) |
+| [CONTRIBUTING.md](CONTRIBUTING.md) / [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md) | Contribution guide         | How to file issues / PRs / build / test / PR submission checklist |
+| [SECURITY.md](SECURITY.md)                                                    | Security reporting         | Vulnerability disclosure process + security contacts |
 
-### 3.3 基准评估（D2：内部共享，不公开发布）
+---
 
-> 2026-07-29 按 D2 从 `docs/benchmarks/` 保守搬迁到 `文档/benchmarks/`（L3 仓内共享，.gitignore 保护）。
-> 下次发布周期经内容脱敏审查后可考虑升回 L1 公开。
+## 3. Published Documents (`docs/` directory)
 
-| 文档                                        | 主题                       | 日期       | 脱敏待审项                  |
-| :------------------------------------------ | :------------------------- | :--------- | :-------------------------- |
-| `文档/benchmarks/EVAL_2026-07-20.md`        | 0.1.0 基准评估（仓内共享） | 2026-07-20 | 环境路径/本机 IP 是否在样本 |
-| `文档/benchmarks/EXP_1.1.md` ~ `EXP_1.5.md` | 实验 1.1~1.5 记录          | —          | 同上                        |
+### 3.1 Security and Audit
 
-### 3.4 API 与宪章
+> Security audit documents (SECURITY_AUDIT / DEPENDENCY_AUDIT / THREAT_MODEL) are formally published at the 1.0 promotion gate per the version strategy (see `VERSION_STRATEGY.md` §4.2). At the current v0.3.x stage only `SECURITY.md` (vulnerability disclosure process) is provided. Formal audit reports will be registered here once published.
 
-| 文档                                     | 说明                                               |
+### 3.2 Release Process
+
+> The release process document (RELEASE_PROCESS) is provided in sync with the corresponding release per the version strategy. For now, refer to the release validation scripts such as `scripts/validate-release.ps1` and `scripts/validate-all.ps1`.
+
+### 3.3 Benchmark Evaluations (D2: in-repo shared, not publicly published)
+
+> On 2026-07-29, conservatively moved from `docs/benchmarks/` to `文档/benchmarks/` per D2 (L3 in-repo shared, protected by .gitignore).
+> After a content sanitization review in the next release cycle, promotion back to L1 public may be considered.
+
+| Document                                    | Topic                                      | Date       | Pending sanitization items                  |
+| :------------------------------------------ | :----------------------------------------- | :--------- | :------------------------------------------ |
+| `文档/benchmarks/EVAL_2026-07-20.md`        | 0.1.0 baseline evaluation (in-repo shared) | 2026-07-20 | Whether environment paths / local IPs appear in the samples |
+| `文档/benchmarks/EXP_1.1.md` ~ `EXP_1.5.md` | Experiment 1.1–1.5 records                 | —          | Same as above                               |
+
+### 3.4 API and Charter
+
+| Document                                 | Description                                        |
 | :--------------------------------------- | :------------------------------------------------- |
-| constitution.md（待发布）  | 治理结构：治理模型、决策层级、贡献者阶梯、冲突解决 |
-| oss_strategy.md（待发布）  | 开源策略：仓组织、贡献模型、发布模型、商业化模型   |
-| **HTTP API 文档**                        | 见 evorule-server 独立仓                           |
+| constitution.md (to be published)        | Governance structure: governance model, decision tiers, contributor ladder, conflict resolution |
+| oss_strategy.md (to be published)        | Open-source strategy: repository organization, contribution model, release model, commercialization model |
+| **HTTP API documentation**               | See the standalone evorule-server repository       |
 
 ---
 
-## 四、Crate 级文档（每 crate 2 份必 + 可选指引）
+## 4. Crate-Level Documents (2 required per crate + optional guides)
 
-### 4.1 Crate SPEC 串联（系统架构全局视图）
+### 4.1 Crate SPEC chain (global architecture view)
 
 ```
-  项目方输入 JSON
+  Project owner JSON input
        │
        ▼
   ┌─────────────────────────────────────────────────┐
-  │ evorule-cli     [CLI_SPEC.md]                    │ 命令行封装（只封装 tier0+tier1 已有能力）
+  │ evorule-cli     [CLI_SPEC.md]                    │ Command-line wrapper (wraps existing tier0+tier1 capabilities only)
   └────────────┬────────────────────────────────────┘
-               │ 调用
+               │ invokes
   ┌────────────▼────────────────────────────────────┐
-  │ evorule-governance [GOVERNANCE_SPEC.md]            │ 会话管理 / 审计链 / I/O 分发框架 / 协作原语
+  │ evorule-governance [GOVERNANCE_SPEC.md]            │ Session management / audit chain / I/O dispatch framework / collaboration primitives
   └────────────┬────────────────────────────────────┘
-               │ 事件分发
+               │ event dispatch
   ┌────────────▼────────────────────────────────────┐
-  │ evorule-reactor   [REACTOR_SPEC.md]                │ 反应器主循环 / Fact 日志 / WAL / 不变量 / 时间机器
+  │ evorule-reactor   [REACTOR_SPEC.md]                │ Reactor main loop / Fact log / WAL / invariants / time machine
   └────────────┬────────────────────────────────────┘
-               │ 确定性执行
+               │ deterministic execution
   ┌────────────▼────────────────────────────────────┐
-  │ evorule-tcb       [TCB_SPEC.md]                    │ TCB：JSON 状态机 / 路径解析 / 域评估 / 变换
+  │ evorule-tcb       [TCB_SPEC.md]                    │ TCB: JSON state machine / path resolution / domain evaluation / transforms
   └─────────────────────────────────────────────────┘
 ```
 
-### 4.2 evorule-tcb（TCB 基础层）
+### 4.2 evorule-tcb (TCB foundation layer)
 
-| 文档                                                                         | 类型       | 说明                                                                                                                                                                                                             |
-| :--------------------------------------------------------------------------- | :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [README.md](evorule-tcb/README.md)                                           | crate 介绍 | 用途、依赖、API 概览                                                                                                                                                                                             |
-| **[TCB_SPEC.md](evorule-tcb/TCB_SPEC.md)**                                   | SPEC 规范  | **TCB 形式化规范**（数据定义 / 不变量 / 元指令语义 / 核心操作语义 / 错误语义）— **必读** · [![crates.io](https://img.shields.io/crates/v/evorule-tcb.svg?label=crates.io)](https://crates.io/crates/evorule-tcb) |
-| [Kani 验证设计](evorule-tcb/verification/kani-formal-verification-design.md) | 验证设计   | TCB Kani 专项设计（P1-P21 证明清单、结构化符号输入、运行命令与 unwind 实测警告）— v0.3.1 |
-| [DETERMINISM_REPORT.md](evorule-tcb/DETERMINISM_REPORT.md)                   | 验证报告   | TCB 确定性报告（零依赖门禁 + proptest 确定性验证现状）                                    |
+| Document                                                                     | Type               | Description                                                                                                                                                                                                     |
+| :--------------------------------------------------------------------------- | :----------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [README.md](evorule-tcb/README.md)                                           | Crate introduction | Purpose, dependencies, API overview                                                                                                                                                                              |
+| **[TCB_SPEC.md](evorule-tcb/TCB_SPEC.md)**                                   | SPEC               | **TCB formal specification** (data definitions / invariants / meta-instruction semantics / core operational semantics / error semantics) — **must-read** · [![crates.io](https://img.shields.io/crates/v/evorule-tcb.svg?label=crates.io)](https://crates.io/crates/evorule-tcb) |
+| [Kani verification design](evorule-tcb/verification/kani-formal-verification-design.md) | Verification design | TCB Kani dedicated design (P1-P21 proof list, structured symbolic inputs, run commands and measured unwind warnings) — v0.3.1 |
+| [DETERMINISM_REPORT.md](evorule-tcb/DETERMINISM_REPORT.md)                   | Verification report | TCB determinism report (zero-dependency gate + proptest determinism verification status)                                                          |
 
-### 4.3 evorule-reactor（反应器层）
+### 4.3 evorule-reactor (reactor layer)
 
-| 文档                                                   | 类型       | 说明                                                                                                                                                                                                                          |
-| :----------------------------------------------------- | :--------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [README.md](evorule-reactor/README.md)                 | crate 介绍 | 反应器用途、组件、依赖关系                                                                                                                                                                                                    |
-| **[REACTOR_SPEC.md](evorule-reactor/REACTOR_SPEC.md)** | SPEC 规范  | **反应器规范**（生命周期 / 通道语义 / 不变量 / 稳定状态检测 / WAL 格式 / FFI 契约）— **必读** · [![crates.io](https://img.shields.io/crates/v/evorule-reactor.svg?label=crates.io)](https://crates.io/crates/evorule-reactor) |
-| [Kani 证明](evorule-reactor/verification/kani_proofs.rs)  | 验证源码   | tier1 11 个 Kani proof（状态见 [verification/STATUS.md](verification/STATUS.md) 附录 C） |
+| Document                                               | Type               | Description                                                                                                                                                                                                                          |
+| :----------------------------------------------------- | :----------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [README.md](evorule-reactor/README.md)                 | Crate introduction | Reactor purpose, components, dependency relations                                                                                                                                                                              |
+| **[REACTOR_SPEC.md](evorule-reactor/REACTOR_SPEC.md)** | SPEC               | **Reactor specification** (lifecycle / channel semantics / invariants / stable-state detection / WAL format / FFI contract) — **must-read** · [![crates.io](https://img.shields.io/crates/v/evorule-reactor.svg?label=crates.io)](https://crates.io/crates/evorule-reactor) |
+| [Kani proofs](evorule-reactor/verification/kani_proofs.rs) | Verification source | 11 tier1 Kani proofs (status in [verification/STATUS.md](verification/STATUS.md) Appendix C) |
 
-### 4.4 evorule-governance（治理层机制）
+### 4.4 evorule-governance (governance layer mechanics)
 
-| 文档                                                            | 类型       | 说明                                                                                                                                                                                                                                    |
-| :-------------------------------------------------------------- | :--------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [README.md](evorule-governance/README.md)                       | crate 介绍 | 用途：会话 / 审计 / I/O 分发框架 / 时间机器 / 调试 / 指标                                                                                                                                                                               |
-| **[GOVERNANCE_SPEC.md](evorule-governance/GOVERNANCE_SPEC.md)** | SPEC 规范  | **治理层规范**（会话隔离 / 审计链哈希格式 / IoDispatcher 框架 / 软限制策略 / 协作原语）— **必读** · [![crates.io](https://img.shields.io/crates/v/evorule-governance.svg?label=crates.io)](https://crates.io/crates/evorule-governance) |
+| Document                                                        | Type               | Description                                                                                                                                                                                                                                    |
+| :-------------------------------------------------------------- | :----------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [README.md](evorule-governance/README.md)                       | Crate introduction | Purpose: sessions / audit / I/O dispatch framework / time machine / debugging / metrics                                                                                                                                                |
+| **[GOVERNANCE_SPEC.md](evorule-governance/GOVERNANCE_SPEC.md)** | SPEC               | **Governance layer specification** (session isolation / audit chain hash format / IoDispatcher framework / soft-limit policy / collaboration primitives) — **must-read** · [![crates.io](https://img.shields.io/crates/v/evorule-governance.svg?label=crates.io)](https://crates.io/crates/evorule-governance) |
 
-### 4.5 evorule-cli（CLI 工具，核心仓唯一例外）
+### 4.5 evorule-cli (CLI tool, the sole exception in the core repository)
 
-| 文档                                       | 类型       | 说明                                                                                                                                                                                                                       |
-| :----------------------------------------- | :--------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [README.md](evorule-cli/README.md)         | crate 介绍 | 子命令说明 + 快速示例 + 外部子命令发现机制                                                                                                                                                                                 |
-| **[CLI_SPEC.md](evorule-cli/CLI_SPEC.md)** | SPEC 规范  | **CLI 契约**（硬边界：只封装 tier0+tier1 已有能力；禁止引入业务逻辑 / 特定 I/O handler）— **必读** · [![crates.io](https://img.shields.io/crates/v/evorule-cli.svg?label=crates.io)](https://crates.io/crates/evorule-cli) |
-| [CHANGELOG.md](evorule-cli/CHANGELOG.md)   | 更新日志   | CLI 独立更新日志（含外部子命令兼容承诺）                                                                                                                                                                                   |
+| Document                                   | Type               | Description                                                                                                                                                                                                                        |
+| :----------------------------------------- | :----------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [README.md](evorule-cli/README.md)         | Crate introduction | Subcommand reference + quick examples + external subcommand discovery mechanism                                                                                                                                             |
+| **[CLI_SPEC.md](evorule-cli/CLI_SPEC.md)** | SPEC               | **CLI contract** (hard boundary: wraps existing tier0+tier1 capabilities only; business logic / specific I/O handlers forbidden) — **must-read** · [![crates.io](https://img.shields.io/crates/v/evorule-cli.svg?label=crates.io)](https://crates.io/crates/evorule-cli) |
+| [CHANGELOG.md](evorule-cli/CHANGELOG.md)   | Changelog          | CLI standalone changelog (includes external subcommand compatibility commitments)                                                                                                                                           |
 
 ---
 
-## 五、文档版本地图（防止引用错版）
+## 5. Document Version Map (prevents referencing the wrong version)
 
-> 同一主题多版并存时，**默认引用"当前有效版本"**。废弃版本只保留在历史参考目录或原位置加 `[已废弃]` 横幅。
+> When multiple versions of the same topic coexist, **reference the "currently effective version" by default**. Deprecated versions are kept only in historical reference locations or flagged in place with a `[deprecated]` banner.
 
-| 主题             | 当前有效版本                                                                                                                                 | 废弃版本（历史参考，禁止引用）                                                                                                                          |
+| Topic            | Currently effective version                                                                                                                  | Deprecated versions (historical reference, do not reference)                                                                                            |
 | :--------------- | :------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 形式化验证白皮书 | [verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)（v3，**当前有效**；验证状态唯一权威 [verification/STATUS.md](verification/STATUS.md)） | `EVORULE_FORMAL_VERTIFICATION_PLAN.md` — 2026-07-29 已删除（v1，含拼写错误）；历史 v2 草稿保留在私有集合（不公开） |
-| 首发检查清单     | 私有不公开（仅团队内部访问）                                                                                                                 | 私有 v1.0（已被 v2.0 取代，不公开）                                                                                                                     |
-| 安全审计报告     | 待发布（1.0 升门时提供，见 `VERSION_STRATEGY.md` §4.2）         | SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（0.1.0 生态全栈版，**[已废弃]** 2026-07-30 旧版）；SECURITY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位，未到承诺期） |
-| 依赖审计报告     | 待发布（1.0 升门时提供） | DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md（0.1.0 生态全栈版，**[已废弃]** 2026-07-30 旧版）；DEPENDENCY_AUDIT_v1.0.0.md（v1.0.0 = 未来占位）         |
-| 威胁模型         | 待发布（1.0 升门时提供）               | THREAT_MODEL.md（生态全栈版，2026-07-20，**[已废弃]** 2026-07-30 被三份独立文档取代）                                                                   |
-| 发布流程         | 待发布（可参考 `scripts/validate-release.ps1` 等发布校验脚本） | RELEASE_PROCESS_v0.1.0.md（0.1.0，**[已废弃]** 2026-08-01 被取代；2026-08-10 因含本地路径泄露从仓库移除，历史保留在 v0.1.0 tag）    |
+| Formal-verification whitepaper | [verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) (v3, **currently effective**; single authority for verification status [verification/STATUS.md](verification/STATUS.md)) | `EVORULE_FORMAL_VERTIFICATION_PLAN.md` — deleted 2026-07-29 (v1, contained a typo); historical v2 draft kept in the private collection (not public) |
+| First-release checklist | Private, not public (team-internal access only)                                                                                                     | Private v1.0 (superseded by v2.0, not public)                                                                                                           |
+| Security audit report | To be published (provided at the 1.0 promotion gate, see `VERSION_STRATEGY.md` §4.2)                                                   | SECURITY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md (0.1.0 ecosystem full-stack, **[deprecated]** legacy version, 2026-07-30); SECURITY_AUDIT_v1.0.0.md (v1.0.0 = future placeholder, commitment period not reached) |
+| Dependency audit report | To be published (provided at the 1.0 promotion gate)                                                                                                 | DEPENDENCY_AUDIT_v0.1.0_LEGACY_FULL_STACK.md (0.1.0 ecosystem full-stack, **[deprecated]** legacy version, 2026-07-30); DEPENDENCY_AUDIT_v1.0.0.md (v1.0.0 = future placeholder) |
+| Threat model     | To be published (provided at the 1.0 promotion gate)                                                                                          | THREAT_MODEL.md (ecosystem full-stack, 2026-07-20, **[deprecated]** superseded by three separate documents on 2026-07-30)                                |
+| Release process  | To be published (refer to release validation scripts such as `scripts/validate-release.ps1`)                                                  | RELEASE_PROCESS_v0.1.0.md (0.1.0, **[deprecated]** superseded on 2026-08-01; removed from the repository on 2026-08-10 due to a local-path leak, history preserved in the v0.1.0 tag) |
 
 ---
 
-## 六、如何找文档（决策树）
+## 6. How to Find Documents (decision tree)
 
 ```
-你要找什么？
+What are you looking for?
 │
-├─► "EvoRule 有什么功能 / 怎么跑"
-│    └─► README.md → 各 lib SPEC（TCB/REACTOR/GOVERNANCE/CLI）→ HTTP API 参考文档（属应用层，见 evorule-server 仓）
+├─► "What can EvoRule do / how do I run it"
+│    └─► README.md → each lib SPEC (TCB/REACTOR/GOVERNANCE/CLI) → HTTP API reference (application layer, see the evorule-server repository)
 │
-├─► "为什么这么设计 / 设计原则是什么"
-│    ├─► 对外公开版：CONTRIBUTING.md（Core Principles）+ VERSION_STRATEGY.md
-│    │                  + 对应 crate SPEC（TCB/REACTOR/GOVERNANCE/CLI）
-│    └─► 内部深层：仅仓内共享文档/ 或 私有集合（外部读者不提供）
+├─► "Why is it designed this way / what are the design principles"
+│    ├─► Public version: CONTRIBUTING.md (Core Principles) + VERSION_STRATEGY.md
+│    │                  + the corresponding crate SPEC (TCB/REACTOR/GOVERNANCE/CLI)
+│    └─► Deeper internals: in-repo shared documents only, or the private collection (not provided to external readers)
 │
-├─► "形式化验证到什么程度 / P0 属性哪些过了"
-│    └─► verification/STATUS.md（验证状态唯一权威，五档词汇）
-│         + verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md（七层方法论）
-│         + 047 私有执行记录（内部，不公开）
+├─► "How far has formal verification gone / which P0 properties pass"
+│    └─► verification/STATUS.md (single authority for verification status, five-tier vocabulary)
+│         + verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md (seven-layer methodology)
+│         + 047 private execution records (internal, not public)
 │
-├─► "版本相关 / 下版本有什么 / 怎么升版本"
+├─► "Version info / what is in the next version / how to bump a version"
 │    └─► CHANGELOG.md + VERSION_STRATEGY.md
-│         + 发布流程文档（待发布，可参考 scripts/validate-release.ps1）
+│         + release process document (to be published; see scripts/validate-release.ps1)
 │
-├─► "安全 / 漏洞 / 依赖有问题吗"
-│    └─► SECURITY.md（报告流程） + 安全审计报告（1.0 升门时发布）
-│         + 威胁模型（1.0 升门时发布）
+├─► "Security / vulnerabilities / dependency issues"
+│    └─► SECURITY.md (reporting process) + security audit report (published at the 1.0 promotion gate)
+│         + threat model (published at the 1.0 promotion gate)
 │
-├─► "我要贡献代码 / 写 PR"
+├─► "I want to contribute code / write a PR"
 │    └─► AGENTS.md → CONTRIBUTING_ZH.md → crate README + SPEC
-│         + GATE_REFERENCE.md（build.rs 门禁）
+│         + GATE_REFERENCE.md (build.rs gates)
 │
-└─► "我要写 CLI 扩展 / 外部子命令"
-     └─► evorule-cli/README.md "外部子命令"一节 + evorule-cli/CLI_SPEC.md 边界
+└─► "I want to write a CLI extension / external subcommand"
+     └─► the "External subcommands" section of evorule-cli/README.md + the boundary in evorule-cli/CLI_SPEC.md
 ```
 
 ---
 
-## 七、文档维护规则（强制）
+## 7. Document Maintenance Rules (mandatory)
 
-1. **加新 L1 公开文档必登索引**：新 L1 文档（根目录 md / docs/\*\* md / crate README SPEC）创建时，必须同步在本 DOCS_INDEX 登记
-2. **引用私有文档零容忍**：L1 公开文档（根目录 / `docs/**` / crate 根 README SPEC）禁止出现任何私有集合路径、文件名字面量或可定位到私有内容的元信息；仓内共享文档禁止出现私有集合的文件内容摘抄。发布前必须通过 `scripts/check_doc_safety.py`
-3. **版本号单一真相源**：所有文档写死的版本号字符串必须与 `Cargo.toml` 顶层 `version` 一致（CHANGELOG 历史段除外）
-4. **文档被取代必标废弃**：新版文档生效时，旧版顶部加 `[已废弃]` 横幅，注明"被 `<新文件名>` 于 `<日期>` 取代"
-5. **索引存在性巡检**：本文件列出的所有路径，CI 期通过 `scripts/check_doc_safety.py` 做单向存在性检查（引用了的文件必须存在）
+1. **New L1 public documents must be registered in the index**: when a new L1 document is created (root-level md / docs/\*\* md / crate README SPEC), it must be registered in this DOCS_INDEX in sync
+2. **Zero tolerance for private document references**: L1 public documents (root level / `docs/**` / crate-root README SPEC) must not contain any private-collection paths, filename literals, or metadata that can locate private content; in-repo shared documents must not contain excerpts of private-collection file contents. Must pass `scripts/check_doc_safety.py` before publishing
+3. **Version string single source of truth**: all hard-coded version strings in documents must match the top-level `version` in `Cargo.toml` (historical sections of the CHANGELOG excepted)
+4. **Superseded documents must be marked deprecated**: when a new document version takes effect, add a `[deprecated]` banner at the top of the old one, noting "superseded by `<new filename>` on `<date>`"
+5. **Index existence patrol**: all paths listed in this file are checked one-way for existence by `scripts/check_doc_safety.py` during CI (referenced files must exist)

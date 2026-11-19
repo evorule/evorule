@@ -4,7 +4,7 @@
 # Tests all 5 subcommands (validate / run / replay / diff / verify-chain)
 # with realistic rule fixtures. Output in TAP format for CI integration.
 #
-# # 测试覆盖
+# # Test coverage
 # - validate: valid/invalid/unknown-type/empty/nonexistent
 # - run: stdout/payload/payload-file/-o/max-steps
 # - replay: normal/nonexistent
@@ -199,8 +199,10 @@ else
 fi
 
 # ===== Test 12: run with --max-steps 0 (immediate Error) =====
-# exit 3 = ExecutionHadErrors 设计语义:Error fact 已产出且事实日志落盘,
-# 执行本身确定性收敛(Stable),CLI 以非零码区分"执行含错误"——期望 0 属旧口径
+# exit 3 = ExecutionHadErrors design semantics: an Error fact has been produced and the
+# fact log written to disk; execution itself converged deterministically (Stable). The CLI
+# uses the non-zero exit code to distinguish "execution contained errors" — expecting 0
+# is the outdated convention.
 assert_cmd "run --max-steps 0 produces Error fact" \
     "3" \
     "max_steps" \
@@ -285,7 +287,8 @@ fi
 # ===== Test 20: FIFO queue order (push [step1,step2] → step1 first) =====
 "$BIN" run "$FIXTURES_DIR/fifo" -o "$WORK_DIR/fifo.log" >/dev/null 2>&1
 # With FIFO: step1 executes first, then step2. Final order="second" (last set wins).
-# 最终状态在 StateTransition.new_payload 内(日志末行是 Stable fact,不能 tail -1 取)
+# The final state lives in StateTransition.new_payload (the last log line is the Stable
+# fact, so `tail -1` cannot be used to fetch it)
 fifo_content=$(cat "$WORK_DIR/fifo.log")
 if [[ "$fifo_content" == *'"order":"second"'* ]]; then
     tap_ok "FIFO queue: step1 then step2 (order=second confirms FIFO)"
@@ -314,11 +317,13 @@ assert_cmd "verify-chain on echo log exits 0" \
     "verified" \
     "$BIN" verify-chain "$WORK_DIR/echo1.log"
 
-# ===== Test 23-28 已删除（2026-09-05 e2e 收敛）=====
-# 曾引用 examples/hospital + examples/law-firm，但这两个示例目录自 v0.1.0
-# 发布清理起就不在仓内（数据从未随仓发布），六个测试在任何 checkout 上必然失败。
-# 恢复旧示例=复活 v0.0.x 旧形态规则（违当前 schema），按历史遗留问题删除；
-# 医院场景的引擎语义覆盖由单元测试与 TCB 确定性 proptest 承担。
+# ===== Tests 23-28 removed (2026-09-05 e2e convergence) =====
+# They referenced examples/hospital + examples/law-firm, but those example
+# directories have not been in the repo since the v0.1.0 release cleanup (the data
+# was never shipped with the repo), so the six tests would fail on any checkout.
+# Restoring the old examples would revive v0.0.x-era rule shapes (violating the
+# current schema); they were removed as a legacy issue. Engine-semantics coverage
+# for the hospital scenario is provided by unit tests and the TCB determinism proptests.
 
 # ===== Summary =====
 echo "#"

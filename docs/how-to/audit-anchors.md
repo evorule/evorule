@@ -1,177 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 EvoRule Project -->
 
-# 如何使用审计锚点签名（防抵赖）
-
-> 任务：为审计链生成数字签名，让第三方可以离线验证审计记录确实由你生成。
-
-## 什么是审计锚点
-
-审计锚点（G-A1）是在 fact log 的关键位置插入的 ed25519 数字签名。与哈希链（`verify-chain`）互补：
-
-- **哈希链**：证明 log 内部自洽（未被篡改、顺序未调换）
-- **审计锚点**：证明 log 来源可信（确由指定私钥持有者生成，防抵赖）
-
-代码依据：`evorule-cli/src/commands/anchor_keygen.rs`、`verify_anchors.rs`。
-
-## 第零步（部署配套）：从种子导出公钥
-
-部署面（evorule-server `EVORULE_ANCHOR_SEED`）只持有种子；验证方只需公钥。
-已有种子时无须重新生成，直接派生导出：
-
-```bash
-evorule anchor-pubkey --seed <64位hex>
-# 或管道形态（种子不进 shell 历史）：
-cat /root/.evorule/audit-sk-seed.txt | evorule anchor-pubkey -
-```
-
-输出一行公钥（64 位 hex），分发给验证方（与 `verify-anchors --pubkey` 配套）。
-
-## 第一步：生成密钥对
-
-```bash
-evorule anchor-keygen
-```
-
-输出：
-```
-=== G-A1 审计锚点签名密钥对 ===
-[SECRET] 私钥种子 (sk_seed_hex): <64位hex>
-[PUBLIC] 公钥 (pk_hex): <64位hex>
-[WARN] 私钥种子请绝对不要泄露/提交到版本库；公钥可分发给验证方
-```
-
-**写入文件**（仅私钥种子，公钥单独分发）：
-```bash
-evorule anchor-keygen --output my-private-key.txt
-```
-
-| 输出 | 长度 | 说明 | 代码依据 |
-|------|------|------|---------|
-| 私钥种子 | 32 字节（64 位 hex） | 必须私密保存，用于配置审计器签名锚点 | anchor_keygen.rs L7 |
-| 公钥 | 32 字节（64 位 hex） | 可公开分发，供验证方离线验证 | anchor_keygen.rs L8 |
-
-> 安全提示：私钥种子一旦丢失无法恢复。建议离线加密存储。`--output` 仅写入私钥种子，公钥打印到 stdout，避免私钥散落（anchor_keygen.rs L27-28 注释）。
-
-## 第二步：配置审计器签名
-
-在 `evorule-governance` 的 `Auditor` 中配置私钥种子，执行时会自动在锚点位置签名。具体配置方式见 `evorule-governance` 文档。
-
-## 第三步：导出审计记录
-
-使用 `evorule-governance` 的 `Auditor::export()` 导出审计记录 JSON。导出物包含：
-- `verifying_key`：内嵌公钥（缺省验证用）
-- `anchors`：锚点数组
-
-输入口径：evorule-server `GET /api/sessions/{id}/anchors` 产物
-（`{session_id, count, anchors: [...]}`，governance ≥0.8.2 / evorule-anchor/2 格式）。
-
-每个锚点的字段（anchor.rs `AuditAnchor`）：
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `anchor_format` | String | 签名载荷格式版本（`evorule-anchor/2`） |
-| `seq` | u64 | 锚点序号（0 起严格 +1） |
-| `session_id` | String | 会话标识 |
-| `fact_range` | {lo, hi} | 覆盖事实区间 [lo, hi)，相邻锚点无缝 |
-| `chain_head` | String | 截至本锚点的事实链链头哈希 |
-| `key_id` | String | 签名密钥标识（轮换支持） |
-| `engine_id` | String | 引擎/部署标识 |
-| `logical_time` | u64 | 逻辑时刻（非墙钟） |
-| `anchor_hash` | String | blake3 载荷哈希（含前锚链接，A2 检出面） |
-| `signature` | String | ed25519 签名（对 v2 载荷串接，64 字节 128 hex） |
-
-## 第四步：离线验证
-
-```bash
-evorule verify-anchors audit-export.json
-```
-
-或指定公钥：
-```bash
-evorule verify-anchors audit-export.json --pubkey <pk_hex>
-```
-
-公钥优先级：`--pubkey` > 导出物内嵌 `verifying_key`（verify_anchors.rs L125-135）。
-
-## 验证内容
-
-`verify-anchors` 逐条校验（evorule-anchor/2）：
-
-### 1. seq 连续
-
-序号 0 起严格 +1——中间锚点被丢弃即断裂。
-
-### 2. 区间无缝
-
-首锚 `lo=0`，相邻锚点 `prev.hi == next.lo`——前缀截断/区间丢失即断裂。
-
-### 3. 签名真实性（v2 载荷串接）
-
-用公钥重算每个锚点的 v2 载荷串接并 ed25519 验签。证明锚点确由私钥持有者生成（防抵赖），且篡改任何载荷字段即失败。
-
-- 算法：ed25519 (RFC 8032) 确定性签名
-- v2 载荷：`evorule-anchor/2|{session_id}|{seq}|{lo}|{hi}|{chain_head}|{key_id}|{engine_id}|{logical_time}`
-  （与 governance `signature_payload_v2` 同构；`|` 分隔，字段序=结构体声明序）
-- 诚实边界：blake3 `anchor_hash` 链重算（A2 截断/fork 检出）由 evorule
-  verify 端点背书——CLI 零 blake3 依赖即可完成防抵赖验证
-
-## 输出解读
-
-**全部通过**：
-```
-=== Verify Anchors: audit-export.json ===
-Algorithm: ed25519 (RFC 8032) deterministic signature
-Public key: <pk_hex>
-
-[OK] anchor#1 seq=1 entry_count=100 last_hash=...
-[OK] anchor#2 seq=2 entry_count=200 last_hash=...
-
-[OK] 全部 2 个锚点签名有效且链式链接完整
-```
-
-**验证失败**：精确报错定位：
-- `锚点链断裂 @seq=N`：prev_anchor_hash 不匹配（中间锚点被删除）
-- `锚点 @seq=N 签名校验失败`：数据被篡改或非本公钥签名
-- `导出物未含 verifying_key`：缺公钥
-
-## 退出码
-
-| 退出码 | 含义 | 代码依据 |
-|--------|------|---------|
-| 0 | 全部锚点签名有效且链式链接完整 | verify_anchors.rs L116 |
-| 1 | 任一锚点被篡改/删改/错签或输入非法 | verify_anchors.rs L117 |
-
-## 与 verify-chain 的配合
-
-```
-完整验证流程：
-1. evorule verify-chain fact-log.jsonl    → 证明 log 未被篡改（哈希链 + 结构不变量）
-2. evorule verify-anchors audit-export.json → 证明 log 来源可信（防抵赖）
-```
-
-两者都通过，才能说"这份执行记录既完整又可信"。
-
-## 常见问题
-
-**Q: 锚点是每步都签吗？**
-A: 不是。锚点在关键位置插入（如 Stable 时、定期间隔），具体策略由 `Auditor` 配置。每步签名会导致性能下降。
-
-**Q: 私钥泄露了怎么办？**
-A: 立即用 `anchor-keygen` 生成新密钥对，更新 Auditor 配置，并通知所有验证方更换公钥。旧锚点仍可验证（用旧公钥），但新执行用新密钥。
-
-**Q: 无锚点的导出物能验证吗？**
-A: `verify-anchors` 对空锚点数组输出 `[WARN] 无审计锚点` 并返回成功（verify_anchors.rs L143-147）。此时仅有哈希链完整性，无来源真实性证据。
-
-## 相关命令
-
-- [`evorule verify-chain`](./verify-hash-chain.md) — 哈希链验证
-- [`evorule run`](./execute-rules.md) — 生成 fact log
-
----
-
-<a id="english"></a>
-
 # How to Use Audit Anchor Signatures (Non-Repudiation)
 
 > Task: generate digital signatures for the audit chain so that third parties can verify offline that the audit records were indeed produced by you.
@@ -205,10 +34,10 @@ evorule anchor-keygen
 
 Output:
 ```
-=== G-A1 审计锚点签名密钥对 ===
-[SECRET] 私钥种子 (sk_seed_hex): <64位hex>
-[PUBLIC] 公钥 (pk_hex): <64位hex>
-[WARN] 私钥种子请绝对不要泄露/提交到版本库；公钥可分发给验证方
+=== G-A1 Audit Anchor Signing Keypair ===
+[SECRET] Private seed (sk_seed_hex): <64 hex chars>
+[PUBLIC] Public key (pk_hex): <64 hex chars>
+[WARN] Never leak the private seed or commit it to version control; the public key may be distributed to verifiers
 ```
 
 **Write to a file** (private seed only; distribute the public key separately):
@@ -233,16 +62,23 @@ Use `Auditor::export()` from `evorule-governance` to export the audit records as
 - `verifying_key`: the embedded public key (used for verification by default)
 - `anchors`: the array of anchors
 
-Fields of each anchor (verify_anchors.rs L52-67, L77-107):
+Input contract: the output of evorule-server `GET /api/sessions/{id}/anchors`
+(`{session_id, count, anchors: [...]}`, governance ≥0.8.2 / evorule-anchor/2 format).
+
+Fields of each anchor (anchor.rs `AuditAnchor`):
 
 | Field | Type | Description |
 |------|------|------|
-| `seq` | u64 | Anchor sequence number |
-| `version` | u64 | Session version |
-| `entry_count` | usize | Number of Facts covered by the anchor |
-| `last_hash` | String | The chain_hash of the last Fact covered by the anchor |
-| `prev_anchor_hash` | String | The self-hash of the previous anchor (`"genesis"` for the first anchor) |
-| `signature` | String | ed25519 signature (64 bytes, 128 hex chars) |
+| `anchor_format` | String | Signature payload format version (`evorule-anchor/2`) |
+| `seq` | u64 | Anchor sequence number (strictly +1 starting at 0) |
+| `session_id` | String | Session identifier |
+| `fact_range` | {lo, hi} | Covered fact range [lo, hi); adjacent anchors are seamless |
+| `chain_head` | String | Chain-head hash of the fact chain as of this anchor |
+| `key_id` | String | Signing key identifier (supports rotation) |
+| `engine_id` | String | Engine/deployment identifier |
+| `logical_time` | u64 | Logical time (not wall-clock time) |
+| `anchor_hash` | String | blake3 payload hash (includes the previous-anchor link; A2 detection surface) |
+| `signature` | String | ed25519 signature over the v2 payload concatenation (64 bytes, 128 hex chars) |
 
 ## Step 4: Offline verification
 
@@ -259,17 +95,15 @@ Public key precedence: `--pubkey` > the `verifying_key` embedded in the export (
 
 ## What is verified
 
-`verify-anchors` checks each anchor in turn (verify_anchors.rs L164-205):
+`verify-anchors` checks each anchor in turn (evorule-anchor/2):
 
-### 1. Anchor chain linking
+### 1. seq contiguous
 
-Each anchor's `prev_anchor_hash` must equal the **self-hash** of the previous anchor (`"genesis"` for the first anchor). This prevents intermediate anchors from being truncated/dropped.
+Sequence numbers start at 0 and increase strictly by +1 — dropping an intermediate anchor breaks the chain.
 
-Anchor self-hash = `blake3(payload + signature)` (verify_anchors.rs L70-74).
+### 2. Seamless fact ranges
 
-### 2. Gapless fact-range continuity
-
-The first anchor has `lo=0`, and adjacent anchors satisfy `prev.hi == next.lo` — prefix truncation or a dropped range breaks the chain.
+The first anchor has `lo=0`, and adjacent anchors satisfy `prev.hi == next.lo` — prefix truncation or a lost range breaks the chain.
 
 ### 3. Signature authenticity (v2 payload concatenation)
 
@@ -278,26 +112,27 @@ The public key is used to recompute each anchor's v2 concatenated payload and ve
 - Algorithm: ed25519 (RFC 8032) deterministic signature
 - v2 payload: `evorule-anchor/2|{session_id}|{seq}|{lo}|{hi}|{chain_head}|{key_id}|{engine_id}|{logical_time}`
   (isomorphic to governance `signature_payload_v2`; `|`-separated, field order = struct declaration order)
-- Honest boundary: blake3 `anchor_hash` chain recomputation (A2 truncation/fork detection) is endorsed by the evorule verify endpoint — the CLI completes non-repudiation verification with zero blake3 dependency
+- Honesty boundary: blake3 `anchor_hash` chain recomputation (A2 truncation/fork detection) is endorsed by the evorule verify endpoint — the CLI completes non-repudiation verification with zero blake3 dependency
 
 ## Reading the output
 
 **All checks pass**:
 ```
-=== Verify Anchors: audit-export.json ===
-Algorithm: ed25519 (RFC 8032) deterministic signature
+=== Verify Anchors (evorule-anchor/2): audit-export.json ===
+Algorithm: ed25519 (RFC 8032) over v2 payload concatenation
 Public key: <pk_hex>
 
-[OK] anchor#1 seq=1 entry_count=100 last_hash=...
-[OK] anchor#2 seq=2 entry_count=200 last_hash=...
+[0] seq=0 range=[0,100) head=3f2a91c4bd7e… signature: OK
+[1] seq=1 range=[100,200) head=8be40a12d95c… signature: OK
 
-[OK] 全部 2 个锚点签名有效且链式链接完整
+[OK] All 2 anchors verified: seq contiguous, ranges seamless, signatures valid
 ```
 
 **Verification failure**: pinpointed errors:
-- `锚点链断裂 @seq=N`: prev_anchor_hash mismatch (an intermediate anchor was deleted)
-- `锚点 @seq=N 签名校验失败`: data was tampered with, or signed under a different public key
-- `导出物未含 verifying_key`: public key missing
+- `Anchor [N] seq broken: expected N, got M`: the seq contiguity is broken (an intermediate anchor was deleted)
+- `Anchor [N] fact range not seamless: expected lo=..., got lo=...`: a gap was introduced into the fact ranges
+- `Anchor [N] signature verification failed (tampered payload or wrong key)`: data was tampered with, or signed under a different public key
+- `No --pubkey provided and document has no embedded 'verifying_key'`: public key missing
 
 ## Exit codes
 
@@ -309,9 +144,9 @@ Public key: <pk_hex>
 ## How it combines with verify-chain
 
 ```
-完整验证流程：
-1. evorule verify-chain fact-log.jsonl    → 证明 log 未被篡改（哈希链 + 结构不变量）
-2. evorule verify-anchors audit-export.json → 证明 log 来源可信（防抵赖）
+Full verification flow:
+1. evorule verify-chain fact-log.jsonl    → proves the log has not been tampered with (hash chain + structural invariants)
+2. evorule verify-anchors audit-export.json → proves the log's origin is trustworthy (non-repudiation)
 ```
 
 Only when both pass can you say "this execution record is both complete and trustworthy".
@@ -325,7 +160,7 @@ A: No. Anchors are inserted at key positions (e.g. at Stable points, at regular 
 A: Immediately generate a new key pair with `anchor-keygen`, update the Auditor configuration, and notify all verifiers to switch to the new public key. Old anchors remain verifiable (with the old public key); new executions use the new key.
 
 **Q: Can an export without anchors be verified?**
-A: `verify-anchors` prints `[WARN] 无审计锚点` for an empty anchor array and returns success (verify_anchors.rs L143-147). In that case there is only hash chain integrity, with no proof of origin authenticity.
+A: `verify-anchors` prints `[WARN] No anchors (anchor chain not enabled for this session)` for an empty anchor array and returns success (verify_anchors.rs L143-147). In that case there is only hash chain integrity, with no proof of origin authenticity.
 
 ## Related commands
 

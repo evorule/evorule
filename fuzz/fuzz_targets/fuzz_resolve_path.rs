@@ -1,20 +1,23 @@
-//! Fuzz 目标：path.rs 路径解析（resolve_path / resolve_path_mut）
+//! Fuzz target: path.rs path resolution (resolve_path / resolve_path_mut)
 //!
-//! 输入: 任意字节（转 UTF-8 后作为路径字符串）
-//! 不变量: 解析任意路径字符串不得 panic（含多字节 UTF-8 边界、空段、
-//!         超深段、非法转义、数组合法性等边界）。
-//! 状态: 固定的中等工作深度 JsonValue（对象/数组/标量混合），不随输入变化。
+//! Input: arbitrary bytes (converted to UTF-8 and used as the path string)
+//! Invariant: resolving any path string must not panic (covering multi-byte
+//!         UTF-8 boundaries, empty segments, overly deep segments, invalid
+//!         escapes, array validity, and other edges).
+//! State: a fixed medium-depth JsonValue (objects/arrays/scalars mixed); it
+//!        does not vary with the input.
 
 #![no_main]
 
 use evorule_tcb::path::{resolve_path, resolve_path_mut};
-// 经 value 模块路径导入: HEAD 与在途改动均保持 `pub mod value` 公开,
-// 顶层 re-export(ObjectMap)是在途改动才有的, 顶层路径会导致 CI E0432
+// Imported via the value module path: both HEAD and in-flight changes keep
+// `pub mod value` public; the top-level re-export (ObjectMap) only exists in
+// in-flight changes, and the top-level path would cause CI E0432
 use evorule_tcb::value::{JsonValue, ObjectMap};
 use libfuzzer_sys::fuzz_target;
 use std::str::from_utf8;
 
-/// 构造固定测试状态:
+/// Build the fixed test state:
 /// { "a": {"x": 42, "name": "evorule"},
 ///   "list": [1, "two", true],
 ///   "deep": {"l2": {"l3": [{"tail": "ok"}]}} }
@@ -50,11 +53,11 @@ fn fixed_state() -> JsonValue {
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(path) = from_utf8(data) {
-        // 只读解析
+        // Read-only resolution
         let state = fixed_state();
         let _ = resolve_path(&state, path);
 
-        // 可变解析（作用于独立克隆状态，结果丢弃）
+        // Mutable resolution (applied to an independent cloned state; the result is discarded)
         let mut state_mut = fixed_state();
         let _ = resolve_path_mut(&mut state_mut, path);
     }

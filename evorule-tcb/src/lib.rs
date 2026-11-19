@@ -1,33 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! `EvoRule` TCB Core - 纯计算内核
+//! `EvoRule` TCB Core - pure computation kernel
 //!
-//! # 设计原则
-//! - 零依赖（`#![no_std]` 兼容）
-//! - 纯函数（所有函数无副作用）
-//! - 确定性强（`BTreeMap` + 确定性迭代）
-//! - 永不 panic（路径解析返回 `Option`）
+//! # Design principles
+//! - Zero dependencies (`#![no_std]` compatible)
+//! - Pure functions (all functions are side-effect free)
+//! - Strong determinism (`BTreeMap` + deterministic iteration)
+//! - Never panics (path resolution returns `Option`)
 //!
-//! # 公开接口
-//! - `execute_transition()`：执行一步状态转换
-//! - `JsonValue`：JSON 数据模型
-//! - `TcbError`：错误类型
+//! # Public interface
+//! - `execute_transition()`: executes one state transition step
+//! - `JsonValue`: JSON data model
+//! - `TcbError`: error type
 //!
-//! # 快速入门
+//! # Quick start
 //!
 //! ```
 //! extern crate alloc;
 //! use evorule_tcb::JsonValue;
 //! use alloc::collections::BTreeMap;
 //!
-//! // 构造一个 JsonValue 对象
+//! // Build a JsonValue object
 //! let mut map = BTreeMap::new();
 //! map.insert("name".to_string(), JsonValue::string("Alice"));
 //! map.insert("age".to_string(), JsonValue::Integer(30));
 //! let value = JsonValue::object(map);
 //!
-//! // 类型检查与取值
+//! // Type checks and value access
 //! assert!(value.is_object());
 //! let age = value.get("age").and_then(|v| v.as_i64());
 //! assert_eq!(age, Some(30));
@@ -36,7 +36,7 @@
 #![no_std]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
-// 永不 panic 保障：禁止以下 panic-prone 模式
+// Never-panic guarantee: the following panic-prone patterns are banned
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
 #![deny(clippy::indexing_slicing)]
@@ -44,7 +44,7 @@
 
 extern crate alloc;
 
-// 模块声明（按依赖顺序：基础类型在前）
+// Module declarations (in dependency order: base types first)
 pub mod discipline;
 pub mod domain;
 pub mod envelope;
@@ -54,7 +54,7 @@ pub mod path;
 pub mod transition;
 pub mod value;
 
-// 核心类型重导出（仅公开稳定的 API）
+// Core type re-exports (only stable public API)
 pub use envelope::EnvelopeLimits;
 pub use error::TcbError;
 pub use executor::META_INSTRUCTION_TYPES;

@@ -1,26 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! `EvoRule` 审计链 no_std 内核（SC3-a 方案乙：SSOT 上提）
+//! The `EvoRule` audit-chain no_std kernel (SSOT promotion)
 //!
-//! 本 crate 是审计链算法的**单一真相源**，从 `evorule-reactor`（std 侧）上提：
-//! - [`fact`]：Fact 数据形态（事实枚举 / FactId / IoType / TraceHit）——
-//!   原子通信单元定义，随迁自 reactor/src/fact.rs（`std::sync::Arc` → `alloc::sync::Arc`，行为逐字一致）
-//! - [`hash`]：稳定 JSON 序列化 + BLAKE3 链哈希——随迁自 reactor/src/hash.rs
-//!   （序列化整体基于 `serde_json::Value/Map`，alloc 模式逐字节等价；tracing 观测调用
-//!   不随迁——纯观测零行为影响，宿主侧日志由壳层按需补挂）
+//! This crate is the **single source of truth** for the audit-chain algorithms,
+//! promoted from `evorule-reactor` (the std side):
+//! - [`fact`]: Fact data shapes (fact enum / FactId / IoType / TraceHit) —
+//!   the atomic communication unit definitions, migrated from reactor/src/fact.rs
+//!   (`std::sync::Arc` → `alloc::sync::Arc`, behavior identical verbatim)
+//! - [`hash`]: stable JSON serialization + BLAKE3 chain hashing — migrated
+//!   from reactor/src/hash.rs (serialization wholly based on
+//!   `serde_json::Value/Map`, alloc mode byte-equivalent; tracing observation
+//!   calls not migrated — pure observation with zero behavior impact, host-side
+//!   logging attached on demand by the shell layer)
 //!
-//! # 设计原则
-//! - `#![no_std]` + alloc：嵌入到 MCU（SC3）与 std 宿主（reactor/governance/cli
-//!   经 re-export 消费）同一实现，消灭复刻漂移
-//! - 确定性优先：同输入同输出，BTreeMap 固定键序
-//! - 字节等价铁律：本上提不改变任何哈希输出（`hash_snapshot.txt` 快照 + 三方
-//!   交叉验证测试随迁守护）
+//! # Design principles
+//! - `#![no_std]` + alloc: one implementation embedded into MCUs and std hosts
+//!   alike (reactor/governance/cli consume via re-exports), eliminating copy drift
+//! - Determinism first: same input, same output; BTreeMap fixed key order
+//! - Byte-equivalence iron law: this promotion changed no hash output
+//!   (guarded by the migrated `hash_snapshot.txt` snapshot + three-way
+//!   cross-validation tests)
 //!
-//! # 消费方式
-//! - `evorule-reactor`：`pub use evorule_audit_chain::fact / hash`（公开面零变化）
-//! - `evorule-governance` / `evorule-cli`：既有 re-export 链路透传，无需改动
-//! - `evorule-mcu`（SC3）：直接依赖本 crate 构建嵌入式最小内核
+//! # Consumption
+//! - `evorule-reactor`: `pub use evorule_audit_chain::fact / hash` (public surface unchanged)
+//! - `evorule-governance` / `evorule-cli`: existing re-export chains pass through, no changes needed
+//! - `evorule-mcu`: depends on this crate directly to build the embedded minimal kernel
 
 #![no_std]
 extern crate alloc;

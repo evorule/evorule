@@ -9,200 +9,201 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# EvoRule 个人贡献者许可协议 (Individual CLA)
+# EvoRule Individual Contributor License Agreement (Individual CLA)
 
-**版本**: 1.0
-**生效日期**: 2026-07-19
+**Version**: 1.0
+**Effective date**: 2026-07-19
 
-> ⚠️ **重要提示**:本协议是法律文件,影响您的版权与专利权。签署前请仔细阅读。如有疑问,请咨询专业律师。
-> 贡献者也可联系 <evorulelab@gmail.com> 获取澄清。
-
----
-
-## 1. 定义
-
-- **"项目"** 指 **EvoRule**(反应式执行引擎)及其所有相关代码仓库,包括但不限于:
-  - `evorule`(主仓库,本仓库)
-  - `evo-agent`(evorule 生态配套仓库)
-  - 未来可能增加的关联仓库
-- **"贡献"** 指您(贡献者)提交给项目的任何源代码、文档、测试用例、补丁、翻译、示例或其他材料,通过 Pull Request / Merge Request / Issue / Email / 任何其他渠道提交。
-- **"版权人"** 指 EvoRule Project(项目版权所有者)。
-- **"版权"** 指根据适用法律对贡献享有的所有知识产权,包括但不限于著作权、专利权和商标权。
-
-## 2. 版权许可授予
-
-您 hereby 授予 EvoRule Project 一项**永久的、全球的、非独占的、免版税的、可再许可的、不可撤销的**版权许可,允许版权人:
-
-1. **复制、修改、改编、转换、翻译**您的贡献
-2. **将您的贡献合并到项目**及其衍生作品中
-3. **以 AGPL-3.0-or-later 许可证**分发项目及包含您贡献的版本
-4. **以其他许可证分发**项目,包括但不限于商业许可证、商业豁免协议(详见 [DUAL_LICENSE.md](DUAL_LICENSE.md))
-5. **创建和分发**基于您贡献的衍生作品
-6. **公开展示和表演**含您贡献的项目
-
-## 3. 专利授权
-
-如果您的贡献包含可专利的内容,或您的贡献导致任何专利权利要求被侵犯,您 hereby 授予版权人及其被许可人一项**永久的、全球的、非独占的、免版税的、不可撤销的**专利许可,允许其:
-
-- **制造**含您贡献的产品
-- **使用**含您贡献的产品
-- **销售或许诺销售**含您贡献的产品
-- **进口**含您贡献的产品
-- **分许可**他人行使上述权利
-
-**专利诉讼触发条款**:
-如果您就您的贡献对版权人或其被许可人提起专利侵权诉讼(包括交叉诉讼),本协议授予您的专利许可将自动终止。
-
-## 4. 陈述与保证
-
-您在此声明并保证:
-
-1. **原创性**:您的贡献是您的原创作品,或您有充分的合法权利将其提交给项目并授予本协议。
-2. **无第三方权利冲突**:您的贡献不侵犯任何第三方的知识产权、版权、专利权、商标权、商业秘密、隐私权或其他合法权利。
-3. **第三方代码**:如果您的贡献包含第三方代码:
-   - 该第三方代码采用与 AGPL-3.0-or-later 兼容的许可证
-   - 您已保留所有必要的版权声明、许可证声明和归属声明
-   - 您已遵守所有相关许可证的要求
-4. **授权能力**:您年满 18 周岁,或已获得法定监护人的同意,且您有权签署本协议并履行其中的义务。
-5. **无利益冲突**:您没有未披露的、可能影响您独立判断或本协议履行的重大利益冲突。
-
-## 5. 道德权利
-
-在适用法律允许的范围内,您**放弃**对您贡献的任何道德权利(moral rights),包括但不限于:
-
-- 署名权(right of attribution)
-- 完整权(right of integrity)
-- 反对修改权(right to object to derogatory treatment)
-- 公开权(right of privacy of certain works)
-
-如法律不允许放弃上述权利,您同意**不行使**上述权利,以便版权人可以自由使用、修改、分发您的贡献。
-
-## 6. 通知义务
-
-如果您发现以下任一情况,您必须**立即**书面通知版权人:
-
-- 您的贡献可能侵犯第三方权利
-- 您对贡献的权利发生变化(如您不再是版权人)
-- 您对贡献的所有权发生变化(如公司重组、版权转让)
-- 您的贡献的来源发生变化
-
-通知方式:<evorulelab@gmail.com>(主题加 `[CLA Notice]`)
-
-## 7. 协议性质与变更
-
-### 7.1 协议性质
-
-本协议是您与版权人之间的**法律协议**。通过向项目提交贡献,您表示您已阅读、理解并同意受本协议条款约束。
-
-### 7.2 协议终止
-
-- 您可以随时**终止**本协议,但终止仅对**未来**的贡献有效,已提交的贡献许可保持有效。
-- 如果您违反本协议的任何条款,您的协议和授予的许可将自动终止,但已分发的代码不受影响。
-
-### 7.3 协议变更
-
-版权人可随时更新本协议(通过发布新版本号)。新版本仅对**未来**的贡献有效,已提交的贡献适用提交时生效的版本。
-
-## 8. 适用法律与争议解决
-
-### 8.1 适用法律
-
-本协议受**中华人民共和国法律**管辖,并按其解释,不适用法律冲突规则。
-
-### 8.2 争议解决
-
-因本协议引起的或与本协议有关的任何争议,双方应首先通过**友好协商**解决;协商不成的,任何一方可提交版权人所在地有管辖权的人民法院通过诉讼解决。
-
-## 9. 其他条款
-
-- **可分割性**:本协议任何条款被认定为无效或不可执行,不影响其他条款的效力。
-- **完整协议**:本协议构成您与版权人之间关于贡献许可的完整协议,取代任何先前的口头或书面协议。
-- **放弃**:任何一方未行使本协议项下的权利,不构成对该权利的放弃。
+> ⚠️ **Important**: this agreement is a legal document that affects your copyright and patent rights. Read it carefully before signing. If in doubt, consult a qualified attorney.
+> Contributors may also contact <evorulelab@gmail.com> for clarification.
 
 ---
 
-## 签署
+## 1. Definitions
 
-通过签署本协议,您确认您已阅读、理解并同意受本协议所有条款约束。
+- **"Project"** means **EvoRule** (the reactive execution engine) and all of its associated code repositories, including but not limited to:
+  - `evorule` (the main repository, this repository)
+  - `evo-agent` (a companion repository of the evorule ecosystem)
+  - Associated repositories that may be added in the future
+- **"Contribution"** means any source code, documentation, test cases, patches, translations, examples, or other materials that you (the contributor) submit to the Project, via Pull Request / Merge Request / Issue / Email / any other channel.
+- **"Copyright Holder"** means EvoRule Project (the owner of the project's copyright).
+- **"Copyright"** means all intellectual property rights in a Contribution under applicable law, including but not limited to copyright, patent, and trademark rights.
 
-| 字段 | 填写内容 |
+## 2. Copyright License Grant
+
+You hereby grant EvoRule Project a **perpetual, worldwide, non-exclusive, royalty-free, sublicensable, irrevocable** copyright license, allowing the Copyright Holder to:
+
+1. **Reproduce, modify, adapt, transform, and translate** your Contributions
+2. **Incorporate your Contributions into the Project** and derivative works thereof
+3. **Distribute the Project and versions containing your Contributions under the AGPL-3.0-or-later license**
+4. **Distribute the Project under other licenses**, including but not limited to commercial licenses and commercial exemption agreements (see [DUAL_LICENSE.md](DUAL_LICENSE.md) for details)
+5. **Create and distribute** derivative works based on your Contributions
+6. **Publicly display and publicly perform** the Project containing your Contributions
+
+## 3. Patent Grant
+
+If your Contribution includes patentable subject matter, or your Contribution causes any patent claim to be infringed, you hereby grant the Copyright Holder and its licensees a **perpetual, worldwide, non-exclusive, royalty-free, irrevocable** patent license, allowing them to:
+
+- **Make** products containing your Contributions
+- **Use** products containing your Contributions
+- **Sell or offer to sell** products containing your Contributions
+- **Import** products containing your Contributions
+- **Sublicense** others to exercise the foregoing rights
+
+**Patent Litigation Termination Clause**:
+
+If you initiate patent infringement litigation (including counterclaims and cross-claims) against the Copyright Holder or its licensees over your Contributions, the patent license granted to you under this agreement terminates automatically.
+
+## 4. Representations and Warranties
+
+You represent and warrant that:
+
+1. **Originality**: your Contributions are your original works, or you have full legal rights to submit them to the Project and make the grants under this agreement.
+2. **No conflicts with third-party rights**: your Contributions do not infringe any third party's intellectual property rights, copyright, patent rights, trademark rights, trade secrets, privacy rights, or other lawful rights.
+3. **Third-party code**: if your Contributions contain third-party code:
+   - That third-party code is licensed under a license compatible with AGPL-3.0-or-later
+   - You have retained all required copyright notices, license notices, and attribution notices
+   - You have complied with the requirements of all relevant licenses
+4. **Capacity to grant**: you are at least 18 years of age, or you have obtained the consent of a legal guardian, and you have the right to sign this agreement and perform its obligations.
+5. **No conflict of interest**: you have no undisclosed material conflict of interest that could affect your independent judgment or the performance of this agreement.
+
+## 5. Moral Rights
+
+To the extent permitted by applicable law, you **waive** any moral rights in your Contributions, including but not limited to:
+
+- The right of attribution
+- The right of integrity
+- The right to object to derogatory treatment
+- The right of privacy with respect to certain works
+
+If the law does not permit waiver of the foregoing rights, you agree **not to exercise** those rights, so that the Copyright Holder may freely use, modify, and distribute your Contributions.
+
+## 6. Notification Obligation
+
+If you become aware of any of the following, you must notify the Copyright Holder **immediately** in writing:
+
+- Your Contributions may infringe third-party rights
+- Your rights in a Contribution change (e.g. you are no longer the copyright holder)
+- Your ownership of a Contribution changes (e.g. a corporate restructuring, a copyright assignment)
+- The origin of your Contribution changes
+
+Notification channel: <evorulelab@gmail.com> (add `[CLA Notice]` to the subject)
+
+## 7. Nature of the Agreement and Changes
+
+### 7.1 Nature of the Agreement
+
+This agreement is a **legal agreement** between you and the Copyright Holder. By submitting a Contribution to the Project, you declare that you have read, understood, and agreed to be bound by the terms of this agreement.
+
+### 7.2 Termination of the Agreement
+
+- You may **terminate** this agreement at any time, but termination applies only to **future** Contributions; licenses to already-submitted Contributions remain in effect.
+- If you breach any term of this agreement, the agreement and the licenses granted under it terminate automatically, without affecting already-distributed code.
+
+### 7.3 Changes to the Agreement
+
+The Copyright Holder may update this agreement at any time (by releasing a new version number). A new version applies only to **future** Contributions; already-submitted Contributions are governed by the version in effect at the time of submission.
+
+## 8. Governing Law and Dispute Resolution
+
+### 8.1 Governing Law
+
+This agreement is governed by and construed in accordance with **the laws of the People's Republic of China**, without regard to its conflict-of-laws rules.
+
+### 8.2 Dispute Resolution
+
+Any dispute arising out of or in connection with this agreement shall first be resolved through **friendly negotiation**; if negotiation fails, either party may bring a lawsuit before a people's court of competent jurisdiction at the place where the Copyright Holder is located.
+
+## 9. Miscellaneous
+
+- **Severability**: if any provision of this agreement is held invalid or unenforceable, the validity of the remaining provisions is unaffected.
+- **Entire agreement**: this agreement constitutes the entire agreement between you and the Copyright Holder concerning the licensing of Contributions, superseding any prior oral or written agreements.
+- **Non-waiver**: a party's failure to exercise a right under this agreement does not constitute a waiver of that right.
+
+---
+
+## Signature
+
+By signing this agreement, you confirm that you have read, understood, and agreed to be bound by all terms of this agreement.
+
+| Field | Value |
 |---|---|
-| **贡献者姓名** | _________________________________ |
-| **电子邮件** | _________________________________ |
-| **GitHub 用户名** | _________________________________ |
-| **所在国家/地区** | _________________________________ |
-| **日期** | _________________________________ |
-| **签名**(电子或手写) | _________________________________ |
+| **Contributor name** | _________________________________ |
+| **Email** | _________________________________ |
+| **GitHub username** | _________________________________ |
+| **Country / region** | _________________________________ |
+| **Date** | _________________________________ |
+| **Signature** (electronic or handwritten) | _________________________________ |
 
 ---
 
-## 提交方式
+## Submission Methods
 
-**方式 1(推荐):首次 PR 时声明**
+**Method 1 (recommended): declaration at the first PR**
 
-- 在首个 PR 的描述中包含:
+- Include the following in the description of the first PR:
   > "I have read and agree to the EvoRule Individual CLA v1.0."
 
-**方式 2:邮件签署**
+**Method 2: signing by email**
 
-- 下载本文件,填写并签名后发送至:
-  - **邮箱**: <evorulelab@gmail.com>(主题加 `[CLA Individual]`)
+- Download this document, fill it in and sign it, and send it to:
+  - **Email**: <evorulelab@gmail.com> (add `[CLA Individual]` to the subject)
 
-**方式 3:GitHub 在线签署**
+**Method 3: online signing on GitHub**
 
-- 在 GitHub 仓库的 CLA 机器人提示下,点击"我同意"。
-
----
-
-## 签署后
-
-- 您将收到版权人的确认邮件(通常 7 天内)
-- 您的名字会出现在 [AUTHORS.md](AUTHORS.md) 中(经您同意)
-- 您的贡献将根据本协议被纳入项目
+- Click "I agree" at the CLA bot prompt in the GitHub repository.
 
 ---
 
-## 关于 CLA 的常见问题
+## After Signing
 
-### Q1:为什么 EvoRule 需要 CLA?
-
-**A**: AGPL-3.0 本身不禁止商业再许可,但要实现"开源 + 商业双轨",需要每位贡献者明确授权版权人有权再许可。否则商业许可存在法律风险。
-
-### Q2:我贡献的代码归属谁?
-
-**A**: **您保留版权**。本协议授予的是**使用许可**,不是版权转让。
-
-### Q3:我撤回贡献会怎样?
-
-**A**: 您可以终止本协议,但**已分发**的代码(无论是 AGPL 版还是商业版)不受影响。终止后,您可以停止未来贡献,但已提交的贡献仍然受本协议保护。
-
-### Q4:公司贡献怎么处理?
-
-**A**: 公司贡献者需要签署 **Corporate CLA**（已发布，见 [CLA-corporate.md](CLA-corporate.md)）。注意：在线签署通道当前**仅支持个人签署、无企业入口**，企业贡献者请按 CLA-corporate.md 的"企业如何签署"走邮件人工流程，勿用个人 CLA 代替。
-
-### Q5:CLA 适用所有贡献吗?
-
-**A**: 是的。任何形式的贡献——代码、文档、Issue 评论、PR 描述——一旦提交,即视为接受本协议。
+- You will receive a confirmation email from the Copyright Holder (usually within 7 days)
+- Your name will appear in [AUTHORS.md](AUTHORS.md) (with your consent)
+- Your Contributions will be incorporated into the Project under this agreement
 
 ---
 
-## 联系信息
+## FAQ about the CLA
 
-- **项目**: EvoRule
-- **版权人**: EvoRule Project
-- **邮箱**: <evorulelab@gmail.com>
+### Q1: Why does EvoRule need a CLA?
+
+**A**: AGPL-3.0 does not itself prohibit commercial re-licensing, but to implement the "open source + commercial dual track", every contributor must explicitly authorize the Copyright Holder to re-license. Otherwise, commercial licensing carries legal risk.
+
+### Q2: Who owns the code I contribute?
+
+**A**: **You retain copyright**. What this agreement grants is a **license to use**, not a copyright assignment.
+
+### Q3: What happens if I withdraw my contribution?
+
+**A**: You may terminate this agreement, but **already-distributed** code (whether the AGPL version or a commercial version) is unaffected. After termination, you may stop contributing in the future, but already-submitted Contributions remain protected by this agreement.
+
+### Q4: How are corporate contributions handled?
+
+**A**: Corporate contributors need to sign the **Corporate CLA** (published, see [CLA-corporate.md](CLA-corporate.md)). Note: the online signing channel currently **supports individual signing only, with no corporate entry**; corporate contributors should follow the "How Corporates Sign" email-based manual process in CLA-corporate.md, and must not substitute the individual CLA for the corporate CLA.
+
+### Q5: Does the CLA apply to all contributions?
+
+**A**: Yes. Any form of contribution — code, documentation, issue comments, PR descriptions — once submitted, is deemed acceptance of this agreement.
+
+---
+
+## Contact
+
+- **Project**: EvoRule
+- **Copyright Holder**: EvoRule Project
+- **Email**: <evorulelab@gmail.com>
 - **GitHub**: <https://github.com/evorule/evorule>
 
 ---
 
-## 协议历史
+## Agreement History
 
-| 版本 | 日期 | 主要变化 |
+| Version | Date | Key changes |
 |---|---|---|
-| 1.0 | 2026-07-19 | 初版,基于项目既有 CLA 文本适配 |
+| 1.0 | 2026-07-19 | Initial version, adapted from the project's pre-existing CLA text |
 
 ---
 
-**本 CLA 采用 Contributor License Agreement 标准结构。**
+**This CLA adopts the standard Contributor License Agreement structure.**
 
-**本文件不是法律建议。实际签署前,建议咨询专业律师。**
+**This document is not legal advice. Before actually signing, it is recommended to consult a qualified attorney.**

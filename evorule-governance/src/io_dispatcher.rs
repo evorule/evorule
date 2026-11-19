@@ -1,24 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! I/O Dispatcher —— v0.2.0 已下沉到 evorule-reactor
+//! I/O Dispatcher — moved down to evorule-reactor in v0.2.0
 //!
-//! # 迁移说明
+//! # Migration notes
 //!
-//! 此模块原定义了独立的 `IoDispatcher` / `IoDispatcherBuilder` 结构体，与
-//! `evorule-reactor` 中的实现重复（v0.1.x H5 下沉时遗留的副本）。
+//! This module originally defined standalone `IoDispatcher` / `IoDispatcherBuilder`
+//! structs, duplicating the implementation in `evorule-reactor` (a copy left over
+//! from the v0.1.x H5 move-down).
 //!
-//! v0.2.0 自定义 IoType 能力重构中，`IoDispatcher` 已在 `evorule-reactor` 统一实现，
-//! 并新增 `contains()` / `known_types()` 方法（供加载期校验使用）。保留 governance
-//! 独立副本会导致：
-//! - `evorule_governance::IoDispatcher` ≠ `evorule_reactor::IoDispatcher`（不同类型）
-//! - governance 用户缺少 `contains()` / `known_types()` 方法
-//! - 混用两个 crate 的 IoDispatcher 产生类型不匹配编译错误
+//! During the v0.2.0 custom-IoType capability refactor, `IoDispatcher` is now
+//! implemented uniformly in `evorule-reactor`, with new `contains()` /
+//! `known_types()` methods (used by load-time validation). Keeping a separate
+//! governance copy would cause:
+//! - `evorule_governance::IoDispatcher` ≠ `evorule_reactor::IoDispatcher` (different types)
+//! - governance users would lack the `contains()` / `known_types()` methods
+//! - mixing the IoDispatcher of the two crates would produce type-mismatch compile errors
 //!
-//! 此文件改为 re-export，与 `io_handler.rs` 的迁移模式一致：
-//! 现有代码 `use evorule_governance::IoDispatcher` 仍可用，且自动获得 reactor
-//! 版本的全部方法（含 v0.2.0 新增的 `contains()` / `known_types()`）。
+//! This file now re-exports, following the same migration pattern as `io_handler.rs`:
+//! existing code `use evorule_governance::IoDispatcher` still works and automatically
+//! gains all methods of the reactor version (including the v0.2.0 additions
+//! `contains()` / `known_types()`).
 //!
-//! 新代码推荐直接使用 `evorule_reactor::IoDispatcher`。
+//! New code should use `evorule_reactor::IoDispatcher` directly.
 
 pub use evorule_reactor::{IoDispatcher, IoDispatcherBuilder};

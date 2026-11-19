@@ -1,25 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! evorule-cli 集成测试 —— 与 e2e.sh 互补（Rust 原生，cargo test 可执行）
+//! evorule-cli integration tests — complements e2e.sh (Rust-native, runnable via cargo test)
 //!
-//! 覆盖 5 个核心子命令（validate / run / replay / diff / verify-chain）
-//! 及其边界条件。CLI 共 11 个子命令（另有 anchor-keygen / anchor-pubkey /
-//! compile-evopack / scan-wal-dir / truncate-partial-line / verify-anchors
-//! 未纳入本套件）。使用二进制子进程调用，不依赖外部 shell。
+//! Covers the 5 core subcommands (validate / run / replay / diff / verify-chain)
+//! and their boundary conditions. The CLI has 11 subcommands (anchor-keygen /
+//! anchor-pubkey / compile-evopack / scan-wal-dir / truncate-partial-line /
+//! verify-anchors are not included in this suite). Invokes the binary as a
+//! subprocess; no external shell needed.
 //!
-//! # 运行方式
+//! # How to run
 //! ```bash
 //! cargo build -p evorule-cli --bin evorule
 //! cargo test -p evorule-cli --test cli_test
 //! ```
 //!
-//! # Lint 豁免说明
+//! # Lint exemption note
 //!
-//! unwrap/expect/panic 的 deny 门禁仅约束生产代码（src/，与 evorule-tcb
-//! build.rs T1-T14 只扫 src/ 的哲学一致）。集成测试中失败即中止是
-//! 预期语义，豁免 panic 类 lint 是 Rust 测试的标准做法（与 evorule-tcb
-//! 测试模块的 #![allow] 一致）。
+//! The unwrap/expect/panic deny gate constrains production code only (src/, the
+//! same philosophy as the evorule-tcb build.rs T1-T14 which scans only src/).
+//! Aborting on failure is the expected semantics in integration tests; exempting
+//! panic-family lints is standard Rust test practice (consistent with the
+//! #![allow] in the evorule-tcb test modules).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::path::PathBuf;
@@ -28,11 +30,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 // ============================================================================
-// 全局递增计数，保证并行测试的数据文件目录唯一
+// Global increasing counter, keeps test data directories unique under parallelism
 // ============================================================================
 static DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// 创建测试用临时目录（基于 PID + 递增计数，避免并行测试间冲突）
+/// Create a temporary directory for tests (PID + increasing counter, avoiding conflicts between parallel tests)
 fn test_tmp_dir() -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "evorule_cli_test_{}_{}_{}",
@@ -43,25 +45,25 @@ fn test_tmp_dir() -> PathBuf {
             .unwrap()
             .as_nanos()
     ));
-    std::fs::create_dir_all(&dir).expect("创建测试临时目录失败");
+    std::fs::create_dir_all(&dir).expect("failed to create the test temp directory");
     dir
 }
 
 // ============================================================================
-// 二进制路径解析
+// Binary path resolution
 // ============================================================================
 
-/// 获取 evorule CLI 二进制路径
+/// Get the evorule CLI binary path
 fn evorule_bin() -> PathBuf {
-    // 优先使用环境变量
+    // Prefer the environment variable
     if let Ok(path) = std::env::var("EVORULE_BIN") {
         return PathBuf::from(path);
     }
-    // 从 CARGO_MANIFEST_DIR 推断
+    // Infer from CARGO_MANIFEST_DIR
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
         .parent()
-        .expect("CARGO_MANIFEST_DIR 应包含父目录（workspace 根）");
+        .expect("CARGO_MANIFEST_DIR should have a parent (workspace root)");
     let target_dir = std::env::var("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| workspace_root.join("target"));
@@ -78,14 +80,14 @@ fn evorule_bin() -> PathBuf {
     let path = target_dir.join(profile).join(bin_name);
     if !path.exists() {
         panic!(
-            "evorule 二进制未找到: {}\n请先编译: cargo build -p evorule-cli --bin evorule",
+            "evorule binary not found: {}\nPlease build first: cargo build -p evorule-cli --bin evorule",
             path.display()
         );
     }
     path
 }
 
-/// 获取 fixture 目录路径
+/// Get the fixtures directory path
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -93,19 +95,19 @@ fn fixtures_dir() -> PathBuf {
 }
 
 // ============================================================================
-// 测试辅助函数
+// Test helpers
 // ============================================================================
 
-/// 运行 CLI 命令，返回 (exit_code, 合并的 stdout+stderr)
+/// Run a CLI command, returning (exit_code, merged stdout+stderr)
 ///
-/// 注意：CLI 的错误信息写在 stderr，成功信息写 stdout。
-/// 为统一断言，将两者合并后检查（等价于 shell 的 `2>&1`）。
+/// Note: the CLI writes error info to stderr and success info to stdout.
+/// For unified assertions, both are merged and checked (equivalent to shell `2>&1`).
 fn run_cli(args: &[&str]) -> (i32, String) {
     let bin = evorule_bin();
     let output: Output = Command::new(&bin)
         .args(args)
         .output()
-        .unwrap_or_else(|e| panic!("无法执行 evorule: {e}"));
+        .unwrap_or_else(|e| panic!("failed to run evorule: {e}"));
 
     let exit_code = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -115,21 +117,21 @@ fn run_cli(args: &[&str]) -> (i32, String) {
     (exit_code, combined)
 }
 
-/// 断言退出码等于期望值 + 输出包含子串
+/// Assert the exit code equals the expected value + output contains a substring
 fn assert_stdout_contains(desc: &str, args: &[&str], expected: i32, needle: &str) {
     let (code, combined) = run_cli(args);
     assert_eq!(
         code, expected,
-        "{desc} 失败: 期望 exit={expected}, 实际 exit={code}\n输出: {combined}",
+        "{desc} failed: expected exit={expected}, got exit={code}\noutput: {combined}",
     );
     assert!(
         combined.contains(needle),
-        "{desc} 失败: 输出未包含 '{needle}'\n输出: {combined}",
+        "{desc} failed: output does not contain '{needle}'\noutput: {combined}",
     );
 }
 
 // ============================================================================
-// 测试: validate 子命令
+// Tests: validate subcommand
 // ============================================================================
 
 #[test]
@@ -178,7 +180,7 @@ fn test_validate_empty_dir() {
 
 #[test]
 fn test_validate_nonexistent_dir() {
-    // 使用临时目录下的不存在路径，避免污染 workspace
+    // Use a nonexistent path under a temp directory, avoiding workspace pollution
     let tmp = test_tmp_dir();
     let nonexistent = tmp.join("nonexistent");
     assert_stdout_contains(
@@ -190,7 +192,7 @@ fn test_validate_nonexistent_dir() {
 }
 
 // ============================================================================
-// 测试: run 子命令
+// Tests: run subcommand
 // ============================================================================
 
 #[test]
@@ -219,7 +221,8 @@ fn test_run_with_payload() {
 fn test_run_with_payload_file() {
     let tmp = test_tmp_dir();
     let payload_file = tmp.join("payload.json");
-    std::fs::write(&payload_file, r#"{"x": 100, "y": "hello"}"#).expect("写入 payload 文件失败");
+    std::fs::write(&payload_file, r#"{"x": 100, "y": "hello"}"#)
+        .expect("failed to write the payload file");
     let dir = fixtures_dir().join("valid");
     let payload_arg = format!("--payload-file={}", payload_file.to_string_lossy());
     assert_stdout_contains(
@@ -237,24 +240,28 @@ fn test_run_with_output_file() {
     let dir = fixtures_dir().join("valid");
     let out_arg = format!("-o={}", out_file.to_string_lossy());
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_arg]);
-    assert_eq!(code, 0, "run -o 失败: exit={code}\n输出: {combined}");
-    // 验证输出文件存在且非空
-    assert!(out_file.exists(), "输出文件未创建: {}", out_file.display());
-    let content = std::fs::read_to_string(&out_file).expect("读取输出文件失败");
-    assert!(!content.is_empty(), "输出文件为空");
-    // 验证首行是有效 JSON 且含 Command
-    let first_line = content.lines().next().expect("输出文件无内容");
+    assert_eq!(code, 0, "run -o failed: exit={code}\noutput: {combined}");
+    // Verify the output file exists and is non-empty
+    assert!(
+        out_file.exists(),
+        "output file not created: {}",
+        out_file.display()
+    );
+    let content = std::fs::read_to_string(&out_file).expect("failed to read the output file");
+    assert!(!content.is_empty(), "output file is empty");
+    // Verify the first line is valid JSON and contains Command
+    let first_line = content.lines().next().expect("output file has no content");
     assert!(
         first_line.contains(r#""type":"Command"#),
-        "首行应包含 Command: {first_line}"
+        "first line should contain Command: {first_line}"
     );
 }
 
 #[test]
 fn test_run_max_steps_zero() {
     let dir = fixtures_dir().join("valid");
-    //（C1/C3）：--max-steps 0 产生 Error fact
-    // （max_steps 违规），run 现返回退出码 3（不再静默成功）。
+    // --max-steps 0 produces an Error fact (max_steps violation); run now returns
+    // exit code 3 (no more silent success).
     assert_stdout_contains(
         "run --max-steps 0",
         &["run", &dir.to_string_lossy(), "--max-steps", "0"],
@@ -264,18 +271,21 @@ fn test_run_max_steps_zero() {
 }
 
 // ============================================================================
-// 测试: replay 子命令
+// Tests: replay subcommand
 // ============================================================================
 
 #[test]
 fn test_replay_valid() {
-    // 先创建一个 fact log
+    // First create a fact log
     let tmp = test_tmp_dir();
     let fact_log = tmp.join("replay_source.log");
     let dir = fixtures_dir().join("valid");
     let out_arg = format!("-o={}", fact_log.to_string_lossy());
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_arg]);
-    assert_eq!(code, 0, "run 创建 fact log 失败: {combined}");
+    assert_eq!(
+        code, 0,
+        "failed to create the fact log with run: {combined}"
+    );
 
     assert_stdout_contains(
         "replay valid fact log",
@@ -298,7 +308,7 @@ fn test_replay_nonexistent() {
 }
 
 // ============================================================================
-// 测试: diff 子命令
+// Tests: diff subcommand
 // ============================================================================
 
 #[test]
@@ -310,9 +320,9 @@ fn test_diff_identical() {
     let out_a = format!("-o={}", a.to_string_lossy());
     let out_b = format!("-o={}", b.to_string_lossy());
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_a]);
-    assert_eq!(code, 0, "run A 失败: {combined}");
+    assert_eq!(code, 0, "run A failed: {combined}");
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_b]);
-    assert_eq!(code, 0, "run B 失败: {combined}");
+    assert_eq!(code, 0, "run B failed: {combined}");
 
     assert_stdout_contains(
         "diff identical logs",
@@ -327,7 +337,7 @@ fn test_diff_different() {
     let tmp = test_tmp_dir();
     let dir = fixtures_dir().join("echo");
 
-    // 两个不同 payload 的 echo rule
+    // Two echo rules with different payloads
     let payload1 = tmp.join("p1.json");
     std::fs::write(&payload1, r#"{"input": "hello"}"#).expect("write p1");
     let payload2 = tmp.join("p2.json");
@@ -339,12 +349,12 @@ fn test_diff_different() {
     let out_a = format!("-o={}", a.to_string_lossy());
     let payload1_arg = format!("--payload-file={}", payload1.to_string_lossy());
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &payload1_arg, &out_a]);
-    assert_eq!(code, 0, "run echo A 失败: {combined}");
+    assert_eq!(code, 0, "run echo A failed: {combined}");
 
     let out_b = format!("-o={}", b.to_string_lossy());
     let payload2_arg = format!("--payload-file={}", payload2.to_string_lossy());
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &payload2_arg, &out_b]);
-    assert_eq!(code, 0, "run echo B 失败: {combined}");
+    assert_eq!(code, 0, "run echo B failed: {combined}");
 
     assert_stdout_contains(
         "diff different logs",
@@ -355,7 +365,7 @@ fn test_diff_different() {
 }
 
 // ============================================================================
-// 测试: verify-chain 子命令
+// Tests: verify-chain subcommand
 // ============================================================================
 
 #[test]
@@ -365,7 +375,10 @@ fn test_verify_chain_valid() {
     let dir = fixtures_dir().join("valid");
     let out_arg = format!("-o={}", fact_log.to_string_lossy());
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_arg]);
-    assert_eq!(code, 0, "run 创建 fact log 失败: {combined}");
+    assert_eq!(
+        code, 0,
+        "failed to create the fact log with run: {combined}"
+    );
 
     assert_stdout_contains(
         "verify-chain valid",
@@ -382,13 +395,16 @@ fn test_verify_chain_tampered() {
     let dir = fixtures_dir().join("valid");
     let out_arg = format!("-o={}", fact_log.to_string_lossy());
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_arg]);
-    assert_eq!(code, 0, "run 创建 fact log 失败: {combined}");
+    assert_eq!(
+        code, 0,
+        "failed to create the fact log with run: {combined}"
+    );
 
-    // 篡改：将 id:2 改为 id:99（破坏 FactId 单调性）
+    // Tamper: change id:2 to id:99 (breaks FactId monotonicity)
     let tampered = tmp.join("tampered.log");
-    let content = std::fs::read_to_string(&fact_log).expect("读取 fact log 失败");
+    let content = std::fs::read_to_string(&fact_log).expect("failed to read the fact log");
     let tampered_content = content.replace(r#""id":2"#, r#""id":99"#);
-    std::fs::write(&tampered, &tampered_content).expect("写入篡改文件失败");
+    std::fs::write(&tampered, &tampered_content).expect("failed to write the tampered file");
 
     assert_stdout_contains(
         "verify-chain tampered",
@@ -399,7 +415,7 @@ fn test_verify_chain_tampered() {
 }
 
 // ============================================================================
-// 测试: FIFO 队列顺序（push [step1,step2] → step1 先执行）
+// Tests: FIFO queue order (push [step1,step2] → step1 executes first)
 // ============================================================================
 
 #[test]
@@ -409,24 +425,24 @@ fn test_fifo_queue_order() {
     let dir = fixtures_dir().join("fifo");
     let out_arg = format!("-o={}", fact_log.to_string_lossy());
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_arg]);
-    assert_eq!(code, 0, "run fifo 失败: {combined}");
+    assert_eq!(code, 0, "run fifo failed: {combined}");
 
-    let content = std::fs::read_to_string(&fact_log).expect("读取 fifo log 失败");
-    // FIFO 顺序：step1 先执行（order="first"），step2 后执行（order="second"）
-    // Stable 不再携带快照（），末次状态以最后一条 StateTransition 判定
+    let content = std::fs::read_to_string(&fact_log).expect("failed to read the fifo log");
+    // FIFO order: step1 executes first (order="first"), step2 after (order="second")
+    // Stable no longer carries a snapshot; the final state is judged by the last StateTransition
     let last_transition = content
         .lines()
         .rev()
         .find(|l| l.contains(r#""type":"StateTransition""#))
-        .expect("fifo log 无 StateTransition");
+        .expect("fifo log has no StateTransition");
     assert!(
         last_transition.contains(r#""order":"second"#),
-        "FIFO 顺序断言失败: 期望最后一条 StateTransition 中 order=second, 实际: {last_transition}"
+        "FIFO order assertion failed: expected order=second in the last StateTransition, got: {last_transition}"
     );
 }
 
 // ============================================================================
-// 测试: 确定性加载（多文件按文件名排序）
+// Tests: deterministic loading (multiple files sorted by file name)
 // ============================================================================
 
 #[test]
@@ -434,28 +450,31 @@ fn test_deterministic_loading() {
     let tmp = test_tmp_dir();
     let dir = fixtures_dir().join("multi");
 
-    // 两次运行必须产生相同输出
+    // Two runs must produce identical output
     let a = tmp.join("multi_a.log");
     let b = tmp.join("multi_b.log");
     let out_a = format!("-o={}", a.to_string_lossy());
     let out_b = format!("-o={}", b.to_string_lossy());
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_a]);
-    assert_eq!(code, 0, "run multi A 失败: {combined}");
+    assert_eq!(code, 0, "run multi A failed: {combined}");
     let (code, combined) = run_cli(&["run", &dir.to_string_lossy(), &out_b]);
-    assert_eq!(code, 0, "run multi B 失败: {combined}");
+    assert_eq!(code, 0, "run multi B failed: {combined}");
 
-    let content_a = std::fs::read_to_string(&a).expect("读取 multi A 失败");
-    let content_b = std::fs::read_to_string(&b).expect("读取 multi B 失败");
-    assert_eq!(content_a, content_b, "两次运行应产生相同输出");
+    let content_a = std::fs::read_to_string(&a).expect("failed to read multi A");
+    let content_b = std::fs::read_to_string(&b).expect("failed to read multi B");
+    assert_eq!(
+        content_a, content_b,
+        "two runs should produce identical output"
+    );
 
-    // 验证三个字段全部设置：a=1, b=2, c=3
-    assert!(content_a.contains(r#""a":1"#), "缺少字段 a=1");
-    assert!(content_a.contains(r#""b":2"#), "缺少字段 b=2");
-    assert!(content_a.contains(r#""c":3"#), "缺少字段 c=3");
+    // Verify all three fields are set: a=1, b=2, c=3
+    assert!(content_a.contains(r#""a":1"#), "missing field a=1");
+    assert!(content_a.contains(r#""b":2"#), "missing field b=2");
+    assert!(content_a.contains(r#""c":3"#), "missing field c=3");
 }
 
 // ============================================================================
-// 测试: --version / --help
+// Tests: --version / --help
 // ============================================================================
 
 #[test]

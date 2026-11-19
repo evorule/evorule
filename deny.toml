@@ -1,14 +1,18 @@
-# cargo-deny 配置（依赖供应链门禁：许可合规 + CVE 咨询 + 重复依赖）
+# cargo-deny configuration (dependency supply-chain gate: license compliance
+# + CVE advisories + duplicate dependencies)
 #
-# 执行: cargo deny check（CI: ci.yml deny job，EmbarkStudios/cargo-deny-action@v2）
-# 原则: evorule-tcb 零依赖（本文件不约束其），其余 crate 的依赖许可必须
-#       与 AGPL-3.0-or-later 兼容；新依赖引入新许可时需在此显式登记并说明理由。
+# Run: cargo deny check (CI: ci.yml deny job, EmbarkStudios/cargo-deny-action@v2)
+# Principle: evorule-tcb is zero-dependency (not constrained by this file);
+# the dependencies of the other crates must be license-compatible with
+# AGPL-3.0-or-later. When a new dependency introduces a new license, register
+# it here explicitly with a rationale.
 
 [graph]
 all-features = true
 
 # ---------------------------------------------------------------------------
-# 许可合规: AGPL-3.0-or-later（本项目）+ 常见宽松许可（依赖项）
+# License compliance: AGPL-3.0-or-later (this project) + common permissive
+# licenses (dependencies)
 # ---------------------------------------------------------------------------
 [licenses]
 version = 2
@@ -36,44 +40,56 @@ allow = [
     "OFL-1.1",
 ]
 confidence-threshold = 0.93
-# 2026-10-24 生态级许可审计（13 在役仓 / 2613 条依赖记录）新增登记，理由逐项如下：
-#   MIT-0              borrow-or-share（server）、@csstools/*（agent/console-cloud）
-#                      MIT 的零归属变体，义务低于 MIT。
-#   BSD-1-Clause       fiat-crypto（OR 分支）——更宽松的 BSD 变体。
-#   0BSD / Unlicense   纯宽松 / 公共领域贡献，无附加义务。
-#   BSL-1.0            clipboard-win、error-code（agent）——Boost 宽松许可。
-#   NCSA               libfuzzer-sys（agent，dev 依赖）：表达式为
-#                      (MIT OR Apache-2.0) AND NCSA，NCSA 是 AND 强制项，
-#                      不能靠 OR 分支规避，故必须显式登记。
-#   CDLA-Permissive-2.0 webpki-roots / webpki-root-certs（server、agent）——
-#                      单一许可（无 OR 备选），不登记则 cargo-deny 判红。
-#   BlueOak-1.0.0     lru-cache（agent）——宽松但非 OSI 认证，按宽松许可处理。
-#   OFL-1.1            字体许可（生态当前无字体依赖，登记以备）。
-# 说明：LGPL-2.1-or-later 未登记——r-efi 等 11 项的表达式均为
-#   "MIT OR Apache-2.0 OR LGPL-2.1-or-later"，生态统一选择 MIT/Apache 分支，
-#   不触发 LGPL 的动态链接与可替换性要求；不整体放行 LGPL 是刻意的。
-# 正文归档见 LICENSES/third-party/，总声明见 THIRD-PARTY-NOTICES.md。
+# Added by the 2026-10-24 ecosystem-wide license audit (13 active repos /
+# 2613 dependency records); rationale per entry:
+#   MIT-0              borrow-or-share (server), @csstools/* (agent/console-cloud)
+#                      — the zero-attribution variant of MIT, weaker obligations.
+#   BSD-1-Clause       fiat-crypto (OR branch) — a more permissive BSD variant.
+#   0BSD / Unlicense   purely permissive / public-domain contributions, no
+#                      additional obligations.
+#   BSL-1.0            clipboard-win, error-code (agent) — Boost permissive license.
+#   NCSA               libfuzzer-sys (agent, dev dependency): the expression is
+#                      (MIT OR Apache-2.0) AND NCSA; NCSA is a mandatory AND term
+#                      that cannot be avoided via the OR branch, so it must be
+#                      registered explicitly.
+#   CDLA-Permissive-2.0 webpki-roots / webpki-root-certs (server, agent) —
+#                      single license (no OR alternative); without registration
+#                      cargo-deny goes red.
+#   BlueOak-1.0.0     lru-cache (agent) — permissive but not OSI-approved;
+#                      treated as a permissive license.
+#   OFL-1.1            font license (no font dependency in the ecosystem today;
+#                      registered for readiness).
+# Note: LGPL-2.1-or-later is not registered — the expressions of r-efi and 10
+#   others are all "MIT OR Apache-2.0 OR LGPL-2.1-or-later"; the ecosystem
+#   uniformly selects the MIT/Apache branch, which does not trigger LGPL's
+#   dynamic-linking and replaceability requirements; not allowing LGPL as a
+#   whole is intentional.
+# Full text archived under LICENSES/third-party/; master declaration in
+# THIRD-PARTY-NOTICES.md.
 
 # ---------------------------------------------------------------------------
-# 安全咨询: RUSTSEC 数据库；漏洞默认拒绝，yanked 仅警告（避免历史噪音）
+# Security advisories: RUSTSEC database; vulnerabilities denied by default,
+# yanked only warns (to avoid historical noise)
 # ---------------------------------------------------------------------------
 [advisories]
 version = 2
 yanked = "warn"
-# bare-metal 已弃用归档（RUSTSEC-2026-0110，unmaintained 类）：cortex-m 0.7 生态
-# 传递依赖，无安全升级路径（官方迁移指引 critical-section 属 cortex-m 大版本
-# 迁移范畴）；当前仅 evorule-mcu 仿真固件 dev/示例链引入，非生产服务面，豁免。
+# deprecated bare-metal archive (RUSTSEC-2026-0110, unmaintained): a
+# transitive dependency of the cortex-m 0.7 ecosystem with no security-upgrade
+# path (the official migration guide, critical-section, belongs to the cortex-m
+# major-version migration); currently introduced only by the evorule-mcu
+# emulation firmware dev/example chain, not a production-service face — exempt.
 ignore = ["RUSTSEC-2026-0110"]
 
 # ---------------------------------------------------------------------------
-# 依赖关系: 重复版本警告；通配符依赖拒绝
+# Dependencies: duplicate-version warnings; wildcard dependencies denied
 # ---------------------------------------------------------------------------
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
 
 # ---------------------------------------------------------------------------
-# 来源: 仅允许 crates.io
+# Sources: only crates.io allowed
 # ---------------------------------------------------------------------------
 [sources]
 unknown-registry = "warn"

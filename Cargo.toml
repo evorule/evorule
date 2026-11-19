@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
-# EvoRule workspace：tcb / reactor / governance / cli 四 crate 统一版本。
-# All four crates share one workspace version. The per-version change
-# history is authoritative in CHANGELOG.md and the release/versioning
-# policy in VERSION_STRATEGY.md — do not duplicate it here (this
-# header previously drifted: its last hand-maintained entry stopped
-# at v0.9.0 while the workspace had reached v0.13.0).
+# EvoRule workspace: the four crates tcb / reactor / governance / cli share
+# one workspace version. The per-version change history is authoritative in
+# CHANGELOG.md and the release/versioning policy in VERSION_STRATEGY.md — do
+# not duplicate it here (this header previously drifted: its last
+# hand-maintained entry stopped at v0.9.0 while the workspace had reached
+# v0.13.0).
 members = [
     "evorule-tcb",
     "evorule-audit-chain",
@@ -18,10 +18,13 @@ members = [
     "evid-verify-core",
     "evid-verify-wasm",
 ]
-# fuzz/ 为独立 libFuzzer 工作区（cargo-fuzz 专用，A1 供应链三件套），
-# 不参与主 workspace 版本/发布/门禁。
-# boards/ 为板级二进制目录（嵌入式实机面），独立构建（各含 .cargo 配置与
-# memory.x），不进主 workspace——hal 依赖零进主依赖图（CI 依赖图扫描门执法）。
+# fuzz/ is a standalone libFuzzer workspace (cargo-fuzz only; part of the
+# supply-chain gate set) and does not take part in main-workspace
+# versioning/publishing/gates.
+# boards/ holds board-level binaries (embedded on-target face), built
+# standalone (each with its own .cargo config and memory.x); they stay out of
+# the main workspace — zero hal dependencies enter the main dependency graph
+# (enforced by the CI dependency-graph scan gate).
 exclude = ["fuzz", "boards"]
 
 [workspace.package]
@@ -33,7 +36,7 @@ rust-version = "1.74"
 homepage = "https://github.com/evorule/evorule"
 repository = "https://github.com/evorule/evorule"
 documentation = "https://docs.rs/evorule-tcb"
-description = "evorule:确定性规则引擎 + BLAKE3 不可篡改审计链 (Deterministic rule engine with BLAKE3 audit chain)"
+description = "evorule: deterministic rule engine + BLAKE3 tamper-evident audit chain"
 readme = "README.md"
 keywords = ["rule-engine", "audit-chain", "blake3", "deterministic"]
 categories = ["data-structures", "parser-implementations"]

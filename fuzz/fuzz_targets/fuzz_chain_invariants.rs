@@ -1,18 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! Fuzz 目标：审计链哈希链式性质（纯函数面）
+//! Fuzz target: audit-chain hash chaining properties (pure-function surface)
 //!
-//! 输入: 任意字节 → 构造 0~8 条 Fact 序列 → `compute_chain_hash` / `chain_step`
-//! 不变量（均仅在「审计链事实哈希」域内，见哈希域注册表纪律）:
-//! 1. 链分解性质：`compute_chain_hash(facts)` == 逐条 `chain_step` 折叠
-//!    （与 Kani 归纳证明互补：Kani 证小规模归纳步骤，fuzz 做大规模随机实证）；
-//! 2. 单条敏感性：篡改序列中任一 Fact 的 id 后，整链哈希必变。
-//!    注：这是经验性加强实证，不是抗碰撞证明——blake3 抗碰撞性不在
-//!    fuzz 证明范围（诚实边界）；
-//! 3. 空链恒为 "genesis"。
+//! Input: arbitrary bytes → construct a sequence of 0-8 Facts →
+//! `compute_chain_hash` / `chain_step`
+//! Invariants (all within the "audit-chain fact hash" domain only; see the
+//! hash-domain registry discipline):
+//! 1. Chain decomposition property: `compute_chain_hash(facts)` == folding
+//!    `chain_step` over each fact (complementary to the Kani induction
+//!    proof: Kani proves small-scale induction steps, the fuzz run performs
+//!    large-scale randomized empirical verification);
+//! 2. Single-record sensitivity: tampering with the id of any Fact in the
+//!    sequence must change the whole-chain hash.
+//!    Note: this is empirical strengthening evidence, not a collision-
+//!    resistance proof — blake3 collision resistance is outside the fuzz
+//!    proof scope (honest boundary);
+//! 3. An empty chain is always "genesis".
 //!
-//! 无副作用纪律：仅调用只读纯函数，无文件 IO、无状态挂载。
+//! Side-effect discipline: only read-only pure functions are called; no
+//! file IO, no state mounting.
 
 #![no_main]
 
@@ -67,7 +74,8 @@ fn build_fact(data: &[u8], id: u64, pos: &mut usize) -> Fact {
     }
 }
 
-/// 单条 Fact 的 id 自增（其余字段逐字保留）——篡改向量的最小实现
+/// Increment the id of a single Fact (all other fields preserved verbatim) —
+/// the minimal tampering vector
 fn with_bumped_id(fact: &Fact) -> Fact {
     let bump = |id: FactId| FactId(id.0.wrapping_add(1_000));
     match fact {
@@ -147,8 +155,8 @@ fn with_bumped_id(fact: &Fact) -> Fact {
 }
 
 fuzz_target!(|data: &[u8]| {
-    // 不变量 3：空链
-    assert_eq!(compute_chain_hash(&[]).expect("空链哈希不失败"), "genesis");
+    // Invariant 3: empty chain
+    assert_eq!(compute_chain_hash(&[]).expect("empty-chain hash must not fail"), "genesis");
 
     let mut pos = 0usize;
     let len = (byte_at(&data, &mut pos) as usize) % 8;
@@ -159,24 +167,25 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
 
-    let chain = compute_chain_hash(&facts).expect("链哈希不失败");
+    let chain = compute_chain_hash(&facts).expect("chain hash must not fail");
 
-    // 不变量 1：链分解（逐条 chain_step 折叠等值）
+    // Invariant 1: chain decomposition (folding chain_step per fact is equal)
     let mut folded = String::from("genesis");
     for f in &facts {
-        let fh = fact_hash(f).expect("fact_hash 不失败");
+        let fh = fact_hash(f).expect("fact_hash must not fail");
         folded = chain_step(&folded, &fh);
     }
-    assert_eq!(chain, folded, "链哈希必须等于逐条折叠");
+    assert_eq!(chain, folded, "chain hash must equal the per-fact folding");
 
-    // 不变量 2：单条 id 篡改后整链哈希必变（经验性实证，非抗碰撞证明）
+    // Invariant 2: tampering with any single id must change the whole-chain
+    // hash (empirical evidence, not a collision-resistance proof)
     for i in 0..facts.len() {
         let mut tampered = facts.clone();
         tampered[i] = with_bumped_id(&tampered[i]);
-        let tampered_chain = compute_chain_hash(&tampered).expect("篡改链哈希不失败");
+        let tampered_chain = compute_chain_hash(&tampered).expect("tampered-chain hash must not fail");
         assert_ne!(
             chain, tampered_chain,
-            "篡改第 {} 条 Fact 的 id 后链哈希必须变化",
+            "chain hash must change after tampering with the id of Fact {}",
             i
         );
     }

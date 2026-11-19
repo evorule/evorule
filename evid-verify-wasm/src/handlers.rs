@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 判定面 handler：入参 JSON → verdict JSON（双路线共享，永不 panic）
+//! Verdict-surface handler: input JSON → verdict JSON (shared by both routes, never panics)
 //!
-//! 解析失败同样产出结构化红（fail-closed 判形直达 UI）；判定语义全部
-//! 委托 [`evid_verify_core`]，本层只做 JSON 报文形态。
+//! Parse failures also produce a structured red (fail-closed shape straight to
+//! the UI); all verdict semantics are delegated to [`evid_verify_core`] — this
+//! layer only shapes the JSON messages.
 
 use std::collections::BTreeMap;
 
@@ -13,7 +14,7 @@ use evid_verify_core::seal::{verify_seal_chain, AnchorSeal};
 use evid_verify_core::verify::{verify_export, verify_wal_lines, ExportStep};
 use serde_json::{json, Value as Jv};
 
-/// 导出面：解析（v1.0 fail-closed）+ 四步判定 + 链尾对账
+/// Export surface: parsing (v1.0 fail-closed) + four-step verdict + tail reconciliation
 pub fn handle_export(input: &Jv) -> Jv {
     let doc = match parse_export_doc(input) {
         Ok(doc) => doc,
@@ -50,9 +51,9 @@ fn step_name(s: ExportStep) -> &'static str {
     }
 }
 
-/// WAL 面：解析 + 三步判定（输入收 `{"lines":[…]}` 或裸数组）
+/// WAL surface: parsing + three-step verdict (input accepts `{"lines":[…]}` or a bare array)
 pub fn handle_wal(input: &Jv) -> Jv {
-    const SHAPE: &str = "WAL 输入应为数组或 {\"lines\":[…]}";
+    const SHAPE: &str = "WAL input must be an array or {\"lines\":[…]}";
     let arr: &Vec<Jv> = match input {
         Jv::Array(a) => a,
         Jv::Object(o) => match o.get("lines").and_then(Jv::as_array) {
@@ -91,24 +92,24 @@ pub fn handle_wal(input: &Jv) -> Jv {
     })
 }
 
-/// 锚点面：解析 + 四规则链验证（公钥按 key_id 查表注入，零硬编码信任根）
+/// Anchor surface: parsing + four-rule chain verification (public keys injected by key_id lookup, zero hardcoded trust root)
 pub fn handle_seals(input: &Jv) -> Jv {
     let Some(obj) = input.as_object() else {
-        return json!({ "ok": false, "error": "锚点输入应为对象 {\"seals\":[…], \"keys\":{…}}" });
+        return json!({ "ok": false, "error": "seals input must be an object {\"seals\":[…], \"keys\":{…}}" });
     };
     let Some(seals_v) = obj.get("seals") else {
-        return json!({ "ok": false, "error": "缺字段 \"seals\"" });
+        return json!({ "ok": false, "error": "missing field \"seals\"" });
     };
     let seals: Vec<AnchorSeal> = match serde_json::from_value(seals_v.clone()) {
         Ok(s) => s,
-        Err(e) => return json!({ "ok": false, "error": format!("seals 解析失败: {e}") }),
+        Err(e) => return json!({ "ok": false, "error": format!("seals parse failed: {e}") }),
     };
     let Some(keys_v) = obj.get("keys") else {
-        return json!({ "ok": false, "error": "缺字段 \"keys\"（公钥表）" });
+        return json!({ "ok": false, "error": "missing field \"keys\" (public key table)" });
     };
     let keys: BTreeMap<String, String> = match serde_json::from_value(keys_v.clone()) {
         Ok(k) => k,
-        Err(e) => return json!({ "ok": false, "error": format!("keys 解析失败: {e}") }),
+        Err(e) => return json!({ "ok": false, "error": format!("keys parse failed: {e}") }),
     };
     match verify_seal_chain(&seals, &keys) {
         Ok(()) => json!({ "ok": true, "seal_count": seals.len() }),

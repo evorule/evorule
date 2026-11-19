@@ -1,41 +1,47 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 内容哈希工具（BLAKE3）—— re-export tier1 单一真相源
+//! Content hashing utilities (BLAKE3) — re-export of the tier1 single source of truth
 //!
-//! # 两套 WAL 合并
-//! 本模块已重构为 evorule-reactor `hash` 模块的**重导出层**。
-//! 哈希算法的单一真相源在 `evorule_reactor::hash`，本模块仅 re-export。
+//! # Merging the two WAL implementations
+//! This module has been refactored into a **re-export layer** of the evorule-reactor `hash`
+//! module.
+//! The single source of truth for the hashing algorithm lives in `evorule_reactor::hash`; this
+//! module only re-exports.
 //!
-//! ## 重导出的符号
-//! - [`HashError`]：哈希计算错误类型
-//! - [`fact_to_stable_json`]：Fact → 稳定 JSON 序列化
-//! - [`fact_hash`]：Fact 的 BLAKE3 哈希
-//! - [`compute_chain_hash`]：哈希链最终链哈希计算
-//! - [`content_hash`]：JsonValue 的 BLAKE3 哈希
+//! ## Re-exported symbols
+//! - [`HashError`]: hash computation error type
+//! - [`fact_to_stable_json`]: Fact → stable JSON serialization
+//! - [`fact_hash`]: BLAKE3 hash of a Fact
+//! - [`compute_chain_hash`]: final chain-hash computation for the hash chain
+//! - [`content_hash`]: BLAKE3 hash of a JsonValue
 //!
-//! ## 已移除的符号
-//! - `verify_hash_chain`：始终返回 `true` 的误导函数（"假验证"陷阱），已彻底删除。
-//!   真正的完整性验证请使用 [`compute_chain_hash`] 重算后与存储的链哈希比对。
-//! - `log_hash_error`：依赖 `Backtrace` 的日志函数，tier1 的 `HashError` 不使用 backtrace
-//! - `tcb_to_serde`：内部函数，已统一到 tier1
+//! ## Removed symbols
+//! - `verify_hash_chain`: a misleading function that always returned `true` (the "fake
+//!   verification" trap), fully deleted.
+//!   For real integrity verification, use [`compute_chain_hash`] to recompute and compare with
+//!   the stored chain hash.
+//! - `log_hash_error`: a logging function depending on `Backtrace`; tier1's `HashError` does not
+//!   use backtraces
+//! - `tcb_to_serde`: internal function, unified into tier1
 
-/// 重导出 tier1 的哈希算法（单一真相源）
+/// Re-exports tier1's hashing algorithm (single source of truth)
 ///
-/// 所有哈希计算函数均在 `evorule_reactor::hash` 中实现，
-/// 本模块通过 re-export 对外暴露相同的 API。
+/// All hash computation functions are implemented in `evorule_reactor::hash`;
+/// this module exposes the same API externally via re-export.
 pub use evorule_reactor::{
     chain_step, compute_chain_hash, content_hash, fact_hash, fact_to_stable_json, HashError,
 };
 
-/// 验证哈希链完整性的正确姿势：用 [`compute_chain_hash`] 重算后与存储的链哈希比对。
+/// The correct way to verify hash-chain integrity: recompute with [`compute_chain_hash`] and
+/// compare against the stored chain hash.
 ///
-/// # 迁移指南
+/// # Migration guide
 /// ```ignore
-/// // 正确做法（真正验证）：
+/// // Correct approach (real verification):
 /// let computed = compute_chain_hash(&facts)?;
 /// if computed != stored_last_hash {
-///     return Err("审计链断裂");
+///     return Err("audit chain broken");
 /// }
 /// ```
 #[cfg(test)]
@@ -156,10 +162,11 @@ mod tests {
         assert_ne!(fact_hash(&fact1).unwrap(), fact_hash(&fact2).unwrap());
     }
 
-    /// 哈希快照测试：与 tier1 的 hash_snapshot.txt 交叉验证
+    /// Hash snapshot test: cross-validated against tier1's hash_snapshot.txt
     ///
-    /// 本测试确保 tier2 re-export 的哈希函数与 tier1 的实现产生相同的哈希值。
-    /// 由于 tier2 现在直接 re-export tier1 的函数，本测试实质上验证 re-export 正确性。
+    /// This test ensures tier2's re-exported hash functions produce the same hash values as
+    /// tier1's implementation. Since tier2 now directly re-exports tier1's functions, this test
+    /// effectively verifies the correctness of the re-export.
     #[test]
     fn test_fact_hash_snapshot() {
         let test_facts = [
@@ -200,11 +207,11 @@ mod tests {
             },
         ];
 
-        // 计算 tier2（re-export 自 tier1）的哈希
+        // compute tier2's hashes (re-exported from tier1)
         let current_hashes: Vec<String> =
             test_facts.iter().map(|f| fact_hash(f).unwrap()).collect();
 
-        // 读取 tier2 的快照文件（如果存在）
+        // read tier2's snapshot file (if it exists)
         let snapshot_file = env!("CARGO_MANIFEST_DIR").to_string() + "/src/hash_snapshot.txt";
         if std::path::Path::new(&snapshot_file).exists() {
             let snapshot = std::fs::read_to_string(&snapshot_file).unwrap();
@@ -223,10 +230,11 @@ mod tests {
         }
     }
 
-    /// 交叉验证：tier2 re-export 的哈希与 tier1 直接计算的哈希一致
+    /// Cross-validation: tier2's re-exported hashes match tier1's directly computed hashes
     ///
-    /// 本测试是两套 WAL 合并的核心验证点：
-    /// 确保 tier2 通过 re-export 调用的哈希函数与 tier1 直接调用的完全一致。
+    /// This test is the core verification point of merging the two WAL implementations:
+    /// it ensures the hash functions invoked via tier2's re-export are exactly identical to
+    /// tier1's direct invocation.
     #[test]
     fn test_cross_validate_with_tier1() {
         let test_facts = [
@@ -267,10 +275,10 @@ mod tests {
             },
         ];
 
-        // tier2 re-export 的哈希
+        // hashes from tier2's re-export
         let tier2_hashes: Vec<String> = test_facts.iter().map(|f| fact_hash(f).unwrap()).collect();
 
-        // tier1 直接计算的哈希
+        // hashes computed directly by tier1
         let tier1_hashes: Vec<String> = test_facts
             .iter()
             .map(|f| evorule_reactor::fact_hash(f).unwrap())
@@ -278,16 +286,16 @@ mod tests {
 
         assert_eq!(
             tier2_hashes, tier1_hashes,
-            "tier2 re-export 的哈希与 tier1 直接计算的哈希不一致！\
-             这违反了两套 WAL 合并的单一真相源原则。"
+            "tier2's re-exported hashes differ from tier1's directly computed hashes! \
+             This violates the single-source-of-truth principle of merging the two WAL implementations."
         );
 
-        // 验证链哈希一致
+        // verify chain hashes match
         let tier2_chain = compute_chain_hash(&test_facts).unwrap();
         let tier1_chain = evorule_reactor::compute_chain_hash(&test_facts).unwrap();
         assert_eq!(
             tier2_chain, tier1_chain,
-            "tier2 re-export 的链哈希与 tier1 直接计算的不一致！"
+            "tier2's re-exported chain hash differs from tier1's directly computed one!"
         );
     }
 
@@ -306,7 +314,7 @@ mod tests {
             },
         ];
 
-        // compute_chain_hash 是确定性的
+        // compute_chain_hash is deterministic
         let result1 = compute_chain_hash(&facts).unwrap();
         let result2 = compute_chain_hash(&facts).unwrap();
         assert_eq!(result1, result2);
@@ -334,6 +342,9 @@ mod tests {
 
         let chain1 = compute_chain_hash(&[fact1.clone(), fact2.clone()]).unwrap();
         let chain2 = compute_chain_hash(&[fact2, fact1]).unwrap();
-        assert_ne!(chain1, chain2, "链哈希应对 Fact 顺序敏感");
+        assert_ne!(
+            chain1, chain2,
+            "chain hash should be order-sensitive over Facts"
+        );
     }
 }

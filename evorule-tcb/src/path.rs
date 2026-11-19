@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 路径解析 - 支持点号分隔 + 数组索引，永不 panic
+//! Path resolution - dot-separated segments + array indexes, never panics
 //!
-//! # 路径语法 (ABNF)
+//! # Path syntax (ABNF)
 //! ```text
 //! path           = segment *( "." segment )
 //! segment        = identifier [ "[" index "]" ]
@@ -16,25 +16,25 @@
 //! enforced by the `is_root_segment_dot_path` ambiguity predicate.
 //! ```
 //!
-//! # 转义规则
-//! - 字段名中的 `.` 需用 `\.` 转义
-//! - 字段名中的 `[` 需用 `\[` 转义
+//! # Escaping rules
+//! - A `.` inside a field name must be escaped as `\.`
+//! - A `[` inside a field name must be escaped as `\[`
 //!
-//! # 示例
-//! - `__exec__.payload.items[0].value` → 访问数组第 0 个元素的 value 字段
-//! - `data\.version` → 字段名为 `data.version`
+//! # Examples
+//! - `__exec__.payload.items[0].value` → accesses the `value` field of array element 0
+//! - `data\.version` → the field name is `data.version`
 //!
-//! # 保证
-//! - 永不 panic
-//! - 任何解析失败返回 `None`
+//! # Guarantees
+//! - Never panics
+//! - Any parse failure returns `None`
 
 use crate::value::JsonValue;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// 解析路径，返回值的引用（若存在）
+/// Resolves a path, returning a reference to the value (if present)
 ///
-/// # 示例
+/// # Examples
 ///
 /// ```
 /// extern crate alloc;
@@ -42,14 +42,14 @@ use alloc::vec::Vec;
 /// use evorule_tcb::path::resolve_path;
 /// use alloc::collections::BTreeMap;
 ///
-/// // 构造嵌套状态
+/// // Build a nested state
 /// let mut inner = BTreeMap::new();
 /// inner.insert("value".to_string(), JsonValue::Integer(42));
 /// let mut mid = BTreeMap::new();
 /// mid.insert("inner".to_string(), JsonValue::object(inner));
 /// let state = JsonValue::object(mid);
 ///
-/// // 路径解析
+/// // Path resolution
 /// assert_eq!(resolve_path(&state, "inner.value").and_then(|v| v.as_i64()), Some(42));
 /// assert_eq!(resolve_path(&state, "missing"), None);
 /// assert_eq!(resolve_path(&state, ""), None);
@@ -59,7 +59,7 @@ pub fn resolve_path<'a>(state: &'a JsonValue, path: &str) -> Option<&'a JsonValu
         return None;
     }
 
-    // 检查尾部点号（如 "x."）
+    // Check for a trailing dot (e.g. "x.")
     if path.ends_with('.') {
         return None;
     }
@@ -76,7 +76,7 @@ pub fn resolve_path<'a>(state: &'a JsonValue, path: &str) -> Option<&'a JsonValu
                 };
             }
             PathSegment::Index(field, idx) => {
-                // 先访问字段（若存在），再访问索引
+                // Access the field first (if present), then the index
                 let target = if let Some(f) = field {
                     match current {
                         JsonValue::Object(map) => map.get(f.as_str())?,
@@ -96,7 +96,7 @@ pub fn resolve_path<'a>(state: &'a JsonValue, path: &str) -> Option<&'a JsonValu
     Some(current)
 }
 
-/// 解析路径，返回值的可变引用（若存在）
+/// Resolves a path, returning a mutable reference to the value (if present)
 pub fn resolve_path_mut<'a>(state: &'a mut JsonValue, path: &str) -> Option<&'a mut JsonValue> {
     if path.is_empty() {
         return None;
@@ -110,33 +110,36 @@ pub fn resolve_path_mut<'a>(state: &'a mut JsonValue, path: &str) -> Option<&'a 
     resolve_path_mut_inner(state, &segments)
 }
 
-/// 解析相对 `__exec__` 上下文的路径（统一路径约定，v0.3.2 起）
+/// Resolves a path relative to the `__exec__` context (unified path convention, since v0.3.2)
 ///
-/// domain 的 `path` 使用本函数（`__exec__` 相对路径为全引擎统一约定）：
+/// The domain `path` uses this function (`__exec__`-relative paths are the
+/// engine-wide unified convention):
 ///
-/// - `__exec__.` 开头：strip 前缀后从 `__exec__` 节点解析（绝对路径兼容写法）
-/// - 其他写法：自动补全 `__exec__.` 前缀解析（相对路径，如 `payload.x`、
-///   `instruction.type`、`queue[0].type`）
+/// - Prefix `__exec__.`: the prefix is stripped and the path is resolved from the
+///   `__exec__` node (absolute-path compatible form)
+/// - Other forms: the `__exec__.` prefix is prepended automatically (relative
+///   paths, e.g. `payload.x`, `instruction.type`, `queue[0].type`)
 ///
-/// 解析失败返回 `None`（调用方决定求值语义：domain 视为 false，
-/// 状态修改类指令转为显式 `PathResolutionFailed`）。
+/// Resolution failure returns `None` (the caller decides the evaluation semantics:
+/// domains treat it as false; state-mutating instructions turn it into an explicit
+/// `PathResolutionFailed`).
 pub(crate) fn resolve_exec_path<'a>(state: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
     let stripped = path.strip_prefix("__exec__.").unwrap_or(path);
     let exec = state.get("__exec__")?;
     resolve_path(exec, stripped)
 }
 
-/// 内部递归实现（可变路径解析）
+/// Internal recursive implementation (mutable path resolution)
 fn resolve_path_mut_inner<'a>(
     state: &'a mut JsonValue,
     segments: &[PathSegment],
 ) -> Option<&'a mut JsonValue> {
-    // 空段列表：返回当前状态（递归终止）
+    // Empty segment list: return the current state (recursion termination)
     if segments.is_empty() {
         return Some(state);
     }
 
-    // 使用 split_first 避免 indexing_slicing（永不 panic）
+    // Use split_first to avoid indexing_slicing (never panics)
     let (first, rest) = segments.split_first()?;
 
     match first {
@@ -159,33 +162,35 @@ fn resolve_path_mut_inner<'a>(
     }
 }
 
-/// 路径段（解析后的中间表示）
+/// Path segment (parsed intermediate representation)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PathSegment {
-    /// 字段访问（如 `payload`）
+    /// Field access (e.g. `payload`)
     Field(String),
-    /// 索引访问（如 `items[0]` 或 `[0]`，field 为 None 时表示纯索引）
+    /// Index access (e.g. `items[0]` or `[0]`; a `None` field means a bare index)
     Index(Option<String>, usize),
 }
 
-/// 解析路径字符串为段列表
+/// Parses a path string into a segment list
 ///
-/// 语法约束：
-/// - 点号分隔符前后必须有字段名，唯一例外是 `]` 之后的**第一个**点号
-///   （允许 `items[0].name` 与 `data.[0]` 两种等价写法）；
-/// - 索引段后的连续点号（如 `items[0]..name`）非法。
+/// Syntax constraints:
+/// - Field names are required on both sides of a dot separator; the only exception
+///   is the **first** dot after `]` (both `items[0].name` and `data.[0]` are
+///   accepted as equivalent forms);
+/// - Consecutive dots after an index segment (e.g. `items[0]..name`) are illegal.
 pub(crate) fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
     let mut segments = Vec::new();
     let mut current = String::new();
     let mut chars = path.chars().peekable();
     let mut escaped = false;
-    // 上一个处理的字符是否为索引段的 ']'：
-    // 仅其后的第一个点号允许 current 为空（消耗后立即复位，拒绝连续点号）
+    // Whether the previously processed character was the ']' of an index segment:
+    // only the first dot after it may leave current empty (reset immediately after
+    // consumption; consecutive dots are rejected)
     let mut just_closed_index = false;
 
     while let Some(c) = chars.next() {
         if escaped {
-            // 转义字符：原样保留
+            // Escaped character: keep verbatim
             current.push(c);
             just_closed_index = false;
             escaped = false;
@@ -198,11 +203,11 @@ pub(crate) fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
         }
 
         if c == '.' {
-            // 点号分隔符：空 current 仅在刚闭合索引段时合法
+            // Dot separator: an empty current is legal only right after a closed index segment
             let after_index = just_closed_index;
             just_closed_index = false;
             if current.is_empty() && !after_index {
-                // 真正的空段（如 "x..y"、".x" 或 "x[0]..y"），非法
+                // A true empty segment (e.g. "x..y", ".x" or "x[0]..y"), illegal
                 return None;
             }
             if !current.is_empty() {
@@ -212,13 +217,13 @@ pub(crate) fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
         }
 
         if c == '[' {
-            // 索引开始
+            // Index begins
             let field = if current.is_empty() {
                 None
             } else {
                 Some(core::mem::take(&mut current))
             };
-            // 解析索引直到 ']'，验证闭合括号存在
+            // Parse the index up to ']' and verify the closing bracket exists
             let mut idx_str = String::new();
             let mut found_close = false;
             for ic in chars.by_ref() {
@@ -229,7 +234,7 @@ pub(crate) fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
                 idx_str.push(ic);
             }
             if !found_close {
-                // 缺少闭合 ']'（如 "[0" 或 "items[0"），非法
+                // Missing closing ']' (e.g. "[0" or "items[0"), illegal
                 return None;
             }
             if idx_str.is_empty() {
@@ -238,7 +243,7 @@ pub(crate) fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
             let idx: usize = idx_str.parse().ok()?;
             segments.push(PathSegment::Index(field, idx));
             just_closed_index = true;
-            // ']' 后必须是 '.', '[', 或字符串结束（拒绝 "[0]abc" 等非法拼接）
+            // After ']' must come '.', '[' or end of string (rejects illegal splices like "[0]abc")
             match chars.peek() {
                 None | Some('.' | '[') => {}
                 _ => return None,
@@ -246,19 +251,21 @@ pub(crate) fn parse_path_segments(path: &str) -> Option<Vec<PathSegment>> {
             continue;
         }
 
-        // 普通字符
+        // Ordinary character
         current.push(c);
         just_closed_index = false;
     }
 
-    // 处理末尾
+    // Handle the tail
     if escaped {
-        // 转义未结束（如 "x\. "），非法
+        // Unterminated escape (e.g. "x\. "), illegal
         return None;
     }
-    // 以点号结尾的路径（如 "x."）属于非法语法：点号是分隔符，必须有后续段。
-    // 此处 current 必为空（点号在前面已被消耗并清空 current），但 segments 可能非空，
-    // 若不检查会被静默接受为前缀路径，掩盖拼写错误。
+    // A path ending with a dot (e.g. "x.") is illegal syntax: a dot is a separator
+    // and must be followed by another segment.
+    // current is necessarily empty here (the dot was consumed earlier and cleared
+    // current), but segments may be non-empty; without this check the path would be
+    // silently accepted as a prefix path, masking typos.
     if current.is_empty() && !just_closed_index {
         return None;
     }
@@ -285,7 +292,7 @@ mod tests {
     use alloc::string::ToString;
     use alloc::vec;
 
-    // ===== 基础路径解析测试 =====
+    // ===== Basic path resolution tests =====
 
     #[test]
     fn test_resolve_path_simple() {
@@ -364,7 +371,7 @@ mod tests {
         assert_eq!(resolve_path(&state, "data.version"), None);
     }
 
-    // ===== resolve_path_mut 测试 =====
+    // ===== resolve_path_mut tests =====
 
     #[test]
     fn test_resolve_path_mut_basic() {
@@ -420,7 +427,7 @@ mod tests {
         assert!(resolve_path_mut(&mut state, "x.").is_none());
     }
 
-    // ===== 边界情况测试 =====
+    // ===== Edge case tests =====
 
     #[test]
     fn test_resolve_path_special_chars_in_field_name() {
@@ -469,7 +476,7 @@ mod tests {
 
     #[test]
     fn test_resolve_path_consecutive_dots_after_index_returns_none() {
-        // L1 回归：索引段后仅允许一个点号，连续点号非法
+        // L1 regression: only one dot is allowed after an index segment; consecutive dots are illegal
         let mut inner = ObjectMap::new();
         inner.insert("name".to_string(), JsonValue::string("alpha"));
         let items = JsonValue::array(vec![JsonValue::Object(inner)]);
@@ -479,10 +486,10 @@ mod tests {
 
         assert_eq!(resolve_path(&state, "items[0]..name"), None);
         assert_eq!(resolve_path(&state, "items[0]...name"), None);
-        // 纯索引开头同理
+        // Same for a leading bare index
         let arr = JsonValue::array(vec![JsonValue::array(vec![JsonValue::Integer(1)])]);
         assert_eq!(resolve_path(&arr, "[0]..x"), None);
-        // 合法对照：单点号仍可用
+        // Positive control: a single dot still works
         assert_eq!(
             resolve_path(&state, "items[0].name"),
             Some(&JsonValue::string("alpha"))
@@ -633,7 +640,7 @@ mod tests {
         assert_eq!(parse_path_segments(""), None);
     }
 
-    // ===== 额外测试：点号后跟索引 =====
+    // ===== Extra tests: dot followed by an index =====
 
     #[test]
     fn test_resolve_path_dot_before_bracket_works() {

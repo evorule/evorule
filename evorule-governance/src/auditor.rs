@@ -1,90 +1,90 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 审计器 - 基于 FactsLog 构建审计链
+//! Auditor - builds the audit chain on top of the FactsLog
 //!
-//! # 功能
-//! - 定期从 FactsLog 读取新事实
-//! - 计算每个 Fact 的哈希，维护哈希链
-//! - 生成审计报告（因果链、版本历史）
-//! - 验证审计链完整性
+//! # Features
+//! - Periodically reads new facts from the FactsLog
+//! - Computes the hash of each fact and maintains the hash chain
+//! - Generates audit reports (causal chains, version history)
+//! - Verifies audit chain integrity
 //!
-//! # 哈希链算法
-//! - `last_hash` 初始为 `"genesis"`
-//! - 每个事实的链哈希 = `blake3(prev_hash + fact_hash)`
-//! - 该链哈希作为下一条目的 `prev_hash`，形成不可篡改的链式结构
+//! # Hash chain algorithm
+//! - `last_hash` starts as `"genesis"`
+//! - Chain hash of each fact = `blake3(prev_hash + fact_hash)`
+//! - That chain hash becomes the `prev_hash` of the next entry, forming a tamper-evident chain
 //!
-//! # 两套 WAL 合并
-//! 自 0.2.0 起，哈希链已提升到 tier1 的 FactsLog/WAL 层。
-//! - tier1 WAL 写入时自动计算并存储哈希链（`content_hash`/`prev_hash`/`chain_hash`）
-//! - 审计器不再独立写 WAL（`append_wal` 已废弃）
-//! - 审计器的 `last_hash` 应与 `FactsLog::last_hash()` 一致
-//! - 恢复审计状态使用 [`Auditor::load_from_tier1_wal`]（读取 tier1 WAL 并验证哈希链）
+//! # Two-WAL merge
+//! Since 0.2.0 the hash chain has been lifted into the tier1 FactsLog/WAL layer.
+//! - tier1 WAL writes compute and store the hash chain automatically (`content_hash`/`prev_hash`/`chain_hash`)
+//! - The auditor no longer writes its own WAL (`append_wal` is deprecated)
+//! - The auditor's `last_hash` must match `FactsLog::last_hash()`
+//! - To restore audit state use [`Auditor::load_from_tier1_wal`] (reads the tier1 WAL and verifies the hash chain)
 
 use crate::clock::LogicalClock;
 use crate::hash;
 use evorule_reactor::{Fact, FactId, FactsLog};
 use std::collections::BTreeMap;
 
-/// 审计条目
+/// Audit entry
 ///
-/// 对应一个被审计的 [`Fact`]，记录其哈希、逻辑时间戳及哈希链前驱。
+/// Corresponds to one audited [`Fact`], recording its hash, logical timestamp and hash-chain predecessor.
 #[derive(Debug, Clone)]
 pub struct AuditEntry {
     /// Fact ID
     pub fact_id: FactId,
-    /// Fact 类型名
+    /// Fact type name
     pub fact_type: &'static str,
-    /// 逻辑时钟值
+    /// Logical clock value
     pub logical_time: u64,
-    /// 内容哈希
+    /// Content hash
     pub content_hash: String,
-    /// 前一条目的哈希（形成哈希链）
+    /// Hash of the previous entry (forms the hash chain)
     pub prev_hash: String,
-    /// 因果父 Fact ID（如有）
+    /// Causal parent fact ID (if any)
     pub cause: Option<FactId>,
 }
 
-/// 审计链加载错误（两套 WAL 合并）
+/// Audit chain loading error (two-WAL merge)
 ///
-/// `load_from_tier1_wal` 的错误类型，涵盖哈希链验证的各种失败场景。
+/// Error type of `load_from_tier1_wal`, covering the failure modes of hash-chain verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadError {
-    /// 文件读取失败（I/O 错误或 WAL 格式错误）
+    /// File read failure (I/O error or malformed WAL)
     IoError(String),
-    /// 哈希计算失败（Fact 序列化错误）
+    /// Hash computation failure (fact serialization error)
     HashError(String),
-    /// Fact 内容被篡改（存储的 content_hash 与重算的不匹配）
+    /// Fact content was tampered with (stored content_hash does not match the recomputed one)
     ContentHashMismatch {
-        /// 记录索引
+        /// Record index
         index: usize,
         /// Fact ID
         fact_id: FactId,
-        /// WAL 中存储的哈希
+        /// Hash stored in the WAL
         stored: String,
-        /// 重算得到的哈希
+        /// Recomputed hash
         recomputed: String,
     },
-    /// 哈希链断裂（prev_hash 链接不正确）
+    /// Hash chain broken (prev_hash linkage incorrect)
     ChainBroken {
-        /// 记录索引
+        /// Record index
         index: usize,
         /// Fact ID
         fact_id: FactId,
-        /// WAL 中存储的 prev_hash
+        /// prev_hash stored in the WAL
         stored_prev: String,
-        /// 期望的 prev_hash（前一条的 chain_hash）
+        /// Expected prev_hash (the previous record's chain_hash)
         expected_prev: String,
     },
-    /// 链哈希被篡改（存储的 chain_hash 与重算的不匹配）
+    /// Chain hash was tampered with (stored chain_hash does not match the recomputed one)
     ChainHashMismatch {
-        /// 记录索引
+        /// Record index
         index: usize,
         /// Fact ID
         fact_id: FactId,
-        /// WAL 中存储的 chain_hash
+        /// chain_hash stored in the WAL
         stored: String,
-        /// 重算得到的 chain_hash
+        /// Recomputed chain_hash
         recomputed: String,
     },
 }
@@ -92,8 +92,8 @@ pub enum LoadError {
 impl core::fmt::Display for LoadError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            LoadError::IoError(msg) => write!(f, "WAL 读取失败: {msg}"),
-            LoadError::HashError(msg) => write!(f, "哈希计算失败: {msg}"),
+            LoadError::IoError(msg) => write!(f, "WAL read failed: {msg}"),
+            LoadError::HashError(msg) => write!(f, "hash computation failed: {msg}"),
             LoadError::ContentHashMismatch {
                 index,
                 fact_id,
@@ -101,7 +101,7 @@ impl core::fmt::Display for LoadError {
                 recomputed,
             } => write!(
                 f,
-                "Fact[{}] (id={}) 内容哈希不匹配: stored={stored}, recomputed={recomputed}",
+                "Fact[{}] (id={}) content hash mismatch: stored={stored}, recomputed={recomputed}",
                 index, fact_id.0
             ),
             LoadError::ChainBroken {
@@ -111,7 +111,7 @@ impl core::fmt::Display for LoadError {
                 expected_prev,
             } => write!(
                 f,
-                "Fact[{}] (id={}) 哈希链断裂: stored_prev={stored_prev}, expected_prev={expected_prev}",
+                "Fact[{}] (id={}) hash chain broken: stored_prev={stored_prev}, expected_prev={expected_prev}",
                 index, fact_id.0
             ),
             LoadError::ChainHashMismatch {
@@ -121,7 +121,7 @@ impl core::fmt::Display for LoadError {
                 recomputed,
             } => write!(
                 f,
-                "Fact[{}] (id={}) 链哈希不匹配: stored={stored}, recomputed={recomputed}",
+                "Fact[{}] (id={}) chain hash mismatch: stored={stored}, recomputed={recomputed}",
                 index, fact_id.0
             ),
         }
@@ -130,69 +130,70 @@ impl core::fmt::Display for LoadError {
 
 impl std::error::Error for LoadError {}
 
-/// 审计器
+/// Auditor
 ///
-/// 周期性消费 [`FactsLog`] 中的新增事实，构建带哈希链的审计条目列表。
-/// 维护 `BTreeMap<FactId, usize>` 实时索引，支持 O(log n) 的因果链查询。
+/// Periodically consumes new facts from the [`FactsLog`] and builds a list of audit entries
+/// backed by a hash chain. Maintains a live `BTreeMap<FactId, usize>` index supporting
+/// O(log n) causal-chain queries.
 ///
-/// # 持久化（WAL）
-/// 可选地通过 [`Auditor::with_wal_path`] 启用 WAL 持久化。
-/// 启用后，每个新增审计条目以 JSONL 格式追加写入磁盘，
-/// 进程重启后可通过 [`Auditor::load_from_wal`] 恢复审计状态。
+/// # Persistence (WAL)
+/// WAL persistence can optionally be enabled via [`Auditor::with_wal_path`].
+/// Once enabled, every new audit entry is appended to disk in JSONL format;
+/// after a process restart the audit state can be restored via [`Auditor::load_from_wal`].
 pub struct Auditor {
-    /// FactsLog 引用
+    /// Reference to the FactsLog
     facts_log: FactsLog,
-    /// 逻辑时钟
+    /// Logical clock
     clock: LogicalClock,
-    /// 已审计到的版本
+    /// Last audited version
     last_audited_version: u64,
-    /// 审计条目列表
+    /// Audit entry list
     entries: Vec<AuditEntry>,
-    /// 上一条目的哈希
+    /// Hash of the previous entry
     last_hash: String,
-    /// FactId -> entries 索引的实时索引（优化因果链查询）
+    /// Live FactId -> entries index (optimizes causal-chain queries)
     index: BTreeMap<FactId, usize>,
-    /// WAL 持久化路径（可选）
+    /// WAL persistence path (optional)
     wal_path: Option<std::path::PathBuf>,
-    /// 是否在 audit_new 后自动验证审计链完整性（P06）
+    /// Whether to auto-verify audit chain integrity after audit_new (P06)
     ///
-    /// 启用后每次 audit_new 完成后自动调用 verify()，及时发现数据篡改。
-    /// 性能开销为 O(n)（n 为审计条目数），建议在大条目数场景配合
-    /// `auto_verify_threshold` 和 `auto_verify_interval` 使用。
+    /// When enabled, verify() runs automatically after each audit_new so tampering is
+    /// detected promptly. The cost is O(n) (n = number of audit entries); for large entry
+    /// counts combine it with `auto_verify_threshold` and `auto_verify_interval`.
     auto_verify: bool,
-    /// 自动验证阈值（P06）
+    /// Auto-verify threshold (P06)
     ///
-    /// 当审计条目数超过此阈值时，跳过自动验证以避免性能问题。
-    /// 默认 1000。设为 0 表示不限制（始终验证）。
+    /// When the audit entry count exceeds this threshold, auto-verification is skipped to
+    /// avoid performance issues. Defaults to 1000. 0 means no limit (always verify).
     auto_verify_threshold: usize,
-    /// 自动验证间隔（P06）
+    /// Auto-verify interval (P06)
     ///
-    /// 每 N 次 audit_new 执行一次自动验证（仅在 auto_verify=true 时生效）。
-    /// 默认 1（每次都验证）。设为 100 表示每 100 次验证一次。
+    /// Runs auto-verification every N audit_new calls (only effective when auto_verify=true).
+    /// Defaults to 1 (verify every time). 100 means verify every 100 calls.
     auto_verify_interval: usize,
-    /// audit_new 调用计数（P06，用于间隔控制）
+    /// audit_new call counter (P06, used for interval control)
     audit_new_count: u64,
-    /// 实时审计验证失败计数（P5-A2 修复，2026-08-27）
+    /// Live audit verification failure counter (P5-A2 fix, 2026-08-27)
     ///
-    /// 篡改探测结果不再只走 stderr 一条通道；server 可通过
-    /// [`Auditor::auto_verify_failure_count`] 读取并上报指标/告警。
+    /// Tamper detection no longer reaches the outside world only via stderr; the server can
+    /// read [`Auditor::auto_verify_failure_count`] and report it as a metric/alert.
     auto_verify_failure_count: std::sync::atomic::AtomicU64,
-    /// 审计锚点链构建器（G-A2，可选——None 时行为与旧版完全一致）
+    /// Audit anchor chain builder (G-A2, optional - behavior identical to the previous version when None)
     anchor_builder: Option<crate::anchor::AnchorChainBuilder>,
-    /// 锚点产出策略（G-A2：每 N 条新事实产一个锚点；0=仅手动/会话结束封条）
+    /// Anchor emission policy (G-A2: one anchor per N new facts; 0 = manual/session-end sealing only)
     anchor_interval: usize,
-    /// 已产出的锚点序列（append-only；供导出/验证）
+    /// Sealed anchor sequence (append-only; used for export/verification)
     anchors: Vec<crate::anchor::AuditAnchor>,
-    /// 锚点持久化日志路径（P0-1/G1；None=纯内存，兼容旧构造）
+    /// Anchor persistence log path (P0-1/G1; None = in-memory only, compatible with the old constructor)
     anchor_log_path: Option<std::path::PathBuf>,
-    /// 自动验证跳过计数（P5-A2 修复，2026-08-27：阈值/间隔跳过留痕可观测）
+    /// Auto-verify skip counter (P5-A2 fix, 2026-08-27: threshold/interval skips are observable)
     auto_verify_skip_count: std::sync::atomic::AtomicU64,
 }
 
 impl Auditor {
-    /// 创建新审计器
+    /// Creates a new auditor
     ///
-    /// `last_hash` 初始为 `"genesis"`，`last_audited_version` 初始为 0。
+    /// `last_hash` starts as `"genesis"` and `last_audited_version` starts at 0.
     pub fn new(facts_log: FactsLog) -> Self {
         Self {
             facts_log,
@@ -215,13 +216,13 @@ impl Auditor {
         }
     }
 
-    /// 创建带实时验证配置的审计器（P06）
+    /// Creates an auditor with live verification configuration (P06)
     ///
-    /// # 参数
-    /// - `facts_log`：FactsLog 引用
-    /// - `auto_verify`：是否在 audit_new 后自动验证
-    /// - `auto_verify_threshold`：条目数超过此阈值时跳过验证（0 表示不限制）
-    /// - `auto_verify_interval`：每 N 次 audit_new 验证一次（1 表示每次都验证）
+    /// # Parameters
+    /// - `facts_log`: reference to the FactsLog
+    /// - `auto_verify`: whether to auto-verify after audit_new
+    /// - `auto_verify_threshold`: skip verification once the entry count exceeds this (0 = no limit)
+    /// - `auto_verify_interval`: verify every N audit_new calls (1 = verify every time)
     pub fn new_with_auto_verify(
         facts_log: FactsLog,
         auto_verify: bool,
@@ -253,9 +254,9 @@ impl Auditor {
         }
     }
 
-    /// 设置实时验证配置（P06）
+    /// Sets the live verification configuration (P06)
     ///
-    /// 可在创建后修改自动验证配置。
+    /// The auto-verify configuration can be changed after construction.
     pub fn set_auto_verify(
         &mut self,
         auto_verify: bool,
@@ -271,32 +272,35 @@ impl Auditor {
         };
     }
 
-    /// 查询当前是否启用自动验证（P06）
+    /// Returns whether auto-verification is currently enabled (P06)
     pub fn is_auto_verify_enabled(&self) -> bool {
         self.auto_verify
     }
 
-    /// 设置 WAL 持久化路径（deprecated）
+    /// Sets the WAL persistence path (deprecated)
     ///
-    /// # ⚠️ 已废弃（两套 WAL 合并）
-    /// 自 0.2.0 起，哈希链已由 tier1 FactsLog/WAL 自动维护，
-    /// 审计器不再需要独立写 WAL。此方法仅保留向后兼容，
-    /// 设置的路径不会被使用（`append_wal` 已禁用）。
+    /// # ⚠️ Deprecated (two-WAL merge)
+    /// Since 0.2.0 the hash chain is maintained automatically by the tier1 FactsLog/WAL and
+    /// the auditor no longer needs its own WAL. This method is kept only for backward
+    /// compatibility; the configured path is never used (`append_wal` is disabled).
     ///
-    /// # 迁移指南
-    /// 审计状态持久化请使用 tier1 WAL（`FactsLog::with_wal`），
-    /// 恢复审计状态请使用 [`Auditor::load_from_tier1_wal`]。
+    /// # Migration guide
+    /// Persist audit state with the tier1 WAL (`FactsLog::with_wal`); restore audit state
+    /// with [`Auditor::load_from_tier1_wal`].
     #[deprecated(
         since = "0.2.0",
-        note = "两套 WAL 合并：审计器不再独立写 WAL，请使用 tier1 FactsLog WAL"
+        note = "two-WAL merge: the auditor no longer writes its own WAL; use the tier1 FactsLog WAL"
     )]
     pub fn with_wal_path<P: AsRef<std::path::Path>>(mut self, path: P) -> Self {
         self.wal_path = Some(path.as_ref().to_path_buf());
         self
     }
 
-    /// 将单条审计条目序列化为 JSONL 行（deprecated，仅供向后兼容）
-    #[deprecated(since = "0.2.0", note = "两套 WAL 合并：审计器不再独立写 WAL")]
+    /// Serializes a single audit entry as a JSONL line (deprecated, backward compatibility only)
+    #[deprecated(
+        since = "0.2.0",
+        note = "two-WAL merge: the auditor no longer writes its own WAL"
+    )]
     #[allow(dead_code)]
     fn entry_to_json_line(entry: &AuditEntry) -> String {
         serde_json::json!({
@@ -310,56 +314,59 @@ impl Auditor {
         .to_string()
     }
 
-    /// 追加单条审计条目到 WAL 文件（deprecated，已禁用）
+    /// Appends a single audit entry to the WAL file (deprecated, disabled)
     ///
-    /// # ⚠️ 已废弃（两套 WAL 合并）
-    /// 自 0.2.0 起，此函数不再执行任何写入操作。
-    /// 哈希链由 tier1 FactsLog/WAL 自动维护。
+    /// # ⚠️ Deprecated (two-WAL merge)
+    /// Since 0.2.0 this function performs no writes.
+    /// The hash chain is maintained automatically by the tier1 FactsLog/WAL.
     #[deprecated(
         since = "0.2.0",
-        note = "两套 WAL 合并：审计器不再独立写 WAL，哈希链由 tier1 WAL 维护"
+        note = "two-WAL merge: the auditor no longer writes its own WAL; the hash chain is maintained by the tier1 WAL"
     )]
     #[allow(dead_code)]
     fn append_wal(&self, _entry: &AuditEntry) {
-        // 两套 WAL 合并：不再写入 auditor WAL
-        // 哈希链已由 tier1 FactsLog::append() 自动写入 tier1 WAL
+        // Two-WAL merge: no longer writes the auditor WAL
+        // The hash chain is written to the tier1 WAL automatically by FactsLog::append()
     }
 
-    /// 审计新增事实
+    /// Audits new facts
     ///
-    /// 从 FactsLog 读取 `last_audited_version` 之后的所有事实，
-    /// 为每个事实创建 [`AuditEntry`]，更新哈希链。
+    /// Reads all facts after `last_audited_version` from the FactsLog, creates an
+    /// [`AuditEntry`] for each fact and updates the hash chain.
     ///
-    /// # 去重策略
-    /// 由于 `FactsLog::read_from` 按 `version_before` 过滤，而同一版本下可能
-    /// 存在多条不改变版本号的事实（如 `Command`/`IoRequest`），直接以版本号
-    /// 做去重会导致重复审计。故本实现以 `entries.len()` 作为已审计进度，
-    /// 读取尚未审计的尾部事实，保证每条事实仅审计一次。
+    /// # Deduplication strategy
+    /// `FactsLog::read_from` filters by `version_before`, but multiple facts that do not bump
+    /// the version (e.g. `Command`/`IoRequest`) can share the same version; deduplicating by
+    /// version alone would audit them twice. This implementation therefore uses
+    /// `entries.len()` as the audit progress and reads the not-yet-audited tail facts, so
+    /// every fact is audited exactly once.
     ///
-    /// # 增量遍历（）
-    /// 原实现每命令调用 `FactsLog::history()` 全量 clone 全部历史事实——
-    /// 长驻会话（千级命令）下每命令近 GB 级内存复制，构成 O(n²) CPU 瓶颈。
-    /// 现改经 [`FactsLog::for_each_fact_from`] 锁内零 clone 增量遍历尾部
-    /// 新事实，语义（去重游标/条目结构/哈希链）与原实现逐条等价。
+    /// # Incremental traversal ()
+    /// The original implementation called `FactsLog::history()` per command and cloned the
+    /// full history - for long-lived sessions (thousands of commands) that meant nearly
+    /// GB-scale memory copies per command, an O(n²) CPU bottleneck. It now traverses the new
+    /// tail facts incrementally with zero clones under the lock via
+    /// [`FactsLog::for_each_fact_from`]; semantics (dedup cursor / entry structure / hash
+    /// chain) are equivalent to the original implementation.
     ///
-    /// # 返回值
-    /// 本次新增的审计条目数量。
-    // 审计遍历 + 哈希 + append 多步串联, 拆函数需共享 self 状态。详见 GATE_REFERENCE.md §六(豁免索引)
+    /// # Returns
+    /// The number of audit entries added by this call.
+    // Audit traversal + hashing + append form one chained multi-step sequence; splitting would require sharing self state. See GATE_REFERENCE.md §6 (exemption index)
     #[allow(clippy::cognitive_complexity)]
     pub fn audit_new(&mut self) -> usize {
-        // P06: 计数始终递增（按调用次数，而非新事实数），用于自动验证间隔控制
+        // P06: the counter always increments (per call, not per new fact), used for auto-verify interval control
         self.audit_new_count += 1;
 
         let history_len = self.facts_log.history_len();
         let start = self.entries.len();
         if start >= history_len {
             self.last_audited_version = self.facts_log.version();
-            tracing::debug!(version = self.last_audited_version, "audit_new: 无新增事实");
+            tracing::debug!(version = self.last_audited_version, "audit_new: no facts");
             return 0;
         }
 
         let count = history_len - start;
-        // 增量审计：字段级拆借以并存 facts_log 只读借与其他字段可变借
+        // Incremental audit: field-level split borrows so the facts_log read borrow coexists with mutable borrows of the other fields
         let facts_log = &self.facts_log;
         let entries = &mut self.entries;
         let clock = &mut self.clock;
@@ -367,8 +374,7 @@ impl Auditor {
         let index = &mut self.index;
         let mut idx_offset = 0usize;
         facts_log.for_each_fact_from(start, |_version_before, fact| {
-            // idx_offset 对齐原 enumerate 语义：计入所有遍历过的事实
-            // （含哈希失败被跳过者），entry_index 保持与历史下标一致
+            // idx_offset mirrors the original enumerate semantics: counts every traversed fact, keeping entry_index aligned with history
             let entry_index = start + idx_offset;
             idx_offset += 1;
 
@@ -379,15 +385,14 @@ impl Auditor {
             let content_hash = match hash::fact_hash(fact) {
                 Ok(h) => h,
                 Err(e) => {
-                    // #10 修复：跳过会产生 entries 与 history 的 index 错位
-                    // （causal_chain 越界风险）——改为占位条目保持对齐，
-                    // content_hash 置空串并 error 留痕（占位条目参与链接，
-                    // 后续 verify 会以空串续链——损坏即显性化，不静默伪装）
+                    // #10 fix: skipping would misalign entries vs history indices (causal_chain
+                    // out-of-bounds) - instead push a placeholder entry (it joins the chain;
+                    // verify continues with the empty string - corruption is surfaced, never masked)
                     tracing::error!(
-                        事实ID = ?fact_id,
-                        事实类型 = %fact_type,
-                        错误 = %e,
-                        "审计器: 事实哈希计算失败，落占位条目（链显性化，不跳过）"
+                        fact_id = ?fact_id,
+                        fact_type = %fact_type,
+                        error = %e,
+                        "auditor: fact hash computation failed; appending a placeholder entry (corruption surfaced explicitly, never skipped)"
                     );
                     let placeholder_prev = last_hash.clone();
                     let placeholder_chain = hash::chain_step(&placeholder_prev, "corrupted-entry");
@@ -406,8 +411,8 @@ impl Auditor {
             };
             let prev_hash = last_hash.clone();
 
-            // 计算新的链哈希：blake3(prev_hash + content_hash)
-            // B1（report-002）：改用 reactor SSOT chain_step，消除本地重复实现漂移风险
+            // Compute the new chain hash: blake3(prev_hash + content_hash)
+            // B1 (report-002): use the reactor SSOT chain_step to eliminate drift risk from a local duplicate implementation
             let new_hash = hash::chain_step(&prev_hash, &content_hash);
             *last_hash = new_hash;
 
@@ -422,19 +427,17 @@ impl Auditor {
                 cause,
             });
 
-            // 两套 WAL 合并：不再写入 auditor WAL
-            // 哈希链已由 tier1 FactsLog::append() 自动写入 tier1 WAL
+            // Two-WAL merge: the hash chain is written to the tier1 WAL automatically by FactsLog::append()
         });
 
         self.last_audited_version = self.facts_log.version();
         tracing::debug!(
             audited = count,
             version = self.last_audited_version,
-            "audit_new: 完成"
+            "audit_new: done"
         );
 
-        // G-A2：锚点策略——自上一锚点起新增事实数达到 interval 即封一个锚点
-        // （interval=0 表示禁用自动锚点，仅 seal_anchor_now 手动封）
+        // G-A2 anchor policy: seal one anchor once fresh facts reach the interval (interval=0 disables auto anchoring)
         if let Some(builder) = self.anchor_builder.as_mut() {
             let covered = builder.next_fact_lo();
             let fresh = self.entries.len().saturating_sub(covered);
@@ -444,20 +447,20 @@ impl Auditor {
                 let head = self.last_hash.clone();
                 match builder.seal(fact_hi, &head) {
                     Ok(anchor) => {
-                        // P0-1：自动封锚同样持久化（此前仅手动路径持久化——
-                        // 双路径分叉正是 G1 深层：自动锚从未落盘）
+                        // P0-1: auto-sealed anchors are persisted too (previously only the manual path
+                        // persisted - that two-path divergence was the deeper G1 cause: auto anchors never hit disk)
                         self.persist_anchor(&anchor);
-                        tracing::debug!(seq = anchor.seq, fact_hi, "audit_new: 锚点已封");
+                        tracing::debug!(seq = anchor.seq, fact_hi, "audit_new: anchor sealed");
                         self.anchors.push(anchor);
                     }
                     Err(e) => {
-                        tracing::error!(错误 = %e, "audit_new: 锚点封条失败（跳过，链不受损）");
+                        tracing::error!(error = %e, "audit_new: anchor seal failed (chain intact)");
                     }
                 }
             }
         }
 
-        // P06: 实时审计验证
+        // P06: live audit verification
         if self.should_auto_verify() {
             if !self.verify() {
                 self.auto_verify_failure_count
@@ -465,52 +468,52 @@ impl Auditor {
                 tracing::error!(
                     entries = self.entries.len(),
                     audit_new_count = self.audit_new_count,
-                    "audit_new: 实时审计验证失败，审计链可能存在数据篡改或损坏"
+                    "audit_new: live audit verification failed; the audit chain may have been tampered with or corrupted"
                 );
             } else {
-                tracing::debug!(entries = self.entries.len(), "audit_new: 实时审计验证通过");
+                tracing::debug!(entries = self.entries.len(), "audit_new: audit passed");
             }
         }
 
         count
     }
 
-    /// 实时审计验证累计失败次数（P5-A2 修复）
+    /// Cumulative live audit verification failure count (P5-A2 fix)
     ///
-    /// 非零即表示审计链曾出现断裂/疑似篡改。server 应周期性读取此值
-    /// 上报到指标系统并配置告警（阈值 >0 即告警）。
+    /// Non-zero means the audit chain has seen a break/suspected tampering. The server should
+    /// read this periodically, push it to the metrics system and configure an alert (alert when >0).
     pub fn auto_verify_failure_count(&self) -> u64 {
         self.auto_verify_failure_count
             .load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// 自动验证累计跳过次数（P5-A2 修复：阈值/间隔跳过留痕）
+    /// Cumulative auto-verify skip count (P5-A2 fix: threshold/interval skips are recorded)
     ///
-    /// 用于评估真实验证覆盖率——跳过比例过高说明 auto_verify 配置
-    /// 形同虚设。
+    /// Used to assess the true verification coverage rate - a high skip ratio means the
+    /// auto_verify configuration is effectively a no-op.
     pub fn auto_verify_skip_count(&self) -> u64 {
         self.auto_verify_skip_count
             .load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// 判断本次是否应执行自动验证（P06）
+    /// Decides whether auto-verification should run this time (P06)
     ///
-    /// 综合考虑三个条件：
-    /// 1. `auto_verify` 必须为 true
-    /// 2. 条目数不超过 `auto_verify_threshold`（0 表示不限制）
-    /// 3. `audit_new_count` 是 `auto_verify_interval` 的倍数
+    /// Three conditions combined:
+    /// 1. `auto_verify` must be true
+    /// 2. entry count does not exceed `auto_verify_threshold` (0 = no limit)
+    /// 3. `audit_new_count` is a multiple of `auto_verify_interval`
     fn should_auto_verify(&self) -> bool {
         if !self.auto_verify || self.entries.is_empty() {
             return false;
         }
         if self.auto_verify_threshold > 0 && self.entries.len() > self.auto_verify_threshold {
-            // P5-A2：跳过不再完全静默——计数留痕 + debug 日志
+            // P5-A2: skips are no longer fully silent - counted + debug log
             self.auto_verify_skip_count
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             tracing::debug!(
                 entries = self.entries.len(),
                 threshold = self.auto_verify_threshold,
-                "实时审计验证: 条目数超过阈值，跳过验证"
+                "live audit verification: entry count exceeds the threshold; skipping verification"
             );
             return false;
         }
@@ -524,39 +527,42 @@ impl Auditor {
         true
     }
 
-    /// 验证审计链完整性
+    /// Verifies audit chain integrity
     ///
-    /// 重新计算每个条目的链哈希，并校验其存储的 `prev_hash` 与上一条目
-    /// 重算出的链哈希一致，确认链式结构未被篡改。
+    /// Recomputes the chain hash of every entry and checks that its stored `prev_hash` matches
+    /// the chain hash recomputed from the previous entry, confirming the chain structure was
+    /// not tampered with.
     ///
-    /// # 返回值
-    /// - `true`：所有条目的 `prev_hash` 链接自洽
-    /// - `false`：发现断裂（某条目 `prev_hash` 与前驱重算哈希不匹配）
+    /// # Returns
+    /// - `true`: every entry's `prev_hash` linkage is self-consistent
+    /// - `false`: a break was found (some entry's `prev_hash` does not match the recomputed hash of its predecessor)
     pub fn verify(&self) -> bool {
         let mut prev_hash = String::from("genesis");
         for entry in &self.entries {
             if entry.prev_hash != prev_hash {
                 tracing::warn!(
                     fact_id = entry.fact_id.0,
-                    "verify: 哈希链断裂，prev_hash 不匹配"
+                    "verify: hash chain broken; prev_hash mismatch"
                 );
                 return false;
             }
-            // 重新计算当前条目的链哈希，作为下一跳的预期 prev_hash（SSOT：reactor chain_step）
+            // Recompute the current entry's chain hash; it becomes the expected prev_hash of the next hop (SSOT: reactor chain_step)
             let recomputed = hash::chain_step(&entry.prev_hash, &entry.content_hash);
             prev_hash = recomputed;
         }
-        tracing::debug!(entries = self.entries.len(), "verify: 审计链完整");
+        tracing::debug!(entries = self.entries.len(), "verify: audit chain intact");
         true
     }
 
-    /// 深度验证（#9 修复）：在 `verify` 链接验证之上，**重算每条 content_hash**
+    /// Deep verification (#9 fix): on top of the `verify` linkage check, **recomputes every content_hash**
     ///
-    /// `verify` 的链步用**存储的** content_hash 续链——攻击者改内容并同步改
-    /// content_hash 后重推 prev 链，可通过 verify。本方法要求携带事实原文
-    /// （`facts: &[Fact]`，与 entries 同序同长），逐条重算 fact_hash 比对。
-    /// 调用方：审计器持有 FactsLog 引用的场景（audit_new 后）/ 导入校验场景。
-    /// 无原文时调用方退回 `verify`（链接语义）并在报告中如实标注。
+    /// The `verify` chain step continues the chain using the **stored** content_hash - an
+    /// attacker who rewrites content and updates content_hash in sync can rebuild a valid prev
+    /// chain and pass verify. This method requires the original facts (`facts: &[Fact]`, same
+    /// order and length as entries) and recomputes fact_hash for each one.
+    /// Callers: scenarios where the auditor holds a FactsLog reference (after audit_new) /
+    /// import validation. Without the original facts the caller falls back to `verify`
+    /// (linkage semantics) and states this honestly in the report.
     pub fn verify_deep(&self, facts: &[Fact]) -> Result<(), crate::auditor::LoadError> {
         if facts.len() != self.entries.len() {
             return Err(crate::auditor::LoadError::ChainBroken {
@@ -570,7 +576,7 @@ impl Auditor {
                 ),
             });
         }
-        // 先做链接验证（同 verify）
+        // First run the linkage verification (same as verify)
         if !self.verify() {
             return Err(crate::auditor::LoadError::ChainBroken {
                 index: 0,
@@ -579,7 +585,7 @@ impl Auditor {
                 expected_prev: "verify() failed".into(),
             });
         }
-        // 逐条重算 content
+        // Recompute the content hash entry by entry
         for (idx, (entry, fact)) in self.entries.iter().zip(facts.iter()).enumerate() {
             let recomputed = hash::fact_hash(fact)
                 .map_err(|e| crate::auditor::LoadError::HashError(format!("entry[{idx}]: {e}")))?;
@@ -595,23 +601,24 @@ impl Auditor {
         Ok(())
     }
 
-    /// 获取审计条目
+    /// Returns the audit entries
     pub fn entries(&self) -> &[AuditEntry] {
         &self.entries
     }
 
-    /// 配置审计锚点链（G-A2）
+    /// Configures the audit anchor chain (G-A2)
     ///
-    /// 启用后按 `interval`（每 N 条新事实）自动封一个签名锚点；
-    /// `interval = 0` 表示不自动封，仅 [`Auditor::seal_anchor_now`] 手动封。
-    /// **锚点默认关**：不调用本方法，审计行为与旧版完全一致（兼容判据 J-T6）。
+    /// When enabled, a signed anchor is sealed automatically every `interval` new facts;
+    /// `interval = 0` means no automatic sealing, only manual sealing via
+    /// [`Auditor::seal_anchor_now`]. **Anchors are off by default**: without this call the
+    /// audit behavior is identical to the previous version (compat criterion J-T6).
     ///
-    /// # 参数
-    /// - `signer`：ed25519 签名器（私钥由调用方注入，不入审计资产）
-    /// - `key_id`：密钥标识（轮换支持）
-    /// - `engine_id`：引擎/部署标识（跨引擎链冒充检出）
-    /// - `session_id`：会话标识
-    /// - `interval`：自动封条间隔（条）；0=仅手动
+    /// # Parameters
+    /// - `signer`: ed25519 signer (the private key is injected by the caller and never enters audit assets)
+    /// - `key_id`: key identifier (supports rotation)
+    /// - `engine_id`: engine/deployment identifier (detects cross-engine chain impersonation)
+    /// - `session_id`: session identifier
+    /// - `interval`: automatic sealing interval (in facts); 0 = manual only
     pub fn with_anchor(
         self,
         signer: crate::signing::AuditSigner,
@@ -623,8 +630,8 @@ impl Auditor {
         self.with_anchor_impl(signer, key_id, engine_id, session_id, interval, None)
     }
 
-    /// 同 [`with_anchor`]，另指定锚点持久化日志（P0-1/G1：append-only JSONL，
-    /// 每封一锚追加一行；恢复时读回——进程重启后历史锚点仍可验）
+    /// Same as [`with_anchor`], plus an anchor persistence log (P0-1/G1: append-only JSONL,
+    /// one line per sealed anchor; read back on restore - historical anchors remain verifiable after a process restart)
     pub fn with_anchor_persisted(
         self,
         signer: crate::signing::AuditSigner,
@@ -657,15 +664,15 @@ impl Auditor {
             signer, key_id, engine_id, session_id,
         ));
         self.anchor_interval = interval;
-        // P0-1：恢复既有锚点（存在则读回续链；损坏行如实跳过+warn，不静默）
+        // P0-1: restore existing anchors (read back and continue the chain when present; corrupt lines are skipped honestly with a warn, never silently)
         if let Some(path) = &anchor_log_path {
             match Self::load_anchor_log(path) {
                 Ok(restored) => {
                     if !restored.is_empty() {
-                        tracing::info!(count = restored.len(), path = %path.display(), "锚点日志恢复");
+                        tracing::info!(count = restored.len(), path = %path.display(), "anchor log restored");
                     }
                     self.anchors = restored;
-                    // 重建 builder 的续链状态（prev_anchor_hash/seq/fact_hi）
+                    // Rebuild the builder's continuation state (prev_anchor_hash/seq/fact_hi)
                     if let Some(builder) = &mut self.anchor_builder {
                         if let Some(last) = self.anchors.last() {
                             let (signer, key_id, engine_id, session_id) = builder.identity();
@@ -682,7 +689,7 @@ impl Auditor {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!(path = %path.display(), error = %e, "锚点日志读取失败（按空锚点链起步）")
+                    tracing::warn!(path = %path.display(), error = %e, "anchor log read failed (starting from an empty anchor chain)")
                 }
             }
         }
@@ -690,13 +697,13 @@ impl Auditor {
         self
     }
 
-    /// 追加一锚到持久化日志（best-effort：失败 warn 不阻塞封条语义）
+    /// Appends one anchor to the persistence log (best-effort: failures warn and never block sealing semantics)
     fn persist_anchor(&self, anchor: &crate::anchor::AuditAnchor) {
         if let Some(path) = &self.anchor_log_path {
             let json = match serde_json::to_string(anchor) {
                 Ok(j) => j,
                 Err(e) => {
-                    tracing::warn!(error = %e, "锚点序列化失败（未持久化）");
+                    tracing::warn!(error = %e, "anchor serialization failed (not persisted)");
                     return;
                 }
             };
@@ -712,12 +719,12 @@ impl Auditor {
                 writeln!(f, "{json}")
             };
             if let Err(e) = write() {
-                tracing::warn!(path = %path.display(), error = %e, "锚点持久化写入失败");
+                tracing::warn!(path = %path.display(), error = %e, "anchor persistence write failed");
             }
         }
     }
 
-    /// 读锚点日志（JSONL；损坏行跳过+收集，返回（合法锚点, 损坏行数）由调用方留痕）
+    /// Reads the anchor log (JSONL; corrupt lines are skipped and collected, returning (valid anchors, corrupt line count) for the caller to record)
     fn load_anchor_log(path: &std::path::Path) -> Result<Vec<crate::anchor::AuditAnchor>, String> {
         let content = std::fs::read_to_string(path).map_err(|e| format!("read: {e}"))?;
         let mut out = Vec::new();
@@ -728,16 +735,16 @@ impl Auditor {
             match serde_json::from_str::<crate::anchor::AuditAnchor>(line) {
                 Ok(a) => out.push(a),
                 Err(e) => {
-                    tracing::warn!(line = idx + 1, error = %e, "锚点日志损坏行跳过");
+                    tracing::warn!(line = idx + 1, error = %e, "corrupt anchor log line skipped");
                 }
             }
         }
         Ok(out)
     }
 
-    /// 立即封一个锚点（会话结束封条 / 手动强制封）
+    /// Seals an anchor immediately (session-end seal / manual forced seal)
     ///
-    /// 在当前审计进度上追加一个签名锚点。空区间锚点合法（封条语义）。
+    /// Appends a signed anchor at the current audit progress. Empty-range anchors are legal (seal semantics).
     pub fn seal_anchor_now(
         &mut self,
     ) -> Result<crate::anchor::AuditAnchor, crate::anchor::AnchorError> {
@@ -747,34 +754,37 @@ impl Auditor {
             .anchor_builder
             .as_mut()
             .ok_or(crate::anchor::AnchorError::Hash(
-                "锚点链未配置（先调用 with_anchor）".to_string(),
+                "anchor chain not configured (call with_anchor first)".to_string(),
             ))?;
         let anchor = builder.seal(fact_hi, &head)?;
-        // P0-1：锚点持久化（append-only JSONL；best-effort 失败 warn 不阻塞封条）
+        // P0-1: anchor persistence (append-only JSONL; best-effort, failures warn and never block sealing)
         self.persist_anchor(&anchor);
         self.anchors.push(anchor);
-        // 刚 push 必非空；不用 expect（F11 门禁），失败即编程错误返回 Err
+        // Right after push the list is non-empty; no expect (F11 gate) - a failure here would be a programming error and returns Err
         self.anchors.last().cloned().ok_or_else(|| {
-            crate::anchor::AnchorError::Hash("锚点序列异常为空（刚 push 后不可达）".to_string())
+            crate::anchor::AnchorError::Hash(
+                "anchor list unexpectedly empty (unreachable right after a push)".to_string(),
+            )
         })
     }
 
-    /// 已封锚点序列（append-only 视图）
-    /// 事实账本只读访问（测试与深度验证场景取 facts 用）
+    /// Sealed anchor sequence (append-only view)
+    /// Read-only access to the fact ledger (used by tests and deep verification to fetch facts)
     pub fn facts_log_ref(&self) -> &FactsLog {
         &self.facts_log
     }
 
-    /// 已封锚点序列（append-only 视图；含从持久化日志恢复的锚点）
+    /// Sealed anchor sequence (append-only view; includes anchors restored from the persistence log)
     pub fn anchors(&self) -> &[crate::anchor::AuditAnchor] {
         &self.anchors
     }
 
-    /// 验证锚点链 + 锚点与事实链的绑定（G-A2 验证入口）
+    /// Verifies the anchor chain plus the binding between anchors and the fact chain (G-A2 verification entry point)
     ///
-    /// 两步：1) [`crate::anchor::verify_anchor_chain`]（结构+签名）；
-    /// 2) 锚点声称的链头与事实链重算比对（[`crate::anchor::verify_binding`]）。
-    /// 返回 `Err(reason)` 描述首个失败点。
+    /// Two steps: 1) [`crate::anchor::verify_anchor_chain`] (structure + signature);
+    /// 2) compares each anchor's claimed chain head against the recomputed fact chain
+    /// ([`crate::anchor::verify_binding`]).
+    /// Returns `Err(reason)` describing the first failure point.
     pub fn verify_anchors(
         &self,
         keys: &std::collections::BTreeMap<String, String>,
@@ -782,7 +792,7 @@ impl Auditor {
         if let Err(e) = crate::anchor::verify_anchor_chain(&self.anchors, keys) {
             return Err(e.to_string());
         }
-        // 绑定：用已审计条目重算事实链头（复用 verify 同源逻辑，SSOT 不重复实现）
+        // Binding: recompute the fact chain head from the audited entries (reuses the same logic as verify; SSOT, no duplicate implementation)
         let mut prev_hash = String::from("genesis");
         let mut heads: Vec<String> = Vec::with_capacity(self.entries.len() + 1);
         heads.push(prev_hash.clone());
@@ -793,7 +803,7 @@ impl Auditor {
         for a in &self.anchors {
             let expect = heads.get(a.fact_range.hi).ok_or_else(|| {
                 format!(
-                    "锚点[{}] fact_hi={} 超出已审计条目数 {}（锚点与审计进度不符）",
+                    "anchor[{}] fact_hi={} exceeds the audited entry count {} (anchor inconsistent with audit progress)",
                     a.seq,
                     a.fact_range.hi,
                     self.entries.len()
@@ -801,7 +811,7 @@ impl Auditor {
             })?;
             if *expect != a.chain_head {
                 return Err(format!(
-                    "锚点[{}] 链头绑定失败: 锚点声称 {}… 重算 {}…（事实链被篡改/替换）",
+                    "anchor[{}] chain-head binding failed: anchor claims {}… recomputed {}… (fact chain tampered/substituted)",
                     a.seq,
                     &a.chain_head[..16.min(a.chain_head.len())],
                     &expect[..16.min(expect.len())]
@@ -811,19 +821,19 @@ impl Auditor {
         Ok(())
     }
 
-    /// 获取当前审计链的末尾哈希
+    /// Returns the tail hash of the current audit chain
     ///
-    /// 返回最后一条审计条目的链哈希，初始为 `"genesis"`。
-    /// 可用于快速获取审计链状态，无需解析 `report()` 的 JSON。
+    /// Returns the chain hash of the last audit entry; initially `"genesis"`.
+    /// Useful for quickly reading the audit chain state without parsing the `report()` JSON.
     pub fn last_hash(&self) -> &str {
         &self.last_hash
     }
 
-    /// 生成审计报告（JSON 格式）
+    /// Generates the audit report (JSON format)
     ///
-    /// 包含审计器元信息（已审计版本、条目数、末尾哈希）与全部审计条目。
+    /// Contains auditor metadata (last audited version, entry count, tail hash) plus all audit entries.
     ///
-    /// 序列化失败时返回 `Err`（不静默退化为 `"{}"`，防止审计数据被误判为"空"）。
+    /// Returns `Err` on serialization failure (never silently degrades to `"{}"`, so audit data cannot be misread as "empty").
     pub fn report(&self) -> Result<String, serde_json::Error> {
         let entries_json: Vec<serde_json::Value> = self
             .entries
@@ -850,14 +860,14 @@ impl Auditor {
         serde_json::to_string_pretty(&report)
     }
 
-    /// 获取因果链（从指定 FactId 开始追溯 cause 链）
+    /// Returns the causal chain (walks the cause chain from the given FactId)
     ///
-    /// 返回从该 FactId 起，沿 `cause` 字段向上追溯的审计条目列表，
-    /// 顺序为：起始条目 → 其因果父 → … → 根因（`cause` 为 `None` 的条目）。
-    /// 若中途找不到对应条目，则在断点处终止追溯。
+    /// Returns the audit entries traced upward along the `cause` field starting from that
+    /// FactId, ordered: start entry → its causal parent → … → root cause (the entry whose
+    /// `cause` is `None`). If an entry cannot be found midway, tracing stops at the break.
     ///
-    /// # 性能优化
-    /// 使用实时维护的 `BTreeMap<FactId, usize>` 索引，查询复杂度为 O(log n)。
+    /// # Performance
+    /// Uses the live `BTreeMap<FactId, usize>` index; query complexity is O(log n).
     pub fn causal_chain(&self, fact_id: FactId) -> Vec<AuditEntry> {
         let mut chain = Vec::new();
         let mut current = Some(fact_id);
@@ -869,7 +879,10 @@ impl Auditor {
                     chain.push(entry);
                 }
                 None => {
-                    tracing::warn!(fact_id = cur_id.0, "causal_chain: 追溯中断，未找到审计条目");
+                    tracing::warn!(
+                        fact_id = cur_id.0,
+                        "causal_chain: traversal interrupted; audit entry not found"
+                    );
                     break;
                 }
             }
@@ -877,25 +890,26 @@ impl Auditor {
         chain
     }
 
-    /// 从 WAL 文件加载审计状态（deprecated，读取旧 auditor WAL 格式）
+    /// Loads audit state from a WAL file (deprecated, reads the old auditor WAL format)
     ///
-    /// # ⚠️ 已废弃（两套 WAL 合并）
-    /// 自 0.2.0 起，审计状态应从 tier1 WAL 恢复，请使用
-    /// [`Auditor::load_from_tier1_wal`] 代替。
+    /// # ⚠️ Deprecated (two-WAL merge)
+    /// Since 0.2.0 audit state should be restored from the tier1 WAL; use
+    /// [`Auditor::load_from_tier1_wal`] instead.
     ///
-    /// 本方法仍可读取旧格式 auditor WAL 文件（`fact_id`/`fact_type`/
-    /// `logical_time`/`content_hash`/`prev_hash`/`cause` JSONL），
-    /// 但不验证哈希链完整性（旧格式无 `chain_hash` 字段）。
+    /// This method can still read old-format auditor WAL files (`fact_id`/`fact_type`/
+    /// `logical_time`/`content_hash`/`prev_hash`/`cause` JSONL) but does not verify hash
+    /// chain integrity (the old format has no `chain_hash` field).
     ///
-    /// # 注意
-    /// 此方法不校验 FactsLog 中是否存在对应 Fact，仅恢复内存结构。
-    /// 调用方应确保 WAL 文件来自可信来源。
+    /// # Note
+    /// This method does not check whether the corresponding Fact exists in the FactsLog; it
+    /// only restores the in-memory structure. Callers must ensure the WAL file comes from a
+    /// trusted source.
     //
-    // 注：deprecated 的旧版 WAL 加载函数，保持原实现便于行为对比。
+    // Note: deprecated legacy WAL loading function kept as-is for behavioral comparison.
     #[allow(clippy::too_many_lines)]
     #[deprecated(
         since = "0.2.0",
-        note = "两套 WAL 合并：请使用 load_from_tier1_wal 读取 tier1 WAL（带哈希验证）"
+        note = "two-WAL merge: use load_from_tier1_wal to read the tier1 WAL (with hash verification)"
     )]
     pub fn load_from_wal(&mut self, path: &std::path::Path) -> std::io::Result<()> {
         use std::io::BufRead;
@@ -913,9 +927,10 @@ impl Auditor {
                 continue;
             }
 
-            //：损坏行不再静默跳过（审计完整性铁律：
-            // 链可能不完整而调用方毫无感知），显式拒绝加载并内嵌客户自助处理意见
-            // （结构化固定错误码，便于 LLM 助手逐条引导用户）。
+            // Corrupt lines are no longer silently skipped (audit integrity iron rule:
+            // the chain could be incomplete with the caller unaware); loading is explicitly refused and
+            // self-service remediation guidance is embedded (structured fixed error code, so LLM
+            // assistants can walk the user through each step).
             let parsed: serde_json::Value = serde_json::from_str(&line).map_err(|e| {
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
@@ -993,9 +1008,9 @@ impl Auditor {
             let fact_id = FactId(fact_id_num);
             let entry = AuditEntry {
                 fact_id,
-                // 安全：fact_type 是静态字符串名（来自 Fact::type_name），
-                // 此处使用泄漏扩展生命周期。WAL 中的类型名都是已知的固定字符串，
-                // 实际使用中应做类型映射表。这里做简化处理。
+                // Safety: fact_type is a static string name (from Fact::type_name);
+                // lifetime extension via leak is used here. All type names in the WAL are known fixed
+                // strings; production use should have a type mapping table. Simplified here.
                 fact_type: FACT_TYPE_STATIC_TABLE
                     .iter()
                     .copied()
@@ -1010,11 +1025,11 @@ impl Auditor {
             self.index.insert(fact_id, self.entries.len());
             self.entries.push(entry);
 
-            // 重算链哈希（验证并更新 last_hash；SSOT：reactor chain_step）
+            // Recompute the chain hash (verifies and updates last_hash; SSOT: reactor chain_step)
             self.last_hash = hash::chain_step(&prev_hash, &content_hash);
 
-            // 更新时钟到已见最大值（advance_to O(1） 对齐，替代 O(n) 逐次 tick；
-            // 终态与原 while-tick 循环逐字节一致 = max(current, logical_time)）
+            // Advance the clock to the max seen value (O(1) advance_to alignment instead of O(n) per-step ticks;
+            // the final state is byte-identical to the original while-tick loop = max(current, logical_time))
             self.clock.advance_to(logical_time);
         }
 
@@ -1022,49 +1037,50 @@ impl Auditor {
         Ok(())
     }
 
-    /// 从 tier1 WAL 加载审计状态并验证哈希链完整性（两套 WAL 合并）
+    /// Loads audit state from the tier1 WAL and verifies hash chain integrity (two-WAL merge)
     ///
-    /// 读取 tier1 WAL 文件（统一格式，含 `content_hash`/`prev_hash`/`chain_hash`），
-    /// 重建审计器的 `entries`、`index`、`last_hash` 和 `clock`，同时**验证**
-    /// 哈希链完整性。
+    /// Reads a tier1 WAL file (unified format with `content_hash`/`prev_hash`/`chain_hash`),
+    /// rebuilds the auditor's `entries`, `index`, `last_hash` and `clock`, and **verifies**
+    /// hash chain integrity.
     ///
-    /// # 验证内容
-    /// 1. **content_hash 验证**：重算每个 Fact 的哈希，与 WAL 中存储的 `content_hash` 比对
-    /// 2. **prev_hash 链接验证**：每条记录的 `prev_hash` 应等于前一条的 `chain_hash`
-    /// 3. **chain_hash 验证**：重算 `blake3(prev_hash + content_hash)`，与存储的 `chain_hash` 比对
+    /// # What is verified
+    /// 1. **content_hash check**: recomputes each Fact's hash and compares it with the `content_hash` stored in the WAL
+    /// 2. **prev_hash linkage check**: each record's `prev_hash` must equal the previous record's `chain_hash`
+    /// 3. **chain_hash check**: recomputes `blake3(prev_hash + content_hash)` and compares it with the stored `chain_hash`
     ///
-    /// # 向后兼容
-    /// - **新格式**（有 `chain_hash` 字段）：执行完整哈希链验证
-    /// - **旧格式**（无 `chain_hash` 字段）：仅重建状态，不验证哈希（发出警告）
+    /// # Backward compatibility
+    /// - **New format** (has `chain_hash`): full hash chain verification
+    /// - **Old format** (no `chain_hash`): rebuilds state only, no hash verification (warns)
     ///
-    /// # 参数
-    /// - `path`: tier1 WAL 文件路径
+    /// # Parameters
+    /// - `path`: tier1 WAL file path
     ///
-    /// # 返回值
-    /// - `Ok(())`：加载并验证成功
-    /// - `Err(LoadError)`：文件读取失败或哈希链验证失败
+    /// # Returns
+    /// - `Ok(())`: loaded and verified successfully
+    /// - `Err(LoadError)`: file read failure or hash chain verification failure
     ///
-    /// # 错误类型
-    /// - [`LoadError::IoError`]：文件读取失败
-    /// - [`LoadError::ContentHashMismatch`]：Fact 内容被篡改（content_hash 不匹配）
-    /// - [`LoadError::ChainBroken`]：哈希链断裂（prev_hash 链接不正确）
-    /// - [`LoadError::ChainHashMismatch`]：链哈希不匹配（chain_hash 被篡改）
+    /// # Error variants
+    /// - [`LoadError::IoError`]: file read failure
+    /// - [`LoadError::ContentHashMismatch`]: Fact content tampered (content_hash mismatch)
+    /// - [`LoadError::ChainBroken`]: hash chain broken (prev_hash linkage incorrect)
+    /// - [`LoadError::ChainHashMismatch`]: chain hash mismatch (chain_hash tampered)
     ///
-    /// # 验证口径（与档案面有意区分）
-    /// 本函数为 **fast-fail**：首个失配即返回带定位的错误——服务于在线恢复
-    /// 场景（快速定位首错）。历史会话档案回看面（evorule-server
-    /// `api::audit_archive::rebuild_chain`）为**尽力全报**：置 `verified=false`
-    /// 后继续扫完全链，服务于全景报告。两口径均为设计使然，非缺陷；
-    /// 修改任一侧前先核对另一侧语义。
-    // 106 行: tier1 WAL 加载 + 链式哈希验证 + mount 必须单函数原子语义
-    // 拆函数会让 hash chain 验证状态在 step 间传递时丢失 early-return 信号
+    /// # Verification stance (intentionally different from the archive surface)
+    /// This function is **fast-fail**: it returns a locating error on the first mismatch -
+    /// serving online recovery (quickly pinpoint the first error). The historical session
+    /// archive review surface (evorule-server `api::audit_archive::rebuild_chain`) is
+    /// **best-effort full report**: it sets `verified=false` and keeps scanning the whole
+    /// chain for panoramic reporting. Both stances are by design, not defects; check the
+    /// other side's semantics before changing either.
+    // 106 lines: tier1 WAL loading + chained hash verification + mount must stay atomic in one function
+    // Splitting would lose the early-return signal when hash chain verification state passes between steps
     #[allow(clippy::too_many_lines)]
     pub fn load_from_tier1_wal(&mut self, path: &std::path::Path) -> Result<(), LoadError> {
         use evorule_reactor::read_wal_with_hash;
 
         let records = read_wal_with_hash(path).map_err(|e| LoadError::IoError(e.to_string()))?;
 
-        // 清空当前状态
+        // Clear the current state
         self.entries.clear();
         self.index.clear();
         self.last_hash = String::from("genesis");
@@ -1080,12 +1096,12 @@ impl Auditor {
             let fact_id = fact.id();
             let fact_type = fact.type_name();
 
-            // 检查是否有哈希字段（新格式）
+            // Check for hash fields (new format)
             if record.chain_hash.is_some() {
                 has_hash_fields = true;
             }
 
-            // 验证 content_hash（新格式）
+            // Verify content_hash (new format)
             if let Some(stored_content) = &record.content_hash {
                 let recomputed = hash::fact_hash(fact)
                     .map_err(|e| LoadError::HashError(format!("fact[{}]: {}", idx, e)))?;
@@ -1099,7 +1115,7 @@ impl Auditor {
                 }
             }
 
-            // 验证 prev_hash 链接（新格式）
+            // Verify prev_hash linkage (new format)
             if let Some(stored_prev) = &record.prev_hash {
                 if stored_prev != &prev_hash {
                     return Err(LoadError::ChainBroken {
@@ -1111,14 +1127,14 @@ impl Auditor {
                 }
             }
 
-            // 重算链哈希（SSOT：reactor chain_step）
+            // Recompute the chain hash (SSOT: reactor chain_step)
             let content_hash = record
                 .content_hash
                 .clone()
                 .unwrap_or_else(|| hash::fact_hash(fact).unwrap_or_else(|_| String::new()));
             let recomputed_chain = hash::chain_step(&prev_hash, &content_hash);
 
-            // 验证 chain_hash（新格式）
+            // Verify chain_hash (new format)
             if let Some(stored_chain) = &record.chain_hash {
                 if stored_chain != &recomputed_chain {
                     return Err(LoadError::ChainHashMismatch {
@@ -1132,7 +1148,7 @@ impl Auditor {
 
             prev_hash = recomputed_chain.clone();
 
-            // 构建 AuditEntry
+            // Build the AuditEntry
             let logical_time = idx as u64 + 1;
             let cause = extract_cause(fact);
             let entry = AuditEntry {
@@ -1147,7 +1163,7 @@ impl Auditor {
                 prev_hash: if record.prev_hash.is_some() {
                     record.prev_hash.clone().unwrap_or_default()
                 } else {
-                    // 旧格式：使用重算的 prev_hash（初始为 genesis）
+                    // Old format: use the recomputed prev_hash (initially genesis)
                     String::from("genesis")
                 },
                 cause,
@@ -1161,63 +1177,64 @@ impl Auditor {
             }
         }
 
-        // 恢复末尾哈希
+        // Restore the tail hash
         self.last_hash = if has_hash_fields {
-            // 新格式：使用最后一条记录的 chain_hash
+            // New format: use the last record's chain_hash
             records
                 .last()
                 .and_then(|r| r.chain_hash.clone())
                 .unwrap_or(prev_hash)
         } else {
-            // 旧格式：使用重算的链哈希
+            // Old format: use the recomputed chain hash
             prev_hash
         };
 
-        // 同步逻辑时钟
+        // Synchronize the logical clock
         while self.clock.current() < max_logical_time {
             self.clock.tick();
         }
 
-        // 更新已审计版本（从最后一条 Fact 推断）
+        // Update the last audited version (inferred from the last Fact)
         self.last_audited_version = records.len() as u64;
 
         if !has_hash_fields {
             tracing::warn!(
                 path = %path.display(),
-                "load_from_tier1_wal: 旧格式 WAL（无哈希字段），仅重建状态，未验证哈希链"
+                "load_from_tier1_wal: legacy WAL (no hash fields); state rebuilt only, hash chain not verified"
             );
         } else {
             tracing::info!(
                 path = %path.display(),
                 entries = self.entries.len(),
                 last_hash = %self.last_hash,
-                "load_from_tier1_wal: 加载并验证审计链成功"
+                "load_from_tier1_wal: audit chain loaded and verified"
             );
         }
 
         Ok(())
     }
 
-    /// 导出审计链为 JSON 格式（P04）
+    /// Exports the audit chain as JSON (P04)
     ///
-    /// 返回包含所有审计条目的 JSON 字符串，可用于跨实例迁移或离线分析。
+    /// Returns a JSON string containing all audit entries, usable for cross-instance
+    /// migration or offline analysis.
     ///
-    /// # 导出格式
+    /// # Export format
     /// ```json
     /// {
     ///   "version": "1.0",
-    ///   "last_hash": "<末尾链哈希>",
-    ///   "last_audited_version": <已审计版本>,
-    ///   "entry_count": <条目数>,
+    ///   "last_hash": "<tail chain hash>",
+    ///   "last_audited_version": <last audited version>,
+    ///   "entry_count": <entry count>,
     ///   "entries": [ { ...AuditEntry }, ... ]
     /// }
     /// ```
     ///
-    /// # 安全说明
-    /// 导出数据包含完整的哈希链信息，可作为审计证据。
-    /// 调用方应妥善保护导出数据，防止被篡改。
+    /// # Security notes
+    /// The exported data contains the complete hash chain information and can serve as
+    /// audit evidence. Callers must protect the export against tampering.
     ///
-    /// 序列化失败时返回 `Err`（不静默退化为 `"{}"`，防止审计数据被误判为"空"）。
+    /// Returns `Err` on serialization failure (never silently degrades to `"{}"`, so audit data cannot be misread as "empty").
     pub fn export(&self) -> Result<String, serde_json::Error> {
         let entries_json: Vec<serde_json::Value> = self
             .entries
@@ -1245,23 +1262,23 @@ impl Auditor {
         serde_json::to_string_pretty(&export)
     }
 
-    /// 从 JSON 导入审计链（P04）
+    /// Imports the audit chain from JSON (P04)
     ///
-    /// 覆盖当前审计状态，导入外部审计数据。
+    /// Overwrites the current audit state with external audit data.
     ///
-    /// # 参数
-    /// `json_str`：由 `export()` 产生的 JSON 字符串
+    /// # Parameters
+    /// `json_str`: JSON string produced by `export()`
     ///
-    /// # 返回
-    /// - `Ok(())`：导入成功
-    /// - `Err(String)`：JSON 解析或字段缺失错误
+    /// # Returns
+    /// - `Ok(())`: import succeeded
+    /// - `Err(String)`: JSON parsing error or missing field
     ///
-    /// # 安全注意事项
-    /// 1. 导入操作会**完全覆盖**当前审计链，具有破坏性
-    /// 2. 调用方应确保导入数据来自可信来源
-    /// 3. 导入后会自动调用 `verify()` 校验哈希链完整性
-    /// 4. `fact_type` 字段会被映射到 `FACT_TYPE_STATIC_TABLE` 中的已知类型，
-    ///    未知类型会被替换为 `"Unknown"`（保留哈希链但丢失类型语义）
+    /// # Security notes
+    /// 1. Import **completely overwrites** the current audit chain and is destructive
+    /// 2. Callers must ensure the imported data comes from a trusted source
+    /// 3. `verify()` runs automatically after import to check hash chain integrity
+    /// 4. The `fact_type` field is mapped to known types in `FACT_TYPE_STATIC_TABLE`;
+    ///    unknown types are replaced with `"Unknown"` (hash chain preserved, type semantics lost)
     pub fn import(&mut self, json_str: &str) -> Result<(), String> {
         let parsed: serde_json::Value =
             serde_json::from_str(json_str).map_err(|e| format!("JSON parse error: {}", e))?;
@@ -1280,7 +1297,7 @@ impl Auditor {
             .and_then(|e| e.as_array())
             .ok_or_else(|| "Missing 'entries' array".to_string())?;
 
-        // 清空当前状态
+        // Clear the current state
         self.entries.clear();
         self.index.clear();
         self.last_hash = String::from("genesis");
@@ -1312,7 +1329,7 @@ impl Auditor {
                 .to_string();
             let cause = entry_val.get("cause").and_then(|v| v.as_u64()).map(FactId);
 
-            // 复用 FACT_TYPE_STATIC_TABLE 将字符串映射为 &'static str
+            // Reuse FACT_TYPE_STATIC_TABLE to map the string to a &'static str
             let fact_type: &'static str = FACT_TYPE_STATIC_TABLE
                 .iter()
                 .copied()
@@ -1332,7 +1349,7 @@ impl Auditor {
             self.entries.push(entry);
         }
 
-        // 恢复末尾哈希和已审计版本
+        // Restore the tail hash and last audited version
         self.last_hash = parsed
             .get("last_hash")
             .and_then(|v| v.as_str())
@@ -1343,7 +1360,7 @@ impl Auditor {
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
 
-        // 同步逻辑时钟到导入数据中的最大 logical_time
+        // Synchronize the logical clock to the max logical_time in the imported data
         let max_logical_time = self
             .entries
             .iter()
@@ -1357,44 +1374,47 @@ impl Auditor {
         tracing::info!(
             entries = self.entries.len(),
             last_audited_version = self.last_audited_version,
-            "import: 审计链导入完成"
+            "import: audit chain imported"
         );
 
         Ok(())
     }
 
-    /// 导入后立即验证审计链完整性（P04 便捷方法）
+    /// Verifies audit chain integrity right after import (P04 convenience method)
     ///
-    /// 等价于 `import()` 后调用 `verify()`，返回导入是否成功且审计链完整。
+    /// Equivalent to calling `verify()` after `import()`; returns whether the import succeeded and the audit chain is intact.
     pub fn import_and_verify(&mut self, json_str: &str) -> Result<bool, String> {
         self.import(json_str)?;
-        // #9 语义边界（诚实标注）：import 的 JSON 不含事实原文，verify 只能做
-        // 链接验证（prev 链自洽）——**攻击者构造自洽伪链可通过**。可信校验须
-        // 持原文走 `verify_deep`（tier1 WAL 场景）或对照签名锚点。此限制为
-        // 导出格式固有（导出物本就不含原文），非实现缺陷；文档明示。
+        // #9 semantic boundary (stated honestly): the import JSON contains no original facts, so verify
+        // can only do linkage validation (prev chain self-consistency) - **an attacker-crafted
+        // self-consistent fake chain would pass**. Trustworthy validation requires the original
+        // facts via `verify_deep` (tier1 WAL scenario) or comparison against signed anchors. This
+        // limitation is inherent to the export format (the export never contains the original
+        // facts), not an implementation defect; documented explicitly.
         let valid = self.verify();
         if !valid {
             tracing::warn!(
                 entries = self.entries.len(),
-                "import_and_verify: 导入后审计链验证失败，数据可能已损坏"
+                "import_and_verify: post-import audit chain verification failed; the data may be corrupted"
             );
         }
         Ok(valid)
     }
 
-    /// 导出压缩的审计链（P05）
+    /// Exports a compressed audit chain (P05)
     ///
-    /// 使用 gzip 压缩 [`export`](Self::export) 产生的 JSON 数据，
-    /// 减少传输和存储大小。压缩率通常可达 5-10 倍（取决于条目数和哈希重复度）。
+    /// gzip-compresses the JSON produced by [`export`](Self::export) to reduce transfer and
+    /// storage size. The compression ratio is typically 5-10x (depending on entry count and
+    /// hash repetition).
     ///
-    /// # 返回
-    /// - `Ok(Vec<u8>)`：gzip 压缩字节流
-    /// - `Err(String)`：压缩失败（极少见，通常是内存不足）
+    /// # Returns
+    /// - `Ok(Vec<u8>)`: gzip-compressed byte stream
+    /// - `Err(String)`: compression failure (rare, usually out of memory)
     ///
-    /// # 使用场景
-    /// - 网络传输：减少带宽占用
-    /// - 长期归档：减少存储成本
-    /// - 跨实例迁移：批量传输
+    /// # Use cases
+    /// - Network transfer: save bandwidth
+    /// - Long-term archival: reduce storage cost
+    /// - Cross-instance migration: bulk transfer
     pub fn export_compressed(&self) -> Result<Vec<u8>, String> {
         use flate2::write::GzEncoder;
         use flate2::Compression;
@@ -1410,27 +1430,27 @@ impl Auditor {
             .map_err(|e| format!("Compression finish error: {}", e))
     }
 
-    /// 从压缩数据导入审计链（P05）
+    /// Imports the audit chain from compressed data (P05)
     ///
-    /// 解压 gzip 数据后调用 [`import`](Self::import)。
+    /// Decompresses the gzip data and calls [`import`](Self::import).
     ///
-    /// # 参数
-    /// `compressed`：由 [`export_compressed`](Self::export_compressed) 产生的 gzip 字节流
+    /// # Parameters
+    /// `compressed`: gzip byte stream produced by [`export_compressed`](Self::export_compressed)
     ///
-    /// # 返回
-    /// - `Ok(())`：解压并导入成功
-    /// - `Err(String)`：解压失败或导入数据格式错误
+    /// # Returns
+    /// - `Ok(())`: decompression and import succeeded
+    /// - `Err(String)`: decompression failure or malformed import data
     ///
-    /// # 安全说明
-    /// 与 [`import`](Self::import) 相同，调用方应确保数据来自可信来源。
-    /// 此方法**不会**自动调用 `verify()`，如需验证请使用
-    /// [`import_compressed_and_verify`](Self::import_compressed_and_verify)。
+    /// # Security notes
+    /// Same as [`import`](Self::import): callers must ensure the data comes from a trusted
+    /// source. This method does **not** call `verify()` automatically; use
+    /// [`import_compressed_and_verify`](Self::import_compressed_and_verify) if verification is needed.
     pub fn import_compressed(&mut self, compressed: &[u8]) -> Result<(), String> {
         use flate2::read::GzDecoder;
         use std::io::Read;
 
-        // 解压限额：gzip 压缩比可达 1000:1+，无界读入会 OOM（压缩炸弹）；
-        // 审计链导出物的合理规模远低于此上限
+        // Decompression limit: gzip ratios can exceed 1000:1 and unbounded reads would OOM (compression bomb);
+        // a legitimate audit chain export is far below this cap
         const MAX_DECOMPRESSED_BYTES: u64 = 256 * 1024 * 1024;
 
         let decoder = GzDecoder::new(compressed);
@@ -1448,31 +1468,32 @@ impl Auditor {
         self.import(&decompressed)
     }
 
-    /// 从压缩数据导入并立即验证（P05 便捷方法）
+    /// Imports from compressed data and verifies immediately (P05 convenience method)
     ///
-    /// 等价于 [`import_compressed`](Self::import_compressed) 后调用 [`verify`](Self::verify)，
-    /// 返回导入是否成功且审计链完整。
+    /// Equivalent to [`import_compressed`](Self::import_compressed) followed by [`verify`](Self::verify);
+    /// returns whether the import succeeded and the audit chain is intact.
     pub fn import_compressed_and_verify(&mut self, compressed: &[u8]) -> Result<bool, String> {
         self.import_compressed(compressed)?;
         let valid = self.verify();
         if !valid {
             tracing::warn!(
                 entries = self.entries.len(),
-                "import_compressed_and_verify: 导入后审计链验证失败"
+                "import_compressed_and_verify: post-import audit chain verification failed"
             );
         }
         Ok(valid)
     }
 }
 
-/// Fact 类型名静态表（用于 WAL 加载时获取 &'static str）
+/// Static table of Fact type names (used to obtain &'static str during WAL loading)
 ///
-/// 包含所有已知的 Fact 变体类型名，加载 WAL 时从中查找匹配项，
-/// 以获取 `&'static str` 引用。
+/// Contains all known Fact variant type names; during WAL loading the match is looked up
+/// here to obtain a `&'static str` reference.
 ///
-/// P0-02：对齐 evorule-reactor/src/fact.rs::Fact::type_name()（7 种）。
-/// 修前缺 `Stable`（终止事实，WAL 重载被映射为 Unknown、丢失类型语义）、
-/// 多 `ControlSignal`（Fact 枚举无此变体）。`Unknown` 保留作导入 fallback 表项。
+/// P0-02: aligned with evorule-reactor/src/fact.rs::Fact::type_name() (7 variants).
+/// Before the fix `Stable` was missing (terminal fact; WAL reload mapped it to Unknown,
+/// losing type semantics) and `ControlSignal` was extra (the Fact enum has no such
+/// variant). `Unknown` is kept as the import fallback entry.
 const FACT_TYPE_STATIC_TABLE: &[&str] = &[
     "Command",
     "PayloadUpdate",
@@ -1484,11 +1505,11 @@ const FACT_TYPE_STATIC_TABLE: &[&str] = &[
     "Unknown",
 ];
 
-/// 从 Fact 中提取因果父 Fact ID
+/// Extracts the causal parent Fact ID from a Fact
 ///
-/// - [`Fact::StateTransition`] / [`Fact::IoRequest`]：返回其 `cause` 字段
-/// - [`Fact::IoResponse`]：返回其 `request_id`（语义上为因果前驱）
-/// - 其他变体：返回 `None`
+/// - [`Fact::StateTransition`] / [`Fact::IoRequest`]: returns its `cause` field
+/// - [`Fact::IoResponse`]: returns its `request_id` (semantically the causal predecessor)
+/// - Other variants: returns `None`
 fn extract_cause(fact: &Fact) -> Option<FactId> {
     match fact {
         Fact::StateTransition { cause, .. } => Some(*cause),
@@ -1509,7 +1530,7 @@ mod tests {
         FactsLog::new()
     }
 
-    // ===== G-A2 审计锚点链集成测试 =====
+    // ===== G-A2 audit anchor chain integration tests =====
 
     fn anchor_auditor(interval: usize) -> Auditor {
         let log = make_facts_log();
@@ -1538,10 +1559,14 @@ mod tests {
 
     #[test]
     fn test_anchor_interval_seals() {
-        // interval=3：6 条事实 → 2 个锚点（3 条一封）
+        // interval=3: 6 facts → 2 anchors (one per 3 facts)
         let mut a = anchor_auditor(3);
         append_facts(&mut a, 6, 1);
-        assert_eq!(a.anchors().len(), 2, "6 条事实 interval=3 应封 2 锚点");
+        assert_eq!(
+            a.anchors().len(),
+            2,
+            "6 facts with interval=3 must seal 2 anchors"
+        );
         assert_eq!(
             a.anchors()[0].fact_range,
             crate::anchor::FactRange { lo: 0, hi: 3 }
@@ -1550,7 +1575,7 @@ mod tests {
             a.anchors()[1].fact_range,
             crate::anchor::FactRange { lo: 3, hi: 6 }
         );
-        // 验证：结构+签名+绑定全绿
+        // Verification: structure + signature + binding all pass
         let mut keys = std::collections::BTreeMap::new();
         keys.insert(
             "k1".to_string(),
@@ -1558,67 +1583,71 @@ mod tests {
         );
         assert!(
             a.verify_anchors(&keys).is_ok(),
-            "正常链 verify_anchors 必须通过"
+            "verify_anchors must pass for a healthy chain"
         );
     }
 
     #[test]
     fn test_anchor_default_off_compat() {
-        // J-T6 兼容判据：不配 with_anchor → 行为与旧版一致（无锚点、verify 正常）
+        // J-T6 compat criterion: without with_anchor → behavior identical to the previous version (no anchors, verify still works)
         let mut a = Auditor::new(make_facts_log());
         append_facts(&mut a, 5, 1);
-        assert!(a.anchors().is_empty(), "默认关：零锚点");
-        assert!(a.verify(), "事实链 verify 不受锚点机制影响");
+        assert!(a.anchors().is_empty(), "off by default: zero anchors");
+        assert!(
+            a.verify(),
+            "fact chain verify is unaffected by the anchor mechanism"
+        );
         assert_eq!(a.entries().len(), 5);
     }
 
     #[test]
     fn test_anchor_detects_fact_tamper() {
-        // A1：篡改已封区间内审计条目 → 绑定失败
+        // A1: tampering with an audit entry inside a sealed range → binding failure
         let mut a = anchor_auditor(3);
         append_facts(&mut a, 6, 1);
         assert_eq!(a.anchors().len(), 2);
-        // 直接改 entries[1] 的 content_hash 模拟篡改（绕过 append）
-        // —— verify() 检链断裂；verify_anchors 检链头不匹配
+        // Directly rewrite entries[1].content_hash to simulate tampering (bypassing append)
+        // - verify() detects the chain break; verify_anchors detects the chain head mismatch
         let mut tampered = a.entries().to_vec();
         tampered[1].content_hash = String::from("deadbeef").repeat(8);
         let _ = tampered;
-        // 通过公钥表验证原锚点：篡改后（entries 被换）绑定必失败——
-        // 这里直接验证机制面：篡改 last_hash 等价物（chain_head）→ 失败
+        // Verify the original anchors against the public key table: after tampering (entries replaced) binding must fail -
+        // here the mechanism itself is verified directly: tampering with the last_hash equivalent (chain_head) → failure
         let mut keys = std::collections::BTreeMap::new();
         keys.insert(
             "k1".to_string(),
             crate::signing::AuditSigner::from_bytes([7u8; 32]).verifying_hex(),
         );
-        // 原状态验证通过
+        // Original state verifies successfully
         assert!(a.verify_anchors(&keys).is_ok());
-        // 篡改锚点声称的链头 → 绑定失败
+        // Tampering with the anchor's claimed chain head → binding failure
         let mut anchors_mut = a.anchors().to_vec();
         anchors_mut[0].chain_head = String::from("f").repeat(64);
-        // 直接走 verify_anchor_chain + 手动绑定（篡改后的锚点链结构自洽性先验）
+        // Go straight through verify_anchor_chain + manual binding (structural self-consistency of the tampered anchor chain comes first)
         let _ = anchors_mut;
-        // verify_binding 路径：篡改事实哈希（等价事实被改）→ 重算链头 ≠ 锚点声称
-        // 用 auditor 私有字段不可达——改为公开行为验证：换掉 entries 内容不可行，
-        // 用 a2 的锚点绑到 a 的链上（fork 冒充）：
+        // verify_binding path: tamper with a fact hash (equivalent to changing the fact) → recomputed chain head ≠ anchor claim.
+        // The auditor's private fields are unreachable - verify via public behavior instead: replacing entries in place is
+        // not feasible, so bind a2's anchor onto a's chain (fork impersonation):
         let mut a2 = anchor_auditor(3);
-        append_facts(&mut a2, 3, 100); // 不同事实（fork）
+        append_facts(&mut a2, 3, 100); // different facts (fork)
         let stolen = a2.anchors()[0].clone();
         let _ = stolen;
-        // a 的锚点[0] 与 a2 的锚点[0] 签名都合法，但 chain_head 不同：
+        // Both a's anchor[0] and a2's anchor[0] have valid signatures but different chain heads:
         assert_ne!(
             a.anchors()[0].chain_head,
             a2.anchors()[0].chain_head,
-            "不同事实链 fork 必产不同链头（A3 检出基础）"
+            "forked fact chains must produce different chain heads (basis of A3 detection)"
         );
     }
 
-    /// P5-A2 修复回归（2026-08-27）：auto_verify 失败/跳过必须可观测
+    /// P5-A2 fix regression (2026-08-27): auto_verify failures/skips must be observable
     #[test]
     fn test_auto_verify_counters_exposed() {
         let log = make_facts_log();
-        // 制造哈希链断裂：先追加一条，再手动改写条目模拟篡改后的验证失败场景
-        // —— 更直接的方式：配置 auto_verify 且制造 verify 失败很难从外部注入，
-        // 这里用"间隔跳过"路径验证 skip 计数器；failure 计数通过 getter 默认 0 验证暴露。
+        // Force a hash chain break: append one fact, then rewrite the entry manually to simulate the
+        // post-tamper verification failure. A more direct route (configuring auto_verify and injecting
+        // a verify failure externally) is hard, so the "interval skip" path validates the skip
+        // counter; the failure counter is validated at 0 through its getter.
         let mut auditor = Auditor::new_with_auto_verify(log, true, 0, 3);
         assert_eq!(auditor.auto_verify_failure_count(), 0);
         assert_eq!(auditor.auto_verify_skip_count(), 0);
@@ -1632,8 +1661,8 @@ mod tests {
             auditor.facts_log.append(f(i)).unwrap();
             auditor.audit_new();
         }
-        // audit_new 6 次,auto_verify_interval=3 → 第 1、4 次验证执行,
-        // 其余 4 次跳过（interval 不满足）→ skip_count == 4
+        // audit_new called 6 times, auto_verify_interval=3 → verification runs on calls 1 and 4,
+        // the other 4 are skipped (interval not met) → skip_count == 4
         assert_eq!(
             auditor.auto_verify_skip_count(),
             4,
@@ -1641,14 +1670,14 @@ mod tests {
         );
         assert_eq!(auditor.auto_verify_failure_count(), 0);
 
-        // 阈值跳过路径：threshold=2 且 entries > 2 → 之后每次都因超阈值跳过
+        // Threshold skip path: threshold=2 and entries > 2 → every subsequent call skips due to the threshold
         let log2 = make_facts_log();
         let mut a2 = Auditor::new_with_auto_verify(log2.clone(), true, 2, 1);
         for i in 1..=5 {
             a2.facts_log.append(f(i)).unwrap();
             a2.audit_new();
         }
-        // entries 达到 3 时开始每次都超阈值 → 跳过 3 次（第 3、4、5 次 audit_new）
+        // Once entries reach 3 every call exceeds the threshold → 3 skips (audit_new calls 3, 4, 5)
         assert_eq!(
             a2.auto_verify_skip_count(),
             3,
@@ -1728,7 +1757,7 @@ mod tests {
             std::env::temp_dir().join(format!("auditor_wal_test_{}.jsonl", std::process::id()));
         let _ = std::fs::remove_file(&tmp);
 
-        // 第一轮：通过 tier1 WAL 写入（两套 WAL 合并后的统一路径）
+        // Round 1: write through the tier1 WAL (the unified path after the two-WAL merge)
         {
             let log = FactsLog::with_wal(&tmp).expect("create wal");
             let f0 = Fact::PayloadUpdate {
@@ -1750,7 +1779,7 @@ mod tests {
             assert!(auditor.verify());
         }
 
-        // 第二轮：从 tier1 WAL 恢复（带哈希链验证）
+        // Round 2: restore from the tier1 WAL (with hash chain verification)
         {
             let log = make_facts_log();
             let mut auditor = Auditor::new(log);
@@ -1762,14 +1791,14 @@ mod tests {
         let _ = std::fs::remove_file(&tmp);
     }
 
-    /// 验证 load_from_tier1_wal 能检测 Fact 内容篡改
+    /// Verifies load_from_tier1_wal detects Fact content tampering
     #[test]
     fn test_load_from_tier1_wal_detects_content_tamper() {
         let tmp =
             std::env::temp_dir().join(format!("auditor_tamper_test_{}.jsonl", std::process::id()));
         let _ = std::fs::remove_file(&tmp);
 
-        // 写入正常 WAL
+        // Write a normal WAL
         {
             let log = FactsLog::with_wal(&tmp).expect("create wal");
             let f = Fact::PayloadUpdate {
@@ -1780,34 +1809,34 @@ mod tests {
             log.append(f).unwrap();
         }
 
-        // 篡改 WAL 文件中的 Fact 内容（修改 value 字段）
+        // Tamper with the Fact content in the WAL file (modify the value field)
         {
             let content = std::fs::read_to_string(&tmp).expect("read wal");
             let tampered = content.replace("42", "999");
             std::fs::write(&tmp, tampered).expect("write tampered wal");
         }
 
-        // 加载应失败（content_hash 不匹配）
+        // Loading must fail (content_hash mismatch)
         let log = make_facts_log();
         let mut auditor = Auditor::new(log);
         let result = auditor.load_from_tier1_wal(&tmp);
-        assert!(result.is_err(), "篡改 Fact 内容应被检测到");
+        assert!(result.is_err(), "tampered Fact content must be detected");
         match result.unwrap_err() {
             LoadError::ContentHashMismatch { .. } => {}
-            other => panic!("期望 ContentHashMismatch，得到: {other}"),
+            other => panic!("expected ContentHashMismatch, got: {other}"),
         }
 
         let _ = std::fs::remove_file(&tmp);
     }
 
-    /// 验证 load_from_tier1_wal 能检测哈希链断裂
+    /// Verifies load_from_tier1_wal detects a broken hash chain
     #[test]
     fn test_load_from_tier1_wal_detects_chain_break() {
         let tmp =
             std::env::temp_dir().join(format!("auditor_chain_break_{}.jsonl", std::process::id()));
         let _ = std::fs::remove_file(&tmp);
 
-        // 写入 2 条 Fact
+        // Write 2 Facts
         {
             let log = FactsLog::with_wal(&tmp).expect("create wal");
             let f0 = Fact::PayloadUpdate {
@@ -1824,24 +1853,24 @@ mod tests {
             log.append(f1).unwrap();
         }
 
-        // 篡改第二条记录的 prev_hash（破坏链）
+        // Tamper with the second record's prev_hash (break the chain)
         {
             let content = std::fs::read_to_string(&tmp).expect("read wal");
             let lines: Vec<&str> = content.lines().collect();
-            // 修改第二行的 prev_hash 字段
+            // Modify the prev_hash field on the second line
             let tampered_line2 = lines[1].replace("\"prev_hash\":\"", "\"prev_hash\":\"tampered");
             let tampered = format!("{}\n{}\n", lines[0], tampered_line2);
             std::fs::write(&tmp, tampered).expect("write tampered wal");
         }
 
-        // 加载应失败（prev_hash 链接不匹配）
+        // Loading must fail (prev_hash linkage mismatch)
         let log = make_facts_log();
         let mut auditor = Auditor::new(log);
         let result = auditor.load_from_tier1_wal(&tmp);
-        assert!(result.is_err(), "哈希链断裂应被检测到");
+        assert!(result.is_err(), "a broken hash chain must be detected");
         match result.unwrap_err() {
             LoadError::ChainBroken { .. } | LoadError::ChainHashMismatch { .. } => {}
-            other => panic!("期望 ChainBroken 或 ChainHashMismatch，得到: {other}"),
+            other => panic!("expected ChainBroken or ChainHashMismatch, got: {other}"),
         }
 
         let _ = std::fs::remove_file(&tmp);
@@ -1863,11 +1892,11 @@ mod tests {
             std::env::temp_dir().join(format!("auditor_wal_incr_{}.jsonl", std::process::id()));
         let _ = std::fs::remove_file(&tmp);
 
-        // 使用 tier1 WAL 持久化（两套 WAL 合并后的统一路径）
+        // Persist through the tier1 WAL (the unified path after the two-WAL merge)
         let log = FactsLog::with_wal(&tmp).expect("create wal");
         let mut auditor = Auditor::new(log.clone());
 
-        // 第一批
+        // First batch
         let f1 = Fact::PayloadUpdate {
             id: FactId(1),
             path: "k1".into(),
@@ -1876,7 +1905,7 @@ mod tests {
         log.append(f1).unwrap();
         assert_eq!(auditor.audit_new(), 1);
 
-        // 第二批
+        // Second batch
         let f2 = Fact::PayloadUpdate {
             id: FactId(2),
             path: "k2".into(),
@@ -1885,7 +1914,7 @@ mod tests {
         log.append(f2).unwrap();
         assert_eq!(auditor.audit_new(), 1);
 
-        // 从 tier1 WAL 恢复应得到 2 条（带哈希链验证）
+        // Restoring from the tier1 WAL must yield 2 entries (with hash chain verification)
         let mut auditor2 = Auditor::new(make_facts_log());
         auditor2.load_from_tier1_wal(&tmp).expect("load tier1 wal");
         assert_eq!(auditor2.entries().len(), 2);
@@ -1915,7 +1944,7 @@ mod tests {
 
         let mut auditor = Auditor::new(log);
         assert_eq!(auditor.audit_new(), 1);
-        // 再次调用 audit_new，无新事实，应返回 0
+        // Calling audit_new again with no new facts must return 0
         assert_eq!(auditor.audit_new(), 0);
         assert_eq!(auditor.audit_new(), 0);
         assert_eq!(auditor.entries().len(), 1);
@@ -1934,7 +1963,7 @@ mod tests {
         let mut auditor = Auditor::new(log);
         auditor.audit_new();
 
-        // 不存在的 fact_id
+        // Nonexistent fact_id
         let chain = auditor.causal_chain(FactId(999));
         assert!(chain.is_empty());
     }
@@ -1953,7 +1982,7 @@ mod tests {
         let mut auditor = Auditor::new(log);
         auditor.audit_new();
 
-        // 根因（没有 cause）的因果链只有自己
+        // The causal chain of a root cause (no cause field) contains only itself
         let chain = auditor.causal_chain(id);
         assert_eq!(chain.len(), 1);
         assert_eq!(chain[0].fact_id, id);
@@ -1973,7 +2002,9 @@ mod tests {
         let mut auditor = Auditor::new(log);
         auditor.audit_new();
 
-        let report = auditor.report().expect("report 序列化不应失败");
+        let report = auditor
+            .report()
+            .expect("report serialization must not fail");
         let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
         assert_eq!(parsed["entry_count"], 1);
         assert_eq!(parsed["entries"].as_array().unwrap().len(), 1);
@@ -2012,7 +2043,7 @@ mod tests {
         let mut auditor = Auditor::new(log);
         auditor.audit_new();
 
-        // IoResponse 的因果父是 request_id
+        // The causal parent of an IoResponse is its request_id
         let chain = auditor.causal_chain(resp_id);
         assert_eq!(chain.len(), 2);
         assert_eq!(chain[0].fact_id, resp_id);
@@ -2023,9 +2054,11 @@ mod tests {
     fn test_auditor_last_hash_genesis() {
         let log = make_facts_log();
         let auditor = Auditor::new(log);
-        // 初始 last_hash 为 "genesis"
-        // 通过 report 间接验证
-        let report = auditor.report().expect("report 序列化不应失败");
+        // Initial last_hash is "genesis"
+        // Verified indirectly via report
+        let report = auditor
+            .report()
+            .expect("report serialization must not fail");
         let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
         assert_eq!(parsed["last_hash"], "genesis");
     }
@@ -2037,7 +2070,7 @@ mod tests {
             std::env::temp_dir().join(format!("auditor_wal_bad_{}.jsonl", std::process::id()));
         let _ = std::fs::remove_file(&tmp);
 
-        // 手动写入混合有效和无效行的 WAL
+        // Manually write a WAL mixing valid and invalid lines
         use std::io::Write;
         let mut file = std::fs::File::create(&tmp).unwrap();
         writeln!(file, "not valid json").unwrap();
@@ -2046,31 +2079,34 @@ mod tests {
             r#"{{"fact_id": 5, "fact_type": "PayloadUpdate", "logical_time": 3, "content_hash": "abc", "prev_hash": "genesis", "cause": null}}"#
         )
         .unwrap();
-        writeln!(file).unwrap(); // 空行
+        writeln!(file).unwrap(); // empty line
         drop(file);
 
         let log = make_facts_log();
         let mut auditor = Auditor::new(log);
-        //：损坏行不再静默跳过——显式拒绝加载
-        // 并附 [EVO-AUDIT-WAL-CORRUPT] 标记与补救指引（审计完整性政策）。
+        // Corrupt lines are no longer silently skipped - loading is explicitly refused
+        // with the [EVO-AUDIT-WAL-CORRUPT] marker and remediation guidance (audit integrity policy).
         let err = auditor
             .load_from_wal(&tmp)
-            .expect_err("损坏 WAL 必须拒绝加载");
+            .expect_err("corrupt WAL must be refused on load");
         let msg = err.to_string();
         assert!(
             msg.contains("EVO-AUDIT-WAL-CORRUPT"),
-            "错误信息须含 [EVO-AUDIT-WAL-CORRUPT] 标记: {msg}"
+            "error message must contain the [EVO-AUDIT-WAL-CORRUPT] marker: {msg}"
         );
-        assert!(msg.contains("Line: 1"), "错误信息须含损坏行号: {msg}");
+        assert!(
+            msg.contains("Line: 1"),
+            "error message must contain the corrupt line number: {msg}"
+        );
         assert!(
             auditor.entries().is_empty(),
-            "拒绝加载后不得残留部分条目（要么完整要么为零）"
+            "after refusal no partial entries may remain (all or nothing)"
         );
 
         let _ = std::fs::remove_file(&tmp);
     }
 
-    // === P06 实时审计验证测试 ===
+    // === P06 live audit verification tests ===
 
     #[test]
     fn test_auto_verify_default_disabled() {
@@ -2078,7 +2114,7 @@ mod tests {
         let auditor = Auditor::new(log);
         assert!(
             !auditor.is_auto_verify_enabled(),
-            "auto_verify 默认应为 false"
+            "auto_verify must default to false"
         );
     }
 
@@ -2105,11 +2141,11 @@ mod tests {
         })
         .unwrap();
 
-        // 启用自动验证
+        // Enable auto-verification
         let mut auditor = Auditor::new_with_auto_verify(log, true, 1000, 1);
         let n = auditor.audit_new();
         assert_eq!(n, 2);
-        // 验证审计链应通过
+        // The audit chain must verify
         assert!(auditor.verify());
     }
 
@@ -2117,7 +2153,7 @@ mod tests {
     fn test_auto_verify_threshold_skips_verification() {
         let log = make_facts_log();
 
-        // 添加 3 条事实
+        // Add 3 facts
         for i in 0..3 {
             log.append(Fact::Command {
                 id: FactId(i as u64 + 1),
@@ -2126,12 +2162,12 @@ mod tests {
             .unwrap();
         }
 
-        // 设置阈值为 2（条目数 3 > 2，应跳过验证）
+        // Set the threshold to 2 (3 entries > 2, verification must be skipped)
         let mut auditor = Auditor::new_with_auto_verify(log, true, 2, 1);
         auditor.audit_new();
-        // 条目数超过阈值，但审计链本身是正确的
+        // Entry count exceeds the threshold but the chain itself is correct
         assert_eq!(auditor.entries().len(), 3);
-        assert!(auditor.verify()); // 手动验证仍然通过
+        assert!(auditor.verify()); // manual verification still passes
     }
 
     #[test]
@@ -2146,7 +2182,7 @@ mod tests {
             .unwrap();
         }
 
-        // 阈值 0 表示不限制
+        // Threshold 0 means no limit
         let mut auditor = Auditor::new_with_auto_verify(log, true, 0, 1);
         auditor.audit_new();
         assert_eq!(auditor.entries().len(), 100);
@@ -2157,19 +2193,19 @@ mod tests {
     fn test_auto_verify_interval_skips_intermediate_calls() {
         let log = make_facts_log();
 
-        // 第一次 audit_new 前添加事实
+        // Add facts before the first audit_new
         log.append(Fact::Command {
             id: FactId(1),
             instruction: JsonValue::empty_object(),
         })
         .unwrap();
 
-        // 间隔为 3，只在第 3、6、9... 次执行验证
+        // Interval 3: verification runs only on calls 3, 6, 9...
         let mut auditor = Auditor::new_with_auto_verify(log, true, 0, 3);
-        auditor.audit_new(); // count=1，不验证
+        auditor.audit_new(); // count=1, no verification
         assert_eq!(auditor.audit_new_count, 1);
 
-        // 再添加事实
+        // Add more facts
         auditor
             .facts_log
             .append(Fact::Command {
@@ -2177,10 +2213,10 @@ mod tests {
                 instruction: JsonValue::empty_object(),
             })
             .unwrap();
-        auditor.audit_new(); // count=2，不验证
+        auditor.audit_new(); // count=2, no verification
         assert_eq!(auditor.audit_new_count, 2);
 
-        // 再添加事实
+        // Add more facts
         auditor
             .facts_log
             .append(Fact::Command {
@@ -2188,7 +2224,7 @@ mod tests {
                 instruction: JsonValue::empty_object(),
             })
             .unwrap();
-        auditor.audit_new(); // count=3，验证
+        auditor.audit_new(); // count=3, verification runs
         assert_eq!(auditor.audit_new_count, 3);
         assert_eq!(auditor.entries().len(), 3);
     }
@@ -2206,21 +2242,21 @@ mod tests {
     #[test]
     fn test_auto_verify_interval_zero_becomes_one() {
         let log = make_facts_log();
-        // 间隔 0 会被自动修正为 1
+        // Interval 0 is auto-corrected to 1
         let auditor = Auditor::new_with_auto_verify(log, true, 0, 0);
-        // 通过行为间接验证：添加一条事实后 audit_new 应执行验证（因为间隔=1）
+        // Verified indirectly by behavior: after adding one fact audit_new must run verification (interval=1)
         drop(auditor);
     }
 
     #[test]
     fn test_auto_verify_empty_entries_skips() {
         let log = make_facts_log();
-        // 没有 fact 时 audit_new 应返回 0 且不验证
+        // With no facts, audit_new must return 0 and skip verification
         let mut auditor = Auditor::new_with_auto_verify(log, true, 0, 1);
         let n = auditor.audit_new();
         assert_eq!(n, 0);
         assert_eq!(auditor.entries().len(), 0);
-        // verify 在空条目时返回 true（无链可验证）
+        // verify returns true on empty entries (nothing to verify)
         assert!(auditor.verify());
     }
 
@@ -2241,14 +2277,14 @@ mod tests {
         let mut auditor = Auditor::new_with_auto_verify(log, true, 0, 1);
         auditor.audit_new();
 
-        // 篡改第一条审计条目的 prev_hash
+        // Tamper with the first audit entry's prev_hash
         auditor.entries[0].prev_hash = "tampered".to_string();
 
-        // verify 应检测到篡改
+        // verify must detect the tampering
         assert!(!auditor.verify());
     }
 
-    // ===== P04: 导出/导入 测试 =====
+    // ===== P04: export/import tests =====
 
     fn build_auditor_with_entries() -> Auditor {
         let log = make_facts_log();
@@ -2276,17 +2312,19 @@ mod tests {
     #[test]
     fn test_export_format() {
         let auditor = build_auditor_with_entries();
-        let json_str = auditor.export().expect("export 序列化不应失败");
+        let json_str = auditor
+            .export()
+            .expect("export serialization must not fail");
 
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed["version"], "1.0");
         assert!(parsed["last_hash"].is_string());
-        assert_eq!(parsed["last_audited_version"], 2); // 断点 11: PayloadUpdate(v1) + StateTransition(v2)
+        assert_eq!(parsed["last_audited_version"], 2); // checkpoint 11: PayloadUpdate(v1) + StateTransition(v2)
         assert_eq!(parsed["entry_count"], 2);
         assert!(parsed["entries"].is_array());
         assert_eq!(parsed["entries"].as_array().unwrap().len(), 2);
 
-        // 检查第一个条目字段
+        // Check the first entry's fields
         let e0 = &parsed["entries"][0];
         assert_eq!(e0["fact_id"], 10);
         assert_eq!(e0["fact_type"], "PayloadUpdate");
@@ -2298,7 +2336,9 @@ mod tests {
     fn test_export_empty_auditor() {
         let log = make_facts_log();
         let auditor = Auditor::new(log);
-        let json_str = auditor.export().expect("export 序列化不应失败");
+        let json_str = auditor
+            .export()
+            .expect("export serialization must not fail");
 
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed["version"], "1.0");
@@ -2310,17 +2350,19 @@ mod tests {
     #[test]
     fn test_import_export_roundtrip() {
         let auditor = build_auditor_with_entries();
-        let export_str = auditor.export().expect("export 序列化不应失败");
+        let export_str = auditor
+            .export()
+            .expect("export serialization must not fail");
         let original_verify = auditor.verify();
         assert!(original_verify);
 
-        // 导入到新 auditor
+        // Import into a new auditor
         let log2 = make_facts_log();
         let mut imported = Auditor::new(log2);
         let result = imported.import(&export_str);
         assert!(result.is_ok());
 
-        // 验证数据一致性
+        // Verify data consistency
         assert_eq!(imported.entries().len(), 2);
         assert_eq!(imported.entries()[0].fact_id, FactId(10));
         assert_eq!(imported.entries()[1].fact_id, FactId(11));
@@ -2332,7 +2374,7 @@ mod tests {
         assert_eq!(imported.last_hash, auditor.last_hash);
         assert_eq!(imported.last_audited_version, auditor.last_audited_version);
 
-        // 导入后哈希链应保持完整
+        // The hash chain must remain intact after import
         assert!(imported.verify());
     }
 
@@ -2384,7 +2426,7 @@ mod tests {
         let log = make_facts_log();
         let mut auditor = Auditor::new(log);
 
-        // 构造包含未知 fact_type 的导入数据
+        // Build import data containing an unknown fact_type
         let import_data = r#"{
             "version": "1.0",
             "last_hash": "anyhash",
@@ -2410,11 +2452,11 @@ mod tests {
 
     #[test]
     fn test_import_resets_state() {
-        // 原审计器有 2 个条目
+        // The original auditor has 2 entries
         let mut auditor = build_auditor_with_entries();
         assert_eq!(auditor.entries().len(), 2);
 
-        // 导入空数据
+        // Import empty data
         let empty_export = r#"{
             "version": "1.0",
             "last_hash": "genesis",
@@ -2433,7 +2475,7 @@ mod tests {
         let log = make_facts_log();
         let mut auditor = Auditor::new(log);
 
-        // 构造 prev_hash 不连续的损坏数据
+        // Build corrupted data with a non-contiguous prev_hash
         let corrupted = r#"{
             "version": "1.0",
             "last_hash": "fakehash",
@@ -2460,25 +2502,27 @@ mod tests {
 
         let result = auditor.import_and_verify(corrupted);
         assert!(result.is_ok());
-        // 导入成功但验证应失败
+        // Import succeeds but verification must fail
         assert!(!result.unwrap());
     }
 
     #[test]
     fn test_import_preserves_causal_chain() {
         let auditor = build_auditor_with_entries();
-        let export_str = auditor.export().expect("export 序列化不应失败");
+        let export_str = auditor
+            .export()
+            .expect("export serialization must not fail");
 
-        // 验证原审计器的因果链
+        // Verify the original auditor's causal chain
         let original_chain = auditor.causal_chain(FactId(11));
         assert_eq!(original_chain.len(), 2);
 
-        // 导入到新审计器
+        // Import into a new auditor
         let log2 = make_facts_log();
         let mut imported = Auditor::new(log2);
         imported.import(&export_str).unwrap();
 
-        // 因果链应可正确追溯
+        // The causal chain must trace correctly
         let chain = imported.causal_chain(FactId(11));
         assert_eq!(chain.len(), 2);
         assert_eq!(chain[0].fact_id, FactId(11));
@@ -2487,20 +2531,22 @@ mod tests {
 
     #[test]
     fn test_import_resets_audit_new_count() {
-        // 原审计器已多次调用 audit_new，计数 > 0
+        // The original auditor has called audit_new several times, count > 0
         let mut auditor = build_auditor_with_entries();
-        auditor.audit_new(); // 再次调用，count = 2
+        auditor.audit_new(); // called again, count = 2
         assert_eq!(auditor.audit_new_count, 2);
 
-        // 导入应重置 audit_new_count
-        let export_str = auditor.export().expect("export 序列化不应失败");
+        // Import must reset audit_new_count
+        let export_str = auditor
+            .export()
+            .expect("export serialization must not fail");
         let log2 = make_facts_log();
         let mut imported = Auditor::new(log2);
         imported.import(&export_str).unwrap();
         assert_eq!(imported.audit_new_count, 0);
     }
 
-    // ===== P05: 压缩导出/导入 测试 =====
+    // ===== P05: compressed export/import tests =====
 
     #[test]
     fn test_export_compressed_returns_valid_gzip() {
@@ -2515,7 +2561,7 @@ mod tests {
 
     #[test]
     fn test_export_compressed_smaller_than_json() {
-        // 构造较大的审计链（100 条目）
+        // Build a larger audit chain (100 entries)
         let log = make_facts_log();
         for i in 0..100 {
             log.append(Fact::Command {
@@ -2527,19 +2573,22 @@ mod tests {
         let mut auditor = Auditor::new(log);
         auditor.audit_new();
 
-        let json_size = auditor.export().expect("export 序列化不应失败").len();
+        let json_size = auditor
+            .export()
+            .expect("export serialization must not fail")
+            .len();
         let compressed = auditor.export_compressed().unwrap();
         let compressed_size = compressed.len();
 
-        // 压缩后应明显小于 JSON（通常 < 30%）
-        // 由于 fact_type 等字段重复度高，压缩率应很好
+        // Compressed size must be clearly smaller than JSON (usually < 30%)
+        // Fields like fact_type repeat heavily, so the ratio should be excellent
         assert!(
             compressed_size < json_size,
             "compressed {} should be < json {}",
             compressed_size,
             json_size
         );
-        // 压缩率至少应小于 50%
+        // The compression ratio must be below 50%
         let ratio = compressed_size as f64 / json_size as f64;
         assert!(ratio < 0.5, "compression ratio {} should be < 0.5", ratio);
     }
@@ -2551,20 +2600,20 @@ mod tests {
         let original_verify = auditor.verify();
         assert!(original_verify);
 
-        // 解压并导入到新 auditor
+        // Decompress and import into a new auditor
         let log2 = make_facts_log();
         let mut imported = Auditor::new(log2);
         let result = imported.import_compressed(&compressed);
         assert!(result.is_ok());
 
-        // 验证数据一致性
+        // Verify data consistency
         assert_eq!(imported.entries().len(), 2);
         assert_eq!(imported.entries()[0].fact_id, FactId(10));
         assert_eq!(imported.entries()[1].fact_id, FactId(11));
         assert_eq!(imported.entries()[0].prev_hash, "genesis");
         assert_eq!(imported.last_hash, auditor.last_hash);
 
-        // 导入后哈希链应保持完整
+        // The hash chain must remain intact after import
         assert!(imported.verify());
     }
 
@@ -2573,7 +2622,7 @@ mod tests {
         let log = make_facts_log();
         let mut auditor = Auditor::new(log);
 
-        // 非 gzip 数据应返回错误
+        // Non-gzip data must return an error
         let bad_data = b"this is not gzip data at all";
         let result = auditor.import_compressed(bad_data);
         assert!(result.is_err());
@@ -2585,14 +2634,14 @@ mod tests {
         let log = make_facts_log();
         let mut auditor = Auditor::new(log);
 
-        // 空数据应返回错误
+        // Empty data must return an error
         let result = auditor.import_compressed(&[]);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_import_compressed_and_verify_detects_corruption() {
-        // 构造损坏的 JSON 数据（prev_hash 不连续）
+        // Build corrupted JSON data (non-contiguous prev_hash)
         let corrupted_json = r#"{
             "version": "1.0",
             "last_hash": "fakehash",
@@ -2617,7 +2666,7 @@ mod tests {
             ]
         }"#;
 
-        // 先压缩损坏的 JSON
+        // Compress the corrupted JSON first
         use flate2::write::GzEncoder;
         use flate2::Compression;
         use std::io::Write;
@@ -2625,7 +2674,7 @@ mod tests {
         encoder.write_all(corrupted_json.as_bytes()).unwrap();
         let corrupted_compressed = encoder.finish().unwrap();
 
-        // 导入并验证应返回 Ok(false)
+        // Import-and-verify must return Ok(false)
         let log = make_facts_log();
         let mut auditor = Auditor::new(log);
         let result = auditor.import_compressed_and_verify(&corrupted_compressed);
@@ -2639,10 +2688,10 @@ mod tests {
         let auditor = Auditor::new(log);
         let compressed = auditor.export_compressed().unwrap();
 
-        // 空审计器也能正常压缩（gzip 头 + 空 entries 数组）
+        // An empty auditor still compresses fine (gzip header + empty entries array)
         assert!(!compressed.is_empty());
 
-        // 解压后应为有效 JSON
+        // After decompression it must be valid JSON
         let log2 = make_facts_log();
         let mut imported = Auditor::new(log2);
         imported.import_compressed(&compressed).unwrap();
@@ -2655,12 +2704,12 @@ mod tests {
         let auditor = build_auditor_with_entries();
         let compressed = auditor.export_compressed().unwrap();
 
-        // 导入到新审计器
+        // Import into a new auditor
         let log2 = make_facts_log();
         let mut imported = Auditor::new(log2);
         imported.import_compressed(&compressed).unwrap();
 
-        // 因果链应可正确追溯
+        // The causal chain must trace correctly
         let chain = imported.causal_chain(FactId(11));
         assert_eq!(chain.len(), 2);
         assert_eq!(chain[0].fact_id, FactId(11));
@@ -2669,11 +2718,11 @@ mod tests {
 
     #[test]
     fn test_compressed_roundtrip_large_chain() {
-        // 大批量数据的压缩/解压往返测试
-        // 构造真实因果链：Fact1 → Fact2 → ... → Fact501（IoRequest 链）
+        // Compression/decompression roundtrip over a large batch
+        // Build a real causal chain: Fact1 → Fact2 → ... → Fact501 (IoRequest chain)
         let log = make_facts_log();
 
-        // 第 1 个：PayloadUpdate（根，无 cause）
+        // First: PayloadUpdate (root, no cause)
         log.append(Fact::PayloadUpdate {
             id: FactId(1),
             path: "root".into(),
@@ -2681,7 +2730,7 @@ mod tests {
         })
         .unwrap();
 
-        // 第 2..501：IoRequest 链，每个 cause 指向上一个
+        // 2..501: IoRequest chain, each cause pointing to the previous one
         for i in 1..500 {
             log.append(Fact::IoRequest {
                 id: FactId(i as u64 + 1),
@@ -2696,26 +2745,26 @@ mod tests {
         auditor.audit_new();
         assert_eq!(auditor.entries().len(), 500);
 
-        // 压缩 → 解压 → 导入
+        // Compress → decompress → import
         let compressed = auditor.export_compressed().unwrap();
         let log2 = make_facts_log();
         let mut imported = Auditor::new(log2);
         imported.import_compressed(&compressed).unwrap();
 
-        // 验证数据完整
+        // Verify data integrity
         assert_eq!(imported.entries().len(), 500);
         assert!(imported.verify());
 
-        // 因果链应可从末尾追溯到根（长度 500）
+        // The causal chain must trace from tail to root (length 500)
         let chain = imported.causal_chain(FactId(500));
         assert_eq!(chain.len(), 500);
-        assert_eq!(chain[0].fact_id, FactId(500)); // 末尾
-        assert_eq!(chain[499].fact_id, FactId(1)); // 根
+        assert_eq!(chain[0].fact_id, FactId(500)); // tail
+        assert_eq!(chain[499].fact_id, FactId(1)); // root
     }
 
-    // ===== P0-1（G1）锚点持久化测试 =====
+    // ===== P0-1 (G1) anchor persistence tests =====
 
-    /// 端到端：封锚→持久化→"重启"（新 Auditor 读回）→锚点链仍可验+续封衔接
+    /// End-to-end: seal → persist → "restart" (a new Auditor reads back) → anchor chain still verifiable + continued sealing
     #[test]
     fn anchor_persistence_roundtrip_across_restart() {
         let dir = tempfile::tempdir().unwrap();
@@ -2740,7 +2789,7 @@ mod tests {
             log_path.clone(),
         );
         auditor.audit_new();
-        // interval=2：单次 audit_new 最多封一锚（4 条事实 → 1 锚覆盖 [0,4)）
+        // interval=2: a single audit_new seals at most one anchor (4 facts → 1 anchor covering [0,4))
         assert_eq!(auditor.anchors().len(), 1);
         let keys = {
             let mut k = std::collections::BTreeMap::new();
@@ -2753,7 +2802,7 @@ mod tests {
         auditor.verify_anchors(&keys).unwrap();
         drop(auditor);
 
-        // "重启"：新 Auditor 从锚点日志恢复
+        // "Restart": a new Auditor restores from the anchor log
         let mut auditor2 = Auditor::new(log).with_anchor_persisted(
             crate::signing::AuditSigner::from_bytes([0x11u8; 32]),
             "persist-key".into(),
@@ -2762,12 +2811,16 @@ mod tests {
             2,
             log_path.clone(),
         );
-        assert_eq!(auditor2.anchors().len(), 1, "重启后锚点必须读回（G1 验收）");
-        // 恢复后先重放审计（锚点 fact_hi=4 需 entries 重建后才可绑定验证）——
-        // 这正是 P0-1 的运维语义：重启 = 恢复锚点 + 重放审计 + 继续封锚
+        assert_eq!(
+            auditor2.anchors().len(),
+            1,
+            "anchors must be read back after restart (G1 acceptance)"
+        );
+        // After restore, replay the audit first (anchor fact_hi=4 can only be bound once entries are rebuilt) -
+        // exactly the P0-1 operational semantics: restart = restore anchors + replay audit + continue sealing
         auditor2.audit_new();
         auditor2.verify_anchors(&keys).unwrap();
-        // 续跑：新增事实触发 interval 自动封第二锚（恢复的 builder 状态接续）
+        // Continue: new facts trigger the interval to auto-seal the second anchor (restored builder state continues)
         for i in 5..=6 {
             auditor2
                 .facts_log_ref()
@@ -2781,23 +2834,23 @@ mod tests {
         assert_eq!(
             auditor2.anchors().len(),
             2,
-            "重启后自动封锚必须接续（builder 状态恢复验证）"
+            "auto-sealing must continue after restart (builder state restored)"
         );
         let a2nd = auditor2.anchors()[1].clone();
-        assert_eq!(a2nd.seq, 1, "续封 seq 接续");
+        assert_eq!(a2nd.seq, 1, "continued seal seq continues");
         assert_eq!(
             a2nd.fact_range.lo,
             auditor2.anchors()[0].fact_range.hi,
-            "区间无缝"
+            "ranges are seamless"
         );
         auditor2.verify_anchors(&keys).unwrap();
 
-        // 持久化文件含 2 行
+        // The persisted file contains 2 lines
         let content = std::fs::read_to_string(&log_path).unwrap();
         assert_eq!(content.lines().count(), 2);
     }
 
-    /// 篡改锚点日志（改链尾）→ 恢复后 verify_anchors 必须 Err
+    /// Tamper with the anchor log (change the chain tail) → verify_anchors must Err after restore
     #[test]
     fn anchor_persistence_tamper_detected() {
         let dir = tempfile::tempdir().unwrap();
@@ -2815,14 +2868,14 @@ mod tests {
         drop(auditor);
 
         let raw = std::fs::read_to_string(&log_path).unwrap();
-        // 篡改链尾（追加一字节）——锚点哈希/签名随之失配
+        // Tamper with the chain tail (append one byte) - anchor hash/signature mismatch follows
         let anchors = {
-            // 从原文提取 chain_head 值做精准替换
+            // Extract the chain_head value from the raw text for a precise replacement
             let v: serde_json::Value = serde_json::from_str(raw.trim()).unwrap();
             let head = v["chain_head"].as_str().unwrap().to_string();
             raw.replace(&head, &format!("{head}x"))
         };
-        assert_ne!(raw, anchors, "篡改必须产生差异");
+        assert_ne!(raw, anchors, "tampering must produce a difference");
         std::fs::write(&log_path, anchors).unwrap();
 
         let auditor2 = Auditor::new(FactsLog::new()).with_anchor_persisted(
@@ -2843,7 +2896,7 @@ mod tests {
         };
         assert!(
             auditor2.verify_anchors(&keys).is_err(),
-            "锚点日志被篡改后恢复的锚点链验证必须 Err"
+            "anchor chain verification after a tampered anchor log must Err"
         );
     }
 }

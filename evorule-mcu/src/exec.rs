@@ -1,29 +1,37 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 同步执行器 facade——事件 → `execute_transition` → 审计 → RAM WAL
+//! Synchronous executor facade — event → `execute_transition` → audit → RAM WAL
 //!
-//! # 与 reactor 主循环的同构关系（字节等价铁律）
-//! 事实发射语义逐行镜像 `evorule-reactor/src/reactor.rs` 主循环（同一批内
-//! 以对拍单测守护）：
-//! - Command：先入链（审计先行），指令以 Command 的 FactId 为 cause 入队
-//! - State：cause 对齐（新 push 指令继承当前 cause、原有指令保留原 cause）→
-//!   StateTransition 入链（记录 bump 前版本，同 FactsLog append 内部事后
-//!   bump 语义）→ 版本 +1 → TransitionTrace（cause 指向 StateTransition）
-//! - 队列溢出：Error + 清空 + Stable，溢出步的 StateTransition 不入链
-//!   （与 reactor 同序）
-//! - Ignored：Error + TransitionTrace（cause 指向 Error），版本不变
-//! - Halted（enforce）：Violation（cause 指向触发来源），版本不变
-//! - TCB Err：Error（消息含步数与指令 Debug 形态），版本不变
-//! - 队列空且已执行过：Stable（版本不 bump）
-//! - IoRequired：IoRequest 入链留痕后暂停（[`McuError::IoPaused`]），板侧经
-//!   [`crate::io::IoBridge`] 执行 I/O 后调 [`McuExecutor::resume_io`] 继续——
-//!   IoResponse 入链 → 结果注入 `payload.__io_results__.{io_type}` →
-//!   原指令重推队首（cause 不变）→ 排空；恢复步 StateTransition 入链前
-//!   整体移除 `__io_results__` 容器（镜像 reactor v0.3.1 I/O 恢复语义）
+//! # Structural correspondence with the reactor main loop (byte-equivalence invariant)
+//! Fact emission semantics mirror the `evorule-reactor/src/reactor.rs` main
+//! loop line by line (guarded by parity unit tests in the same delivery):
+//! - Command: appended to the chain first (audit first); the instruction is
+//!   queued with the Command's FactId as cause
+//! - State: cause alignment (newly pushed instructions inherit the current
+//!   cause, existing instructions keep their original cause) → StateTransition
+//!   appended to the chain (records the pre-bump version, same as the
+//!   FactsLog append-then-bump semantics) → version +1 → TransitionTrace
+//!   (cause points to the StateTransition)
+//! - Queue overflow: Error + clear + Stable; the overflowing step's
+//!   StateTransition is not appended to the chain (same order as reactor)
+//! - Ignored: Error + TransitionTrace (cause points to the Error), version unchanged
+//! - Halted (enforce): Violation (cause points to the trigger source), version unchanged
+//! - TCB Err: Error (message includes the step count and the instruction's
+//!   Debug form), version unchanged
+//! - Queue empty and at least one step executed: Stable (no version bump)
+//! - IoRequired: the IoRequest is appended to the chain for the audit trail,
+//!   then pause ([`McuError::IoPaused`]); the board performs the I/O via
+//!   [`crate::io::IoBridge`] and calls [`McuExecutor::resume_io`] to continue —
+//!   IoResponse appended to the chain → result injected into
+//!   `payload.__io_results__.{io_type}` → the original instruction re-queued
+//!   at the front (cause unchanged) → drained; before the recovery step's
+//!   StateTransition is appended, the `__io_results__` container is removed
+//!   wholesale (mirrors the reactor v0.3.1 I/O recovery semantics)
 //!
 //! # FactId
-//! 从 1 起顺序分配（同 `FactIdGenerator::new()` 语义），与 reactor 缺省一致。
+//! Assigned sequentially starting from 1 (same semantics as
+//! `FactIdGenerator::new()`), consistent with the reactor default.
 
 use alloc::collections::VecDeque;
 use alloc::format;
@@ -39,58 +47,67 @@ use crate::error::McuError;
 use crate::pack::RulePack;
 use crate::wal::{McuWalStore, RamWalStore};
 
-/// 队列长度缺省硬限（与 reactor 防线同形的嵌入式档位；0 = 不限制）
+/// Default hard cap on queue length (the embedded counterpart of the reactor
+/// defense line; 0 = unlimited)
 pub const DEFAULT_MAX_QUEUE_LEN: usize = 1024;
 
-/// 单次 run 最大执行步数缺省值（0 = 不限制）
+/// Default maximum executed steps per run (0 = unlimited)
 pub const DEFAULT_MAX_STEPS_PER_RUN: u64 = 10_000;
 
-/// 单次 run 的执行报告
+/// Execution report of a single run
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunReport {
-    /// 本次实际执行的指令步数（含被忽略/报错的步）
+    /// Number of instruction steps actually executed in this run (including
+    /// ignored/errored steps)
     pub steps_executed: u64,
-    /// 本次消耗的 tick 数（每执行步一 tick，当前与 steps_executed 同值）
+    /// Number of ticks consumed in this run (one tick per executed step;
+    /// currently equal to steps_executed)
     pub ticks: u64,
-    /// run 结束后的状态版本
+    /// State version after the run ends
     pub version: u64,
-    /// run 结束后的审计链尾哈希
+    /// Audit chain tail hash after the run ends
     pub chain_tail_hash: String,
 }
 
-/// 挂起中的 I/O 请求（对外视图）
+/// A pending I/O request (public view)
 ///
-/// run 返回 [`McuError::IoPaused`] 后经 [`McuExecutor::pending_io`] 查询；
-/// `request_id` / `io_type` / `params` 与链上 IoRequest 事实逐字段一致，
-/// 板侧据此执行 I/O（[`crate::io::IoBridge`]）后调 [`McuExecutor::resume_io`]。
+/// Queried via [`McuExecutor::pending_io`] after run returns
+/// [`McuError::IoPaused`]; `request_id` / `io_type` / `params` match the
+/// on-chain IoRequest fact field by field. The board performs the I/O
+/// accordingly ([`crate::io::IoBridge`]) and then calls
+/// [`McuExecutor::resume_io`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingIo {
-    /// 链上 IoRequest 事实 id（resume_io 配对键）
+    /// On-chain IoRequest fact id (pairing key for resume_io)
     pub request_id: u64,
-    /// I/O 类型
+    /// I/O type
     pub io_type: String,
-    /// 请求参数（io_request 规则的 params 路径解析结果）
+    /// Request parameters (resolution result of the io_request rule's params path)
     pub params: JsonValue,
 }
 
-/// 挂起 I/O 内部登记（含恢复重推所需的缓存指令与 cause；不对外暴露）
+/// Internal registration of a pending I/O (holds the cached instruction and
+/// cause needed for the recovery re-queue; not exposed publicly)
 struct PendingIoState {
     request_id: FactId,
     io_type: String,
-    #[allow(dead_code)] // 介质视图字段：链上 IoRequest 事实已含 params，
-    // 此处仅镜像 reactor register_io_request 的完整登记面，供调试检查
+    #[allow(dead_code)] // medium-view field: the on-chain IoRequest fact already
+    // carries params; this mirrors the full registration surface of the
+    // reactor's register_io_request for debug inspection
     params: JsonValue,
-    /// 缓存的原指令（IoResponse 到达后重推队首）
+    /// Cached original instruction (re-queued at the front once the IoResponse arrives)
     instruction: JsonValue,
-    /// 原指令的 cause（恢复执行时审计链 cause 连续）
+    /// Cause of the original instruction (keeps the audit chain cause continuous on recovery)
     cause: FactId,
 }
 
-/// MCU 同步执行器（单线程；I/O 走暂停-恢复，见 [`McuExecutor::resume_io`]）
+/// MCU synchronous executor (single-threaded; I/O goes through pause-resume,
+/// see [`McuExecutor::resume_io`])
 ///
-/// WAL 后端经 [`McuWalStore`] 注入：缺省 [`RamWalStore`]（类型参数缺省
-/// 保持既有 API 不变）；板级 Flash 后端（`wal_flash::FlashWalStore`）经
-/// [`McuExecutor::with_wal_store`] 注入，执行路径与后端无关。
+/// The WAL backend is injected via [`McuWalStore`]: default [`RamWalStore`]
+/// (the defaulted type parameter keeps the existing API unchanged); the
+/// board-level Flash backend (`wal_flash::FlashWalStore`) is injected via
+/// [`McuExecutor::with_wal_store`]; the execution path is backend-agnostic.
 pub struct McuExecutor<S: McuWalStore = RamWalStore> {
     pack: RulePack,
     payload: JsonValue,
@@ -101,15 +118,17 @@ pub struct McuExecutor<S: McuWalStore = RamWalStore> {
     clock: TickClock,
     max_queue_len: usize,
     max_steps_per_run: u64,
-    /// 挂起的 I/O 请求登记表（可多请求并存，镜像 reactor 登记表语义；
-    /// IoResponse 按 request_id 配对，杜绝新 I/O 静默顶掉旧挂起）
+    /// Registry of pending I/O requests (multiple requests may coexist,
+    /// mirroring the reactor registry semantics; IoResponse pairs by
+    /// request_id so a new I/O never silently displaces an older pending one)
     pendings: Vec<PendingIoState>,
-    /// I/O 恢复执行标志：恢复步 StateTransition 入链前清除 `__io_results__`
+    /// I/O recovery flag: the `__io_results__` container is cleared before the
+    /// recovery step's StateTransition is appended
     io_recovery: bool,
 }
 
 impl McuExecutor<RamWalStore> {
-    /// 以空初始状态创建（队列硬限/步数上限取缺省值）
+    /// Create with an empty initial state (queue cap / step cap at defaults)
     pub fn new(pack: RulePack) -> Self {
         Self::with_options(
             pack,
@@ -119,12 +138,15 @@ impl McuExecutor<RamWalStore> {
         )
     }
 
-    /// 全量选项构造（RAM WAL 后端）
+    /// Constructor with all options (RAM WAL backend)
     ///
-    /// - `initial_payload`：初始业务状态（种子化语义，同 reactor fork 场景）
-    /// - `max_queue_len`：队列硬限（0 = 不限制）；溢出 → Error + 清空 + Stable
-    /// - `max_steps_per_run`：单 run 步数上限（0 = 不限制）；超限 → Error +
-    ///   清空 + Stable（与 reactor `MaxRoundsExceeded` 处置同形）
+    /// - `initial_payload`: initial business state (seeded semantics, same as
+    ///   the reactor fork scenario)
+    /// - `max_queue_len`: queue hard cap (0 = unlimited); overflow →
+    ///   Error + clear + Stable
+    /// - `max_steps_per_run`: per-run step cap (0 = unlimited); exceeding it →
+    ///   Error + clear + Stable (mirrors the reactor `MaxRoundsExceeded`
+    ///   handling)
     pub fn with_options(
         pack: RulePack,
         initial_payload: JsonValue,
@@ -137,10 +159,12 @@ impl McuExecutor<RamWalStore> {
 }
 
 impl<S: McuWalStore> McuExecutor<S> {
-    /// 全量选项构造 + 显式 WAL 后端注入
+    /// Constructor with all options plus an explicit WAL backend
     ///
-    /// - `wal`：WAL 后端（RAM / Flash 同面）；执行器持有，write-ahead
-    ///   契约由后端实现承担（`append_record` 返回 `Ok` 即承诺已落）
+    /// - `wal`: WAL backend (RAM / Flash share the same surface); owned by the
+    ///   executor, with the write-ahead contract carried by the backend
+    ///   implementation (an `Ok` returned by `append_record` promises the
+    ///   record is durably written)
     pub fn with_wal_store(
         pack: RulePack,
         initial_payload: JsonValue,
@@ -163,39 +187,45 @@ impl<S: McuWalStore> McuExecutor<S> {
         }
     }
 
-    /// 当前业务状态
+    /// Current business state
     pub fn payload(&self) -> &JsonValue {
         &self.payload
     }
 
-    /// 当前状态版本
+    /// Current state version
     pub fn version(&self) -> u64 {
         self.version
     }
 
-    /// WAL 后端（含全部审计记录与链尾哈希；RAM / Flash 同面）
+    /// WAL backend (holds all audit records and the chain tail hash; RAM /
+    /// Flash share the same surface)
     pub fn wal(&self) -> &S {
         &self.wal
     }
 
-    /// tick 时钟（确定性单调计数）
+    /// Tick clock (deterministic monotonic counter)
     pub fn clock(&self) -> &TickClock {
         &self.clock
     }
 
-    /// 提交一个事件（指令）并同步执行至队列排空
+    /// Submit an event (instruction) and execute synchronously until the queue drains
     ///
-    /// 语义与 reactor 单命令会话一致：Command 入链 → 指令入队 → 逐条
-    /// `execute_transition` → 事实入链 → 队列空且已执行过则 Stable。
+    /// Semantics match the reactor single-command session: Command appended to
+    /// the chain → instruction queued → per-instruction `execute_transition` →
+    /// facts appended to the chain → Stable once the queue is empty and at
+    /// least one step executed.
     ///
     /// # Errors
-    /// - [`McuError::IoPaused`]：规则触发 `io_request`（IoRequest 事实已入链；
-    ///   经 [`pending_io`](Self::pending_io) 查询 + [`IoBridge`](crate::io::IoBridge)
-    ///   执行后调 [`resume_io`](Self::resume_io) 继续）
-    /// - [`McuError::VersionOverflow`] / [`McuError::FactIdOverflow`]：计数溢出
-    /// - [`McuError::Hash`]：哈希计算失败（理论不可达）
+    /// - [`McuError::IoPaused`]: a rule triggered `io_request` (the IoRequest
+    ///   fact is already on the chain; query via
+    ///   [`pending_io`](Self::pending_io), perform the I/O with
+    ///   [`IoBridge`](crate::io::IoBridge), then call
+    ///   [`resume_io`](Self::resume_io) to continue)
+    /// - [`McuError::VersionOverflow`] / [`McuError::FactIdOverflow`]: counter overflow
+    /// - [`McuError::Hash`]: hash computation failed (theoretically unreachable)
     pub fn run(&mut self, instruction: JsonValue) -> Result<RunReport, McuError> {
-        // 1. Command 事实先入链（审计先行），指令以 cmd id 为 cause 入队
+        // 1. The Command fact is appended to the chain first (audit first);
+        // the instruction is queued with the cmd id as cause
         let cmd_id = self.next_id()?;
         let queue_instruction = instruction.clone();
         self.append_fact(Fact::Command {
@@ -207,20 +237,26 @@ impl<S: McuWalStore> McuExecutor<S> {
         self.drain(0, 0)
     }
 
-    /// I/O 恢复执行：提交 IoResponse 并排空队列
+    /// I/O recovery: submit an IoResponse and drain the queue
     ///
-    /// 镜像 reactor `handle_fact` IoResponse 分支（v0.3.1）：
-    /// 1. IoResponse 事实先入链（外部声明先留痕，emit-then-handle 同构）
-    /// 2. unknown/stale request_id → Error 事实留痕（A1），继续排空
-    /// 3. error / null 结果 → 丢弃缓存指令（防 exists 死循环），版本 bump
-    /// 4. 正常结果 → 注入 `__io_results__.{io_type}` → 原指令重推队首
-    ///    （cause 不变）→ 恢复步 StateTransition 入链前整体移除容器
+    /// Mirrors the reactor `handle_fact` IoResponse branch (v0.3.1):
+    /// 1. The IoResponse fact is appended first (the external declaration
+    ///    leaves a trace first; emit-then-handle isomorphism)
+    /// 2. unknown/stale request_id → Error fact recorded on the chain; drain continues
+    /// 3. error / null result → the cached instruction is dropped (prevents an
+    ///    exists infinite loop), version bumps
+    /// 4. Normal result → inject into `__io_results__.{io_type}` → the original
+    ///    instruction re-queued at the front (cause unchanged) → the container
+    ///    is removed wholesale before the recovery step's StateTransition is
+    ///    appended
     ///
-    /// `outcome`：`Ok(result)` 为成功应答；`Err(msg)` 为失败应答（对应链上
-    /// IoResponse 的 `error` 字段，result 字段记 null）。
+    /// `outcome`: `Ok(result)` is a successful reply; `Err(msg)` is a failure
+    /// reply (maps to the on-chain IoResponse's `error` field, with the result
+    /// field recorded as null).
     ///
     /// # Errors
-    /// 同 [`run`](Self::run)（恢复排空中触发新 I/O 亦返回 `IoPaused`）
+    /// Same as [`run`](Self::run) (a new I/O triggered during the recovery
+    /// drain also returns `IoPaused`)
     pub fn resume_io(
         &mut self,
         request_id: u64,
@@ -245,8 +281,9 @@ impl<S: McuWalStore> McuExecutor<S> {
             .map(|pos| self.pendings.remove(pos));
         match known {
             None => {
-                // A1：unknown/stale IoResponse 不静默忽略——Error 事实入链，
-                // 审计重放可逐条对账"响应事实 + 异常标记"（与 reactor 同构）
+                // unknown/stale IoResponse is never silently ignored — an Error
+                // fact is appended so audit replay can reconcile each
+                // "response fact + anomaly marker" (isomorphic to reactor)
                 let err_id = self.next_id()?;
                 self.append_fact(Fact::Error {
                     id: err_id,
@@ -258,9 +295,12 @@ impl<S: McuWalStore> McuExecutor<S> {
             }
             Some(p) => {
                 if result.is_null() || error.is_some() {
-                    // null 结果与错误响应没有可消费的结果：exists 域将 null 视为
-                    // 不存在，若注入后再重推原指令会无限重发 io_request；
-                    // 处置：丢弃缓存指令，版本 bump 留痕（与 reactor 同构）
+                    // A null result or error reply carries no consumable
+                    // result: the exists domain treats null as missing, so
+                    // injecting and re-queuing the original instruction would
+                    // re-issue the io_request endlessly; handling: drop the
+                    // cached instruction and bump the version to leave a trace
+                    // (isomorphic to reactor)
                     self.version = self
                         .version
                         .checked_add(1)
@@ -280,11 +320,13 @@ impl<S: McuWalStore> McuExecutor<S> {
         self.drain(0, 0)
     }
 
-    /// 当前挂起的 I/O 请求（run 返回 [`McuError::IoPaused`] 后可查询）
+    /// Currently pending I/O requests (queryable after run returns
+    /// [`McuError::IoPaused`])
     ///
-    /// 快照按挂起顺序排列；`request_id` / `io_type` / `params` 与链上
-    /// IoRequest 事实逐字段一致。板侧任取其一执行 I/O 后调
-    /// [`resume_io`](Self::resume_io) 按 request_id 配对。
+    /// The snapshot is ordered by pending order; `request_id` / `io_type` /
+    /// `params` match the on-chain IoRequest fact field by field. The board
+    /// may pick any one, perform the I/O, and call
+    /// [`resume_io`](Self::resume_io), which pairs by request_id.
     pub fn pending_ios(&self) -> Vec<PendingIo> {
         self.pendings
             .iter()
@@ -296,8 +338,9 @@ impl<S: McuWalStore> McuExecutor<S> {
             .collect()
     }
 
-    /// 向 payload 注入 `__io_results__.{io_type}`（嵌套路径自动创建，与
-    /// reactor `inject_io_result` / eval 同构——恢复双路径规则的消费源）
+    /// Inject `__io_results__.{io_type}` into the payload (nested paths are
+    /// auto-created; isomorphic to the reactor `inject_io_result` / eval —
+    /// the consumption source of the dual-path I/O recovery rule)
     fn inject_io_result(payload: &mut JsonValue, io_type: &str, result: JsonValue) {
         if payload.as_object_mut().is_none() {
             *payload = JsonValue::empty_object();
@@ -316,12 +359,13 @@ impl<S: McuWalStore> McuExecutor<S> {
         }
     }
 
-    // 主循环多变体 match + cause 对齐 + 溢出处置单函数原子语义，与 reactor
-    // 主循环同构对账（同款豁免理由）
+    // The main loop's multi-variant match + cause alignment + overflow
+    // handling form one function's atomic semantics; isomorphic accounting
+    // with the reactor main loop (same lint exemption rationale)
     #[allow(clippy::too_many_lines)]
     fn drain(&mut self, mut steps: u64, mut executed: u64) -> Result<RunReport, McuError> {
         while let Some((instr, cause)) = self.queue.pop_front() {
-            // 步数上限（同 reactor：检查在出队/执行之前）
+            // Step cap (same as reactor: checked before dequeue/execution)
             if self.max_steps_per_run > 0 && steps >= self.max_steps_per_run {
                 let err_id = self.next_id()?;
                 self.append_fact(Fact::Error {
@@ -351,8 +395,9 @@ impl<S: McuWalStore> McuExecutor<S> {
                     rule_hits,
                 }) => {
                     self.payload = new_payload;
-                    // cause 对齐（镜像 state.rs update_queue_with_causes）：
-                    // 新 push 的指令继承当前 cause，原有指令保留原 cause
+                    // Cause alignment (mirrors state.rs update_queue_with_causes):
+                    // newly pushed instructions inherit the current cause;
+                    // existing instructions keep their original cause
                     let old_len = self.queue.len();
                     let old_causes: Vec<FactId> = self.queue.iter().map(|(_, c)| *c).collect();
                     let new_count = new_queue.len().saturating_sub(old_len);
@@ -366,8 +411,9 @@ impl<S: McuWalStore> McuExecutor<S> {
                         self.queue.push_back((queued, c));
                     }
 
-                    // 队列溢出（镜像 reactor：溢出 → Error + 清空 + Stable，
-                    // 溢出步的 StateTransition 不入链）
+                    // Queue overflow (mirrors reactor: overflow → Error +
+                    // clear + Stable; the overflowing step's StateTransition
+                    // is not appended to the chain)
                     let queue_len = self.queue.len();
                     if self.max_queue_len > 0 && queue_len >= self.max_queue_len {
                         let err_id = self.next_id()?;
@@ -387,9 +433,12 @@ impl<S: McuWalStore> McuExecutor<S> {
                         return Ok(self.report(executed));
                     }
 
-                    // I/O 恢复步：StateTransition 入链前整体移除 __io_results__
-                    // 容器（镜像 reactor clear_io_recovery 时机——恢复步 ST 记录
-                    // 清除后 payload，容器不进审计快照，杜绝残留影响后续 I/O）
+                    // I/O recovery step: remove the __io_results__ container
+                    // wholesale before the StateTransition is appended (mirrors
+                    // the reactor clear_io_recovery timing — the recovery step's
+                    // ST records the post-clear payload so the container never
+                    // enters the audit snapshot, preventing residue from
+                    // affecting later I/O)
                     if self.io_recovery {
                         if let Some(obj) = self.payload.as_object_mut() {
                             let _ = obj.remove("__io_results__");
@@ -406,13 +455,16 @@ impl<S: McuWalStore> McuExecutor<S> {
                         new_payload: self.payload.clone(),
                         new_queue: new_queue_json,
                     })?;
-                    // 版本 bump 在 ST 入链之后（镜像 FactsLog append 内部事后
-                    // bump：StateTransition 记录 bump 前版本）
+                    // Version bump happens after the ST is appended (mirrors
+                    // the FactsLog append-then-bump: StateTransition records
+                    // the pre-bump version)
                     self.version = self
                         .version
                         .checked_add(1)
                         .ok_or(McuError::VersionOverflow)?;
-                    // 命中归因轨迹（紧随 StateTransition，cause 指向它；记录性事实，不推进版本）
+                    // Hit attribution trace (immediately follows the
+                    // StateTransition, cause points to it; a record-keeping
+                    // fact that does not advance the version)
                     let trace_id = self.next_id()?;
                     self.append_fact(Fact::TransitionTrace {
                         id: trace_id,
@@ -425,7 +477,8 @@ impl<S: McuWalStore> McuExecutor<S> {
                     reason,
                     rule_hits,
                 }) => {
-                    // 静默忽略显式留痕：Error 事实 + 命中归因（cause 指向 Error），版本不变
+                    // Explicit trace for silent ignores: Error fact + hit
+                    // attribution (cause points to the Error), version unchanged
                     let err_id = self.next_id()?;
                     self.append_fact(Fact::Error {
                         id: err_id,
@@ -441,7 +494,9 @@ impl<S: McuWalStore> McuExecutor<S> {
                     })?;
                 }
                 Ok(TransitionResult::Halted { rule_index, reason }) => {
-                    // enforce 拦截：违规指令已出队即丢弃，Violation 留痕，版本不变
+                    // enforce interception: the violating instruction was
+                    // already dequeued and dropped; Violation leaves a trace,
+                    // version unchanged
                     let id = self.next_id()?;
                     self.append_fact(Fact::Violation {
                         id,
@@ -452,11 +507,15 @@ impl<S: McuWalStore> McuExecutor<S> {
                     })?;
                 }
                 Ok(TransitionResult::IoRequired { io_type, params }) => {
-                    // I/O 暂停（镜像 reactor 主循环 IoRequired 分支）：缓存原
-                    // 指令与 cause（恢复执行重推队首、审计 cause 连续），先
-                    // 入链 IoRequest（write-ahead），登记挂起后返回 IoPaused；
-                    // v0.2.0 口径：io_type 透传不校验，未知类型由板侧
-                    // IoBridge 处置（处理不了走 Err 应答 → Error 路径）
+                    // I/O pause (mirrors the reactor main loop's IoRequired
+                    // branch): cache the original instruction and cause (for
+                    // re-queue at the front on recovery, keeping the audit
+                    // cause continuous), append the IoRequest first
+                    // (write-ahead), register the pending request, then return
+                    // IoPaused; since v0.2.0, io_type is passed through without
+                    // validation and unknown types are handled by the
+                    // board-side IoBridge (an unhandled type goes through the
+                    // Err reply → Error path)
                     let id = self.next_id()?;
                     self.append_fact(Fact::IoRequest {
                         id,
@@ -477,7 +536,9 @@ impl<S: McuWalStore> McuExecutor<S> {
                     });
                 }
                 Err(err) => {
-                    // TCB 错误：Error 留痕（指令不回队，避免无限循环），版本不变
+                    // TCB error: an Error fact leaves a trace (the instruction
+                    // is not re-queued, avoiding an infinite loop), version
+                    // unchanged
                     let id = self.next_id()?;
                     self.append_fact(Fact::Error {
                         id,
@@ -489,7 +550,8 @@ impl<S: McuWalStore> McuExecutor<S> {
             }
         }
 
-        // 稳定（镜像 StableDetector::is_stable(队列空, 无 pending I/O) && steps > 0）
+        // Stable (mirrors StableDetector::is_stable(queue empty, no pending
+        // I/O) && steps > 0)
         if steps > 0 {
             let stable_id = self.next_id()?;
             self.append_fact(Fact::Stable {
@@ -501,7 +563,8 @@ impl<S: McuWalStore> McuExecutor<S> {
         Ok(self.report(executed))
     }
 
-    /// 追加事实并维护审计链（write-ahead：先落 WAL，再由调用方更新内存状态）
+    /// Append a fact and maintain the audit chain (write-ahead: persist to
+    /// the WAL first, then the caller updates in-memory state)
     fn append_fact(&mut self, fact: Fact) -> Result<(), McuError> {
         let version_before = self.version;
         let content_hash = fact_hash(&fact).map_err(|e| McuError::Hash(e.to_string()))?;
@@ -513,7 +576,7 @@ impl<S: McuWalStore> McuExecutor<S> {
             &content_hash,
             &prev_hash,
             &chain_hash,
-        )?; // 后端错误直接透传（环满/编程违例等 fail-visible）
+        )?; // backend errors pass through directly (ring full / program violation etc. fail-visible)
         Ok(())
     }
 
@@ -541,7 +604,7 @@ pub mod parity_fixtures {
     use alloc::vec;
     use evorule_audit_chain::fact::FactId;
 
-    /// Command 事实快捷构造（测试用）
+    /// Shortcut constructor for a Command fact (test helper)
     pub fn command_fact(id: u64, instruction: JsonValue) -> Fact {
         Fact::Command {
             id: FactId(id),
@@ -549,7 +612,7 @@ pub mod parity_fixtures {
         }
     }
 
-    /// increment 指令：`{"type":"increment","params":{"attr":...,"delta":...}}`
+    /// increment instruction: `{"type":"increment","params":{"attr":...,"delta":...}}`
     pub fn increment_instruction(attr: &str, delta: i64) -> JsonValue {
         JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("increment")),
@@ -563,17 +626,17 @@ pub mod parity_fixtures {
         ])
     }
 
-    /// noop 指令
+    /// noop instruction
     pub fn noop_instruction() -> JsonValue {
         JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))])
     }
 
-    /// fetch 指令（触发 io_request 分支）
+    /// fetch instruction (triggers the io_request branch)
     pub fn fetch_instruction() -> JsonValue {
         JsonValue::object_from_pairs(&[("type", JsonValue::string("fetch"))])
     }
 
-    /// 对拍规则组：increment branch 域匹配 + 直接 set 规则（noop 亦触发）
+    /// Parity rule set: increment branch domain match + direct set rule (noop also triggers)
     pub fn parity_rules_tcb() -> Vec<JsonValue> {
         vec![
             JsonValue::object_from_pairs(&[
@@ -608,7 +671,8 @@ pub mod parity_fixtures {
                     ]),
                 ),
             ]),
-            // 直接 set 规则：不问指令类型，命中即执行（与 TCB 直接规则语义一致）
+            // Direct set rule: matches regardless of instruction type,
+            // executes on hit (consistent with TCB direct-rule semantics)
             JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("set")),
                 (
@@ -623,7 +687,8 @@ pub mod parity_fixtures {
         ]
     }
 
-    /// io 触发规则组：fetch 指令 → io_request(sensor_read)（fail-visible 用例）
+    /// I/O-triggering rule set: fetch instruction → io_request(sensor_read)
+    /// (fail-visible case)
     pub fn fetch_io_rules() -> Vec<JsonValue> {
         vec![JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
@@ -655,9 +720,10 @@ pub mod parity_fixtures {
         ])]
     }
 
-    /// I/O 双路径循环规则（与 reactor 差分验证 v0.3.1 call_external 场景同构）：
-    /// call_external 无 `__io_results__.call_external` → io_request（首次）；
-    /// 有 → set 消费到 `llm_response`（恢复执行）
+    /// I/O dual-path loop rules (isomorphic to the reactor v0.3.1
+    /// call_external differential scenario): call_external without
+    /// `__io_results__.call_external` → io_request (first pass); with it →
+    /// set consuming into `llm_response` (recovery execution)
     pub fn io_resume_rules_tcb() -> Vec<JsonValue> {
         vec![JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
@@ -752,7 +818,8 @@ pub mod parity_fixtures {
         ])]
     }
 
-    /// call_external 指令（messages 数组 + tools 空表，与 reactor 差分场景同构）
+    /// call_external instruction (messages array + empty tools list,
+    /// isomorphic to the reactor differential scenario)
     pub fn call_external_instruction(content: &str) -> JsonValue {
         JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("call_external")),
@@ -772,7 +839,8 @@ pub mod parity_fixtures {
         ])
     }
 
-    /// 固定 LLM 应答（确定性 canned 值，对拍两侧同值；纯文本无 tool_calls）
+    /// Fixed LLM reply (deterministic canned value, identical on both parity
+    /// sides; plain text without tool_calls)
     pub fn canned_llm_result() -> JsonValue {
         JsonValue::object_from_pairs(&[
             ("role", JsonValue::string("assistant")),
@@ -790,16 +858,17 @@ mod tests {
         command_fact, fetch_instruction, fetch_io_rules, increment_instruction, noop_instruction,
         parity_rules_tcb,
     };
-    // reactor 根 re-export（wal 模块私有，persistence feature 门后）
+    // reactor root re-exports (wal module is private; behind the persistence feature gate)
     use alloc::boxed::Box;
     use evorule_reactor::{
         fact_to_json, Fact, FactId, FactsLog, MemoryWalStore, TraceHit, WalRecord,
     };
 
-    // ===== native 参照侧（reactor FactsLog + 同构主循环）=====
+    // ===== native reference side (reactor FactsLog + isomorphic main loop) =====
 
-    /// native 参照执行器：FactsLog 承担版本/哈希链/WAL 语义，
-    /// 主循环逻辑与 reactor 同构（同款 cause 对齐与事实发射顺序）
+    /// Native reference executor: FactsLog carries the version/hash-chain/WAL
+    /// semantics; the main loop logic is isomorphic to the reactor (same
+    /// cause alignment and fact emission order)
     struct NativeMirror {
         log: FactsLog,
         payload: JsonValue,
@@ -822,7 +891,7 @@ mod tests {
             FactId(self.next_id)
         }
 
-        // 与 McuExecutor::run 逐行同构（对拍基准）
+        // Line-by-line isomorphic to McuExecutor::run (parity baseline)
         #[allow(clippy::too_many_lines)]
         fn run_command(&mut self, rules: &[JsonValue], instruction: JsonValue) {
             let cmd_id = self.next_id();
@@ -944,9 +1013,9 @@ mod tests {
         }
     }
 
-    /// 逐条 + 字节级对拍：native `WalRecord` vs mcu `RamWalStore`
+    /// Record-by-record + byte-level parity: native `WalRecord` vs mcu `RamWalStore`
     fn assert_wal_parity(native: &[WalRecord], mcu: &RamWalStore) {
-        assert_eq!(native.len(), mcu.len(), "记录数必须一致");
+        assert_eq!(native.len(), mcu.len(), "record counts must match");
         for (i, n) in native.iter().enumerate() {
             let m = mcu.records().get(i).unwrap();
             assert_eq!(
@@ -969,7 +1038,8 @@ mod tests {
                 n.chain_hash.as_ref(),
                 "record {i} chain_hash"
             );
-            // 字节级：mcu line_json vs native 侧按 WalWriter 同款构造的 JSONL 行
+            // Byte level: mcu line_json vs the native-side JSONL line built
+            // the same way as WalWriter
             let mut obj = serde_json::Map::new();
             obj.insert(
                 "version_before".into(),
@@ -997,34 +1067,34 @@ mod tests {
         }
     }
 
-    // ===== 对拍主测试 =====
+    // ===== Main parity tests =====
 
     #[test]
     fn test_mcu_parity_with_native_multi_command() {
         let rules = parity_rules_tcb();
 
-        // native 侧
+        // native side
         let native_store = MemoryWalStore::new();
         let mut native = NativeMirror::new(native_store.clone());
         native.run_command(&rules, increment_instruction("x", 5));
         native.run_command(&rules, noop_instruction());
         native.run_command(&rules, increment_instruction("x", -2));
 
-        // mcu 侧
+        // mcu side
         let mut mcu = McuExecutor::new(RulePack::from_rules(rules.clone()).unwrap());
         mcu.run(increment_instruction("x", 5)).unwrap();
         mcu.run(noop_instruction()).unwrap();
         mcu.run(increment_instruction("x", -2)).unwrap();
 
-        // 业务状态与版本一致
+        // Business state and version match
         assert_eq!(mcu.payload(), &native.payload);
         assert_eq!(mcu.version(), native.log.snapshot().2);
-        // 负增量生效：x = 5 - 2 = 3
+        // Negative increment applied: x = 5 - 2 = 3
         assert_eq!(mcu.payload().get("x").and_then(|v| v.as_i64()), Some(3));
 
-        // 全链逐条 + 字节级对拍
+        // Full-chain record-by-record + byte-level parity
         assert_wal_parity(&native_store.records(), mcu.wal());
-        // 链尾非 genesis 且一致
+        // Chain tail is not genesis and matches
         assert_ne!(mcu.wal().chain_tail_hash(), "genesis");
         assert_eq!(
             mcu.wal().chain_tail_hash(),
@@ -1040,7 +1110,7 @@ mod tests {
 
     #[test]
     fn test_mcu_parity_with_native_ignored_instruction() {
-        // 空规则表：任何指令 → Ignored → Error + TransitionTrace + Stable
+        // Empty rule table: any instruction → Ignored → Error + TransitionTrace + Stable
         let rules: Vec<JsonValue> = Vec::new();
 
         let native_store = MemoryWalStore::new();
@@ -1051,19 +1121,19 @@ mod tests {
         mcu.run(noop_instruction()).unwrap();
 
         assert_wal_parity(&native_store.records(), mcu.wal());
-        // Ignored 路径：Error + Trace + Stable（无 StateTransition，版本不变）
+        // Ignored path: Error + Trace + Stable (no StateTransition, version unchanged)
         assert_eq!(mcu.version(), 0);
         assert_eq!(mcu.wal().len(), 4);
         assert!(
             matches!(mcu.wal().records().get(1).unwrap().fact, Fact::Error { .. }),
-            "第二事实应为 Error"
+            "second fact should be Error"
         );
         assert!(
             matches!(
                 mcu.wal().records().get(2).unwrap().fact,
                 Fact::TransitionTrace { .. }
             ),
-            "第三事实应为 TransitionTrace"
+            "third fact should be TransitionTrace"
         );
     }
 
@@ -1087,15 +1157,15 @@ mod tests {
     fn test_mcu_stable_fact_and_version_bump() {
         let mut mcu = McuExecutor::new(RulePack::from_rules(parity_rules_tcb()).unwrap());
         mcu.run(increment_instruction("x", 5)).unwrap();
-        // Command + StateTransition + TransitionTrace + Stable = 4 条
+        // Command + StateTransition + TransitionTrace + Stable = 4 records
         assert_eq!(mcu.wal().len(), 4);
         assert_eq!(mcu.version(), 1);
         let last = mcu.wal().records().last().unwrap();
         assert!(
             matches!(last.fact, Fact::Stable { version: 1, .. }),
-            "末事实应为 Stable(version=1)"
+            "last fact should be Stable(version=1)"
         );
-        // 首记录 prev 为 genesis
+        // The first record's prev is genesis
         assert_eq!(mcu.wal().records().first().unwrap().prev_hash, "genesis");
     }
 
@@ -1113,14 +1183,14 @@ mod tests {
             ),
             "got: {err}"
         );
-        // Command + IoRequest 已入链留痕，链尾可用
+        // Command + IoRequest already appended to the chain; the tail hash is usable
         assert_eq!(mcu.wal().len(), 2);
         assert!(
             matches!(
                 mcu.wal().records().get(1).unwrap().fact,
                 Fact::IoRequest { .. }
             ),
-            "第二事实应为 IoRequest"
+            "second fact should be IoRequest"
         );
     }
 
@@ -1160,9 +1230,11 @@ mod tests {
         assert_eq!(mcu.payload().get("x").and_then(|v| v.as_i64()), Some(105));
     }
 
-    // ===== RAM / Flash 双后端对拍（同序列 → 链尾一致 + 行流逐字节一致）=====
+    // ===== RAM / Flash dual-backend parity (same sequence → identical chain
+    // tail + byte-identical line stream) =====
 
-    /// 同指令序列双后端对拍：RAM 缺省执行器 vs Flash 后端执行器
+    /// Dual-backend parity over the same instruction sequence: RAM default
+    /// executor vs Flash-backend executor
     #[test]
     fn test_mcu_parity_ram_vs_flash_backend() {
         use crate::wal_flash::{FlashMedium as _, FlashWalStore, RamFlashMedium};
@@ -1175,10 +1247,11 @@ mod tests {
             noop_instruction(),
         ];
 
-        // RAM 后端（缺省）
+        // RAM backend (default)
         let mut ram = McuExecutor::new(RulePack::from_rules(rules.clone()).unwrap());
-        // Flash 后端（RAM 模拟介质：页 512B × 16；真实行含三哈希字段 ~305B，
-        // 每页 ~1.7 行天然练换页，8KB 环容不触环满）
+        // Flash backend (RAM-simulated medium: pages 512B × 16; a real line
+        // with the three hash fields is ~305B, ~1.7 lines per page naturally
+        // exercises page rotation; the 8KB ring never hits ring-full)
         let medium = RamFlashMedium::new(512, 16);
         let flash_store = FlashWalStore::open(medium).unwrap();
         let mut flash = McuExecutor::with_wal_store(
@@ -1194,12 +1267,12 @@ mod tests {
             flash.run(cmd.clone()).unwrap();
         }
 
-        // 业务状态 / 版本 / 链尾一致
+        // Business state / version / chain tail match
         assert_eq!(ram.payload(), flash.payload());
         assert_eq!(ram.version(), flash.version());
         assert_eq!(ram.wal().chain_tail_hash(), flash.wal().chain_tail_hash());
 
-        // 逐行 line_json 逐字节一致
+        // line_json identical byte-by-byte for every line
         assert_eq!(ram.wal().len(), flash.wal().len());
         for i in 0..ram.wal().len() {
             assert_eq!(
@@ -1209,7 +1282,8 @@ mod tests {
             );
         }
 
-        // Flash 介质上的行流（含 \n）与 RAM 行流拼接逐字节一致
+        // The line stream on the Flash medium (with \n) matches the
+        // concatenated RAM line stream byte-for-byte
         let mut flash_stream = Vec::new();
         for i in 0..flash.wal().len() {
             flash_stream.extend_from_slice(flash.wal().line_json(i).unwrap().as_bytes());
@@ -1223,11 +1297,15 @@ mod tests {
                 media_bytes.push(b);
             }
         }
-        assert_eq!(flash_stream, media_bytes, "介质行流与行账本逐字节一致");
+        assert_eq!(
+            flash_stream, media_bytes,
+            "medium line stream matches the line ledger byte-for-byte"
+        );
     }
 
-    /// native `WalWriter` 直读对拍：native JSONL 文件字节流 vs Flash 后端
-    /// 介质行流逐字节一致（方案口径：JSONL 行 + native 直读复用）
+    /// native `WalWriter` direct-read parity: the native JSONL file byte
+    /// stream matches the Flash backend's medium line stream byte-for-byte
+    /// (approach: JSONL lines + reuse of the native direct read)
     #[test]
     fn test_flash_wal_stream_matches_native_walwriter_bytes() {
         use crate::wal_flash::{FlashWalStore, RamFlashMedium};
@@ -1237,7 +1315,8 @@ mod tests {
         let rules = parity_rules_tcb();
         let commands = [increment_instruction("x", 5), noop_instruction()];
 
-        // Flash 后端跑同序列（页 512B × 16，容真实行 ~305B/行）
+        // Flash backend runs the same sequence (pages 512B × 16, fitting real
+        // lines of ~305B each)
         let medium = RamFlashMedium::new(512, 16);
         let flash_store = FlashWalStore::open(medium).unwrap();
         let mut flash = McuExecutor::with_wal_store(
@@ -1251,14 +1330,15 @@ mod tests {
             flash.run(cmd.clone()).unwrap();
         }
 
-        // native 侧：镜像主循环重放同序列产生 native 记录
+        // native side: the mirror main loop replays the same sequence to
+        // produce native records
         let native_store = MemoryWalStore::new();
         let mut mirror = NativeMirror::new(native_store.clone());
         for cmd in &commands {
             mirror.run_command(&parity_rules_tcb(), cmd.clone());
         }
 
-        // native WalWriter 直写 .jsonl（hash 字段原样保存）
+        // native WalWriter writes the .jsonl directly (hash fields saved as-is)
         let path = std::env::temp_dir().join(format!(
             "evorule_mcu_flash_parity_{}.jsonl",
             std::process::id()
@@ -1277,9 +1357,10 @@ mod tests {
         }
         drop(writer);
 
-        // 逐字节：native .jsonl 文件 vs Flash 介质行流
-        // （M-1 格式头行是 native WAL 文件级元数据，非记录——对拍比较
-        //  记录字节，头行滤除）
+        // Byte-for-byte: native .jsonl file vs Flash medium line stream
+        // (the WAL format header line is native WAL file-level metadata, not
+        // a record — the parity compares record bytes with the header
+        // filtered out)
         let native_bytes = {
             let raw = fs::read(&path).unwrap();
             let header = b"{\"format\":\"evorule-wal/2\"}
@@ -1297,12 +1378,12 @@ mod tests {
         }
         assert_eq!(
             native_bytes, flash_stream,
-            "native WalWriter .jsonl 与 Flash 介质行流必须逐字节一致"
+            "native WalWriter .jsonl and the Flash medium line stream must match byte-for-byte"
         );
         let _ = fs::remove_file(&path);
     }
 
-    // ===== I/O 暂停-恢复（镜像 reactor v0.3.1 handle_fact IoResponse 分支）=====
+    // ===== I/O pause-resume (mirrors the reactor v0.3.1 handle_fact IoResponse branch) =====
 
     use crate::exec::parity_fixtures::{
         call_external_instruction, canned_llm_result, io_resume_rules_tcb,
@@ -1320,8 +1401,9 @@ mod tests {
             .collect()
     }
 
-    /// 正常路径：IoRequest 入链 → 暂停 → 挂起查询与链上一致 → resume →
-    /// 注入消费 → 容器清除 → Stable；全链事实序列与 IoResponse 字段核对
+    /// Happy path: IoRequest appended → pause → pending view matches the
+    /// chain → resume → inject and consume → container cleared → Stable;
+    /// verify the full-chain fact sequence and the IoResponse fields
     #[test]
     fn test_io_pause_resume_happy_path() {
         let mut mcu = io_executor();
@@ -1336,7 +1418,7 @@ mod tests {
             ),
             "got: {err}"
         );
-        // 挂起视图与链上 IoRequest 一致（messages 透传）
+        // The pending view matches the on-chain IoRequest (messages passed through)
         let pending = mcu.pending_ios();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].request_id, 2);
@@ -1349,14 +1431,22 @@ mod tests {
                 .map(<[JsonValue]>::len),
             Some(1)
         );
-        // 链上事实：Command + IoRequest
+        // On-chain facts: Command + IoRequest
         assert_eq!(fact_kinds(&mcu), ["Command", "IoRequest"]);
 
-        // resume：IoResponse 入链 → 注入 → 原指令重推消费 → 容器清除 → Stable
+        // resume: IoResponse appended → inject → original instruction re-queued
+        // and consumed → container cleared → Stable
         let canned = canned_llm_result();
         let report = mcu.resume_io(2, Ok(canned.clone())).unwrap();
-        assert_eq!(report.steps_executed, 1, "恢复排空只执行重推的原指令");
-        assert_eq!(mcu.version(), 2, "IoResponse 消费 bump + 恢复步 ST bump");
+        assert_eq!(
+            report.steps_executed, 1,
+            "the recovery drain only executes the re-queued original instruction"
+        );
+        assert_eq!(
+            mcu.version(),
+            2,
+            "IoResponse consumption bump + recovery-step ST bump"
+        );
         assert_eq!(
             mcu.payload()
                 .get("llm_response")
@@ -1366,7 +1456,7 @@ mod tests {
         );
         assert!(
             mcu.payload().get("__io_results__").is_none(),
-            "__io_results__ 容器必须在恢复步整体移除"
+            "__io_results__ container must be removed wholesale at the recovery step"
         );
         assert_eq!(
             fact_kinds(&mcu),
@@ -1395,8 +1485,9 @@ mod tests {
         }
     }
 
-    /// A1：unknown/stale request_id → IoResponse + Error 双事实入链，
-    /// 不静默忽略；挂起不消费可继续正确应答
+    /// unknown/stale request_id → IoResponse + Error both appended to the
+    /// chain, never silently ignored; the unconsumed pending request can
+    /// still be answered correctly
     #[test]
     fn test_io_resume_unknown_request_id_records_error() {
         let mut mcu = io_executor();
@@ -1415,8 +1506,12 @@ mod tests {
         );
         assert_eq!(report.steps_executed, 0);
         assert!(mcu.payload().get("llm_response").is_none());
-        assert_eq!(mcu.version(), 0, "unknown 路径不 bump 版本");
-        // 挂起未被消费：仍可按真实 request_id 应答
+        assert_eq!(
+            mcu.version(),
+            0,
+            "the unknown path does not bump the version"
+        );
+        // The pending request was not consumed: it can still be answered by its real request_id
         assert_eq!(mcu.pending_ios()[0].request_id, real_id);
         mcu.resume_io(real_id, Ok(canned_llm_result())).unwrap();
         assert_eq!(
@@ -1428,7 +1523,8 @@ mod tests {
         );
     }
 
-    /// 错误应答（error=Some）：缓存指令被丢弃（防 exists 死循环），版本 bump
+    /// Error reply (error=Some): the cached instruction is dropped (prevents
+    /// an exists infinite loop), version bumps
     #[test]
     fn test_io_resume_error_drops_instruction() {
         let mut mcu = io_executor();
@@ -1442,11 +1538,15 @@ mod tests {
             .resume_io(request_id, Err("device gone".to_string()))
             .unwrap();
         assert_eq!(fact_kinds(&mcu), ["Command", "IoRequest", "IoResponse"]);
-        assert_eq!(report.steps_executed, 0, "无重推执行");
-        assert_eq!(mcu.version(), 1, "丢弃指令路径仅 IoResponse 消费 bump");
+        assert_eq!(report.steps_executed, 0, "no re-queued execution");
+        assert_eq!(
+            mcu.version(),
+            1,
+            "the drop-instruction path only bumps for IoResponse consumption"
+        );
         assert!(mcu.payload().get("llm_response").is_none());
-        assert!(mcu.pending_ios().is_empty(), "挂起已消费");
-        // 链上 IoResponse 携带 error 与 null result
+        assert!(mcu.pending_ios().is_empty(), "pending request consumed");
+        // The on-chain IoResponse carries error and a null result
         match &mcu.wal().records()[2].fact {
             Fact::IoResponse { result, error, .. } => {
                 assert!(result.is_null());
@@ -1456,7 +1556,8 @@ mod tests {
         }
     }
 
-    /// null 结果应答：与错误应答同处置（无可消费结果，丢弃缓存指令）
+    /// Null-result reply: handled the same as an error reply (no consumable
+    /// result, cached instruction dropped)
     #[test]
     fn test_io_resume_null_result_drops_instruction() {
         let mut mcu = io_executor();
@@ -1472,8 +1573,10 @@ mod tests {
         assert_eq!(mcu.version(), 1);
     }
 
-    /// 跨暂停队列连续：run(io) 暂停后 run(increment) 完整执行（挂起不受扰），
-    /// resume 后 io 指令重推队首消费——恢复步同时清除容器
+    /// Queue continuity across pauses: after run(io) pauses, run(increment)
+    /// executes fully (pendings are undisturbed); after resume, the io
+    /// instruction is re-queued at the front and consumed — the recovery step
+    /// also clears the container
     #[test]
     fn test_io_resume_then_queued_increment_executes() {
         let mut rules = parity_rules_tcb();
@@ -1485,7 +1588,7 @@ mod tests {
             McuError::IoPaused { request_id, .. } => *request_id,
             other => panic!("expected IoPaused, got {other:?}"),
         };
-        // 第二指令独立完整执行（暂停不阻塞新 run）
+        // The second instruction executes independently and fully (a pause does not block new runs)
         let r2 = mcu.run(increment_instruction("x", 5)).unwrap();
         assert_eq!(r2.steps_executed, 1);
         assert_eq!(mcu.payload().get("x").and_then(|v| v.as_i64()), Some(5));
@@ -1503,8 +1606,10 @@ mod tests {
         assert!(mcu.payload().get("__io_results__").is_none());
     }
 
-    /// 多挂起并存 + 顺序恢复：两次 I/O 相继暂停（登记表不顶掉），按
-    /// request_id 顺序应答各消费一轮（v0.3.1 残留根治场景的回归面）
+    /// Multiple pendings coexist + sequential recovery: two I/Os pause in
+    /// turn (the registry never displaces one with another); answering by
+    /// request_id order consumes one cycle each (regression surface for the
+    /// v0.3.1 residue-fix scenario)
     #[test]
     fn test_io_resume_multiple_pending_sequential_cycles() {
         let mut mcu = io_executor();
@@ -1518,8 +1623,12 @@ mod tests {
             McuError::IoPaused { request_id, .. } => *request_id,
             other => panic!("expected IoPaused, got {other:?}"),
         };
-        assert_eq!(id2, id1 + 2, "两轮 Command+IoRequest");
-        assert_eq!(mcu.pending_ios().len(), 2, "多挂起并存不互相顶掉");
+        assert_eq!(id2, id1 + 2, "two rounds of Command+IoRequest");
+        assert_eq!(
+            mcu.pending_ios().len(),
+            2,
+            "multiple pendings coexist without displacing each other"
+        );
 
         let canned_a = canned_llm_result();
         let canned_b = JsonValue::object_from_pairs(&[
@@ -1536,7 +1645,8 @@ mod tests {
         );
         assert_eq!(mcu.pending_ios().len(), 1);
         mcu.resume_io(id2, Ok(canned_b)).unwrap();
-        // 第二轮消费覆盖第一轮（容器已在恢复步清除，无残留串扰）
+        // The second cycle's consumption overwrites the first (the container
+        // was cleared at the recovery step; no residue cross-talk)
         assert_eq!(
             mcu.payload()
                 .get("llm_response")
@@ -1546,7 +1656,7 @@ mod tests {
         );
         assert!(mcu.payload().get("__io_results__").is_none());
         assert!(mcu.pending_ios().is_empty());
-        // 4 次版本 bump（2 × IoResponse 消费 + 2 × 恢复步 ST）
+        // 4 version bumps (2 × IoResponse consumption + 2 × recovery-step ST)
         assert_eq!(mcu.version(), 4);
     }
 }

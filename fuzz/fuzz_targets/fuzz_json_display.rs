@@ -1,14 +1,18 @@
-//! Fuzz 目标：JsonValue Display 序列化
+//! Fuzz target: JsonValue Display serialization
 //!
-//! 输入: 任意字节 → 确定性映射为深度受控（≤8）的 JsonValue → to_string()
-//! 不变量: 序列化任意合法构造的 JsonValue 不得 panic、不得死循环。
-//!         （字符集限定可打印 ASCII，避免 String 变体构造非法 UTF-8；
-//!          递归深度由 MAX_DEPTH 封顶，杜绝栈溢出噪声。）
+//! Input: arbitrary bytes → deterministically map to a JsonValue with bounded
+//! depth (≤8) → to_string()
+//! Invariant: serializing any legally constructed JsonValue must not panic
+//! and must not loop forever.
+//!         (The charset is restricted to printable ASCII, avoiding invalid
+//!          UTF-8 in the String variant; recursion depth is capped by
+//!          MAX_DEPTH, eliminating stack-overflow noise.)
 
 #![no_main]
 
-// 经 value 模块路径导入: HEAD 与在途改动均保持 `pub mod value` 公开,
-// 顶层 re-export(ObjectMap)是在途改动才有的, 顶层路径会导致 CI E0432
+// Imported via the value module path: both HEAD and in-flight changes keep
+// `pub mod value` public; the top-level re-export (ObjectMap) only exists in
+// in-flight changes, and the top-level path would cause CI E0432
 use evorule_tcb::value::{JsonValue, ObjectMap};
 use libfuzzer_sys::fuzz_target;
 
@@ -41,7 +45,7 @@ fn build_value(data: &[u8], depth: u32, pos: &mut usize) -> JsonValue {
             let n = (byte_at(data, pos) as usize) % (MAX_STR + 1);
             let mut s = String::with_capacity(n);
             for _ in 0..n {
-                // 0x20..=0x7E：可打印 ASCII 单字节，安全 UTF-8
+                // 0x20..=0x7E: printable single-byte ASCII, safe UTF-8
                 let b = 0x20 + (byte_at(data, pos) % 0x5F);
                 s.push(b as char);
             }

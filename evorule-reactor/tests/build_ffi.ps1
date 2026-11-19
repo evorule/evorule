@@ -1,12 +1,12 @@
-# evorule C FFI 构建脚本 (PowerShell)
+# evorule C FFI build script (PowerShell)
 #
-# 用法：
-#   .\build_ffi.ps1          # 构建 FFI 动态库
-#   .\build_ffi.ps1 -Test    # 构建并运行 C 测试
+# Usage:
+#   .\build_ffi.ps1          # build the FFI dynamic library
+#   .\build_ffi.ps1 -Test    # build and run the C tests
 #
-# 前置条件：
-#   - Rust 工具链已安装
-#   - MSVC 或 MinGW-w64 已安装
+# Prerequisites:
+#   - Rust toolchain installed
+#   - MSVC or MinGW-w64 installed
 
 param(
     [switch]$Test
@@ -21,7 +21,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host " evorule C FFI Build Script" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
-# Step 1: 构建 Rust FFI 动态库
+# Step 1: build the Rust FFI dynamic library
 Write-Host "`n[1/3] Building Rust FFI library..." -ForegroundColor Yellow
 
 Push-Location $RepoRoot
@@ -33,7 +33,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 Pop-Location
 
-# 检查输出文件
+# Check the output artifact
 $DllPath = Join-Path $TargetDir "release\evorule_reactor.dll"
 
 if (Test-Path $DllPath) {
@@ -45,7 +45,7 @@ if (Test-Path $DllPath) {
     exit 1
 }
 
-# Step 2: 编译 C 测试程序
+# Step 2: compile the C test program
 if ($Test) {
     Write-Host "`n[2/3] Compiling C test program..." -ForegroundColor Yellow
 
@@ -53,7 +53,7 @@ if ($Test) {
     $TestSrc = Join-Path $PSScriptRoot "test_evorule.c"
     $TestExe = Join-Path $PSScriptRoot "test_evorule.exe"
 
-    # 检查编译器
+    # Check for a compiler
     $Compiler = $null
     if (Get-Command cl -ErrorAction SilentlyContinue) {
         $Compiler = "cl"
@@ -67,10 +67,10 @@ if ($Test) {
     Write-Host "  Using compiler: $Compiler" -ForegroundColor Gray
 
     if ($Compiler -eq "cl") {
-        # MSVC 编译
+        # MSVC compilation
         $LibPath = Join-Path $TargetDir "release\evorule_reactor.dll.lib"
         if (-not (Test-Path $LibPath)) {
-            # 生成 import library
+            # Generate the import library
             $DefFile = Join-Path $PSScriptRoot "evorule.def"
             "@LIBRARY evorule_reactor.dll`nEXPORTS`nevorule_version`nevorule_free_string`nevorule_reactor_new`nevorule_reactor_free`nevorule_reactor_send_command`nevorule_reactor_current_queue_size`nevorule_result_get_output`nevorule_result_free" | Out-File -FilePath $DefFile -Encoding ascii
             lib /def:$DefFile /out:$LibPath 2>&1 | Out-Null
@@ -79,7 +79,7 @@ if ($Test) {
         cl /nologo /I"$IncludeDir" test_evorule.c /link "$LibPath" /out:test_evorule.exe 2>&1
         Pop-Location
     } else {
-        # GCC/MinGW 编译
+        # GCC/MinGW compilation
         Push-Location $PSScriptRoot
         gcc -I"$IncludeDir" -L"$TargetDir\release" -levorule_reactor -o test_evorule.exe test_evorule.c 2>&1
         Pop-Location
@@ -92,7 +92,7 @@ if ($Test) {
 
     Write-Host "  Output: $TestExe" -ForegroundColor Green
 
-    # Step 3: 运行测试
+    # Step 3: run the tests
     Write-Host "`n[3/3] Running C test program..." -ForegroundColor Yellow
 
     $Env:PATH = "$TargetDir\release;$Env:PATH"

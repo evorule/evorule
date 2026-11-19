@@ -1,19 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 端到端审计链集成测试（两套 WAL 合并验证）
+//! End-to-end audit-chain integration tests (two-WAL merge validation)
 //!
-//! # 测试目标
-//! 验证两套 WAL 合并方案的端到端完整性：
-//! 1. **tier1 写 WAL**：`FactsLog::append` 自动计算哈希链并写入 WAL（含 `content_hash`/`prev_hash`/`chain_hash`）
-//! 2. **tier2 加载验证**：`Auditor::load_from_tier1_wal` 读取 tier1 WAL 并逐条验证哈希链
-//! 3. **篡改检测**：对 Fact 内容、`prev_hash`、`chain_hash` 的任何篡改都能被检测
-//! 4. **跨层一致性**：tier1 `FactsLog::last_hash()` 与 tier2 `Auditor::last_hash` 字节级一致
-//! 5. **CLI 兼容性**：WAL 文件可被 `evorule_reactor::read_wal_with_hash` 读取（CLI `verify-chain` 使用同一接口）
+//! # Test goals
+//! Verify the end-to-end integrity of the merged two-WAL scheme:
+//! 1. **tier1 writes WAL**: `FactsLog::append` computes the hash chain automatically and
+//!    writes it into the WAL (including `content_hash`/`prev_hash`/`chain_hash`)
+//! 2. **tier2 load verification**: `Auditor::load_from_tier1_wal` reads the tier1 WAL and
+//!    verifies the hash chain entry by entry
+//! 3. **Tamper detection**: any tampering with Fact content, `prev_hash`, or `chain_hash`
+//!    is detected
+//! 4. **Cross-layer consistency**: tier1 `FactsLog::last_hash()` and tier2
+//!    `Auditor::last_hash` agree byte-for-byte
+//! 5. **CLI compatibility**: the WAL file can be read by `evorule_reactor::read_wal_with_hash`
+//!    (the CLI `verify-chain` command uses the same interface)
 //!
-//! # 单一真相源验证
-//! 哈希算法的唯一实现在 `evorule_reactor::hash`，tier2 通过 re-export 调用。
-//! 本测试通过对比 tier1 和 tier2 的 `last_hash` 验证单一真相源原则。
+//! # Single source of truth verification
+//! The hash algorithm has a single implementation in `evorule_reactor::hash`, which tier2
+//! consumes via re-export. This test verifies the single-source-of-truth principle by
+//! comparing the `last_hash` of tier1 and tier2.
 
 #![allow(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 
@@ -26,7 +32,7 @@ use evorule_reactor::{read_wal_with_hash, Fact, FactId, FactsLog, IoType, WalRec
 use evorule_tcb::JsonValue;
 use tempfile::TempDir;
 
-/// 构造一个简单的 Command Fact
+/// Build a simple Command Fact
 fn make_command(id: u64, instruction_type: &str) -> Fact {
     let mut params = BTreeMap::new();
     params.insert("attr".to_string(), JsonValue::string("x"));
@@ -40,7 +46,7 @@ fn make_command(id: u64, instruction_type: &str) -> Fact {
     }
 }
 
-/// 构造一个 StateTransition Fact
+/// Build a StateTransition Fact
 fn make_state_transition(id: u64, cause: u64, payload_val: i64) -> Fact {
     let mut payload = BTreeMap::new();
     payload.insert("x".to_string(), JsonValue::Integer(payload_val));
@@ -52,7 +58,7 @@ fn make_state_transition(id: u64, cause: u64, payload_val: i64) -> Fact {
     }
 }
 
-/// 构造一个 Stable Fact
+/// Build a Stable Fact
 fn make_stable(id: u64, version: u64) -> Fact {
     Fact::Stable {
         id: FactId(id),
@@ -60,7 +66,7 @@ fn make_stable(id: u64, version: u64) -> Fact {
     }
 }
 
-/// 构造一个 IoRequest Fact
+/// Build an IoRequest Fact
 fn make_io_request(id: u64, cause: u64) -> Fact {
     let mut params = BTreeMap::new();
     params.insert("url".to_string(), JsonValue::string("http://example.com"));
@@ -72,7 +78,7 @@ fn make_io_request(id: u64, cause: u64) -> Fact {
     }
 }
 
-/// 构造一个 IoResponse Fact
+/// Build an IoResponse Fact
 fn make_io_response(id: u64, request_id: u64) -> Fact {
     Fact::IoResponse {
         id: FactId(id),
@@ -82,7 +88,7 @@ fn make_io_response(id: u64, request_id: u64) -> Fact {
     }
 }
 
-/// 构造一个完整的事实序列（覆盖 7 种 Fact 变体中的 5 种常用类型）
+/// Build a complete fact sequence (covering 5 of the 7 commonly used Fact variants)
 fn build_fact_sequence() -> Vec<Fact> {
     vec![
         make_command(1, "increment"),
@@ -91,48 +97,49 @@ fn build_fact_sequence() -> Vec<Fact> {
         make_state_transition(4, 3, 2),
         make_io_request(5, 4),
         make_io_response(6, 5),
-        make_stable(7, 2), // id=7，于版本 2 稳定
+        make_stable(7, 2), // id=7, stabilized at version 2
     ]
 }
 
-/// 读取 WAL 文件所有行（原始文本），用于篡改测试
+/// Read all lines of the WAL file (raw text), for the tamper tests
 fn read_wal_lines(path: &PathBuf) -> Vec<String> {
     let content = fs::read_to_string(path).expect("WAL file should be readable");
     content
         .lines()
-        // M-1 格式头行（{"format":"evorule-wal/2"}）不是记录——篡改测试的
-        // 行下标均相对记录行，头行滤除使既有下标语义不变
+        // The M-1 format header line ({"format":"evorule-wal/2"}) is not a record — the
+        // line indices used by the tamper tests are relative to record lines, so filtering
+        // out the header keeps the existing index semantics unchanged
         .filter(|l| !l.trim().is_empty() && !l.contains("\"format\":\"evorule-wal"))
         .map(|l| l.to_string())
         .collect()
 }
 
-/// 将 WAL 行写回文件
+/// Write the WAL lines back to the file
 fn write_wal_lines(path: &PathBuf, lines: &[String]) {
     let content = lines.join("\n") + "\n";
     fs::write(path, content).expect("WAL file should be writable");
 }
 
 // ============================================================================
-// 测试 1：tier1 FactsLog 写入的 WAL 包含哈希字段
+// Test 1: WAL written by tier1 FactsLog contains hash fields
 // ============================================================================
 #[test]
 fn test_tier1_wal_contains_hash_fields() {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let wal_path = tmp.path().join("hash_chain_test.wal");
 
-    // 创建带 WAL 的 FactsLog
+    // Create a FactsLog with WAL
     let facts_log = FactsLog::with_wal(&wal_path).expect("failed to create FactsLog with WAL");
     let facts = build_fact_sequence();
 
-    // 追加所有事实
+    // Append all facts
     for fact in &facts {
         facts_log
             .append(fact.clone())
             .expect("append should succeed");
     }
 
-    // 读取 WAL 文件并验证包含哈希字段
+    // Read the WAL file and verify it contains the hash fields
     let records = read_wal_with_hash(&wal_path).expect("WAL should be readable");
     assert_eq!(
         records.len(),
@@ -140,7 +147,7 @@ fn test_tier1_wal_contains_hash_fields() {
         "WAL record count should match fact count"
     );
 
-    // 每条记录都应包含完整的哈希字段
+    // Every record should carry the complete hash fields
     for (i, record) in records.iter().enumerate() {
         assert!(
             record.content_hash.is_some(),
@@ -159,7 +166,7 @@ fn test_tier1_wal_contains_hash_fields() {
         );
     }
 
-    // 首条记录的 prev_hash 应为 "genesis"
+    // The first record's prev_hash should be "genesis"
     assert_eq!(
         records[0].prev_hash.as_deref(),
         Some("genesis"),
@@ -173,14 +180,14 @@ fn test_tier1_wal_contains_hash_fields() {
 }
 
 // ============================================================================
-// 测试 2：tier2 Auditor 从 tier1 WAL 加载并验证哈希链成功
+// Test 2: tier2 Auditor loads the tier1 WAL and verifies the hash chain successfully
 // ============================================================================
 #[test]
 fn test_tier2_loads_and_verifies_tier1_wal() {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let wal_path = tmp.path().join("cross_layer_test.wal");
 
-    // tier1: 写 WAL
+    // tier1: write WAL
     let facts_log = FactsLog::with_wal(&wal_path).expect("failed to create FactsLog with WAL");
     let facts = build_fact_sequence();
     for fact in &facts {
@@ -190,20 +197,20 @@ fn test_tier2_loads_and_verifies_tier1_wal() {
     }
     let tier1_last_hash = facts_log.last_hash();
 
-    // tier2: 从 tier1 WAL 加载并验证
+    // tier2: load and verify from the tier1 WAL
     let mut auditor = Auditor::new(FactsLog::new());
     auditor
         .load_from_tier1_wal(&wal_path)
         .expect("load_from_tier1_wal should succeed");
 
-    // 验证审计条目数
+    // Verify the audit entry count
     assert_eq!(
         auditor.entries().len(),
         facts.len(),
         "auditor entries count should match fact count"
     );
 
-    // 验证 last_hash 跨层一致（单一真相源核心验证点）
+    // Verify last_hash cross-layer consistency (core single-source-of-truth checkpoint)
     assert_eq!(
         auditor.last_hash(),
         tier1_last_hash.as_str(),
@@ -220,14 +227,14 @@ fn test_tier2_loads_and_verifies_tier1_wal() {
 }
 
 // ============================================================================
-// 测试 3：篡改 Fact 内容 → 检测 ContentHashMismatch
+// Test 3: tamper with Fact content → ContentHashMismatch detected
 // ============================================================================
 #[test]
 fn test_tier2_detects_content_tamper() {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let wal_path = tmp.path().join("tamper_content.wal");
 
-    // tier1: 写 WAL
+    // tier1: write WAL
     let facts_log = FactsLog::with_wal(&wal_path).expect("failed to create FactsLog with WAL");
     let facts = build_fact_sequence();
     for fact in &facts {
@@ -236,13 +243,13 @@ fn test_tier2_detects_content_tamper() {
             .expect("append should succeed");
     }
 
-    // 读取 WAL 原始行
+    // Read the raw WAL lines
     let lines = read_wal_lines(&wal_path);
     assert!(lines.len() >= 4, "WAL should have at least 4 records");
 
-    // 篡改第 2 条记录的 Fact 内容（修改 new_payload 的值）
-    // 原始: {"version_before":1,"fact":{"type":"StateTransition","id":2,"cause":1,"new_payload":{"x":1},"new_queue":[]},"content_hash":"...","prev_hash":"...","chain_hash":"..."}
-    // 篡改: 将 "x":1 改为 "x":999
+    // Tamper with the Fact content of record 2 (modify the new_payload value)
+    // Original: {"version_before":1,"fact":{"type":"StateTransition","id":2,"cause":1,"new_payload":{"x":1},"new_queue":[]},"content_hash":"...","prev_hash":"...","chain_hash":"..."}
+    // Tamper: change "x":1 to "x":999
     let tampered_line = lines[1].replace("\"x\":1", "\"x\":999");
     assert_ne!(
         tampered_line, lines[1],
@@ -252,7 +259,7 @@ fn test_tier2_detects_content_tamper() {
     tampered_lines[1] = tampered_line;
     write_wal_lines(&wal_path, &tampered_lines);
 
-    // tier2: 加载应失败，检测到 ContentHashMismatch
+    // tier2: load should fail with ContentHashMismatch detected
     let mut auditor = Auditor::new(FactsLog::new());
     let result = auditor.load_from_tier1_wal(&wal_path);
 
@@ -286,14 +293,14 @@ fn test_tier2_detects_content_tamper() {
 }
 
 // ============================================================================
-// 测试 4：篡改 prev_hash → 检测 ChainBroken
+// Test 4: tamper with prev_hash → ChainBroken detected
 // ============================================================================
 #[test]
 fn test_tier2_detects_prev_hash_tamper() {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let wal_path = tmp.path().join("tamper_prev_hash.wal");
 
-    // tier1: 写 WAL
+    // tier1: write WAL
     let facts_log = FactsLog::with_wal(&wal_path).expect("failed to create FactsLog with WAL");
     let facts = build_fact_sequence();
     for fact in &facts {
@@ -302,12 +309,12 @@ fn test_tier2_detects_prev_hash_tamper() {
             .expect("append should succeed");
     }
 
-    // 读取 WAL 原始行
+    // Read the raw WAL lines
     let lines = read_wal_lines(&wal_path);
     assert!(lines.len() >= 3, "WAL should have at least 3 records");
 
-    // 篡改第 3 条记录的 prev_hash（改为错误的值）
-    // 解析 JSON,修改 prev_hash,重新序列化
+    // Tamper with record 3's prev_hash (set it to a wrong value)
+    // Parse the JSON, modify prev_hash, re-serialize
     let mut record_json: serde_json::Value =
         serde_json::from_str(&lines[2]).expect("record should be valid JSON");
     record_json["prev_hash"] = serde_json::Value::String("tampered_prev_hash_value".to_string());
@@ -316,7 +323,7 @@ fn test_tier2_detects_prev_hash_tamper() {
     tampered_lines[2] = tampered_line;
     write_wal_lines(&wal_path, &tampered_lines);
 
-    // tier2: 加载应失败,检测到 ChainBroken
+    // tier2: load should fail with ChainBroken detected
     let mut auditor = Auditor::new(FactsLog::new());
     let result = auditor.load_from_tier1_wal(&wal_path);
 
@@ -348,14 +355,14 @@ fn test_tier2_detects_prev_hash_tamper() {
 }
 
 // ============================================================================
-// 测试 5：篡改 chain_hash → 检测 ChainHashMismatch
+// Test 5: tamper with chain_hash → ChainHashMismatch detected
 // ============================================================================
 #[test]
 fn test_tier2_detects_chain_hash_tamper() {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let wal_path = tmp.path().join("tamper_chain_hash.wal");
 
-    // tier1: 写 WAL
+    // tier1: write WAL
     let facts_log = FactsLog::with_wal(&wal_path).expect("failed to create FactsLog with WAL");
     let facts = build_fact_sequence();
     for fact in &facts {
@@ -364,11 +371,11 @@ fn test_tier2_detects_chain_hash_tamper() {
             .expect("append should succeed");
     }
 
-    // 读取 WAL 原始行
+    // Read the raw WAL lines
     let lines = read_wal_lines(&wal_path);
     assert!(lines.len() >= 2, "WAL should have at least 2 records");
 
-    // 篡改第 1 条记录的 chain_hash（改为错误的值）
+    // Tamper with record 1's chain_hash (set it to a wrong value)
     let mut record_json: serde_json::Value =
         serde_json::from_str(&lines[0]).expect("record should be valid JSON");
     record_json["chain_hash"] =
@@ -378,7 +385,7 @@ fn test_tier2_detects_chain_hash_tamper() {
     tampered_lines[0] = tampered_line;
     write_wal_lines(&wal_path, &tampered_lines);
 
-    // tier2: 加载应失败,检测到 ChainHashMismatch
+    // tier2: load should fail with ChainHashMismatch detected
     let mut auditor = Auditor::new(FactsLog::new());
     let result = auditor.load_from_tier1_wal(&wal_path);
 
@@ -406,14 +413,14 @@ fn test_tier2_detects_chain_hash_tamper() {
 }
 
 // ============================================================================
-// 测试 6：tier1 FactsLog::recover 恢复后 last_hash 一致
+// Test 6: last_hash stays consistent after tier1 FactsLog::recover
 // ============================================================================
 #[test]
 fn test_tier1_recover_restores_hash_chain() {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let wal_path = tmp.path().join("recover_test.wal");
 
-    // tier1: 写 WAL
+    // tier1: write WAL
     let facts_log = FactsLog::with_wal(&wal_path).expect("failed to create FactsLog with WAL");
     let facts = build_fact_sequence();
     for fact in &facts {
@@ -424,10 +431,10 @@ fn test_tier1_recover_restores_hash_chain() {
     let original_last_hash = facts_log.last_hash();
     let original_history_len = facts_log.history_len();
 
-    // recover: 从 WAL 恢复
+    // recover: restore from the WAL
     let recovered = FactsLog::recover(&wal_path).expect("recover should succeed");
 
-    // 验证恢复后的 last_hash 与原始一致
+    // Verify the recovered last_hash matches the original
     assert_eq!(
         recovered.last_hash(),
         original_last_hash,
@@ -446,14 +453,14 @@ fn test_tier1_recover_restores_hash_chain() {
 }
 
 // ============================================================================
-// 测试 7：CLI 兼容性 - read_wal_with_hash 接口可读取 tier1 WAL
+// Test 7: CLI compatibility - read_wal_with_hash can read the tier1 WAL
 // ============================================================================
 #[test]
 fn test_cli_verify_chain_compatible_with_tier1_wal() {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let wal_path = tmp.path().join("cli_compat_test.wal");
 
-    // tier1: 写 WAL
+    // tier1: write WAL
     let facts_log = FactsLog::with_wal(&wal_path).expect("failed to create FactsLog with WAL");
     let facts = build_fact_sequence();
     for fact in &facts {
@@ -462,7 +469,8 @@ fn test_cli_verify_chain_compatible_with_tier1_wal() {
             .expect("append should succeed");
     }
 
-    // CLI 使用 read_wal_with_hash 读取 WAL（模拟 evorule-cli verify-chain 命令的读取路径）
+    // The CLI reads the WAL via read_wal_with_hash (mirrors the read path of the
+    // evorule-cli verify-chain command)
     let records: Vec<WalRecord> =
         read_wal_with_hash(&wal_path).expect("CLI should be able to read tier1 WAL");
 
@@ -472,17 +480,17 @@ fn test_cli_verify_chain_compatible_with_tier1_wal() {
         "CLI read record count should match"
     );
 
-    // 模拟 CLI verify_chain_with_stored 的验证逻辑
+    // Mirror the CLI verify_chain_with_stored verification logic
     let mut prev_hash = String::from("genesis");
     for (i, record) in records.iter().enumerate() {
         let fact_id = record.fact.id();
 
-        // 跳过无哈希字段的记录
+        // Skip records without hash fields
         if record.chain_hash.is_none() {
             continue;
         }
 
-        // 1. 验证 content_hash
+        // 1. Verify content_hash
         let recomputed_content = hash::fact_hash(&record.fact)
             .unwrap_or_else(|e| panic!("fact[{}]: hash error: {}", i, e));
         assert_eq!(
@@ -493,7 +501,7 @@ fn test_cli_verify_chain_compatible_with_tier1_wal() {
             fact_id.0
         );
 
-        // 2. 验证 prev_hash 链接
+        // 2. Verify prev_hash linkage
         assert_eq!(
             record.prev_hash.as_deref(),
             Some(prev_hash.as_str()),
@@ -502,7 +510,7 @@ fn test_cli_verify_chain_compatible_with_tier1_wal() {
             fact_id.0
         );
 
-        // 3. 验证 chain_hash
+        // 3. Verify chain_hash
         let combined = format!("{}{}", prev_hash, recomputed_content);
         let recomputed_chain = blake3::hash(combined.as_bytes()).to_hex().to_string();
         assert_eq!(
@@ -523,14 +531,14 @@ fn test_cli_verify_chain_compatible_with_tier1_wal() {
 }
 
 // ============================================================================
-// 测试 8：三方 last_hash 一致（tier1 FactsLog + tier2 Auditor + CLI compute_chain_hash）
+// Test 8: three-way last_hash consistency (tier1 FactsLog + tier2 Auditor + CLI compute_chain_hash)
 // ============================================================================
 #[test]
 fn test_three_way_hash_consistency() {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let wal_path = tmp.path().join("three_way_test.wal");
 
-    // tier1: 写 WAL
+    // tier1: write WAL
     let facts_log = FactsLog::with_wal(&wal_path).expect("failed to create FactsLog with WAL");
     let facts = build_fact_sequence();
     for fact in &facts {
@@ -540,18 +548,18 @@ fn test_three_way_hash_consistency() {
     }
     let tier1_last_hash = facts_log.last_hash();
 
-    // tier2: 加载 WAL
+    // tier2: load the WAL
     let mut auditor = Auditor::new(FactsLog::new());
     auditor
         .load_from_tier1_wal(&wal_path)
         .expect("load should succeed");
     let tier2_last_hash = auditor.last_hash();
 
-    // CLI: 用 compute_chain_hash 重算
+    // CLI: recompute with compute_chain_hash
     let cli_chain_hash =
         hash::compute_chain_hash(&facts).expect("compute_chain_hash should succeed");
 
-    // 三方一致
+    // All three agree
     assert_eq!(
         tier1_last_hash, tier2_last_hash,
         "tier1 last_hash should match tier2 last_hash"
@@ -568,14 +576,14 @@ fn test_three_way_hash_consistency() {
 }
 
 // ============================================================================
-// 测试 9：空 WAL 文件的边界情况
+// Test 9: edge case of an empty WAL file
 // ============================================================================
 #[test]
 fn test_empty_wal_edge_case() {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let wal_path = tmp.path().join("empty_test.wal");
 
-    // 创建带 WAL 的 FactsLog,但不 append 任何 Fact
+    // Create a FactsLog with WAL but append no Fact
     let facts_log = FactsLog::with_wal(&wal_path).expect("failed to create FactsLog with WAL");
     let tier1_last_hash = facts_log.last_hash();
     assert_eq!(
@@ -583,10 +591,10 @@ fn test_empty_wal_edge_case() {
         "empty FactsLog last_hash should be 'genesis'"
     );
 
-    // tier2: 加载空 WAL
+    // tier2: load the empty WAL
     let mut auditor = Auditor::new(FactsLog::new());
     let result = auditor.load_from_tier1_wal(&wal_path);
-    // 空 WAL 应该加载成功（无记录可验证）
+    // An empty WAL should load successfully (no records to verify)
     match result {
         Ok(()) => {
             assert_eq!(

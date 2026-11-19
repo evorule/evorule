@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 事实（Fact）定义 - 系统的原子通信单元
+//! Fact definition — the system's atomic communication unit
 
 use evorule_tcb::JsonValue;
 
-// no_std + alloc prelude（SSOT 上提：std prelude 中 alloc 级条目显式导入）
+// no_std + alloc prelude (SSOT promotion: alloc-level entries of the std prelude imported explicitly)
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 
-/// 事实唯一标识符
+/// Unique fact identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FactId(pub u64);
 
@@ -20,88 +20,95 @@ impl core::fmt::Display for FactId {
     }
 }
 
-/// I/O 请求类型（与 core_eval.json 中的 io_type 对应）
+/// I/O request type (corresponds to io_type in core_eval.json)
 ///
-/// v0.2.0：内部表示从 `&'static str` 改为 `Arc<str>`，支持应用层注册任意
-/// io_type（如 `retrieve`/`file`/`http`）。`Arc<str>` 满足 `Clone + Eq + Hash +
-/// Ord + Send + Sync`，可作 `BTreeMap`/`HashMap` key、跨线程共享、克隆廉价
-/// （原子计数）。
+/// v0.2.0: the internal representation changed from `&'static str` to
+/// `Arc<str>`, letting the application layer register arbitrary io_types
+/// (e.g. `retrieve`/`file`/`http`). `Arc<str>` satisfies
+/// `Clone + Eq + Hash + Ord + Send + Sync`, works as a `BTreeMap`/`HashMap`
+/// key, shares across threads, and clones cheaply (atomic counting).
 ///
-/// # 失去 `Copy` 的影响
+/// # Impact of losing `Copy`
 ///
-/// 所有按值传递处需显式 `.clone()`。典型场景：reactor 中
-/// `state.register_io_request(id, io_type)` 后仍要在 `Fact::IoRequest` 与
-/// `tracing::debug!` 中使用 `io_type`，需 `io_type.clone()`。
+/// All by-value pass-through sites need an explicit `.clone()`. Typical case:
+/// in the reactor, after `state.register_io_request(id, io_type)` the
+/// `io_type` is still used in `Fact::IoRequest` and `tracing::debug!`, so it
+/// needs `io_type.clone()`.
 ///
-/// # 5 个旧 io_type
+/// # The 5 legacy io_types
 ///
-/// 从 `const` 改为工厂函数（`Arc::from` 非 const）。字符串值不变，故
-/// `IoType::new("call_service") == IoType::call_service()` 成立，旧 WAL /
-/// core_eval 无需改动。
+/// Changed from `const` to factory functions (`Arc::from` is not const). The
+/// string values are unchanged, so
+/// `IoType::new("call_service") == IoType::call_service()` holds; legacy WAL /
+/// core_eval need no change.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct IoType(pub alloc::sync::Arc<str>);
 
 impl IoType {
-    /// 调用外部服务
+    /// Call an external service
     pub fn call_external() -> Self {
         Self(alloc::sync::Arc::from("call_external"))
     }
-    /// 查询数据库
+    /// Query a database
     pub fn query_db() -> Self {
         Self(alloc::sync::Arc::from("query_db"))
     }
-    /// HTTP GET 请求
+    /// HTTP GET request
     pub fn http_get() -> Self {
         Self(alloc::sync::Arc::from("http_get"))
     }
-    /// 保存到记忆
+    /// Save to memory
     pub fn save_memory() -> Self {
         Self(alloc::sync::Arc::from("save_memory"))
     }
-    /// 调用外部服务（v0.1.x 借道路径：按 `params.service_name` 二级路由）
+    /// Call an external service (v0.1.x legacy path: secondary routing by `params.service_name`)
     pub fn call_service() -> Self {
         Self(alloc::sync::Arc::from("call_service"))
     }
 
-    /// 运行时构造任意 io_type（v0.2.0 自定义 IoType 入口）
+    /// Construct an arbitrary io_type at runtime (v0.2.0 custom-IoType entry)
     ///
-    /// 用于应用层注册自定义 io_type，如 `IoType::new("retrieve")`。
-    /// 5 个旧 io_type 字符串值不变：`IoType::new("call_service") == IoType::call_service()`。
+    /// Lets the application layer register custom io_types, e.g.
+    /// `IoType::new("retrieve")`. The 5 legacy io_type string values are
+    /// unchanged: `IoType::new("call_service") == IoType::call_service()`.
     pub fn new(name: &str) -> Self {
         Self(alloc::sync::Arc::from(name))
     }
 
-    /// 从字符串解析 I/O 类型
+    /// Parse an I/O type from a string
     ///
-    /// v0.2.0：无条件接受（校验责任移到 subscriber / `ReactorBuilder::known_io_types`）。
-    /// 保留方法名仅为向后兼容旧调用点，行为从"未知返回 None"变为"始终返回 Some"，
-    /// 避免静默破坏。
-    #[deprecated(note = "v0.2.0 起用 IoType::new；parse 不再校验，保留仅为向后兼容")]
+    /// v0.2.0: accepts unconditionally (validation moved to subscribers /
+    /// `ReactorBuilder::known_io_types`). The method name is kept only for
+    /// backward compatibility of old call sites; behavior changed from
+    /// "return None on unknown" to "always return Some" to avoid silent breakage.
+    #[deprecated(
+        note = "since v0.2.0 use IoType::new; parse no longer validates and is kept only for backward compatibility"
+    )]
     pub fn parse(s: &str) -> Option<Self> {
         Some(Self::new(s))
     }
 
-    /// 转为字符串
+    /// Convert to a string
     pub fn as_str(&self) -> &str {
         self.0.as_ref()
     }
 }
 
-/// 控制流指令类型（G8 合规：唯一真值来源，位于 fact.rs 受豁免）
+/// Control-flow instruction type (G8-gate compliant: single source of truth, exempted here in fact.rs)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ControlFlowType {
-    /// 顺序执行多条指令
+    /// Execute multiple instructions in sequence
     Sequence,
-    /// 条件分支
+    /// Conditional branch
     Conditional,
-    /// 循环执行
+    /// Loop execution
     WhileLoop,
-    /// 将指令推入队列
+    /// Push an instruction onto the queue
     Push,
 }
 
 impl ControlFlowType {
-    /// 从字符串解析控制流类型
+    /// Parse a control-flow type from a string
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "sequence" => Some(ControlFlowType::Sequence),
@@ -112,7 +119,7 @@ impl ControlFlowType {
         }
     }
 
-    /// 转换为字符串
+    /// Convert to a string
     pub fn as_str(&self) -> &'static str {
         match self {
             ControlFlowType::Sequence => "sequence",
@@ -129,30 +136,31 @@ impl core::fmt::Display for IoType {
     }
 }
 
-/// 事实 ID 生成器（单调递增）
+/// Fact ID generator (monotonically increasing)
 #[derive(Debug)]
 pub struct FactIdGenerator {
     next: u64,
 }
 
 impl FactIdGenerator {
-    /// 创建新的生成器（从 1 开始）
+    /// Create a new generator (starting from 1)
     pub const fn new() -> Self {
         Self { next: 1 }
     }
 
-    /// 从指定值恢复（崩溃恢复续跑用）
+    /// Resume from a given value (for crash-recovery continuation)
     ///
-    /// `resume(n)` 后首次 `next_id()` 返回 `FactId(n)`。
-    /// `resume(1)` 等价于 `new()`。
+    /// After `resume(n)`, the first `next_id()` returns `FactId(n)`.
+    /// `resume(1)` equals `new()`.
     ///
-    /// 用于崩溃恢复场景：从历史 WAL 中的最大 FactId + 1 续跑，
-    /// 避免新一轮产生的 FactId 与历史 WAL 中的同类型 Fact 重复。
+    /// For crash recovery: continue from the largest FactId in the historical
+    /// WAL + 1, avoiding FactId collisions between the new round and
+    /// same-type Facts in the historical WAL.
     pub fn resume(from: u64) -> Self {
         Self { next: from }
     }
 
-    /// 生成下一个 ID
+    /// Generate the next ID
     pub fn next_id(&mut self) -> FactId {
         let id = FactId(self.next);
         self.next += 1;
@@ -166,25 +174,27 @@ impl Default for FactIdGenerator {
     }
 }
 
-/// 域判定归因的 trace 条目（事实层自有类型，不绑定 tcb 类型）
+/// Trace entry for domain-verdict attribution (fact-layer owned type, not bound to tcb types)
 ///
-/// 三态归因落账（专项-20261001 方案 2' v4）：branch/enforce 域求值的
-/// 结果分类与 `on_missing` 静态声明值，以字符串标签承载（标签取值见
-/// TCB `DomainOutcome::label` / `missing_reason` / `OnMissingPolicy::label`）。
-/// R1 纪律：归因仅作审计用途，不回灌执行。
+/// Three-state attribution booking: the result classification of
+/// branch/enforce domain evaluation and the static `on_missing` declaration
+/// value, carried as string labels (label values see TCB
+/// `DomainOutcome::label` / `missing_reason` / `OnMissingPolicy::label`).
+/// Discipline: attribution is audit-only and never fed back into execution.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraceDomainAttribution {
-    /// 域判定结果标签："sat" / "unsat" / "missing"
+    /// Domain-verdict outcome label: "sat" / "unsat" / "missing"
     pub outcome: String,
-    /// Missing 分类标签：outcome 为 "missing" 时为 Some（"path_not_found" /
-    /// "incomparable" / "value_literal_ambiguous"），否则 None
+    /// Missing classification label: Some when outcome is "missing"
+    /// ("path_not_found" / "incomparable" / "value_literal_ambiguous"),
+    /// otherwise None
     pub missing_reason: Option<String>,
-    /// 规则文本 `on_missing` 声明值："error" / "unsat"；未声明为 None
+    /// Rule-text `on_missing` declaration value: "error" / "unsat"; None when undeclared
     pub on_missing: Option<String>,
 }
 
 impl TraceDomainAttribution {
-    /// 从 TCB 域归因映射（构造期转换；字段仍为 String 标签，类型不绑定 tcb）
+    /// Map from a TCB domain attribution (construction-time conversion; fields remain String labels, types not bound to tcb)
     pub fn from_tcb(attr: &evorule_tcb::domain::DomainAttribution) -> Self {
         Self {
             outcome: attr.outcome.label().into(),
@@ -194,24 +204,25 @@ impl TraceDomainAttribution {
     }
 }
 
-/// 单条规则命中归因的 trace 条目
+/// Trace entry for a single rule-hit attribution
 ///
-/// 事实层自有类型（不绑定 tcb 类型，保持 crate 边界解耦）。
-/// `index` 为规则在合并规则列表中的下标，来源标签由装载层映射。
+/// Fact-layer owned type (not bound to tcb types, keeping crate boundaries
+/// decoupled). `index` is the rule's index in the merged rule list; the source
+/// label is mapped by the loading layer.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraceHit {
-    /// 规则在合并规则列表中的下标
+    /// The rule's index in the merged rule list
     pub index: u64,
-    /// 规则顶层指令类型（如 "branch"、"set"）
+    /// The rule's top-level instruction type (e.g. "branch", "set")
     pub instr_type: String,
-    /// 是否结构命中
+    /// Whether it structurally hit
     pub hit: bool,
-    /// 域判定归因：仅 branch/enforce 指令求值成功时为 Some，其余 None
+    /// Domain-verdict attribution: Some only when branch/enforce instruction evaluation succeeded, None otherwise
     pub domain_attr: Option<TraceDomainAttribution>,
 }
 
 impl TraceHit {
-    /// 从 TCB 规则命中归因构造事实层 trace 条目（归因映射单一出口）
+    /// Build a fact-layer trace entry from a TCB rule-hit attribution (the single attribution-mapping exit)
     pub fn from_rule_hit(hit: &evorule_tcb::transition::RuleHit) -> Self {
         Self {
             index: hit.index as u64,
@@ -225,137 +236,144 @@ impl TraceHit {
     }
 }
 
-/// 事实（Fact）—— 系统的原子通信单元
+/// Fact — the system's atomic communication unit
 ///
-/// 所有组件之间仅通过事实通信，无直接函数调用。
+/// All components communicate only through facts; there are no direct function calls.
 ///
-/// # 设计约定
-/// - 所有变体携带 `id: FactId`，用于全局唯一标识与审计追踪
-/// - `StateTransition` 和 `IoRequest` 携带 `cause: FactId`，指向触发该事实的来源
-/// - `IoResponse` 携带 `error: Option<String>`，None 表示成功，Some 表示 I/O 失败
+/// # Design conventions
+/// - Every variant carries `id: FactId` for global unique identification and audit tracing
+/// - `StateTransition` and `IoRequest` carry `cause: FactId`, pointing to the fact that triggered them
+/// - `IoResponse` carries `error: Option<String>`; None means success, Some means I/O failure
 #[derive(Debug, Clone, PartialEq)]
 pub enum Fact {
-    /// 用户提交新指令（触发执行）
+    /// The user submits a new instruction (triggers execution)
     Command {
-        /// 事实唯一标识符
+        /// Unique fact identifier
         id: FactId,
-        /// 待执行的指令对象
+        /// The instruction object to execute
         instruction: JsonValue,
     },
 
-    /// 外部更新 payload 字段（由治理层注入）
+    /// External update of a payload field (injected by the governance layer)
     PayloadUpdate {
-        /// 事实唯一标识符
+        /// Unique fact identifier
         id: FactId,
-        /// 要更新的 payload 路径
+        /// The payload path to update
         path: String,
-        /// 新值
+        /// The new value
         value: JsonValue,
     },
 
-    /// 状态转换（由反应器自动产生）
+    /// State transition (produced automatically by the reactor)
     StateTransition {
-        /// 事实唯一标识符
+        /// Unique fact identifier
         id: FactId,
-        /// 触发此转换的源事实 ID（通常是 Command 或 IoResponse）
+        /// The source fact ID that triggered this transition (usually a Command or IoResponse)
         cause: FactId,
-        /// 转换后的新 payload
+        /// The new payload after the transition
         new_payload: JsonValue,
-        /// 转换后的新指令队列
+        /// The new instruction queue after the transition
         new_queue: Vec<JsonValue>,
     },
 
-    /// I/O 请求（由 TCB 产生，由治理层消费）
+    /// I/O request (produced by the TCB, consumed by the governance layer)
     IoRequest {
-        /// 事实唯一标识符，用于 IoRequest ↔ IoResponse 配对
+        /// Unique fact identifier, used for IoRequest ↔ IoResponse pairing
         id: FactId,
-        /// 触发此 I/O 请求的源事实 ID
+        /// The source fact ID that triggered this I/O request
         cause: FactId,
-        /// I/O 类型
+        /// The I/O type
         io_type: IoType,
-        /// 请求参数
+        /// Request parameters
         params: JsonValue,
     },
 
-    /// I/O 响应（由治理层产生，由反应器消费）
+    /// I/O response (produced by the governance layer, consumed by the reactor)
     IoResponse {
-        /// 事实唯一标识符
+        /// Unique fact identifier
         id: FactId,
-        /// 对应的 IoRequest ID
+        /// The corresponding IoRequest ID
         request_id: FactId,
-        /// I/O 执行结果
+        /// The I/O execution result
         result: JsonValue,
-        /// I/O 错误信息（None=成功，Some=失败描述）
+        /// The I/O error message (None = success, Some = failure description)
         error: Option<String>,
     },
 
-    /// 系统稳定（无更多指令可执行）
+    /// System stable (no more executable instructions)
     Stable {
-        /// 事实唯一标识符
+        /// Unique fact identifier
         id: FactId,
-        /// 稳定时的会话版本号
+        /// The session version at stabilization
         ///
-        /// # 设计（O(n²) 修复）
-        /// 原字段 `final_snapshot: JsonValue`（全量 payload 快照）在长驻会话下
-        /// 每命令 O(n) 写入事实链，累计 O(n²)（实测 ~1500 命令 → 100MB WAL、
-        /// 2.5s/命令）。恢复路径（FactsLog::recover）对 Stable 仅更新
-        /// last_stable_version、从不读取快照内容，快照为纯冗余 → 瘦身为版本号。
-        /// 状态本体由最近一条 StateTransition.new_payload 确定，消费方经
-        /// snapshot API 获取，信息零丢失。
+        /// # Design (O(n²) fix)
+        /// The original field `final_snapshot: JsonValue` (a full payload
+        /// snapshot) wrote O(n) into the fact chain per command under
+        /// long-lived sessions, accumulating O(n²) (measured: ~1500 commands →
+        /// 100MB WAL, 2.5s per command). The recovery path
+        /// (FactsLog::recover) only updates last_stable_version for Stable and
+        /// never reads the snapshot content — the snapshot was pure redundancy
+        /// → slimmed down to a version number. The state body is determined by
+        /// the latest StateTransition.new_payload; consumers obtain it via the
+        /// snapshot API with zero information loss.
         version: u64,
     },
 
-    /// 系统错误（超时或 TCB 内部错误）
+    /// System error (timeout or internal TCB error)
     Error {
-        /// 事实唯一标识符
+        /// Unique fact identifier
         id: FactId,
-        /// 错误描述
+        /// The error description
         message: String,
     },
 
-    /// 规则命中归因轨迹（由反应器在收敛转换后追加）
+    /// Rule-hit attribution trace (appended by the reactor after a converged transition)
     ///
-    /// 每次收敛（State/Ignored）追加一条：`cause` 指向同次转换的
-    /// `StateTransition` 或 `Error`(ignored) 事实；`rule_hits` 与合并
-    /// 规则列表等长。`IoRequired` 中途信号**不产生**本事实（D11 重放
-    /// 契约：以收敛后重放为准，避免重复计数）。
-    /// 本事实不推进会话版本（记录性事实，不改变业务状态）。
+    /// One entry per convergence (State/Ignored): `cause` points to the same
+    /// transition's `StateTransition` or `Error`(ignored) fact; `rule_hits` is
+    /// as long as the merged rule list. An `IoRequired` mid-way signal does
+    /// **not** produce this fact (D11 replay contract: the post-convergence
+    /// replay is authoritative, avoiding double counting).
+    /// This fact does not advance the session version (a recording fact; does not change business state).
     TransitionTrace {
-        /// 事实唯一标识符
+        /// Unique fact identifier
         id: FactId,
-        /// 同次转换的 StateTransition / Error(ignored) 事实 ID
+        /// The fact ID of the same transition's StateTransition / Error(ignored)
         cause: FactId,
-        /// 各规则命中归因（与合并规则列表等长，按执行顺序）
+        /// Per-rule hit attributions (as long as the merged rule list, in execution order)
         rule_hits: Vec<TraceHit>,
     },
 
-    /// 违规被强制拦截（`enforce` 原语命中，回归验证）
+    /// A violation forcibly intercepted (an `enforce` primitive hit; regression-verified)
     ///
-    /// # 系统独占（三权分立：阻止权/记录权在系统）
+    /// # System-exclusive (separation of powers: blocking / recording rights belong to the system)
     ///
-    /// 本事实**仅由反应器**在收到 `TransitionResult::Halted` 时发射——
-    /// LLM、规则、任何指令类型均无通道产生本事实（杜绝伪造拦截记录）。
+    /// This fact is emitted **only by the reactor** upon receiving
+    /// `TransitionResult::Halted` — LLMs, rules, and any instruction type have
+    /// no channel to produce it (forged interception records are impossible).
     ///
-    /// # 记录性事实（不 bump version）
+    /// # Recording fact (does not bump version)
     ///
-    /// 与 `TransitionTrace` 同形态：不改变业务状态。违规指令被**拒绝执行**
-    /// （不产生 StateTransition、不推回队列），payload/queue 保持该步前原样。
+    /// Same shape as `TransitionTrace`: does not change business state. The
+    /// violating instruction is **refused execution** (no StateTransition
+    /// produced, not pushed back onto the queue); payload/queue stay as they
+    /// were before the step.
     Violation {
-        /// 事实唯一标识符
+        /// Unique fact identifier
         id: FactId,
-        /// 触发违规的来源事实 ID（通常是 Command 或 IoResponse）
+        /// The source fact ID that triggered the violation (usually a Command or IoResponse)
         cause: FactId,
-        /// 命中的 enforce 规则在合并规则列表中的下标
+        /// The index of the hit enforce rule in the merged rule list
         rule_index: u64,
-        /// 违规说明（enforce params.reason）
+        /// The violation description (enforce params.reason)
         reason: String,
-        /// 被拒指令完整回显（审计可追溯"谁想干什么"）
+        /// The full echo of the rejected instruction (audit traceability of "who wanted to do what")
         instruction: JsonValue,
     },
 }
 
 impl Fact {
-    /// 返回事实类型的字符串名称（用于日志）
+    /// Return the string name of the fact type (for logs)
     pub fn type_name(&self) -> &'static str {
         match self {
             Fact::Command { .. } => "Command",
@@ -370,7 +388,7 @@ impl Fact {
         }
     }
 
-    /// 返回事实的唯一标识符
+    /// Return the fact's unique identifier
     pub fn id(&self) -> FactId {
         match self {
             Fact::Command { id, .. }
@@ -385,26 +403,32 @@ impl Fact {
         }
     }
 
-    /// 是否为终止事实（Stable 或 Error）
+    /// Whether this is a terminal fact (Stable or Error)
     pub fn is_terminal(&self) -> bool {
         matches!(self, Fact::Stable { .. } | Fact::Error { .. })
     }
 
-    /// 将 Fact 序列化为 JsonValue（供 HTTP API 返回完整 Fact 详情）
+    /// Serialize the Fact into a JsonValue (for the HTTP API to return full fact details)
     ///
-    /// 返回的 JSON 对象包含 `type` 字段和各变体的所有字段，
-    /// 可通过 `tcb_to_serde` 转为 `serde_json::Value` 用于 HTTP 响应。
+    /// The returned JSON object contains the `type` field plus all fields of
+    /// the variant; it can be converted to `serde_json::Value` via
+    /// `tcb_to_serde` for HTTP responses.
     ///
-    /// # u64 全域无损（v0.9.0）
+    /// # Full-u64 losslessness (v0.9.0)
     ///
-    /// FactId 与各 u64 字段经 `JsonValue::U64`（u64 全域通道）承载，
-    /// 高位值（如规则集锚定事实的 `u64::MAX-1` 哨兵 id）不再回绕。
-    /// 历史注记：v0.8.x 时代本函数以 `as i64` 承载高位 FactId 会回绕为负，
-    /// 当时的诚实边界标注（禁止用于写侧落链或哈希输入）随根治批移除——
-    /// 该纪律仍然成立：**权威序列化 = [`crate::hash::fact_to_stable_json`]**
-    /// （哈希输入唯一来源，BTreeMap 键序稳定）；本函数仅服务展示面。
+    /// FactId and other u64 fields are carried via `JsonValue::U64` (the
+    /// full-u64 channel); high-bit values (e.g. the `u64::MAX-1` sentinel id of
+    /// the ruleset-anchoring fact) no longer wrap around.
+    /// Historical note: in the v0.8.x era this function carried high-bit FactIds
+    /// via `as i64`, wrapping them negative; the then honest-boundary note
+    /// (forbidden for write-side chain storage or hash inputs) was removed with
+    /// the root-cause fix batch — the discipline still stands:
+    /// **authoritative serialization = [`crate::hash::fact_to_stable_json`]**
+    /// (the sole hash-input source, stable BTreeMap key order); this function
+    /// serves the display surface only.
     //
-    // 注：match 全部 Fact 变体的序列化分支，有意保持单一函数便于对账字段映射。
+    // Note: the match covers the serialization branch of every Fact variant,
+    // deliberately kept as a single function for easy field-mapping reconciliation.
     #[allow(clippy::too_many_lines)]
     pub fn to_json(&self) -> JsonValue {
         use evorule_tcb::JsonValue as J;
@@ -480,11 +504,13 @@ impl Fact {
                 cause,
                 rule_hits,
             } => {
-                // P1-1（G3 修复）：domain_attr 进导出面——与 hash.rs
-                // trace_attr_to_json 逐键同构（outcome 必有；missing_reason/
-                // on_missing None 省略）。此前导出物缺该键导致离线重算哈希
-                // ≠ 链上哈希（域归因存在的记录）。键序不参与哈希（哈希输入
-                // 是 stable_json 的 BTreeMap 序），此处仅要求信息完备。
+                // domain_attr joins the export surface — key-isomorphic with
+                // trace_attr_to_json in hash.rs (outcome always present;
+                // missing_reason / on_missing omitted on None). Previously the
+                // export lacked this key, making offline hash recomputation ≠
+                // on-chain hash for records with domain attribution. Key order
+                // does not participate in hashing (the hash input is
+                // stable_json's BTreeMap order); only information completeness matters here.
                 let hits: Vec<J> = rule_hits
                     .iter()
                     .map(|h| {
@@ -538,9 +564,11 @@ mod tests {
     #![allow(clippy::panic, clippy::expect_used)]
     use super::*;
 
-    /// P1-1（G3 回归）：to_json 导出面与 fact_to_stable_json 哈希面信息完备一致——
-    /// TransitionTrace 含 domain_attr（Some）时，导出物必须携带该键且逐键同构。
-    /// 修复前导出物丢 domain_attr → 第三方按导出物离线重算哈希 ≠ 链上哈希。
+    /// Regression: the to_json export surface and the fact_to_stable_json hash
+    /// surface must be information-complete and consistent — when TransitionTrace
+    /// carries domain_attr (Some), the export must carry the key and be
+    /// key-isomorphic. Before the fix the export dropped domain_attr → offline
+    /// hash recomputation from the export ≠ the on-chain hash.
     #[test]
     fn to_json_includes_domain_attr_matching_stable_json() {
         let attr = TraceDomainAttribution {
@@ -559,25 +587,25 @@ mod tests {
             }],
         };
 
-        // 导出面：domain_attr 必须出现且三键齐备
+        // Export surface: domain_attr must appear with all three keys
         let exported = fact.to_json();
         let exported_str = format!("{:?}", exported.get("rule_hits"));
         assert!(
             exported_str.contains("domain_attr"),
-            "导出物缺 domain_attr: {exported_str}"
+            "export missing domain_attr: {exported_str}"
         );
         assert!(
             exported_str.contains("path_not_found"),
-            "导出物缺 missing_reason"
+            "export missing missing_reason"
         );
-        assert!(exported_str.contains("unsat"), "导出物缺 on_missing");
+        assert!(exported_str.contains("unsat"), "export missing on_missing");
 
-        // 哈希面：同 fact 的 stable_json 也含 domain_attr——两形态信息集一致
+        // Hash surface: the same fact's stable_json also contains domain_attr — the two forms share the same information set
         let stable = crate::hash::fact_to_stable_json(&fact).unwrap();
         let stable_str = format!("{:?}", stable.get("rule_hits"));
         assert!(stable_str.contains("domain_attr"));
 
-        // None 时两形态都省略（既有 legacy-shape 语义不破坏）
+        // With None both forms omit it (existing legacy-shape semantics not broken)
         let fact_none = Fact::TransitionTrace {
             id: FactId(9),
             cause: FactId(2),
@@ -591,10 +619,10 @@ mod tests {
         let exported_none = format!("{:?}", fact_none.to_json().get("rule_hits"));
         assert!(
             !exported_none.contains("domain_attr"),
-            "None 时导出面也必须省略"
+            "the export surface must also omit on None"
         );
     }
-    // no_std crate 测试构建链接 std：测试宏显式导入
+    // no_std crates link std for test builds: test macros imported explicitly
     use std::{format, vec};
 
     #[test]
@@ -681,7 +709,7 @@ mod tests {
 
     #[test]
     fn test_io_type_roundtrip() {
-        // 所有 IoType 变体的 new ↔ as_str 往返
+        // new ↔ as_str roundtrip over all IoType variants
         for expected in [
             IoType::call_external(),
             IoType::query_db(),
@@ -697,20 +725,20 @@ mod tests {
 
     #[test]
     fn test_io_type_parse_accepts_any() {
-        // v0.2.0: parse 无条件接受（校验责任移到 subscriber / known_io_types）
+        // v0.2.0: parse accepts unconditionally (validation moved to subscribers / known_io_types)
         #[allow(deprecated)]
         {
             assert!(IoType::parse("unknown").is_some());
             assert!(IoType::parse("retrieve").is_some());
             assert!(IoType::parse("call_service").is_some());
-            // 空字符串也被接受（校验由上层负责）
+            // The empty string is accepted too (validation is the upper layer's duty)
             assert!(IoType::parse("").is_some());
         }
     }
 
     #[test]
     fn test_io_type_new_equals_factory() {
-        // v0.2.0: new 构造与工厂函数对相同字符串应相等（HashMap/BTreeMap key 一致性）
+        // v0.2.0: new and the factory functions must be equal for the same string (HashMap/BTreeMap key consistency)
         assert_eq!(IoType::new("call_service"), IoType::call_service());
         assert_eq!(IoType::new("call_external"), IoType::call_external());
         assert_eq!(IoType::new("retrieve"), IoType::new("retrieve"));
@@ -735,29 +763,31 @@ mod tests {
 
     #[test]
     fn test_violation_fact_to_json_and_meta() {
-        // 回归验证：Violation 事实序列化 + 元信息（type_name/id/is_terminal）
+        // Regression: Violation fact serialization + meta info (type_name/id/is_terminal)
         let fact = Fact::Violation {
             id: FactId(9),
             cause: FactId(3),
             rule_index: 2,
-            reason: "违规：禁删数据集".to_string(),
+            reason: "violation: deleting the dataset is forbidden".to_string(),
             instruction: JsonValue::object_from_pairs(&[("type", JsonValue::string("delete_all"))]),
         };
 
         assert_eq!(fact.type_name(), "Violation");
         assert_eq!(fact.id(), FactId(9));
-        // 记录性事实：非终止（不结束会话，会话继续处理队列）
+        // Recording fact: non-terminal (does not end the session; the session keeps processing the queue)
         assert!(!fact.is_terminal());
 
         let json = fact.to_json();
         assert_eq!(json.get("type"), Some(&JsonValue::string("Violation")));
-        // v0.9.0 起 u64 字段走 U64 全域通道（根治 as i64 回绕）
+        // Since v0.9.0 u64 fields go through the full-u64 U64 channel (root fix for the as i64 wraparound)
         assert_eq!(json.get("id"), Some(&JsonValue::U64(9)));
         assert_eq!(json.get("cause"), Some(&JsonValue::U64(3)));
         assert_eq!(json.get("rule_index"), Some(&JsonValue::U64(2)));
         assert_eq!(
             json.get("reason"),
-            Some(&JsonValue::string("违规：禁删数据集"))
+            Some(&JsonValue::string(
+                "violation: deleting the dataset is forbidden"
+            ))
         );
         assert_eq!(
             json.get("instruction").and_then(|v| v.get("type")),
@@ -765,8 +795,9 @@ mod tests {
         );
     }
 
-    /// u64 回绕根治回归（v0.9.0）：高位 FactId 经 to_json 无损承载——
-    /// 规则集锚定事实的 u64::MAX-1 哨兵 id 不再回绕为负。
+    /// u64 wraparound root-fix regression (v0.9.0): high-bit FactIds carried
+    /// losslessly through to_json — the u64::MAX-1 sentinel id of the
+    /// ruleset-anchoring fact no longer wraps negative.
     #[test]
     fn test_to_json_sentinel_fact_id_lossless() {
         let sentinel = u64::MAX - 1;
@@ -777,16 +808,16 @@ mod tests {
         };
         let json = fact.to_json();
         assert_eq!(json.get("id").and_then(|v| v.as_u64()), Some(sentinel));
-        // 旧通道形态校验：id 是 U64 不是 Integer（i64 回绕通道已退役）
+        // Legacy channel form check: id is U64 not Integer (the i64-wraparound channel is retired)
         assert!(json.get("id").is_some_and(|v| v.is_u64()));
-        // 往返：哈希面（serde Number u64 无损）与展示面对同一哨兵同值
+        // Roundtrip: the hash surface (serde Number lossless u64) and the display surface agree on the same sentinel
         let stable = crate::hash::fact_to_stable_json(&fact).unwrap();
         assert_eq!(stable.get("id").and_then(|v| v.as_u64()), Some(sentinel));
     }
 
     #[test]
     fn test_fact_is_terminal_all_variants() {
-        // 终止事实
+        // Terminal facts
         assert!(Fact::Stable {
             id: FactId(1),
             version: 0,
@@ -798,7 +829,7 @@ mod tests {
         }
         .is_terminal());
 
-        // 非终止事实
+        // Non-terminal facts
         assert!(!Fact::Command {
             id: FactId(3),
             instruction: JsonValue::empty_object(),
@@ -902,7 +933,7 @@ mod tests {
 
     #[test]
     fn test_fact_id_generator_default() {
-        // Default 应从 0 开始，next_id 从 1 开始
+        // Default starts from 0; next_id starts from 1
         let mut gen = FactIdGenerator::default();
         assert_eq!(gen.next_id(), FactId(1));
     }

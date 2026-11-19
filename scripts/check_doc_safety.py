@@ -103,7 +103,8 @@ L2L3_REF_PATTERN = re.compile(r'文档[\\/](design|implement|benchmarks|archive)
 # L2/L3 例外：与 R3 同一套规则声明文件（AGENTS.md / DOCS_INDEX.md）
 # 另外 DOCS_INDEX 中的「搬迁说明」也允许（标注搬迁痕迹的说明行）
 L2L3_EXEMPT_HINTS = re.compile(
-    r'(按 D' r'2|保守搬迁|永不发布|\.gitignore 保护|L2 设计规范层|L3 实施细节层|仓内共享|不发布|先写设计文档|v0\.1\.0 基准评估|实验 1\.1)'
+    r'(按 D2|保守搬迁|永不发布|\.gitignore 保护|L2 设计规范层|L3 实施细节层|仓内共享|不发布|先写设计文档|v0\.1\.0 基准评估|实验 1\.1'
+    r'|per D2|conservatively moved|never published|protected by \.gitignore|in-repo shared|not published|write the design doc first|0\.1\.0 baseline evaluation|Experiment 1\.1|relocation note)'
 )
 
 # L1 层目录定义：根目录 *.md + docs/**（不含 docs/benchmarks，已搬走留空）

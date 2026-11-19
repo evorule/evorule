@@ -1,20 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! I/O Handler trait —— object-safe,支持 trait object 动态分发
+//! I/O Handler trait — object-safe, supports dynamic dispatch via trait objects
 //!
-//! # H5 迁移背景
+//! # H5 migration background
 //!
-//! 此 trait 原位于 `evorule-governance/src/io_handler.rs`,使用 `impl Future`(RPITIT)
-//! 签名,非 object-safe,无法 `dyn IoHandler`。
+//! This trait originally lived in `evorule-governance/src/io_handler.rs` with an
+//! `impl Future` (RPITIT) signature, which is not object-safe and cannot be used
+//! as `dyn IoHandler`.
 //!
-//! H5 架构债务修复中,trait 下沉到 evorule-reactor(与 `IoType` 同层),并改用
-//! `#[async_trait]` 使其 object-safe。这样:
-//! - 应用层 crate(`evorule-io-handlers`)可依赖 evorule-reactor(而非 evorule-governance),
-//!   避免循环依赖
-//! - `IoDispatcher` 可持有 `HashMap<IoType, Arc<dyn IoHandler>>`,动态注册 handler
+//! During the H5 architecture-debt fix, the trait was sunk down into
+//! evorule-reactor (same layer as `IoType`) and switched to `#[async_trait]`,
+//! making it object-safe. This way:
+//! - Application-layer crates (`evorule-io-handlers`) can depend on
+//!   evorule-reactor (rather than evorule-governance), avoiding circular dependencies
+//! - `IoDispatcher` can hold `HashMap<IoType, Arc<dyn IoHandler>>` and register
+//!   handlers dynamically
 //!
-//! # 使用示例
+//! # Usage example
 //!
 //! ```
 //! use async_trait::async_trait;
@@ -34,37 +37,38 @@
 use async_trait::async_trait;
 use evorule_tcb::JsonValue;
 
-/// I/O 执行结果
+/// I/O execution result
 ///
-/// 成功时返回 `JsonValue`(将注入到 `payload.__io_results__.{io_type}`),
-/// 失败时返回错误消息(将记录到 `IoResponse.error` 字段)。
+/// On success returns a `JsonValue` (injected into `payload.__io_results__.{io_type}`);
+/// on failure returns an error message (recorded in the `IoResponse.error` field).
 pub type IoResult = Result<JsonValue, String>;
 
-/// I/O Handler trait —— 所有 I/O handler 实现此接口
+/// I/O Handler trait — all I/O handlers implement this interface
 ///
-/// 使用 `#[async_trait]` 使 trait object-safe,支持 `Arc<dyn IoHandler>`。
+/// Uses `#[async_trait]` to make the trait object-safe, supporting `Arc<dyn IoHandler>`.
 ///
-/// `params` 来自 `Fact::IoRequest.params`,已由 TCB 从路径引用解析为具体值。
+/// `params` comes from `Fact::IoRequest.params`, already resolved by the TCB from
+/// path references into concrete values.
 ///
-/// # 实现者职责
-/// - 从 `params` 提取所需字段(如 `url`、`query`、`key`)
-/// - 执行实际 I/O 操作(HTTP 请求、SQL 查询、文件读写等)
-/// - 返回 `Ok(JsonValue)` 或 `Err(String)`
+/// # Implementer responsibilities
+/// - Extract the required fields from `params` (e.g. `url`, `query`, `key`)
+/// - Perform the actual I/O operation (HTTP requests, SQL queries, file reads/writes, etc.)
+/// - Return `Ok(JsonValue)` or `Err(String)`
 ///
-/// # 调用方
-/// - `evorule-governance::IoDispatcher` 根据 `IoType` 分发到对应 handler
-/// - `evorule-governance::IoSubscriber` 订阅 `Fact::IoRequest` 后调用 dispatch
+/// # Callers
+/// - `evorule-governance::IoDispatcher` dispatches to the corresponding handler by `IoType`
+/// - `evorule-governance::IoSubscriber` subscribes to `Fact::IoRequest` and calls dispatch
 #[async_trait]
 pub trait IoHandler: Send + Sync {
-    /// 执行 I/O 操作
+    /// Executes the I/O operation
     ///
-    /// # 参数
-    /// - `params`:I/O 请求参数(由 `io_request` 指令透传,如
-    ///   `call_external` 为 `{"messages": [...], "tools": [...]}`,
-    ///   `call_service` 为 `{"service_name": "...", "args": {...}}`)
+    /// # Arguments
+    /// - `params`: I/O request parameters (passed through by the `io_request` instruction; e.g.
+    ///   `call_external` takes `{"messages": [...], "tools": [...]}`,
+    ///   `call_service` takes `{"service_name": "...", "args": {...}}`)
     ///
-    /// # 返回
-    /// - `Ok(JsonValue)`:I/O 结果(将注入到 `payload.__io_results__.{io_type}`)
-    /// - `Err(String)`:错误消息(将记录到 `IoResponse.error`,结果不会被消费)
+    /// # Returns
+    /// - `Ok(JsonValue)`: the I/O result (injected into `payload.__io_results__.{io_type}`)
+    /// - `Err(String)`: error message (recorded in `IoResponse.error`; the result is not consumed)
     async fn execute(&self, params: &JsonValue) -> IoResult;
 }

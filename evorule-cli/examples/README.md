@@ -6,61 +6,61 @@
   This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 -->
 
-# evorule-cli 示例目录
+# evorule-cli examples directory
 
-> 【重要】evorule 核心仓是 **纯机制层**（framework），不内置业务场景的规则模板。
+> [Important] The evorule core repo is a **pure mechanism layer** (framework) and does not bundle business-scenario rule templates.
 >
-> 所有面向行业的开箱即用规则集（医院 HIPAA 合规、律所利益冲突、金融反洗钱等）已按
-> evorule 边界规范（见仓根 `AGENTS.md` 边界判断表：`evorule-cli 加规则模板 = 业务内容，
-> 不是机制，放 evorule-application ❌`）**迁移至兄弟仓 evorule-application**。
+> All industry-facing, out-of-the-box rule sets (hospital HIPAA compliance, law-firm conflict of interest, finance AML, etc.) have been
+> migrated to the sibling repo evorule-application per the evorule boundary spec (see the boundary decision table in the repo-root
+> `AGENTS.md`: `adding rule templates to evorule-cli = business content, not mechanism; goes to evorule-application ❌`).
 
-## 本目录内容（机制层最小化样例）
+## Contents of this directory (minimal mechanism-layer samples)
 
-本目录保留的示例仅用于 **演示 evorule 核心机制的语法**，不涉及任何行业业务规则。
-如需业务级开箱即用模板，请移步 `evorule-application` 仓：
+The examples kept here exist only to **demonstrate the syntax of the evorule core mechanisms**; no industry business rules are involved.
+For business-level, out-of-the-box templates, go to the `evorule-application` repo:
 
-- 仓库相对位置：与 evorule 仓为同级兄弟仓（兄弟目录）
-- 路径（建议克隆后访问）：`evorule-application/examples/evorule-cli/`
-- 典型模板目录：
-  - `hospital/` — 医院信息科 HIPAA / 等保 2.0 / PIPL 规则集
-  - `law-firm/` — 律所合规部 利益冲突 / 客户保密 / GDPR Art.30 规则集
-  - `finance/` — 金融 AML / KYC 规则集
-  - `gov/` — 政务数据分级分类规则集
+- Relative position: a sibling repo of the evorule repo (sibling directory)
+- Path (recommended after cloning): `evorule-application/examples/evorule-cli/`
+- Typical template directories:
+  - `hospital/` — hospital IT department HIPAA / MLPS 2.0 / PIPL rule sets
+  - `law-firm/` — law-firm compliance department: conflict of interest / client confidentiality / GDPR Art.30 rule sets
+  - `finance/` — finance AML / KYC rule sets
+  - `gov/` — government data classification & grading rule sets
 
-## 机制层最小化使用演示
+## Minimal mechanism-layer usage demo
 
-不依赖业务模板，用 evorule 核心的测试 fixture（`tests/fixtures/`）即可跑通全部 5 个子命令：
+Without any business template, the evorule core's test fixtures (`tests/fixtures/`) are enough to exercise all 5 subcommands:
 
 ```bash
-# 假设当前在 evorule 仓根目录
+# Assume the current directory is the evorule repo root
 
-# 1) 验证一组最小化规则集
+# 1) Validate a minimal rule set
 evorule validate evorule-cli/tests/fixtures/valid/
 
-# 2) 用最小化 payload 跑一次执行
+# 2) Run one execution with a minimal payload
 echo '{"user_id": "u-001", "counter": 0}' > /tmp/payload.json
 evorule run evorule-cli/tests/fixtures/valid/ --payload-file /tmp/payload.json
 
-# 3) 生成 fact log，然后验证哈希链
+# 3) Generate a fact log, then verify the hash chain
 evorule run evorule-cli/tests/fixtures/valid/ \
     --payload-file /tmp/payload.json -o /tmp/facts.jsonl
 evorule verify-chain /tmp/facts.jsonl
 
-# 4) 时间旅行：重放 + 对两次运行做 diff
+# 4) Time travel: replay + diff the two runs
 evorule replay /tmp/facts.jsonl
-evorule diff /tmp/facts.jsonl /tmp/facts.jsonl   # 相同 → 空 diff
+evorule diff /tmp/facts.jsonl /tmp/facts.jsonl   # identical → empty diff
 ```
 
-## 如何编写自己的规则（不搬业务模板）
+## How to write your own rules (without copying business templates)
 
-1. **最小起步**：复制 `evorule-cli/tests/fixtures/valid/*.json` 中任一条规则
-2. **按语法写**：规则结构参考 `evorule-governance/src/rule_validation.rs` 的静态校验规则
-3. **本地验证**：`evorule validate ./my-rules/`
-4. **接到生产**：把 `io_request` 的 `io_type` 接入你方 I/O handler（实现放在
-   `evo-agent` 仓或 `evorule-application` 仓，**不能写进 evorule 核心仓**）
+1. **Start minimal**: copy any single rule from `evorule-cli/tests/fixtures/valid/*.json`
+2. **Write to the syntax**: model rule structure on the static validation rules in `evorule-governance/src/rule_validation.rs`
+3. **Validate locally**: `evorule validate ./my-rules/`
+4. **Go to production**: wire the `io_request`'s `io_type` into your own I/O handler (the implementation lives in the
+   `evo-agent` repo or the `evorule-application` repo; it must **not** be written into the evorule core repo)
 
 ---
 
-> 【留痕声明】本目录中原 hospital/ 与 law-firm/ 业务规则模板（2026-07-30 前存在）
-> 是**经项目方明确决策并确认**按 evorule 边界规范迁移出核心仓的越界清理操作，
-> 不再回迁（见 AGENTS.md §规则二·记录留痕）。
+> [Record note] The former hospital/ and law-firm/ business rule templates in this directory (present before 2026-07-30) were moved
+> out of the core repo as an out-of-boundary cleanup operation, **explicitly decided and confirmed by the project owner**, and are not
+> migrated back (see AGENTS.md §2, decision records).

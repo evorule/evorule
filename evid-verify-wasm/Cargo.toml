@@ -7,13 +7,15 @@ authors.workspace = true
 homepage.workspace = true
 repository.workspace = true
 readme.workspace = true
-description = "EVID 移动端验证器 wasm 绑定：extern \"C\" 字节 ABI（免安装主产物）+ wasm-bindgen 绑定面（feature bindgen）"
+description = "EVID mobile verifier wasm binding: extern \"C\" byte ABI (install-free primary artifact) + wasm-bindgen binding surface (feature bindgen)"
 rust-version = "1.81"
 
-# 双路线：cdylib（extern "C" 字节 ABI，零 import 零 JS 胶水，单文件 HTML
-# 验证器主产物）+ rlib（宿主侧 handler 测试）；bindgen feature 才编译
-# wasm-bindgen 绑定面——route A 产物保持零 import，WebAssembly.instantiate
-# 即用（wasm-bindgen 会在模块里挂宿主 import，污染免安装实例化）。
+# Dual routes: cdylib (extern "C" byte ABI, zero imports zero JS glue, the
+# single-file HTML verifier's primary artifact) + rlib (host-side handler
+# tests); the bindgen feature is what compiles the wasm-bindgen binding
+# surface — route A artifacts keep zero imports, ready for a plain
+# WebAssembly.instantiate (wasm-bindgen attaches host imports into the module,
+# polluting install-free instantiation).
 [lib]
 crate-type = ["cdylib", "rlib"]
 

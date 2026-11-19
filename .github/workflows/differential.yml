@@ -1,21 +1,21 @@
 # =============================================================================
-# GitHub Actions: 差分测试(Differential Testing)
+# GitHub Actions: differential testing
 #
-# 验证三个差分测试属性(验证代码位于各 tier 的 verification/ 目录):
+# Verifies the three differential-test properties (verification code lives in each tier's verification/ directory):
 #
-# evorule-reactor（verification/differential_test.rs）:
-#   - diff_reactor_vs_pure: reactor::next_step 与 pure::next_step
-#     产生相同状态变更(运行时逻辑 vs 纯函数逻辑一致性)
+# evorule-reactor (verification/differential_test.rs):
+#   - diff_reactor_vs_pure: reactor::next_step and pure::next_step
+#     produce the same state changes (runtime logic vs pure-function logic consistency)
 #
-# evorule-governance（verification/differential_test.rs）:
+# evorule-governance (verification/differential_test.rs):
 #   - diff_version_consistency: facts_log.version() == reactor.state.version
-#     (审计链版本号与反应器内部状态版本号一致)
+#     (audit-chain version matches the reactor's internal state version)
 #   - diff_rewind_vs_factslog: TimeMachine::rewind(facts, N).snapshot
-#     与 FactsLog 重放到版本 N 的快照一致(时间机器 vs 审计链重建)
+#     matches the FactsLog replay snapshot at version N (time machine vs audit-chain rebuild)
 #
-# 触发条件: tier1/tier2 源码、verification/ 目录或差分测试本身变更
+# Trigger: tier1/tier2 source, verification/ directories, or the differential tests themselves
 #
-# 本地等价命令:
+# Local equivalent commands:
 #   cargo test --package evorule-reactor --test differential_test
 #   cargo test --package evorule-governance --test differential_test
 # =============================================================================
@@ -51,12 +51,12 @@ on:
         required: false
         default: "256"
 
-# 显式最小权限 (Scorecard Token-Permissions): 默认只读, 写权限在需要的 job 单独声明
+# Explicit minimal permissions (Scorecard Token-Permissions): read-only by default; write permissions declared per job where needed
 permissions: read-all
 
 env:
   CARGO_TERM_COLOR: always
-  # 默认 256 case(快速),CI 可通过 workflow_dispatch 提升至 1000
+  # default 256 cases (fast); CI can raise it to 1000 via workflow_dispatch
   PROPTEST_CASES: "256"
 
 jobs:
@@ -76,8 +76,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      # 差分测试供源: agent_constitution.json 唯一实体在 evo-agent 仓
-      # (differential_test.rs 候选④ = 仓根兄弟位), 单仓检出缺源必红。
+      # Differential test source: the sole copy of agent_constitution.json lives in the evo-agent repo
+      # (differential_test.rs candidate 4 = repo-root sibling location); a single-repo checkout misses the source and goes red.
       - name: Checkout evo-agent (constitution source)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -118,7 +118,7 @@ jobs:
     needs: differential-test
     if: always()
     timeout-minutes: 5
-    # PR 摘要评论需要写 issue/pull-request API
+    # the PR summary comment needs the issue/pull-request write API
     permissions:
       issues: write
       pull-requests: write

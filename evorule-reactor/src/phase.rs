@@ -1,46 +1,48 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 反应器执行阶段（控制层状态机显式化）
+//! Reactor execution phases (making the control-plane state machine explicit)
 //!
-//! # 设计
+//! # Design
 //!
-//! ReactorPhase 是反应器的**控制层状态**，描述"现在在做什么"：
-//! - 不是业务语义（"在算 call_llm"），而是控制语义（"在等 I/O"）
-//! - 转移函数是纯算法，可单测
-//! - 主循环通过 phase 驱动，可观察、可演化
+//! ReactorPhase is the reactor's **control-plane state**, describing "what is
+//! being done now":
+//! - Not business semantics ("computing call_llm"), but control semantics
+//!   ("waiting for I/O")
+//! - The transition function is a pure algorithm, unit-testable
+//! - The main loop is driven by phase: observable and evolvable
 //!
-//! # 规范合规
+//! # Spec compliance
 //!
-//! - Phase 是控制层概念，非业务语义（符合 G8）
-//! - 转移函数是纯算法（符合机制-策略分离）
-//! - 不包含业务术语字符串（符合 §5.2）
-//! - 嵌套最多 2 层（符合 F8）
-//! - 单函数不超过 50 行（符合 F9）
+//! - Phase is a control-plane concept, not business semantics (per G8)
+//! - The transition function is a pure algorithm (per mechanism-policy separation)
+//! - Contains no business-term strings (per §5.2)
+//! - Nesting at most 2 levels (per F8)
+//! - Single function no more than 50 lines (per F9)
 
-/// 反应器执行阶段
+/// Reactor execution phase
 ///
-/// 描述反应器主循环当前所处的控制层状态。
-/// 每次主循环迭代时更新，用于可观测性和调试。
+/// Describes the control-plane state the reactor main loop is currently in.
+/// Updated on every main-loop iteration, for observability and debugging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ReactorPhase {
-    /// 启动或上一轮 Stable 后，等待第一个 Fact
+    /// After startup or a Stable round, waiting for the first Fact
     #[default]
     Idle,
-    /// 非阻塞 drain command 通道中所有待处理 Fact
+    /// Non-blocking drain of all pending Facts from the command channel
     Draining,
-    /// 持续执行队列指令（pending_io == 0）
+    /// Continuously executing queue instructions (pending_io == 0)
     Executing,
-    /// 等待 I/O 响应（pending_io > 0）
+    /// Waiting for I/O responses (pending_io > 0)
     AwaitingIo,
-    /// 本轮已 Stable，发射 Stable Fact 后回到 Idle
+    /// Stable in this round; emits the Stable Fact then returns to Idle
     Stable,
-    /// 错误状态（max_rounds/TCB/I/O timeout），恢复后回到 Idle
+    /// Error state (max_rounds/TCB/I-O timeout); returns to Idle after recovery
     Error,
 }
 
 impl ReactorPhase {
-    /// 阶段名称（用于 tracing 和 Prometheus 标签）
+    /// Phase name (for tracing and Prometheus labels)
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Idle => "idle",
@@ -53,26 +55,26 @@ impl ReactorPhase {
     }
 }
 
-/// 阶段转移上下文（纯数据，用于转移函数判断）
+/// Phase transition context (pure data, used by the transition function)
 ///
-/// 从 ReactorState 提取的关键信息，使转移函数成为纯函数。
+/// Key information extracted from ReactorState, making the transition function pure.
 #[derive(Debug, Clone)]
 pub struct PhaseContext {
-    /// 队列是否为空
+    /// Whether the queue is empty
     pub queue_empty: bool,
-    /// pending I/O 数量
+    /// Number of pending I/O requests
     pub pending_io: usize,
-    /// 已执行步数
+    /// Number of executed steps
     pub steps: usize,
-    /// 本轮是否 drain 到任何 Fact
+    /// Whether this round drained any Fact
     pub drained_any: bool,
 }
 
 impl ReactorPhase {
-    /// 阶段转移函数（纯算法，可单测）
+    /// Phase transition function (pure algorithm, unit-testable)
     ///
-    /// 根据当前阶段和上下文，返回下一个阶段。
-    /// 此函数不修改任何状态，仅做逻辑判断。
+    /// Given the current phase and context, returns the next phase.
+    /// This function modifies no state; it only makes logical decisions.
     pub fn next(self, ctx: &PhaseContext) -> Self {
         match self {
             Self::Idle => Self::Draining,
@@ -82,7 +84,7 @@ impl ReactorPhase {
         }
     }
 
-    /// Draining 后的转移：根据上下文判断下一个阶段
+    /// Transition after Draining: decides the next phase from the context
     fn next_after_draining(ctx: &PhaseContext) -> Self {
         if ctx.pending_io > 0 {
             Self::AwaitingIo
@@ -95,7 +97,7 @@ impl ReactorPhase {
         }
     }
 
-    /// Executing 后的转移：根据上下文判断下一个阶段
+    /// Transition after Executing: decides the next phase from the context
     fn next_after_executing(ctx: &PhaseContext) -> Self {
         if ctx.pending_io > 0 {
             Self::AwaitingIo
@@ -106,7 +108,7 @@ impl ReactorPhase {
         }
     }
 
-    /// 执行完毕后的转移：判断稳定还是回到 Idle
+    /// Transition after execution finishes: decides stable or back to Idle
     fn post_execution(ctx: &PhaseContext) -> Self {
         if ctx.steps > 0 {
             Self::Stable

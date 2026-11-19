@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! QEMU mps2-an386 I/O 暂停-恢复样例：对拍 fixture 规则包 + 固定应答恢复
+//! QEMU mps2-an386 I/O pause-resume example: parity fixture rule pack +
+//! fixed-reply recovery
 //!
-//! # 对拍协议（与 `examples/native_io_resume_tail` 配对）
-//! 同一 `.evopack` 规则包（双路径 I/O 循环规则）+ 同一指令 + 同一固定应答
-//! 在 no_std 固件中执行完整暂停-恢复协议：run 触发 IoRequest 暂停 →
-//! `IoBridge`（semihosting echo 面）执行 → `resume_io` 注入恢复 →
-//! 消费到 `llm_response` 且 `__io_results__` 清除 → 输出
-//! `IO_CHAIN_TAIL=<64 hex>`；与 native 参照输出逐字节一致即证 I/O 恢复
-//! 协议跨目标一致（判据链见 native 侧文档）。
+//! # Parity protocol (paired with `examples/native_io_resume_tail`)
+//! The same `.evopack` rule pack (dual-path I/O loop rules) + the same
+//! instruction + the same fixed reply executes the full pause-resume
+//! protocol in no_std firmware: run triggers an IoRequest pause → the
+//! `IoBridge` (semihosting echo surface) executes → `resume_io` injects and
+//! recovers → consumed into `llm_response` with `__io_results__` cleared →
+//! prints `IO_CHAIN_TAIL=<64 hex>`; byte-identical output versus the native
+//! reference proves the I/O recovery protocol is consistent across targets
+//! (see the native side's docs for the criterion chain).
 //!
-//! 运行（与 qemu_parity 同编排，固件名替换为 qemu_io_resume）：
+//! Run (same orchestration as qemu_parity, with the firmware name replaced
+//! by qemu_io_resume):
 //! ```text
 //! cargo build --release --target thumbv7em-none-eabihf \
 //!     -p evorule-mcu --features qemu,tlsf-alloc --example qemu_io_resume
@@ -36,14 +40,16 @@ use evorule_mcu::{IoBridge, McuError, McuExecutor, McuWalStore, RulePack};
 use evorule_tcb::JsonValue;
 use panic_semihosting as _;
 
-/// I/O 对拍 fixture（host 编译器 `compile-evopack` 产物，与 native 参照同一文件）
+/// I/O parity fixture (produced by the host compiler's `compile-evopack`;
+/// the same file as the native reference)
 const EVOPACK: &[u8] = include_bytes!("../tests/fixtures/io_resume_rules.evopack");
 
-/// 内核堆（TLSF 静态池，8192 字 = 32 KiB，与 parity 样例同容量）
+/// Kernel heap (TLSF static pool, 8192 words = 32 KiB, same capacity as the
+/// parity example)
 #[global_allocator]
 static HEAP: TlsfGlobal<8192> = TlsfGlobal::new();
 
-/// 固定 LLM 应答（与 native 参照逐字段同值，对拍确定性）
+/// Fixed LLM reply (field-by-field identical to the native reference; parity determinism)
 fn canned_llm_result() -> JsonValue {
     JsonValue::object_from_pairs(&[
         ("role", JsonValue::string("assistant")),
@@ -51,8 +57,9 @@ fn canned_llm_result() -> JsonValue {
     ])
 }
 
-/// semihosting echo 面的确定性 canned 桥（仿真最小实现）：
-/// 应答固定值进审计链，保证 QEMU 与 native 两侧应答逐字节一致
+/// Deterministic canned bridge over the semihosting echo surface (minimal
+/// simulation implementation): the fixed reply value enters the audit chain,
+/// keeping the QEMU and native replies byte-identical
 struct CannedBridge;
 
 impl IoBridge for CannedBridge {
@@ -64,7 +71,7 @@ impl IoBridge for CannedBridge {
     }
 }
 
-/// fail-visible 退出（错误消息经 semihosting 留痕）
+/// fail-visible exit (the error message is traced via semihosting)
 fn fail(msg: &str) -> ! {
     hprintln!("IO_PARITY_FAIL: {}", msg);
     debug::exit(debug::EXIT_FAILURE);
@@ -75,8 +82,9 @@ fn fail(msg: &str) -> ! {
 
 #[entry]
 fn main() -> ! {
-    // SAFETY: HEAP 为静态独占分配器，初始化恰好在 main 入口执行一次
-    // （entry 单入口语义），且中断在 core 启动后、init 前不会触碰堆
+    // SAFETY: HEAP is the static exclusive allocator; initialization executes
+    // exactly once at the main entry (the entry single-entry semantics), and
+    // interrupts do not touch the heap after core startup and before init
     unsafe {
         HEAP.init();
     }
@@ -87,7 +95,8 @@ fn main() -> ! {
     };
     let mut ex = McuExecutor::new(pack);
 
-    // 指令：call_external（messages 透传，与 native 参照同值）
+    // Instruction: call_external (messages passed through, same values as the
+    // native reference)
     let instruction = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("call_external")),
         (
@@ -105,7 +114,7 @@ fn main() -> ! {
         ),
     ]);
 
-    // run → IoRequest 入链后暂停
+    // run → pauses after the IoRequest is appended to the chain
     let request_id = match ex.run(instruction) {
         Err(McuError::IoPaused {
             request_id,
@@ -124,7 +133,7 @@ fn main() -> ! {
         }
     };
 
-    // 板侧执行 I/O（canned 桥）后恢复
+    // Recover after the board side performs the I/O (canned bridge)
     let mut bridge = CannedBridge;
     let outcome = match ex.pending_ios().first() {
         Some(p) if p.request_id == request_id => bridge.perform(&p.io_type, &p.params),
@@ -140,7 +149,8 @@ fn main() -> ! {
         Err(_) => fail("resume failed"),
     }
 
-    // 场景终态自检：llm_response 消费到位，容器清除不残留
+    // Scenario final-state self-check: llm_response consumed in place,
+    // container cleared with no residue
     match ex
         .payload()
         .get("llm_response")

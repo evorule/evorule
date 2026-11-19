@@ -1,25 +1,30 @@
-# EvoRule Fuzz 工作区（独立于主 workspace，由父 Cargo.toml exclude）
+# EvoRule fuzz workspace (independent of the main workspace, excluded by the parent Cargo.toml)
 #
-# 覆盖:
-# - fuzz_resolve_path:        path.rs 路径字符串解析（resolve_path / resolve_path_mut）— 攻击面主目标
-# - fuzz_json_display:        JsonValue 边界构造 → Display 序列化（panic / 深度递归猎场）
-# - fuzz_stable_json_hash:    审计链稳定序列化 + 事实哈希（规范形幂等/确定性，纯函数面）
-# - fuzz_wal_parse_roundtrip: WAL 记录解析 + Fact 持久化 roundtrip（Cursor 输入零文件 IO）
-# - fuzz_chain_invariants:    审计链链式性质（链分解/单条敏感性/genesis，纯函数面）
+# Coverage:
+# - fuzz_resolve_path:        path.rs path-string resolution (resolve_path / resolve_path_mut) — the main attack-surface target
+# - fuzz_json_display:        JsonValue edge-case construction → Display serialization (hunting ground for panics / deep recursion)
+# - fuzz_stable_json_hash:    audit-chain stable serialization + fact hashing (canonical-form idempotence / determinism, pure-function surface)
+# - fuzz_wal_parse_roundtrip: WAL record parsing + Fact persistence roundtrip (Cursor input, zero file IO)
+# - fuzz_chain_invariants:    audit-chain chaining properties (chain decomposition / single-record sensitivity / genesis, pure-function surface)
 #
-# 运行（本地 smoke）:
+# Run (local smoke):
 #   Linux/macOS:  RUSTUP_TOOLCHAIN=nightly-2025-11-21 cargo fuzz run fuzz-resolve-path --target x86_64-unknown-linux-gnu -- -max_total_time=30
-#     （--target 显式 host 三元组: cargo-fuzz 0.14+ 在 Linux 默认 musl 静态目标, 与 sanitizer 不兼容）
-#   Windows 补充: 需将 MSVC 的 ASAN DLL 目录加入 PATH，否则报 STATUS_DLL_NOT_FOUND:
+#     (--target pins the host triple explicitly: cargo-fuzz 0.14+ defaults to the musl static target on Linux, which is incompatible with sanitizers)
+#   Windows extra: add the MSVC ASAN DLL directory to PATH, otherwise STATUS_DLL_NOT_FOUND is raised:
 #     $env:PATH = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\<ver>\bin\Hostx64\x64;' + $env:PATH
-# CI: .github/workflows/fuzz.yml（每目标 60s smoke）
+# CI: .github/workflows/fuzz.yml (60s smoke per target)
 #
-# corpus 约定: corpus/ 目录默认 ignore（libFuzzer 自学习语料不入库防膨胀）；
-# seed_* 前缀文件为刻意维护的结构种子（覆盖协议关键形态），以 git add -f 入库。
-# 无副作用纪律（最高原则）: 仅调用只读纯函数 API。审计链三 target 依赖
-# evorule-audit-chain（no_std 纯算法 crate）与 evorule-reactor 的纯解析/序列化
-# 函数（parse_wal_records 经 BufRead 输入，fuzz 侧以 Cursor 包裹，零文件系统）。
-# 禁止清单: WalWriter / FactsLog::recover* / with_wal* 等一切写路径与状态挂载。
+# Corpus convention: the corpus/ directory is ignored by default (libFuzzer
+# self-learned corpora stay out of the repo to prevent bloat); files with the
+# seed_* prefix are deliberately maintained structural seeds (covering key
+# protocol shapes) and are committed via git add -f.
+# Side-effect discipline (highest principle): only read-only pure-function
+# APIs are called. The three audit-chain targets depend on evorule-audit-chain
+# (a no_std pure-algorithm crate) and on the pure parsing/serialization
+# functions of evorule-reactor (parse_wal_records takes a BufRead input; the
+# fuzz side wraps it in a Cursor, zero filesystem).
+# Forbidden list: WalWriter / FactsLog::recover* / with_wal* and every other
+# write path or state mounting.
 
 [package]
 name = "evorule-fuzz"

@@ -4,97 +4,97 @@ Formal verification reports are public artifacts; we release them under CC0
 for maximum transparency and reproducibility.
 -->
 
-# TLC 模型检测验证报告
+# TLC Model Checking Verification Report
 
-> **验证对象**: `ExecuteTransition.tla` — tier0 `execute_transition` 状态机
-> **验证工具**: TLC 2.19 (tla2tools.jar, 2024-08-08 build)
-> **运行环境**: Windows 11, OpenJDK 25, 4GB heap
-> **验证日期**: 2026-07-25
-> **设计文档**: [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](../../verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) §3.2.2
+> **Verification target**: `ExecuteTransition.tla` — tier0 `execute_transition` state machine
+> **Verification tool**: TLC 2.19 (tla2tools.jar, 2024-08-08 build)
+> **Runtime environment**: Windows 11, OpenJDK 25, 4GB heap
+> **Verification date**: 2026-07-25
+> **Design document**: [EVORULE_FORMAL_VERIFICATION_PLAN_v3.md](../../verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) §3.2.2
 
 ---
 
-## 1. 验证结果
+## 1. Verification result
 
 `$lang
 Model checking completed. No error has been found.
 
 ```text
 
-| 指标           | 值                                     |
+| Metric | Value |
 | -------------- | -------------------------------------- |
-| 生成状态数     | 16,830                                 |
-| 去重状态数     | 13,629                                 |
-| 队列剩余       | 0                                      |
-| 状态图搜索深度 | 33                                     |
-| 平均出度       | 1 (最小 0, 最大 21, 95th percentile 1) |
-| 指纹碰撞概率   | 2.4×10⁻¹² (可忽略)                     |
-| 耗时           | < 1 秒                                 |
+| States generated | 16,830 |
+| Distinct states | 13,629 |
+| Queue remaining | 0 |
+| State graph search depth | 33 |
+| Average out-degree | 1 (min 0, max 21, 95th percentile 1) |
+| Fingerprint collision probability | 2.4×10⁻¹² (negligible) |
+| Elapsed time | < 1 second |
 
-## 2. 模型参数
+## 2. Model parameters
 
-按 [v3 计划 §3.4](../../verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md)（L3 模型检测层）参数降级要求，使用以下有限模型：
+Per the parameter downgrade requirements of [v3 plan §3.4](../../verification/plan/EVORULE_FORMAL_VERIFICATION_PLAN_v3.md) (L3 model-checking layer), the following finite model is used:
 
-| 参数         | 值   | 对应 Rust 常量         | 说明                                |
+| Parameter | Value | Corresponding Rust constant | Description |
 | ------------ | ---- | ---------------------- | ----------------------------------- |
-| N_MAX        | 2    | MAX_TRANSFORM_RULES=128 | core_eval 规则数上限（降级为 2）    |
-| D_MAX        | 2    | MAX_BRANCH_DEPTH=64    | branch 嵌套深度上限（降级为 2）     |
-| D_DOM_MAX    | 2    | MAX_DOMAIN_DEPTH=64    | domain 递归深度上限（降级为 2）     |
-| InstrTypeSet | 4 种 | 4 元指令               | set / push / branch / io_request    |
-| IoTypeSet    | 3 种 | 5 I/O 类型             | call_llm / call_external / query_db |
+| N_MAX        | 2    | MAX_TRANSFORM_RULES=128 | core_eval rule count cap (downgraded to 2) |
+| D_MAX        | 2    | MAX_BRANCH_DEPTH=64    | branch nesting depth cap (downgraded to 2) |
+| D_DOM_MAX    | 2    | MAX_DOMAIN_DEPTH=64    | domain recursion depth cap (downgraded to 2) |
+| InstrTypeSet | 4    | 4-primitive instruction | set / push / branch / io_request |
+| IoTypeSet    | 3    | 5 I/O types | call_llm / call_external / query_db |
 
-### 参数降级理由
+### Parameter downgrade rationale
 
-N_MAX=3 完整模型产生状态空间爆炸（8062 个状态文件，5.1GB 磁盘，未完成）。
-降级到 N_MAX=2 后，控制流路径**全部保留**，深度强制验证 D_MAX=2 仍有效
-（验证 depth=2 时 NestingTooDeep 触发）。
+The full N_MAX=3 model caused state-space explosion (8062 state files, 5.1GB disk, did not finish).
+After downgrading to N_MAX=2, all control-flow paths are **retained**, and the depth enforcement verification is still valid at D_MAX=2
+(NestingTooDeep is verified to trigger at depth=2).
 
-## 3. 验证的 5 个不变式
+## 3. The 5 verified invariants
 
-| 不变式              | 全称                      | 验证内容                                                                  | 结果    |
+| Invariant | Full name | Verified content | Result |
 | ------------------- | ------------------------- | ------------------------------------------------------------------------- | ------- |
-| I1 Termination      | TerminationInvariant      | pc ∈ {Done, Error} ⇒ result_type ≠ none；pc = Error ⇒ result_type = error | ✅ PASS |
-| I2 Determinism      | DeterminismInvariant      | pc ∈ PCType ∧ result_type ∈ ResultType（类型一致性）                      | ✅ PASS |
-| I3 DepthEnforcement | DepthEnforcementInvariant | depth ≤ D_MAX ∧ domDepth ≤ D_DOM_MAX+1（或 pc = Error）                   | ✅ PASS |
-| I4 IoEarlyReturn    | IoEarlyReturnInvariant    | io_requested ⇒ pc ∈ {IoReturn, Done}                                      | ✅ PASS |
-| I5 LoopProgress     | LoopProgressInvariant     | 0 ≤ i ≤ N_MAX                                                             | ✅ PASS |
+| I1 Termination | TerminationInvariant | pc ∈ {Done, Error} ⇒ result_type ≠ none; pc = Error ⇒ result_type = error | ✅ PASS |
+| I2 Determinism | DeterminismInvariant | pc ∈ PCType ∧ result_type ∈ ResultType (type consistency) | ✅ PASS |
+| I3 DepthEnforcement | DepthEnforcementInvariant | depth ≤ D_MAX ∧ domDepth ≤ D_DOM_MAX+1 (or pc = Error) | ✅ PASS |
+| I4 IoEarlyReturn | IoEarlyReturnInvariant | io_requested ⇒ pc ∈ {IoReturn, Done} | ✅ PASS |
+| I5 LoopProgress | LoopProgressInvariant | 0 ≤ i ≤ N_MAX | ✅ PASS |
 
-## 4. 验证覆盖范围
+## 4. Verification coverage
 
-### ✅ TLC 验证（有限模型穷举）
+### ✅ TLC verification (finite model exhaustive)
 
-- N_MAX=2, D_MAX=2, D_DOM_MAX=2 的所有可能输入组合
-- 5 个不变式在所有 13,629 个可达状态上成立
-- 状态机无死锁（TerminalStep 处理 Done/Error 自环）
-- 状态机确定性（每个 pc 值唯一决定 enabled 动作）
-- 深度不超限（branch depth ≤ 2, domain depth ≤ 3）
-- I/O 提前返回（io_requested ⇒ pc ∈ {IoReturn, Done}）
-- 循环推进（i ∈ [0, 2]）
+- All possible input combinations for N_MAX=2, D_MAX=2, D_DOM_MAX=2
+- 5 invariants hold on all 13,629 reachable states
+- state machine is deadlock-free (TerminalStep handles Done/Error self-loops)
+- state machine is deterministic (each pc value uniquely determines enabled actions)
+- depth not exceeded (branch depth ≤ 2, domain depth ≤ 3)
+- I/O early return (io_requested ⇒ pc ∈ {IoReturn, Done})
+- loop progress (i ∈ [0, 2])
 
-### 控制流路径覆盖
+### Control-flow path coverage
 
-以下 14 个 pc 状态全部被覆盖：
+All 14 pc states below are covered:
 Init → LengthCheck → Loop → ExecRule →
 BranchDepthCheck → DomainDepthCheck → DomainEval →
 BranchDomain → BranchBody → ExecSubRule →
 IoReturn → ExtractResult → Done / Error
 
-### ❌ TLC 不验证（需 TLAPS，未来工作）
+### ❌ TLC does not verify (requires TLAPS, future work)
 
-- ∀N 的归纳证明（TLC 只验有限 N_MAX=2）
-- 无限状态空间性质
-- 真实 BTreeMap/路径解析的语义正确性（已抽象掉）
+- inductive proof for ∀N (TLC only verifies finite N_MAX=2)
+- infinite state-space properties
+- semantic correctness of the real BTreeMap/path resolution (abstracted away)
 
-## 5. 复现命令
+## 5. Reproduction command
 
 ```bash
 cd evorule-tcb/tla
 java -XX:+UseParallelGC -cp tla2tools.jar tlc2.TLC -config ExecuteTransition.cfg ExecuteTransition
 ```
 
-## 6. 结论
+## 6. Conclusion
 
-tier0 `execute_transition` 的 TLA+ 状态机规格在 N_MAX=2, D_MAX=2, D_DOM_MAX=2
-有限模型下通过 TLC 模型检测，5 个不变式全部成立，无死锁。
+The TLA+ state machine specification of tier0 `execute_transition` passes TLC model checking under the finite model N_MAX=2, D_MAX=2, D_DOM_MAX=2;
+all 5 invariants hold, no deadlock.
 
-**T1-3 TLC 模型检测 PASS ✅**
+**T1-3 TLC model checking PASS ✅**

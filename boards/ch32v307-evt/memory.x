@@ -1,11 +1,15 @@
-/* CH32V307VCT6 内存布局（256KB Flash / 64KB RAM，riscv-rt 0.18 REGION_* 约定）
+/* CH32V307VCT6 memory layout (256KB Flash / 64KB RAM, riscv-rt 0.18 REGION_*
+ * convention)
  *
- * Flash 尾部 8 页 × 4KB = 32KB（0x08038000..0x08040000）为 WAL 尾部页环，
- * 有意不设 REGION——该区仅由板级代码固定地址访问（环形布局 8 页起步，
- * 参数化扩容时同步调整 REGION_TEXT/RODATA 长度与本文件注记）。
+ * The last 8 Flash pages, 8 x 4KB = 32KB (0x08038000..0x08040000), form the
+ * WAL tail-page ring, intentionally without a REGION — that area is accessed
+ * only at fixed addresses by board code (ring layout starts at 8 pages; when
+ * parameterizing a larger capacity, adjust REGION_TEXT/RODATA lengths and the
+ * notes in this file in lockstep).
  *
- * RAM 配平注意：TLSF 静态池（8192 字 = 32KB + 头开销）落在 .bss，
- * REGION_BSS 必须 ≥ 36KB；REGION_HEAP 仅为占位（实际堆 = .bss 中的池）。
+ * RAM balancing note: the TLSF static pool (8192 words = 32KB + header
+ * overhead) lives in .bss; REGION_BSS must be >= 36KB. REGION_HEAP is a
+ * placeholder only (the actual heap is the pool in .bss).
  */
 MEMORY
 {

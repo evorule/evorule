@@ -17,236 +17,236 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# EvoRule 商业许可协议（摘要）
+# EvoRule Commercial License Agreement (Summary)
 
-**版本**: 2.0
-**生效日期**: 2026-09-08
+**Version**: 2.0
+**Effective date**: 2026-09-08
 
-> ⚠️ **重要提示**：本文档为商业许可协议的**摘要版本**，完整法律文本需通过正式渠道获取并签署。
-> 如需获取完整的商业许可协议，请联系：<evorulelab@gmail.com>
-
----
-
-## 1. 许可授予
-
-EvoRule Project（以下简称"许可方"）授予您（以下简称"被许可方"）**非独占、不可转让**（除非获得书面同意）的商业许可，允许您在符合本协议条款的前提下使用 EvoRule 反应式执行引擎软件。
-
-### 1.1 许可范围
-
-被许可方有权：
-
-- ✅ 在**闭源**商业产品中使用 EvoRule
-- ✅ **修改** EvoRule 源代码（无需公开）
-- ✅ 将 EvoRule **集成**到专有软件中
-- ✅ 在 **SaaS 服务**中使用 EvoRule（无需公开服务端代码）
-- ✅ **分发**包含 EvoRule 的产品
-- ✅ 在产品文档和营销材料中**引用** EvoRule 名称（需遵守 [TRADEMARK.md](TRADEMARK.md) 政策）
-
-### 1.2 限制
-
-被许可方不得：
-
-- ❌ **反向工程**、反编译或反汇编（除非适用法律明确允许）
-- ❌ **转售、出租或租赁** EvoRule 本身
-- ❌ **移除或修改**版权声明和商标
-- ❌ **将许可转让**给第三方（除非获得书面同意）
-- ❌ **使用 EvoRule 商标**进行未经授权的商业推广
+> ⚠️ **Important**: this document is a **summary version** of the commercial license agreement; the complete legal text must be obtained and executed through official channels.
+> To obtain the complete commercial license agreement, contact: <evorulelab@gmail.com>
 
 ---
 
-## 2. 许可类型
+## 1. License Grant
 
-### 2.1 永久许可
+EvoRule Project (hereinafter the "Licensor") grants you (hereinafter the "Licensee") a **non-exclusive, non-transferable** (except with written consent) commercial license to use the EvoRule reactive execution engine software, subject to the terms of this agreement.
 
-| 项目 | 说明 |
+### 1.1 Scope of the License
+
+The Licensee is entitled to:
+
+- ✅ Use EvoRule in **closed-source** commercial products
+- ✅ **Modify** the EvoRule source code (without publication)
+- ✅ **Integrate** EvoRule into proprietary software
+- ✅ Use EvoRule in **SaaS services** (without publishing the server-side code)
+- ✅ **Distribute** products containing EvoRule
+- ✅ **Reference** the EvoRule name in product documentation and marketing materials (subject to the [TRADEMARK.md](TRADEMARK.md) policy)
+
+### 1.2 Restrictions
+
+The Licensee must not:
+
+- ❌ **Reverse engineer**, decompile, or disassemble (except as explicitly permitted by applicable law)
+- ❌ **Resell, rent out, or lease** EvoRule itself
+- ❌ **Remove or modify** copyright notices and trademarks
+- ❌ **Transfer the license** to a third party (except with written consent)
+- ❌ Use the **EvoRule trademarks** for unauthorized commercial promotion
+
+---
+
+## 2. License Types
+
+### 2.1 Perpetual License
+
+| Item | Description |
 |---|---|
-| 费用 | 一次性付费 |
-| 期限 | 永久有效 |
-| 更新 | 不包含未来版本的免费更新 |
-| 适用 | 希望长期使用**特定版本**的企业 |
-| 升级 | 升级到新版本需另付费 |
+| Cost | One-time payment |
+| Term | Perpetual |
+| Updates | Free updates to future versions not included |
+| Fits | Enterprises intending to use a **specific version** long-term |
+| Upgrades | Upgrading to a new version requires an additional payment |
 
-### 2.2 订阅许可
+### 2.2 Subscription License
 
-| 项目 | 说明 |
+| Item | Description |
 |---|---|
-| 费用 | 年费制 |
-| 期限 | 按年续费 |
-| 更新 | 包含所有版本更新 |
-| 支持 | 包含基础技术支持 |
-| 适用 | 希望持续获得最新功能和支持的企业 |
+| Cost | Annual fee |
+| Term | Renewed yearly |
+| Updates | All version updates included |
+| Support | Basic technical support included |
+| Fits | Enterprises seeking continuous access to the latest features and support |
 
-### 2.3 永久 + 维护
+### 2.3 Perpetual + Maintenance
 
-永久许可基础上，按年支付维护费，获得订阅许可的所有权益。
-
----
-
-## 3. 定价框架
-
-- 按**实体规模**（年营收区间）与**部署规模**计价；
-- 具体价目单在签署时提供，**不公开于本摘要**；
-- 技术支持与实施服务**单独计价**。
-
-> 年营收 < ¥1 亿的合格实体优先使用 [FCL](FREE_COMMERCIAL_LICENSE.md)（免费）；本商业许可主要面向**不符合 FCL 资格**的实体。
-
-**联系方式**: <evorulelab@gmail.com>（主题加 `[Commercial License]`）
+Perpetual license plus an annual maintenance fee, obtaining all benefits of the subscription license.
 
 ---
 
-## 4. 变更控制权条款（Change of Control）
+## 3. Pricing Framework
 
-若被许可方发生**收购、合并或控制权转移**，本许可在以下情形**终止或须重新谈判**：
+- Priced by **entity size** (annual revenue band) and **deployment scale**;
+- The specific price list is provided at signing and is **not published in this summary**;
+- Technical support and implementation services are **priced separately**.
 
-- (a) 受让方为被许可方竞争对手；或
-- (b) 交易导致 EvoRule 被纳入竞争对手产品线。
+> Eligible entities with annual revenue < CNY 100 million should use the [FCL](FREE_COMMERCIAL_LICENSE.md) (free) first; this commercial license primarily targets entities **not eligible for the FCL**.
 
-被许可方须在控制权变更完成前 **30 日**书面通知版权人。
-
----
-
-## 5. 技术支持
-
-### 5.1 基础支持（包含在订阅许可中）
-
-- 📧 **邮件支持** — 工作日 48 小时内响应
-- 📚 **文档访问权限** — 含内部技术手册
-- 🐛 **Bug 修复** — 严重程度分级处理
-
-### 5.2 高级支持（额外付费）
-
-- 📞 **电话 / 视频会议支持**
-- ⚡ **紧急问题优先处理** — 4 小时内响应
-- 👨‍💻 **专属技术顾问**
-- 🎓 **定制培训和咨询**
-
-### 5.3 不在支持范围
-
-- ❌ 项目方私有代码的 bug
-- ❌ 第三方库集成的问题
-- ❌ 使用方式咨询（可单独购买培训）
+**Contact**: <evorulelab@gmail.com> (add `[Commercial License]` to the subject)
 
 ---
 
-## 6. 保证与免责声明
+## 4. Change of Control Clause
 
-### 6.1 有限保证
+If the Licensee undergoes an **acquisition, merger, or transfer of control**, this license **terminates or must be renegotiated** in either of the following circumstances:
 
-许可方保证 EvoRule 在正常使用时按官方文档描述运行；发现重大 Bug 时提供修复（订阅期内免费，永久许可需购买维护）。
+- (a) The acquirer is a competitor of the Licensee; or
+- (b) The transaction results in EvoRule being incorporated into a competitor's product line.
 
-### 6.2 免责声明
-
-除明确保证外，EvoRule 按"**现状**"提供，不提供任何其他明示或暗示的保证（适销性、特定用途适用性、不侵权、持续可用性 / 零停机等）。
-
----
-
-## 7. 责任限制
-
-在任何情况下，许可方对因使用或无法使用 EvoRule 而导致的任何损害**不承担责任**。累计赔偿责任**不超过**被许可方在过去 12 个月内支付的许可费用总额。
+The Licensee must notify the Copyright Holder in writing **30 days** before the completion of the change of control.
 
 ---
 
-## 8. 终止
+## 5. Technical Support
 
-### 8.1 自动终止情形
+### 5.1 Basic Support (included in the subscription license)
 
-- 被许可方违反本协议条款
-- 被许可方破产或清算
-- 许可方被法律要求终止（合规原因）
-- 发生第四节变更控制权情形且未重新谈判
+- 📧 **Email support** — response within 48 hours on business days
+- 📚 **Documentation access** — including internal technical manuals
+- 🐛 **Bug fixes** — handled by severity tiering
 
-### 8.2 终止后果
+### 5.2 Premium Support (additional fee)
 
-许可终止后，被许可方必须立即停止使用、在 30 日内销毁所有副本并书面确认。
+- 📞 **Phone / video conference support**
+- ⚡ **Priority handling of urgent issues** — response within 4 hours
+- 👨‍💻 **Dedicated technical advisor**
+- 🎓 **Customized training and consulting**
 
-### 8.3 终止不影响
+### 5.3 Outside the Support Scope
 
-- 终止前已分发的产品（已部署的不追溯）
-- 终止前已发生的费用（不退还）
-- 终止前的责任限制条款
-
-### 8.4 违约治愈与专利诉讼（与 FCL 对齐）
-
-- **一般违约**：收到书面违约通知后 **15 日治愈期**内纠正，授权继续；逾期自动终止。
-- **故意或重复违约**：经一次纠正后再次实质性违约，**永久终止**。
-- **专利诉讼**：被许可方就 EvoRule 对版权人或其被许可人提起专利侵权诉讼，本许可（含专利授权）**即时终止**。
+- ❌ Bugs in the project's private code
+- ❌ Issues with third-party library integrations
+- ❌ Usage consultation (training may be purchased separately)
 
 ---
 
-## 9. 知识产权
+## 6. Warranty and Disclaimer
 
-- EvoRule 的所有**知识产权**归 EvoRule Project 所有
-- 本协议**不转让**任何知识产权，仅授予使用权
-- 被许可方对**基于 EvoRule 开发的衍生作品**拥有所有权
-- `core_eval.json`（宪法）采用 CC0 1.0，不在本协议范围内
+### 6.1 Limited Warranty
 
----
+The Licensor warrants that EvoRule operates as described in the official documentation under normal use; upon discovery of significant bugs, fixes are provided (free during a subscription term; a maintenance purchase is required for perpetual licenses).
 
-## 10. 适用法律与争议解决
+### 6.2 Disclaimer
 
-- **适用法律**：中华人民共和国法律
-- **争议解决**：先友好协商，协商不成时提交版权人所在地有管辖权的人民法院诉讼
-- **合同语言**：本协议以**中文为正本**
+Except for the express warranty above, EvoRule is provided "**as is**", with no other warranties of any kind, express or implied (including merchantability, fitness for a particular purpose, non-infringement, continuous availability / zero downtime, etc.).
 
 ---
 
-## 11. 其他条款
+## 7. Limitation of Liability
 
-### 11.1 完整性
-
-本协议构成双方就 EvoRule 商业许可的完整协议，取代之前所有口头或书面沟通。
-
-### 11.2 修订
-
-许可方保留随时修订本协议的权利，修订后的协议在通知被许可方后生效（已签许可不受影响）。
-
-### 11.3 可分割性
-
-任何条款被认定无效或不可执行，其余条款仍然有效。
-
-### 11.4 不弃权
-
-任何一方未行使权利，不构成对该权利的放弃。
+Under no circumstances shall the Licensor be **liable** for any damages arising from the use of or inability to use EvoRule. Aggregate liability shall **not exceed** the total license fees paid by the Licensee in the preceding 12 months.
 
 ---
 
-## 联系信息
+## 8. Termination
 
-**许可方**: EvoRule Project
-**邮箱**: <evorulelab@gmail.com>
-**网站**: <https://github.com/evorule/evorule>
+### 8.1 Automatic Termination
 
-**被许可方**: ________________________
-**联系人**: ________________________
-**邮箱**: ________________________
+- The Licensee breaches the terms of this agreement
+- The Licensee becomes bankrupt or is liquidated
+- The Licensor is legally required to terminate (compliance reasons)
+- A Section 4 change-of-control circumstance occurs without renegotiation
 
----
+### 8.2 Effect of Termination
 
-## 签署
+Upon termination of the license, the Licensee must immediately cease use, destroy all copies within 30 days, and confirm in writing.
 
-**许可方代表**:
+### 8.3 Termination Does Not Affect
 
-- 签名: ________________________
-- 姓名: ________________________
-- 职位: 创始人 & 项目负责人
-- 日期: ________________________
+- Products distributed before termination (no retroactive effect on deployed products)
+- Fees incurred before termination (non-refundable)
+- The limitation-of-liability provisions in effect before termination
 
-**被许可方代表**:
+### 8.4 Cure and Patent Litigation (aligned with the FCL)
 
-- 签名: ________________________
-- 姓名: ________________________
-- 职位: ________________________
-- 日期: ________________________
+- **Ordinary breach**: correction within a **15-day cure period** after receipt of written breach notice preserves the license; expiry without correction terminates it automatically.
+- **Willful or repeated breach**: a second material breach after one correction results in **permanent termination**.
+- **Patent litigation**: if the Licensee initiates patent infringement litigation against the Copyright Holder or its licensees over EvoRule, this license (including the patent grant) **terminates immediately**.
 
 ---
 
-## 文档历史
+## 9. Intellectual Property
 
-| 版本 | 日期 | 变更 |
+- All **intellectual property** in EvoRule is owned by the EvoRule Project
+- This agreement **does not transfer** any intellectual property; it grants only a right of use
+- The Licensee owns **derivative works it develops based on EvoRule**
+- `core_eval.json` (the constitution) is under CC0 1.0 and is outside the scope of this agreement
+
+---
+
+## 10. Governing Law and Dispute Resolution
+
+- **Governing law**: the laws of the People's Republic of China
+- **Dispute resolution**: friendly negotiation first; failing that, litigation before a people's court of competent jurisdiction at the place where the Copyright Holder is located
+- **Language of the agreement**: the **Chinese version is the authoritative original** of this agreement
+
+---
+
+## 11. Miscellaneous
+
+### 11.1 Entire Agreement
+
+This agreement constitutes the entire agreement between the parties concerning the commercial licensing of EvoRule, superseding all prior oral or written communications.
+
+### 11.2 Amendments
+
+The Licensor reserves the right to amend this agreement at any time; an amended agreement takes effect upon notice to the Licensee (already-signed licenses are unaffected).
+
+### 11.3 Severability
+
+If any provision is held invalid or unenforceable, the remaining provisions remain in effect.
+
+### 11.4 Non-Waiver
+
+A party's failure to exercise a right does not constitute a waiver of that right.
+
+---
+
+## Contact
+
+**Licensor**: EvoRule Project
+**Email**: <evorulelab@gmail.com>
+**Website**: <https://github.com/evorule/evorule>
+
+**Licensee**: ________________________
+**Contact person**: ________________________
+**Email**: ________________________
+
+---
+
+## Signature
+
+**Licensor's representative**:
+
+- Signature: ________________________
+- Name: ________________________
+- Title: Founder & Project Lead
+- Date: ________________________
+
+**Licensee's representative**:
+
+- Signature: ________________________
+- Name: ________________________
+- Title: ________________________
+- Date: ________________________
+
+---
+
+## Document History
+
+| Version | Date | Change |
 |---|---|---|
-| 1.0 | 2026-07-19 | 初版 |
-| 2.0 | 2026-09-08 | 新增变更控制权条款（Change of Control）；终止条款与 FCL 对齐（15 日治愈 / 专利诉讼即时终止）；删除面向中小企 / 初创的分层定价暗示 |
+| 1.0 | 2026-07-19 | Initial version |
+| 2.0 | 2026-09-08 | Added the change of control clause; termination clauses aligned with the FCL (15-day cure / immediate termination on patent litigation); removed tiered-pricing implications aimed at SMEs / startups |
 
 ---
 
-*⚠️ 此为协议模板，正式签署前请咨询法律顾问。*
+*⚠️ This is an agreement template; consult legal counsel before formal signing.*

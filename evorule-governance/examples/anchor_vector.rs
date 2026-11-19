@@ -1,4 +1,5 @@
-// 黄金向量生成器（人工运行的示例面产物工具）：确定性输入上的 unwrap 属示例惯用法。
+// Golden-vector generator (manually-run example-surface artifact tool): unwrap on
+// deterministic inputs is idiomatic for examples.
 #![allow(clippy::unwrap_used)]
 
 use evorule_governance::anchor::AnchorChainBuilder;

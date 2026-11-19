@@ -1,53 +1,53 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! EvoRule 反应式执行器
+//! EvoRule reactive executor
 //!
-//! # 设计原则
-//! - 事实驱动：所有交互通过 Fact 通道进行
-//! - 单一串行通道：保证调度确定性
-//! - 稳定检测：队列空 + 无待处理 I/O = 稳定
-//! - 无状态泄漏：所有状态由反应器维护
-//! - Append-Only 审计链：所有 Fact 追加到 FactsLog，支持审计重放
+//! # Design principles
+//! - Fact-driven: all interaction goes through the Fact channel
+//! - Single serial channel: guarantees scheduling determinism
+//! - Stability detection: empty queue + no pending I/O = stable
+//! - No state leakage: all state is maintained by the reactor
+//! - Append-only audit chain: all Facts are appended to the FactsLog, supporting audit replay
 //!
-//! # 架构
+//! # Architecture
 //! ```text
-//! 用户/治理层 → FactSender → [command mpsc] → 反应器
+//! User/governance → FactSender → [command mpsc] → reactor
 //!                                                ↓
-//!                                          调用 TCB 核心
+//!                                          calls the TCB core
 //!                                                ↓
-//!                                  产生新 Fact → event broadcast → 用户/I/O 订阅者/审计器
+//!                                  produces new Facts → event broadcast → user/I-O subscribers/auditor
 //!                                                ↓
-//!                                  所有 Fact → FactsLog（审计链）
+//!                                  all Facts → FactsLog (audit chain)
 //! ```
 //!
-//! # 模块结构
-//! - `fact` — Fact 枚举、FactId、IoType
-//! - `io_handler` — I/O Handler trait（H5: 从 evorule-governance 下沉,object-safe）
-//! - `channel` — 双通道封装（command + event）
-//! - `reactor` — 反应器核心引擎
-//! - `state` — 反应器内部状态
-//! - `facts_log` — Append-Only 审计链（含哈希链）
-//! - `stable_detector` — 稳定检测逻辑
-//! - `invariants` — 结构不变量检查
-//! - `hash` — BLAKE3 哈希链算法（单一真相源）
-//! - `wal` — WAL 读写（JSONL 格式，含哈希字段）
-//! - `pure` — 纯逻辑模块，Kani 形式化验证准备
-//! - `runtime` — 运行时抽象（时钟缝：宿主能力隔离到 trait 之后）
-//! - `ffi` — C FFI 接口（feature = "ffi"）
-//! - `error` — 错误类型定义
-//! - `phase` — 反应器阶段定义
+//! # Module structure
+//! - `fact` — Fact enum, FactId, IoType
+//! - `io_handler` — I/O Handler trait (H5: sunk down from evorule-governance, object-safe)
+//! - `channel` — dual-channel wrapper (command + event)
+//! - `reactor` — reactor core engine
+//! - `state` — reactor internal state
+//! - `facts_log` — append-only audit chain (with hash chain)
+//! - `stable_detector` — stability detection logic
+//! - `invariants` — structural invariant checks
+//! - `hash` — BLAKE3 hash-chain algorithm (single source of truth)
+//! - `wal` — WAL read/write (JSONL format, with hash fields)
+//! - `pure` — pure-logic module, preparation for Kani formal verification
+//! - `runtime` — runtime abstraction (clock seam: host capabilities isolated behind a trait)
+//! - `ffi` — C FFI interface (feature = "ffi")
+//! - `error` — error type definitions
+//! - `phase` — reactor phase definitions
 //!
-//! # 使用示例
+//! # Usage example
 //! ```ignore
 //! use evorule_reactor::{Reactor, Fact, FactId};
 //! use evorule_tcb::JsonValue;
 //!
-//! let core_eval = vec![];  // 从 core_eval.json 加载
+//! let core_eval = vec![];  // loaded from core_eval.json
 //! let reactor = Reactor::builder(core_eval).max_rounds(1000).build();
 //! let (tx, mut rx, _event_tx, _handle, _facts_log) = reactor.spawn();
 //!
-//! // 提交命令
+//! // Submit a command
 //! tx.send(Fact::Command {
 //!     id: FactId(1),
 //!     instruction: JsonValue::object_from_pairs(&[
@@ -59,10 +59,10 @@
 //!     ]),
 //! }).unwrap();
 //!
-//! // 等待 Stable 事实（broadcast recv 返回 Result）
+//! // Wait for the Stable fact (broadcast recv returns Result)
 //! while let Ok(fact) = rx.recv().await {
 //!     if let Fact::Stable { version, .. } = fact {
-//!         println!("会话于版本 {} 稳定", version);
+//!         println!("session stable at version {}", version);
 //!         break;
 //!     }
 //! }
@@ -70,8 +70,9 @@
 
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
-// 永不 panic 保障：禁止以下 panic-prone 模式（与 evorule-tcb 基线对齐）
-// 测试/基准模块内可局部 #[allow(...)] 豁免
+// Never-panic guarantee: the following panic-prone patterns are forbidden
+// (aligned with the evorule-tcb baseline). Test/bench modules may locally
+// #[allow(...)] to exempt themselves.
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
 #![deny(clippy::indexing_slicing)]
@@ -82,14 +83,14 @@ mod channel_local;
 mod error;
 mod fact;
 mod facts_log;
-// ffi feature 必须暴露 extern "C" 接口，局部 allow unsafe_code 覆盖 deny
-// 默认 feature (无 ffi) 下 ffi 模块不会被编译
+// The ffi feature must expose extern "C" interfaces; a local allow(unsafe_code)
+// overrides the deny. Without the ffi feature the ffi module is not compiled.
 #[cfg_attr(feature = "ffi", allow(unsafe_code))]
 #[cfg(feature = "ffi")]
 mod ffi;
 mod hash;
 mod invariants;
-// H5: IoHandler trait 下沉到 evorule-reactor(与 IoType 同层,object-safe)
+// H5: IoHandler trait sunk down into evorule-reactor (same layer as IoType, object-safe)
 mod io_context;
 mod io_dispatcher;
 mod io_handler;
@@ -109,7 +110,7 @@ pub use channel_local::{
 };
 pub use error::ReactorError;
 pub use fact::{ControlFlowType, Fact, FactId, FactIdGenerator, IoType, TraceHit};
-// H5: IoHandler/IoResult 从 evorule-governance 下沉,供应用层 crate 使用
+// H5: IoHandler/IoResult sunk down from evorule-governance, for use by application-layer crates
 #[cfg(feature = "persistence")]
 pub use facts_log::replay_wal_records;
 pub use facts_log::{FactsLog, FactsLogError};

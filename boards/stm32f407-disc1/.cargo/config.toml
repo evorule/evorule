@@ -1,3 +1,4 @@
 [target.thumbv7em-none-eabihf]
-# memory.x 由 cortex-m-rt 的 link.x 内部 INCLUDE，不得再加 -Tmemory.x（重复定义）
+# memory.x is INCLUDEd internally by cortex-m-rt's link.x; do not add
+# -Tmemory.x again (it would redefine the regions)
 rustflags = ["-C", "link-arg=-Tlink.x"]

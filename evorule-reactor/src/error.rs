@@ -1,40 +1,40 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 反应器错误类型
+//! Reactor error types
 
-/// 反应器错误
+/// Reactor error
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReactorError {
-    /// 通道已关闭（所有发送者被丢弃）
+    /// Channel closed (all senders dropped)
     ChannelClosed,
 
-    /// 达到最大轮次限制
+    /// Maximum rounds limit reached
     MaxRoundsExceeded {
-        /// 实际轮次数
+        /// Actual number of rounds
         rounds: usize,
-        /// 最大允许轮次数
+        /// Maximum allowed number of rounds
         max_rounds: usize,
     },
 
-    /// TCB 执行错误（包含原始错误信息）
+    /// TCB execution error (contains the original error message)
     TcbError {
-        /// 错误描述
+        /// Error description
         message: String,
     },
 
-    /// 无效状态（payload 或 queue 缺失）
+    /// Invalid state (payload or queue missing)
     InvalidState {
-        /// 缺失的字段
+        /// The missing field
         field: &'static str,
     },
 
-    /// 取消信号（外部请求停止）
+    /// Cancel signal (externally requested stop)
     Cancelled,
 
-    /// 反应器任务异常终止（panic 或被 abort）
+    /// Reactor task terminated abnormally (panicked or aborted)
     TaskJoinError {
-        /// 错误描述
+        /// Error description
         message: String,
     },
 }

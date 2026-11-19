@@ -6,60 +6,60 @@
   This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 -->
 
-# Mutation Testing 指南 (cargo-mutants)
+# Mutation Testing Guide (cargo-mutants)
 
-[evorule-tcb](../) 的测试**真的能抓 bug**吗？mutation testing 给答案。
+Do the tests of [evorule-tcb](../) **actually catch bugs**? Mutation testing gives the answer.
 
-## 🎯 原理
+## 🎯 Principle
 
-cargo-mutants 自动在源代码中注入微小改动 ("mutant")：
+cargo-mutants automatically injects tiny changes ("mutants") into the source code:
 
 - `>=` → `>`
 - `+` → `-`
 - `true` → `false`
-- 删一行、删一个分支、改一个常量...
+- delete a line, delete a branch, change a constant...
 
-每个 mutant 都跑完整测试套件：
+Each mutant runs the full test suite:
 
-- **CAUGHT** (抓到): 测试失败 → 测试有效 ✓
-- **MISSED** (漏过): 测试通过 → 测试有盲区 ⚠
-- **TIMEOUT**: mutant 死循环/超时
+- **CAUGHT**: test fails → test is effective ✓
+- **MISSED**: test passes → test has a blind spot ⚠
+- **TIMEOUT**: mutant infinite loops / times out
 
-**Mutation score** = caught / total。分数越低，测试越"摆设"。
+**Mutation score** = caught / total. The lower the score, the more the tests are just window dressing.
 
-## 📋 现状
+## 📋 Current state
 
-- evorule-tcb 测试数: 227 (lib unit + integration + panic_free + proptest + tcb_error_variants + doctest)
-- 估算 mutants: ~1500 (基于 5636 lines src / ~4 lines per mutant)
-- 实测耗时: 24h+ (单 mutant ~30s - 2min, 含编译 + 227 tests)
-- 建议起步: 先 `--quick` 跑 30min 采样建立 baseline
+- evorule-tcb test count: 227 (lib unit + integration + panic_free + proptest + tcb_error_variants + doctest)
+- estimated mutants: ~1500 (based on 5636 lines src / ~4 lines per mutant)
+- measured runtime: 24h+ (single mutant ~30s - 2min, including compile + 227 tests)
+- suggested starting point: run `--quick` first for a 30min sample to establish a baseline
 
-## 🛠️ 安装
+## 🛠️ Installation
 
 ```bash
 cargo install --locked cargo-mutants
 cargo mutants --version
 ```
 
-## 🚀 运行
+## 🚀 Running
 
-### Baseline (30min 采样)
+### Baseline (30min sample)
 
 ```bash
 cd evorule-tcb
 ./../scripts/run-mutants.sh --quick
-# 或直接:
+# or directly:
 timeout 30m cargo mutants --timeout 60 --output mutants.out/
 ```
 
-### 全部 (24h+)
+### All (24h+)
 
 ```bash
 cd evorule-tcb
 cargo mutants --timeout 120 --output mutants.out/
 ```
 
-### 单文件 (快速验证)
+### Single file (quick verification)
 
 ```bash
 ./../scripts/run-mutants.sh --file src/error.rs  # ~50 mutants, 1-2h
@@ -67,21 +67,21 @@ cargo mutants --timeout 120 --output mutants.out/
 ./../scripts/run-mutants.sh --file src/path.rs   # ~200 mutants, 4-8h
 ```
 
-### 使用 wrapper
+### Using the wrapper
 
 ```bash
-# 从项目根
-./scripts/run-mutants.sh --help     # 显示所有选项
-./scripts/run-mutants.sh --install  # 装 cargo-mutants
-./scripts/run-mutants.sh --list     # 列出所有 mutants 不跑
+# from project root
+./scripts/run-mutants.sh --help     # show all options
+./scripts/run-mutants.sh --install  # install cargo-mutants
+./scripts/run-mutants.sh --list     # list all mutants without running
 ./scripts/run-mutants.sh --quick    # 30min baseline
 ./scripts/run-mutants.sh --file src/executor.rs
-./scripts/run-mutants.sh            # 跑全部
+./scripts/run-mutants.sh            # run all
 ```
 
-## 📊 解读结果
+## 📊 Interpreting results
 
-`mutants.out/mutants.json` 含完整数据。HTML 报告 (`mutants.out/mutants.html`) 直接打开：
+`mutants.out/mutants.json` contains the full data. The HTML report (`mutants.out/mutants.html`) opens directly:
 
 ```bash
 # Linux
@@ -92,48 +92,48 @@ open evorule-tcb/mutants.out/mutants.html
 start evorule-tcb/mutants.out/mutants.html
 ```
 
-### Mutation Score 标准
+### Mutation score standards
 
-| 分数 | 评估 | 行动 |
+| Score | Assessment | Action |
 |---|---|---|
-| > 80% | 优秀 | 维护即可 |
-| 60-80% | 良好 | 关注 MISSED mutants |
-| 40-60% | 中等 | **优先补 MISSED mutants 的测试** |
-| < 40% | 薄弱 | 重构测试 |
+| > 80% | Excellent | Maintain |
+| 60-80% | Good | Watch MISSED mutants |
+| 40-60% | Fair | **Prioritize adding tests for MISSED mutants** |
+| < 40% | Weak | Refactor tests |
 
-## 🔧 处理 MISSED mutants
+## 🔧 Handling MISSED mutants
 
-每个 MISSED mutant 是测试盲区。处理步骤：
+Every MISSED mutant is a test blind spot. Handling steps:
 
-1. **理解 mutant**: mutants.html 显示源码差异
-2. **判定**:
-   - 等价 mutant (mutant 行为不变): 接受，标 EQUIVALENT
-   - 真盲区: 加测试
-3. **加测试**:
+1. **Understand the mutant**: mutants.html shows the source diff
+2. **Judge**:
+   - equivalent mutant (mutant behavior unchanged): accept, mark EQUIVALENT
+   - real blind spot: add a test
+3. **Add a test**:
 
    ```rust
    #[test]
    fn regression_for_<function>_<mutation>() {
-       // 构造触发特定分支的输入
-       // 验证期望行为
+       // construct input that triggers a specific branch
+       // verify expected behavior
    }
    ```
 
-4. **重跑**: 验证 mutant 现在被 CAUGHT
+4. **Rerun**: verify the mutant is now CAUGHT
 
 ## 📊 CI
 
 `.github/workflows/mutants.yml`:
 
-- **Schedule**: 每周日 00:00 UTC (夜间跑)
+- **Schedule**: every Sunday 00:00 UTC (overnight run)
 - **Manual**: workflow_dispatch
 - **Timeout**: 12h/job (GitHub Actions max)
-- **Output**: mutants.out/ artifact + 摘要
+- **Output**: mutants.out/ artifact + summary
 
-CI 不阻断 PR，仅生成报告。merge 决策权在 USER。
+CI does not block PRs; it only generates reports. Merge decision authority rests with the USER.
 
-## 📖 延伸阅读
+## 📖 Further reading
 
-- [cargo-mutants 文档](https://github.com/sourcefrog/cargo-mutants)
-- [Mutation Testing 原理](https://en.wikipedia.org/wiki/Mutation_testing)
-- [Kani 形式化验证](./KANI.md) (互补技术: 形式化证明 vs 启发式 mutant)
+- [cargo-mutants docs](https://github.com/sourcefrog/cargo-mutants)
+- [Mutation testing principle](https://en.wikipedia.org/wiki/Mutation_testing)
+- [Kani formal verification](./KANI.md) (complementary technique: formal proof vs heuristic mutant)

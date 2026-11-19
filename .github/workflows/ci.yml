@@ -1,17 +1,17 @@
 # CI for EvoRule workspace (evorule-tcb / evorule-reactor / evorule-governance / evorule-cli)
 #
-# 覆盖:
-# - 双平台 (Linux / Windows) 全量 cargo test --workspace
-# - evorule-cli 端到端测试 (tests/e2e.sh, TAP 格式)
-# - TCB 构建门禁 (build.rs 在 cargo build 时自动执行)
-# - i18n 双语门禁 (docs 中英漂移 + server code→err.* 字典对照)
-# - 验证状态同步门禁 (STATUS.md ↔ 证据库 ↔ 文档/CI 清单, scripts/check_status_sync.py)
-# - ASSURANCE 规范合规门禁 (规范/状态分离 T 系执法, scripts/check_assurance_compliance.py)
-# - 文档安全门禁 (L1 私有信息零泄露 + CHANGELOG 六类治理, scripts/check_doc_safety.py)
+# Covers:
+# - two-platform (Linux / Windows) full cargo test --workspace
+# - evorule-cli end-to-end tests (tests/e2e.sh, TAP format)
+# - TCB build gate (build.rs runs automatically during cargo build)
+# - i18n dual-language gate (docs zh/en drift + server code->err.* dict pairing)
+# - verification status sync gate (STATUS.md <-> evidence base <-> docs/CI lists, scripts/check_status_sync.py)
+# - ASSURANCE spec compliance gate (spec/status separation, T-series enforcement, scripts/check_assurance_compliance.py)
+# - doc safety gate (L1 zero private-info leakage + CHANGELOG six-category governance, scripts/check_doc_safety.py)
 #
-# 设计说明:
-# - 测试矩阵覆盖当前支持的平台 (Linux / Windows)
-# - rust-version 1.74; 使用 stable 工具链保证向后兼容
+# Design notes:
+# - test matrix covers the currently supported platforms (Linux / Windows)
+# - rust-version 1.74; stable toolchain for backward compatibility
 name: CI
 
 on:
@@ -19,10 +19,10 @@ on:
     branches: [main, master, "release/**"]
   pull_request:
     branches: [main, master]
-  # 允许手动触发
+  # manual trigger allowed
   workflow_dispatch:
 
-# 显式最小权限 (Scorecard Token-Permissions): CI 仅需只读
+# Explicit minimal permissions (Scorecard Token-Permissions): CI only needs read
 permissions: read-all
 
 env:
@@ -30,7 +30,7 @@ env:
 
 jobs:
   # ==========================================================================
-  # 1. 三平台全量测试
+  # 1. Full test suite, all platforms
   # ==========================================================================
   test:
     name: test (${{ matrix.os }})
@@ -45,8 +45,8 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      # 差分测试供源: agent_constitution.json 唯一实体在 evo-agent 仓
-      # (differential_test.rs 候选④ = 仓根兄弟位), 单仓检出缺源必红。
+      # Differential test source: the sole copy of agent_constitution.json lives in the evo-agent repo
+      # (differential_test.rs candidate 4 = repo-root sibling location); a single-repo checkout misses the source and goes red.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: evorule/evo-agent
@@ -54,23 +54,23 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
-      # 缓存 cargo 构建产物 (跨平台共享缓存, key 含 runner 避免冲突)
+      # cache cargo build artifacts (cache shared across platforms; key includes the runner to avoid conflicts)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: . -> target
 
-      - name: 全量测试 (workspace)
+      - name: Full test suite (workspace)
         run: cargo test --workspace --all-targets
 
-      - name: 文档测试
+      - name: Doc tests
         run: cargo test --workspace --doc
 
-      - name: 编译检查 (release, 验证门禁)
+      - name: Compile check (release, gate verification)
         run: cargo build --workspace --release
 
   # ==========================================================================
-  # 2. evorule-cli 端到端测试 (bash e2e.sh)
-  #    仅在 Linux 上运行 (脚本依赖 bash + mktemp, 与 CI 意图一致)
+  # 2. evorule-cli end-to-end tests (bash e2e.sh)
+  #    Linux only (the script depends on bash + mktemp, matching CI intent)
   # ==========================================================================
   e2e:
     name: e2e (cli)
@@ -85,17 +85,17 @@ jobs:
         with:
           workspaces: . -> target
 
-      - name: 构建 release 二进制
+      - name: Build the release binary
         run: cargo build -p evorule-cli --release --bin evorule
 
-      - name: 运行 e2e.sh (TAP 格式输出)
+      - name: Run e2e.sh (TAP output)
         run: bash evorule-cli/tests/e2e.sh ./target/release/evorule
 
-      - name: 运行 Rust 集成测试 (cli_test)
+      - name: Run Rust integration tests (cli_test)
         run: cargo test -p evorule-cli --test cli_test --release
 
   # ==========================================================================
-  # 3. TCB 确定性专项 (零依赖门禁 + proptest)
+  # 3. TCB determinism dedicated job (zero-dependency gate + proptest)
   # ==========================================================================
   tcb-determinism:
     name: tcb determinism
@@ -110,15 +110,15 @@ jobs:
         with:
           workspaces: . -> target
 
-      # proptest 确定性属性测试 (随机采样验证 相同输入→相同输出)
-      - name: TCB 确定性属性测试
+      # proptest determinism property tests (random sampling verifies same input -> same output)
+      - name: TCB determinism property tests
         run: cargo test -p evorule-tcb --test determinism_proptest --release
 
-      # 构建门禁已随 cargo build 执行; 显式验证零依赖产物
-      - name: TCB 零依赖产物验证
+      # the build gate already ran with cargo build; explicitly verify the zero-dependency artifact
+      - name: TCB zero-dependency artifact verification
         run: |
           cargo build -p evorule-tcb --release
-          # 检查编译产物无外部依赖 (仅 Rust std)
+          # check the compiled artifact has no external dependencies (Rust std only)
           cargo tree -p evorule-tcb --edges normal
 
   # ==========================================================================
@@ -157,11 +157,11 @@ jobs:
             --console-dir sibling/evorule-console-cloud/src/lib/locale
 
   # ==========================================================================
-  # 5. 验证状态同步门禁 (M1/M5 常态化执法, 纯文本扫描, 无需 Rust 工具链)
-  #    防三层漂移: STATUS.md(唯一真相源) ↔ 证据库 ↔ 文档/CI 清单
-  #    S 系 11 项规则: 状态词汇/状态↔证据闭环/命名配对/FAIL字段/隔离区/
-  #    证据时效(git log -L)/CI闸门对齐/对外数字/版本对齐/披露留痕
-  #    注意: S7/S11 依赖完整 git 历史, 必须 fetch-depth: 0
+  # 5. Verification status sync gate (M1/M5 continuous enforcement, pure text scan, no Rust toolchain needed)
+  #    Prevents three-layer drift: STATUS.md (single source of truth) <-> evidence base <-> docs/CI lists
+  #    S-series 11 rules: status vocabulary / status<->evidence closure / naming pairing / FAIL fields /
+  #    quarantine / evidence freshness (git log -L) / CI gate alignment / external numbers / version alignment / disclosure trail
+  #    Note: S7/S11 depend on full git history, so fetch-depth: 0 is required
   # ==========================================================================
   status-sync:
     name: verification status sync (S1-S11)
@@ -171,13 +171,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 验证状态一致性 (STATUS.md ↔ 证据 ↔ 文档/CI)
+      - name: Verification status consistency (STATUS.md <-> evidence <-> docs/CI)
         run: python3 scripts/check_status_sync.py
 
   # ==========================================================================
-  # 5b. ASSURANCE 规范合规门禁 (规范/状态分离执法, 纯文本扫描, 无需 Rust 工具链)
-  #     T 系规则: 规范自体零状态词(T1)/零SHA(T2)/内部信息零容忍(T3)/
-  #     对外材料比较级禁令(T4)/等级冒领禁令(T5)/状态承载纪律(T6)
+  # 5b. ASSURANCE spec compliance gate (spec/status separation enforcement, pure text scan, no Rust toolchain needed)
+  #     T-series rules: spec body zero status words (T1) / zero SHA (T2) / zero tolerance for internal info (T3) /
+  #     external-material comparative ban (T4) / grade-claim ban (T5) / status-carrying discipline (T6)
   # ==========================================================================
   assurance-compliance:
     name: assurance compliance (T1-T6)
@@ -185,14 +185,14 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: ASSURANCE 规范合规 (规范自体 / 对外材料 / verification 顶层文档)
+      - name: ASSURANCE spec compliance (spec body / external materials / verification top-level docs)
         run: python3 scripts/check_assurance_compliance.py
 
   # ==========================================================================
-  # 5c. 文档安全门禁 (与 status-sync 构成双安全检查)
-  #     R 系规则: L1 公开文档私有信息零泄露 (M9) + agent 身份零泄露 +
-  #     交叉引用完整性 + CHANGELOG 六类内容治理。
-  #     R-门控1 (staged 检查) 在 CI 无暂存区语义自动为空集, 不影响其余规则。
+  # 5c. Doc safety gate (forms a dual safety check with status-sync)
+  #     R-series rules: L1 zero private-info leakage in public docs (M9) + zero agent-identity leakage +
+  #     cross-reference integrity + CHANGELOG six-category content governance.
+  #     R-gate 1 (staged check) is automatically an empty set in CI (no staging-area semantics), not affecting other rules.
   # ==========================================================================
   doc-safety:
     name: doc safety (R rules)
@@ -200,19 +200,21 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          # fetch 全量以携带 git tags——CHANGELOG 与最新 tag 对齐检查依赖 tags；
-          # 浅克隆下 tags 为空集，该检查会空转通过（本地门禁红而 CI 绿的盲区成因）
+          # full fetch to carry git tags -- the CHANGELOG vs latest-tag alignment check depends on tags;
+          # under a shallow clone the tag set is empty and that check no-ops green (cause of the
+          # "local gate red but CI green" blind spot)
           fetch-depth: 0
 
-      - name: L1 文档安全与引用完整性
+      - name: L1 doc safety and reference integrity
         run: python3 scripts/check_doc_safety.py
 
   # ==========================================================================
-  # 5d. 公开面矩阵扫描 (全文件类型, 纯文本扫描)
-  #     词表五类: AI 身份 / 厂商名 / 内部批次编号 / 私有路径仓名 / 治理语境。
-  #     本 job 对 A1(AI 身份) 与 B(内部编号) 计入退出码即红;
-  #     C/D 类当前为复核项不阻断, 待存量处置后逐类收紧。
-  #     豁免清单: ratchet 基线 (scripts/public-face-matrix-baseline.txt，存量冻结+增量零容忍；键=类别|路径|行内容md5 不随行号漂移)。
+  # 5d. Public-face matrix scan (all file types, pure text scan)
+  #     Vocabulary, five categories: AI identity / vendor names / internal batch numbers / private paths & repo names / governance context.
+  #     This job counts A1 (AI identity) and B (internal numbers) into the exit code (red);
+  #     categories C/D are review-only today and do not block; they will be tightened category by category after stock disposal.
+  #     Exemption list: ratchet baseline (scripts/public-face-matrix-baseline.txt, stock frozen + zero tolerance for
+  #     increments; key = category|path|line-content md5, immune to line-number drift).
   # ==========================================================================
   public-face-scan:
     name: public face scan (A1/B blocking)
@@ -220,14 +222,14 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: 公开面矩阵扫描 (AI 身份 + 内部编号阻断)
+      - name: Public-face matrix scan (AI identity + internal number blocking)
         run: python3 scripts/scan_public_face.py --fail-on A1 --fail-on B --ratchet scripts/public-face-matrix-baseline.txt
 
   # ==========================================================================
-  # 5f. 跨语言哈希对拍（G5/P1-4：Python 参考实现 vs 内核 SSOT 黄金向量）
-  #     v4 教训的收口：两侧各自自洽不算兼容，必须有对拍测试（CI 强制）。
-  #     向量集 11 组（7 标准事实 + domain_attr 两态 + 中文换行 + i64 边界），
-  #     由内核 SSOT 实算导出（scripts/g5_golden_vectors.json）。
+  # 5f. Cross-language hash parity (G5/P1-4: Python reference implementation vs kernel SSOT golden vectors)
+  #     Closing the v4 lesson: each side being self-consistent is not compatibility; a parity test is mandatory (CI-enforced).
+  #     Vector set, 11 groups (7 standard facts + domain_attr both states + CJK newline + i64 boundary),
+  #     exported by actually running the kernel SSOT (scripts/g5_golden_vectors.json).
   # ==========================================================================
   cross-lang-parity:
     name: cross-lang parity (python vs rust ssot)
@@ -237,15 +239,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: 安装 blake3
+      - name: Install blake3
         run: pip install blake3
-      - name: 黄金向量对拍（Python 独立实现 vs Rust SSOT 导出）
+      - name: Golden vector parity (standalone Python implementation vs Rust SSOT export)
         run: python3 scripts/cross_lang_verifier.py scripts/g5_golden_vectors.json
 
   # ==========================================================================
-  # 5e. 宪法联动门禁 ([CON-R-003] 固化义务, 纯文本扫描)
-  #     语义路径 (evorule-tcb / evorule-discipline) 变更 → PR 描述须含
-  #     「宪法联动：」标记行, 缺失即红。
+  # 5e. Constitution linkage gate ([CON-R-003] codified obligation, pure text scan)
+  #     Semantic path (evorule-tcb / evorule-discipline) changes -> the PR description must contain
+  #     a "constitution linkage:" marker line; missing is red.
   # ==========================================================================
   constitution-linkage:
     name: constitution linkage (CON-R-003)
@@ -254,18 +256,18 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          # 三点 diff 需合并基, 全量历史保证 merge-base 可得
+          # the three-dot diff needs the merge base; full history guarantees merge-base availability
           fetch-depth: 0
 
-      - name: 语义路径变更 → PR 描述须含「宪法联动」标记
+      - name: Semantic path changes -> PR description must carry the constitution-linkage marker
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: python3 scripts/check_constitution_linkage.py --base "origin/${{ github.base_ref }}"
 
   # ==========================================================================
-  # 6. 依赖门禁 (cargo-deny, A2 供应链三件套)
-  #    许可合规 (deny.toml [licenses]) + RUSTSEC 漏洞 ([advisories])
-  #    + 重复依赖/通配符 ([bans]) + 来源白名单 ([sources])
+  # 6. Dependency gate (cargo-deny, A2 supply-chain triad)
+  #    license compliance (deny.toml [licenses]) + RUSTSEC advisories ([advisories])
+  #    + duplicate deps/wildcards ([bans]) + source allowlist ([sources])
   # ==========================================================================
   deny:
     name: deny (licenses + advisories + bans)

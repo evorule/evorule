@@ -21,332 +21,332 @@
 
 ---
 
-## 0. 有所得,必有所失(写在最前)
+## 0. Every gain implies a loss (foreword)
 
-**所有选择都是放弃**。evorule 选确定性,就得放下 LLM 的飘逸;选 JSON,就得放下纯代码的自由;选可重放,就得付 WAL 写盘的代价。
+**Every choice is an abandonment**. If evorule chooses determinism, it must give up the LLM's free-flowing flair; if it chooses JSON, it must give up the freedom of pure code; if it chooses replayability, it must pay the cost of WAL disk writes.
 
-这些不是 bug,**是 feature 的影子**——选一个方向,反方向就成了代价。evorule 不假装"全都要"。
+These are not bugs — **they are the shadow of the features**: pick one direction and the opposite direction becomes the cost. evorule does not pretend to "have it all".
 
-具体 trade-off(不是 bug):
+The concrete trade-offs (not bugs):
 
-| 我们选了      | 我们放弃了             |
+| What we chose          | What we gave up                          |
 | ------------- | ---------------------- |
-| 确定性        | LLM 般的生成式创造     |
-| JSON 表达     | 纯代码的极致性能       |
-| 可重放 / 审计 | 轻装上阵的敏捷         |
-| 形式化可证明  | "差不多就行"的工程弹性 |
+| Determinism        | LLM-like generative creativity     |
+| JSON expression        | The ultimate performance of pure code       |
+| Replayability / auditability | The agility of traveling light         |
+| Formally provable  | The engineering elasticity of "close enough" |
 
-**承认 trade-off,然后在选定方向上走到底**——这是 evorule 的诚实。
+**Acknowledge the trade-off, then carry the chosen direction all the way** — that is evorule's honesty.
 
-但承认代价 ≠ 死守代价。evorule 在机制层与应用层之间**留一道缝**——`IoHandler` / `IoDispatcher` 让应用层有空间去调用 LLM、引入不确定性、做"机制层不会做"的事。
+But acknowledging the cost ≠ clinging to the cost. Between the mechanism layer and the application layer, evorule **leaves a gap** — `IoHandler` / `IoDispatcher` give the application layer room to call LLMs, introduce non-determinism, and do the things "the mechanism layer will not do".
 
-怎么在"机制层的稳"和"应用层的活"之间找到**那条可持续的平衡线**——是 evorule 整个生命周期要回答的题,不是 1.0 的事。
+How to find **that sustainable equilibrium line** between the "stability of the mechanism layer" and the "liveliness of the application layer" is a question evorule must answer across its entire lifetime — not something settled at 1.0.
 
-给LLM精灵，一个确定性的落点。
+A deterministic landing point for the LLM sprite.
 
 ---
 
-## 1. JSON 是一等公民
+## 1. JSON is a first-class citizen
 
-**evorule 不是"支持 JSON",是"只接受 JSON"**。
+**evorule does not "support JSON" — it "accepts only JSON"**.
 
-| 你交给 evorule 的      | evorule 做的                    | 你从 evorule 拿到的      |
+| What you hand to evorule | What evorule does               | What you get back from evorule |
 | ---------------------- | ------------------------------- | ------------------------ |
-| 业务规则(用 JSON 表达) | 当作数据加载,跟代码一样参与执行 | 一个透明的反应式执行环境 |
-| 运行时状态(也是 JSON)  | 严格按因果链转换                | 一个可重放的状态机       |
-| 决策上下文(还是 JSON)  | 进入事实账本                    | 一份可审计的执行历史     |
+| Business rules (expressed in JSON) | Loaded as data, participating in execution just like code | A transparent reactive execution environment |
+| Runtime state (also JSON) | Transformed strictly along the causal chain | A replayable state machine |
+| Decision context (still JSON) | Enters the facts ledger | An auditable execution history |
 
-**这条边界就是 evorule 的全部**:
+**This boundary is the entirety of evorule**:
 
-- 规则/知识 = JSON
-- 状态 = JSON
-- 事件 = JSON
-- I/O 参数 = JSON
-- 审计账本 = JSONL(每行一个 JSON Fact)
+- rules/knowledge = JSON
+- state = JSON
+- events = JSON
+- I/O parameters = JSON
+- audit ledger = JSONL (one JSON Fact per line)
 
-**为什么 JSON**:
+**Why JSON**:
 
-- **天生透明** — JSON 是人可直接读写的文本,没有隐藏的元数据
-- **天生可解释** — JSON 自描述,字段名/值类型自身就是文档
-- **天生可审计** — JSONL 历史可 grep、可 diff、可重放
+- **Transparent by nature** — JSON is text humans can read and write directly, with no hidden metadata
+- **Explainable by nature** — JSON is self-describing; field names / value types are themselves documentation
+- **Auditable by nature** — the JSONL history can be grepped, diffed, and replayed
 
-其余的一切(确定性内核、因果链、时间机器、Kani 验证、零 unsafe)都是为了**让"JSON 执行"这件事更可信任**。它们是工具,不是目的。
+Everything else (the deterministic kernel, the causal chain, the time machine, Kani verification, zero unsafe) exists to **make "JSON execution" more trustworthy**. They are tools, not ends.
 
 ---
 
-## 2. 机制 vs 策略分离
+## 2. Mechanism vs policy separation
 
-evorule 仓 = **机制层**。**业务编排、HTTP、SDK、CLI demo、AI agent 框架**全部在应用层仓里。
+The evorule repo = the **mechanism layer**. **Business orchestration, HTTP, SDK, CLI demos, AI agent frameworks** all live in the application-layer repos.
 
-| 类别               | 在哪                                                                                               |
+| Category           | Where                                                                                               |
 | ------------------ | -------------------------------------------------------------------------------------------------- |
-| **机制层(本仓)**   | evorule-tcb / evorule-reactor / evorule-governance / evorule-cli                                   |
-| **应用层**(其他仓) | evorule-server / evorule-sdk / evo-agent                                                          |
+| **Mechanism layer (this repo)** | evorule-tcb / evorule-reactor / evorule-governance / evorule-cli                        |
+| **Application layer** (other repos) | evorule-server / evorule-sdk / evo-agent                                           |
 
-**边界规则**(来源:`evorule-governance/src/lib.rs:14-15`):
+**Boundary rules** (source: `evorule-governance/src/lib.rs:14-15`):
 
-> **H5/H6 边界清理后不再包含**:HTTP API、SSE、Prometheus metrics、Bearer 认证、具体 I/O Handler 实现。  
-> 上述应用层功能由应用层自行构建,本 crate 仅提供机制层接口。
+> **No longer included after the H5/H6 boundary cleanup**: HTTP API, SSE, Prometheus metrics, Bearer authentication, concrete I/O Handler implementations.  
+> The application layer builds the above application-layer capabilities itself; this crate provides only mechanism-layer interfaces.
 
-**v0.2.0 边界再调整**:
+**v0.2.0 boundary readjustment**:
 
-- `IoHandler` trait 从 governance 下沉到 reactor(机制层基座,供 agent 直接依赖,不需要绕道 governance)
-- `IoDispatcher` 同样下沉
-- `evorule-governance` 保留 re-export(向后兼容)
+- the `IoHandler` trait sank from governance down to reactor (mechanism-layer foundation, for agents to depend on directly without detouring through governance)
+- `IoDispatcher` likewise sank
+- `evorule-governance` keeps the re-export (backward compatibility)
 
-**机制层不染指控制流**:
+**The mechanism layer never touches control flow**:
 
-- evorule-reactor **不知道** `conditional` / `while_loop` / `sequence` 的存在
-- 控制流是 tier0 `core_eval.json` 里的 3 真元指令(`set` / `push` / `branch`)
-- tier1 只负责"调度元指令 + 维护事实账本"
+- evorule-reactor **does not know** that `conditional` / `while_loop` / `sequence` exist
+- control flow is the 3 true meta instructions in tier0 `core_eval.json` (`set` / `push` / `branch`)
+- tier1 is only responsible for "dispatching meta instructions + maintaining the facts ledger"
 
-**I/O 外挂**:
+**I/O plug-in**:
 
-- `IoHandler` trait 在 tier1 reactor **定义**(v0.2.0 从 governance 下沉)
-- 具体实现(handler 类)在应用层仓**注入**
-- 机制层**零业务逻辑侵入**
+- the `IoHandler` trait is **defined** in the tier1 reactor (sunk from governance in v0.2.0)
+- concrete implementations (handler classes) are **injected** by the application-layer repos
+- the mechanism layer has **zero business-logic intrusion**
 
-**事实总线**:
+**Facts bus**:
 
-- 所有组件通过 `Fact` 通信,无直接函数调用
-- 任何"绕开 Fact"的捷径 = 破坏不变式
-
----
-
-## 3. TCB 最小化
-
-**evorule-tcb 只做三件事:读指令、算状态、写 trace。**
-
-```
-TCB = while 循环 + InstructionExecutor
-其他一切都是数据
-```
-
-**TCB 全部"智能"是一个 while 循环**:
-
-- 反复应用 `core.eval` 规则
-- 直到指令变为 `noop`
-- `core.eval` 是 JSON 数据
-- `InstructionExecutor` 识别 3.5 个元指令
-
-**TCB 是纯计算函数**:
-
-- 无状态(每次调用基于入参)
-- 无 I/O
-- 无时间
-- 无随机
-
-**为什么不放 LLM**:
-
-- LLM 概率性 → 破坏确定性
-- LLM 需要 I/O → 违反 T4
-- LLM 难形式化验证 → 失去"可证明"的金标准
-- 项目方的"AI Agent 框架"梦 → 在应用层仓实现,不在 TCB
-
-**为什么不放业务规则**:
-
-- 业务规则 = 项目方的业务,不是引擎的
-- 业务规则应是数据,可被 git diff / 替换
-- 引擎 = 解释器(不变)+ 规则(变)
-
-**形式化验证的成本与收益**:
-
-- 成本:TCB 限制增加(只能用有限指令集 + 有限数据类型)
-- 收益:**核心不变式可被 Kani + TLA+ 证明**,无需依赖 review 完整性
+- all components communicate through `Fact`, with no direct function calls
+- any "bypass the Fact" shortcut = breaking an invariant
 
 ---
 
-## 4. 确定性优先
+## 3. TCB minimization
 
-**给同样的 JSON 输入,evorule 必须产生同样的 JSON 输出。无歧义。**
+**evorule-tcb does only three things: read instructions, compute state, write traces.**
 
-为达到这个目标,TCB 强制以下约束(来源:`evorule-tcb/TCB_SPEC.md` §二):
+```
+TCB = a while loop + InstructionExecutor
+everything else is data
+```
 
-| 编号    | 约束                                                                                     | 理由                    |
+**All of the TCB's "intelligence" is one while loop**:
+
+- repeatedly applies the `core.eval` rules
+- until the instruction becomes `noop`
+- `core.eval` is JSON data
+- `InstructionExecutor` recognizes 3.5 meta instructions
+
+**The TCB is a pure computational function**:
+
+- stateless (each call depends only on its inputs)
+- no I/O
+- no time
+- no randomness
+
+**Why no LLM inside**:
+
+- LLMs are probabilistic → breaks determinism
+- LLMs need I/O → violates T4
+- LLMs are hard to formally verify → loses the "provable" gold standard
+- the project's "AI Agent framework" dream → implemented in the application-layer repos, not in the TCB
+
+**Why no business rules inside**:
+
+- business rules = the project's business, not the engine's
+- business rules should be data, diffable / replaceable with git
+- engine = interpreter (unchanging) + rules (changing)
+
+**Costs and benefits of formal verification**:
+
+- cost: more TCB restrictions (only a finite instruction set + finite data types)
+- benefit: **core invariants can be proven by Kani + TLA+**, without depending on review completeness
+
+---
+
+## 4. Determinism first
+
+**Given the same JSON input, evorule must produce the same JSON output. No ambiguity.**
+
+To achieve this, the TCB enforces the following constraints (source: `evorule-tcb/TCB_SPEC.md` §2):
+
+| ID      | Constraint                                                                               | Reason                  |
 | ------- | ---------------------------------------------------------------------------------------- | ----------------------- |
-| **T4**  | 禁止任何 I/O(`std::fs::` / `std::net::` / `std::io::` / `File::open` / `std::process::`) | 确定性要求              |
-| **T5**  | 禁止读取系统时间(`SystemTime` / `Instant`)                                               | 确定性要求              |
-| **T6**  | 禁止随机数生成(`rand::` / `random()`)                                                    | 确定性要求              |
-| **T8**  | 必须用 `BTreeMap` 不用 `HashMap`;必须用 `Vec` 不用 `HashSet`                             | 确定性迭代顺序          |
-| **T12** | 禁止浮点数(`f32` / `f64` / `Float`)                                                      | 浮点运算跨平台非确定    |
-| **T13** | 禁止 `static mut` / 全局可变状态                                                         | TCB 必须无状态(`&self`) |
-| **T14** | 禁止线程/异步(`std::thread` / `tokio::` / `async` / `await` / `spawn`)                   | 引入并发非确定性        |
+| **T4**  | Any I/O forbidden (`std::fs::` / `std::net::` / `std::io::` / `File::open` / `std::process::`) | determinism requirement |
+| **T5**  | Reading system time forbidden (`SystemTime` / `Instant`)                                 | determinism requirement |
+| **T6**  | Random-number generation forbidden (`rand::` / `random()`)                               | determinism requirement |
+| **T8**  | Must use `BTreeMap` not `HashMap`; must use `Vec` not `HashSet`                          | deterministic iteration order |
+| **T12** | Floats forbidden (`f32` / `f64` / `Float`)                                               | float arithmetic is non-deterministic across platforms |
+| **T13** | `static mut` / global mutable state forbidden                                            | the TCB must be stateless (`&self`) |
+| **T14** | Threads/async forbidden (`std::thread` / `tokio::` / `async` / `await` / `spawn`)        | concurrency introduces non-determinism |
 
-**为什么不用 HashMap**:
+**Why not HashMap**:
 
-- 哈希表迭代顺序**未定义**(`std::collections::HashMap` 文档明确说明)
-- 不同 Rust 版本、不同平台可能产生不同顺序
-- BTreeMap 按 key 字典序,跨版本跨平台一致
+- hash-table iteration order is **undefined** (explicitly stated in the `std::collections::HashMap` documentation)
+- different Rust versions and different platforms may produce different orders
+- BTreeMap orders by key lexicographically, consistent across versions and platforms
 
-**为什么不用浮点**:
+**Why not floats**:
 
-- `0.1 + 0.2 != 0.3`(IEEE 754)
-- 不同 CPU 架构 / 编译器 / 优化等级可能产生微小差异
-- 整数 + checked 算术 = 100% 确定性
+- `0.1 + 0.2 != 0.3` (IEEE 754)
+- different CPU architectures / compilers / optimization levels may produce tiny differences
+- integers + checked arithmetic = 100% determinism
 
-**为什么不用系统时间**:
+**Why not system time**:
 
-- `SystemTime::now()` 每次调用都不同
-- 用 `LogicalClock`(tier2 治理层,见 evorule-governance)替代
+- `SystemTime::now()` differs on every call
+- replaced by `LogicalClock` (tier2 governance layer, see evorule-governance)
 
-**为什么不用随机数**:
+**Why not random numbers**:
 
-- 没有"真随机",只有伪随机
-- 伪随机需要 seed,seed 改变 → 输出改变
-- 确定性场景需要"可重放",random 破坏这点
+- there is no "true randomness", only pseudo-randomness
+- pseudo-randomness needs a seed; change the seed → change the output
+- deterministic scenarios need "replayability"; randomness destroys that
 
-**为什么不用 `static mut`**:
+**Why not `static mut`**:
 
-- 全局可变状态 = 隐藏的输入
-- 函数签名只显示入参,看不到全局
-- `&self` 是唯一可信契约
+- global mutable state = hidden inputs
+- the function signature shows only the inputs; globals are invisible
+- `&self` is the only trustworthy contract
 
 ---
 
-## 5. 形式化验证为什么必要
+## 5. Why formal verification is necessary
 
-**测试只能证明"程序能处理我想到的输入",形式化验证能证明"程序对所有可能输入都正确"。**
+**Testing can only prove "the program handles the inputs I thought of"; formal verification can prove "the program is correct for all possible inputs".**
 
-| 方法             | 测试了什么                  | 不能测什么                 |
+| Method           | What it tests               | What it cannot test        |
 | ---------------- | --------------------------- | -------------------------- |
-| 单元测试         | 特定输入 → 期望输出         | 边界外的输入               |
-| 集成测试         | 模块协作                    | 极端并发 / 状态空间        |
-| proptest         | 随机生成 → 期望属性         | "随机"可能漏掉 corner case |
-| mutation testing | "测试真的能抓 bug 吗"       | 测试代码本身的正确性       |
-| **Kani**(CBMC)   | **所有可能输入** → 期望属性 | 模型本身是不是真实系统     |
-| **TLA+**(TLC)    | **所有可能状态** → 不变式   | 真实实现的语法/语义细节    |
+| Unit tests       | specific inputs → expected outputs | inputs beyond the boundary |
+| Integration tests | module collaboration       | extreme concurrency / state space |
+| proptest         | random generation → expected properties | "random" may miss corner cases |
+| mutation testing | "can the tests really catch bugs" | the correctness of the test code itself |
+| **Kani** (CBMC)  | **all possible inputs** → expected properties | whether the model is the real system |
+| **TLA+** (TLC)   | **all possible states** → invariants | syntax/semantics details of the real implementation |
 
-**Kani**(CBMC 模型检查):
+**Kani** (CBMC model checking):
 
-- 把 Rust 代码"展开"成等价的中间表示
-- 穷举所有可能的输入(在合理范围内)
-- 验证"对所有输入,程序都不违反性质"
-- **34 个 proof**(A 档 14 + B 档 20;5 层覆盖 — L1 基础类型 3 / L2 路径解析 11 / L3 域评估 10 / L4 元指令 7 / L5 状态转换 3),2026-09-14 全量复跑实测:A 档 14 个全 PASS;B 档 20 个(`evaluate_domain`/`execute_transition` 系列)实测 600s/3600s 超时,判定当前不可运行(由 proptest 间接覆盖):状态见 `verification/STATUS.md`(唯一权威)
+- "unrolls" Rust code into an equivalent intermediate representation
+- exhausts all possible inputs (within reasonable bounds)
+- verifies "for all inputs, the program violates no property"
+- **34 proofs** (Tier A 14 + Tier B 20; 5-layer coverage — L1 basic types 3 / L2 path resolution 11 / L3 domain evaluation 10 / L4 meta instructions 7 / L5 state transitions 3), full re-run measured on 2026-09-14: all 14 Tier A proofs PASS; the 20 Tier B proofs (`evaluate_domain`/`execute_transition` series) hit measured 600s/3600s timeouts and are judged currently not runnable (indirectly covered by proptest): status in `verification/STATUS.md` (single authority)
 
-**TLA+**(TLC 模型检测):
+**TLA+** (TLC model checking):
 
-- 用形式化规格描述系统状态机
-- 穷举所有可达状态
-- 验证不变式
-- tier0 状态机经 TLC 有限模型(N_MAX=2 参数降级)验证:13,629 个去重状态 + 5 个不变式全 PASS(2026-07-25,见 `evorule-tcb/tla/TLC_VERIFICATION_REPORT.md`)
+- describes the system state machine with a formal specification
+- exhausts all reachable states
+- verifies invariants
+- the tier0 state machine verified by TLC's finite model (N_MAX=2 parameter downgrading): 13,629 deduplicated states + 5 invariants all PASS (2026-07-25, see `evorule-tcb/tla/TLC_VERIFICATION_REPORT.md`)
 
-**为什么"不靠 review 靠证明"**:
+**Why "proofs instead of reviews"**:
 
-- review = 人眼检查,**人会累,会漏**
-- 证明 = 机器检查,**机器不累,不漏**
-- TCB 是 evorule 可信度的根基,根基必须证明,不能只 review
+- review = human-eye checking; **humans tire and miss things**
+- proofs = machine checking; **machines do not tire and do not miss**
+- the TCB is the foundation of evorule's trustworthiness; the foundation must be proven, not merely reviewed
 
-**对合规读者**:
+**For compliance-minded readers**:
 
-- 医疗 / 律所 / 金融 / 政务需要"不可篡改的审计链"
-- Kani / TLA+ 证明 = 给监管的"防篡改证据"
-- "不靠 review 靠证明" = 合规友好的**客观证据**
+- healthcare / law firms / finance / government need "tamper-proof audit chains"
+- Kani / TLA+ proofs = "anti-tampering evidence" for regulators
+- "proofs instead of reviews" = compliance-friendly **objective evidence**
 
 ---
 
-## 6. 0 unsafe 为什么是硬约束
+## 6. Why 0 unsafe is a hard constraint
 
-**`#![forbid(unsafe_code)]` 在所有 4 个子 crate 强制**(`evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli`)。
+**`#![forbid(unsafe_code)]` is enforced in all 4 sub-crates** (`evorule-tcb` / `evorule-reactor` / `evorule-governance` / `evorule-cli`).
 
 ```rust
 #![forbid(unsafe_code)]
 ```
 
-**为什么是硬约束**:
+**Why it is a hard constraint**:
 
-- unsafe = "我保证这段代码不会出问题"
-- 编译器不会检查 unsafe 块
-- unsafe bug = 未定义行为(可能安全,可能 crash,可能任意内存访问)
-- 审计链可信 = TCB 可信 = TCB 内存安全
-- unsafe 一旦存在,审计链 = 不可信(可能有内存踩踏)
+- unsafe = "I guarantee this code will not go wrong"
+- the compiler does not check unsafe blocks
+- an unsafe bug = undefined behavior (might be safe, might crash, might access arbitrary memory)
+- a trustworthy audit chain = a trustworthy TCB = TCB memory safety
+- once unsafe exists, the audit chain = untrustworthy (memory trampling possible)
 
-**唯一例外**:
+**The only exception**:
 
-- `evorule-reactor/src/ffi.rs` 是 `#[cfg(feature = "ffi")]` 启用
-- 标注 `#[cfg_attr(feature = "ffi", allow(unsafe_code))]`
-- FFI 边界**必须** unsafe(与 C 交互需要)
-- FFI 是**机制层与应用层的边界**——所有 unsafe 都集中在这一个文件
-- 已知问题:`ffi` feature 在 `--all-features` 下因 `lib.rs` 的 `forbid` 与 `ffi.rs` 的 `allow` 冲突(E0453),无法编译,这是 v0.1.x 预存在问题
+- `evorule-reactor/src/ffi.rs` is enabled under `#[cfg(feature = "ffi")]`
+- annotated `#[cfg_attr(feature = "ffi", allow(unsafe_code))]`
+- the FFI boundary **must** be unsafe (interacting with C requires it)
+- FFI is **the boundary between the mechanism layer and the application layer** — all unsafe is concentrated in this one file
+- known issue: under `--all-features`, the `ffi` feature fails to compile because the `forbid` in `lib.rs` conflicts with the `allow` in `ffi.rs` (E0453); this is a pre-existing v0.1.x issue
 
-**为什么不是 "deny"**:
+**Why not "deny"**:
 
-- `deny` 只是警告级别,可以用 `#[allow]` 覆盖
-- `forbid` 是 hard error,**任何子句都改不了**
-- 这就是"硬约束"——不是文档约定,是编译器强制
+- `deny` is only a warning level that `#[allow]` can override
+- `forbid` is a hard error that **no clause can override**
+- that is what makes it a "hard constraint" — not a documentation convention, but compiler enforcement
 
 ---
 
-## 7. 诚实记账(版本策略)
+## 7. Honest bookkeeping (version strategy)
 
-**版本号反映代码真实状态,不是营销数字。**
+**The version number reflects the code's true state, not a marketing number.**
 
-来源:[VERSION_STRATEGY.md](VERSION_STRATEGY.md)(v1.2,2026-08-02)
+Source: [VERSION_STRATEGY.md](VERSION_STRATEGY.md) (v1.2, 2026-08-02)
 
-| 原则         | 说明                                |
+| Principle    | Meaning                              |
 | ------------ | ----------------------------------- |
-| **诚实**     | 版本号反映代码真实状态,不是营销数字 |
-| **可预测**   | 项目方能从版本号变化判断影响范围      |
-| **可回溯**   | 任何发布的版本都能从 git 找回并构建 |
-| **文档先行** | 升级指南 / CHANGELOG 必须先于发布   |
+| **Honest**   | the version number reflects the code's true state, not a marketing number |
+| **Predictable** | projects can judge the impact scope from version-number changes |
+| **Traceable** | any released version can be recovered from git and built |
+| **Documentation first** | upgrade guides / CHANGELOG must precede the release |
 
-**SemVer 在 0.x 阶段的特殊规则**:
+**SemVer's special rule for the 0.x phase**:
 
-- SemVer 规定 0.x 阶段**任何 MINOR 升级都允许包含破坏性变更**
-- evorule 采纳:0.x 阶段 API 本来就不稳定
-- 项目方应**锁版本**(`evorule = "=0.9.0"`,精确版本)
+- SemVer stipulates that in the 0.x phase **any MINOR upgrade may include breaking changes**
+- evorule adopts this: in the 0.x phase the API is unstable anyway
+- projects should **pin the version** (`evorule = "=0.9.0"`, exact version)
 
-**CHANGELOG 规则**:
+**CHANGELOG rules**:
 
-- 每个 0.x 版本必须**独立章节**(无 `[Unreleased]` 占位)
-- 格式遵循 Keep a Changelog
-- 重大变更必须标 `⚠️ BREAKING CHANGES`
-- 必须有迁移指南(在 CHANGELOG 或独立 doc)
+- every 0.x version must have an **independent section** (no `[Unreleased]` placeholder)
+- the format follows Keep a Changelog
+- major changes must be marked `⚠️ BREAKING CHANGES`
+- a migration guide is mandatory (in the CHANGELOG or a standalone doc)
 
-**升 1.0.0 的硬条件**(任一不满足 = 继续 0.x):
+**Hard conditions for 1.0.0** (any one unmet = stay on 0.x):
 
-详见 [VERSION_STRATEGY.md §4.2](VERSION_STRATEGY.md#42-升-100-的门)（8 项条件）或 [ROADMAP.md §二](ROADMAP.md#二升-100-的硬条件)。
+See [VERSION_STRATEGY.md §4.2](VERSION_STRATEGY.md#42-the-gate-to-100) (8 conditions) or [ROADMAP.md §2](ROADMAP.md#2-hard-gates-for-10) for details.
 
-**为什么诚实**:
+**Why honest**:
 
-- 营销版本号 → 失信 → 项目方被骗
-- 诚实版本号 → 信任 → 项目方能精确判断风险
-- evorule 的"可信执行引擎"定位要求**自身必须可被信任**
+- marketing version numbers → lost trust → projects get deceived
+- honest version numbers → trust → projects can judge risk precisely
+- evorule's "trustworthy execution engine" positioning requires that **evorule itself be trustworthy**
 
 ---
 
-## 8. 我们不是什么(避免常见误解)
+## 8. What we are not (avoiding common misconceptions)
 
-| 误解                       | 真相                                                                                                                                                                                    |
+| Misconception              | Truth                                                                                                                                                                                  |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "evorule 是规则引擎"       | evorule 是 **JSON 数据集的执行引擎**。规则 = 数据,引擎 = 解释器。区别在于:规则引擎通常有专门的 DSL 和可视化 IDE,evorule 只认 JSON。                                                     |
-| "evorule 是 AI Agent 框架" | evorule 是 **确定性执行引擎,零 AI / 零 LLM**。evorule 不调用 LLM,不做 embedding,不"思考"。AI Agent 框架在 `evo-agent` 仓(应用层),它们用 evorule 作底座。              |
-| "evorule 是工作流引擎"     | evorule 是 **反应式执行引擎**。工作流 = 预定义的步骤序列(控制流在业务层);evorule = 由 JSON 规则动态决定的下一步(数据驱动)。区别在于:工作流是"先定好怎么做",evorule 是"运行时算怎么做"。 |
-| "evorule 是数据库"         | evorule 是 **状态机 + 审计链**,不是数据库。FactsLog 是 append-only 事件流,不是关系型存储。需要数据库请在应用层集成。                                                                    |
-| "evorule 是分布式系统"     | evorule 仓本身是**单进程反应器**。多反应器协作原语(`join` / `channel` / `shared_facts_space`)已从核心仓移除,改到 application 仓实现。                                                            |
-| "evorule 引擎很复杂"       | evorule-tcb 实际核心 1559 行,目标 235 行(6.6× 主要是测试)。`core_eval.json` 是公开宪法,可以读完。**故意保持小**。                                                                       |
-| "evorule 什么都做"         | evorule **故意什么都不做**(除了加减与因果链)。HTTP / SDK / Agent 框架 / 可视化工具 = 在其他仓,不是 evorule。                                                                            |
+| "evorule is a rules engine" | evorule is an **execution engine for JSON datasets**. Rules = data, engine = interpreter. The difference: rules engines usually come with a dedicated DSL and a visual IDE; evorule only recognizes JSON. |
+| "evorule is an AI Agent framework" | evorule is a **deterministic execution engine with zero AI / zero LLM**. evorule does not call LLMs, does not do embeddings, does not "think". The AI Agent frameworks live in the `evo-agent` repo (application layer); they use evorule as their foundation. |
+| "evorule is a workflow engine" | evorule is a **reactive execution engine**. A workflow = a predefined step sequence (control flow in the business layer); evorule = the next step dynamically decided by JSON rules (data-driven). The difference: a workflow "decides in advance how to do it"; evorule "computes at runtime how to do it". |
+| "evorule is a database"    | evorule is a **state machine + audit chain**, not a database. FactsLog is an append-only event stream, not relational storage. If you need a database, integrate at the application layer. |
+| "evorule is a distributed system" | the evorule repo itself is a **single-process reactor**. The multi-reactor collaboration primitives (`join` / `channel` / `shared_facts_space`) have been removed from the core repo and are to be implemented in the application repo instead. |
+| "the evorule engine is complex" | evorule-tcb's actual core is 1559 lines against a target of 235 lines (the 6.6× is mostly tests). `core_eval.json` is the public constitution and can be read in full. **Deliberately kept small**. |
+| "evorule does everything"  | evorule **deliberately does nothing** (except arithmetic and the causal chain). HTTP / SDK / Agent frameworks / visualization tools = other repos, not evorule.                                                                                        |
 
 ---
 
-## 附录 A · 设计约束速查
+## Appendix A · Design-constraint quick reference
 
-| 编号     | 约束                                    | 类别       |
+| ID       | Constraint                              | Category   |
 | -------- | --------------------------------------- | ---------- |
-| T1       | 3 真 + 0.5 signal 元指令(封闭)          | 指令集     |
-| T2       | 6 个域类型(封闭)                        | 指令集     |
-| T4       | 禁止任何 I/O                            | 确定性     |
-| T5       | 禁止读系统时间                          | 确定性     |
-| T6       | 禁止随机数                              | 确定性     |
-| T7       | 无运行时指令注册                        | 扩展性     |
-| T8       | `BTreeMap` 不用 `HashMap`               | 数据结构   |
-| T9 / G1  | 禁止 panic-prone                        | 错误处理   |
-| T10 / G2 | `#![forbid(unsafe_code)]`               | 内存安全   |
-| T12      | 禁止浮点                                | 确定性     |
-| T13      | 禁止 `static mut`                       | 全局状态   |
-| T14      | 禁止线程 / 异步                         | 并发       |
-| D1       | `core_eval.json` 每次修改必加 CHANGELOG | 宪法稳定性 |
-| D2       | 状态转换 ≤ 64 步 / 64 层                | 终止性     |
-| D9       | 路径解析永不 panic                      | 错误路径   |
-| D10      | 6 种 JSON 类型(无 Float)                | 数据模型   |
+| T1       | 3 true + 0.5 signal meta instructions (closed) | instruction set |
+| T2       | 6 domain types (closed)                 | instruction set |
+| T4       | Any I/O forbidden                       | determinism |
+| T5       | Reading system time forbidden           | determinism |
+| T6       | Random numbers forbidden                | determinism |
+| T7       | No runtime instruction registration     | extensibility |
+| T8       | `BTreeMap` instead of `HashMap`         | data structures |
+| T9 / G1  | Panic-prone forbidden                   | error handling |
+| T10 / G2 | `#![forbid(unsafe_code)]`               | memory safety |
+| T12      | Floats forbidden                        | determinism |
+| T13      | `static mut` forbidden                  | global state |
+| T14      | Threads / async forbidden               | concurrency |
+| D1       | Every `core_eval.json` change requires a CHANGELOG entry | constitution stability |
+| D2       | State transitions ≤ 64 steps / 64 levels | termination |
+| D9       | Path resolution never panics            | error paths |
+| D10      | 6 JSON types (no Float)                 | data model |
 
-完整定义:[evorule-tcb/TCB_SPEC.md](evorule-tcb/TCB_SPEC.md)(权威)
+Full definitions: [evorule-tcb/TCB_SPEC.md](evorule-tcb/TCB_SPEC.md) (authoritative)

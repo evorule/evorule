@@ -1,14 +1,15 @@
 # =============================================================================
 # GitHub Actions: Mutation Testing (cargo-mutants)
 #
-# 验证 evorule-tcb 测试**真的能抓 bug**. 单个 mutant 注入一个微小改动,
-# 跑测试看是否能检测到. "MISSED" mutants 是测试盲区.
+# Verifies that evorule-tcb tests **really catch bugs**. Each mutant injects a tiny
+# change, then the test suite runs to see whether it detects it. "MISSED" mutants
+# are blind spots of the test suite.
 #
-# Schedule: 每周日 UTC 0:00 (夜间跑, 不阻塞 PR)
-# Manual: workflow_dispatch 可触发
+# Schedule: every Sunday 00:00 UTC (nightly run, does not block PRs)
+# Manual: can be triggered via workflow_dispatch
 #
-# 单 mutant: ~30s - 2min (编译 + 227 tests)
-# 总量: ~1500 mutants × 1min ≈ 25h
+# Per mutant: ~30s - 2min (compile + 227 tests)
+# Total: ~1500 mutants x 1min ~= 25h
 # =============================================================================
 
 name: mutants
@@ -23,7 +24,7 @@ on:
         required: false
         default: "360"
 
-# 显式最小权限 (Scorecard Token-Permissions): 变异测试仅需只读 (产物走 artifact 上传)
+# Explicit minimal permissions (Scorecard Token-Permissions): mutation testing only needs read (artifacts go through artifact upload)
 permissions: read-all
 
 env:

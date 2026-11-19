@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 性能基准 — 审计链 audit_new + verify
+//! Performance benchmark — audit chain audit_new + verify
 //!
-//! 041 v2.0 A8：建立治理层审计链性能基线。
-//! - `audit_new`：从 FactsLog 拉取新增事实，计算哈希链条目
-//! - `verify`：O(n) 遍历整条哈希链校验完整性
+//! 041 v2.0 A8: establish the governance-layer audit-chain performance baseline.
+//! - `audit_new`: pull newly appended facts from the FactsLog and compute hash-chain entries
+//! - `verify`: O(n) traversal of the whole hash chain checking integrity
 //!
-//! # 运行
+//! # Run
 //! ```bash
 //! cargo bench -p evorule-governance --bench audit_chain
 //! ```
@@ -18,7 +18,7 @@ use evorule_governance::Auditor;
 use evorule_reactor::{Fact, FactId, FactsLog};
 use evorule_tcb::JsonValue;
 
-/// 向 FactsLog 填充 n 条 Command 事实
+/// Fill the FactsLog with n Command facts
 fn fill_facts(log: &FactsLog, n: u64) {
     let instruction = JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("increment")),
@@ -38,7 +38,7 @@ fn fill_facts(log: &FactsLog, n: u64) {
     }
 }
 
-/// audit_new 100 条事实的开销（含哈希链条目构造）
+/// Cost of audit_new over 100 facts (including hash-chain entry construction)
 fn bench_audit_new_100(c: &mut Criterion) {
     c.bench_function("auditor/audit_new_100_facts", |b| {
         b.iter(|| {
@@ -51,9 +51,9 @@ fn bench_audit_new_100(c: &mut Criterion) {
     });
 }
 
-/// verify 1000 条审计条目的开销（O(n) 哈希链校验）
+/// Cost of verify over 1000 audit entries (O(n) hash-chain integrity check)
 fn bench_audit_verify_1000(c: &mut Criterion) {
-    // 预构造 1000 条审计链（bench 外一次性准备）
+    // Pre-build the 1000-entry audit chain (one-time preparation outside the bench)
     let log = FactsLog::new();
     fill_facts(&log, 1000);
     let mut auditor = Auditor::new(log);

@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 跨会话共享事实存储
+//! Cross-session shared facts storage
 //!
-//! # 设计依据
-//! 基于文档 19（auto_recall 记忆机制）和 22（补齐清单），SharedFactsLog 是跨会话共享事实的全局存储。
-//! 每个 session 写入 `shared.*` 命名空间的 PayloadUpdate 时，同步写入 SharedFactsLog，
-//! 其他 session 可以从中读取。
+//! # Design basis
+//! Based on doc 19 (the auto_recall memory mechanism) and doc 22 (the completion checklist),
+//! SharedFactsLog is the global storage for cross-session shared facts.
+//! Whenever a session writes a PayloadUpdate into the `shared.*` namespace, it is also written
+//! into SharedFactsLog; other sessions can read from it.
 //!
-//! # 并发模型
-//! 使用 `std::sync::RwLock`，因为写操作极快（push + 字段更新），不跨 await 持锁。
+//! # Concurrency model
+//! Uses `std::sync::RwLock`, because writes are extremely fast (push + field updates) and never
+//! hold the lock across awaits.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -19,98 +21,110 @@ use evorule_reactor::{Fact, FactId, FactsLog, FactsLogError};
 use evorule_tcb::JsonValue;
 use serde::{Deserialize, Serialize};
 
-/// 共享事实元数据
+/// Shared fact metadata
 ///
-/// 每条共享事实除了原始 Fact 的内容外，还包含来源会话 ID 等元数据。
+/// Besides the original Fact's content, each shared fact carries metadata such as the source
+/// session ID.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SharedFact {
-    /// 事实 ID
+    /// Fact ID
     pub fact_id: FactId,
-    /// 事实路径
+    /// Fact path
     pub path: String,
-    /// 事实值
+    /// Fact value
     pub value: JsonValue,
-    /// 来源会话 ID
+    /// Source session ID
     pub source_session_id: u64,
-    /// 版本号
+    /// Version number
     pub version: u64,
-    /// 来源会话侧的源头 fact_id（N6 链路统一，R10）
+    /// The session-side origin fact_id (N6 chain unification, R10)
     ///
-    /// 同一逻辑记忆存在两个账本节点：会话侧（session WAL 哈希链上的
-    /// `Fact::PayloadUpdate`）与共享侧（本账本）。本字段记录共享侧条目
-    /// 对应的会话侧源头事实 ID，使跨链溯源可出示双侧证据。
+    /// The same logical memory has two ledger nodes: the session side (the `Fact::PayloadUpdate`
+    /// on the session WAL hash chain) and the shared side (this ledger). This field records the
+    /// session-side origin fact ID corresponding to a shared-side entry, so cross-chain
+    /// traceability can present evidence from both sides.
     ///
-    /// 语义边界：`fact_id` 是**链内节点地址**（会话链/共享链各自独立编址），
-    /// 逻辑身份由 `path` 承载——两个 fact_id 不是"同一 ID 的分裂"，而是
-    /// 两个审计事件（"会话写入 X" 与 "X 被广播进共享账本"）的节点地址。
+    /// Semantic boundary: `fact_id` is the **node address within a chain** (session chain / shared
+    /// chain are addressed independently); the logical identity is carried by `path` — the two
+    /// fact_ids are not "a split of one ID", but the node addresses of two audit events
+    /// ("the session wrote X" and "X was broadcast into the shared ledger").
     ///
-    /// `None` 表示：经旧签名 `append` 写入（无 origin 通道），或该条目
-    /// 先于 R10 存在（metadata 中无映射）。溯源索引随 metadata 持久化，
-    /// 丢失语义与 `fact_sources` 一致（辅助索引，WAL 为权威）。
+    /// `None` means: written via the old-signature `append` (no origin channel), or the entry
+    /// predates R10 (no mapping in metadata). The origin index is persisted with metadata; its
+    /// loss semantics match `fact_sources` (an auxiliary index; the WAL is authoritative).
     pub origin_fact_id: Option<u64>,
 }
 
-/// 共享事实元数据持久化容器
+/// Shared-facts metadata persistence container
 ///
-/// 用于将 `SharedFactsLog` 的内存元数据（`fact_sources`、`next_fact_id`、`rolled_up`、
-/// `used_at_startup`）持久化到独立文件，弥补 `FactsLog` 的 WAL 只记录 Fact 本身、
-/// 不记录元数据的设计限制。
+/// Persists the in-memory metadata of `SharedFactsLog` (`fact_sources`, `next_fact_id`,
+/// `rolled_up`, `used_at_startup`) into a standalone file, filling the design gap that the
+/// `FactsLog` WAL records only the Fact itself, not metadata.
 ///
-/// 序列化为 JSON 文件，通过 `write_metadata_atomic` 原子写入（write tmp + rename）。
+/// Serialized as a JSON file and written atomically via `write_metadata_atomic`
+/// (write tmp + rename).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SharedFactsMetadata {
-    /// 下一个 fact_id（自增计数器）
+    /// The next fact_id (an auto-incrementing counter)
     pub next_fact_id: u64,
-    /// FactId(u64) → source_session_id 映射
+    /// FactId(u64) → source_session_id mapping
     pub fact_sources: BTreeMap<u64, u64>,
-    /// FactId(u64) → 会话侧源头 fact_id 映射（N6 链路统一，R10）
+    /// FactId(u64) → session-side origin fact_id mapping (N6 chain unification, R10)
     ///
-    /// 仅存 `Some` 项；`#[serde(default)]` 保证旧 metadata 文件（无此字段）
-    /// 反序列化不报错——溯源索引是辅助数据，缺失只损失跨链出处，不损审计链。
+    /// Only `Some` entries are stored; `#[serde(default)]` guarantees that older metadata files
+    /// (lacking this field) deserialize without error — the origin index is auxiliary data; its
+    /// absence only loses cross-chain provenance, not the audit chain.
     #[serde(default)]
     pub fact_origins: BTreeMap<u64, u64>,
-    /// session_id → 启动时使用的 fact_id 列表
+    /// session_id → the fact_id list used at startup
     pub used_at_startup: BTreeMap<u64, Vec<u64>>,
-    /// 已标记为 rollup 的 fact_id 集合（`facts_by_path_prefix` 查询时过滤）
+    /// The set of fact_ids marked as rollup (filtered in `facts_by_path_prefix` queries)
     pub rolled_up: BTreeSet<u64>,
-    /// 共享账本锚点链（G-A2 同源机制；持久化入 metadata 使锚链跨重启存续）
+    /// The shared-ledger anchor chain (same-origin mechanism as G-A2; persisted into metadata so
+    /// the anchor chain survives restarts)
     #[serde(default)]
     pub anchors: Vec<SharedLedgerAnchor>,
 }
 
-/// 共享账本锚点（载荷 = 账本链尾 + metadata 摘要）
+/// Shared-ledger anchor (payload = ledger chain tail + metadata digest)
 ///
-/// 与会话锚点（anchor.rs）同源哲学：锚自身成链+ed25519 确定性签名；
-/// 载荷额外携带 **metadata 规范字节摘要**（origin/rollup 等元数据在链外，
-/// 由锚摘要保护）。摘要语义 = 该锚生成时刻 metadata 的快照：篡改历史
-/// metadata（含历史锚点）→ 与后一锚的摘要不符 → 检出。
+/// Same philosophy as the session anchor (anchor.rs): anchors form a chain themselves +
+/// ed25519 deterministic signatures;
+/// the payload additionally carries the **canonical-byte digest of metadata** (origin/rollup and
+/// other metadata live outside the chain, protected by the anchor digest). The digest semantics =
+/// a snapshot of metadata at the anchor's creation: tampering with historical
+/// metadata (including historical anchors) → mismatch with the next anchor's digest → detected.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SharedLedgerAnchor {
-    /// 锚序号（0 起严格递增）
+    /// Anchor sequence number (strictly increasing from 0)
     pub seq: u64,
-    /// 覆盖的记录数（截至本锚）
-    /// 覆盖的记录数（截至本锚）
+    /// Covered record count (as of this anchor)
+    /// Covered record count (as of this anchor)
     pub records: u64,
-    /// 账本链尾哈希
-    /// 账本链尾哈希
+    /// Ledger chain-tail hash
+    /// Ledger chain-tail hash
     pub chain_head: String,
-    /// 本锚生成时刻 metadata 规范字节的 blake3 摘要（不含 anchors 字段自身）
-    /// 本锚生成时刻 metadata 规范字节的 blake3 摘要（不含 anchors 字段自身）
+    /// blake3 digest of the metadata canonical bytes at this anchor's creation (excluding the
+    /// anchors field itself)
+    /// blake3 digest of the metadata canonical bytes at this anchor's creation (excluding the
+    /// anchors field itself)
     pub metadata_digest: String,
-    /// 锚链哈希 = blake3(prev_anchor_hash + seq + records + chain_head + key_id + metadata_digest)
-    /// 锚链哈希 = blake3(prev_anchor_hash + seq + records + chain_head + key_id + metadata_digest)
+    /// Anchor chain hash = blake3(prev_anchor_hash + seq + records + chain_head + key_id + metadata_digest)
+    /// Anchor chain hash = blake3(prev_anchor_hash + seq + records + chain_head + key_id + metadata_digest)
     pub anchor_hash: String,
-    /// 签名密钥标识
+    /// Signing key identifier
     pub key_id: String,
-    /// 引擎/部署标识
+    /// Engine/deployment identifier
     pub engine_id: String,
-    /// 签名目标 = 载荷字段 `|` 串接（零依赖可验同源约定）
-    /// 签名目标 = 载荷字段 `|` 串接（零依赖可验同源约定）
+    /// Signature target = payload fields concatenated with `|` (the zero-dependency-verifiable
+    /// same-origin convention)
+    /// Signature target = payload fields concatenated with `|` (the zero-dependency-verifiable
+    /// same-origin convention)
     pub signature: String,
 }
 
 impl SharedLedgerAnchor {
-    /// v1 签名载荷（字段串接，零依赖可验）
+    /// v1 signature payload (field concatenation, zero-dependency verifiable)
     pub fn signature_payload(&self) -> String {
         format!(
             "evorule-shared-anchor/1|{}|{}|{}|{}|{}|{}",
@@ -123,7 +137,7 @@ impl SharedLedgerAnchor {
         )
     }
 
-    /// 锚链哈希（含 prev 链接）
+    /// Anchor chain hash (including the prev link)
     pub fn compute_hash(prev_anchor_hash: &str, a: &SharedLedgerAnchor) -> String {
         let combined = format!(
             "{}|{}|{}|{}|{}|{}|{}",
@@ -139,35 +153,38 @@ impl SharedLedgerAnchor {
     }
 }
 
-/// 共享账本锚点验证报告
+/// Shared-ledger anchor verification report
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SharedAnchorReport {
-    /// 锚点总数
+    /// Total anchor count
     pub anchor_count: usize,
-    /// 末锚链尾与当前账本链尾一致（账本被重算则不一致）
+    /// The last anchor's chain tail matches the current ledger chain tail (mismatch if the ledger
+    /// was recomputed)
     pub binding_chain_head_match: bool,
-    /// 末锚摘要与当前 metadata 摘要一致（元数据被篡改则不一致）
+    /// The last anchor's digest matches the current metadata digest (mismatch if metadata was tampered)
     pub binding_metadata_match: bool,
 }
 
-/// 共享账本锚点常量
+/// Shared-ledger anchor constant
 pub const SHARED_LEDGER_ANCHOR_GENESIS: &str = "shared-anchor-genesis";
 
-/// `mark_as_rollup` 的显式结果（R11 静默失败修复）
+/// The explicit result of `mark_as_rollup` (the R11 silent-failure fix)
 ///
-/// 修复前返回 `()`——调用方无法感知"标记了不存在的 id"这一静默失败。
+/// Before the fix it returned `()` — the caller could not perceive the silent failure of
+/// "marking nonexistent ids".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RollupOutcome {
-    /// 实际存在的、成功标记（或已标记，幂等）的 id 数量
+    /// The count of ids that actually exist and were successfully marked (or already marked, idempotent)
     pub marked: usize,
-    /// 共享账本中不存在的 id 清单（典型原因：误用 payload 侧 fact_id，
-    /// 与共享表 ID 空间不通用）。调用方必须显式处理，不得忽略。
+    /// The list of ids absent from the shared ledger (typical cause: mistakenly using the
+    /// payload-side fact_id, which does not share the shared-table ID space). The caller must
+    /// handle this explicitly; ignoring it is forbidden.
     pub unknown: Vec<FactId>,
 }
 
-/// 跨会话共享事实存储
+/// Cross-session shared facts storage
 ///
-/// 作为跨会话共享事实的全局存储，支持按路径前缀查询。
+/// The global storage for cross-session shared facts, supporting path-prefix queries.
 #[derive(Debug, Clone)]
 pub struct SharedFactsLog {
     inner: Arc<RwLock<SharedFactsLogInner>>,
@@ -177,22 +194,22 @@ struct SharedFactsLogInner {
     facts_log: FactsLog,
     next_fact_id: u64,
     fact_sources: BTreeMap<FactId, u64>,
-    /// FactId → 会话侧源头 fact_id（N6 链路统一，R10；仅存 Some 项）
+    /// FactId → session-side origin fact_id (N6 chain unification, R10; only Some entries stored)
     fact_origins: BTreeMap<FactId, u64>,
-    /// 锚点签名器（部署面注入；None=锚点关）
+    /// The anchor signer (injected by the deployment side; None = anchors off)
     anchor_signer: Option<crate::signing::AuditSigner>,
     anchor_key_id: String,
     anchor_engine_id: String,
-    /// 每 N 条新记录封一锚（0=仅手动）
+    /// Seal one anchor per N new records (0 = manual only)
     anchor_interval: u64,
-    /// 距上锚新增记录数
+    /// New records since the last anchor
     records_since_anchor: u64,
-    /// 锚点链（持久化随 metadata；序号严格递增）
+    /// The anchor chain (persisted with metadata; sequence numbers strictly increase)
     anchors: Vec<SharedLedgerAnchor>,
     used_at_startup: BTreeMap<u64, Vec<FactId>>,
-    /// 已标记为 rollup 的 fact_id 集合（`facts_by_path_prefix` 过滤，`fact_by_id` 不过滤）
+    /// The set of fact_ids marked as rollup (filtered by `facts_by_path_prefix`, not by `fact_by_id`)
     rolled_up: BTreeSet<FactId>,
-    /// metadata 文件路径（`Some` 时写操作后持久化；`None` 时纯内存）
+    /// The metadata file path (persisted after write ops when `Some`; purely in memory when `None`)
     metadata_path: Option<PathBuf>,
 }
 
@@ -207,16 +224,17 @@ impl std::fmt::Debug for SharedFactsLogInner {
 }
 
 impl SharedFactsLogInner {
-    /// 持久化 metadata 到文件（须持有写锁调用）
+    /// Persists metadata to the file (must be called while holding the write lock)
     ///
-    /// 统一持久化契约（P4-DESIGN ADR，2026-08-27）：
-    /// 所有修改 `fact_sources` / `used_at_startup` / `rolled_up` / `next_fact_id`
-    /// 的写操作完成后必须调用本方法。策略为 best-effort——写入失败只记 warn
-    /// 日志、不阻塞调用方（metadata 是 WAL 事实历史的辅助索引，WAL 本身
-    /// 才是权威数据源；重启后 recover 以 WAL 为准重建事实，metadata 缺失
-    /// 仅损失消费关系/rollup 标记等治理元数据）。
+    /// Unified persistence contract (P4-DESIGN ADR, 2026-08-27):
+    /// after every write operation that modifies `fact_sources` / `used_at_startup` /
+    /// `rolled_up` / `next_fact_id`, this method must be called. The policy is best-effort — a
+    /// write failure only logs a warn and never blocks the caller (metadata is an auxiliary index
+    /// of the WAL fact history; the WAL itself is the authoritative data source; on restart,
+    /// recover rebuilds facts from the WAL as the truth, and missing metadata only loses
+    /// governance metadata such as consumption relations / rollup marks).
     ///
-    /// 已覆盖的调用方：`append`、`record_used_at_startup`、`mark_as_rollup`。
+    /// Callers covered: `append`, `record_used_at_startup`, `mark_as_rollup`.
     fn persist_metadata_locked(&self) {
         if let Some(ref meta_path) = self.metadata_path {
             if let Err(e) = write_metadata_atomic(meta_path, self) {
@@ -227,7 +245,7 @@ impl SharedFactsLogInner {
 }
 
 impl SharedFactsLog {
-    /// 创建空的 SharedFactsLog（无 WAL，纯内存）
+    /// Creates an empty SharedFactsLog (no WAL, purely in memory)
     pub fn new() -> Self {
         Self {
             inner: Arc::new(RwLock::new(SharedFactsLogInner {
@@ -248,10 +266,10 @@ impl SharedFactsLog {
         }
     }
 
-    /// 创建带 WAL 持久化的 SharedFactsLog（不恢复历史，向后兼容）
+    /// Creates a SharedFactsLog with WAL persistence (no history recovery, backward compatible)
     ///
-    /// 注意：此方法只挂载 WAL writer，不从 WAL 恢复历史。
-    /// 如需完整恢复（fact 历史 + 元数据），请使用 [`recover`](Self::recover)。
+    /// Note: this method only mounts the WAL writer and does not recover history from the WAL.
+    /// For full recovery (fact history + metadata), use [`recover`](Self::recover).
     pub fn with_wal<P: AsRef<Path>>(path: P) -> Result<Self, FactsLogError> {
         let facts_log = FactsLog::with_wal(path)?;
         Ok(Self {
@@ -273,26 +291,28 @@ impl SharedFactsLog {
         })
     }
 
-    /// 从 WAL + metadata 文件完整恢复 SharedFactsLog
+    /// Fully recovers SharedFactsLog from the WAL + metadata file
     ///
-    /// 与 [`with_wal`](Self::with_wal) 不同，此方法会：
-    /// 1. 调用 `FactsLog::recover(wal_path)` 从 WAL 重放 fact 历史
-    /// 2. 读取 metadata 文件恢复 `fact_sources`、`next_fact_id`、`rolled_up`、`used_at_startup`
+    /// Unlike [`with_wal`](Self::with_wal), this method:
+    /// 1. calls `FactsLog::recover(wal_path)` to replay the fact history from the WAL
+    /// 2. reads the metadata file to restore `fact_sources`, `next_fact_id`, `rolled_up`,
+    ///    `used_at_startup`
     ///
-    /// # 参数
-    /// - `wal_path`: WAL 文件路径
-    /// - `metadata_path`: metadata 文件路径（不存在时使用默认值）
+    /// # Arguments
+    /// - `wal_path`: the WAL file path
+    /// - `metadata_path`: the metadata file path (defaults are used when it does not exist)
     ///
-    /// # 错误
-    /// - WAL 恢复失败返回 `FactsLogError`
-    /// - metadata 文件读取失败（文件不存在除外）返回 `FactsLogError`
+    /// # Errors
+    /// - a WAL recovery failure returns `FactsLogError`
+    /// - a metadata-file read failure (other than file-not-found) returns `FactsLogError`
     pub fn recover<P1: AsRef<Path>, P2: AsRef<Path>>(
         wal_path: P1,
         metadata_path: P2,
     ) -> Result<Self, FactsLogError> {
-        // WAL 文件不存在时用 with_wal 创建新的，存在时用 recover 恢复；
-        // 恢复前先做全链三查（content 重算/prev 链接/链步——审计链防篡改语义，
-        // 与 Auditor::load_from_tier1_wal 同口径）：失配 fail-visible 拒绝启动账本
+        // when the WAL file is absent, create a fresh one with with_wal; when present, recover it;
+        // before recovery, run the whole-chain triple check (content recomputation / prev link /
+        // chain step — the audit-chain tamper-defense semantics, same approach as
+        // Auditor::load_from_tier1_wal): a mismatch fails visibly and refuses to start the ledger
         let facts_log = if wal_path.as_ref().exists() {
             verify_wal_chain(wal_path.as_ref())?;
             FactsLog::recover(&wal_path)?
@@ -300,20 +320,23 @@ impl SharedFactsLog {
             FactsLog::with_wal(&wal_path)?
         };
 
-        // P4-D：清理上次写入中断留下的孤儿 tmp 文件（write 与 rename 之间
-        // 崩溃/断电会产生）；不影响正确性——正式文件从未被触碰——但残留
-        // 会随时间堆积，且下次原子写入会被直接覆盖，无需保留。
+        // P4-D: clean up orphan tmp files left by an interrupted write (produced by a
+        // crash/power loss between write and rename); correctness is unaffected — the real file
+        // is never touched — but the residue piles up over time and would be overwritten by the
+        // next atomic write anyway, so keeping it serves nothing.
         let tmp_path = metadata_path.as_ref().with_extension("tmp");
         if tmp_path.exists() {
             match std::fs::remove_file(&tmp_path) {
-                Ok(()) => tracing::info!(tmp = %tmp_path.display(), "已清理孤儿 metadata.tmp"),
+                Ok(()) => {
+                    tracing::info!(tmp = %tmp_path.display(), "orphan metadata.tmp cleaned up")
+                }
                 Err(e) => {
-                    tracing::warn!(tmp = %tmp_path.display(), error = %e, "清理孤儿 metadata.tmp 失败")
+                    tracing::warn!(tmp = %tmp_path.display(), error = %e, "failed to clean up the orphan metadata.tmp")
                 }
             }
         }
 
-        // 读取 metadata 文件（不存在时使用默认值）
+        // read the metadata file (defaults are used when it does not exist)
         let metadata = match std::fs::read_to_string(&metadata_path) {
             Ok(content) => serde_json::from_str::<SharedFactsMetadata>(&content)
                 .map_err(|e| FactsLogError::WalError(format!("metadata parse error: {e}")))?,
@@ -321,14 +344,15 @@ impl SharedFactsLog {
             Err(e) => return Err(FactsLogError::WalError(format!("metadata read error: {e}"))),
         };
 
-        // 转换 u64 → FactId
+        // convert u64 → FactId
         let fact_sources: BTreeMap<FactId, u64> = metadata
             .fact_sources
             .into_iter()
             .map(|(k, v)| (FactId(k), v))
             .collect();
 
-        // R10：溯源索引恢复（旧 metadata 无此字段时为空 map，语义 = origin 未知）
+        // R10: restore the origin index (an empty map when older metadata lacks the field;
+        // semantics = origin unknown)
         let fact_origins: BTreeMap<FactId, u64> = metadata
             .fact_origins
             .into_iter()
@@ -343,20 +367,25 @@ impl SharedFactsLog {
 
         let rolled_up: BTreeSet<FactId> = metadata.rolled_up.into_iter().map(FactId).collect();
 
-        // F1（audit-chain 专项 2026-08-28）：孤立 fact 结构性检测（P1-F2 兑现）。
-        // 崩溃窗口（append 三步分离：fact 先落 WAL、fact_sources 后写 metadata）
-        // 会产生"WAL 中有 PayloadUpdate、fact_sources 无映射"的孤立 fact——
-        // 该段审计链不可归因。不自动伪造映射（source 无法从 fact 内容恢复，
-        // 伪造即撒谎，与 P4-O2 消费关系单向信任原则一致），只检测 + 显式告警。
+        // F1 (audit-chain initiative 2026-08-28): structural detection of orphan facts (the
+        // P1-F2 deliverable).
+        // The crash window (the append's three separated steps: the fact lands in the WAL first,
+        // fact_sources is written into metadata later) produces an orphan fact of "a PayloadUpdate
+        // present in the WAL but unmapped in fact_sources" — that audit-chain segment cannot be
+        // attributed. Do not fabricate mappings automatically (the source cannot be recovered
+        // from the fact content; fabricating is lying, consistent with the P4-O2 one-way trust
+        // principle for consumption relations); only detect + warn explicitly.
         let orphans = match detect_orphan_facts(&facts_log, &fact_sources) {
             Ok(v) => v,
             Err(e) => {
-                // 恢复阶段的 facts_log 未经压实，本不应发生；一旦发生即说明
-                // 集合不完整，此时"未发现孤立"是假结论——必须显式告警而非静默通过。
+                // the recovery-stage facts_log is not compacted, so this should never happen;
+                // if it does, the set is incomplete and "no orphans found" would be a false
+                // conclusion — warn explicitly instead of passing silently.
                 tracing::warn!(
                     error = %e,
-                    "孤立 fact 检测未完成：事实集合不完整（压实点前历史已从内存投影丢弃），\
-                     无法确认审计链中是否存在不可归因段"
+                    "orphan-fact detection incomplete: the fact set is not complete (history \
+                     before the compaction point was dropped from the in-memory projection); \
+                     unattributable segments in the audit chain cannot be ruled out"
                 );
                 Vec::new()
             }
@@ -365,12 +394,12 @@ impl SharedFactsLog {
             for id in &orphans {
                 tracing::warn!(
                     fact_id = id,
-                    "孤立共享 fact：WAL 中存在但 fact_sources 缺失（崩溃窗口产物，因果映射永久丢失，该段审计链不可归因）"
+                    "orphan shared fact: present in the WAL but missing from fact_sources (crash-window artifact; the causal mapping is permanently lost and this audit-chain segment cannot be attributed)"
                 );
             }
             tracing::warn!(
                 count = orphans.len(),
-                "孤立共享 fact 检测汇总：恢复的审计链中存在不可归因段，建议人工核对 WAL 与 metadata 文件"
+                "orphan shared fact detection summary: the recovered audit chain contains unattributable segments; manually cross-check the WAL and metadata files"
             );
         }
 
@@ -394,34 +423,35 @@ impl SharedFactsLog {
         })
     }
 
-    /// 因果一致性校验：返回孤立 fact_id 列表（压实场景下显式报错）
+    /// Causal-consistency check: returns the orphan fact_id list (explicit error under
+    /// compaction)
     ///
-    /// 孤立 fact = WAL 历史中存在该 `Fact::PayloadUpdate`，但 `fact_sources`
-    /// 无对应映射（崩溃窗口产物，因果映射永久丢失）。
+    /// An orphan fact = the `Fact::PayloadUpdate` exists in the WAL history, but `fact_sources`
+    /// has no corresponding mapping (a crash-window artifact; the causal mapping is lost forever).
     ///
-    /// - [`recover`](Self::recover) 完成时会自动检测并逐条 `warn!`；
-    /// - 本方法供运行期健康检查 / 外部审计工具调用。
+    /// - detected automatically with per-item `warn!` when [`recover`](Self::recover) completes;
+    /// - this method serves runtime health checks / external audit tools.
     ///
-    /// # 错误
-    /// 若实例运行期间发生过压缩（compact），压缩点前的 fact 已从内存投影
-    /// 丢弃，`read_from(0)` 拿不到完整集合——本方法返回
-    /// [`Err(FactsLogError::CompactedRead)`]，**不静默漏检**：一个静默返回
-    /// 空列表的审计方法，会把"没查全"冒充成"查过没问题"。
-    /// 精确的全量校验应基于 WAL 离线重放工具。
+    /// # Errors
+    /// If the instance was compacted at runtime, facts before the compaction point are dropped
+    /// from the in-memory projection and `read_from(0)` cannot obtain the full set — this method
+    /// returns [`Err(FactsLogError::CompactedRead)`], **never silently missing**: an audit method
+    /// that silently returns an empty list would dress "incomplete" up as "checked and clean".
+    /// An exact full check should be based on an offline WAL replay tool.
     pub fn verify_causal_consistency(&self) -> Result<Vec<u64>, FactsLogError> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         detect_orphan_facts(&inner.facts_log, &inner.fact_sources)
     }
 
-    /// 追加共享事实
+    /// Appends a shared fact
     ///
-    /// # 参数
-    /// - `path`: 事实路径（通常以 `shared.` 开头）
-    /// - `value`: 事实值
-    /// - `source_session_id`: 来源会话 ID，用于跨会话因果追溯
+    /// # Arguments
+    /// - `path`: the fact path (usually starting with `shared.`)
+    /// - `value`: the fact value
+    /// - `source_session_id`: the source session ID, for cross-session causal tracing
     ///
-    /// # 返回
-    /// 追加后的版本号
+    /// # Returns
+    /// The version number after the append
     pub fn append(
         &self,
         path: &str,
@@ -431,12 +461,13 @@ impl SharedFactsLog {
         self.append_inner(path, value, source_session_id, None)
     }
 
-    /// 轮换共享事实 WAL 文件（干预原语 wal.force_rotate 通路）
+    /// Rotates the shared-facts WAL file (the wal.force_rotate intervention-primitive path)
     ///
-    /// 委托内层 [`FactsLog::rotate_wal`]：纯追加式分片切换（序号 +1 开新
-    /// 文件，旧分片保持完整——崩溃安全，不影响链内容与可回放性）。
-    /// 纯内存模式 / 无可轮换后端：`Ok(false)`。轮换不产生事实、不改
-    /// metadata——它是存储层操作，与审计链内容无关。
+    /// Delegates to the inner [`FactsLog::rotate_wal`]: a pure-append shard switch (sequence +1
+    /// opens a new file, the old shard stays intact — crash-safe, without affecting chain content
+    /// or replayability).
+    /// Pure-memory mode / no rotatable backend: `Ok(false)`. Rotation produces no facts and does
+    /// not touch metadata — it is a storage-layer operation, unrelated to audit-chain content.
     pub fn rotate_wal(&self) -> Result<bool, FactsLogError> {
         self.inner
             .read()
@@ -445,18 +476,19 @@ impl SharedFactsLog {
             .rotate_wal()
     }
 
-    /// 追加共享事实并携带会话侧源头 fact_id（N6 链路统一，R10）
+    /// Appends a shared fact carrying the session-side origin fact_id (N6 chain unification, R10)
     ///
-    /// 与 [`append`](Self::append) 唯一区别：共享侧条目记录其会话侧源头
-    /// 事实 ID，使 `/{id}/source` 可出示双侧证据。`origin_fact_id: None`
-    /// 时行为与 `append` 完全一致。
+    /// The only difference from [`append`](Self::append): the shared-side entry records its
+    /// session-side origin fact ID, so `/{id}/source` can present evidence from both sides. With
+    /// `origin_fact_id: None`, behavior is identical to `append`.
     ///
-    /// # 参数
-    /// - `origin_fact_id`: 会话侧源头 fact_id。调用方须保证该事实已确定
-    ///   入链（server 路由先 `command_tx.send` 成功后广播，origin 永不悬空）
+    /// # Arguments
+    /// - `origin_fact_id`: the session-side origin fact_id. The caller must guarantee that fact
+    ///   has deterministically entered the chain (the server route broadcasts only after
+    ///   `command_tx.send` succeeds; origin never dangles)
     ///
-    /// # 返回
-    /// 追加后的版本号
+    /// # Returns
+    /// The version number after the append
     pub fn append_with_origin(
         &self,
         path: &str,
@@ -467,7 +499,7 @@ impl SharedFactsLog {
         self.append_inner(path, value, source_session_id, origin_fact_id)
     }
 
-    /// 两个公开 append 入口的共同实现（私有）
+    /// The shared implementation of the two public append entry points (private)
     fn append_inner(
         &self,
         path: &str,
@@ -495,11 +527,12 @@ impl SharedFactsLog {
             inner.fact_origins.insert(fact_id, origin);
         }
 
-        // 持久化 metadata（best-effort：失败只记日志，不阻塞 append）
+        // persist metadata (best-effort: failures only log, never blocking append)
         inner.persist_metadata_locked();
 
-        // 锚点策略：距上锚新增记录达 interval 即封一锚（失败保留计数下次补封；
-        // 锁内调用 seal_anchor_now 需写锁——改为释锁后手动封）
+        // anchor policy: seal one anchor when new records since the last anchor reach the interval
+        // (on failure the counter is kept for the next append; calling seal_anchor_now inside the
+        // lock needs the write lock — so seal manually after releasing it)
         inner.records_since_anchor += 1;
         let should_seal =
             inner.anchor_interval > 0 && inner.records_since_anchor >= inner.anchor_interval;
@@ -513,7 +546,8 @@ impl SharedFactsLog {
         Ok(version)
     }
 
-    /// 配置锚点签名（部署面注入；与会话锚点同一 EVORULE_ANCHOR_SEED 体系）
+    /// Configures anchor signing (injected by the deployment side; the same EVORULE_ANCHOR_SEED
+    /// system as session anchors)
     pub fn with_anchor(
         &self,
         signer: crate::signing::AuditSigner,
@@ -528,7 +562,7 @@ impl SharedFactsLog {
         inner.anchor_interval = interval;
     }
 
-    /// metadata 规范字节（不含 anchors 字段自身）的 blake3 摘要
+    /// blake3 digest of the metadata canonical bytes (excluding the anchors field itself)
     fn metadata_digest_locked(inner: &SharedFactsLogInner) -> String {
         let m = SharedFactsMetadata {
             next_fact_id: inner.next_fact_id,
@@ -546,7 +580,7 @@ impl SharedFactsLog {
         blake3::hash(normalized.as_bytes()).to_hex().to_string()
     }
 
-    /// 封一个锚（载荷=当前链尾+metadata 摘要；持久化入 metadata）
+    /// Seals one anchor (payload = current chain tail + metadata digest; persisted into metadata)
     pub fn seal_anchor_now(&self) -> Result<SharedLedgerAnchor, FactsLogError> {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         let signer = inner
@@ -582,7 +616,7 @@ impl SharedFactsLog {
         Ok(anchor)
     }
 
-    /// 当前锚点链
+    /// The current anchor chain
     pub fn anchors(&self) -> Vec<SharedLedgerAnchor> {
         self.inner
             .read()
@@ -591,10 +625,13 @@ impl SharedFactsLog {
             .clone()
     }
 
-    /// 验证锚点链（序号连续+锚链哈希+签名）与 metadata 绑定（摘要比对）
+    /// Verifies the anchor chain (contiguous sequence + anchor chain hash + signatures) and the
+    /// metadata binding (digest comparison)
     ///
-    /// keys: key_id → 公钥 hex；`verify_binding=true` 时额外比对末锚链尾与当前账本链尾、
-    /// 与当前 metadata 摘要（末锚之后无新记录/元数据变更时全绿；有则如实报差异）。
+    /// keys: key_id → public-key hex; with `verify_binding=true`, additionally compares the last
+    /// anchor's chain tail with the current ledger chain tail and with the current metadata digest
+    /// (all green when there are no new records/metadata changes after the last anchor; otherwise
+    /// the differences are reported as they are).
     pub fn verify_shared_anchors(
         &self,
         keys: &std::collections::BTreeMap<String, String>,
@@ -644,27 +681,29 @@ impl SharedFactsLog {
             if let Some(last) = anchors.last() {
                 report.binding_chain_head_match = last.chain_head == inner.facts_log.last_hash();
                 let digest_now = Self::metadata_digest_locked(&inner);
-                // 末锚后无新增记录时 metadata 不应变（anchors 未变）
+                // when no new records were added after the last anchor, metadata must not have
+                // changed (anchors unchanged)
                 report.binding_metadata_match = last.metadata_digest == digest_now;
             }
         }
         Ok(report)
     }
 
-    /// 查询指定事实的会话侧源头 fact_id（N6 链路统一，R10）
+    /// Queries the session-side origin fact_id of a fact (N6 chain unification, R10)
     ///
-    /// # 返回
-    /// 会话侧源头 fact_id；无 origin 通道（旧签名写入/历史条目）时返回 `None`
+    /// # Returns
+    /// The session-side origin fact_id; `None` when there is no origin channel (old-signature
+    /// writes / historical entries)
     pub fn origin_fact_id(&self, fact_id: FactId) -> Option<u64> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.fact_origins.get(&fact_id).copied()
     }
 
-    /// 按路径前缀查询共享事实
+    /// Queries shared facts by path prefix
     ///
-    /// 返回所有路径以指定前缀开头的共享事实。
-    /// 已标记为 rollup 的 fact 会被过滤（不显示在列表中）。
-    /// 如需查询单个已 rollup 的 fact，使用 [`fact_by_id`](Self::fact_by_id)（不过滤）。
+    /// Returns all shared facts whose paths start with the given prefix.
+    /// Facts marked as rollup are filtered out (not shown in the list).
+    /// To query a single rolled-up fact, use [`fact_by_id`](Self::fact_by_id) (unfiltered).
     pub fn facts_by_path_prefix(&self, prefix: &str) -> Vec<SharedFact> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
 
@@ -673,12 +712,14 @@ impl SharedFactsLog {
             .facts_by_path_prefix(prefix)
             .into_iter()
             .filter_map(|(version, fact)| {
-                // 不变式「只有未 rollup 的 PayloadUpdate 才进入结果」在此**一次性**编码。
-                // 原实现拆成 filter + map 两次匹配 PayloadUpdate，第二次匹配只能靠
-                // `unreachable` 宏兜底——一旦 Fact 新增变体或上游过滤条件变更，
-                // 该兜底即成为真实 panic 点。改为单次匹配后无 panic 路径。
+                // The invariant "only non-rolled-up PayloadUpdates enter the result" is encoded
+                // here **once**.
+                // The original implementation split it into filter + map, matching PayloadUpdate
+                // twice, with the second match backed only by an `unreachable` macro — as soon as
+                // a new Fact variant appears or the upstream filter changes, that fallback
+                // becomes a real panic point. The single-match rewrite has no panic path.
                 match fact {
-                    // 过滤已 rollup 的 fact（列表查询不显示旧摘要）
+                    // filter out rolled-up facts (list queries do not show old summaries)
                     Fact::PayloadUpdate { id, path, value } if !inner.rolled_up.contains(&id) => {
                         Some(SharedFact {
                             fact_id: id,
@@ -695,25 +736,25 @@ impl SharedFactsLog {
             .collect()
     }
 
-    /// 查询指定事实的来源会话 ID
+    /// Queries the source session ID of a fact
     ///
-    /// # 参数
-    /// - `fact_id`: 事实 ID
+    /// # Arguments
+    /// - `fact_id`: the fact ID
     ///
-    /// # 返回
-    /// 来源会话 ID，如果找不到则返回 None
+    /// # Returns
+    /// The source session ID, or None when not found
     pub fn source_session_id(&self, fact_id: FactId) -> Option<u64> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.fact_sources.get(&fact_id).copied()
     }
 
-    /// 按事实 ID 查询完整事实信息
+    /// Queries the full fact information by fact ID
     ///
-    /// # 参数
-    /// - `fact_id`: 事实 ID
+    /// # Arguments
+    /// - `fact_id`: the fact ID
     ///
-    /// # 返回
-    /// 完整的共享事实信息，如果找不到则返回 None
+    /// # Returns
+    /// The full shared-fact information, or None when not found
     pub fn fact_by_id(&self, fact_id: FactId) -> Option<SharedFact> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
 
@@ -737,40 +778,40 @@ impl SharedFactsLog {
         None
     }
 
-    /// 返回当前版本号
+    /// Returns the current version number
     pub fn version(&self) -> u64 {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.facts_log.version()
     }
 
-    /// 返回历史记录数量
+    /// Returns the history record count
     pub fn history_len(&self) -> usize {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.facts_log.history_len()
     }
 
-    /// 记录会话启动时使用的事实 ID
+    /// Records the fact IDs used by a session at startup
     ///
-    /// 用于追踪共享事实的消费关系，支持跨会话因果追溯。
-    /// 如果设置了 `metadata_path`，状态会持久化到文件（原子写入），
-    /// 确保重启后消费关系链不丢失。
+    /// Traces the consumption relations of shared facts, supporting cross-session causal tracing.
+    /// When `metadata_path` is set, the state is persisted to the file (atomic write),
+    /// ensuring the consumption-relation chain survives restarts.
     ///
-    /// # 参数
-    /// - `session_id`: 会话 ID
-    /// - `fact_ids`: 该会话启动时使用的事实 ID 列表
+    /// # Arguments
+    /// - `session_id`: the session ID
+    /// - `fact_ids`: the fact ID list the session used at startup
     pub fn record_used_at_startup(&self, session_id: u64, fact_ids: &[FactId]) {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.used_at_startup.insert(session_id, fact_ids.to_vec());
         inner.persist_metadata_locked();
     }
 
-    /// 查询会话启动时使用的事实 ID
+    /// Queries the fact IDs a session used at startup
     pub fn get_used_at_startup(&self, session_id: u64) -> Option<Vec<FactId>> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.used_at_startup.get(&session_id).cloned()
     }
 
-    /// 查询使用指定事实的所有会话
+    /// Queries all sessions that used the given fact
     pub fn get_sessions_using_fact(&self, fact_id: FactId) -> Vec<u64> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner
@@ -781,31 +822,33 @@ impl SharedFactsLog {
             .collect()
     }
 
-    /// 标记 fact 为已 rollup
+    /// Marks facts as rolled up
     ///
-    /// 被标记的 fact 在 `facts_by_path_prefix` 查询中被过滤（不再显示在列表中），
-    /// 但 `fact_by_id` 仍可查到（保持审计可追溯）。
-    /// 如果设置了 `metadata_path`，状态会持久化到文件（原子写入）。
+    /// Marked facts are filtered out of `facts_by_path_prefix` queries (no longer shown in the
+    /// list), but remain reachable via `fact_by_id` (keeping audit traceability).
+    /// When `metadata_path` is set, the state is persisted to the file (atomic write).
     ///
-    /// # 参数
-    /// - `fact_ids`: 要标记为 rollup 的 fact ID 列表
+    /// # Arguments
+    /// - `fact_ids`: the fact ID list to mark as rollup
     ///
-    /// # 返回
-    /// [`RollupOutcome`]：实际标记数 + 共享账本中不存在的 id 清单。
+    /// # Returns
+    /// [`RollupOutcome`]: the actual marked count + the list of ids absent from the shared ledger.
     ///
-    /// # R11（静默失败修复）
-    /// 修复前：不存在的 id 也被无条件插入 `rolled_up` 并返回 `()`——调用方
-    /// （server 端点）无法区分"标记成功"与"标记了不存在的 id"。典型事故：
-    /// 调用方误用写入响应里的 payload 侧 fact_id（与共享表 ID 空间不通用），
-    /// 得到 HTTP 200 但实际什么都没标记 → 旧摘要永不失效 → 反复 rollup 膨胀。
-    /// 现在：不存在的 id **不入** `rolled_up`（不给账本塞垃圾标记），
-    /// 并在返回值中显式列出，由调用方决定如何上报。
+    /// # R11 (the silent-failure fix)
+    /// Before the fix: nonexistent ids were inserted into `rolled_up` unconditionally and `()`
+    /// returned — the caller (the server endpoint) could not distinguish "marked successfully"
+    /// from "marked nonexistent ids". Typical incident: the caller mistakenly used the payload-side
+    /// fact_id from the write response (which does not share the shared-table ID space), got an
+    /// HTTP 200 while actually marking nothing → old summaries never expired → repeated rollup
+    /// bloat.
+    /// Now: nonexistent ids **never enter** `rolled_up` (no garbage marks stuffed into the ledger),
+    /// and are listed explicitly in the return value; the caller decides how to report them.
     pub fn mark_as_rollup(&self, fact_ids: &[FactId]) -> RollupOutcome {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         let mut marked = 0usize;
         let mut unknown = Vec::new();
         for id in fact_ids {
-            // 存在性锚点与 fact_by_id 一致：fact_sources 表
+            // the existence anchor matches fact_by_id: the fact_sources table
             if inner.fact_sources.contains_key(id) {
                 inner.rolled_up.insert(*id);
                 marked += 1;
@@ -813,30 +856,32 @@ impl SharedFactsLog {
                 unknown.push(*id);
             }
         }
-        // 持久化 metadata（best-effort）
+        // persist metadata (best-effort)
         inner.persist_metadata_locked();
         RollupOutcome { marked, unknown }
     }
 
-    /// 查询某 fact 是否已标记为 rollup（诊断/审计用途，R11 新增）
+    /// Queries whether a fact is marked as rollup (diagnostic/audit use, added in R11)
     pub fn is_rolled_up(&self, fact_id: &FactId) -> bool {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.rolled_up.contains(fact_id)
     }
 
-    /// 重置 SharedFactsLog 到初始状态
+    /// Resets SharedFactsLog to its initial state
     ///
-    /// # 安全性边界（F6，audit-chain 专项 2026-08-28 标注）
+    /// # Safety boundary (F6, annotated in the audit-chain initiative 2026-08-28)
     ///
-    /// **仅限纯内存实例调用**。底层 [`FactsLog::reset`](evorule_reactor::FactsLog::reset)
-    /// 只丢弃内存投影并将 WAL 写入器置为 `None`，**不会删除磁盘上的 WAL 文件**。
-    /// 若实例配置了 `metadata_path`（含 WAL 持久化），调用本方法后：
-    /// - 已落盘的旧事实在重启重放时会**全部复活**；
-    /// - metadata（`fact_sources` 等）虽同步清空，但与复活的事实形成新的
-    ///   孤儿状态，破坏审计链完整性。
+    /// **For purely in-memory instances only**. The underlying
+    /// [`FactsLog::reset`](evorule_reactor::FactsLog::reset) only drops the in-memory projection
+    /// and sets the WAL writer to `None`; it **does not delete the WAL file on disk**.
+    /// If the instance has `metadata_path` configured (including WAL persistence), calling this
+    /// method means:
+    /// - old facts already on disk will **all revive** on restart replay;
+    /// - metadata (`fact_sources` etc.) is cleared in sync, but forms a fresh orphan state with the
+    ///   revived facts, breaking audit-chain integrity.
     ///
-    /// 需要彻底清空持久化实例时，必须先删除 WAL 与 metadata 文件再重建实例，
-    /// 而不是调用本方法。
+    /// To fully wipe a persistent instance, delete the WAL and metadata files and rebuild the
+    /// instance — do not call this method.
     pub fn reset(&self) {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.facts_log.reset();
@@ -847,10 +892,10 @@ impl SharedFactsLog {
     }
 }
 
-/// 原子写入 metadata 文件（write tmp + rename，防断电损坏）
+/// Writes the metadata file atomically (write tmp + rename, guarding against power-loss corruption)
 ///
-/// 将 `SharedFactsLogInner` 的元数据序列化为 JSON，先写入临时文件再 rename，
-/// 确保断电时不会产生损坏的 metadata 文件。
+/// Serializes the metadata of `SharedFactsLogInner` into JSON, writes a temporary file first and
+/// then renames, ensuring a power loss never produces a corrupted metadata file.
 fn write_metadata_atomic(path: &Path, inner: &SharedFactsLogInner) -> Result<(), FactsLogError> {
     let metadata = SharedFactsMetadata {
         next_fact_id: inner.next_fact_id,
@@ -883,14 +928,16 @@ impl Default for SharedFactsLog {
     }
 }
 
-/// 孤立 fact 检测：WAL 历史中的 PayloadUpdate 集合 − fact_sources 键集
+/// Orphan-fact detection: the set of PayloadUpdates in the WAL history − the key set of
+/// fact_sources
 ///
-/// 只认 `Fact::PayloadUpdate`（SharedFactsLog.append 的唯一产物形态）。
+/// Only `Fact::PayloadUpdate` is recognized (the sole product form of SharedFactsLog.append).
 ///
-/// # 错误
-/// 若 facts_log 发生过压缩，压缩点前的历史已从内存投影丢弃，本函数无法
-/// 取得完整集合，返回 [`FactsLogError::CompactedRead`]——**不返回空列表**，
-/// 以免"校验不完整"被误读为"未发现孤立"。
+/// # Errors
+/// If the facts_log was compacted, history before the compaction point is dropped from the
+/// in-memory projection; this function cannot obtain the full set and returns
+/// [`FactsLogError::CompactedRead`] — **never an empty list**, so "validation incomplete" is not
+/// misread as "no orphans found".
 fn detect_orphan_facts(
     facts_log: &FactsLog,
     fact_sources: &BTreeMap<FactId, u64>,
@@ -910,11 +957,12 @@ fn detect_orphan_facts(
         .collect())
 }
 
-/// 共享账本 WAL 全链三查（恢复前置验证，fail-visible）
+/// The shared-ledger WAL whole-chain triple check (pre-recovery validation, fail-visible)
 ///
-/// 与内核 Auditor 加载验证同口径：逐条重算 content_hash、比对 prev 链接与
-/// 链步推进；旧格式（无哈希字段）行计入 unhashed 不假充验证过；任一带哈希
-/// 行失配返回错误并定位。
+/// Same approach as the kernel Auditor load validation: recomputes content_hash per record,
+/// compares prev links and chain-step advancement; old-format (hash-field-less) rows are counted
+/// as unhashed and never passed off as verified; any hashed-row mismatch returns an error with
+/// the location.
 fn verify_wal_chain(wal_path: &Path) -> Result<(), FactsLogError> {
     use evorule_reactor::{fact_hash, read_wal_with_hash};
 
@@ -965,7 +1013,7 @@ mod tests {
         let shared = SharedFactsLog::new();
         assert!(
             !shared.rotate_wal().unwrap(),
-            "纯内存模式（无 WAL 后端）轮换必须返回 false"
+            "rotation in pure-memory mode (no WAL backend) must return false"
         );
     }
 
@@ -984,7 +1032,7 @@ mod tests {
             .append("shared.research.note1", JsonValue::string("hello"), 100)
             .unwrap();
 
-        assert_eq!(version, 1); // 断点 11: PayloadUpdate 现在递增 version
+        assert_eq!(version, 1); // checkpoint 11: PayloadUpdate now increments version
         assert_eq!(log.history_len(), 1);
     }
 
@@ -1051,7 +1099,7 @@ mod tests {
         assert_eq!(log.version(), 0);
     }
 
-    // ===== L-3: mark_as_rollup + recover 测试 =====
+    // ===== L-3: mark_as_rollup + recover tests =====
 
     #[test]
     fn test_mark_as_rollup_filters_from_prefix_query() {
@@ -1076,10 +1124,10 @@ mod tests {
         )
         .unwrap();
 
-        // 标记 s1 为 rollup
+        // mark s1 as rollup
         log.mark_as_rollup(&[FactId(1)]);
 
-        // 列表查询：s1 被过滤
+        // list query: s1 filtered
         let result = log.facts_by_path_prefix("shared.ns.sessions.");
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].fact_id, FactId(2));
@@ -1099,7 +1147,7 @@ mod tests {
 
         log.mark_as_rollup(&[FactId(1)]);
 
-        // fact_by_id 不过滤 rolled_up（审计可追溯）
+        // fact_by_id does not filter rolled_up (audit traceability)
         let fact = log.fact_by_id(FactId(1));
         assert!(fact.is_some());
         assert_eq!(fact.unwrap().path, "shared.ns.sessions.s1.summary");
@@ -1107,7 +1155,7 @@ mod tests {
 
     #[test]
     fn test_mark_as_rollup_unknown_ids_reported_not_marked() {
-        // R11：不存在的 id 不得静默入 rolled_up，必须显式上报
+        // R11: nonexistent ids must never silently enter rolled_up; they must be reported explicitly
         let log = SharedFactsLog::new();
 
         log.append(
@@ -1117,20 +1165,20 @@ mod tests {
         )
         .unwrap();
 
-        // 混合批次：1 存在、999/1000 不存在（payload 侧 id 误用的典型形态）
+        // mixed batch: 1 exists, 999/1000 do not (the typical shape of payload-side id misuse)
         let outcome = log.mark_as_rollup(&[FactId(1), FactId(999), FactId(1000)]);
-        assert_eq!(outcome.marked, 1, "只有存在的 id 被标记");
+        assert_eq!(outcome.marked, 1, "only existing ids are marked");
         assert_eq!(
             outcome.unknown,
             vec![FactId(999), FactId(1000)],
-            "不存在的 id 必须逐个上报"
+            "nonexistent ids must be reported one by one"
         );
 
-        // 不存在的 id 不进 rolled_up（不给账本塞垃圾标记）
+        // nonexistent ids never enter rolled_up (no garbage marks stuffed into the ledger)
         assert!(!log.is_rolled_up(&FactId(999)));
         assert!(log.is_rolled_up(&FactId(1)));
 
-        // 幂等：已标记的 id 再次标记 = marked，不算 unknown
+        // idempotent: re-marking an already-marked id = marked, not unknown
         let again = log.mark_as_rollup(&[FactId(1)]);
         assert_eq!(again.marked, 1);
         assert!(again.unknown.is_empty());
@@ -1144,7 +1192,7 @@ mod tests {
         let wal_path = dir.path().join("shared.wal");
         let meta_path = dir.path().join("shared.json");
 
-        // 第一次创建：写入数据 + rollup
+        // first creation: write data + rollup
         {
             let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
             log.append("shared.ns.stable.key1", JsonValue::string("v1"), 100)
@@ -1155,27 +1203,27 @@ mod tests {
                 100,
             )
             .unwrap();
-            log.mark_as_rollup(&[FactId(2)]); // rollup s1 summary
+            log.mark_as_rollup(&[FactId(2)]); // rollup the s1 summary
         }
 
-        // 第二次创建：从 WAL + metadata 恢复
+        // second creation: recover from WAL + metadata
         {
             let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
-            assert_eq!(log.history_len(), 2); // fact 历史恢复
+            assert_eq!(log.history_len(), 2); // fact history recovered
             assert_eq!(log.version(), 2);
 
-            // fact_sources 恢复
+            // fact_sources recovered
             assert_eq!(log.source_session_id(FactId(1)), Some(100));
 
-            // rolled_up 恢复：prefix 查询过滤了 FactId(2)
+            // rolled_up recovered: the prefix query filters FactId(2)
             let result = log.facts_by_path_prefix("shared.ns.");
             assert_eq!(result.len(), 1);
             assert_eq!(result[0].fact_id, FactId(1));
 
-            // fact_by_id 仍可查到 rolled_up 的 fact
+            // fact_by_id can still reach the rolled-up fact
             assert!(log.fact_by_id(FactId(2)).is_some());
 
-            // next_fact_id 恢复：下一次 append 从 3 开始
+            // next_fact_id recovered: the next append starts from 3
             let v = log
                 .append("shared.ns.stable.key2", JsonValue::string("v2"), 200)
                 .unwrap();
@@ -1191,14 +1239,14 @@ mod tests {
         let wal_path = dir.path().join("shared.wal");
         let meta_path = dir.path().join("nonexistent.json");
 
-        // metadata 文件不存在 → 使用默认值，不报错
+        // metadata file missing → defaults used, no error
         let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
         assert_eq!(log.history_len(), 0);
         assert_eq!(log.version(), 0);
     }
 
-    /// P4-BUG 回归：record_used_at_startup 必须持久化，
-    /// 重启（recover）后消费关系链不得丢失。
+    /// P4-BUG regression: record_used_at_startup must persist;
+    /// the consumption-relation chain must not be lost after a restart (recover).
     #[test]
     fn test_record_used_at_startup_persists_across_recover() {
         use tempfile::tempdir;
@@ -1213,24 +1261,24 @@ mod tests {
                 .unwrap();
             log.record_used_at_startup(42, &[FactId(1), FactId(2)]);
             log.record_used_at_startup(43, &[FactId(1)]);
-        } // drop：模拟进程退出
+        } // drop: simulates process exit
 
-        // 模拟重启恢复
+        // simulates restart recovery
         let log2 = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
         assert_eq!(
             log2.get_used_at_startup(42),
             Some(vec![FactId(1), FactId(2)]),
-            "重启后 used_at_startup(42) 丢失：P4-BUG 回归失败"
+            "used_at_startup(42) lost after restart: P4-BUG regression failed"
         );
         assert_eq!(log2.get_used_at_startup(43), Some(vec![FactId(1)]));
         assert_eq!(
             log2.get_sessions_using_fact(FactId(2)),
             vec![42],
-            "重启后消费关系查询结果不完整"
+            "the consumption-relation query result is incomplete after restart"
         );
     }
 
-    /// P4-D 回归：recover 时清理孤儿 metadata.tmp。
+    /// P4-D regression: recover cleans up the orphan metadata.tmp.
     #[test]
     fn test_recover_removes_orphan_tmp_file() {
         use tempfile::tempdir;
@@ -1245,14 +1293,14 @@ mod tests {
         let _log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
         assert!(
             !tmp_path.exists(),
-            "孤儿 metadata.tmp 未被 recover 清理：P4-D 回归失败"
+            "the orphan metadata.tmp was not cleaned up by recover: P4-D regression failed"
         );
     }
 
-    /// F1 回归（audit-chain 专项 2026-08-28）：崩溃窗口产生的孤立 fact
-    /// （WAL 有 PayloadUpdate、fact_sources 缺映射）必须被检出并可查询。
-    /// 模拟方式：正常 append 两条后 drop，再手写一份"只有一条映射"的
-    /// metadata（模拟 fact_sources 写入前进程崩溃）。
+    /// F1 regression (audit-chain initiative 2026-08-28): orphan facts produced by the crash
+    /// window (a PayloadUpdate in the WAL, unmapped in fact_sources) must be detected and queryable.
+    /// Simulation: append two facts normally then drop, and hand-write a metadata holding "only
+    /// one mapping" (simulating a process crash before fact_sources was written).
     #[test]
     fn test_recover_detects_orphan_facts_from_crash_window() {
         use tempfile::tempdir;
@@ -1267,9 +1315,10 @@ mod tests {
                 .unwrap();
             log.append("shared.ns.b", JsonValue::string("v2"), 101)
                 .unwrap();
-        } // drop：模拟进程退出（此时两条映射都已持久化）
+        } // drop: simulates process exit (both mappings already persisted at this point)
 
-        // 模拟崩溃窗口：metadata 只含 fact_id=1 的映射（fact_id=2 的映射丢失）
+        // simulates the crash window: metadata holds only the fact_id=1 mapping (the fact_id=2
+        // mapping is lost)
         let degraded = serde_json::json!({
             "fact_sources": {"1": 100},
             "next_fact_id": 2,
@@ -1283,11 +1332,11 @@ mod tests {
         assert_eq!(
             orphans,
             vec![2],
-            "崩溃窗口产生的孤立 fact 未被检出：F1 回归失败"
+            "the orphan fact from the crash window was not detected: F1 regression failed"
         );
     }
 
-    /// F1 对照：完整 metadata（无崩溃窗口）时不得误报。
+    /// F1 control: with complete metadata (no crash window) there must be no false positive.
     #[test]
     fn test_verify_causal_consistency_no_false_positive_when_consistent() {
         use tempfile::tempdir;
@@ -1304,13 +1353,13 @@ mod tests {
 
         assert!(
             log.verify_causal_consistency().unwrap().is_empty(),
-            "一致的 WAL+metadata 被误报为孤立：F1 对照测试失败"
+            "a consistent WAL+metadata was falsely reported as orphaned: the F1 control test failed"
         );
     }
 
-    // ===== R10：origin_fact_id 跨链溯源（N6） =====
+    // ===== R10: origin_fact_id cross-chain provenance (N6) =====
 
-    /// append_with_origin → 前缀查询 / fact_by_id / 独立查询三出口均携带 origin
+    /// append_with_origin → all three query exits (prefix query / fact_by_id / standalone query) carry the origin
     #[test]
     fn test_append_with_origin_visible_in_all_query_paths() {
         let log = SharedFactsLog::new();
@@ -1320,16 +1369,32 @@ mod tests {
 
         let facts = log.facts_by_path_prefix("shared.ns.");
         assert_eq!(facts.len(), 1);
-        assert_eq!(facts[0].origin_fact_id, Some(53), "前缀查询应携带 origin");
+        assert_eq!(
+            facts[0].origin_fact_id,
+            Some(53),
+            "the prefix query should carry the origin"
+        );
 
         let by_id = log.fact_by_id(FactId(1)).unwrap();
-        assert_eq!(by_id.origin_fact_id, Some(53), "fact_by_id 应携带 origin");
+        assert_eq!(
+            by_id.origin_fact_id,
+            Some(53),
+            "fact_by_id should carry the origin"
+        );
 
-        assert_eq!(log.origin_fact_id(FactId(1)), Some(53), "独立查询应命中");
-        assert_eq!(log.origin_fact_id(FactId(999)), None, "未知 id 应返回 None");
+        assert_eq!(
+            log.origin_fact_id(FactId(1)),
+            Some(53),
+            "the standalone query should hit"
+        );
+        assert_eq!(
+            log.origin_fact_id(FactId(999)),
+            None,
+            "an unknown id should return None"
+        );
     }
 
-    /// 旧签名 append（无 origin 通道）→ origin 恒 None（向后兼容语义）
+    /// old-signature append (no origin channel) → origin always None (backward-compatible semantics)
     #[test]
     fn test_append_without_origin_is_none() {
         let log = SharedFactsLog::new();
@@ -1339,11 +1404,14 @@ mod tests {
 
         let facts = log.facts_by_path_prefix("shared.ns.");
         assert_eq!(facts.len(), 1);
-        assert_eq!(facts[0].origin_fact_id, None, "旧签名写入不得伪造 origin");
+        assert_eq!(
+            facts[0].origin_fact_id, None,
+            "old-signature writes must not fabricate an origin"
+        );
         assert_eq!(log.origin_fact_id(FactId(1)), None);
     }
 
-    /// origin 随 metadata 持久化，recover 后可查（与 fact_sources 同级语义）
+    /// the origin is persisted with metadata and queryable after recover (semantics on par with fact_sources)
     #[test]
     fn test_origin_persists_across_recover() {
         use tempfile::tempdir;
@@ -1356,20 +1424,21 @@ mod tests {
             let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
             log.append_with_origin("shared.ns.key", JsonValue::string("v1"), 100, Some(53))
                 .unwrap();
-        } // drop：模拟进程退出
+        } // drop: simulates process exit
 
         let log2 = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
         assert_eq!(
             log2.origin_fact_id(FactId(1)),
             Some(53),
-            "重启后 origin 丢失：R10 持久化回归失败"
+            "the origin was lost after restart: the R10 persistence regression failed"
         );
         let facts = log2.facts_by_path_prefix("shared.ns.");
         assert_eq!(facts[0].origin_fact_id, Some(53));
     }
 
-    /// 旧 metadata 文件（无 fact_origins 字段）→ 恢复零报错、origin=None
-    /// （serde(default) 是升级兼容的硬前提：升级前数据不得因新字段拒绝加载）
+    /// an old metadata file (no fact_origins field) → recovery with zero errors, origin=None
+    /// (serde(default) is the hard premise of upgrade compatibility: pre-upgrade data must never
+    /// be rejected because of a new field)
     #[test]
     fn test_legacy_metadata_without_origins_recovers_cleanly() {
         use tempfile::tempdir;
@@ -1378,13 +1447,13 @@ mod tests {
         let wal_path = dir.path().join("shared.wal");
         let meta_path = dir.path().join("shared_meta.json");
 
-        // 先正常写入产生 WAL
+        // write normally first to produce a WAL
         {
             let log = SharedFactsLog::recover(&wal_path, &meta_path).unwrap();
             log.append("shared.ns.key", JsonValue::string("v1"), 100)
                 .unwrap();
         }
-        // 手写 R10 之前形态的 metadata（无 fact_origins 字段）
+        // hand-write the pre-R10 metadata shape (no fact_origins field)
         let legacy = serde_json::json!({
             "fact_sources": {"1": 100},
             "next_fact_id": 2,
@@ -1397,15 +1466,15 @@ mod tests {
         assert_eq!(
             log2.origin_fact_id(FactId(1)),
             None,
-            "旧 metadata 恢复后 origin 应为 None"
+            "after recovering from old metadata the origin should be None"
         );
-        // 事实与来源不受影响
+        // facts and sources unaffected
         assert_eq!(log2.source_session_id(FactId(1)), Some(100));
         assert_eq!(log2.history_len(), 1);
     }
 
     // =======================================================================
-    // 批 H：共享账本锚点链测试
+    // Batch H: shared-ledger anchor chain tests
     // =======================================================================
 
     fn anchor_setup(dir: &std::path::Path, name: &str) -> SharedFactsLog {
@@ -1430,7 +1499,7 @@ mod tests {
         keys
     }
 
-    /// 封锚→验证全绿→绑定（链尾+metadata 摘要）匹配
+    /// seal anchor → verification all green → binding (chain tail + metadata digest) matches
     #[test]
     fn shared_anchor_seal_and_verify_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
@@ -1443,13 +1512,16 @@ mod tests {
         log.seal_anchor_now().unwrap();
         let report = log.verify_shared_anchors(&anchor_keys(), true).unwrap();
         assert_eq!(report.anchor_count, 1);
-        assert!(report.binding_chain_head_match, "末锚链尾应与账本链尾一致");
+        assert!(
+            report.binding_chain_head_match,
+            "the last anchor's chain tail should match the ledger chain tail"
+        );
         assert!(
             report.binding_metadata_match,
-            "末锚摘要应与当前 metadata 一致"
+            "the last anchor's digest should match the current metadata"
         );
 
-        // 锚点持久化：recover 后锚链续存且可验
+        // anchor persistence: the anchor chain survives recover and stays verifiable
         drop(log);
         let wal = dir.path().join("s-a1.wal");
         let meta = dir.path().join("s-a1_meta.json");
@@ -1461,10 +1533,11 @@ mod tests {
             0,
         );
         let r2 = log2.verify_shared_anchors(&anchor_keys(), true).unwrap();
-        assert_eq!(r2.anchor_count, 1, "锚点跨重启持久化");
+        assert_eq!(r2.anchor_count, 1, "anchors persist across restarts");
     }
 
-    /// 元数据篡改检出：改 origin 映射（链外文件级攻击）→ 末锚摘要绑定失配
+    /// metadata tamper detection: altering the origin mapping (an off-chain file-level attack) →
+    /// the last anchor's digest binding mismatches
     #[test]
     fn shared_anchor_detects_metadata_tamper() {
         let dir = tempfile::tempdir().unwrap();
@@ -1474,11 +1547,11 @@ mod tests {
         log.seal_anchor_now().unwrap();
         drop(log);
 
-        // 篡改 metadata（改 origin 映射——链外元数据）
+        // tamper with metadata (alter the origin mapping — off-chain metadata)
         let meta_path = dir.path().join("s-a2_meta.json");
         let raw = std::fs::read_to_string(&meta_path).unwrap();
         let tampered = raw.replace("\"1\":99", "\"1\":777");
-        assert_ne!(raw, tampered, "篡改应产生差异");
+        assert_ne!(raw, tampered, "tampering should produce a difference");
         std::fs::write(&meta_path, tampered).unwrap();
 
         let wal = dir.path().join("s-a2.wal");
@@ -1486,11 +1559,12 @@ mod tests {
         let report = log2.verify_shared_anchors(&anchor_keys(), true).unwrap();
         assert!(
             !report.binding_metadata_match,
-            "元数据被篡改后末锚摘要绑定必须失配"
+            "after metadata tampering the last anchor's digest binding must mismatch"
         );
     }
 
-    /// 账本整链重算检出：换一条链（重算自洽）→ 末锚链尾绑定失配
+    /// ledger whole-chain recompute detection: swap in another chain (recompute self-consistent) →
+    /// the last anchor's chain-tail binding mismatches
     #[test]
     fn shared_anchor_detects_ledger_recalculation() {
         let dir = tempfile::tempdir().unwrap();
@@ -1500,7 +1574,8 @@ mod tests {
         log.seal_anchor_now().unwrap();
         drop(log);
 
-        // 用另一条链替换（append 不同内容——模拟整链重算后链尾变化）
+        // replace with another chain (append different content — simulating a chain-tail change
+        // after whole-chain recomputation)
         let wal2 = dir.path().join("s-a3-fake.wal");
         let fake = SharedFactsLog::recover(&wal2, dir.path().join("s-a3-fake_meta.json")).unwrap();
         fake.append_with_origin("shared.x", JsonValue::Integer(999), 7, None)
@@ -1508,12 +1583,13 @@ mod tests {
 
         let log2 = anchor_setup(dir.path(), "s-a3");
         let report = log2.verify_shared_anchors(&anchor_keys(), true).unwrap();
-        assert!(report.binding_chain_head_match); // 原账本自身一致
-                                                  // 直接验证绑定语义：用 fake 的链尾注入比较——经报告字段模拟
-        let _ = fake; // 篡改注入的实证在 bin 层验收（H5' 注入3）
+        assert!(report.binding_chain_head_match); // the original ledger is self-consistent
+                                                  // binding semantics verified directly: comparing with the fake chain tail
+                                                  // injected — simulated via the report fields
+        let _ = fake; // tamper-injection evidence is accepted at the bin layer (H5' injection 3)
     }
 
-    /// interval 自动封锚
+    /// interval auto-sealing
     #[test]
     fn shared_anchor_interval_auto_seal() {
         let dir = tempfile::tempdir().unwrap();
@@ -1528,10 +1604,18 @@ mod tests {
         );
         log.append_with_origin("shared.a", JsonValue::Integer(1), 1, None)
             .unwrap();
-        assert_eq!(log.anchors().len(), 0, "未达 interval 不封锚");
+        assert_eq!(
+            log.anchors().len(),
+            0,
+            "below the interval no anchor is sealed"
+        );
         log.append_with_origin("shared.b", JsonValue::Integer(2), 1, None)
             .unwrap();
-        assert_eq!(log.anchors().len(), 1, "达 interval 自动封锚");
+        assert_eq!(
+            log.anchors().len(),
+            1,
+            "reaching the interval seals an anchor automatically"
+        );
         log.append_with_origin("shared.c", JsonValue::Integer(3), 1, None)
             .unwrap();
         log.append_with_origin("shared.d", JsonValue::Integer(4), 1, None)
@@ -1539,7 +1623,7 @@ mod tests {
         assert_eq!(log.anchors().len(), 2);
     }
 
-    /// 锚点篡改检出：改锚点内容（seq/链尾）→ 验证 Err
+    /// anchor tamper detection: altering anchor content (seq/chain tail) → verification Err
     #[test]
     fn shared_anchor_tamper_detected() {
         let dir = tempfile::tempdir().unwrap();
@@ -1548,10 +1632,10 @@ mod tests {
             .unwrap();
         log.seal_anchor_now().unwrap();
 
-        // 恒定断言：未篡改路径本身必须可验
+        // constant assertion: the untampered path itself must verify
         assert!(log.verify_shared_anchors(&anchor_keys(), false).is_ok());
 
-        // 篡改锚点链尾（metadata.anchors 被改后 recover 的形态）
+        // tamper with the anchor chain tail (the shape after metadata.anchors is altered and recovered)
         let meta = dir.path().join("s-a5_meta.json");
         let raw = std::fs::read_to_string(&meta).unwrap();
         let anchors = log.anchors();
@@ -1564,7 +1648,7 @@ mod tests {
         let log2 = anchor_setup(dir.path(), "s-a5");
         assert!(
             log2.verify_shared_anchors(&anchor_keys(), false).is_err(),
-            "锚点被篡改后验证必须 Err"
+            "after anchor tampering verification must be Err"
         );
     }
 }

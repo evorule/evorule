@@ -17,199 +17,196 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# EvoRule 商标政策
+# EvoRule Trademark Policy
 
 <div align="center">
   <img src="assets/evorule-banner.svg" alt="EvoRule Banner" width="320" height="80">
   <br><br>
 </div>
 
-**版本**: 1.0
-**生效日期**: 2026-07-19
+**Version**: 1.0
+**Effective date**: 2026-07-19
 
 ---
 
-## 概述
+## Overview
 
-**"EvoRule"** 名称、徽标和品牌资产是 EvoRule Project 的**商标**。
+The **"EvoRule"** name, logo, and brand assets are **trademarks** of the EvoRule Project.
 
-虽然 EvoRule 代码在 **AGPL-3.0-or-later 许可证**下开源,但**商标被保留**以确保质量一致并防止项目方混淆。
+While the EvoRule code is open-sourced under the **AGPL-3.0-or-later license**, the **trademarks are reserved** to ensure quality consistency and to prevent confusion about who stands behind the project.
 
-本政策说明**哪些使用是允许的**,**哪些需要事先许可**。
+This policy explains **which uses are permitted** and **which require prior permission**.
 
 ---
 
-## 商标列表
+## Trademark List
 
-EvoRule Project 拥有以下商标(统称"EvoRule 商标"):
+The EvoRule Project owns the following trademarks (collectively, the "EvoRule Trademarks"):
 
-| 商标 | 类型 |
+| Trademark | Type |
 |---|---|
-| **EvoRule** | 文字商标 |
-| **EvoRule Logo**（独立 Logo，待制作） | 图形商标 |
-| **EvoRule Banner**（evorule-banner.svg，现有） | 图形商标 |
-| **"规则不言语。它们只运行。而我们是首批见证者。"** | Slogan(可能注册) |
-| **"Knowledge Execution"** | 英文 Slogan(可能注册) |
-| **"只接受和运行 JSON 数据集"** | 中文 Slogan(可能注册) |
+| **EvoRule** | Word mark |
+| **EvoRule Logo** (standalone logo, to be produced) | Figurative mark |
+| **EvoRule Banner** (evorule-banner.svg, existing) | Figurative mark |
+| **"Rules do not speak. They only run. And we are among the first to witness them."** (translation of the registered-candidate slogan) | Slogan (possible registration) |
+| **"Knowledge Execution"** | English slogan (possible registration) |
+| **"Accepts and runs JSON datasets only"** (translation of the registered-candidate slogan) | Chinese slogan (possible registration) |
 
 ---
 
-## ✅ 允许的使用(无需事先许可)
+## ✅ Permitted Uses (no prior permission required)
 
-### 1. 描述用途(Descriptive Use)
+### 1. Descriptive Use
 
-您可以**自由**使用 "EvoRule" 名称来**描述**与 EvoRule 相关的活动,例如:
+You may **freely** use the "EvoRule" name to **describe** EvoRule-related activities, for example:
 
-- "本站点使用 EvoRule 反应式执行引擎驱动"
-- "本文介绍如何用 EvoRule 解决 XX 问题"
-- "EvoRule 中文社区"
-- "EvoRule 项目方大会"
+- "This site is powered by the EvoRule reactive execution engine"
+- "This article explains how to solve problem X with EvoRule"
+- "EvoRule community (locale name) group"
+- "EvoRule project community conference"
 
-### 2. 兼容性声明(Compatibility)
+### 2. Compatibility Statements
 
-您可以**以非误导方式**使用 EvoRule 徽标来声明兼容性,例如:
+You may use the EvoRule logo to declare compatibility, **in a non-misleading way**, for example:
 
-- "Built with EvoRule"(配 EvoRule Logo)
-- "基于 EvoRule"(配 EvoRule Logo)
-- "EvoRule 兼容"(配 EvoRule Logo)
+- "Built with EvoRule" (with the EvoRule logo)
+- "Based on EvoRule" (with the EvoRule logo)
+- "EvoRule-compatible" (with the EvoRule logo)
 
-**前提**:
+**Prerequisites**:
 
-- ✅ Logo 不得修改
-- ✅ 必须清晰说明"兼容"而非"官方"
-- ✅ 不得暗示官方认证或背书
+- ✅ The logo must not be modified
+- ✅ It must be made clear that this means "compatible", not "official"
+- ✅ It must not imply official certification or endorsement
 
-### 3. 开源贡献(Open Source Contribution)
+### 3. Open Source Contribution
 
-您可以**为 EvoRule 项目本身**的贡献使用 EvoRule 商标(commit message、PR 描述等),无需许可。
+You may use the EvoRule trademarks for contributions **to the EvoRule project itself** (commit messages, PR descriptions, etc.) without permission.
 
-### 4. 学术与教育用途(Academic / Educational)
+### 4. Academic / Educational Use
 
-您可以在:
+You may use the EvoRule name and logo (in a non-misleading way) in:
 
-- 学术论文(引用 EvoRule)
-- 教学材料(介绍 EvoRule)
-- 技术博客(讨论 EvoRule)
+- Academic papers (citing EvoRule)
+- Teaching materials (introducing EvoRule)
+- Technical blogs (discussing EvoRule)
 
-中使用 EvoRule 名称和 Logo(非误导性使用)。
+### 5. Press / Journalism
 
-### 5. 新闻报道(Press / Journalism)
-
-媒体可以在新闻报道、技术评测、采访中正常使用 EvoRule 商标。
+The media may use the EvoRule trademarks normally in news reporting, technical reviews, and interviews.
 
 ---
 
-## ❌ 禁止的使用(无事先书面许可)
+## ❌ Prohibited Uses (without prior written permission)
 
-### 1. 暗示官方背书
+### 1. Implied Official Endorsement
 
-- ❌ 任何暗示 EvoRule Project "认可"、"认证"、"推荐" 您或您产品的方式
-- ❌ 使用 EvoRule 商标来**推广**与 EvoRule 无关的产品或服务
-- ❌ 在没有真实 EvoRule 集成的情况下使用 "Powered by EvoRule" 等表述
+- ❌ Any way of implying that the EvoRule Project "endorses", "certifies", or "recommends" you or your product
+- ❌ Using the EvoRule trademarks to **promote** products or services unrelated to EvoRule
+- ❌ Using phrases such as "Powered by EvoRule" without a genuine EvoRule integration
 
-### 2. 域名与社交媒体
+### 2. Domains and Social Media
 
-- ❌ 注册包含 "evorule" 的域名(无论是否带变体、连字符、子域)
-  - 允许的例外:`evorule.your-company.com` 用于兼容性产品
-- ❌ 注册 "@evorule" 或 "evorule" 开头的社交媒体账号(除非官方授权)
-- ❌ 创建看似官方的"evo-rule"、"evorule_xxx"、"xxx_evorule" 等账号
+- ❌ Registering domains containing "evorule" (with or without variants, hyphens, subdomains)
+  - Permitted exception: `evorule.your-company.com` for a compatibility product
+- ❌ Registering "@evorule" or social media accounts starting with "evorule" (unless officially authorized)
+- ❌ Creating accounts that look official, such as "evo-rule", "evorule_xxx", "xxx_evorule"
 
-### 3. 修改或衍生商标
+### 3. Modifying or Deriving Trademarks
 
-- ❌ 修改 Logo 的颜色、比例、字体
-- ❌ 把 Logo 与其他商标组合(可能造成混淆)
-- ❌ 把 Logo 用作产品名或公司名的一部分
-- ❌ 把 Logo 注册为商标(您所在司法管辖区)
+- ❌ Changing the logo's colors, proportions, or fonts
+- ❌ Combining the logo with other trademarks (which may cause confusion)
+- ❌ Using the logo as part of a product name or company name
+- ❌ Registering the logo as a trademark (in your jurisdiction)
 
-### 4. 商业用途
+### 4. Commercial Use
 
-- ❌ 在没有事先商业许可的情况下,在**商业产品或服务**中使用 EvoRule 商标进行营销
-- ❌ 用 EvoRule 商标暗示您的产品是"EvoRule 官方版"或"EvoRule 推荐版"
+- ❌ Using the EvoRule trademarks for marketing in **commercial products or services** without prior commercial permission
+- ❌ Using the EvoRule trademarks to imply that your product is the "official EvoRule edition" or the "EvoRule-recommended edition"
 
-### 5. 贬损或误导
+### 5. Disparagement or Misleading Use
 
-- ❌ 任何可能损害 EvoRule 商标声誉的使用
-- ❌ 任何可能误导消费者认为您的产品/服务是 EvoRule 官方出品的使用
+- ❌ Any use that could damage the reputation of the EvoRule trademarks
+- ❌ Any use that could mislead consumers into believing your product/service is an official EvoRule offering
 
 ---
 
-## 📋 需要事先书面许可的用途
+## 📋 Uses Requiring Prior Written Permission
 
-| 用途 | 许可要求 |
+| Use | Permission requirement |
 |---|---|
-| 在产品名/公司名中使用 "EvoRule" | 必需 |
-| 创建 EvoRule 主题周边商品(T恤、贴纸等) | 必需 |
-| 大规模营销活动使用 EvoRule 商标 | 必需 |
-| 注册包含 "evorule" 的域名 | 必需 |
-| 培训/咨询业务使用 "EvoRule 认证" 等术语 | 必需 |
+| Using "EvoRule" in a product name / company name | Required |
+| Creating EvoRule-themed merchandise (T-shirts, stickers, etc.) | Required |
+| Using the EvoRule trademarks in large-scale marketing campaigns | Required |
+| Registering domains containing "evorule" | Required |
+| Using terms such as "EvoRule certified" in training / consulting businesses | Required |
 
-**联系方式**:<evorulelab@gmail.com>(主题加 `[Trademark]`)
-
----
-
-## 商标使用指南(Brand Guidelines)
-
-如需使用 EvoRule Logo,请遵守:
-
-1. **最小尺寸**:Logo 在数字媒体上不小于 32×32 像素,印刷品不小于 10mm
-2. **留白**:Logo 周围至少保留 Logo 高度的 1/4 作为留白
-3. **背景**:浅色背景用深色 Logo,深色背景用浅色 Logo。**不得**用复杂背景
-4. **不修改**:不得旋转、拉伸、改变颜色、添加阴影或特效
-5. **完整使用**:始终使用完整的 Logo + "EvoRule" 文字组合
+**Contact**: <evorulelab@gmail.com> (add `[Trademark]` to the subject)
 
 ---
 
-## 违规处理
+## Brand Guidelines
 
-如果发现违反本政策的使用,EvoRule Project 将:
+If you need to use the EvoRule logo, please follow these rules:
 
-1. **首次**:友好沟通,要求停止使用
-2. **二次**:正式书面警告
-3. **持续**:法律行动(商标侵权)
+1. **Minimum size**: the logo must be no smaller than 32×32 pixels on digital media and no smaller than 10mm in print
+2. **Clear space**: keep clear space of at least 1/4 of the logo's height around the logo
+3. **Background**: use a dark logo on light backgrounds and a light logo on dark backgrounds. **Do not** use complex backgrounds
+4. **No modification**: do not rotate, stretch, recolor, or add shadows or effects to the logo
+5. **Complete use**: always use the complete logo + "EvoRule" wordmark combination
 
 ---
 
-## 第三方项目命名
+## Handling Violations
 
-如果您开发了与 EvoRule 兼容的第三方项目,**可以**使用以下命名约定:
+If a use that violates this policy is discovered, the EvoRule Project will:
+
+1. **First instance**: reach out amicably and request that the use stop
+2. **Second instance**: issue a formal written warning
+3. **Continued**: take legal action (trademark infringement)
+
+---
+
+## Third-Party Project Naming
+
+If you develop a third-party project compatible with EvoRule, you **may** use the following naming conventions:
 
 - ✅ `EvoRule Connector for XXX`
 - ✅ `EvoRule Plugin: XXX`
 - ✅ `EvoRule-compatible XXX`
-- ❌ `EvoRule XXX`(暗示官方)
-- ❌ `XXX for EvoRule`(暗示官方插件)
+- ❌ `EvoRule XXX` (implies official status)
+- ❌ `XXX for EvoRule` (implies an official plugin)
 
-**前提**:在 README/文档中**明确说明**"本项目是社区贡献,非 EvoRule Project 官方产品"。
-
----
-
-## 与 EvoRule 兼容的实现(基于 CC0 宪法)
-
-由于 `core_eval.json` 采用 **CC0 1.0 公共领域**,您可以基于它实现自己的 EvoRule 兼容引擎。**但**:
-
-- ✅ 可以称为 "EvoRule-compatible Engine"
-- ✅ 可以引用 EvoRule 宪法
-- ❌ **不得**称自己的实现为 "EvoRule"(品牌专属)
-- ❌ **不得**使用 EvoRule Logo 作为您的实现的标识
-
-这是 **"标准 vs 实现"** 分离的体现:宪法是公共的,品牌是私有的。
+**Prerequisite**: state **clearly** in the README/documentation that "this project is a community contribution and not an official product of the EvoRule Project".
 
 ---
 
-## 联系方式
+## EvoRule-Compatible Implementations (based on the CC0 constitution)
 
-- **商标使用许可申请**:<evorulelab@gmail.com>(主题加 `[Trademark]`)
-- **侵权举报**:<evorulelab@gmail.com>(主题加 `[Trademark Violation]`)
-- **官方网站**:<https://github.com/evorule/evorule>
+Because `core_eval.json` is dedicated to the public domain under **CC0 1.0**, you may implement your own EvoRule-compatible engine based on it. **However**:
+
+- ✅ You may call it an "EvoRule-compatible Engine"
+- ✅ You may reference the EvoRule constitution
+- ❌ You **must not** call your implementation "EvoRule" (the brand is exclusive)
+- ❌ You **must not** use the EvoRule logo as the identity of your implementation
+
+This embodies the **"standard vs implementation"** separation: the constitution is public, the brand is private.
 
 ---
 
-## 版本历史
+## Contact
 
-| 版本 | 日期 | 变更说明 |
+- **Trademark use permission requests**: <evorulelab@gmail.com> (add `[Trademark]` to the subject)
+- **Infringement reports**: <evorulelab@gmail.com> (add `[Trademark Violation]` to the subject)
+- **Official website**: <https://github.com/evorule/evorule>
+
+---
+
+## Version History
+
+| Version | Date | Change |
 |---|---|---|
-| 1.0 | 2026-07-19 | 初版
+| 1.0 | 2026-07-19 | Initial version
 
 ---
-
 

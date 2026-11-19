@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 //
-// 示例:展示 evorule-tcb 的核心 API —— `execute_transition`
+// Example: demonstrating the core API of evorule-tcb — `execute_transition`
 //
-// 5 步上手:
-//   1. 构造一个业务 payload (`{x: 10}`)
-//   2. 构造一条 core_eval 规则 (本例为 `set(x, 42)`)
-//   3. 构造当前指令 (`noop` — 不消耗规则,纯函数测试用)
-//   4. 调用 `execute_transition` 执行一步状态转换
-//   5. 读取新 payload 验证
+// 5 steps to get started:
+//   1. Construct a business payload (`{x: 10}`)
+//   2. Construct one core_eval rule (here `set(x, 42)`)
+//   3. Construct the current instruction (`noop` — consumes no rules; for pure-function testing)
+//   4. Call `execute_transition` to run one state transition step
+//   5. Read the new payload and verify
 //
-// 运行方式:
+// How to run:
 //   cargo run -p evorule-tcb --example basic_transition
 
 use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 use std::collections::BTreeMap;
 
 fn main() {
-    // 1. 业务 payload: { x: 10 }
+    // 1. Business payload: { x: 10 }
     let mut p = BTreeMap::new();
     p.insert("x".to_string(), JsonValue::Integer(10));
     let payload = JsonValue::object(p);
-    println!("初始 payload: {payload}");
+    println!("Initial payload: {payload}");
 
-    // 2. core_eval 规则: set(x, 42) — 把 attr "x" 设为 42
+    // 2. core_eval rule: set(x, 42) — sets attr "x" to 42
     let mut set_params = BTreeMap::new();
     set_params.insert("attr".to_string(), JsonValue::string("x"));
     set_params.insert("operation".to_string(), JsonValue::string("set"));
@@ -33,36 +33,36 @@ fn main() {
     set_rule.insert("params".to_string(), JsonValue::object(set_params));
     let core_eval = vec![JsonValue::object(set_rule)];
 
-    // 3. 当前指令: noop(不触发任何规则,仅作为 TCB 的输入)
+    // 3. Current instruction: noop (triggers no rules; only serves as TCB input)
     let mut instr = BTreeMap::new();
     instr.insert("type".to_string(), JsonValue::string("noop"));
     let instruction = JsonValue::object(instr);
 
-    // 4. 执行
+    // 4. Execute
     let result = execute_transition(&core_eval, &instruction, &payload, &[]);
 
-    // 5. 验证
+    // 5. Verify
     match result {
         Ok(TransitionResult::State { new_payload, .. }) => {
-            println!("执行后 payload: {new_payload}");
+            println!("Payload after execution: {new_payload}");
             let x = new_payload.get("x").and_then(|v| v.as_i64());
-            assert_eq!(x, Some(42), "x 应被 set 改成 42");
-            println!("✅ x 已被正确改成 42");
+            assert_eq!(x, Some(42), "x should have been set to 42");
+            println!("✅ x correctly set to 42");
         }
         Ok(TransitionResult::Ignored { .. }) => {
-            eprintln!("⚠️ 指令被忽略（无匹配规则）");
+            eprintln!("⚠️ Instruction ignored (no matching rule)");
             std::process::exit(1);
         }
         Ok(TransitionResult::IoRequired { .. }) => {
-            eprintln!("❌ 不应触发 IoRequired(本例规则无 I/O)");
+            eprintln!("❌ IoRequired should not be triggered (no I/O in this example's rules)");
             std::process::exit(1);
         }
         Ok(TransitionResult::Halted { .. }) => {
-            eprintln!("❌ 不应触发 Halted(本例规则无 enforce)");
+            eprintln!("❌ Halted should not be triggered (no enforce in this example's rules)");
             std::process::exit(1);
         }
         Err(e) => {
-            eprintln!("❌ TCB 执行失败: {e:?}");
+            eprintln!("❌ TCB execution failed: {e:?}");
             std::process::exit(1);
         }
     }

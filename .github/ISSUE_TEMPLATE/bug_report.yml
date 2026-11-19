@@ -1,44 +1,44 @@
-name: Bug 报告 / Bug Report
-description: 报告一个可复现的缺陷
+name: Bug Report
+description: Report a reproducible defect
 title: "[Bug] "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        感谢报告缺陷。请尽量提供可复现信息, 以便快速定位。
-        **安全相关缺陷请走 SECURITY.md 的私秘渠道, 勿在此公开。**
+        Thank you for reporting a defect. Please provide reproduction details so it can be located quickly.
+        **For security-related defects, use the private channel in SECURITY.md; do not disclose them publicly here.**
   - type: dropdown
     id: component
     attributes:
-      label: 涉及组件
+      label: Component involved
       options:
         - evorule-cli
-        - evorule-governance (审计链)
-        - evorule-reactor (ReAct 循环)
-        - evorule-tcb (确定性内核)
-        - 文档 / 治理流程
+        - evorule-governance (audit chain)
+        - evorule-reactor (ReAct loop)
+        - evorule-tcb (deterministic kernel)
+        - docs / governance process
     validations:
       required: true
   - type: textarea
     id: what
     attributes:
-      label: 现象
-      description: 实际发生了什么?
+      label: Observed behavior
+      description: What actually happened?
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: 期望
-      description: 你预期发生什么?
+      label: Expected behavior
+      description: What did you expect to happen?
     validations:
       required: true
   - type: textarea
     id: reproduce
     attributes:
-      label: 复现步骤
-      description: 最小可复现步骤 / 输入 JSON / 命令
+      label: Reproduction steps
+      description: Minimal reproduction steps / input JSON / commands
       placeholder: |
         1. evorule run --rule xxx.json
         2. ...
@@ -47,12 +47,12 @@ body:
   - type: input
     id: version
     attributes:
-      label: 版本 / tag
+      label: Version / tag
       placeholder: v0.6.0
   - type: checkboxes
     id: cla
     attributes:
       label: CLA
       options:
-        - label: 我已阅读并同意 Individual CLA (CLA-individual.md)
+        - label: I have read and agree to the Individual CLA (CLA-individual.md)
           required: true

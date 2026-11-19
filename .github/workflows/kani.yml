@@ -1,29 +1,30 @@
 # =============================================================================
-# GitHub Actions: Kani 形式化验证（适配 main 分支架构）
+# GitHub Actions: Kani formal verification (adapted to the main branch architecture)
 #
-# 与 dev/wip 版的关键差异（必须遵守，否则静默全绿）：
-#   - main 的 TCB proof 位于 tests/kani/，经 tests/kani_entry.rs 顶层入口
-#     → cargo kani 必须加 --tests，否则 Checking harness 计数为 0
-#   - reactor 的 proof 经 src/pure.rs #[path] 引入 lib
-#     → 不可加 --tests（加了反而找不到 harness）
+# Key differences from the dev/wip variant (must be respected, otherwise silently all green):
+#   - main's TCB proofs live in tests/kani/, entering through the tests/kani_entry.rs top-level entry
+#     -> cargo kani must add --tests, otherwise the Checking harness count is 0
+#   - reactor's proofs enter the lib via src/pure.rs #[path]
+#     -> --tests must NOT be added (adding it makes the harness unfindable)
 #
-# 分档依据（实测，Kani 0.67.0 / WSL Ubuntu 22.04，2026-09-11）：
+# Tiering basis (measured, Kani 0.67.0 / WSL Ubuntu 22.04, 2026-09-11):
 #
-#   A 档 14 个：9~28s 全部 SUCCESSFUL，串行合计 ≈4.2min → 进 PR 闸门
-#   B 档 23 个：实测 600s 全超时（其中 2 个实际跑 910s+）
-#               实测 3600s 仍超时（verify_merge_safe 跑满 3603s）
-#               证实 unwind 不是杠杆（unwind 4/8 无改善）
-#               → 判定「当前不可运行」，不进 nightly，仅手动触发且允许失败
+#   Tier A, 14 proofs: all SUCCESSFUL in 9~28s, ~4.2min serial total -> into the PR gate
+#   Tier B, 23 proofs: all timed out at 600s (2 of them actually ran 910s+)
+#               still timed out at 3600s (verify_merge_safe ran the full 3603s)
+#               confirmed unwind is not a lever (unwind 4/8 no improvement)
+#               -> judged "not runnable currently"; not in nightly, manual trigger only and allowed to fail
 #
-# ⚠️ 不要为 B 档加大超时：至今无任何证据表明它们会终止。
-#    加大超时只会让失败来得更晚、烧掉更多 runner 时间。
+# WARNING: do not raise the timeout for tier B: no evidence so far suggests they terminate.
+#    Raising the timeout only makes failure arrive later and burns more runner time.
 #
-# Kani 版本: 0.67.0
-# Rust 版本: nightly-2025-11-21
+# Kani version: 0.67.0
+# Rust version: nightly-2025-11-21
 #
-# 2026-10-10 v0.8.1 release 备注：verification-only 的 tag commit（仅验证文档
-# 变更）不命中本文件 paths 过滤，M4 release gate 因 tag commit 上无 kani run
-# 而阻塞——本注释行使该 tag commit 命中 paths 触发 A 档实跑，供 M4 核查。
+# 2026-10-10 v0.8.1 release note: a verification-only tag commit (only verification docs
+# changed) does not hit this file's paths filter, and the M4 release gate blocks because the
+# tag commit has no kani run -- this comment line makes the tag commit hit paths and trigger
+# a tier A run, for M4 verification.
 # =============================================================================
 
 name: kani
@@ -41,14 +42,15 @@ on:
       - "evorule-eval/Cargo.toml"
       - "Cargo.toml"
       - ".github/workflows/kani.yml"
-      # M4 release gate 核查「tag commit 上 kani-tcb-a-tier 绿」：验证文档
-      # （verification/**）的收口提交同样必须触发 A 档实跑，否则 verification-only
-      # 的 release commit 永远无 kani run、门禁自锁（2026-10-10 v0.8.1 发版实证）。
+      # The M4 release gate checks "kani-tcb-a-tier green on the tag commit": verification docs
+      # (verification/**) closeout commits must likewise trigger a tier A run, otherwise a
+      # verification-only release commit never gets a kani run and the gate self-locks
+      # (2026-10-10 v0.8.1 release proof).
       - "verification/**"
-      # 同理：release.yml 自身的修复 commit 若重切 tag（workflow-only tag commit）
-      # 也不命中 paths → 无 kani run → gate 900s fail-closed（2026-10-13 v0.8.5
-      # 发版实证，当日以手动 dispatch kani 临时解锁）。入 paths 后该类 commit
-      # 自动触发 A 档实跑，门禁自锁根除。
+      # Likewise: a fix commit to release.yml itself, if the tag is re-cut (workflow-only tag commit),
+      # also misses paths -> no kani run -> gate 900s fail-closed (2026-10-13 v0.8.5
+      # release proof; unlocked that day by a manual kani dispatch). Once in paths, such commits
+      # automatically trigger a tier A run, eliminating the gate self-lock.
       - ".github/workflows/release.yml"
   pull_request:
     paths:
@@ -63,9 +65,9 @@ on:
       - ".github/workflows/kani.yml"
       - "verification/**"
       - ".github/workflows/release.yml"
-  # 手动触发（a / b / all）
-  #   a = A 档 + reactor（PR 闸门，分钟级）
-  #   b = B 档 20 个重型 proof（已知 >1h，仅供人工探索，不阻塞）
+  # manual trigger (a / b / all)
+  #   a = tier A + reactor (PR gate, minutes)
+  #   b = tier B, 20 heavy proofs (known >1h; manual exploration only, non-blocking)
   workflow_dispatch:
     inputs:
       tier:
@@ -73,7 +75,7 @@ on:
         required: false
         default: "all"
 
-# 显式最小权限 (Scorecard Token-Permissions): proof 验证仅需只读
+# Explicit minimal permissions (Scorecard Token-Permissions): proof verification only needs read
 permissions: read-all
 
 env:
@@ -82,8 +84,8 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # A 档：TCB 14 个轻量 proof（PR 闸门）
-  # 实测 9~28s/个，串行 ≈4.2min；全部带文件内 #[kani::unwind](1~8)
+  # Tier A: 14 lightweight TCB proofs (PR gate)
+  # Measured 9~28s each, ~4.2min serial; all carry in-file #[kani::unwind](1~8)
   # ---------------------------------------------------------------------------
   kani-tcb-a-tier:
     runs-on: ubuntu-22.04
@@ -114,10 +116,10 @@ jobs:
           cargo kani setup
           cargo kani --version
 
-      - name: Verify A-tier proofs (evorule-tcb, 14 个)
+      - name: Verify A-tier proofs (evorule-tcb, 14)
         run: |
           set -e
-          # ⚠️ --tests 必需：main 的 TCB proof 在 tests/kani/ 下
+          # WARNING: --tests required: main's TCB proofs live under tests/kani/
           for h in \
             verify_partial_eq_never_panics \
             verify_resolve_path_deterministic \
@@ -140,20 +142,21 @@ jobs:
           done
 
   # ---------------------------------------------------------------------------
-  # reactor：4 个 CI proof（PR 闸门）
-  # proof 经 src/pure.rs #[path] 引入 lib → 不可加 --tests
+  # reactor: 4 CI proofs (PR gate)
+  # proofs enter the lib via src/pure.rs #[path] -> --tests must NOT be added
   #
-  # P1-5（command_does_not_decrease_queue）2026-09-12 同根因修复入闸：
-  #   proof 末尾 forget(state) 跳过 Drop（见下 P0-11 说明），本地实测
-  #   0.57s PASS / --default-unwind 4 下 0.60s PASS。
-  # P0-11（invariant_cause_queue_sync）2026-09-12 修复根因后重入闸门：
-  #   根因：CBMC 将 VecDeque 堆缓冲区中的 JsonValue 按任意变体建模，任何触发
-  #   JsonValue Drop 的路径（pop 返回值 / clear 的 drop_in_place / state 整体
-  #   Drop）都会展开 Object(BTreeMap) 红黑树析构的无界 unwind → 状态爆炸。
-  #   修复：proof 侧 forget(popped)/(state) + clear_queue 的 #[cfg(kani)]
-  #   take+forget 分支（evorule-reactor/src/state.rs）。本地实测 1.53s PASS。
-  #   ⚠️ P0-11 不带 --default-unwind 4（该配置实测对 P0-11 无效且致超时，
-  #   修复前 3 份 FAIL 记录见 evorule-reactor/verification/evidence/kani/）。
+  # P1-5 (command_does_not_decrease_queue) 2026-09-12 same-root-cause fix, re-gated:
+  #   the proof ends with forget(state) skipping Drop (see the P0-11 note below); locally
+  #   measured 0.57s PASS / 0.60s PASS with --default-unwind 4.
+  # P0-11 (invariant_cause_queue_sync) 2026-09-12 root cause fixed, re-gated:
+  #   root cause: CBMC models JsonValue in the VecDeque heap buffer as an arbitrary variant; any
+  #   path triggering JsonValue Drop (pop return value / clear's drop_in_place / whole-state
+  #   Drop) unrolls the Object(BTreeMap) red-black tree destructor's unbounded unwind -> state explosion.
+  #   fix: proof-side forget(popped)/(state) + clear_queue's #[cfg(kani)]
+  #   take+forget branch (evorule-reactor/src/state.rs). Locally measured 1.53s PASS.
+  #   WARNING: P0-11 runs without --default-unwind 4 (measured: that config is ineffective for
+  #   P0-11 and causes timeouts; the 3 pre-fix FAIL records live under
+  #   evorule-reactor/verification/evidence/kani/).
   # ---------------------------------------------------------------------------
   kani-reactor:
     runs-on: ubuntu-22.04
@@ -184,22 +187,25 @@ jobs:
           cargo kani setup
           cargo kani --version
 
-      - name: Verify reactor CI proofs (4 个)
+      - name: Verify reactor CI proofs (4)
         run: |
           set -e
-          # 不可加 --tests：reactor proof 在 lib 中（src/pure.rs #[path] 引入）
-          # P0-11 单独跑且不带 --default-unwind（该配置实测对 P0-11 无效，见 job 头注释）
+          # --tests must not be added: reactor proofs are in the lib (entered via src/pure.rs #[path])
+          # P0-11 runs standalone and without --default-unwind (measured: that config is ineffective
+          # for P0-11, see the job header comment)
           echo "==> invariant_cause_queue_sync"
           timeout -k 30 300 cargo kani -p evorule-reactor \
             --harness invariant_cause_queue_sync --output-format=terse
 
-          # P0-14 2026-10-21 入闸门：实测 WSL Kani 0.67.0 Verification 14.9s
-          # SUCCESSFUL（默认 unwind=10）。⚠️ 必须单独跑且不带 --default-unwind：
-          # 实测该配置下 unwind 不足导致 unwinding assertion 失败（2026-10-21，
-          # rc=1 one or more unwinding failures）——与 P0-11 同模式。
-          # 界声明（AL2/R2）：默认 unwind 10 内的链 back-link 归纳（N<=3 步骤）；
-          # Kani 哈希为 cfg(kani) 简化替身——证明对象为链步结构性质，blake3
-          # 抗碰撞不在证明范围（诚实边界，见 verification/DISCLOSURE_LOG.md）
+          # P0-14 gated 2026-10-21: measured WSL Kani 0.67.0 Verification 14.9s
+          # SUCCESSFUL (default unwind=10). WARNING: must run standalone and without
+          # --default-unwind: measured, with that config the insufficient unwind causes
+          # unwinding assertion failures (2026-10-21, rc=1 one or more unwinding failures)
+          # -- same pattern as P0-11.
+          # Boundary declaration (AL2/R2): within default unwind 10, the chain back-link induction (N<=3 steps);
+          # the Kani hash is a cfg(kani) simplified stand-in -- the proof target is the chain-step
+          # structural property; blake3 collision resistance is out of proof scope
+          # (honest boundary, see verification/DISCLOSURE_LOG.md)
           echo "==> proof_hash_chain_back_link"
           timeout -k 30 300 cargo kani -p evorule-reactor \
             --harness proof_hash_chain_back_link --output-format=terse
@@ -214,19 +220,20 @@ jobs:
           done
 
   # ---------------------------------------------------------------------------
-  # B 档：TCB 20 个重型 proof —— 仅手动触发，允许失败
-  # （2026-09-14：原 23 个，P15/P16/P17 随 collect/merge 原语退役删除）
+  # Tier B: 20 heavy TCB proofs -- manual trigger only, allowed to fail
+  # (2026-09-14: originally 23; P15/P16/P17 removed with the collect/merge primitive retirement)
   #
-  # 实测（2026-09-11）：
-  #   600s 上限 → 3/3 全超时（其中 2 个实际跑 910s+）
-  #   3600s 上限 → verify_merge_safe 跑满 3603s 仍超时
-  #   unwind 4/8 → 无改善（证伪「配置缺陷」假设）
+  # Measured (2026-09-11):
+  #   600s cap -> 3/3 all timed out (2 of them actually ran 910s+)
+  #   3600s cap -> verify_merge_safe ran the full 3603s and still timed out
+  #   unwind 4/8 -> no improvement (falsifies the "config defect" hypothesis)
   #
-  # 判定：当前不可运行。无证据表明会终止，故不进 nightly
-  #       （23 × 5h ≈ 115 runner-小时/晚 换来的只是必然的超时）。
-  # 保留本 job 仅供人工按需探索；continue-on-error 保证不阻塞。
+  # Verdict: not runnable currently. No evidence of termination, so not in nightly
+  #       (23 x 5h ~= 115 runner-hours per night for nothing but guaranteed timeouts).
+  # This job is kept for manual on-demand exploration only; continue-on-error guarantees non-blocking.
   #
-  # 若将来要让 B 档真正可验证，正确做法是缩小符号输入规模，不是加大超时。
+  # If tier B should ever become truly verifiable, the right approach is to shrink the
+  # symbolic input space, not raise the timeout.
   # ---------------------------------------------------------------------------
   kani-tcb-b-tier:
     if: github.event_name == 'workflow_dispatch'
@@ -277,7 +284,7 @@ jobs:
           esac
           for h in $LIST; do
             echo "==> $h"
-            # 单个 proof 上限 900s；超时不算失败（collect 结果后统一判读）
+            # per-proof cap 900s; a timeout is not counted as failure (interpret uniformly after collect)
             timeout -k 30 900 cargo kani -p evorule-tcb --tests \
-              --harness "$h" --output-format=terse || echo "::warning::$h 未通过或超时"
+              --harness "$h" --output-format=terse || echo "::warning::$h did not pass or timed out"
           done

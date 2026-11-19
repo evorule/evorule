@@ -1,396 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 EvoRule Project -->
 
-# JSON 规则集格式参考
-
-> 字典式参考。evorule 规则集（rule_set）的完整字段、类型、约束。
-> 基于 `evorule-tcb` v0.6.0 源码实测：`core_eval.json`（语言规范样本）、`executor.rs`（元指令执行）、`domain.rs`（域评估）、`transition.rs`（状态转换）。
-
-## 总览
-
-evorule 规则集是一个 JSON 文件，描述**指令到状态转换的映射**。与传统 when-then 规则引擎不同，evorule 采用**指令驱动的 transform 规则**：每条规则匹配一种指令类型，匹配后执行元指令序列修改状态或推入新指令。
-
-```
-指令(instruction) → transform 规则匹配 → 元指令执行 → 新状态 + 新指令队列
-```
-
-规则集文件可单独存放，也可多个文件放在同一目录（CLI 加载目录下所有 `*.json`）。
-
----
-
-## 顶层结构
-
-```json
-{
-  "$schema": "https://evorule.org/schemas/rule_set/v1.0.json",
-  "kind": "rule_set",
-  "id": "org.example.my_rules",
-  "rule_id": "my_rules",
-  "version": "1.0.0",
-  "description": "规则集描述",
-  "metadata": { ... },
-  "transform": [ ... ]
-}
-```
-
-| 字段 | 类型 | 必填 | 说明 | 代码依据 |
-|------|------|------|------|---------|
-| `$schema` | String | 否 | JSON Schema 引用 | core_eval.json L2 |
-| `kind` | String | 是 | 固定为 `"rule_set"` | core_eval.json L3 |
-| `id` | String | 是 | 规则集唯一标识（反向域名风格） | core_eval.json L4 |
-| `rule_id` | String | 是 | 规则集短名 | core_eval.json L5 |
-| `version` | String | 是 | 语义化版本 | core_eval.json L6 |
-| `description` | String | 否 | 人类可读描述 | core_eval.json L7 |
-| `metadata` | Object | 否 | 元数据（作者、许可证、约束说明等） | core_eval.json L8-33 |
-| `transform` | Array | 是 | transform 规则列表（元指令数组），上限 128 条 | transition.rs `MAX_TRANSFORM_RULES` |
-
----
-
-## transform 规则
-
-`transform` 是一个**元指令数组**。每条元指令按顺序执行，前一条的输出状态作为后一条的输入。
-
-元指令类型共 5 种（SSOT：`executor.rs` `META_INSTRUCTION_TYPES`）：
-
-| 类型 | 说明 | 执行函数 |
-|------|------|---------|
-| `branch` | 条件分支：评估 domain，执行 on_true 或 on_false | `exec_branch` |
-| `set` | 修改状态：对指定路径执行 set/add/sub 操作 | `exec_set` |
-| `push` | 推入指令：将指令列表推入队列前端 | `exec_push` |
-| `io_request` | I/O 请求：产生 IoRequired 信号，不修改状态 | `exec_io_request` |
-| `enforce` | 强制执行：自进化预留原语，由 governance tier 门禁控制 | `exec_enforce` |
-
-> **v0.6.0 破坏性变更（规则清理）**：`collect` 与 `merge` 元指令已退役——LLM 多轮编排属于应用层职责，机制层不再内置 ReAct 循环原语。规则文件中使用这两个类型将被 schema 拒绝。多轮编排请由应用层 runner 实现。
-
-> Termination guarantee: the whole rule tree shares a single execution budget `MAX_TOTAL_META_INSTRUCTIONS` (executor.rs), branch recursion is capped by `MAX_BRANCH_DEPTH` (executor.rs), and the rule count is capped by `MAX_TRANSFORM_RULES` (transition.rs) — together with the domain depth `MAX_DOMAIN_DEPTH` these are the `EnvelopeLimits` defaults (the default entry behaves identically); deployments tuning the envelope go through `execute_transition_with_limits` (fail-fast sizing-invariant validation at entry).
-
----
-
-## 元指令详细参数
-
-### branch（条件分支）
-
-```json
-{
-  "type": "branch",
-  "params": {
-    "domain": { "type": "instruction", "instruction_type": "increment" },
-    "on_true": [ ... ],
-    "on_false": [ ... ]
-  }
-}
-```
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `params.domain` | Object 或 String | 是 | 域条件（见下方 domain 类型）。字符串视为路径引用，解析为域对象 |
-| `params.on_true` | Array | 否 | domain 为真时执行的子指令数组 |
-| `params.on_false` | Array | 否 | domain 为假时执行的子指令数组 |
-
-**命中口径**（executor.rs L720-725）：所选分支存在且非空即命中；空数组或缺失分支 = 无效果路径，不命中。
-
----
-
-### set（修改状态）
-
-```json
-{
-  "type": "set",
-  "params": {
-    "attr": "__exec__.payload.counter",
-    "operation": "add",
-    "value": "__exec__.instruction.params.delta"
-  }
-}
-```
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `params.attr` | String | 是 | 目标路径。`__exec__.payload.` 开头的自动剥离前缀；其他 `__` 开头的视为路径引用 |
-| `params.operation` | String | 是 | 操作类型：`set`（覆盖）、`add`（加）、`sub`（减） |
-| `params.value` | Any | 是 | 操作数。`__` 开头字符串视为路径引用，否则为字面值 |
-
-**路径语法**（executor.rs L330-340）：支持字段访问（`.`）和数组索引（`[0]`），如 `items[0].done`。
-
-**null 语义**（executor.rs L356-362）：缺失字段或 null 值在算术操作（add/sub）中视为 0；set 操作直接覆盖。
-
----
-
-### push（推入指令）
-
-```json
-{
-  "type": "push",
-  "params": {
-    "instructions": "__exec__.instruction.params.instructions"
-  }
-}
-```
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `params.instructions` | Array 或 String | 是 | 指令列表。`__` 开头字符串视为路径引用，解析为数组 |
-
-**行为**（executor.rs L676-679）：新指令在前，旧队列在后（栈式推入）。空列表 = no-op。
-
----
-
-### io_request（I/O 请求）
-
-```json
-{
-  "type": "io_request",
-  "params": {
-    "io_type": "call_external",
-    "messages": "__exec__.payload.messages",
-    "tools?": "__exec__.payload.tools"
-  }
-}
-```
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `params.io_type` | String | 是 | I/O 类型标识（如 `call_external`、`http_get`） |
-| `params.<key>` | Any | 是 | 必选参数。`__` 开头字符串视为路径引用，解析失败立即报错 |
-| `params.<key>?` | Any | 否 | 可选参数（键名带 `?` 后缀）。路径引用解析失败时跳过该参数 |
-
-**行为**（executor.rs L790-793）：产生 `IoRequired` 信号，不修改状态。信号立即向上传播，其后的 transform 规则不执行。
-
-**约束**（core_eval.json L22-24）：每条 transform 规则中最多一个 io_request；io_request 必须是 branch 的叶子节点（on_false 分支），之前不能有 set/push 操作。
-
----
-
-### 已退役元指令：collect / merge（v0.6.0）
-
-`collect`（批量生成指令）与 `merge`（合并工具结果到消息历史）原语已在 v0.6.0 随规则清理退役。这两个原语用于在机制层内嵌 LLM ReAct 多轮循环（collect 遍历 LLM tool_calls 扇出 call_service、merge 合并工具结果回环生成下一条 LLM 调用），该编排属于应用层职责。
-
-- 规则文件中使用 `"type": "collect"` / `"type": "merge"` 将被 schema 枚举直接拒绝（加载即报错，不静默忽略）
-- 多轮工具编排请由应用层 runner / tool_registry 实现；机制层保留 `io_request` 单轮触发/消费语义
-
----
-
-## domain（域条件）类型
-
-domain 用于 branch 指令的条件评估。共 8 种类型（SSOT：`domain.rs` dispatch L374-383）：
-
-| 类型 | 说明 | 必填参数 | 代码依据 |
-|------|------|---------|---------|
-| `instruction` | 当前指令类型匹配 | `instruction_type` | domain.rs L217 |
-| `eq` | 路径值 == 目标值 | `path`, `value`, `on_missing` | domain.rs L169 |
-| `lt` | 路径值 < 目标值（仅 i64） | `path`, `value`, `on_missing` | domain.rs L185 |
-| `in` | 路径值 ∈ 字面量集合 | `path`, `values`, `on_missing` | domain.rs L478 |
-| `exists` | 路径存在且非 null | `path` | domain.rs L205 |
-| `all` | 所有子域为真（AND） | `inner`（数组） | domain.rs L231 |
-| `not` | 子域为假 | `inner`（单个域） | domain.rs L257 |
-| `has_fields` | 对象包含指定非空字段 | `path`, `fields`（非空数组） | domain.rs L279 |
-
-> 注意：evorule v0.6.0 **没有** `gt`、`gte`、`neq`、`contains` 等操作符。大于比较可用 `not(lt)` 组合实现。
-
-### on_missing 声明（三态域判定，eq/lt/in 必填）
-
-`eq` / `lt` / `in` 为三态域：状态侧缺失时输出**三态** `DomainOutcome`（`sat` 真实成立 / `unsat` 真实不成立 / `missing` 路径不存在、类型不可比或 value 引用歧义），由 `on_missing` 显式声明 missing 的处理策略——**禁止静默**：
-
-| 声明值 | 语义 |
-|--------|------|
-| `"error"` | 求值缺失 → 拒绝执行（显式报错，不走任何分支） |
-| `"unsat"` | 求值缺失 → 投影为假，走 `on_false` 分支，归因（`missing_reason`）随事实面落账审计 |
-
-- **装载期强制**：eq/lt/in 未声明 `on_missing`、声明值非法、或 `value`（`in` 为 `values` 字符串元素）呈缺 `__` 前缀的根段点分形态（像路径引用的字面量写作错误），在规则装载/导入期被拒收（fail-closed），不进入运行期。
-- `all.inner` 内的 eq/lt/in 同样必须声明（walk 整棵域树）。动态域字符串（`"__exec__.…"` 路径引用）不受此约束。
-- `exists` / `instruction` / `has_fields` 为存在性检查本体（二态，无 missing 语义），无需声明。
-- 归因透传：命中归因事实（TransitionTrace/TraceHit）的 `domain_attr` 记录三态结果、missing 归因与声明值，见 [fact-types.md](fact-types.md) TransitionTrace 节。
-
-### instruction（指令类型匹配）
-
-```json
-{ "type": "instruction", "instruction_type": "increment" }
-```
-
-匹配当前执行指令的 `type` 字段。这是最常用的 domain 类型，用于定义"哪种指令触发哪条规则"。
-
-### eq（相等）
-
-```json
-{ "type": "eq", "path": "__exec__.payload.counter", "value": 5, "on_missing": "unsat" }
-```
-
-`value` 支持 `__` 开头路径引用（跨字段比较）。路径不存在或引用不可解析 → `missing`（三态；由 `on_missing` 声明分派——`error` 拒绝执行 / `unsat` 投影为假走 `on_false` 并落归因，见上方 on_missing 声明节）。`value` 为缺 `__` 前缀的根段点分形态视为写作错误，装载期拒收。
-
-### lt（小于）
-
-```json
-{ "type": "lt", "path": "__exec__.payload.counter", "value": 10 }
-```
-
-仅支持 i64 整数比较。任一侧非整数或路径不存在 → `missing`（三态，分派同 eq，见上方 on_missing 声明节）。
-
-### in（集合成员）
-
-```json
-{ "type": "in", "path": "__exec__.instruction.params.model", "values": ["MiniMax-M2.5", "MiniMax-M3"], "on_missing": "error" }
-```
-
-路径值 ∈ `values` 字面量数组任一元素 → `sat`，否则 `unsat`。`values` 为纯字面量数组（元素不做 `__` 引用解析），缺失/非数组/空数组在装载期拒收（fail-fast）；字符串元素呈根段点分形态按写作错误拒载。路径不存在 → `missing`（分派同 eq）。
-
-### exists（存在）
-
-```json
-{ "type": "exists", "path": "__exec__.payload.__io_results__.call_external" }
-```
-
-JSON `null` 视为"已清除/不存在"（domain.rs L200-204）。用于检测 I/O 结果是否已返回。
-
-### all（逻辑与）
-
-```json
-{
-  "type": "all",
-  "inner": [
-    { "type": "instruction", "instruction_type": "conditional" },
-    { "type": "exists", "path": "__exec__.payload.flag" }
-  ]
-}
-```
-
-空列表 = 真（真空真约定，domain.rs L228）。
-
-### not（逻辑非）
-
-```json
-{ "type": "not", "inner": { "type": "exists", "path": "__exec__.payload.done" } }
-```
-
-### has_fields（字段存在）
-
-```json
-{ "type": "has_fields", "path": "__exec__.payload.llm_response", "fields": ["choices", "usage"] }
-```
-
-检查对象是否包含所有指定字段且字段非空（非 null、非空数组）。`fields` 必须为非空数组，否则结构侧报错。
-
----
-
-## 指令（instruction）格式
-
-指令是推入队列并被 transform 规则匹配的执行单元。
-
-```json
-{
-  "type": "increment",
-  "params": {
-    "attr": "counter",
-    "delta": 1
-  }
-}
-```
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `type` | String | 是 | 指令类型，被 `instruction` domain 匹配 |
-| `params` | Object | 否 | 指令参数，规则中通过 `__exec__.instruction.params.<key>` 引用 |
-
-**内置指令类型**（core_eval.json 定义的 transform 规则覆盖）：
-- `increment`：数值递增（attr + delta）
-- `decrement`：数值递减（attr + delta）
-- `set`：设置值（attr + value）
-- `sequence`：顺序执行（instructions 数组）
-- `conditional`：条件执行（domain + then + else）
-- `while_loop`：循环（condition + body）
-- `noop`：空操作
-
-应用可自定义指令类型，只需在规则集中定义对应的 transform 规则。未定义的指令类型会触发 `TransitionResult::Ignored`（transition.rs L293-298），反应器产生 Error 事实。
-
----
-
-## 状态（payload）与执行上下文
-
-执行时，TCB 构建 `__exec__` 上下文（transition.rs L309-322）：
-
-```
-__exec__.instruction  — 当前指令
-__exec__.payload      — 业务状态（项目方数据）
-__exec__.queue        — 待执行指令队列
-__exec__.__io_results__.<io_type> — I/O 结果（按类型隔离）
-```
-
-规则中的路径引用通过 `__exec__.` 前缀访问上下文。`set` 指令的 `attr` 若以 `__exec__.payload.` 开头会自动剥离前缀，直接操作业务状态。
-
----
-
-## 最小示例
-
-```json
-{
-  "kind": "rule_set",
-  "id": "org.example.counter",
-  "rule_id": "counter",
-  "version": "1.0.0",
-  "description": "计数器规则集：increment 到 5 后标记 done",
-  "transform": [
-    {
-      "type": "branch",
-      "params": {
-        "domain": { "type": "instruction", "instruction_type": "increment" },
-        "on_true": [
-          {
-            "type": "set",
-            "params": {
-              "attr": "__exec__.instruction.params.attr",
-              "operation": "add",
-              "value": "__exec__.instruction.params.delta"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "type": "branch",
-      "params": {
-        "domain": {
-          "type": "all",
-          "inner": [
-            { "type": "instruction", "instruction_type": "increment" },
-            { "type": "eq", "path": "__exec__.payload.counter", "value": 5, "on_missing": "unsat" }
-          ]
-        },
-        "on_true": [
-          {
-            "type": "set",
-            "params": {
-              "attr": "done",
-              "operation": "set",
-              "value": true
-            }
-          }
-        ]
-      }
-    },
-    {
-      "type": "branch",
-      "params": {
-        "domain": { "type": "all", "inner": [] },
-        "on_true": []
-      }
-    }
-  ]
-}
-```
-
-执行 `evorule run ./rules --payload '{"counter": 0}'`，连续发送 5 条 `increment` 指令后，`counter=5` 且 `done=true`。
-
----
-
-## 相关参考
-
-- [CLI 参考](./cli-reference.md)
-- [Fact 类型参考](./fact-types.md)
-- 任务式指南见 [how-to/](../how-to/)
-- 语言规范样本：`evorule-tcb/core_eval.json`（CC0 公共领域）
-
----
-
-<a id="english"></a>
-
 # JSON Rule Set Format Reference
 
 > Dictionary-style reference. Complete fields, types, and constraints of an evorule rule set.
@@ -417,7 +27,7 @@ A rule set can live in a single file, or multiple files can share one directory 
   "id": "org.example.my_rules",
   "rule_id": "my_rules",
   "version": "1.0.0",
-  "description": "规则集描述",
+  "description": "Rule set description",
   "metadata": { ... },
   "transform": [ ... ]
 }
@@ -450,7 +60,7 @@ There are 5 meta-instruction types in total (SSOT: `executor.rs` `META_INSTRUCTI
 | `io_request` | I/O request: produces an IoRequired signal, does not modify state | `exec_io_request` |
 | `enforce` | Enforce: reserved primitive for self-evolution, gated by the governance tier | `exec_enforce` |
 
-> **Breaking change in v0.6.0 (iteration #69 cleanup)**: the `collect` and `merge` meta-instructions have been retired — LLM multi-turn orchestration is an application-layer responsibility, and the mechanism layer no longer embeds ReAct loop primitives. Rule sets using these two types are rejected by the schema. Implement multi-turn orchestration in your application-layer runner.
+> **Breaking change in v0.6.0 (rule-cleanup iteration)**: the `collect` and `merge` meta-instructions have been retired — LLM multi-turn orchestration is an application-layer responsibility, and the mechanism layer no longer embeds ReAct loop primitives. Rule sets using these two types are rejected by the schema. Implement multi-turn orchestration in your application-layer runner.
 
 > Termination guarantee: the entire rule tree shares a single execution budget `MAX_TOTAL_META_INSTRUCTIONS` (executor.rs); branch recursion is capped by `MAX_BRANCH_DEPTH` (executor.rs), and the rule count is capped by `MAX_TRANSFORM_RULES` (transition.rs) — these, together with the domain depth `MAX_DOMAIN_DEPTH`, are the defaults of `EnvelopeLimits` (the default entry behaves identically); deployments that need custom envelope limits use `execute_transition_with_limits` (fail-fast validation at the entry).
 
@@ -552,7 +162,7 @@ There are 5 meta-instruction types in total (SSOT: `executor.rs` `META_INSTRUCTI
 
 ### Retired meta-instructions: collect / merge (v0.6.0)
 
-The `collect` (batch instruction generation) and `merge` (merge tool results into the message history) primitives were retired in v0.6.0 (iteration #69 cleanup). They existed to embed an LLM ReAct multi-turn loop in the mechanism layer (`collect` fans out `call_service` over LLM tool_calls; `merge` merges tool results back into the loop to generate the next LLM call) — such orchestration is an application-layer responsibility.
+The `collect` (batch instruction generation) and `merge` (merge tool results into the message history) primitives were retired in v0.6.0 (the rule-cleanup iteration). They existed to embed an LLM ReAct multi-turn loop in the mechanism layer (`collect` fans out `call_service` over LLM tool_calls; `merge` merges tool results back into the loop to generate the next LLM call) — such orchestration is an application-layer responsibility.
 
 - Rule sets using `"type": "collect"` / `"type": "merge"` are rejected outright by the schema enum (a load-time error, never silently ignored)
 - Implement multi-turn tool orchestration in your application-layer runner / tool_registry; the mechanism layer keeps the single-round `io_request` trigger/consume semantics
@@ -561,13 +171,14 @@ The `collect` (batch instruction generation) and `merge` (merge tool results int
 
 ## Domain types
 
-Domains are used for condition evaluation in branch instructions. There are 7 types in total (SSOT: `domain.rs` L128-139):
+Domains are used for condition evaluation in branch instructions. There are 8 types in total (SSOT: `domain.rs` dispatch, L374-383):
 
 | Type | Description | Required parameters | Code basis |
 |------|------|---------|---------|
 | `instruction` | Matches the current instruction type | `instruction_type` | domain.rs L217 |
 | `eq` | Path value == target value | `path`, `value`, `on_missing` | domain.rs L169 |
 | `lt` | Path value < target value (i64 only) | `path`, `value`, `on_missing` | domain.rs L185 |
+| `in` | Path value ∈ a literal set | `path`, `values`, `on_missing` | domain.rs L478 |
 | `exists` | The path exists and is not null | `path` | domain.rs L205 |
 | `all` | All sub-domains are true (AND) | `inner` (array) | domain.rs L231 |
 | `not` | The sub-domain is false | `inner` (single domain) | domain.rs L257 |
@@ -619,7 +230,7 @@ i64 integer comparison only. If either side is not an integer, or the path does 
 { "type": "in", "path": "__exec__.instruction.params.model", "values": ["MiniMax-M2.5", "MiniMax-M3"], "on_missing": "error" }
 ```
 
-Sat when the value at the path equals any element of the `values` literal array, otherwise Unsat. `values` must be a pure literal array (elements are never resolved as `__` references); a missing, non-array, or empty `values` is rejected at load time (fail-fast), and string elements shaped like a root-segment dot path are rejected as authoring errors. A missing path → `missing` (dispatched like `eq`).
+`sat` when the value at the path equals any element of the `values` literal array, otherwise `unsat`. `values` must be a pure literal array (elements are never resolved as `__` references); a missing, non-array, or empty `values` is rejected at load time (fail-fast), and string elements shaped like a root-segment dot path are rejected as authoring errors. A missing path → `missing` (dispatched like `eq`).
 
 ### exists (existence)
 
@@ -714,7 +325,7 @@ Path references in rules reach the context through the `__exec__.` prefix. If th
   "id": "org.example.counter",
   "rule_id": "counter",
   "version": "1.0.0",
-  "description": "计数器规则集：increment 到 5 后标记 done",
+  "description": "Counter rule set: mark done once the counter reaches 5 via increment",
   "transform": [
     {
       "type": "branch",

@@ -1,33 +1,39 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! native 参照：I/O 暂停-恢复场景 host 编译的链尾哈希（仿真对拍基准值）
+//! native reference: the host-compiled chain tail hash for the I/O
+//! pause-resume scenario (the simulation parity baseline value)
 //!
-//! # 判据链（I/O 恢复跨目标对拍）
-//! 1. 对拍单测（`exec::tests`）已证：I/O 暂停-恢复全链事实序列
-//!    （Command / IoRequest / IoResponse / StateTransition / TransitionTrace /
-//!    Stable）与 reactor v0.3.1 handle_fact IoResponse 分支逐行同构
-//! 2. 本例执行同场景（io_resume fixture 规则包 + call_external 指令 +
-//!    固定应答）打印 host 内核链尾（基准值）
-//! 3. `examples/qemu_io_resume`（mps2-an386 固件）输出与之逐字节一致
-//!    → I/O 恢复协议跨目标确定性成立
+//! # Criterion chain (I/O recovery cross-target parity)
+//! 1. The parity unit tests (`exec::tests`) have proven: the I/O
+//!    pause-resume full-chain fact sequence (Command / IoRequest / IoResponse /
+//!    StateTransition / TransitionTrace / Stable) is line-by-line isomorphic
+//!    to the reactor v0.3.1 handle_fact IoResponse branch
+//! 2. This example executes the same scenario (io_resume fixture rule pack +
+//!    call_external instruction + fixed reply) and prints the host-kernel
+//!    chain tail (the baseline value)
+//! 3. `examples/qemu_io_resume` (mps2-an386 firmware) output matches it
+//!    byte-for-byte → the I/O recovery protocol is deterministic across targets
 //!
-//! # 场景
-//! `tests/fixtures/io_resume_rules.evopack`（双路径 I/O 循环规则）+
-//! call_external 指令（messages 透传）；run 触发 IoRequest 暂停后，
-//! 以固定应答（`canned_llm_result` 同值：`{"role":"assistant",
-//! "content":"no tools needed"}`）resume；期望终态 `llm_response.content`
-//! 消费到位且 `__io_results__` 容器已清除。
+//! # Scenario
+//! `tests/fixtures/io_resume_rules.evopack` (dual-path I/O loop rules) +
+//! the call_external instruction (messages passed through); after run
+//! triggers an IoRequest pause, resume with the fixed reply (same value as
+//! `canned_llm_result`: `{"role":"assistant",
+//! "content":"no tools needed"}`); the expected final state is
+//! `llm_response.content` consumed in place with the `__io_results__`
+//! container cleared.
 //!
-//! 运行：`cargo run -p evorule-mcu --example native_io_resume_tail`
-//! 输出：`IO_CHAIN_TAIL=<64 hex>`（stdout），进度走 stderr。
+//! Run: `cargo run -p evorule-mcu --example native_io_resume_tail`
+//! Output: `IO_CHAIN_TAIL=<64 hex>` (stdout); progress goes to stderr.
 
 use std::process::ExitCode;
 
 use evorule_mcu::{McuError, McuExecutor, McuWalStore, RulePack};
 use evorule_tcb::JsonValue;
 
-/// I/O 对拍 fixture（host 编译器 `compile-evopack` 产物，与 QEMU 固件同一文件）
+/// I/O parity fixture (produced by the host compiler's `compile-evopack`;
+/// the same file as the QEMU firmware)
 const EVOPACK: &[u8] = include_bytes!("../tests/fixtures/io_resume_rules.evopack");
 
 fn call_external_instruction(content: &str) -> JsonValue {
@@ -49,7 +55,8 @@ fn call_external_instruction(content: &str) -> JsonValue {
     ])
 }
 
-/// 固定 LLM 应答（与内核 `canned_llm_result` 逐字段同值，对拍确定性）
+/// Fixed LLM reply (field-by-field identical to the kernel's
+/// `canned_llm_result`; parity determinism)
 fn canned_llm_result() -> JsonValue {
     JsonValue::object_from_pairs(&[
         ("role", JsonValue::string("assistant")),
@@ -67,7 +74,7 @@ fn main() -> ExitCode {
     };
     let mut ex = McuExecutor::new(pack);
 
-    // run → IoRequest 入链后暂停
+    // run → pauses after the IoRequest is appended to the chain
     let request_id = match ex.run(call_external_instruction("hello from io parity")) {
         Err(McuError::IoPaused {
             request_id,
@@ -90,7 +97,7 @@ fn main() -> ExitCode {
         }
     };
 
-    // 固定应答恢复
+    // Resume with the fixed reply
     match ex.resume_io(request_id, Ok(canned_llm_result())) {
         Ok(report) => eprintln!(
             "native resumed: steps={} ticks={} version={}",
@@ -102,7 +109,8 @@ fn main() -> ExitCode {
         }
     }
 
-    // 场景终态自检：llm_response 消费到位，容器清除不残留
+    // Scenario final-state self-check: llm_response consumed in place,
+    // container cleared with no residue
     match ex
         .payload()
         .get("llm_response")

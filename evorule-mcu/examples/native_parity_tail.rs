@@ -1,28 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! native 参照：同场景 host 编译的链尾哈希（仿真对拍基准值）
+//! native reference: the host-compiled chain tail hash for the same scenario
+//! (the simulation parity baseline value)
 //!
-//! # 判据链（仿真确定性对拍）
-//! 1. T3 对拍单测（`exec::tests`）已证：同输入下 host 内核与 reactor std
-//!    宿主全链逐条 WAL 字节级一致、链尾哈希一致
-//! 2. 本例打印同场景 host 内核链尾（基准值）
-//! 3. `examples/qemu_parity`（mps2-an386 固件）输出与之逐字节一致
-//!    → 跨目标确定性成立，传递闭合 std 宿主等价
+//! # Criterion chain (deterministic simulation parity)
+//! 1. The parity unit tests (`exec::tests`) have proven: for the same input,
+//!    the host kernel and the reactor std host agree record-by-record on WAL
+//!    bytes for the full chain and share the same chain tail hash
+//! 2. This example prints the same scenario's host-kernel chain tail (the
+//!    baseline value)
+//! 3. `examples/qemu_parity` (mps2-an386 firmware) output matches it
+//!    byte-for-byte → cross-target determinism holds, transitively closing
+//!    std-host equivalence
 //!
-//! # 场景（与 T3 多指令对拍单测同构）
-//! parity fixture 规则包（`tests/fixtures/parity_rules.evopack`）+
-//! 三条指令：increment(x,5) → noop → increment(x,-2)；期望终态 x = 3。
+//! # Scenario (isomorphic to the multi-instruction parity unit test)
+//! The parity fixture rule pack (`tests/fixtures/parity_rules.evopack`) +
+//! three instructions: increment(x,5) → noop → increment(x,-2); the expected
+//! final state is x = 3.
 //!
-//! 运行：`cargo run -p evorule-mcu --example native_parity_tail`
-//! 输出：`CHAIN_TAIL=<64 hex>`（stdout），进度走 stderr。
+//! Run: `cargo run -p evorule-mcu --example native_parity_tail`
+//! Output: `CHAIN_TAIL=<64 hex>` (stdout); progress goes to stderr.
 
 use std::process::ExitCode;
 
 use evorule_mcu::{McuExecutor, McuWalStore, RulePack};
 use evorule_tcb::JsonValue;
 
-/// 对拍 fixture（host 编译器产物，与 QEMU 固件 include 的同一文件）
+/// Parity fixture (host compiler output; the same file included by the QEMU firmware)
 const EVOPACK: &[u8] = include_bytes!("../tests/fixtures/parity_rules.evopack");
 
 fn increment_instruction(attr: &str, delta: i64) -> JsonValue {
@@ -75,7 +80,8 @@ fn main() -> ExitCode {
         }
     }
 
-    // 场景终态自检：x = 5 - 2 = 3（与 T3 对拍单测一致）
+    // Scenario final-state self-check: x = 5 - 2 = 3 (consistent with the
+    // parity unit test)
     match ex.payload().get("x").and_then(|v| v.as_i64()) {
         Some(3) => {}
         other => {

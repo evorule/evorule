@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 并发会话隔离测试 — 041 v2.0 A6
+//! Concurrent session isolation tests — 041 v2.0 A6
 //!
-//! 验证 project_memory 硬约束：
-//! "每个 session 必须有独立 reactor 实例以确保多用户并发隔离"。
+//! Verifies the project_memory hard constraint:
+//! "each session must have an independent reactor instance to ensure multi-user
+//! concurrent isolation".
 //!
-//! 覆盖三个并发场景：
-//! 1. 多会话并发执行命令，状态不得串扰（核心隔离保证）
-//! 2. 并发创建/关闭会话无死锁，计数归零
-//! 3. 并发创建的会话 ID 唯一
+//! Covers three concurrency scenarios:
+//! 1. Multiple sessions execute commands concurrently without state cross-talk
+//!    (core isolation guarantee)
+//! 2. Concurrent session creation/close with no deadlock, count returns to zero
+//! 3. Session IDs created concurrently are unique
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::expect_used)]
 #![allow(clippy::panic)]
@@ -21,10 +23,11 @@ use evorule_governance::SessionManager;
 use evorule_reactor::{Fact, FactId};
 use evorule_tcb::JsonValue;
 
-/// 构造与 core_eval.json increment 规则一致的 transform 规则。
+/// Builds a transform rule consistent with the core_eval.json increment rule.
 ///
-/// core_eval 是"映射规则"（branch → set+add），不是业务指令本身。
-/// reactor 用它把业务指令 "increment" 转换为元指令 set(attr, add, delta)。
+/// core_eval is the "mapping rule" (branch → set+add), not the business instruction itself.
+/// The reactor uses it to transform the business instruction "increment" into the meta
+/// instructions set(attr, add, delta).
 fn make_core_eval() -> Vec<JsonValue> {
     vec![JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("branch")),
@@ -79,7 +82,7 @@ fn make_increment(fact_id: u64, delta: i64) -> Fact {
     }
 }
 
-/// 从 payload 取 x 字段整数值
+/// Read the integer value of the x field from a payload
 fn payload_x(payload: &JsonValue) -> Option<i64> {
     match payload {
         JsonValue::Object(map) => map.get("x").and_then(|v| v.as_i64()),
@@ -87,8 +90,9 @@ fn payload_x(payload: &JsonValue) -> Option<i64> {
     }
 }
 
-/// 8 个会话并发执行 25 条 increment 命令，每会话 delta 不同。
-/// 验证最终各会话 x == delta * 25，状态不串扰，审计链各自完整。
+/// 8 sessions concurrently execute 25 increment commands, each session with a different delta.
+/// Verifies each session ends with x == delta * 25, no state cross-talk, and each audit
+/// chain intact.
 #[tokio::test]
 async fn concurrent_sessions_state_isolation() {
     const N_SESSIONS: usize = 8;
@@ -96,14 +100,14 @@ async fn concurrent_sessions_state_isolation() {
 
     let mgr = Arc::new(SessionManager::new(make_core_eval(), 10000));
 
-    // 1. 创建 N 个会话
+    // 1. Create N sessions
     let mut session_ids = Vec::with_capacity(N_SESSIONS);
     for _ in 0..N_SESSIONS {
         session_ids.push(mgr.create_session().expect("create session"));
     }
     assert_eq!(mgr.len(), N_SESSIONS);
 
-    // 2. 并发：每会话一个 task，发 CMDS 条 increment(delta=idx+1)
+    // 2. Concurrent: one task per session, sending CMDS increment(delta=idx+1) commands
     let mut tasks = Vec::with_capacity(N_SESSIONS);
     for (idx, &sid) in session_ids.iter().enumerate() {
         let session = mgr.get_session(sid).expect("get session");
@@ -115,52 +119,56 @@ async fn concurrent_sessions_state_isolation() {
                     .send(make_increment(n as u64, delta))
                     .expect("send command");
             }
-            // 预期 x = delta * CMDS
+            // Expected x = delta * CMDS
             delta * CMDS_PER_SESSION as i64
         }));
     }
 
-    // 3. 等待所有命令发送完成
+    // 3. Wait for all commands to be sent
     let mut expected = Vec::with_capacity(N_SESSIONS);
     for t in tasks {
         expected.push(t.await.expect("task join"));
     }
 
-    // 4. 等待反应器处理完（长运行模式，Stable 后仍驻留）
+    // 4. Wait for the reactors to finish processing (long-running mode, they stay alive after Stable)
     tokio::time::sleep(Duration::from_millis(800)).await;
 
-    // 5. 验证隔离：各会话 x == expected[idx]，无串扰；审计链各自完整
+    // 5. Verify isolation: each session x == expected[idx], no cross-talk; each audit chain intact
     for (idx, &sid) in session_ids.iter().enumerate() {
         let session = mgr.get_session(sid).expect("get session after run");
         let (payload, _queue, version) = session.facts_log.snapshot();
-        let x = payload_x(&payload)
-            .unwrap_or_else(|| panic!("session {} payload 缺少 x 字段: {}", sid, payload));
+        let x = payload_x(&payload).unwrap_or_else(|| {
+            panic!(
+                "session {} payload is missing the x field: {}",
+                sid, payload
+            )
+        });
         assert_eq!(
             x, expected[idx],
-            "session {} (idx {}) 状态串扰: x={} expected={} (并发隔离被破坏)",
+            "session {} (idx {}) state cross-talk: x={} expected={} (concurrent isolation broken)",
             sid, idx, x, expected[idx]
         );
         assert!(
             session.audit_verify(),
-            "session {} 审计链完整性校验失败",
+            "session {} audit-chain integrity verification failed",
             sid
         );
         assert!(
             version >= CMDS_PER_SESSION as u64,
-            "session {} version 异常偏低: {} (期望 >= {})",
+            "session {} version unexpectedly low: {} (expected >= {})",
             sid,
             version,
             CMDS_PER_SESSION
         );
     }
 
-    // 6. 清理
+    // 6. Cleanup
     for &sid in &session_ids {
         let _ = mgr.close_session(sid);
     }
 }
 
-/// 并发创建/关闭会话无死锁，最终计数归零。
+/// Concurrent session create/close with no deadlock; the count ends at zero.
 #[tokio::test]
 async fn concurrent_create_close_no_deadlock() {
     let mgr = Arc::new(SessionManager::new(make_core_eval(), 100));
@@ -170,7 +178,7 @@ async fn concurrent_create_close_no_deadlock() {
         let mgr = mgr.clone();
         tasks.push(tokio::spawn(async move {
             let id = mgr.create_session().expect("create session");
-            // 立即关闭（触发 command_tx drop → reactor 优雅退出）
+            // Close immediately (triggers command_tx drop → graceful reactor exit)
             let _handle = mgr.close_session(id).expect("close session");
         }));
     }
@@ -179,10 +187,15 @@ async fn concurrent_create_close_no_deadlock() {
         t.await.expect("task join");
     }
 
-    assert_eq!(mgr.len(), 0, "所有会话关闭后计数应归零，实际 {}", mgr.len());
+    assert_eq!(
+        mgr.len(),
+        0,
+        "count should be zero after all sessions are closed, got {}",
+        mgr.len()
+    );
 }
 
-/// 并发创建的会话 ID 必须唯一。
+/// Session IDs created concurrently must be unique.
 #[tokio::test]
 async fn concurrent_create_yields_unique_ids() {
     let mgr = Arc::new(SessionManager::new(make_core_eval(), 200));
@@ -206,7 +219,7 @@ async fn concurrent_create_yields_unique_ids() {
     assert_eq!(
         ids.len(),
         original_len,
-        "并发创建产生重复 SessionId: {} unique / {} total",
+        "concurrent creation produced duplicate SessionIds: {} unique / {} total",
         ids.len(),
         original_len
     );

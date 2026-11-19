@@ -1,24 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 权限子系统 —— 机制层数据模型、版本化快照与条件评估
+//! Permission subsystem — mechanism-layer data model, versioned snapshots and condition evaluation
 //!
-//! # 定位
-//! 本模块是治理层能力面新增之一，服务于 evorule-server 的 `/api/permissions` 端点族
-//! （应用层策略）。核心职责：
-//! - [`entry`]：`PermissionEntry` 数据模型（与实施文档 18 的 schema 对齐）
-//! - [`table`]：`PermissionTable` —— 基于 `SharedFactsLog` 的版本化权限快照与判定
-//! - [`condition`]：`ConditionEvaluator` —— 复用 TCB `evaluate_domain` 评估条件表达式
+//! # Positioning
+//! This module is one of the governance-layer capability additions, serving the evorule-server
+//! `/api/permissions` endpoint family (application-layer policy). Core responsibilities:
+//! - [`entry`]: the `PermissionEntry` data model (aligned with the schema in implementation doc 18)
+//! - [`table`]: `PermissionTable` — versioned permission snapshots and verdicts based on `SharedFactsLog`
+//! - [`condition`]: `ConditionEvaluator` — reuses TCB `evaluate_domain` to evaluate condition expressions
 //!
-//! # 持久化约定
-//! 权限条目存储在 `SharedFactsLog` 的 `shared.__permission__.entry.<id>` 路径下，
-//! 每次新建/更新以 `append` 追写一个新版本，历史版本保留以保证可审计回放。
-//! 版本化快照 `PermissionTable::snapshot_at(log, v_shared)` 据此重建 [v_shared] 时点的
-//! 一致视图，保证权限判定确定性（与 `IoCallContext.v_trigger` 语义对齐，见 reactor `io_context`）。
+//! # Persistence conventions
+//! Permission entries are stored under the `shared.__permission__.entry.<id>` path of
+//! `SharedFactsLog`; each create/update appends a new version via `append`, and historical
+//! versions are retained for auditable replay.
+//! The versioned snapshot `PermissionTable::snapshot_at(log, v_shared)` rebuilds from this a
+//! consistent view at point [v_shared], guaranteeing deterministic permission verdicts
+//! (semantics aligned with `IoCallContext.v_trigger`, see reactor `io_context`).
 //!
-//! # 设计原则（additive）
-//! 本模块不复用/不修改任何既有 trait 或签名，仅新增纯数据模型 + 纯函数，
-//! 由应用层（evorule-server）负责 HTTP 路由与审批流程编排。
+//! # Design principles (additive)
+//! This module neither reuses nor modifies any existing trait or signature; it only adds pure
+//! data models + pure functions, with the application layer (evorule-server) responsible for
+//! HTTP routing and approval-flow orchestration.
 
 pub mod condition;
 pub mod entry;
@@ -37,16 +40,17 @@ pub use table::{DefaultPolicy, PermissionTable, Verdict};
 
 use evorule_tcb::JsonValue;
 
-/// 将 TCB 的 `JsonValue` 转换为 `serde_json::Value`（用于 serde 反序列化）
+/// Converts TCB's `JsonValue` into `serde_json::Value` (for serde deserialization)
 ///
-/// 权限条目从 `SharedFactsLog` 读回时是 TCB 类型，本桥接函数将其无损转为
-/// `serde_json::Value`，从而可继续用 serde 反序列化为 `PermissionEntry`。
+/// When permission entries are read back from `SharedFactsLog` they are TCB types; this
+/// bridge function converts them losslessly into `serde_json::Value`, so they can be
+/// further deserialized with serde into `PermissionEntry`.
 pub(crate) fn tcb_to_serde(v: &JsonValue) -> serde_json::Value {
     match v {
         JsonValue::Null => serde_json::Value::Null,
         JsonValue::Bool(b) => serde_json::Value::Bool(*b),
         JsonValue::Integer(i) => serde_json::Value::Number((*i).into()),
-        // u64 全域通道（v0.9.0）：serde Number 原生无损承载，不经 i64 cast
+        // u64 full-range channel (v0.9.0): carried losslessly natively by serde Number, without an i64 cast
         JsonValue::U64(v) => serde_json::Value::Number((*v).into()),
         JsonValue::String(s) => serde_json::Value::String(s.to_string()),
         JsonValue::Array(a) => serde_json::Value::Array(a.iter().map(tcb_to_serde).collect()),
@@ -60,9 +64,9 @@ pub(crate) fn tcb_to_serde(v: &JsonValue) -> serde_json::Value {
     }
 }
 
-/// 将 `serde_json::Value` 转换为 TCB 的 `JsonValue`（用于序列化写入共享事实）
+/// Converts `serde_json::Value` into TCB's `JsonValue` (for serializing writes into shared facts)
 ///
-/// 与 [`tcb_to_serde`] 互为逆操作，供新增/更新权限条目的写入路径使用。
+/// Inverse of [`tcb_to_serde`], used by the write paths that add/update permission entries.
 pub(crate) fn serde_to_tcb(v: &serde_json::Value) -> JsonValue {
     match v {
         serde_json::Value::Null => JsonValue::Null,

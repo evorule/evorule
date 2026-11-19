@@ -1,18 +1,18 @@
 # Pull Request
 
-## 变更说明
-<!-- 简述本次 PR 改了什么、为什么。跨 crate 改动请先完成 CHANGE_REQUEST 登记。 -->
+## Change description
+<!-- Briefly state what this PR changes and why. For cross-crate changes, complete the CHANGE_REQUEST registration first. -->
 
-## 关联
-- 关联 Issue / CHANGE_REQUEST: #
+## Related
+- Related Issue / CHANGE_REQUEST: #
 
-## 检查清单
-- [ ] 已通过 `cargo fmt --all -- --check`、`cargo test --workspace --all-targets` 与 `cargo clippy --workspace --all-targets -- -D warnings`
-- [ ] 已更新相关文档（若改动源码/配置，参见 `docs/CODE_DOC_MAP.md` 的映射）
-- [ ] 宪法联动：触及语义路径（`evorule-tcb/`、`evorule-discipline/` —— 指令集 / 域 / `__exec__` 结构）时，已同批升级 [evorule-system-rules](https://github.com/evorule/evorule-system-rules) 宪法（semver minor+，条文 [CON-R-003]），并在本行改写为宪法仓 PR/commit 链接；未涉语义路径可不勾选
-- [ ] 若涉及验证资产/验证文档：已同步 `verification/STATUS.md`，且其快照版本与 `Cargo.toml` workspace version 一致（[MECHANISM.md](verification/MECHANISM.md) M4）
-- [ ] 已阅读并同意 [Individual CLA](CLA-individual.md) —— 签署方式：在 PR 评论
+## Checklist
+- [ ] `cargo fmt --all -- --check`, `cargo test --workspace --all-targets` and `cargo clippy --workspace --all-targets -- -D warnings` all pass
+- [ ] Relevant docs updated (for source/config changes see the mapping in `docs/CODE_DOC_MAP.md`)
+- [ ] Constitution linkage: when semantic paths (`evorule-tcb/`, `evorule-discipline/` — instruction set / domains / `__exec__` structure) are touched, the [evorule-system-rules](https://github.com/evorule/evorule-system-rules) constitution has been upgraded in the same batch (semver minor+, clause [CON-R-003]), and this line rewritten as the constitution-linkage marker line with the constitution repo PR/commit link (exact marker format enforced by `scripts/check_constitution_linkage.py`); leave unchecked if no semantic path is involved
+- [ ] If verification assets/docs are involved: `verification/STATUS.md` synced, and its snapshot version matches the `Cargo.toml` workspace version ([MECHANISM.md](verification/MECHANISM.md) M4)
+- [ ] Read and agreed to the [Individual CLA](CLA-individual.md) — sign by commenting on the PR:
       `I have read the CLA Document and I hereby sign the CLA`
 
-## 备注
-<!-- 任何需要 reviewer 注意的点 -->
+## Notes
+<!-- Anything the reviewer should pay attention to -->

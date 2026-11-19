@@ -5,28 +5,29 @@
 #![allow(unsafe_code)]
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
-//! C FFI 接口 —— 暴露 evorule 核心功能给 C/C++/Python 等外部语言。
+//! C FFI interface — exposes evorule core functionality to external languages
+//! such as C/C++/Python.
 //!
-//! # 设计原则
+//! # Design principles
 //!
-//! 1. **句柄模式**：所有对象通过 opaque pointer 暴露，避免内存安全问题
-//! 2. **同步包装**：使用 tokio runtime 在同步环境中运行 async 代码
-//! 3. **零拷贝**：字符串传递使用指针 + 长度模式
-//! 4. **错误码**：所有函数返回 evorule_error_code 枚举
+//! 1. **Handle pattern**: all objects are exposed as opaque pointers, avoiding memory-safety issues
+//! 2. **Synchronous wrapper**: a tokio runtime runs async code in a synchronous environment
+//! 3. **Zero copy**: strings are passed with a pointer + length pattern
+//! 4. **Error codes**: all functions return the evorule_error_code enum
 //!
-//! # 使用示例（C）
+//! # Usage example (C)
 //!
 //! ```c
 //! #include <evorule.h>
 //!
 //! int main() {
-//!     // 创建反应器
+//!     // Create the reactor
 //!     evorule_reactor* reactor = evorule_reactor_new();
 //!
-//!     // 发送命令
+//!     // Send a command
 //!     evorule_reactor_send_command(reactor, "{\"type\": \"increment\"}");
 //!
-//!     // 销毁反应器
+//!     // Destroy the reactor
 //!     evorule_reactor_free(reactor);
 //!     return 0;
 //! }
@@ -68,22 +69,24 @@ pub extern "C" fn evorule_free_string(s: *mut c_char) {
     }
 }
 
-/// FFI 句柄：存储 ReactorHandle 和 Runtime
+/// FFI handle: stores the ReactorHandle and the Runtime
 struct ReactorFfiHandle {
     _handle: crate::ReactorHandle,
     _runtime: tokio::runtime::Runtime,
-    // 存储 command sender 用于发送命令
+    // Stores the command sender for sending commands
     command_tx: crate::FactSender,
-    // 存储快照引用
+    // Stores the snapshot reference
     snapshot: std::sync::Arc<std::sync::Mutex<crate::ReactorStateSnapshot>>,
-    // C4：Command FactId 生成器（持久，跨 send_command 调用复用）
+    // C4: Command FactId generator (persistent, reused across send_command calls)
     //
-    // 修复前每次 `evorule_reactor_send_command` 都 `FactIdGenerator::new()`，
-    // 导致所有 Command 的 FactId 恒为 1，FactsLog 中 FactId 重复。
-    // 现持久化于句柄内，`next_id()` 单调递增（1, 2, 3, ...）。
+    // Before the fix, every `evorule_reactor_send_command` called
+    // `FactIdGenerator::new()`, so every Command's FactId was always 1 and
+    // FactIds repeated in the FactsLog. It is now persisted in the handle and
+    // `next_id()` increases monotonically (1, 2, 3, ...).
     //
-    // 线程安全约定：与 `command_tx` 一致，FFI 句柄的 `&mut` 访问由 C 调用方
-    // 外部同步（同一句柄的并发 send_command 调用需调用方自行串行化）。
+    // Thread-safety convention: same as `command_tx` — `&mut` access to the FFI
+    // handle is externally synchronized by the C caller (concurrent send_command
+    // calls on the same handle must be serialized by the caller).
     fact_id_gen: crate::FactIdGenerator,
 }
 
@@ -97,26 +100,28 @@ pub extern "C" fn evorule_reactor_new() -> *mut evorule_reactor {
         Ok(r) => r,
         Err(_) => return std::ptr::null_mut(),
     };
-    // wasm32-unknown-unknown 不支持 tokio runtime（std::time::Instant 未实现，
-    // runtime 构造即 panic）。FFI 异步入口在 WASM 下不可用，调用方将收到 null。
-    // WASM 场景请使用纯同步 TCB 路径（execute_transition + 内存 FactsLog + BLAKE3 Auditor），
-    // 详见 evorule-wasm-demo。（66 §10.4-2 处置）
+    // wasm32-unknown-unknown does not support the tokio runtime (std::time::Instant
+    // is unimplemented, and runtime construction panics immediately). The FFI async
+    // entry point is unavailable under WASM; the caller receives null.
+    // For WASM scenarios use the purely synchronous TCB path
+    // (execute_transition + in-memory FactsLog + BLAKE3 Auditor);
+    // see evorule-wasm-demo for details. (disposition per doc 66 §10.4-2)
     #[cfg(target_arch = "wasm32")]
     return std::ptr::null_mut();
 
-    // 在 runtime 内创建 reactor
+    // Create the reactor inside the runtime
     let reactor = Reactor::builder(Vec::new()).build();
     let (command_tx, _event_rx, _event_tx, handle, facts_log) = reactor.spawn();
 
-    // 获取快照引用（需要访问内部字段）
-    // 注意：ReactorHandle 的 snapshot 是私有的，我们需要另一种方式
-    // 简化方案：不存储 snapshot，直接使用 handle 的方法
+    // Get the snapshot reference (needs access to the internal field)
+    // Note: ReactorHandle's snapshot is private, so we need another way
+    // Simplification: do not store the snapshot; use the handle's methods directly
 
-    // 使用 Arc<Mutex<ReactorStateSnapshot>> 的默认值
+    // Use a default value for Arc<Mutex<ReactorStateSnapshot>>
     let snapshot =
         std::sync::Arc::new(std::sync::Mutex::new(crate::ReactorStateSnapshot::default()));
 
-    // 保持 facts_log 存活（防止 drop）
+    // Keep facts_log alive (prevent drop)
     let _facts_log = facts_log;
 
     let ffi_handle = Box::new(ReactorFfiHandle {
@@ -124,7 +129,7 @@ pub extern "C" fn evorule_reactor_new() -> *mut evorule_reactor {
         _runtime: runtime,
         command_tx,
         snapshot,
-        // C4：Command FactId 从 1 起单调递增（持久于句柄内）
+        // C4: Command FactIds increase monotonically from 1 (persisted in the handle)
         fact_id_gen: crate::FactIdGenerator::new(),
     });
 
@@ -159,38 +164,40 @@ pub extern "C" fn evorule_reactor_send_command(
         Err(_) => return evorule_error_code::EVORULE_ERROR_INVALID_ARG,
     };
 
-    // 手动解析 JSON 字符串为 JsonValue
-    // evorule-tcb 的 JsonValue 不实现 serde，需要手动构造
+    // Manually parse the JSON string into a JsonValue
+    // evorule-tcb's JsonValue does not implement serde, so it must be built manually
     let instruction = match parse_simple_json(json_str) {
         Some(v) => v,
         None => return evorule_error_code::EVORULE_ERROR_INVALID_ARG,
     };
 
-    // C4：使用句柄内持久的 FactIdGenerator，保证 Command FactId 单调递增（1, 2, 3, ...）。
-    // 修复前每次 new() 导致所有 Command 的 FactId 恒为 1，FactsLog 中 FactId 重复。
+    // C4: use the persistent FactIdGenerator held in the handle, keeping Command
+    // FactIds monotonically increasing (1, 2, 3, ...).
+    // Before the fix, every new() caused all Command FactIds to be 1, with
+    // FactIds repeating in the FactsLog.
     let fact = crate::Fact::Command {
         id: handle.fact_id_gen.next_id(),
         instruction,
     };
 
-    // 使用 send 发送到 unbounded channel
+    // Use send to push onto the unbounded channel
     match handle.command_tx.send(fact) {
         Ok(()) => evorule_error_code::EVORULE_OK,
         Err(_) => evorule_error_code::EVORULE_ERROR_RUNTIME,
     }
 }
 
-/// 简单 JSON 解析器（支持基本类型）
+/// Simple JSON parser (supports basic types)
 fn parse_simple_json(s: &str) -> Option<JsonValue> {
     let s = s.trim();
     if s.starts_with('{') && s.ends_with('}') {
-        // 简单对象解析
+        // Simple object parsing
         parse_json_object(s)
     } else if s.starts_with('"') && s.ends_with('"') {
-        // 字符串
+        // String
         Some(JsonValue::string(&s[1..s.len() - 1]))
     } else if s.starts_with('[') && s.ends_with(']') {
-        // 空数组
+        // Empty array
         Some(JsonValue::Array(vec![]))
     } else if s == "true" {
         Some(JsonValue::bool(true))
@@ -205,7 +212,7 @@ fn parse_simple_json(s: &str) -> Option<JsonValue> {
     }
 }
 
-/// 简单 JSON 对象解析（只支持一层键值对）
+/// Simple JSON object parser (only supports one level of key-value pairs)
 fn parse_json_object(s: &str) -> Option<JsonValue> {
     let s = s.trim();
     if !s.starts_with('{') || !s.ends_with('}') {
@@ -217,25 +224,25 @@ fn parse_json_object(s: &str) -> Option<JsonValue> {
         return Some(JsonValue::Object(ObjectMap::new()));
     }
 
-    // 简单解析：只处理 "key": value 格式
+    // Simple parsing: only handles "key": value format
     let mut obj = ObjectMap::new();
     for part in inner.split(',') {
         let part = part.trim();
         if part.is_empty() {
             continue;
         }
-        // 查找 ":"
+        // Find ":"
         let colon_pos = part.find(':')?;
         let key_part = part[..colon_pos].trim();
         let val_part = part[colon_pos + 1..].trim();
 
-        // 解析 key（去掉引号）
+        // Parse the key (strip the quotes)
         if !key_part.starts_with('"') || !key_part.ends_with('"') {
             return None;
         }
         let key = &key_part[1..key_part.len() - 1];
 
-        // 解析 value
+        // Parse the value
         let val = parse_simple_json(val_part)?;
         obj.insert(key.to_string(), val);
     }
@@ -276,7 +283,7 @@ pub extern "C" fn evorule_reactor_current_queue_size(reactor: *mut evorule_react
         return -1;
     }
     let handle = unsafe { &*(reactor as *mut ReactorFfiHandle) };
-    // 使用 snapshot 获取队列长度
+    // Use the snapshot to get the queue length
     handle
         .snapshot
         .lock()
@@ -292,16 +299,18 @@ mod tests {
     use crate::Fact;
     use std::time::{Duration, Instant};
 
-    /// C4 端到端：连发 3 条命令后，Command Fact 在 FactsLog 中 FactId 必须为
-    /// 单调递增的 [1, 2, 3]。
+    /// C4 end-to-end: after sending 3 commands in a row, the Command Facts in the
+    /// FactsLog must have monotonically increasing FactIds [1, 2, 3].
     ///
-    /// 修复前每次 `evorule_reactor_send_command` 都 `FactIdGenerator::new()`，
-    /// 导致所有 Command 的 FactId 恒为 1，FactsLog 中 FactId 重复（破坏审计链
-    /// 唯一性）。修复后生成器持久于句柄内，`next_id()` 跨调用累加 → 1, 2, 3, ...
+    /// Before the fix, every `evorule_reactor_send_command` called
+    /// `FactIdGenerator::new()`, so every Command's FactId was always 1 and FactIds
+    /// repeated in the FactsLog (breaking audit-chain uniqueness). After the fix the
+    /// generator is persisted in the handle, and `next_id()` accumulates across
+    /// calls → 1, 2, 3, ...
     ///
-    /// 直接构造 `ReactorFfiHandle`（保留 facts_log clone 用于观察），调用真实
-    /// `evorule_reactor_send_command` 三次，确认 facts_log.history() 中 Command
-    /// FactId 序列为 [1, 2, 3]。
+    /// Constructs `ReactorFfiHandle` directly (keeping a facts_log clone for
+    /// observation), calls the real `evorule_reactor_send_command` three times, and
+    /// confirms the Command FactId sequence in facts_log.history() is [1, 2, 3].
     #[test]
     fn ffi_send_command_produces_distinct_fact_ids_in_facts_log() {
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -309,7 +318,7 @@ mod tests {
             .build()
             .unwrap();
 
-        // 在 runtime 上下文内 spawn reactor（tokio::spawn 需 context）
+        // Spawn the reactor inside the runtime context (tokio::spawn needs the context)
         let (command_tx, _event_rx, _event_tx, handle, facts_log) = {
             let _guard = runtime.enter();
             let reactor = Reactor::builder(Vec::new()).build();
@@ -327,7 +336,7 @@ mod tests {
         });
         let ptr = Box::into_raw(ffi_handle) as *mut evorule_reactor;
 
-        // 连发 3 条命令
+        // Send 3 commands in a row
         let cmds = [r#"{"op":"a"}"#, r#"{"op":"b"}"#, r#"{"op":"c"}"#];
         for c in &cmds {
             let cstr = CString::new(*c).unwrap();
@@ -335,7 +344,8 @@ mod tests {
             assert_eq!(rc, evorule_error_code::EVORULE_OK);
         }
 
-        // 轮询 facts_log，等待 3 条 Command 落盘（reactor 异步 drain + emit）
+        // Poll facts_log, waiting for the 3 Commands to land (the reactor drains and
+        // emits asynchronously)
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
             let n = facts_log

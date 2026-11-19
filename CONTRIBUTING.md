@@ -23,7 +23,7 @@
 **Version**: 0.12.1
 **Last updated**: 2026-11-05
 
-> 🇨🇳 **中文版贡献指南见 [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md)。**
+> 🇨🇳 **The Chinese contribution guide is at [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md).**
 > For international contributors, the English version is the authoritative reference.
 
 ---
@@ -182,10 +182,10 @@ test(e2e): add core constitution smoke test
 
 **All contributions must include a CLA**. The bot will check automatically on PR.
 
-- Individual contributors: [CLA-individual.md](CLA-individual.md)（已发布）
-- Corporate contributors: [CLA-corporate.md](CLA-corporate.md)（已发布）
+- Individual contributors: [CLA-individual.md](CLA-individual.md) (published)
+- Corporate contributors: [CLA-corporate.md](CLA-corporate.md) (published)
 
-> ⚠️ **Corporate contributors**: the online signing channel currently supports **individual signing only — there is no corporate entry**. Do **not** sign the individual CLA on behalf of your company. Follow the "企业如何签署" / corporate signing steps in [CLA-corporate.md](CLA-corporate.md) (download → fill → email <evorulelab@gmail.com> → manual review).
+> ⚠️ **Corporate contributors**: the online signing channel currently supports **individual signing only — there is no corporate entry**. Do **not** sign the individual CLA on behalf of your company. Follow the "How Corporates Sign" steps in [CLA-corporate.md](CLA-corporate.md) (download → fill → email <evorulelab@gmail.com> → manual review).
 
 **Why CLA?**
 
@@ -205,7 +205,7 @@ test(e2e): add core constitution smoke test
 
 ### End-to-end tests
 
-Verify 5 core scenarios over HTTP API (setup 详见 evorule-server 仓 README):
+Verify 5 core scenarios over HTTP API (setup: see the evorule-server repo README for details):
 
 1. Health check
 2. Session lifecycle

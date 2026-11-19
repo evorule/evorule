@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 性能基准 — reactor 主循环端到端
+//! Performance benchmark — reactor main loop end-to-end
 //!
-//! 041 v2.0 A7：建立 reactor 主循环性能基线。
-//! 覆盖 spawn → 提交命令 → 接收 Stable 事件 → 优雅退出的完整路径，
-//! 反映真实反应器调度 + tier0 执行 + FactsLog append + 事件广播的开销。
+//! 041 v2.0 A7: establish the reactor main-loop performance baseline.
+//! Covers the full path spawn → submit command → receive the Stable event →
+//! graceful exit, reflecting the real reactor scheduling + tier0 execution +
+//! FactsLog append + event broadcast overhead.
 //!
-//! # 运行
+//! # Run
 //! ```bash
 //! cargo bench -p evorule-reactor --bench reactor_e2e
 //! ```
@@ -17,7 +18,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use evorule_reactor::{Fact, FactId, Reactor};
 use evorule_tcb::JsonValue;
 
-/// 构造 increment 宪法规则
+/// Builds the increment constitution rule
 fn make_core_eval() -> Vec<JsonValue> {
     vec![JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("increment")),
@@ -31,7 +32,7 @@ fn make_core_eval() -> Vec<JsonValue> {
     ])]
 }
 
-/// 构造 increment 指令
+/// Builds an increment instruction
 fn make_increment(delta: i64) -> JsonValue {
     JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("increment")),
@@ -45,7 +46,7 @@ fn make_increment(delta: i64) -> JsonValue {
     ])
 }
 
-/// 单命令端到端：spawn 反应器 → 发 1 条 increment → 等 Stable → 退出
+/// Single-command end-to-end: spawn the reactor → send 1 increment → await Stable → exit
 fn bench_reactor_single_command(c: &mut Criterion) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -66,7 +67,7 @@ fn bench_reactor_single_command(c: &mut Criterion) {
                     })
                     .expect("send command");
 
-                // 等待 Stable 事件（主循环处理完成的标志）
+                // Wait for the Stable event (marks main-loop processing completion)
                 while let Ok(fact) = event_rx.recv().await {
                     if matches!(fact, Fact::Stable { .. }) {
                         break;
@@ -80,7 +81,7 @@ fn bench_reactor_single_command(c: &mut Criterion) {
     });
 }
 
-/// 100 命令端到端：连续提交 100 条命令，等最终 Stable
+/// 100-command end-to-end: submit 100 commands in a row, await the final Stable
 fn bench_reactor_100_commands(c: &mut Criterion) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -105,14 +106,14 @@ fn bench_reactor_100_commands(c: &mut Criterion) {
                         .expect("send command");
                 }
 
-                // 长运行模式：队列空后 emit Stable
+                // Long-running mode: emit Stable once the queue is empty
                 while let Ok(fact) = event_rx.recv().await {
                     if matches!(fact, Fact::Stable { .. }) {
                         break;
                     }
                 }
 
-                // 确认 100 条命令都已入账（防止优化器消除）
+                // Confirm all 100 commands are accounted for (prevents optimizer elimination)
                 let history_len = facts_log.history().len();
                 black_box(history_len);
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 反应器内部状态
+//! Reactor internal state
 
 use crate::fact::{FactId, IoType};
 use crate::phase::ReactorPhase;
@@ -10,29 +10,31 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
 // ============================================================================
-// Kani 专用集合类型
+// Kani-specific collection types
 //
-// Kani 对 BTreeSet/BTreeMap 的红黑树内部结构建模能力有限（见
-// evorule-tcb/verification/kani-formal-verification-design.md），即使集合只有 1 个元素，insert/remove 操作
-// 也会展开大量红黑树节点操作路径，导致 CBMC 状态爆炸。
+// Kani has limited ability to model the red-black tree internals of
+// BTreeSet/BTreeMap (see evorule-tcb/verification/kani-formal-verification-design.md).
+// Even with only 1 element in the set, insert/remove operations unroll a large
+// number of red-black tree node operation paths, causing CBMC state explosion.
 //
-// 解决方案：在 #[cfg(kani)] 模式下用基于 Vec 的线性集合替代 BTreeSet/
-// BTreeMap。Vec 的 push/swap_remove/contains 操作在 Kani 中建模高效
-// （无指针追踪、无递归树遍历）。API 与 BTreeSet/BTreeMap 兼容，使
-// ReactorState 的方法实现无需条件编译分支。
+// Solution: under #[cfg(kani)], replace BTreeSet/BTreeMap with Vec-based linear
+// collections. Vec's push/swap_remove/contains operations model efficiently in
+// Kani (no pointer chasing, no recursive tree traversal). The API is compatible
+// with BTreeSet/BTreeMap, so ReactorState's method implementations need no
+// conditional-compilation branches.
 //
-// 参考模式：evorule-tcb/verification/fixed_map.rs（FixedMap 替代 BTreeMap）。
+// Reference pattern: evorule-tcb/verification/fixed_map.rs (FixedMap replacing BTreeMap).
 // ============================================================================
 
 #[cfg(kani)]
 mod kani_collections {
     use crate::fact::FactId;
 
-    /// Kani 专用：基于 Vec 的集合，替代 BTreeSet<FactId>
+    /// Kani-specific: Vec-based set replacing BTreeSet<FactId>
     ///
-    /// API 兼容 BTreeSet<FactId> 的常用方法（insert/remove/len/is_empty/
-    /// contains）。不保证迭代顺序（使用 swap_remove），但 Kani proof
-    /// 不依赖迭代顺序。
+    /// API compatible with the common BTreeSet<FactId> methods (insert/remove/
+    /// len/is_empty/contains). Does not guarantee iteration order (uses
+    /// swap_remove), but Kani proofs do not depend on iteration order.
     #[derive(Debug, Clone, Default)]
     pub(crate) struct KIdSet(Vec<FactId>);
 
@@ -66,10 +68,10 @@ mod kani_collections {
         }
     }
 
-    /// Kani 专用：基于 Vec 的映射，替代 BTreeMap<FactId, V>
+    /// Kani-specific: Vec-based map replacing BTreeMap<FactId, V>
     ///
-    /// API 兼容 BTreeMap<FactId, V> 的常用方法（insert/remove/len/
-    /// is_empty/contains_key/get/get_mut/iter）。
+    /// API compatible with the common BTreeMap<FactId, V> methods (insert/
+    /// remove/len/is_empty/contains_key/get/get_mut/iter).
     #[derive(Debug, Clone, Default)]
     pub(crate) struct KIdMap<V>(Vec<(FactId, V)>);
 
@@ -107,15 +109,16 @@ mod kani_collections {
         pub fn iter(&self) -> std::slice::Iter<'_, (FactId, V)> {
             self.0.iter()
         }
-        /// 键迭代器（对齐 BTreeMap::keys 消费形态；kani 代形集合下
-        /// `iter().map(|(k, _)| k)` 会触发 clippy 的 map-keys 提示）
+        /// Key iterator (aligns with the BTreeMap::keys consumption shape;
+        /// with the Kani stand-in collections, `iter().map(|(k, _)| k)` would
+        /// trigger clippy's map-keys lint)
         pub fn keys(&self) -> impl Iterator<Item = &FactId> {
             self.0.iter().map(|(k, _)| k)
         }
     }
 
-    /// KIdMap 的引用迭代器，兼容 `for (k, v) in &map` 语法
-    /// （BTreeMap 的 IntoIterator for &BTreeMap 产出 (&K, &V)）
+    /// Reference iterator for KIdMap, compatible with `for (k, v) in &map`
+    /// syntax (BTreeMap's IntoIterator for &BTreeMap yields (&K, &V))
     pub(crate) struct KIdMapIter<'a, V> {
         inner: std::slice::Iter<'a, (FactId, V)>,
     }
@@ -137,7 +140,7 @@ mod kani_collections {
         }
     }
 
-    /// KIdSet 的引用迭代器，兼容 `for x in &set` 语法
+    /// Reference iterator for KIdSet, compatible with `for x in &set` syntax
     pub(crate) struct KIdSetIter<'a> {
         inner: std::slice::Iter<'a, FactId>,
     }
@@ -160,111 +163,120 @@ mod kani_collections {
     }
 }
 
-/// 反应器内部状态
+/// Reactor internal state
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // 部分工具方法供 evorule-governance 或扩展使用
+#[allow(dead_code)] // some utility methods serve evorule-governance or extensions
 pub(crate) struct ReactorState {
-    /// 当前业务状态
+    /// Current business state (payload)
     pub payload: JsonValue,
 
-    /// 当前指令队列
+    /// Current instruction queue
     pub queue: VecDeque<JsonValue>,
 
-    /// 单调递增版本号（每次状态变更 +1）
+    /// Monotonically increasing version number (+1 on every state change)
     pub version: u64,
 
-    /// 上一次的版本号（用于不变式 #3：version 单调递增自检）
+    /// Previous version number (used by invariant #3: version monotonic-increase self-check)
     ///
-    /// 由 `bump_version` 维护：`prev_version = version; version += 1;`
+    /// Maintained by `bump_version`: `prev_version = version; version += 1;`
     pub prev_version: u64,
 
-    /// 待响应的 I/O 请求数量
+    /// Number of I/O requests awaiting responses
     pub pending_io_count: usize,
 
-    /// 待处理的 I/O 请求集合（用于验证 IoResponse）
+    /// Set of pending I/O requests (used to validate IoResponse)
     ///
-    /// 使用 BTreeSet 保证确定性迭代顺序（与 evorule-tcb 风格一致）。
+    /// Uses BTreeSet for deterministic iteration order (consistent with the
+    /// evorule-tcb style).
     #[cfg(not(kani))]
     pub pending_requests: BTreeSet<FactId>,
-    /// Kani 模式：用 KIdSet 替代 BTreeSet，避免红黑树建模导致 CBMC 状态爆炸
+    /// Kani mode: KIdSet replaces BTreeSet to avoid CBMC state explosion from red-black tree modeling
     #[cfg(kani)]
     pub pending_requests: kani_collections::KIdSet,
 
-    /// 触发 I/O 的原指令缓存（IoRequest id → (原指令, cause)）
+    /// Cache of the original instruction that triggered I/O (IoRequest id → (original instruction, cause))
     ///
-    /// IoResponse 到达后，反应器将原指令重新推送回队列前端，
-    /// 使 core_eval.json 中的 `exists(__io_results__.{io_type})` 双路径生效：
-    /// - 首次执行：走 on_false 分支，触发 io_request
-    /// - 恢复执行：走 on_true 分支，set 消费 __io_results__.{io_type} 到业务字段
+    /// When the IoResponse arrives, the reactor re-pushes the original instruction
+    /// to the front of the queue, making the `exists(__io_results__.{io_type})`
+    /// dual-path mechanism in core_eval.json effective:
+    /// - First execution: takes the on_false branch, triggering io_request
+    /// - Resumed execution: takes the on_true branch, `set` consumes __io_results__.{io_type} into business fields
     ///
-    /// 断点 1 修复：同时缓存 cause（触发 I/O 的原指令的 cause FactId），
-    /// 使恢复执行时 StateTransition/IoRequest 的 cause 指向正确的 Fact。
+    /// Breakpoint-1 fix: also caches the cause (the cause FactId of the original
+    /// instruction that triggered I/O), so that on resumed execution the cause of
+    /// StateTransition/IoRequest points to the correct Fact.
     #[cfg(not(kani))]
     pub pending_io_instructions: BTreeMap<FactId, (JsonValue, FactId)>,
-    /// Kani 模式：用 KIdMap 替代 BTreeMap
+    /// Kani mode: KIdMap replaces BTreeMap
     #[cfg(kani)]
     pub pending_io_instructions: kani_collections::KIdMap<(JsonValue, FactId)>,
 
-    /// 指令队列的平行 cause 追踪（与 `queue` 一一对应）
+    /// Parallel cause tracking for the instruction queue (one-to-one with `queue`)
     ///
-    /// 断点 1 修复：每个队列中的指令都关联一个 cause FactId，
-    /// 用于 StateTransition/IoRequest 的 cause 字段。
-    /// 解决 drain 多个 Command 时 current_cause 被覆盖的问题。
+    /// Breakpoint-1 fix: every instruction in the queue is associated with a
+    /// cause FactId, used for the cause field of StateTransition/IoRequest.
+    /// Solves the problem of current_cause being overwritten when draining
+    /// multiple Commands.
     ///
-    /// 不变式：`instruction_causes.len() == queue.len()` 始终成立。
+    /// Invariant: `instruction_causes.len() == queue.len()` always holds.
     pub instruction_causes: VecDeque<FactId>,
 
-    /// I/O 请求发射时间戳（P3-11：用于超时检测）
+    /// I/O request emission timestamps (P3-11: used for timeout detection)
     ///
-    /// 每次 `register_io_request` 时记录当前时间，
-    /// 超时检测时扫描此映射判断是否超过 warn/error 阈值。
+    /// Each `register_io_request` records the current time; timeout detection
+    /// scans this map to determine whether the warn/error thresholds are exceeded.
     #[cfg(not(kani))]
     pub pending_io_timestamps: BTreeMap<FactId, Instant>,
-    /// Kani 模式：用 KIdMap 替代 BTreeMap
+    /// Kani mode: KIdMap replaces BTreeMap
     #[cfg(kani)]
     pub pending_io_timestamps: kani_collections::KIdMap<Instant>,
 
-    /// I/O 请求类型记录（阶段3-1.4：用于按 io_type 查超时阈值）
+    /// I/O request type records (Phase 3-1.4: used to look up timeout thresholds by io_type)
     ///
-    /// 每次 `register_io_request` 时记录 io_type，
-    /// `check_io_timeouts` 时按 io_type 查 `IoTimeoutPolicy` 获取专属阈值。
+    /// Each `register_io_request` records the io_type; `check_io_timeouts`
+    /// looks up the dedicated thresholds of the corresponding `IoTimeoutPolicy` by io_type.
     #[cfg(not(kani))]
     pub pending_io_types: BTreeMap<FactId, IoType>,
-    /// Kani 模式：用 KIdMap 替代 BTreeMap
+    /// Kani mode: KIdMap replaces BTreeMap
     #[cfg(kani)]
     pub pending_io_types: kani_collections::KIdMap<IoType>,
 
-    /// I/O 恢复执行标志
+    /// I/O recovery flag
     ///
-    /// IoResponse 到达后设为 true，重新执行原指令后（execute_transition 返回 State）
-    /// 反应器检查此标志，若为 true 则清除 `payload.__io_results__` 并重置为 false。
-    /// 这是必要的：v0.3.1 中 `exists` 域对 null 返回 false（core_eval 用 null 清除结果），
-    /// 若 io_recovery 未清除，后续不同的 I/O 指令会错误地认为仍在恢复中。
+    /// Set to true when the IoResponse arrives; after the original instruction is
+    /// re-executed (execute_transition returns State), the reactor checks this flag
+    /// and, if true, clears `payload.__io_results__` and resets it to false.
+    /// This is necessary: in v0.3.1 the `exists` domain returns false for null
+    /// (core_eval clears results with null); if io_recovery is not cleared, a later,
+    /// different I/O instruction would wrongly believe it is still recovering.
     pub io_recovery: bool,
 
-    /// 控制层阶段（白盒化：让执行状态机可观察）
+    /// Control-plane phase (white-box: makes the execution state machine observable)
     ///
-    /// 由主循环每次迭代更新，用于 tracing 与调试。
-    /// 阶段转移函数是纯算法（见 [crate::phase::ReactorPhase::next]）。
+    /// Updated by the main loop on every iteration, for tracing and debugging.
+    /// The phase transition function is a pure algorithm (see
+    /// [crate::phase::ReactorPhase::next]).
     pub phase: ReactorPhase,
 
-    /// 不变式违规累计计数（白盒化：结构性自检结果）
+    /// Cumulative count of invariant violations (white-box: structural self-check results)
     ///
-    /// 每次 phase 转移时调用 `check_invariants`，违规时累加。
-    /// 仅记录，不强制中断反应器（用 `tracing::error!` 而非 `debug_assert!`，符合 F11）。
+    /// `check_invariants` is called on every phase transition; violations accumulate.
+    /// Recorded only, never forcibly interrupts the reactor (uses `tracing::error!`
+    /// instead of `debug_assert!`, per F11).
     pub structural_invariant_violations: u64,
 
-    /// Kani 专用：__io_result__ 存在标志
+    /// Kani-specific: __io_result__ presence flag
     ///
-    /// Kani 对 `JsonValue::Object` 内部的 `BTreeMap<String, JsonValue>` 操作
-    /// （insert/remove/contains_key）建模能力有限，即使只操作 1 个 key 也会
-    /// 导致 CBMC 状态爆炸。此标志在 Kani 模式下替代 BTreeMap 操作，
-    /// 使 `inject_io_result`/`clear_io_result`/`has_io_result` 成为 O(1) 操作。
+    /// Kani has limited ability to model BTreeMap<String, JsonValue> operations
+    /// (insert/remove/contains_key) inside `JsonValue::Object`; even operating on
+    /// a single key causes CBMC state explosion. Under Kani mode this flag replaces
+    /// BTreeMap operations, making `inject_io_result`/`clear_io_result`/
+    /// `has_io_result` O(1) operations.
     #[cfg(kani)]
     pub kani_has_io_result: bool,
 }
 
-#[allow(dead_code)] // 部分队列操作方法供扩展使用
+#[allow(dead_code)] // some queue-operation methods serve extensions
 impl ReactorState {
     pub fn new() -> Self {
         Self {
@@ -298,44 +310,45 @@ impl ReactorState {
         }
     }
 
-    /// 安全递增版本号（同时更新 prev_version，支持不变式 #3 自检）
+    /// Safely increment the version number (also updates prev_version, supporting the invariant #3 self-check)
     ///
-    /// 替代 `state.version += 1;`，确保 prev_version 同步更新。
-    /// 在 PayloadUpdate / IoResponse / StateTransition 处理时调用。
+    /// Replaces `state.version += 1;`, ensuring prev_version is updated in sync.
+    /// Called when handling PayloadUpdate / IoResponse / StateTransition.
     pub fn bump_version(&mut self) {
         self.prev_version = self.version;
         self.version += 1;
     }
 
-    /// 稳定条件：队列空 + 无待处理 I/O
+    /// Stability condition: empty queue + no pending I/O
     pub fn is_stable(&self) -> bool {
         self.queue.is_empty() && self.pending_io_count == 0
     }
 
-    /// 返回队列长度
+    /// Returns the queue length
     pub fn queue_len(&self) -> usize {
         self.queue.len()
     }
 
-    /// 弹出队首指令及其关联的 cause
+    /// Pops the front instruction together with its associated cause
     ///
-    /// 断点 1 修复：返回 (instruction, cause) 对，
-    /// cause 用于后续 StateTransition/IoRequest Fact 的 cause 字段。
+    /// Breakpoint-1 fix: returns an (instruction, cause) pair; the cause is used
+    /// for the cause field of the subsequent StateTransition/IoRequest Fact.
     pub fn pop_instruction(&mut self) -> Option<(JsonValue, FactId)> {
         let instr = self.queue.pop_front()?;
         let cause = self.instruction_causes.pop_front().unwrap_or(FactId(0));
         Some((instr, cause))
     }
 
-    /// 推指令到队首，关联指定 cause
+    /// Pushes an instruction to the front of the queue, associated with the given cause
     pub fn push_front(&mut self, instruction: JsonValue, cause: FactId) {
         self.queue.push_front(instruction);
         self.instruction_causes.push_front(cause);
     }
 
-    /// 推多条指令到队首，共享同一 cause
+    /// Pushes multiple instructions to the front of the queue, sharing one cause
     ///
-    /// 反序后 push_front 保持原序：[a,b,c] → push c,b,a → 队列 [a,b,c,...]
+    /// Reversing before push_front preserves the original order:
+    /// [a,b,c] → push c,b,a → queue [a,b,c,...]
     pub fn push_front_all(&mut self, instructions: Vec<JsonValue>, cause: FactId) {
         for instr in instructions.into_iter().rev() {
             self.queue.push_front(instr);
@@ -343,13 +356,13 @@ impl ReactorState {
         }
     }
 
-    /// 推指令到队尾，关联指定 cause
+    /// Pushes an instruction to the back of the queue, associated with the given cause
     pub fn push_back(&mut self, instruction: JsonValue, cause: FactId) {
         self.queue.push_back(instruction);
         self.instruction_causes.push_back(cause);
     }
 
-    /// 推多条指令到队尾，共享同一 cause
+    /// Pushes multiple instructions to the back of the queue, sharing one cause
     pub fn push_back_all(&mut self, instructions: Vec<JsonValue>, cause: FactId) {
         for instr in instructions {
             self.queue.push_back(instr);
@@ -357,17 +370,18 @@ impl ReactorState {
         }
     }
 
-    /// 清空队列和 cause 队列（同步清空，保持 len 相等）
+    /// Clears the queue and the cause queue (cleared in sync, keeping lengths equal)
     ///
-    /// 用于 MaxRoundsExceeded 和队列长度超限的恢复路径。
+    /// Used by the MaxRoundsExceeded and queue-length-overrun recovery paths.
     ///
-    /// # Kani 模式
+    /// # Kani mode
     ///
-    /// CBMC 将 VecDeque 堆缓冲区中的 `JsonValue` 按任意变体建模，
-    /// `clear` 的 `drop_in_place` 会展开 `Object(BTreeMap)` 红黑树
-    /// 析构循环，无界 unwind 导致状态爆炸（P0-11 超时根因）。
-    /// 改用 `mem::take` + `forget`：长度清空语义与真实 clear 一致，
-    /// 仅跳过元素析构（与 kani_collections 替代方案同理）。
+    /// CBMC models the `JsonValue` elements in a VecDeque heap buffer as arbitrary
+    /// variants; `clear`'s `drop_in_place` unrolls the `Object(BTreeMap)` red-black
+    /// tree destructor loop, and unbounded unwind causes state explosion (the P0-11
+    /// timeout root cause). Uses `mem::take` + `forget` instead: the length-clearing
+    /// semantics match the real `clear`, only skipping element destruction
+    /// (same rationale as the kani_collections stand-ins).
     pub fn clear_queue(&mut self) {
         #[cfg(kani)]
         {
@@ -384,16 +398,16 @@ impl ReactorState {
         }
     }
 
-    /// 用 execute_transition 返回的新队列更新状态，同步重建 cause 队列
+    /// Updates state with the new queue returned by execute_transition, rebuilding the cause queue in sync
     ///
-    /// 断点 1 修复：push 元指令将新指令前置到队列头部，
-    /// 所以 new_queue = [新 push 的指令...] + [原有剩余指令]。
-    /// - 前 new_count 条是新 push 的指令 → 继承 current_cause
-    /// - 后 old_len 条是原有指令 → 保留原 cause
+    /// Breakpoint-1 fix: the push meta instruction prepends new instructions to the
+    /// head of the queue, so new_queue = [newly pushed instructions...] + [remaining old instructions].
+    /// - The first new_count entries are the newly pushed instructions → inherit current_cause
+    /// - The remaining old_len entries are the original instructions → keep their original causes
     ///
-    /// 参数:
-    /// - `new_queue`: execute_transition 返回的新队列
-    /// - `current_cause`: 当前执行的指令的 cause（新 push 的指令继承此 cause）
+    /// Arguments:
+    /// - `new_queue`: the new queue returned by execute_transition
+    /// - `current_cause`: the cause of the currently executed instruction (newly pushed instructions inherit it)
     pub fn update_queue_with_causes(&mut self, new_queue: Vec<JsonValue>, current_cause: FactId) {
         let old_len = self.queue.len();
         let old_causes: Vec<FactId> = self.instruction_causes.drain(..).collect();
@@ -413,21 +427,24 @@ impl ReactorState {
         }
     }
 
-    /// 注册一个待处理的 I/O 请求
+    /// Registers a pending I/O request
     ///
-    /// 幂等：重复注册同一 id 不会增加计数（防止 count 与 set 大小不一致）。
-    /// P3-11：同时记录发射时间戳，用于超时检测。
-    /// 阶段3-1.4：同时记录 io_type，用于按类型查超时阈值。
+    /// Idempotent: re-registering the same id does not increase the count
+    /// (prevents count/set-size divergence).
+    /// P3-11: also records the emission timestamp for timeout detection.
+    /// Phase 3-1.4: also records the io_type, for per-type timeout-threshold lookup.
     ///
-    /// 兼容包装：内部取系统时钟。时钟缝见 [`Self::register_io_request_at`]。
+    /// Compatibility wrapper: internally reads the system clock. See
+    /// [`Self::register_io_request_at`] for the clock seam.
     pub fn register_io_request(&mut self, id: FactId, io_type: IoType) {
         self.register_io_request_at(id, io_type, Instant::now());
     }
 
-    /// [`Self::register_io_request`] 的时间注入变体（时钟缝）
+    /// Time-injected variant of [`Self::register_io_request`] (clock seam)
     ///
-    /// 时间以数据进入状态层，调用方持有 [`crate::runtime::RuntimeClock`]。
-    /// 行为与包装版逐字一致（仅时间来源不同）。
+    /// Time enters the state layer as data; the caller holds
+    /// [`crate::runtime::RuntimeClock`]. Behavior is verbatim identical to the
+    /// wrapper (only the time source differs).
     pub fn register_io_request_at(&mut self, id: FactId, io_type: IoType, now: Instant) {
         if self.pending_requests.insert(id) {
             self.pending_io_count += 1;
@@ -436,17 +453,18 @@ impl ReactorState {
         }
     }
 
-    /// 查询指定 I/O 请求的 io_type（IoResponse 处理时用于定位 `__io_results__.{io_type}`）
+    /// Queries the io_type of a given I/O request (used to locate `__io_results__.{io_type}` when handling IoResponse)
     ///
-    /// 必须在 `complete_io_request` 之前调用，因为完成请求会移除 io_type 记录。
+    /// Must be called before `complete_io_request`, because completing the request
+    /// removes the io_type record.
     pub fn get_io_type(&self, id: &FactId) -> Option<&IoType> {
         self.pending_io_types.get(id)
     }
 
-    /// 完成一个 I/O 请求，返回是否成功（即该请求是否在等待中）
+    /// Completes an I/O request, returning whether it succeeded (i.e. whether the request was pending)
     ///
-    /// P3-11：同时移除时间戳。
-    /// 阶段3-1.4：同时移除 io_type 记录。
+    /// P3-11: also removes the timestamp.
+    /// Phase 3-1.4: also removes the io_type record.
     pub fn complete_io_request(&mut self, id: FactId) -> bool {
         if self.pending_requests.remove(&id) {
             self.pending_io_count = self.pending_io_count.saturating_sub(1);
@@ -458,11 +476,11 @@ impl ReactorState {
         }
     }
 
-    /// 扫描 pending I/O 超时（P3-11）
+    /// Scans pending I/O for timeouts (P3-11)
     ///
-    /// 返回 `(warn_ids, error_ids)`：
-    /// - `warn_ids`：超过 `warn_timeout` 但未超过 `error_timeout` 的请求 ID
-    /// - `error_ids`：超过 `error_timeout` 的请求 ID（调用方应发射 Error 并恢复）
+    /// Returns `(warn_ids, error_ids)`:
+    /// - `warn_ids`: request IDs past `warn_timeout` but not past `error_timeout`
+    /// - `error_ids`: request IDs past `error_timeout` (the caller should emit Error and recover)
     pub fn scan_io_timeouts(
         &self,
         warn_timeout: Duration,
@@ -471,10 +489,10 @@ impl ReactorState {
         self.scan_io_timeouts_at(Instant::now(), warn_timeout, error_timeout)
     }
 
-    /// [`Self::scan_io_timeouts`] 的时间注入变体（时钟缝）
+    /// Time-injected variant of [`Self::scan_io_timeouts`] (clock seam)
     ///
-    /// `now` 由调用方的 [`crate::runtime::RuntimeClock`] 提供。
-    /// 判定逻辑与包装版逐字一致。
+    /// `now` is provided by the caller's [`crate::runtime::RuntimeClock`].
+    /// The decision logic is verbatim identical to the wrapper.
     pub fn scan_io_timeouts_at(
         &self,
         now: Instant,
@@ -483,9 +501,9 @@ impl ReactorState {
     ) -> (Vec<FactId>, Vec<FactId>) {
         let mut warn_ids = Vec::new();
         let mut error_ids = Vec::new();
-        // 用 .iter() 兼容 BTreeMap 和 KIdMap（Kani 模式）
-        // BTreeMap::iter() 产出 (&FactId, &Instant)
-        // KIdMap::iter() 产出 &(FactId, Instant)，for 解构后等价
+        // Use .iter() for compatibility with both BTreeMap and KIdMap (Kani mode)
+        // BTreeMap::iter() yields (&FactId, &Instant)
+        // KIdMap::iter() yields &(FactId, Instant), equivalent after for-destructuring
         for (id, timestamp) in self.pending_io_timestamps.iter() {
             let elapsed = now.duration_since(*timestamp);
             if elapsed >= error_timeout {
@@ -497,13 +515,15 @@ impl ReactorState {
         (warn_ids, error_ids)
     }
 
-    /// 强制移除一个超时的 I/O 请求（P3-11：error 超时恢复用）
+    /// Forcibly removes a timed-out I/O request (P3-11: used by error-timeout recovery)
     ///
-    /// 与 `complete_io_request` 不同，此方法不期望 IoResponse 到达，
-    /// 而是反应器主动清理超时请求。同时移除缓存的指令、时间戳和 io_type 记录。
+    /// Unlike `complete_io_request`, this method does not expect an IoResponse to
+    /// arrive; instead the reactor proactively cleans up the timed-out request.
+    /// Also removes the cached instruction, timestamp, and io_type record.
     ///
-    /// 幂等性：若 id 不在 pending_requests 中，不做任何修改（保持计数一致）。
-    /// 这确保 `pending_io_count == pending_requests.len()` 不变量在任意 id 输入下保持。
+    /// Idempotency: if the id is not in pending_requests, nothing is modified
+    /// (keeping the count consistent). This ensures the
+    /// `pending_io_count == pending_requests.len()` invariant holds for arbitrary id inputs.
     pub fn force_remove_io_request(&mut self, id: FactId) {
         if self.pending_requests.remove(&id) {
             self.pending_io_count = self.pending_io_count.saturating_sub(1);
@@ -513,32 +533,36 @@ impl ReactorState {
         }
     }
 
-    /// 缓存触发 I/O 的原指令及其 cause（IoRequest 产生时调用）
+    /// Caches the original instruction that triggered I/O and its cause (called when an IoRequest is produced)
     ///
-    /// IoResponse 到达后，通过 `take_io_instruction` 取出并重新推送回队列前端，
-    /// 使 core_eval.json 中的双路径机制生效。
+    /// When the IoResponse arrives, `take_io_instruction` retrieves it and re-pushes
+    /// it to the front of the queue, making the dual-path mechanism in core_eval.json effective.
     ///
-    /// 断点 1 修复：同时缓存 cause，使恢复执行时 cause 指向正确的 Fact。
+    /// Breakpoint-1 fix: also caches the cause, so on resumed execution the cause
+    /// points to the correct Fact.
     pub fn save_io_instruction(&mut self, id: FactId, instruction: JsonValue, cause: FactId) {
         self.pending_io_instructions
             .insert(id, (instruction, cause));
     }
 
-    /// 取出并移除缓存的原指令及其 cause（IoResponse 处理时调用）
+    /// Takes and removes the cached original instruction and its cause (called when handling IoResponse)
     ///
-    /// 返回 `Some((instruction, cause))` 表示该 id 有缓存，应重新推送回队列；
-    /// 返回 `None` 表示该 id 无缓存（可能是未知 IoResponse 或重复处理）。
+    /// Returns `Some((instruction, cause))` if the id has a cache entry and it should
+    /// be re-pushed to the queue; returns `None` if the id has no cache entry
+    /// (possibly an unknown IoResponse or duplicate handling).
     pub fn take_io_instruction(&mut self, id: FactId) -> Option<(JsonValue, FactId)> {
         self.pending_io_instructions.remove(&id)
     }
 
-    /// 清除 payload 中的 `__io_results__` 字段
+    /// Clears the `__io_results__` field from the payload
     ///
-    /// v0.3.1：I/O 结果按 io_type 隔离存储在 `__io_results__.{io_type}`，
-    /// core_eval 消费后将对应项置为 null（`exists` 将 null 视为不存在）。
-    /// I/O 恢复执行后调用，整体移除 `__io_results__` 容器，
-    /// 防止残留的 null 项在后续 I/O 指令中被误读、也避免陈旧结果影响后续 I/O 指令。
-    /// 因为同一时刻最多只有一个 pending I/O，整体移除是安全的。
+    /// v0.3.1: I/O results are stored per io_type in `__io_results__.{io_type}`;
+    /// after core_eval consumes them it sets the corresponding entry to null
+    /// (`exists` treats null as absent). Called after I/O-resumed execution to
+    /// remove the whole `__io_results__` container, preventing leftover null
+    /// entries from being misread by later I/O instructions and avoiding stale
+    /// results affecting later I/O instructions. Since at most one I/O is pending
+    /// at any moment, removing the whole container is safe.
     pub fn clear_io_result(&mut self) {
         #[cfg(kani)]
         {
@@ -553,11 +577,12 @@ impl ReactorState {
         }
     }
 
-    /// 原子清除 I/O 恢复状态（同时清除 `__io_results__` 和 `io_recovery` 标志）
+    /// Atomically clears the I/O recovery state (clears both `__io_results__` and the `io_recovery` flag)
     ///
-    /// 此方法在一次调用内完成两个操作，避免中间状态违反不变式 #2/#4。
-    /// 注意: 不变式检查在 'main 循环开头调用，不会在此方法内部触发，
-    /// 所以中间状态不会被误报。
+    /// This method performs both operations in a single call, avoiding intermediate
+    /// states that violate invariants #2/#4.
+    /// Note: invariant checks are called at the start of the 'main loop and are not
+    /// triggered inside this method, so intermediate states are not misreported.
     pub fn clear_io_recovery(&mut self) {
         self.clear_io_result();
         self.io_recovery = false;
@@ -602,7 +627,7 @@ mod tests {
         assert_eq!(state.pending_io_count, 1);
         assert!(!state.pending_requests.contains(&id1));
 
-        // 完成不存在的请求
+        // Completing a non-existent request
         assert!(!state.complete_io_request(FactId(999)));
         assert_eq!(state.pending_io_count, 1);
     }
@@ -661,7 +686,7 @@ mod tests {
         state.push_back(JsonValue::string("a"), FactId(1));
         state.push_back(JsonValue::string("b"), FactId(2));
 
-        // push_front 将指令插入队首
+        // push_front inserts the instruction at the front of the queue
         state.push_front(JsonValue::string("urgent"), FactId(3));
 
         assert_eq!(
@@ -695,7 +720,7 @@ mod tests {
         let mut state = ReactorState::new();
         state.push_back(JsonValue::string("old"), FactId(1));
 
-        // push_front_all 应将新指令插入到 old 之前
+        // push_front_all should insert the new instructions before "old"
         state.push_front_all(
             vec![JsonValue::string("new1"), JsonValue::string("new2")],
             FactId(2),
@@ -717,7 +742,7 @@ mod tests {
 
     #[test]
     fn test_register_duplicate_io_request() {
-        // 重复注册同一 id 应幂等：count 与 set 大小保持一致
+        // Re-registering the same id must be idempotent: count and set size stay consistent
         let mut state = ReactorState::new();
         let id = FactId(1);
 
@@ -725,17 +750,17 @@ mod tests {
         assert_eq!(state.pending_io_count, 1);
         assert_eq!(state.pending_requests.len(), 1);
 
-        // 重复注册同一 id：count 不变（幂等）
+        // Re-registering the same id: count unchanged (idempotent)
         state.register_io_request(id, IoType::call_external());
         assert_eq!(state.pending_io_count, 1);
         assert_eq!(state.pending_requests.len(), 1);
 
-        // 完成后：count 减为 0，set 为空
+        // After completion: count drops to 0, set is empty
         assert!(state.complete_io_request(id));
         assert_eq!(state.pending_io_count, 0);
         assert!(state.pending_requests.is_empty());
 
-        // 再次完成：返回 false
+        // Completing again: returns false
         assert!(!state.complete_io_request(id));
         assert_eq!(state.pending_io_count, 0);
     }
@@ -763,7 +788,7 @@ mod tests {
 
     #[test]
     fn test_instruction_causes_synced_with_queue() {
-        // 断点 1: 验证 instruction_causes 与 queue 始终同步
+        // Breakpoint 1: verify instruction_causes always stays in sync with queue
         let mut state = ReactorState::new();
         assert_eq!(state.instruction_causes.len(), state.queue.len());
 
@@ -781,18 +806,18 @@ mod tests {
 
     #[test]
     fn test_update_queue_with_causes_new_push() {
-        // 断点 1: 验证 update_queue_with_causes 正确分配 cause
-        // 模拟: pop 指令后队列有 [B, C]（cause=[cB, cC]），
-        // execute_transition push 了 [X, Y]，返回 new_queue = [X, Y, B, C]
+        // Breakpoint 1: verify update_queue_with_causes assigns causes correctly
+        // Simulation: after popping, the queue holds [B, C] (causes=[cB, cC]);
+        // execute_transition pushed [X, Y], returning new_queue = [X, Y, B, C]
         let mut state = ReactorState::new();
         state.push_back(JsonValue::string("B"), FactId(2));
         state.push_back(JsonValue::string("C"), FactId(3));
-        // 此时 queue = [B, C], causes = [2, 3]
+        // At this point queue = [B, C], causes = [2, 3]
 
-        // 模拟 pop 后的 cause
-        let current_cause = FactId(1); // 被 pop 的指令的 cause
+        // Simulate the cause after pop
+        let current_cause = FactId(1); // cause of the popped instruction
 
-        // new_queue = [X, Y, B, C]（push 前置了 X, Y）
+        // new_queue = [X, Y, B, C] (push prepended X, Y)
         let new_queue = vec![
             JsonValue::string("X"),
             JsonValue::string("Y"),
@@ -801,7 +826,7 @@ mod tests {
         ];
         state.update_queue_with_causes(new_queue, current_cause);
 
-        // 验证: X, Y 继承 current_cause(1)，B, C 保留原 cause(2, 3)
+        // Verify: X, Y inherit current_cause(1); B, C keep their original causes (2, 3)
         assert_eq!(
             state.pop_instruction(),
             Some((JsonValue::string("X"), FactId(1)))
@@ -823,7 +848,7 @@ mod tests {
     #[test]
     fn test_complete_io_request_empty() {
         let mut state = ReactorState::new();
-        // 空状态下完成任意 id 应返回 false
+        // Completing any id on an empty state should return false
         assert!(!state.complete_io_request(FactId(999)));
         assert_eq!(state.pending_io_count, 0);
     }
@@ -836,11 +861,11 @@ mod tests {
         assert_eq!(state.queue_len(), 0);
     }
 
-    // ===== P3-11 资源管理测试 =====
+    // ===== P3-11 resource-management tests =====
 
     #[test]
     fn test_register_io_request_records_timestamp() {
-        // P3-11: register_io_request 应同时记录时间戳
+        // P3-11: register_io_request should also record the timestamp
         let mut state = ReactorState::new();
         let id = FactId(1);
         state.register_io_request(id, IoType::call_external());
@@ -849,7 +874,7 @@ mod tests {
 
     #[test]
     fn test_complete_io_request_removes_timestamp() {
-        // P3-11: complete_io_request 应同时移除时间戳
+        // P3-11: complete_io_request should also remove the timestamp
         let mut state = ReactorState::new();
         let id = FactId(1);
         state.register_io_request(id, IoType::call_external());
@@ -860,7 +885,7 @@ mod tests {
 
     #[test]
     fn test_scan_io_timeouts_no_pending() {
-        // P3-11: 无 pending I/O 时 scan 返回空
+        // P3-11: scan returns empty when there is no pending I/O
         let state = ReactorState::new();
         let (warn_ids, error_ids) =
             state.scan_io_timeouts(Duration::from_secs(30), Duration::from_secs(60));
@@ -870,11 +895,11 @@ mod tests {
 
     #[test]
     fn test_scan_io_timeouts_warn_level() {
-        // P3-11: 超过 warn_timeout 但未超过 error_timeout
+        // P3-11: past warn_timeout but not past error_timeout
         let mut state = ReactorState::new();
         let id = FactId(1);
         state.register_io_request(id, IoType::call_external());
-        // 模拟 35s 前注册的请求（超过 30s warn，未超过 60s error）
+        // Simulate a request registered 35s ago (over the 30s warn, under the 60s error)
         state
             .pending_io_timestamps
             .insert(id, Instant::now() - Duration::from_secs(35));
@@ -886,24 +911,24 @@ mod tests {
 
     #[test]
     fn test_scan_io_timeouts_error_level() {
-        // P3-11: 超过 error_timeout
+        // P3-11: past error_timeout
         let mut state = ReactorState::new();
         let id = FactId(1);
         state.register_io_request(id, IoType::call_external());
-        // 模拟 65s 前注册的请求（超过 60s error）
+        // Simulate a request registered 65s ago (over the 60s error)
         state
             .pending_io_timestamps
             .insert(id, Instant::now() - Duration::from_secs(65));
         let (warn_ids, error_ids) =
             state.scan_io_timeouts(Duration::from_secs(30), Duration::from_secs(60));
-        // 超过 error 阈值的不会同时出现在 warn 列表中
+        // Requests over the error threshold do not also appear in the warn list
         assert!(warn_ids.is_empty());
         assert_eq!(error_ids, vec![FactId(1)]);
     }
 
     #[test]
     fn test_scan_io_timeouts_mixed() {
-        // P3-11: 混合场景：一个 warn 级别，一个 error 级别，一个正常
+        // P3-11: mixed scenario — one at warn level, one at error level, one normal
         let mut state = ReactorState::new();
         let warn_id = FactId(1);
         let error_id = FactId(2);
@@ -911,14 +936,14 @@ mod tests {
         state.register_io_request(warn_id, IoType::call_external());
         state.register_io_request(error_id, IoType::call_external());
         state.register_io_request(normal_id, IoType::call_external());
-        // 手动设置时间戳
+        // Set timestamps manually
         state
             .pending_io_timestamps
             .insert(warn_id, Instant::now() - Duration::from_secs(40));
         state
             .pending_io_timestamps
             .insert(error_id, Instant::now() - Duration::from_secs(70));
-        // normal_id 保持当前时间
+        // normal_id keeps the current time
         let (warn_ids, error_ids) =
             state.scan_io_timeouts(Duration::from_secs(30), Duration::from_secs(60));
         assert_eq!(warn_ids, vec![FactId(1)]);
@@ -927,23 +952,23 @@ mod tests {
 
     #[test]
     fn test_force_remove_io_request() {
-        // P3-11 + 阶段3-1.4: force_remove_io_request 应清除所有相关状态
+        // P3-11 + Phase 3-1.4: force_remove_io_request should clear all related state
         let mut state = ReactorState::new();
         let id = FactId(1);
         state.register_io_request(id, IoType::call_external());
         state.save_io_instruction(id, JsonValue::string("original_instruction"), FactId(100));
 
-        // 确认状态已设置
+        // Confirm the state has been set
         assert_eq!(state.pending_io_count, 1);
         assert!(state.pending_requests.contains(&id));
         assert!(state.pending_io_instructions.contains_key(&id));
         assert!(state.pending_io_timestamps.contains_key(&id));
         assert!(state.pending_io_types.contains_key(&id));
 
-        // 强制移除
+        // Force removal
         state.force_remove_io_request(id);
 
-        // 确认所有相关状态已清除
+        // Confirm all related state has been cleared
         assert_eq!(state.pending_io_count, 0);
         assert!(!state.pending_requests.contains(&id));
         assert!(!state.pending_io_instructions.contains_key(&id));
@@ -953,17 +978,17 @@ mod tests {
 
     #[test]
     fn test_force_remove_nonexistent_io_request() {
-        // P3-11: 强制移除不存在的请求不应 panic
+        // P3-11: forcibly removing a non-existent request must not panic
         let mut state = ReactorState::new();
         state.force_remove_io_request(FactId(999));
         assert_eq!(state.pending_io_count, 0);
     }
 
-    // ===== 阶段3-1.4 I/O 类型记录测试 =====
+    // ===== Phase 3-1.4 I/O type recording tests =====
 
     #[test]
     fn test_register_io_request_records_io_type() {
-        // 阶段3-1.4: register_io_request 应同时记录 io_type
+        // Phase 3-1.4: register_io_request should also record the io_type
         let mut state = ReactorState::new();
         let id = FactId(1);
         state.register_io_request(id, IoType::query_db());
@@ -972,7 +997,7 @@ mod tests {
 
     #[test]
     fn test_complete_io_request_removes_io_type() {
-        // 阶段3-1.4: complete_io_request 应同时移除 io_type 记录
+        // Phase 3-1.4: complete_io_request should also remove the io_type record
         let mut state = ReactorState::new();
         let id = FactId(1);
         state.register_io_request(id, IoType::call_external());
@@ -983,7 +1008,7 @@ mod tests {
 
     #[test]
     fn test_register_multiple_io_types() {
-        // 阶段3-1.4: 不同请求记录不同 io_type
+        // Phase 3-1.4: different requests record different io_types
         let mut state = ReactorState::new();
         state.register_io_request(FactId(1), IoType::call_external());
         state.register_io_request(FactId(2), IoType::query_db());

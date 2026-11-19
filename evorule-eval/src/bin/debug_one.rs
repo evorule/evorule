@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Debug: 单用例诊断 execute_transition 返回
+// Debug: diagnose a single-case execute_transition return
 
 use evorule_tcb::{execute_transition, JsonValue};
 

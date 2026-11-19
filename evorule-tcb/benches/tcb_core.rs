@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 性能基准 — TCB 核心热路径
+//! Performance benchmarks — TCB core hot paths
 //!
-//! 041 v2.0：建立 TCB 核心性能基线。
-//! 覆盖 execute_transition、路径解析、domain 评估等核心热路径。
+//! 041 v2.0: establish the TCB core performance baseline.
+//! Covers core hot paths such as execute_transition, path resolution, and domain evaluation.
 //!
-//! # 运行
+//! # Run
 //! ```bash
 //! cargo bench -p evorule-tcb --bench tcb_core
 //! ```
@@ -15,9 +15,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use evorule_tcb::{execute_transition, JsonValue, TransitionResult};
 
-// ===== 辅助函数 =====
+// ===== Helper functions =====
 
-/// 构造 increment 指令
+/// Constructs an increment instruction
 fn make_instruction(attr: &str, delta: i64) -> JsonValue {
     JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("increment")),
@@ -31,7 +31,7 @@ fn make_instruction(attr: &str, delta: i64) -> JsonValue {
     ])
 }
 
-/// 构造 set 指令
+/// Constructs a set instruction
 fn make_set_instruction(attr: &str, value: i64) -> JsonValue {
     JsonValue::object_from_pairs(&[
         ("type", JsonValue::string("set")),
@@ -45,12 +45,12 @@ fn make_set_instruction(attr: &str, value: i64) -> JsonValue {
     ])
 }
 
-/// 构造 noop 指令
+/// Constructs a noop instruction
 fn make_noop_instruction() -> JsonValue {
     JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))])
 }
 
-/// 构造简单 payload
+/// Constructs a simple payload
 fn make_payload() -> JsonValue {
     JsonValue::object_from_pairs(&[
         ("x", JsonValue::Integer(10)),
@@ -59,10 +59,10 @@ fn make_payload() -> JsonValue {
     ])
 }
 
-/// 构造 core_eval 规则列表（包含 increment/decrement/set/noop 规则）
+/// Constructs the core_eval rule list (containing increment/decrement/set/noop rules)
 fn make_core_eval() -> Vec<JsonValue> {
     vec![
-        // increment 规则
+        // increment rule
         JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
             (
@@ -98,7 +98,7 @@ fn make_core_eval() -> Vec<JsonValue> {
                 ]),
             ),
         ]),
-        // set 规则
+        // set rule
         JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
             (
@@ -134,7 +134,7 @@ fn make_core_eval() -> Vec<JsonValue> {
                 ]),
             ),
         ]),
-        // noop 规则
+        // noop rule
         JsonValue::object_from_pairs(&[
             ("type", JsonValue::string("branch")),
             (
@@ -154,10 +154,10 @@ fn make_core_eval() -> Vec<JsonValue> {
     ]
 }
 
-// ===== Benchmark 函数 =====
+// ===== Benchmark functions =====
 
-/// Benchmark 1: execute_transition - increment 指令
-/// 核心热路径：执行 increment 指令
+/// Benchmark 1: execute_transition - increment instruction
+/// Core hot path: executing the increment instruction
 fn bench_execute_transition_increment(c: &mut Criterion) {
     let core_eval = make_core_eval();
     let instruction = make_instruction("x", 5);
@@ -176,8 +176,8 @@ fn bench_execute_transition_increment(c: &mut Criterion) {
     });
 }
 
-/// Benchmark 2: execute_transition - set 指令
-/// 核心热路径：执行 set 指令
+/// Benchmark 2: execute_transition - set instruction
+/// Core hot path: executing the set instruction
 fn bench_execute_transition_set(c: &mut Criterion) {
     let core_eval = make_core_eval();
     let instruction = make_set_instruction("x", 42);
@@ -196,8 +196,8 @@ fn bench_execute_transition_set(c: &mut Criterion) {
     });
 }
 
-/// Benchmark 3: execute_transition - noop 指令
-/// 最轻量的指令执行
+/// Benchmark 3: execute_transition - noop instruction
+/// The lightest instruction execution
 fn bench_execute_transition_noop(c: &mut Criterion) {
     let core_eval = make_core_eval();
     let instruction = make_noop_instruction();
@@ -216,8 +216,8 @@ fn bench_execute_transition_noop(c: &mut Criterion) {
     });
 }
 
-/// Benchmark 4: execute_transition - 1000 次 increment 循环
-/// 模拟连续操作场景
+/// Benchmark 4: execute_transition - 1000-increment loop
+/// Simulates a continuous operation scenario
 fn bench_execute_transition_1000_increments(c: &mut Criterion) {
     let core_eval = make_core_eval();
     let instruction = make_instruction("counter", 1);
@@ -240,8 +240,8 @@ fn bench_execute_transition_1000_increments(c: &mut Criterion) {
     });
 }
 
-/// Benchmark 5: JsonValue 构造性能
-/// 数据结构基础操作
+/// Benchmark 5: JsonValue construction performance
+/// Basic data structure operation
 fn bench_jsonvalue_construction(c: &mut Criterion) {
     c.bench_function("tcb/jsonvalue_construction", |b| {
         b.iter(|| {
@@ -263,8 +263,8 @@ fn bench_jsonvalue_construction(c: &mut Criterion) {
     });
 }
 
-/// Benchmark 6: JsonValue 字段访问性能
-/// 路径解析基础操作
+/// Benchmark 6: JsonValue field access performance
+/// Basic path resolution operation
 fn bench_jsonvalue_field_access(c: &mut Criterion) {
     let value = JsonValue::object_from_pairs(&[
         ("x", JsonValue::Integer(10)),
@@ -291,8 +291,8 @@ fn bench_jsonvalue_field_access(c: &mut Criterion) {
     });
 }
 
-/// Benchmark 7: core_eval 规则匹配性能
-/// 规则遍历与匹配
+/// Benchmark 7: core_eval rule matching performance
+/// Rule traversal and matching
 fn bench_rule_matching(c: &mut Criterion) {
     let core_eval = make_core_eval();
     let instruction = make_instruction("x", 1);
@@ -300,28 +300,29 @@ fn bench_rule_matching(c: &mut Criterion) {
 
     c.bench_function("tcb/rule_matching", |b| {
         b.iter(|| {
-            // 测量规则匹配开销（实际执行 increment 指令触发规则匹配）
+            // Measure the rule-matching overhead (actually executing the increment instruction
+            // triggers rule matching)
             let result = execute_transition(
                 black_box(&core_eval),
                 black_box(&instruction),
                 black_box(&payload),
                 black_box(&[]),
             );
-            // 只关心是否成功匹配
+            // Only care whether the match succeeds
             let is_state = matches!(result, Ok(TransitionResult::State { .. }));
             black_box(is_state);
         });
     });
 }
 
-/// Benchmark 8: 队列操作性能
-/// 指令队列处理
+/// Benchmark 8: queue operation performance
+/// Instruction queue processing
 fn bench_queue_operations(c: &mut Criterion) {
     let core_eval = make_core_eval();
     let instruction = make_set_instruction("x", 100);
     let payload = make_payload();
 
-    // 模拟有队列的场景
+    // Simulate a scenario with a queue
     let queue = vec![
         make_instruction("x", 1),
         make_instruction("y", 2),

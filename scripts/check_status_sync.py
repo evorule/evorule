@@ -648,7 +648,7 @@ S9_ANCHORS = [
     # unchecked (once drifted 34 vs 38). CJK fragments use \uXXXX escapes to
     # keep this file ASCII-clean for the en-only ratchet.
     ("README.md", re.compile(r"Kani: (\d+) proofs \((\d+) verified"), ("total", "verified"), True),
-    ("verification/README.md", re.compile(r"TCB Kani proof\uff08(\d+) \u4e2a"), ("tcb",), True),
+    ("verification/README.md", re.compile(r"TCB Kani proofs \((\d+)"), ("tcb",), True),
     ("verification/STATUS.md", re.compile(r"\u9644\u5f55 B\uff1aTCB (\d+) \u4e2a proof \u5206\u6863\u6e05\u5355"), ("tcb",), True),
     ("verification/STATUS.md", re.compile(r"\u9644\u5f55 C\uff1areactor (\d+) \u4e2a proof \u6e05\u5355"), ("reactor",), True),
 ]

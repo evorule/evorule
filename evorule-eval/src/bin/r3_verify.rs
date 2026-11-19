@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! R3 —— 审计复核吞吐（WAL verify，条/s）
+//! R3 — audit re-verification throughput (WAL verify, records/s)
 //!
-//! 三种复核方式逐条计时（真实工作负载产生的 WAL）：
-//! 1. **哈希链复核**：逐条重算 content_hash（fact_hash）+ prev/chain 链接（chain_step）
-//! 2. **结构不变量复核**：FactId 单调 + cause 引用有效
-//! 3. **重执行复核**：整跑重执行一遍并逐位比对（最贵也最强）
+//! Three verification modes timed record by record (WALs produced by real workloads):
+//! 1. **Hash-chain verification**: recompute content_hash (fact_hash) per record
+//!    + prev/chain linking (chain_step)
+//! 2. **Structural invariant verification**: FactId monotonicity + valid cause references
+//! 3. **Re-execution verification**: re-execute the whole run and compare bit-exactly (the most expensive and the strongest)
 //!
-//! 口径：records/s 与 MB/s（按 WAL 序列化字节计）。
+//! Metrics: records/s and MB/s (by WAL serialization bytes).
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -38,8 +39,9 @@ fn hash_chain_verify(facts: &[Fact]) -> Result<(), String> {
         let content =
             evorule_reactor::fact_hash(fact).map_err(|e| format!("fact[{i}] hash: {e}"))?;
         let expected_chain = evorule_reactor::chain_step(&prev_hash, &content);
-        // 链推进（验证器语义：校验重算与存储一致性由 R3 的落盘比对承担，
-        // 此处测的是"复核一条记录的全额计算成本"）
+        // Chain advance (verifier semantics: recomputation-vs-stored consistency is
+        // covered by R3's on-disk comparison; what is measured here is "the full
+        // computation cost of re-verifying one record")
         let _ = expected_chain;
         prev_hash = expected_chain;
     }
@@ -79,7 +81,7 @@ fn main() -> Result<(), String> {
     let mut rows: Vec<serde_json::Value> = Vec::new();
 
     for wl in &workloads {
-        // 收集本工作负载命中的全部真实种子，组成多命令会话
+        // Collect every real seed this workload hits, forming a multi-command session
         let mut matched_instrs: Vec<JsonValue> = Vec::new();
         for (_, instr) in &seeds {
             let probe = run_once(
@@ -99,7 +101,7 @@ fn main() -> Result<(), String> {
             continue;
         }
 
-        // 生成批量会话 WAL（真实指令序列，payload 跨指令延续）
+        // Generate the batch-session WAL (real instruction sequence, payload persisting across instructions)
         let run = run_batch(&wl.rules, &matched_instrs, true, false);
         let facts = &run.facts;
         let n = facts.len() as u64;
@@ -108,7 +110,7 @@ fn main() -> Result<(), String> {
             continue;
         }
 
-        // 1) 哈希链复核
+        // 1) Hash-chain verification
         let mut t = Vec::new();
         for _ in 0..VERIFY_REPS {
             let start = std::time::Instant::now();
@@ -118,7 +120,7 @@ fn main() -> Result<(), String> {
         t.sort_unstable();
         let hash_nanos = t[t.len() / 2];
 
-        // 2) 结构不变量
+        // 2) Structural invariants
         let mut t = Vec::new();
         for _ in 0..VERIFY_REPS {
             let start = std::time::Instant::now();
@@ -128,7 +130,7 @@ fn main() -> Result<(), String> {
         t.sort_unstable();
         let struct_nanos = t[t.len() / 2];
 
-        // 3) 重执行复核（含位级比对）
+        // 3) Re-execution verification (with bit-level comparison)
         let base_hash = evorule_eval::facts_chain_hash(facts)?;
         let base_payload = evorule_eval::payload_hash(&run.final_payload)?;
         let mut t = Vec::new();
@@ -178,7 +180,7 @@ fn main() -> Result<(), String> {
     let summary = serde_json::json!({
         "metric": "R3 audit re-verification throughput",
         "verify_reps": VERIFY_REPS,
-        "note": "哈希链=BLAKE3 逐条重算+链步；结构=FactId 单调+cause 引用；重执行=整跑重放逐位比对",
+        "note": "hash-chain = per-record BLAKE3 recomputation + chain steps; structural = FactId monotonicity + cause references; re-execution = whole-run replay compared bit-exactly",
         "cases": rows,
     });
     write_json(&dir.join("summary.json"), &summary)?;

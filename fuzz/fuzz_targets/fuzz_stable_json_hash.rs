@@ -1,21 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! Fuzz 目标：审计链稳定序列化与事实哈希（纯函数面）
+//! Fuzz target: audit-chain stable serialization and fact hashing (pure-function surface)
 //!
-//! 输入: 任意字节 → 确定性构造 9 变体 Fact → `fact_to_stable_json` → `fact_hash`
-//! 不变量:
-//! 1. 不 panic（任意可构造 Fact 的稳定序列化与哈希安全）；
-//! 2. 确定性：同一输入两次 `fact_hash` 等值；
-//! 3. 规范形幂等：stable JSON 序列化字节 == 再解析再序列化字节
-//!    （键序字母序稳定的字节级证据——存量哈希不变承诺的 fuzz 级守护）；
-//! 4. 哈希输出恒为 64 位 hex。
+//! Input: arbitrary bytes → deterministically construct one of the 9 Fact
+//! variants → `fact_to_stable_json` → `fact_hash`
+//! Invariants:
+//! 1. No panic (stable serialization and hashing are safe for any constructible Fact);
+//! 2. Determinism: two `fact_hash` calls on the same input are equal;
+//! 3. Canonical-form idempotence: the stable-JSON serialization bytes ==
+//!    the re-parse-then-reserialize bytes (byte-level evidence of stable
+//!    alphabetical key order — the fuzz-level guard of the unchanged-hashes
+//!    promise for existing data);
+//! 4. The hash output is always 64 hex digits.
 //!
-//! 域归属：断言仅覆盖「审计链事实哈希」域（哈希域注册表纪律：不同域哈希
-//! 不可互证，本目标不构成对其他哈希域的任何断言）。
+//! Domain attribution: the assertions cover only the "audit-chain fact hash"
+//! domain (hash-domain registry discipline: hashes of different domains are
+//! not mutually verifiable; this target makes no assertions about any other
+//! hash domain).
 //!
-//! 无副作用纪律：仅调用只读纯函数（evorule-audit-chain 为 no_std 纯算法
-//! crate），无文件 IO、无状态挂载、无写路径。
+//! Side-effect discipline: only read-only pure functions are called
+//! (evorule-audit-chain is a no_std pure-algorithm crate); no file IO, no
+//! state mounting, no write paths.
 
 #![no_main]
 
@@ -38,7 +44,7 @@ fn byte_at(data: &[u8], pos: &mut usize) -> u8 {
 }
 
 fn build_string(data: &[u8], pos: &mut usize) -> String {
-    // 字符集限定可打印 ASCII，避免构造非法 UTF-8
+    // Restrict the charset to printable ASCII, avoiding invalid UTF-8 construction
     let len = (byte_at(data, pos) as usize) % MAX_STR;
     (0..len)
         .map(|_| (0x20 + (byte_at(data, pos) % 0x5f)) as char)
@@ -154,22 +160,23 @@ fuzz_target!(|data: &[u8]| {
     let mut pos = 0usize;
     let fact = build_fact(data, 1, &mut pos);
 
-    let stable = fact_to_stable_json(&fact).expect("stable json 构造不失败");
-    let serialized = serde_json::to_string(&stable).expect("序列化不失败");
+    let stable = fact_to_stable_json(&fact).expect("stable json construction must not fail");
+    let serialized = serde_json::to_string(&stable).expect("serialization must not fail");
 
-    // 不变量 3：规范形幂等（键序字母序稳定的字节级证据）
+    // Invariant 3: canonical-form idempotence (byte-level evidence of stable
+    // alphabetical key order)
     let reparsed: serde_json::Value =
-        serde_json::from_str(&serialized).expect("stable json 必须可解析");
-    let reserialized = serde_json::to_string(&reparsed).expect("再序列化不失败");
-    assert_eq!(serialized, reserialized, "stable json 必须是规范形");
+        serde_json::from_str(&serialized).expect("stable json must be parseable");
+    let reserialized = serde_json::to_string(&reparsed).expect("reserialization must not fail");
+    assert_eq!(serialized, reserialized, "stable json must be in canonical form");
 
-    // 不变量 2 + 4：确定性与 64 hex
-    let h1 = fact_hash(&fact).expect("fact_hash 不失败");
-    let h2 = fact_hash(&fact).expect("fact_hash 不失败");
-    assert_eq!(h1, h2, "fact_hash 必须确定性");
-    assert_eq!(h1.len(), 64, "哈希必须为 64 位 hex");
+    // Invariants 2 + 4: determinism and 64 hex
+    let h1 = fact_hash(&fact).expect("fact_hash must not fail");
+    let h2 = fact_hash(&fact).expect("fact_hash must not fail");
+    assert_eq!(h1, h2, "fact_hash must be deterministic");
+    assert_eq!(h1.len(), 64, "hash must be 64 hex digits");
     assert!(
         h1.bytes().all(|b| b.is_ascii_hexdigit()),
-        "哈希必须为 hex 字符"
+        "hash must be hex characters"
     );
 });

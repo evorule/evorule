@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! TCB 错误类型 - 纯计算错误，不含 I/O
+//! TCB error types - pure computation errors, no I/O
 
 use alloc::string::String;
 
-/// TCB 错误类型
+/// TCB error type
 ///
-/// # 设计原则
-/// - 不包含 `IoPause`（I/O 由反应器处理）
-/// - 不包含 `MaxStepsExceeded`（由反应器控制）
-/// - 所有错误均不 panic
-/// - 每个错误变体都包含足够的上下文信息便于诊断
+/// # Design principles
+/// - No `IoPause` variant (I/O is handled by the reactor)
+/// - No `MaxStepsExceeded` variant (controlled by the reactor)
+/// - No error ever panics
+/// - Every error variant carries enough context for diagnosis
 ///
-/// # 代码示例
+/// # Example
 ///
-/// `TcbError` 由 `execute_transition` 与 `execute_meta_instruction` 返回，
-/// 可通过 `match` 分支处理；所有变体均实现了 `Display`：
+/// `TcbError` is returned by `execute_transition` and `execute_meta_instruction`
+/// and can be handled via `match` arms; every variant implements `Display`:
 ///
 /// ```
 /// use evorule_tcb::TcbError;
@@ -24,7 +24,7 @@ use alloc::string::String;
 /// let e = TcbError::MissingField { field: "operation".to_string() };
 /// assert_eq!(e.to_string(), "missing field: operation");
 ///
-/// // 分支处理不同错误类型
+/// // Handle different error variants
 /// match e {
 ///     TcbError::MissingField { field } => assert_eq!(field, "operation"),
 ///     _ => panic!("unexpected variant"),
@@ -32,92 +32,95 @@ use alloc::string::String;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TcbError {
-    /// 指令中缺少必需字段
+    /// A required field is missing from the instruction
     MissingField {
-        /// 缺失的字段名
+        /// Name of the missing field
         field: String,
     },
 
-    /// 未知的元指令类型
+    /// Unknown meta instruction type
     UnknownMetaInstruction {
-        /// 未知的元指令类型名称
+        /// Name of the unknown meta instruction type
         meta_type: String,
     },
 
-    /// 未知的域类型（domain `type` 字段不在支持的 8 种之内）
+    /// Unknown domain type (the domain `type` field is not one of the 8 supported types)
     UnknownDomainType {
-        /// 未知的域类型名称
+        /// Name of the unknown domain type
         domain_type: String,
     },
 
-    /// 未知的 set 操作类型
+    /// Unknown `set` operation type
     UnknownOperation {
-        /// 未知的操作名称（如 "multiply"）
+        /// Name of the unknown operation (e.g. "multiply")
         operation: String,
     },
 
-    /// 状态结构异常（如 `__exec__` 不存在）
+    /// Malformed state structure (e.g. `__exec__` missing)
     InvalidState {
-        /// 具体错误原因描述
+        /// Concrete description of the failure cause
         reason: String,
     },
 
-    /// 类型不匹配
+    /// Type mismatch
     InvalidType {
-        /// 期望的类型
+        /// Expected type
         expected: &'static str,
-        /// 实际的类型
+        /// Actual type
         actual: &'static str,
-        /// 发生错误的上下文（如字段名）
+        /// Context where the error occurred (e.g. field name)
         context: String,
     },
 
-    /// 路径解析失败
+    /// Path resolution failed
     PathResolutionFailed {
-        /// 失败的完整路径
+        /// The full path that failed
         path: String,
-        /// 失败的具体原因
+        /// Concrete reason for the failure
         reason: String,
     },
 
-    /// branch 嵌套深度超限
+    /// branch nesting depth exceeds the limit
     NestingTooDeep {
-        /// 当前深度限制值
+        /// The current depth limit value
         limit: usize,
     },
 
-    /// 整数运算溢出（`add`/`sub` 超出 i64 范围）
+    /// Integer arithmetic overflow (`add`/`sub` out of i64 range)
     IntegerOverflow {
-        /// 溢出操作描述
+        /// Description of the overflowing operation
         operation: String,
-        /// 左操作数
+        /// Left operand
         left: i64,
-        /// 右操作数
+        /// Right operand
         right: i64,
     },
 
-    /// `core_eval` transform 规则数量超限
+    /// Too many `core_eval` transform rules
     TooManyTransformRules {
-        /// 允许的最大规则数
+        /// Maximum number of allowed rules
         limit: usize,
-        /// 实际传入的规则数
+        /// Actual number of rules supplied
         actual: usize,
     },
 
-    /// 单次状态转换执行的元指令总数超限（终止性宽度防线）
+    /// Total meta instructions executed in a single state transition exceed the limit
+    /// (termination width defense)
     TooManyExecutedInstructions {
-        /// 允许的最大执行总数
+        /// Maximum allowed execution total
         limit: usize,
     },
 
-    /// 域判定 Missing 被显式声明拒绝（`on_missing: "error"`）
+    /// A domain-evaluation Missing was explicitly declared rejected (`on_missing: "error"`)
     ///
-    /// eq/lt/in 域判定遇到状态侧缺失/不可比/value 引用歧义时，若规则作者
-    /// 通过 `on_missing: "error"` 显式声明「缺失即错误」，则拒绝执行
-    /// （分支不执行），错误经结构侧错误通道全链留痕——静默通道从根上
-    /// 铲除（专项-20261001 方案 2' v4）。
+    /// When an eq/lt/in domain evaluation hits a state-side missing/incomparable/
+    /// value-reference ambiguity and the rule author has explicitly declared
+    /// `on_missing: "error"` ("missing means error"), execution is rejected (the
+    /// branch does not run) and the error is traced end-to-end through the structural
+    /// error channel — the silent channel is eradicated at the root (internal
+    /// special project, plan 2' v4).
     MissingRejected {
-        /// 缺失原因与定位（如 "path_not_found: instruction.params.x"）
+        /// Missing reason and location (e.g. "path_not_found: instruction.params.x")
         detail: String,
     },
 }
@@ -207,7 +210,7 @@ mod tests {
     use alloc::format;
     use alloc::string::ToString;
 
-    /// 验证所有错误变体的 Display 输出
+    /// Verifies the Display output of all error variants
     #[test]
     fn test_display_all_variants() {
         let err = TcbError::MissingField {
@@ -291,7 +294,7 @@ mod tests {
         );
     }
 
-    /// 验证 PartialEq 行为
+    /// Verifies PartialEq behavior
     #[test]
     fn test_partial_eq_behavior() {
         let e1 = TcbError::MissingField {
@@ -325,7 +328,7 @@ mod tests {
         );
     }
 
-    /// 验证 Clone 行为
+    /// Verifies Clone behavior
     #[test]
     fn test_clone_behavior() {
         let err = TcbError::PathResolutionFailed {

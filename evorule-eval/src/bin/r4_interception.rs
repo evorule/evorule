@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! R4 —— 违规拦截率（纪律门禁 L2）
+//! R4 — violation interception rate (the L2 discipline gate)
 //!
-//! 阳性样本（真实历史违规）：R-B1 修复前 bundle-ds-yuanze-01-v3（git 历史
-//! `df6a16d^` 提取，历史审定 6 处 D5 真阳性），逐文件检查。
-//! 阴性样本（现役合规全集）：server 现役全部 bundle + 宪法 + L2 纪律集 +
-//! wasm 合并规则集，逐文件 + 合并检查。
+//! Positive samples (real historical violations): the pre-fix
+//! bundle-ds-yuanze-01-v3 (extracted from pre-fix git history; historically
+//! adjudicated 6 real D5 positives), checked file by file.
+//! Negative samples (the full in-service compliant set): all server in-service
+//! bundles + the constitution + the L2 discipline set + the wasm merged
+//! ruleset, per-file + merged checks.
 //!
-//! 指标：拦截率 = 检出违规数 / 历史真阳性数；误报 = 阴性集检出数（预期 0）。
+//! Metric: interception rate = violations detected / historical true positives;
+//! false positives = detections on the negative set (expected 0).
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -16,8 +19,8 @@ use std::path::{Path, PathBuf};
 
 use evorule_eval::{load_rules_file, out_dir, samples_root, write_json, REPO_ROOT, SERVER_ROOT};
 
-/// R-B1 历史真阳性数：修复提交 `df6a16d` 实际改动 7 个规则文件
-/// （每处 1 条 DC-09/D5 违规；bundle_manifest.json 仅哈希同步，非违规）
+/// Historical true positives: the pre-fix remediation commit actually changed 7 rule files
+/// (1 DC-09/D5 violation each; bundle_manifest.json only syncs hashes, not a violation)
 const GROUND_TRUTH_POSITIVES: usize = 7;
 
 fn scan_file(path: &Path) -> Result<(usize, Vec<serde_json::Value>), String> {
@@ -68,7 +71,7 @@ fn main() -> Result<(), String> {
     let mut detected = 0usize;
     let mut false_positives = 0usize;
 
-    // ---- 阳性：R-B1 修复前 bundle ----
+    // ---- Positives: the pre-fix bundle ----
     let prefix_dir = samples_root().join("prefix-bundle-ds-yuanze-01-v3");
     for f in scan_dir_files(&prefix_dir, true) {
         let (scanned, vios) = scan_file(&f)?;
@@ -93,7 +96,7 @@ fn main() -> Result<(), String> {
         positives.push(serde_json::json!({ "file": name, "scanned": scanned, "violations": vios }));
     }
 
-    // ---- 阴性 1：现役 bundle 全集 ----
+    // ---- Negatives 1: the full in-service bundle set ----
     let bundles_dir = Path::new(SERVER_ROOT).join("rules").join("bundles");
     let mut neg_files: Vec<PathBuf> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&bundles_dir) {
@@ -107,7 +110,7 @@ fn main() -> Result<(), String> {
             neg_files.extend(scan_dir_files(&d, true));
         }
     }
-    // ---- 阴性 2：宪法 / L2 纪律集 / wasm 合并集 ----
+    // ---- Negatives 2: constitution / L2 discipline set / wasm merged set ----
     neg_files.push(
         Path::new(REPO_ROOT)
             .join("evorule-tcb")
@@ -163,7 +166,7 @@ fn main() -> Result<(), String> {
         "interception_rate": interception_rate,
         "false_positives": false_positives,
         "negative_files_checked": neg_files.len(),
-        "note": "阳性=R-B1 修复前 bundle（git df6a16d^ 提取的真实历史违规，真阳性数=修复提交实际改动的 7 个规则文件）；阴性=现役全部 bundle + 宪法 + 纪律集 + wasm 合并集",
+        "note": "positives = the pre-fix bundle (real historical violations extracted from pre-fix git history; true-positive count = the 7 rule files the remediation commit actually changed); negatives = all in-service bundles + the constitution + the discipline set + the wasm merged set",
         "positives_detail": positives,
         "negatives_detail": negatives,
     });

@@ -1,50 +1,58 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 差分测试:审计链版本一致性(P0-9)+ 时间机器 vs FactsLog 重建一致性(P0-10)
+//! Differential tests: audit-chain version consistency (P0-9) + time machine vs FactsLog
+//! reconstruction consistency (P0-10)
 //!
-//! # 位置说明
+//! # Location
 //!
-//! 本文件位于 `verification/` 目录(形式化验证专属目录),与 `src/` 核心实现解耦:
-//! - 不受 `build.rs` 编译时门禁约束(仅扫 `src/` 目录)
-//! - 通过 `Cargo.toml` 的 `[[test]]` 目标指向,作为集成测试编译
+//! This file lives in the `verification/` directory (dedicated to formal verification),
+//! decoupled from the core implementation in `src/`:
+//! - Not subject to the `build.rs` compile-time gate (which only scans `src/`)
+//! - Wired as an integration test via the `[[test]]` target in `Cargo.toml`
 //!
-//! # 验证目标
+//! # Verification goals
 //!
 //! ## P0-9: `diff_version_consistency`
 //!
 //! `facts_log.version() == reactor.snapshot().version`
 //!
-//! 验证审计链(FactsLog)的版本号与反应器内部状态版本号一致。
-//! 如果两者分叉,会导致时间旅行调试器看到的版本与实际执行版本不匹配。
+//! Verifies that the audit chain's (FactsLog) version number matches the reactor's internal
+//! state version number. If the two diverge, a time-travel debugger would see a version
+//! that does not match the actually executed version.
 //!
 //! ## P0-10: `diff_rewind_vs_factslog`
 //!
-//! `rewind(facts, N).snapshot == FactsLog 重放到版本 N 的快照`
+//! `rewind(facts, N).snapshot == FactsLog replayed up to version N's snapshot`
 //!
-//! 验证时间机器(纯函数重建)与 FactsLog(命令式追加)产生相同的历史快照。
-//! 两条独立路径达到同一版本,互为交叉验证。
+//! Verifies that the time machine (pure-function reconstruction) and FactsLog (imperative
+//! append) produce the same historical snapshots. Two independent paths reaching the same
+//! version cross-validate each other.
 //!
 //! ## P0-15: `diff_recover_vs_append`
 //!
-//! `FactsLog 逐条 append（内存 WAL 后端）的终态 == replay_wal_records(WAL 记录) 的终态`
+//! `FactsLog entry-by-entry append (in-memory WAL backend) final state ==
+//!  replay_wal_records(WAL records) final state`
 //!
-//! 验证进程内追加路径与 WAL 重放路径（recover 的纯核心）产生相同的
-//! 快照/队列/版本/链尾哈希——审计链重放确定性。
+//! Verifies that the in-process append path and the WAL replay path (the pure core of
+//! recover) produce the same snapshot/queue/version/tail-hash — audit-chain replay
+//! determinism.
 //!
-//! # 语义等价规约(差分测试的形式化契约)
+//! # Semantic-equivalence specification (formal contract of the differential tests)
 //!
-//! - **P0-9**: 对任意指令序列 `Cmds` 与初始 payload `S`:
+//! - **P0-9**: for any instruction sequence `Cmds` and initial payload `S`:
 //!   `facts_log.version() == reactor.snapshot().version`
-//!   (审计链视角与反应器内部视角的版本号必须一致,不得分叉)。
-//! - **P0-10**: 对任意事实序列 `Facts` 与目标版本 `N`:
-//!   `rewind(Facts, N).snapshot == FactsLog 重放前 N 个事实后的 snapshot`
-//!   (两条独立重建路径产生的版本号与 payload 均须结构全等)。
-//! - **P0-15**: 对任意事实序列 `Facts`:
-//!   `append 链终态 == replay_wal_records(append 产生的 WAL 记录) 终态`
-//!   (快照/队列/版本/链尾哈希四元组全等)。
+//!   (the audit-chain view and the reactor-internal view of the version number must
+//!   agree, never diverge).
+//! - **P0-10**: for any fact sequence `Facts` and target version `N`:
+//!   `rewind(Facts, N).snapshot == FactsLog replayed through the first N facts' snapshot`
+//!   (the version number and payload produced by the two independent reconstruction
+//!   paths must be structurally equal).
+//! - **P0-15**: for any fact sequence `Facts`:
+//!   `append-chain final state == replay_wal_records(records produced by append) final state`
+//!   (the snapshot/queue/version/tail-hash quadruple must be fully equal).
 //!
-//! # 跑法
+//! # How to run
 //!
 //! ```bash
 //! cargo test --package evorule-governance --test differential_test
@@ -60,10 +68,10 @@ use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 
 // =============================================================================
-// 辅助:JsonValue ↔ serde_json::Value 转换(用于比较)
+// Helpers: JsonValue ↔ serde_json::Value conversion (for comparison)
 // =============================================================================
 
-/// 将 evorule_tcb::JsonValue 转换为 serde_json::Value(用于与 RewindSnapshot 比较)
+/// Convert an evorule_tcb::JsonValue into a serde_json::Value (for comparison with RewindSnapshot)
 fn tcb_to_serde(v: &JsonValue) -> serde_json::Value {
     match v {
         JsonValue::Null => serde_json::Value::Null,
@@ -83,7 +91,7 @@ fn tcb_to_serde(v: &JsonValue) -> serde_json::Value {
 }
 
 // =============================================================================
-// 辅助:构造 Fact
+// Helpers: build Facts
 // =============================================================================
 
 fn payload_update_fact(id: u64, path: &str, value: i64) -> Fact {
@@ -107,7 +115,7 @@ fn state_transition_fact(id: u64, cause: u64, payload_x: i64, payload_y: i64) ->
 }
 
 // =============================================================================
-// proptest 配置
+// proptest configuration
 // =============================================================================
 
 fn proptest_config() -> ProptestConfig {
@@ -129,13 +137,14 @@ fn proptest_config() -> ProptestConfig {
 proptest! {
     #![proptest_config(proptest_config())]
 
-    /// P0-9: 单条 Command 后,审计链版本与反应器内部版本一致
+    /// P0-9: after a single Command, the audit-chain version and the reactor-internal
+    /// version agree
     ///
-    /// 差分对:
-    /// - A: FactsLog::version()(审计链视角)
-    /// - B: ReactorHandle::snapshot().version(反应器内部视角)
+    /// Differential pair:
+    /// - A: FactsLog::version() (audit-chain view)
+    /// - B: ReactorHandle::snapshot().version (reactor-internal view)
     ///
-    /// 发送一条 Command → StateTransition 后,两者版本都应为 1。
+    /// After sending one Command → StateTransition, both versions should be 1.
     #[test]
     fn diff_version_consistency_single_command(
         initial_x in -1_000_000i64..1_000_000,
@@ -143,7 +152,7 @@ proptest! {
     ) {
         let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
         rt.block_on(async move {
-            // 空核心规则集 —— execute_transition 返回 State(payload 不变)
+            // Empty core rule set — execute_transition returns State (payload unchanged)
             let core_eval: Vec<JsonValue> = vec![];
             let payload = JsonValue::object_from_pairs(&[
                 ("x", JsonValue::Integer(initial_x)),
@@ -156,7 +165,7 @@ proptest! {
                 .build();
             let (tx, mut rx, _event_tx, handle, log) = reactor.spawn();
 
-            // 发送 set 指令(触发 StateTransition)
+            // Send a set instruction (triggers StateTransition)
             let instruction = JsonValue::object_from_pairs(&[
                 ("type", JsonValue::string("set")),
                 ("params", JsonValue::object_from_pairs(&[
@@ -165,13 +174,13 @@ proptest! {
                     ("value", JsonValue::Integer(new_value)),
                 ])),
             ]);
-            // FactSender 是 UnboundedSender,send 是同步方法
+            // FactSender is an UnboundedSender; send is a synchronous method
             tx.send(Fact::Command {
                 id: FactId(1),
                 instruction,
             }).expect("send command failed");
 
-            // 等待 Stable(确保 StateTransition 已被 FactsLog 记录)
+            // Wait for Stable (ensures the StateTransition has been recorded by FactsLog)
             let mut got_transition = false;
             while let Ok(fact) = rx.recv().await {
                 match fact {
@@ -186,7 +195,7 @@ proptest! {
 
             handle.abort();
 
-            // 核心断言:如果发生了 StateTransition,版本号必须一致
+            // Core assertion: if a StateTransition occurred, the version numbers must agree
             if got_transition {
                 let reactor_version = handle.snapshot()
                     .expect("reactor snapshot should exist")
@@ -203,7 +212,8 @@ proptest! {
         })?;
     }
 
-    /// P0-9: 多条 Command 后,审计链版本与反应器内部版本一致
+    /// P0-9: after multiple Commands, the audit-chain version and the reactor-internal
+    /// version agree
     #[test]
     fn diff_version_consistency_multi_command(
         n_commands in 1usize..10,
@@ -221,7 +231,7 @@ proptest! {
                 .build();
             let (tx, mut rx, _event_tx, handle, log) = reactor.spawn();
 
-            // 发送 n_commands 条 noop 指令
+            // Send n_commands noop instructions
             for i in 0..n_commands {
                 let instruction = JsonValue::object_from_pairs(&[
                     ("type", JsonValue::string("noop")),
@@ -231,7 +241,7 @@ proptest! {
                     instruction,
                 }).expect("send command failed");
 
-                // 等待这条命令的 Stable
+                // Wait for this command's Stable
                 while let Ok(fact) = rx.recv().await {
                     if matches!(fact, Fact::Stable { .. } | Fact::Error { .. }) {
                         break;
@@ -241,7 +251,7 @@ proptest! {
 
             handle.abort();
 
-            // 比较版本号
+            // Compare version numbers
             let reactor_version = handle.snapshot()
                 .expect("reactor snapshot should exist")
                 .version;
@@ -258,27 +268,28 @@ proptest! {
 }
 
 // =============================================================================
-// P0-10: rewind(facts, N) == FactsLog 重放到版本 N
+// P0-10: rewind(facts, N) == FactsLog replayed up to version N
 // =============================================================================
 
 proptest! {
     #![proptest_config(proptest_config())]
 
-    /// P0-10: PayloadUpdate 序列 —— rewind 与 FactsLog 重放产生相同快照
+    /// P0-10: PayloadUpdate sequence — rewind and FactsLog replay produce the same snapshot
     ///
-    /// 差分对:
+    /// Differential pair:
     /// - A: rewind(&all_facts, target_version) → RewindSnapshot
-    /// - B: FactsLog 重放前 target_version 个事实 → snapshot()
+    /// - B: FactsLog replay of the first target_version facts → snapshot()
     ///
-    /// 两条独立路径重建同一版本的状态,互为交叉验证。
+    /// Two independent paths rebuild the state of the same version, cross-validating
+    /// each other.
     #[test]
     fn diff_rewind_vs_factslog_payload_update(
-        // 1..8 个 PayloadUpdate 事实,每个更新 "x" 字段
+        // 1..8 PayloadUpdate facts, each updating the "x" field
         values in proptest::collection::vec(-1000i64..1000, 1..8),
-        // 目标索引(选择中间某个版本做差分)
+        // Target index (pick some middle version for the differential comparison)
         target_idx in 0usize..7,
     ) {
-        // 生成 PayloadUpdate 事实序列
+        // Generate the PayloadUpdate fact sequence
         let facts: Vec<Fact> = values.iter().enumerate().map(|(i, &v)| {
             payload_update_fact(i as u64 + 1, "x", v)
         }).collect();
@@ -286,9 +297,9 @@ proptest! {
         let target_idx = target_idx.min(facts.len() - 1);
         let target_facts = &facts[..=target_idx];
 
-        // 路径 A: rewind
-        // rewind 需要 target_version,PayloadUpdate 每个递增 version,
-        // 所以 target_idx 个事实后 version = target_idx + 1
+        // Path A: rewind
+        // rewind needs the target_version; each PayloadUpdate increments the version by 1,
+        // so after target_idx facts the version = target_idx + 1
         let target_version = (target_idx + 1) as u64;
         let rewind_snapshot = rewind(&facts, target_version);
         prop_assert!(
@@ -298,21 +309,21 @@ proptest! {
         );
         let rs = rewind_snapshot.unwrap();
 
-        // 路径 B: FactsLog 重放到 target_version
+        // Path B: FactsLog replayed up to target_version
         let log_b = FactsLog::with_initial_payload(JsonValue::empty_object());
         for fact in target_facts {
             log_b.append(fact.clone()).expect("append failed");
         }
         let (b_payload, _b_queue, b_version) = log_b.snapshot();
 
-        // 比较版本号
+        // Compare version numbers
         prop_assert_eq!(
             rs.version, b_version,
             "version mismatch: rewind={} vs facts_log={}",
             rs.version, b_version,
         );
 
-        // 比较 payload
+        // Compare payloads
         let b_payload_serde = tcb_to_serde(&b_payload);
         prop_assert_eq!(
             &rs.payload, &b_payload_serde,
@@ -320,7 +331,7 @@ proptest! {
             target_version,
         );
 
-        // 验证 x 字段值正确
+        // Verify the x field value is correct
         let expected_x = values[target_idx];
         prop_assert_eq!(
             rs.payload.get("x").and_then(|v| v.as_i64()),
@@ -329,19 +340,20 @@ proptest! {
         );
     }
 
-    /// P0-10: StateTransition 序列 —— rewind 与 FactsLog 重放产生相同快照
+    /// P0-10: StateTransition sequence — rewind and FactsLog replay produce the same snapshot
     ///
-    /// StateTransition 替换整个 payload(而非合并),测试不同的重建路径。
+    /// StateTransition replaces the whole payload (rather than merging), exercising a
+    /// different reconstruction path.
     #[test]
     fn diff_rewind_vs_factslog_state_transition(
-        // 1..6 个 (x, y) 对,每个生成一个 StateTransition
+        // 1..6 (x, y) pairs, each producing one StateTransition
         pairs in proptest::collection::vec(
             (-1000i64..1000, -1000i64..1000),
             1..6,
         ),
         target_idx in 0usize..5,
     ) {
-        // 生成 StateTransition 事实序列
+        // Generate the StateTransition fact sequence
         let facts: Vec<Fact> = pairs.iter().enumerate().map(|(i, &(x, y))| {
             state_transition_fact(i as u64 + 1, i as u64, x, y)
         }).collect();
@@ -349,7 +361,7 @@ proptest! {
         let target_idx = target_idx.min(facts.len() - 1);
         let target_facts = &facts[..=target_idx];
 
-        // 路径 A: rewind
+        // Path A: rewind
         let target_version = (target_idx + 1) as u64;
         let rewind_snapshot = rewind(&facts, target_version);
         prop_assert!(
@@ -358,21 +370,21 @@ proptest! {
         );
         let rs = rewind_snapshot.unwrap();
 
-        // 路径 B: FactsLog 重放
+        // Path B: FactsLog replay
         let log_b = FactsLog::with_initial_payload(JsonValue::empty_object());
         for fact in target_facts {
             log_b.append(fact.clone()).expect("append failed");
         }
         let (b_payload, _b_queue, b_version) = log_b.snapshot();
 
-        // 比较版本号
+        // Compare version numbers
         prop_assert_eq!(
             rs.version, b_version,
             "version mismatch (StateTransition): rewind={} vs facts_log={}",
             rs.version, b_version,
         );
 
-        // 比较 payload
+        // Compare payloads
         let b_payload_serde = tcb_to_serde(&b_payload);
         prop_assert_eq!(
             &rs.payload, &b_payload_serde,
@@ -380,7 +392,8 @@ proptest! {
             target_version,
         );
 
-        // 验证 x/y 字段值正确(应为最后一次 StateTransition 的值)
+        // Verify the x/y field values are correct (they should be the last
+        // StateTransition's values)
         let (expected_x, expected_y) = pairs[target_idx];
         prop_assert_eq!(
             rs.payload.get("x").and_then(|v| v.as_i64()),
@@ -394,15 +407,15 @@ proptest! {
         );
     }
 
-    /// P0-10: 混合事实序列(PayloadUpdate + StateTransition)
+    /// P0-10: mixed fact sequence (PayloadUpdate + StateTransition)
     ///
-    /// 验证 rewind 在混合事实类型下仍与 FactsLog 一致。
+    /// Verifies rewind still agrees with FactsLog on mixed fact types.
     #[test]
     fn diff_rewind_vs_factslog_mixed(
-        // 先一个 StateTransition 设定初始状态,然后多个 PayloadUpdate 修改
+        // First one StateTransition sets the initial state, then multiple PayloadUpdates modify it
         initial_x in -500i64..500,
         initial_y in -500i64..500,
-        // 每个更新选择 "x" 或 "y" 字段
+        // Each update picks either the "x" or the "y" field
         updates in proptest::collection::vec(
             (-500i64..500, proptest::sample::select(vec!["x".to_string(), "y".to_string()])),
             1..5,
@@ -420,29 +433,29 @@ proptest! {
         let target_idx = target_idx.min(total_facts - 1);
         let target_facts = &facts[..=target_idx];
 
-        // target_version: 1 (StateTransition) + target_idx (PayloadUpdate 数)
+        // target_version: 1 (StateTransition) + target_idx (PayloadUpdate count)
         let target_version = (target_idx + 1) as u64;
 
-        // 路径 A: rewind
+        // Path A: rewind
         let rewind_snapshot = rewind(&facts, target_version);
         prop_assert!(rewind_snapshot.is_some(), "rewind should return Some for mixed sequence");
         let rs = rewind_snapshot.unwrap();
 
-        // 路径 B: FactsLog 重放
+        // Path B: FactsLog replay
         let log_b = FactsLog::with_initial_payload(JsonValue::empty_object());
         for fact in target_facts {
             log_b.append(fact.clone()).expect("append failed");
         }
         let (b_payload, _b_queue, b_version) = log_b.snapshot();
 
-        // 比较版本号
+        // Compare version numbers
         prop_assert_eq!(
             rs.version, b_version,
             "version mismatch (mixed): rewind={} vs facts_log={}",
             rs.version, b_version,
         );
 
-        // 比较 payload
+        // Compare payloads
         let b_payload_serde = tcb_to_serde(&b_payload);
         prop_assert_eq!(
             &rs.payload, &b_payload_serde,
@@ -453,21 +466,24 @@ proptest! {
 }
 
 // =============================================================================
-// P0-15: append 路径 vs WAL 重放路径 一致性(diff_recover_vs_append)
+// P0-15: append path vs WAL replay path consistency (diff_recover_vs_append)
 // =============================================================================
 
 proptest! {
     #![proptest_config(proptest_config())]
 
-    /// P0-15: FactsLog 逐条 append(内存 WAL 后端)与 replay_wal_records 纯重放全等
+    /// P0-15: FactsLog entry-by-entry append (in-memory WAL backend) is fully equal to
+    /// replay_wal_records pure replay
     ///
-    /// 差分对:
-    /// - A: FactsLog + MemoryWalStore 后端逐条 append(进程内追加路径)
-    /// - B: replay_wal_records(A 产生的 WAL 记录)(WAL 重放路径,recover 的纯核心)
+    /// Differential pair:
+    /// - A: FactsLog + MemoryWalStore backend, entry-by-entry append (in-process append path)
+    /// - B: replay_wal_records(the WAL records produced by A) (WAL replay path, the pure
+    ///   core of recover)
     ///
-    /// 断言: 快照 / 队列 / 版本 / 链尾哈希四元组全等,另含历史长度与
-    /// last_stable_version。事实应用语义由 reactor 侧 apply_fact_to_state
-    /// 单点保证——本差分测试是该单点契约的 CI 常驻执行面。
+    /// Asserts: the snapshot / queue / version / tail-hash quadruple is fully equal, plus
+    /// history length and last_stable_version. Fact-application semantics are guaranteed
+    /// at the single point apply_fact_to_state on the reactor side — this differential
+    /// test is the CI-resident execution face of that single-point contract.
     #[test]
     fn diff_recover_vs_append(
         specs in prop::collection::vec((0u8..5, -1000i64..1000), 0..12),
@@ -516,20 +532,21 @@ proptest! {
         let log_b = replay_wal_records(&records).expect("replay failed");
         let (snap_b, queue_b, ver_b) = log_b.snapshot();
 
-        prop_assert_eq!(ver_a, ver_b, "版本分叉: append={} vs replay={}", ver_a, ver_b);
+        prop_assert_eq!(ver_a, ver_b, "version divergence: append={} vs replay={}", ver_a, ver_b);
         prop_assert!(
             snap_a == snap_b,
-            "快照分叉: append={} vs replay={}",
+            "snapshot divergence: append={} vs replay={}",
             tcb_to_serde(&snap_a), tcb_to_serde(&snap_b),
         );
-        prop_assert!(queue_a == queue_b, "队列分叉");
+        prop_assert!(queue_a == queue_b, "queue divergence");
         let hash_b = log_b.last_hash();
-        // 消息保持静态: prop_assert_eq 展开中 left/right 被 move,失败输出自动含两值
-        prop_assert_eq!(hash_a, hash_b, "链尾哈希分叉: append vs replay");
-        prop_assert_eq!(log_a.history_len(), log_b.history_len(), "历史长度分叉");
+        // Message kept static: left/right are moved in the prop_assert_eq expansion, and
+        // the failure output automatically includes both values
+        prop_assert_eq!(hash_a, hash_b, "tail-hash divergence: append vs replay");
+        prop_assert_eq!(log_a.history_len(), log_b.history_len(), "history length divergence");
         prop_assert_eq!(
             log_a.last_stable_version(), log_b.last_stable_version(),
-            "last_stable_version 分叉",
+            "last_stable_version divergence",
         );
     }
 }

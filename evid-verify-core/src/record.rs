@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 链记录适配层：S1 导出文档（v1.0）与 WAL 行 → 判定所需投影
+//! Chain record adapter: export doc (v1.0) and WAL lines → projections for verdicts
 //!
-//! 仅提取判定所需字段；导出条目中的 `cause`/`logical_time` 等展示性字段
-//! 不参与判定，容忍存在。形态闸：导出版本仅认 [`EXPORT_VERSION`]，
-//! `entry_count` 与 `entries` 长度不符即拒。
+//! Extracts only the fields verdicts need; presentational fields of export
+//! entries such as `cause`/`logical_time` do not participate in verdicts and
+//! are tolerated. Shape gate: the export version must be [`EXPORT_VERSION`],
+//! and an `entry_count` inconsistent with the `entries` length is rejected.
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -14,30 +15,30 @@ use core::fmt;
 use crate::parse::{fact_from_json, ParseError};
 use serde_json::Value as Jv;
 
-/// 事实链链首 prev 哈希（与 SSOT `compute_chain_hash` 同源）
+/// Fact-chain head prev hash (same source as the SSOT `compute_chain_hash`)
 pub const GENESIS: &str = "genesis";
 
-/// 支持的导出格式版本（fail-closed：未知版本拒收）
+/// Supported export format version (fail-closed: unknown versions rejected)
 pub const EXPORT_VERSION: &str = "1.0";
 
-/// 导出条目（S1 v1.0 判定所需投影）
+/// Export entry (v1.0 projection for verdicts)
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExportEntry {
-    /// 内容哈希（条目声明）
+    /// Content hash (entry declaration)
     pub content_hash: String,
-    /// 事实对象（stable JSON 同形对象）
+    /// Fact object (stable-JSON-shaped object)
     pub fact: evorule_audit_chain::fact::Fact,
-    /// 条目级事实 id 投影（与 `fact.id()` 对账）
+    /// Entry-level fact id projection (reconciled with `fact.id()`)
     pub fact_id: u64,
-    /// 条目级事实类型投影（与 `fact.type_name()` 对账）
+    /// Entry-level fact type projection (reconciled with `fact.type_name()`)
     pub fact_type: String,
-    /// 事实 stable JSON 原文（content_hash 的逐字节输入源）
+    /// Fact stable JSON original (the byte-level input source of content_hash)
     pub fact_json_stable: String,
-    /// 前序链尾声明
+    /// Declared previous chain tail
     pub prev_hash: String,
 }
 
-/// 导出文档（S1 v1.0）
+/// Export doc (v1.0)
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExportDoc {
     pub version: String,
@@ -46,7 +47,7 @@ pub struct ExportDoc {
     pub entries: Vec<ExportEntry>,
 }
 
-/// WAL 行（三步判定所需投影）
+/// WAL line (projection for the three-step verdict)
 #[derive(Debug, Clone, PartialEq)]
 pub struct WalLine {
     pub content_hash: String,
@@ -55,13 +56,14 @@ pub struct WalLine {
     pub fact: evorule_audit_chain::fact::Fact,
 }
 
-/// 导出文档解析
+/// Export doc parsing
 ///
-/// 接受两种已知形态（显式识别，非静默猜测）：裸 export 对象
-/// （`{version, entry_count, last_hash, entries}`）或 S1 导出文件的
-/// `{"export": {...}}` 包装层。其余形态拒收。
+/// Accepts two known shapes (explicitly recognized, never silently guessed):
+/// the bare export object (`{version, entry_count, last_hash, entries}`) or
+/// the `{"export": {...}}` wrapper of the export file. Other shapes are
+/// rejected.
 pub fn parse_export_doc(v: &Jv) -> Result<ExportDoc, ParseError> {
-    let outer = obj_of(v, "导出文档")?;
+    let outer = obj_of(v, "export doc")?;
     let obj = match outer.get("export") {
         Some(inner) => obj_of(inner, "export")?,
         None => outer,
@@ -70,14 +72,14 @@ pub fn parse_export_doc(v: &Jv) -> Result<ExportDoc, ParseError> {
     let version = req_str(obj, "version", CTX)?;
     if version != EXPORT_VERSION {
         return Err(ParseError::new(alloc::format!(
-            "不支持的导出版本 \"{version}\"（支持 {EXPORT_VERSION}，fail-closed）"
+            "unsupported export version \"{version}\" (supported: {EXPORT_VERSION}, fail-closed)"
         )));
     }
     let entry_count = req_u64(obj, "entry_count", CTX)?;
     let last_hash = req_str(obj, "last_hash", CTX)?.to_string();
     let arr = req(obj, "entries", CTX)?
         .as_array()
-        .ok_or_else(|| ParseError::new("export.entries 应为数组"))?;
+        .ok_or_else(|| ParseError::new("export.entries must be an array"))?;
     let mut entries = Vec::with_capacity(arr.len());
     for (i, e) in arr.iter().enumerate() {
         let ctx = alloc::format!("entries[{i}]");
@@ -106,9 +108,9 @@ pub fn parse_export_doc(v: &Jv) -> Result<ExportDoc, ParseError> {
     })
 }
 
-/// WAL 行解析
+/// WAL line parsing
 pub fn parse_wal_line(v: &Jv) -> Result<WalLine, ParseError> {
-    let obj = obj_of(v, "WAL 行")?;
+    let obj = obj_of(v, "WAL line")?;
     const CTX: &str = "wal";
     let fact = fact_from_json(req(obj, "fact", CTX)?).map_err(|err| err.at(CTX))?;
     Ok(WalLine {
@@ -121,7 +123,7 @@ pub fn parse_wal_line(v: &Jv) -> Result<WalLine, ParseError> {
 
 fn obj_of<'a>(v: &'a Jv, what: &str) -> Result<&'a serde_json::Map<String, Jv>, ParseError> {
     v.as_object()
-        .ok_or_else(|| ParseError::new(alloc::format!("{what} 应为对象")))
+        .ok_or_else(|| ParseError::new(alloc::format!("{what} must be an object")))
 }
 
 fn req<'a>(
@@ -130,7 +132,7 @@ fn req<'a>(
     ctx: &str,
 ) -> Result<&'a Jv, ParseError> {
     obj.get(key)
-        .ok_or_else(|| ParseError::new(alloc::format!("{ctx} 缺字段 \"{key}\"")))
+        .ok_or_else(|| ParseError::new(alloc::format!("{ctx} missing field \"{key}\"")))
 }
 
 fn req_str<'a>(
@@ -140,17 +142,22 @@ fn req_str<'a>(
 ) -> Result<&'a str, ParseError> {
     let v = req(obj, key, ctx)?;
     v.as_str()
-        .ok_or_else(|| ParseError::new(alloc::format!("{ctx}.{key} 应为字符串")))
+        .ok_or_else(|| ParseError::new(alloc::format!("{ctx}.{key} must be a string")))
 }
 
 fn req_u64(obj: &serde_json::Map<String, Jv>, key: &str, ctx: &str) -> Result<u64, ParseError> {
     let v = req(obj, key, ctx)?;
-    v.as_u64()
-        .ok_or_else(|| ParseError::new(alloc::format!("{ctx}.{key} 应为非负整数")))
+    v.as_u64().ok_or_else(|| {
+        ParseError::new(alloc::format!("{ctx}.{key} must be a non-negative integer"))
+    })
 }
 
 impl fmt::Display for ExportDoc {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "导出文档 v{}: {} 条", self.version, self.entry_count)
+        write!(
+            f,
+            "export doc v{}: {} entries",
+            self.version, self.entry_count
+        )
     }
 }

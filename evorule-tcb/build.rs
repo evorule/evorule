@@ -1,99 +1,103 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! evorule-tcb compile-time gate (L1 字面量门禁)
+//! evorule-tcb compile-time gate (L1 literal gate)
 //!
-//! 强制执行 TCB_SPEC.md 的 T4-T14 + G1/G2 规则 (见 §五 编译时门禁)。
-//! 跨模块设计见 ../../GATE_REFERENCE.md §四(跨模块门控图)+ §五(SPEC 章节编号映射)。
+//! Enforces the T4-T14 + G1/G2 rules of TCB_SPEC.md (see §5 compile-time gate).
+//! Cross-module design see ../../GATE_REFERENCE.md §4 (cross-module gating map) + §5 (SPEC section numbering map).
 //!
-//! # 扫描的 24 个模式
+//! # The 24 scanned patterns
 //!
-//! | 规则          | 模式                                           | 数量 |
-//! |---------------|------------------------------------------------|------|
-//! | T8 (哈希容器) | `HashMap`, `HashSet`                           | 2    |
-//! | G1/T9 (panic) | `.unwrap(`, `.expect(`, `debug_assert!`, `panic!(` | 4 |
-//! | G2/T10 (unsafe)| `unsafe`                                      | 1    |
-//! | T12 (浮点)    | `f32`, `f64`, `Float`                          | 3    |
-//! | T5 (系统时间) | `SystemTime`, `Instant`                        | 2    |
-//! | T6 (随机数)   | `rand::`, `random()`                           | 2    |
-//! | T4 (I/O)      | `std::fs::`, `std::net::`, `std::io::`, 等     | 5    |
-//! | T14 (线程异步)| `std::thread`, `tokio::`, `async`, `await`, `spawn(` | 5 |
+//! | Rule          | Pattern                                            | Count |
+//! |---------------|----------------------------------------------------|-------|
+//! | T8 (hash containers) | `HashMap`, `HashSet`                         | 2    |
+//! | G1/T9 (panic) | `.unwrap(`, `.expect(`, `debug_assert!`, `panic!(`  | 4    |
+//! | G2/T10 (unsafe)| `unsafe`                                           | 1    |
+//! | T12 (floats)  | `f32`, `f64`, `Float`                               | 3    |
+//! | T5 (system time) | `SystemTime`, `Instant`                          | 2    |
+//! | T6 (randomness) | `rand::`, `random()`                              | 2    |
+//! | T4 (I/O)      | `std::fs::`, `std::net::`, `std::io::`, etc.        | 5    |
+//! | T14 (threads/async) | `std::thread`, `tokio::`, `async`, `await`, `spawn(` | 5 |
 //!
-//! 匹配口径: 每行同时按原文与去空白文本匹配 (`x.unwrap ()` 等插空写法同样
-//! 拦截); 行内自闭合块注释先剥离再匹配 (字符串感知, 跨行
-//! 未闭合保守整行); `async`/`await` 裸词按词界匹配
-//! ("asynchronous" 等英文单词不再误命中); 注释/属性行判定
-//! 仍用原文。
+//! Matching conventions: each line is matched both on the raw text and on the
+//! whitespace-squeezed text (interleaved forms like `x.unwrap ()` are intercepted too);
+//! self-closing inline block comments are stripped before matching (string-aware; cross-line
+//! unclosed conservatively keeps the whole line); `async`/`await` bare words are matched on
+//! word boundaries (English words like "asynchronous" no longer false-positive); comment/
+//! attribute line detection still uses the raw text.
 //!
-//! 除上述 24 个逐行子串模式外, 还执行 1 项文件级检查:
-//! `BOM-detected` —— 源码文件不得以 UTF-8 BOM (U+FEFF) 开头。
-//! 编辑器引入 BOM 会遮蔽首行 `//` 前缀, 使注释跳过失效 (首行被误当代码扫描)。
-//! 门禁检测到 BOM 时: 剥离 BOM 保证后续扫描正确, 同时将 BOM 记为违规强制移除。
+//! Besides the 24 per-line substring patterns above, 1 file-level check is performed:
+//! `BOM-detected` — source files must not start with a UTF-8 BOM (U+FEFF).
+//! A BOM introduced by editors masks the first-line `//` prefix, defeating comment-line
+//! skipping (the first line is mistaken for code and scanned).
+//! When the gate detects a BOM: the BOM is stripped to keep subsequent scanning correct, and
+//! the BOM is recorded as a violation forcing removal.
 //!
-//! # 守不住的 (靠 L3 code review)
+//! # What this gate cannot hold (covered by L3 code review)
 //!
-//! T1/T2 (需 trait impl / enum 变体计数) / T3 (运行时) / T7 (接口检测) / T13 (static mut)
+//! T1/T2 (needs trait impl / enum variant counting) / T3 (runtime) / T7 (interface detection) / T13 (static mut)
 //!
-//! # 紧急跳过
+//! # Emergency skip
 //!
 //! ```bash
-//! EVORULE_SKIP_GATE=1 cargo build       # 跳过 L1 字面量门禁
-//! EVORULE_SKIP_REASON="原因"            # 跳过理由登记 (未登记将出 warning)
+//! EVORULE_SKIP_GATE=1 cargo build       # skip the L1 literal gate
+//! EVORULE_SKIP_REASON="reason"          # skip reason registration (unregistered → warning)
 //! ```
-//! 阀值仅 `1`/`true` 生效 (`0`/空/其他值 = 门禁照常执行, fail-closed)。
-//! 跳过必须临时且有书面理由, 永不永久禁用。
+//! Only `1`/`true` activate the switch (`0`/empty/other values = the gate runs as usual, fail-closed).
+//! Skips must be temporary and carry a written reason; never permanently disabled.
 //!
-//! # 门禁定位（诚实边界）
+//! # Gate positioning (honest boundary)
 //!
-//! 本文件全部门禁是工程质量自查纪律（机制-策略分离、确定性红线），不是
-//! 对抗主动攻击者的安全边界；策略层检测无阀常开。CR 变更自查
-//! （CHANGE_REQUEST.md 字段清单）已移出公开仓，由本地 git pre-commit hook
-//! 承接——它从来不是防伪造审查机制（既定裁定）。
+//! All gates in this file are engineering-quality self-check discipline (mechanism-policy
+//! separation, determinism red lines), not a security boundary against active attackers;
+//! the policy-layer detection is valve-less always-on. CR change self-check
+//! (CHANGE_REQUEST.md field checklist) has moved out of the public repo and is carried by a
+//! local git pre-commit hook — it was never an anti-forgery review mechanism (established ruling).
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-/// 禁止模式: (标签, 字节子串)
+/// Forbidden patterns: (label, byte substring)
 ///
-/// 用字节子串匹配而非 `regex`, 保持 build.rs 零依赖。
+/// Byte substring matching instead of `regex`, keeping build.rs zero-dependency.
 const FORBIDDEN: &[(&str, &str)] = &[
-    // T8 / G6: 哈希容器 (非确定性迭代顺序)
+    // T8 / G6: hash containers (non-deterministic iteration order)
     ("T8-HashMap", "HashMap"),
     ("T8-HashSet", "HashSet"),
-    // G1 / T9 / T11 / F11: panic-prone 构造 (TCB 不得 panic)
+    // G1 / T9 / T11 / F11: panic-prone constructs (TCB must not panic)
     ("T9-unwrap-call", ".unwrap("),
     ("T9-expect-call", ".expect("),
     ("T11-debug_assert", "debug_assert!"),
-    // F11-panic (补齐整改): 旧清单缺 panic!(, GitHub 侧又无 clippy
-    // job, panic!( 在 tcb 内零门禁覆盖。补齐后 L1 每次构建必扫。
+    // F11-panic (remediation backfill): the old list lacked panic!(, and the GitHub side had no
+    // clippy job, so panic!( had zero gate coverage inside tcb. After backfill, L1 scans on every build.
     ("F11-panic", "panic!("),
-    // F11 panic 路径宏收紧 (裁定): panic! 之外的 panic 路径——
-    // assert!/unreachable!/todo! 同属生产代码 panic 面。注: assert!(
-    // 与 T11-debug_assert 子串重叠 (`debug_assert!(` 内含 `assert!(`),
-    // 命中行会双报两标签——均为真实违规, 属可接受噪声。
+    // F11 panic-path macro tightening (ruling): panic paths beyond panic! —
+    // assert!/unreachable!/todo! are also production-code panic surface. Note: assert!(
+    // overlaps the T11-debug_assert substring (`debug_assert!(` contains `assert!(`),
+    // so hit lines double-report both labels — both are real violations, acceptable noise.
     ("F11-assert", "assert!("),
     ("F11-unreachable", "unreachable!("),
     ("F11-todo", "todo!("),
-    // G2 / T10: unsafe 关键字 (禁止内存非确定行为)
+    // G2 / T10: unsafe keyword (forbids memory non-determinism)
     ("T10-unsafe-keyword", "unsafe"),
-    // T12: 浮点类型 (跨平台非确定)
+    // T12: floating-point types (cross-platform non-determinism)
     ("T12-f32", "f32"),
     ("T12-f64", "f64"),
     ("T12-Float", "Float"),
-    // T5: 系统时间 (破坏确定性)
+    // T5: system time (breaks determinism)
     ("T5-SystemTime", "SystemTime"),
     ("T5-Instant", "Instant"),
-    // T6: 随机数生成
+    // T6: random number generation
     ("T6-rand", "rand::"),
     ("T6-random", "random()"),
-    // T4: I/O 操作 (文件/网络/数据库/进程)
+    // T4: I/O operations (files/network/databases/processes)
     ("T4-std-fs", "std::fs::"),
     ("T4-std-net", "std::net::"),
     ("T4-std-io", "std::io::"),
     ("T4-File-open", "File::open"),
     ("T4-std-process", "std::process::"),
-    // T14: 线程和异步运行时 (引入并发非确定性)
+    // T14: threads and async runtimes (introduce concurrency non-determinism)
     ("T14-std-thread", "std::thread"),
     ("T14-tokio", "tokio::"),
     ("T14-async", "async"),
@@ -101,14 +105,16 @@ const FORBIDDEN: &[(&str, &str)] = &[
     ("T14-spawn", "spawn("),
 ];
 
-/// 跳过类环境变量解析（fail-closed 阀值语义）。
+/// Skip-type environment variable parsing (fail-closed threshold semantics).
 ///
-/// 仅 `1` / `true`（trim 后、大小写不敏感）视为请求跳过；其余任何值
-/// （`0`、空串、乱值）一律不跳过——门禁照常执行，并发出 warning 提示
-/// 该值被忽略。旧实现 `is_ok()` 把 `=0`/空值也当跳过，属意外 fail-open。
+/// Only `1` / `true` (after trim, case-insensitive) count as a skip request; any other value
+/// (`0`, empty string, garbage) never skips — the gate runs as usual, with a warning that the
+/// value was ignored. The old `is_ok()` implementation treated `=0`/empty as skip too — an
+/// accidental fail-open.
 ///
-/// 附带跳过理由登记（EVORULE_SKIP_REASON）：跳过生效时若未设置非空理由，
-/// 追加 warning——「大声原则」：任何跳过都必须可追溯。
+/// Includes skip reason registration (EVORULE_SKIP_REASON): when a skip is in effect without a
+/// non-empty reason, an extra warning is emitted — the "loud principle": every skip must be
+/// traceable.
 fn skip_requested(var: &str) -> bool {
     match std::env::var(var) {
         Ok(v) => {
@@ -134,10 +140,12 @@ fn skip_requested(var: &str) -> bool {
     }
 }
 
-/// 去空白对照文本（整改确立）：`x.unwrap ()` 等插空写法在纯原文
-/// 子串匹配下漏检，故每行额外生成去全部空白文本参与匹配。注释/属性行
-/// 判定仍用原文。代价：字符串字面量内凑巧去空白命中的极小概率误报——
-/// 符合门禁「宁可误报不可漏报」哲学。
+/// Whitespace-squeezed comparison text (established remediation): interleaved forms like
+/// `x.unwrap ()` escape raw substring matching, so each line additionally produces a
+/// whitespace-squeezed text for matching. Comment/attribute line detection still uses the raw
+/// text. Cost: a tiny false-positive chance when string literals coincidentally hit on the
+/// squeezed text — consistent with the gate's "prefer false positives over false negatives"
+/// philosophy.
 fn squeeze_ws(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     for c in line.chars() {
@@ -148,27 +156,30 @@ fn squeeze_ws(line: &str) -> String {
     out
 }
 
-/// 同行块注释剥离（整改确立）。
+/// Same-line block comment stripping (established remediation).
 ///
-/// 假阳性背景：注释判定只认 `//` 开头，行中块注释区段内的示例文字
-/// （如 `/* conditional */`）会让 L1 误报。本函数把同行**自闭合**的
-/// 块注释区段（含嵌套 `/* /* */ */`）从匹配文本中剥离。
+/// False-positive background: comment detection only recognizes lines starting with `//`, and
+/// example text inside inline block comment segments (e.g. `/* conditional */`) made L1
+/// false-positive. This function strips same-line **self-closing** block comment segments
+/// (including nested `/* /* */ */`) from the matching text.
 ///
-/// 字符串感知（防漏报）：`"..."`、`b"..."`、原始字符串 `r"..."` /
-/// `r#"..."#` / `r##"..."##` 内的 `/*` 不是注释起点——否则字符串内伪
-/// `/*` 会把后续真代码吃进伪注释区一起剥掉，构成漏报面（违背「宁可
-/// 误报不可漏报」）。常规字符串内 `\"` 转义跳过；原始字符串按定义
-/// 不处理转义。字符字面量 `'x'` 不设独立状态：`'/​*'` 形态在合法 Rust
-/// 中不存在（char 只装一个标量），代价只是 `'"';` 这类写法让本行
-/// 「未闭合」而保守降级——误报方向，安全。
+/// String awareness (against false negatives): a `/*` inside `"..."`, `b"..."`, raw strings
+/// `r"..."` / `r#"..."#` / `r##"..."##` is not a comment start — otherwise a fake `/*` inside
+/// a string would swallow subsequent real code into a fake comment segment and strip it
+/// together, creating a false-negative surface (violating "prefer false positives over false
+/// negatives"). Regular strings skip `\"` escapes; raw strings by definition process no
+/// escapes. Char literals `'x'` get no dedicated state: the `'/ *'` form does not exist in
+/// legal Rust (a char holds one scalar); the cost is only that forms like `'"';` leave the
+/// line "unclosed" and conservatively degrade — false-positive direction, safe.
 ///
-/// fail-closed 边界：`/*` 无同行 `*/`、字符串未在本行闭合——一律放弃
-/// 剥离、整行按原文匹配；跨行块注释首行同样整行保留。剥离器自身不
-/// 允许成为漏报面。字符串内容原样保留参与匹配（字符串内命中是设计
-/// 接受的误报）。
+/// fail-closed boundary: `/*` without a same-line `*/`, or a string not closed on this line —
+/// always give up stripping and match the whole line raw; the first line of a cross-line block
+/// comment likewise keeps the whole line. The stripper itself must not become a false-negative
+/// surface. String contents are kept verbatim for matching (hits inside strings are
+/// design-accepted false positives).
 ///
-/// 字节级扫描安全：UTF-8 多字节序列所有连续字节 > 0x7F，不会与 ASCII
-/// 的 `/ * " ' # b r` 混淆。
+/// Byte-level scan safety: all bytes of UTF-8 multi-byte sequences are > 0x7F and cannot be
+/// confused with ASCII `/ * " ' # b r`.
 fn strip_inline_block_comments(line: &str) -> String {
     let b = line.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(b.len());
@@ -261,14 +272,16 @@ fn strip_inline_block_comments(line: &str) -> String {
     String::from_utf8(out).unwrap_or_else(|_| line.to_string())
 }
 
-/// 裸词命中判定（整改确立）。
+/// Bare-word hit detection (established remediation).
 ///
-/// `async` / `await` 作为裸词 needle 在普通子串匹配下会被
-/// "asynchronous" / "awaiting" 等英文单词误命中（假阳性）。命中后检查
-/// 前后字符均非 ASCII 字母——真正使用 async/await 关键字时两侧是
-/// 空白/符号/标点（含 `.await` 后缀调用形式）。去空白口径下 `async fn`
-/// 合并为 `asyncfn`，词界检查自然拒绝该合并词——但原文口径已保证
-/// `async fn` 照常命中，两口径协同无漏报。其余 needle 走普通子串匹配。
+/// `async` / `await` as bare-word needles are falsely hit by English words like
+/// "asynchronous" / "awaiting" under plain substring matching (false positives). After a hit,
+/// checks that the characters before and after are both non-ASCII-alphabetic — a real
+/// async/await keyword use has whitespace/symbols/punctuation on both sides (including the
+/// `.await` suffix call form). Under the squeezed convention `async fn` merges into
+/// `asyncfn`, which the word-boundary check naturally rejects — but the raw convention already
+/// guarantees `async fn` still hits; the two conventions cooperate with no false negatives.
+/// Other needles use plain substring matching.
 fn bare_word_hit(hay: &str, needle: &str) -> bool {
     if needle != "async" && needle != "await" {
         return hay.contains(needle);
@@ -288,14 +301,16 @@ fn bare_word_hit(hay: &str, needle: &str) -> bool {
     false
 }
 
-/// 剥离行首属性语法 `#![...]` / `#[...]`（整改确立）。
+/// Strips leading attribute syntax `#![...]` / `#[...]` (established remediation).
 ///
-/// 括号深度感知：自行首 `#`（可选 `!`）后的 `[` 起计数嵌套 `[`/`]`，配平为 0
-/// 处截断，返回其后余文——`#![deny(unsafe_code)]` 剥离后为空（不误报），
-/// `#[inline] unsafe fn` 剥离后余文参与匹配（拦截）。属性未在本行闭合则返回
-/// None，调用方保守回退为按原文整行匹配（fail-closed：宁可误报不可漏报）。
-/// 仅剥离首个属性，同一行后续内容继续参与子串匹配。字节级扫描安全：UTF-8
-/// 连续字节不会与 `[]` 混淆。
+/// Bracket-depth aware: starting from the line-leading `#` (optional `!`) `[`, counts nested
+/// `[`/`]`, truncates where the balance reaches 0, and returns the remainder —
+/// `#![deny(unsafe_code)]` strips to empty (no false positive), `#[inline] unsafe fn` strips
+/// to a remainder that participates in matching (intercepted). If the attribute is not closed
+/// on this line, returns None; the caller conservatively falls back to matching the whole line
+/// raw (fail-closed: prefer false positives over false negatives). Only the first attribute is
+/// stripped; the rest of the line continues to participate in substring matching. Byte-level
+/// scan safety: UTF-8 continuation bytes are not confused with `[]`.
 fn strip_leading_attr(line: &str) -> Option<&str> {
     let bytes = line.as_bytes();
     let mut i = 0;
@@ -327,10 +342,10 @@ fn strip_leading_attr(line: &str) -> Option<&str> {
     None
 }
 
-/// 从源码中剥离 `#[cfg(test)] mod tests { ... }` 块体。
+/// Strips `#[cfg(test)] mod tests { ... }` block bodies from the source.
 ///
-/// 通过花括号计数 (感知字符串/字符/注释), 使测试内的字面量门禁模式
-/// 不触发误报。
+/// Counts braces (string/char/comment aware) so that literal gate patterns inside tests do not
+/// trigger false positives.
 fn strip_test_mod(src: &str) -> String {
     let bytes = src.as_bytes();
     let mut out = String::with_capacity(src.len());
@@ -442,17 +457,18 @@ fn skip_to_mod_tests(src: &str) -> Option<usize> {
     None
 }
 
-/// `'` 处判别：字符字面量（`'x'` / `'\n'` / `'\''`）还是生命周期（`'a` / `'static` / `'_`）。
+/// Discriminates at `'`: char literal (`'x'` / `'\n'` / `'\''`) or lifetime (`'a` / `'static` / `'_`).
 ///
-/// 判别规则（Rust 语法保证无歧义）：
-/// - `'` 后跟 `\` → 转义字符字面量；
-/// - `'` 后跟单字符且再下一位是 `'` → 单字符字面量；
-/// - 其余（`'ident`）→ 生命周期/标签。
+/// Discrimination rules (Rust syntax guarantees no ambiguity):
+/// - `'` followed by `\` → escaped char literal;
+/// - `'` followed by a single char and then another `'` → single-char literal;
+/// - otherwise (`'ident`) → lifetime/label.
 ///
-/// 合法源码不存在 `'ab'`（多字符字面量非法），故该判别不会误判。
-/// 不判别的后果：`fn f() -> &'static str {` 的 `'static` 进入字符态后吞掉
-/// 直到下一个 `'` 之间的所有 `{}`，令 match_brace 永不闭合、tests 模块
-/// 整体不被剥离，门禁对全文件测试代码全量误报。
+/// Legal source never contains `'ab'` (multi-char literals are illegal), so this discrimination
+/// cannot misjudge. Consequence of not discriminating: the `'static` of
+/// `fn f() -> &'static str {` enters char state and swallows all `{}` until the next `'`,
+/// making match_brace never close and the tests module never stripped — the gate then
+/// false-positives on the whole file's test code.
 fn char_lit_starts(bytes: &[u8], i: usize) -> bool {
     match bytes.get(i + 1) {
         Some(b'\\') => true,
@@ -461,7 +477,7 @@ fn char_lit_starts(bytes: &[u8], i: usize) -> bool {
     }
 }
 
-/// 生命周期跳过：从 `'` 起越过标识符字符（`'static` / `'a` / `'_`），停在非 ident 处。
+/// Lifetime skip: from `'`, step over identifier characters (`'static` / `'a` / `'_`), stopping at a non-ident char.
 fn skip_lifetime(bytes: &[u8], mut i: usize) -> usize {
     i += 1; // 越过 '
     while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
@@ -470,7 +486,7 @@ fn skip_lifetime(bytes: &[u8], mut i: usize) -> usize {
     i
 }
 
-/// 查找下一个不在注释/字符串内的 `{`, 遇到 `;` 返回 None (`mod tests;` 无体)。
+/// Finds the next `{` not inside a comment/string; returns None on `;` (`mod tests;` has no body).
 fn find_inline_lbrace(src: &str) -> Option<usize> {
     let bytes = src.as_bytes();
     let mut i = 0;
@@ -555,7 +571,7 @@ fn find_inline_lbrace(src: &str) -> Option<usize> {
     None
 }
 
-/// 为 `{` at `open_idx` 找匹配的 `}` (感知字符串/注释)。
+/// Finds the matching `}` for the `{` at `open_idx` (string/comment aware).
 fn match_brace(src: &str, open_idx: usize) -> Option<usize> {
     let bytes = src.as_bytes();
     if bytes[open_idx] != b'{' {
@@ -647,10 +663,10 @@ fn match_brace(src: &str, open_idx: usize) -> Option<usize> {
     None
 }
 
-/// T8/T9/F11 是 test-tolerant (测试中允许: HashMap/unwrap/expect 是
-/// 测试惯例, panic!/assert!/unreachable!/todo! 是测试断言与失败路径
-/// 机制本体; 生产代码由 clippy panic=deny 与 L1 双守);
-/// T10/T11 (unsafe/debug_assert) 在所有位置强制。
+/// T8/T9/F11 are test-tolerant (allowed in tests: HashMap/unwrap/expect are test conventions;
+/// panic!/assert!/unreachable!/todo! are the test assertion and failure-path mechanisms
+/// themselves; production code is guarded by both clippy panic=deny and L1);
+/// T10/T11 (unsafe/debug_assert) are enforced everywhere.
 fn is_test_tolerant(label: &str) -> bool {
     matches!(
         label,
@@ -665,14 +681,15 @@ fn is_test_tolerant(label: &str) -> bool {
     )
 }
 
-/// 字符串字面量内容掩码（T12-float-lit 专用，防版本串误报）。
+/// String literal content mask (T12-float-lit specific, prevents version-string false positives).
 ///
-/// 把 `"` 字符串字面量的内容替换为空格（引号也掩掉），`\` 转义对整体
-/// 跳过两字符。版本号/IP 等数字点串几乎只出现在字符串与注释中——
-/// 注释由调用方剥离（行注释经掩码文本截断，块注释经
-/// strip_inline_block_comments），字符串在此掩码。
-/// 返回 (掩码文本, 引号是否行内闭合)；未闭合 = 多行字符串跨行，
-/// 调用方保守跳过该行（诚实边界：跨行字符串内的浮点形文本不检）。
+/// Replaces the content of `"` string literals with spaces (quotes masked too); `\` escapes
+/// skip two characters overall. Version numbers/IPs and other digit-dot strings appear almost
+/// only in strings and comments — comments are stripped by the caller (line comments truncated
+/// via the masked text, block comments via strip_inline_block_comments), strings are masked
+/// here. Returns (masked text, whether the quote closed inline); unclosed = a multi-line string
+/// spanning lines, the caller conservatively skips the line (honest boundary: float-shaped text
+/// inside cross-line strings is not checked).
 fn mask_string_contents(line: &str) -> (String, bool) {
     let mut out = String::with_capacity(line.len());
     let mut in_str = false;
@@ -700,18 +717,19 @@ fn mask_string_contents(line: &str) -> (String, bool) {
     (out, !in_str)
 }
 
-/// 浮点字面量判定（T12-float-lit 收紧；build.rs 零依赖手工判定）。
+/// Float literal detection (T12-float-lit tightening; zero-dependency hand detection in build.rs).
 ///
-/// 对注释剥离+字符串掩码后的文本找「数字.数字」模式（数字组含 `_`
-/// 分隔符），并做边界排除：
-/// - 前组首字符紧邻 `.` → 版本号中段/元组索引链上下文（`0.6.1` 的
-///   `6.1`、`x.0.1` 的 `0.1`），跳过；
-/// - 后组尾字符紧邻 `.` → 版本号前段上下文（`1.0.2` 的 `1.0`），跳过。
+/// Finds "digit.digit" patterns (digit groups include `_` separators) in the text after comment
+/// stripping + string masking, with boundary exclusions:
+/// - the preceding group's last char adjacent to `.` → mid-version-number/tuple-index-chain
+///   context (`6.1` of `0.6.1`, `0.1` of `x.0.1`), skip;
+/// - the following group's first char adjacent to `.` → leading-version-number context
+///   (`1.0` of `1.0.2`), skip.
 ///
-/// 保留命中：`1.0`、`1.0e5`、`2.5_f64` 等——代码位置（非字符串/注释）
-/// 的「数字.数字」除上述边界外只能是浮点字面量（推断默认 f64）。
-/// 范围 `0..1` 的连写 `..` 不构成数字.数字。已知残余漏报面：跨行字符
-/// 串内的浮点形文本（调用方跳过未闭合行）。
+/// Kept hits: `1.0`, `1.0e5`, `2.5_f64` etc. — at code positions (not strings/comments),
+/// "digit.digit" outside the above boundaries can only be a float literal (inferred default
+/// f64). The range `0..1` written `..` does not form digit.digit. Known residual false-negative
+/// surface: float-shaped text inside cross-line strings (the caller skips unclosed lines).
 fn float_lit_hit(text: &str) -> bool {
     let b = text.as_bytes();
     let is_d = |c: u8| c.is_ascii_digit() || c == b'_';
@@ -728,23 +746,24 @@ fn float_lit_hit(text: &str) -> bool {
             e += 1;
         }
         if s > 0 && b[s - 1] == b'.' {
-            continue; // 版本号中段/元组索引链
+            continue; // mid-version-number/tuple-index chain
         }
         if e + 1 < b.len() && b[e + 1] == b'.' {
-            continue; // 版本号前段
+            continue; // leading version number
         }
         return true;
     }
     false
 }
 
-/// T12-float-lit 独立通道 (收紧): 浮点字面量推断 (`let x = 1.0;`)
-/// 无 f32/f64/Float 字面量, T12 关键字模式漏报——推断字面量默认 f64,
-/// 同属浮点非确定面。非固定子串, 不入 FORBIDDEN 表, 走手工判定
-/// (mask_string_contents + float_lit_hit)。测试模块豁免 (与 T8/T9/F11
-/// 同口径: 测试夹具数据可含小数形文本, 红线约束的是生产确定性);
-/// 注释行豁免与同行块注释剥离与主扫描同口径。
-/// 返回 (行号, 违规行裁剪文本) 列表。
+/// T12-float-lit independent channel (tightening): inferred float literals (`let x = 1.0;`)
+/// carry no f32/f64/Float literal and are missed by the T12 keyword patterns — inferred
+/// literals default to f64, also on the float non-determinism surface. Not a fixed substring;
+/// not in the FORBIDDEN table; uses hand detection (mask_string_contents + float_lit_hit).
+/// Test-module exemption (same conventions as T8/T9/F11: test fixture data may contain
+/// decimal-shaped text; the red line constrains production determinism); comment-line exemption
+/// and same-line block comment stripping follow the main scan's conventions.
+/// Returns a list of (line number, trimmed violating line).
 fn float_lit_violations(raw: &str) -> Vec<(usize, String)> {
     let mut hits: Vec<(usize, String)> = Vec::new();
     let float_scan = strip_test_mod(raw);
@@ -756,8 +775,9 @@ fn float_lit_violations(raw: &str) -> Vec<(usize, String)> {
         let stripped = strip_inline_block_comments(trimmed);
         let (masked, closed) = mask_string_contents(&stripped);
         if !closed {
-            // 行内引号未闭合 (多行字符串跨行): 保守跳过本行
-            // (诚实边界: 跨行字符串内浮点形文本不检, 见 mask_string_contents 文档)。
+            // Quote unclosed inline (multi-line string spanning lines): conservatively skip this
+            // line (honest boundary: float-shaped text inside cross-line strings is not checked,
+            // see the mask_string_contents docs).
             continue;
         }
         let code = match masked.find("//") {
@@ -772,10 +792,12 @@ fn float_lit_violations(raw: &str) -> Vec<(usize, String)> {
 }
 
 fn main() -> ExitCode {
-    // 策略层反模式检测 (无阀常开, 既定裁定): 机制-策略分离是
-    // 设计不变量, 不设旁路阀。CR 自查 (CHANGE_REQUEST.md 校验) 已移出公开仓
-    // build.rs——EVORULE_SKIP_CR_GATE 随之移除, 自查由本地 git pre-commit hook
-    // 承接 (hook 源落本地工具区, 不随仓库/发布公开)。
+    // Policy-layer anti-pattern detection (valve-less always-on, established ruling):
+    // mechanism-policy separation is a design invariant; no bypass valve. CR self-check
+    // (CHANGE_REQUEST.md validation) has moved out of the public repo build.rs —
+    // EVORULE_SKIP_CR_GATE was removed with it; self-check is carried by the local git
+    // pre-commit hook (the hook source lives in the local tooling area, not published with the
+    // repo/release).
     if let Err(e) = detect_strategy_patterns("evorule-tcb") {
         eprintln!("{}", e);
         return ExitCode::FAILURE;
@@ -800,9 +822,10 @@ fn main() -> ExitCode {
 
     let mut violations: Vec<(PathBuf, String, String)> = Vec::new();
 
-    // L1a 必须递归: src/ 下任何层级的子模块同样受 TCB 红线约束。
-    // 此处与 reactor/governance/cli 三仓的 collect_rs_files 语义对齐
-    // (见 GATE_REFERENCE.md 跨仓同步契约)。文件列表按路径排序, 扫描顺序确定。
+    // L1a must recurse: submodules at any level under src/ are equally bound by the TCB red
+    // lines. Aligned with the collect_rs_files semantics of the reactor/governance/cli repos
+    // (see the GATE_REFERENCE.md cross-repo sync contract). The file list is sorted by path;
+    // the scan order is deterministic.
     let mut l1a_files: Vec<PathBuf> = Vec::new();
     collect_rs_files_for_strategy(&src_dir, &mut l1a_files);
     if l1a_files.is_empty() {
@@ -820,9 +843,11 @@ fn main() -> ExitCode {
             }
         };
 
-        // BOM 检测: 编辑器可能引入 UTF-8 BOM (U+FEFF), 它会遮蔽首行 `//` 前缀,
-        // 使注释跳过失效 (首行被误当代码扫描 → 可能误报 T8/T9/T10 等模式)。
-        // 剥离 BOM 保证后续扫描正确, 同时将 BOM 记为违规强制移除 (确定性 + 格式一致性)。
+        // BOM detection: editors may introduce a UTF-8 BOM (U+FEFF), which masks the first-line
+        // `//` prefix, defeating comment-line skipping (the first line is mistaken for code →
+        // possible false positives on T8/T9/T10 patterns). Strip the BOM to keep subsequent
+        // scanning correct, and record the BOM as a violation forcing removal (determinism +
+        // format consistency).
         if raw.starts_with('\u{FEFF}') {
             violations.push((
                 path.clone(),
@@ -841,15 +866,18 @@ fn main() -> ExitCode {
 
             for (lineno, line) in content_to_scan.lines().enumerate() {
                 let trimmed = line.trim_start();
-                // 注释行豁免判定仍用原文 (既定口径)
+                // Comment-line exemption detection still uses the raw text (established convention)
                 if trimmed.starts_with("//") {
                     continue;
                 }
-                // unsafe 属性行剥离匹配 (既定整改)：不再对 `#[`/`#!` 开头
-                // 行整体豁免——旧实现放任 `#[inline] unsafe fn` 借道逃逸。剥离行首
-                // 属性语法后扫描余下内容：纯属性行 (`#![forbid(unsafe_code)]` 等)
-                // 剥离后为空不误报；`#[inline] unsafe fn` 剥离后命中拦截；属性未
-                // 闭合保守按原文匹配 (fail-closed)。其余模式本就无属性行豁免。
+                // unsafe attribute-line stripping match (established remediation): no longer
+                // blanket-exempts lines starting with `#[`/`#!` — the old implementation let
+                // `#[inline] unsafe fn` escape via the attribute exemption. After stripping the
+                // leading attribute syntax, the remainder is scanned: pure attribute lines
+                // (`#![forbid(unsafe_code)]` etc.) strip to empty with no false positive;
+                // `#[inline] unsafe fn` strips to a hit and is intercepted; unclosed attributes
+                // conservatively match the raw text (fail-closed). Other patterns never had
+                // attribute-line exemptions anyway.
                 let scan_src: &str = if label.contains("unsafe")
                     && (trimmed.starts_with("#[") || trimmed.starts_with("#!"))
                 {
@@ -862,12 +890,13 @@ fn main() -> ExitCode {
                     line
                 };
 
-                // 同行块注释剥离: `/* conditional */` 等
-                // 注释示例文字不再误报; 字符串感知防漏报, 跨行未闭合保守整行。
+                // Same-line block comment stripping: comment example text like
+                // `/* conditional */` no longer false-positives; string awareness guards against
+                // false negatives; cross-line unclosed conservatively keeps the whole line.
                 let stripped = strip_inline_block_comments(scan_src);
                 let squeezed = squeeze_ws(&stripped);
-                // 裸词词界判定 (整改): async/await 不再被
-                // "asynchronous"/"awaiting" 等英文单词误命中。
+                // Bare-word boundary detection (remediation): async/await no longer falsely hit
+                // by English words like "asynchronous"/"awaiting".
                 if bare_word_hit(&stripped, needle) || bare_word_hit(&squeezed, needle) {
                     violations.push((
                         path.clone(),
@@ -878,8 +907,8 @@ fn main() -> ExitCode {
             }
         }
 
-        // T12-float-lit 独立通道 (收紧): 浮点字面量推断检测,
-        // 判定逻辑与豁免口径见 float_lit_violations 文档。
+        // T12-float-lit independent channel (tightening): inferred float literal detection;
+        // detection logic and exemption conventions see the float_lit_violations docs.
         for (lineno, trimmed) in float_lit_violations(&raw) {
             violations.push((
                 path.clone(),
@@ -890,10 +919,11 @@ fn main() -> ExitCode {
     }
 
     if violations.is_empty() {
-        // 大声原则: 通过也要可见——零输出的通过无法与
-        // "build.rs 被删/被短路/未执行" 区分。cargo:warning 每次构建常态
-        // 可见, 与 SKIPPED 输出及 L1b 策略层检测 PASSED 输出口径一致;
-        // 文件数/模式数动态取值, 模式清单变更不产生假数字。
+        // Loud principle: visible even on pass — a zero-output pass cannot be distinguished
+        // from "build.rs deleted/short-circuited/not executed". cargo:warning is routinely
+        // visible on every build, consistent with the SKIPPED output and the L1b policy-layer
+        // detection PASSED output; file count/pattern count are dynamic, so pattern-list changes
+        // produce no fake numbers.
         println!(
             "cargo:warning=evorule-tcb 字面量门禁 PASSED - 已扫 {} 文件 x {} 模式, 0 违规",
             scanned_files,
@@ -906,7 +936,7 @@ fn main() -> ExitCode {
     ExitCode::FAILURE
 }
 
-/// 违规报告输出 (stderr 逐条列明 + 紧急跳过指引)。
+/// Violation report output (stderr itemized + emergency skip guidance).
 fn report_gate_failures(violations: &[(PathBuf, String, String)]) {
     eprintln!();
     eprintln!("==== evorule-tcb compile-time gate FAILED ====");
@@ -919,58 +949,62 @@ fn report_gate_failures(violations: &[(PathBuf, String, String)]) {
     eprintln!("To bypass in an emergency, set EVORULE_SKIP_GATE=1 (with justification comment).");
 }
 
-// ===== 策略模式检测器 (Strategy Pattern Detector) =====
+// ===== Strategy pattern detector =====
 
-/// 策略层反模式定义
+/// Policy-layer anti-pattern definition
 ///
-/// 这些模式在机制层（evorule 仓）中是禁止的，因为它们代表策略层（应用层）逻辑
+/// These patterns are forbidden in the mechanism layer (the evorule repo) because they
+/// represent policy-layer (application-layer) logic
 struct StrategyPattern<'a> {
     label: &'static str,
     patterns: &'a [&'static str],
     description: &'static str,
 }
 
-/// 策略层反模式检测列表
+/// Policy-layer anti-pattern detection list
 const STRATEGY_PATTERNS: &[StrategyPattern<'static>] = &[
-    // P1: 业务领域关键字 - 机制层不应包含特定业务领域的逻辑
-    // 注意：使用更具体的模式，避免误报
+    // P1: business domain keywords - the mechanism layer must not contain logic of specific
+    // business domains
+    // Note: use more specific patterns to avoid false positives
     StrategyPattern {
         label: "P1-business-domain",
         patterns: &[
-            // 医疗领域
+            // medical domain
             "\"hospital\"",
             "\"medical\"",
             "\"patient\"",
             "\"clinic\"",
-            // 金融领域
+            // finance domain
             "\"finance\"",
             "\"bank_\"",
             "\"investment\"",
             "\"loan_\"",
-            // 法律领域
+            // legal domain
             "\"lawyer\"",
             "\"court_case\"",
             "\"legal_document\"",
-            // 保险领域
+            // insurance domain
             "\"insurance\"",
             "\"policy_number\"",
             "\"premium_amount\"",
-            // 制造业
+            // manufacturing
             "\"manufacturing\"",
             "\"production_line\"",
-            // 电商领域
+            // e-commerce domain
             "\"ecommerce\"",
             "\"order_item\"",
             "\"payment_method\"",
         ],
         description: "机制层包含特定业务领域关键字，策略层逻辑必须在应用层仓实现",
     },
-    // P2: 控制流指令硬编码 - 检查是否实现了控制流逻辑（不是引用名称）
-    // 机制层可以引用控制流类型名称作为数据模型，但不应实现控制流逻辑
+    // P2: control-flow instruction hardcoding - checks whether control-flow logic is
+    // implemented (not referenced by name)
+    // The mechanism layer may reference control-flow type names as data models, but must not
+    // implement control-flow logic
     StrategyPattern {
         label: "P2-control-flow-hardcode",
         patterns: &[
-            // 控制流实现逻辑（而非引用）
+            // control-flow implementation logic (not references)
             "execute_conditional",
             "execute_while_loop",
             "execute_sequence",
@@ -983,7 +1017,8 @@ const STRATEGY_PATTERNS: &[StrategyPattern<'static>] = &[
         ],
         description: "控制流指令的执行逻辑应在 core_eval.json 中定义，不应在 Rust 代码中实现",
     },
-    // P3: 业务操作硬编码 - 机制层不应包含特定业务操作
+    // P3: business operation hardcoding - the mechanism layer must not contain specific
+    // business operations
     StrategyPattern {
         label: "P3-business-operation",
         patterns: &[
@@ -1008,7 +1043,8 @@ const STRATEGY_PATTERNS: &[StrategyPattern<'static>] = &[
         ],
         description: "机制层包含特定业务操作，操作逻辑应在应用层实现",
     },
-    // P4: 业务规则名硬编码 - 机制层不应包含特定业务规则名
+    // P4: business rule name hardcoding - the mechanism layer must not contain specific
+    // business rule names
     StrategyPattern {
         label: "P4-business-rule-name",
         patterns: &[
@@ -1027,12 +1063,12 @@ const STRATEGY_PATTERNS: &[StrategyPattern<'static>] = &[
     },
 ];
 
-/// 扫描 src/ 目录中的策略层反模式
+/// Scans the src/ directory for policy-layer anti-patterns
 ///
-/// # 返回
+/// # Returns
 ///
-/// - Ok(()) 未检测到策略层反模式
-/// - Err(String) 检测到策略层反模式，包含详细违规信息
+/// - Ok(()) no policy-layer anti-pattern detected
+/// - Err(String) policy-layer anti-pattern detected, with detailed violation information
 fn detect_strategy_patterns(crate_name: &str) -> Result<(), String> {
     // 获取 manifest 目录
     let manifest_dir = match std::env::var("CARGO_MANIFEST_DIR") {
@@ -1114,7 +1150,8 @@ fn detect_strategy_patterns(crate_name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 收集目录下所有 .rs 文件（递归；供 L1a 字面量门禁与策略检测共用）
+/// Collects all .rs files under the directory (recursive; shared by the L1a literal gate and
+/// the strategy detection)
 fn collect_rs_files_for_strategy(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
@@ -1149,7 +1186,8 @@ mod tests {
 
     #[test]
     fn test_match_brace_ignores_lifetime() {
-        // 注意：'static 必须在首个 { 之后且其后整段无撇号，才能复现旧缺陷
+        // Note: 'static must come after the first { and be followed by no apostrophe for the
+        // rest of the segment, to reproduce the old defect
         let src = "fn outer() { let mk: fn() -> &'static str; }";
         let open = src.find('{').unwrap();
         let close = match_brace(src, open).unwrap();
@@ -1158,7 +1196,8 @@ mod tests {
 
     #[test]
     fn test_strip_survives_lifetime_apostrophe() {
-        // 撇号在 tests 体内、其后整个文件无撇号 → 旧行为 match_brace 永不闭合
+        // The apostrophe sits inside the tests body and the rest of the file has no apostrophe
+        // → old behavior: match_brace never closes
         let src = concat!(
             "#[cfg(test)]\n",
             "mod tests {\n",
@@ -1176,9 +1215,10 @@ mod tests {
 
     #[test]
     fn test_strip_multiple_test_mods() {
-        // 一文件多个 cfg(test) 模块 (executor.rs 实况: executor_ssot_tests +
-        // tests): 旧实现把第一个模块的尾部整段原样压入输出又重扫一遍, 后续
-        // 测试模块体未被剥离; 且生产代码被重复计入输出。
+        // Multiple cfg(test) modules in one file (executor.rs reality: executor_ssot_tests +
+        // tests): the old implementation pushed the first module's tail verbatim into the
+        // output and rescanned it, leaving subsequent test module bodies unstripped; production
+        // code was also double-counted into the output.
         let src = concat!(
             "fn prod() { let _x = 1; }\n",
             "#[cfg(test)]\n",
@@ -1216,77 +1256,79 @@ mod tests {
 
     #[test]
     fn test_char_lit_starts_discrimination() {
-        // 转义字符字面量
+        // escaped char literal
         assert!(char_lit_starts(b"let c = '\\n';", 8));
-        // 单字符字面量
+        // single-char literal
         assert!(char_lit_starts(b"let c = 'x';", 8));
-        // 生命周期
+        // lifetime
         assert!(!char_lit_starts(b"fn f() -> &'static str {", 12));
         assert!(!char_lit_starts(b"fn f<'a>(x: &'a u8) {}", 5));
     }
 
     #[test]
     fn test_squeeze_ws_catches_whitespace_bypass() {
-        // 插空写法原文未命中、去空白命中 → 拦截
+        // Interleaved form misses on the raw text, hits on the squeezed text → intercepted
         let bypass = "let x = v.unwrap ();";
         assert!(!bypass.contains(".unwrap("));
         assert!(squeeze_ws(bypass).contains(".unwrap("));
         assert!(squeeze_ws("let m: Hash Map<u8, u8>;").contains("HashMap"));
-        // 原文直命中路径不受影响; 合法代码不误伤
+        // Raw direct-hit path unaffected; legal code not harmed
         assert!("let x = v.unwrap();".contains(".unwrap("));
         assert!(!squeeze_ws("let x = v.unwrap_or(1);").contains(".unwrap("));
     }
 
     #[test]
     fn test_strip_leading_attr() {
-        // 纯属性行剥离后为空 → 不误报
+        // Pure attribute line strips to empty → no false positive
         assert_eq!(strip_leading_attr("#[forbid(unsafe_code)]"), Some(""));
         assert_eq!(strip_leading_attr("#![deny(unsafe_code)]"), Some(""));
         assert_eq!(
             strip_leading_attr("#[cfg_attr(feature = \"ffi\", allow(unsafe_code))]"),
             Some("")
         );
-        // 同行属性后藏代码 → 剥离后余文命中
+        // Code hidden after a same-line attribute → remainder hits after stripping
         let rest = strip_leading_attr("#[inline] unsafe fn f() {}").unwrap();
         assert!(rest.contains("unsafe"));
-        // 方括号深度感知: 字符串内出现的 ']' 需配平后截断
+        // Bracket-depth awareness: a ']' inside strings must be balanced before truncation
         assert_eq!(
             strip_leading_attr("#[doc = \"[x]\"] fn g() {}"),
             Some(" fn g() {}")
         );
-        // 未闭合属性 → None → 调用方按原文匹配 (fail-closed)
+        // Unclosed attribute → None → caller matches the raw text (fail-closed)
         assert_eq!(strip_leading_attr("#[doc = \"unterminated"), None);
     }
 
     #[test]
     fn test_strip_inline_block_comments() {
-        // 同行自闭合块注释 → 剥离, 注释内示例文字不再误报
+        // Same-line self-closing block comment → stripped; example text inside comments no
+        // longer false-positives
         let s = strip_inline_block_comments("let x = 1; /* conditional */ let y = 2;");
         assert!(!s.contains("conditional"), "got: {}", s);
         assert!(s.contains("let y = 2;"));
-        // 嵌套块注释配平剥离
+        // Nested block comments balanced and stripped
         let s = strip_inline_block_comments("fn f() {} /* a /* b */ c */ fn g() {}");
         assert!(!s.contains(" /* "), "got: {}", s);
-        // 字符串感知: 字符串内 /* 不是注释起点 (防伪起点吃真代码 → 漏报)
+        // String awareness: /* inside strings is not a comment start (against fake starts
+        // swallowing real code → false negatives)
         let s = strip_inline_block_comments("let s = \"a/*b\"; v.unwrap();");
         assert!(s.contains("v.unwrap();"), "got: {}", s);
-        // 原始字符串 r#...# 内 /* 不起注释
+        // /* inside raw strings r#...# does not start a comment
         let s = strip_inline_block_comments("let s = r#\"/*\"#; v.unwrap();");
         assert!(s.contains("v.unwrap();"), "got: {}", s);
-        // 常规字符串转义 \" 跳过
+        // Regular string escape \" skipped
         let s = strip_inline_block_comments("let s = \"say \\\"hi\\\"\"; v.unwrap();");
         assert!(s.contains("v.unwrap();"), "got: {}", s);
-        // 未闭合字符串 → 整行保守 (fail-closed)
+        // Unclosed string → whole line conservative (fail-closed)
         assert_eq!(
             strip_inline_block_comments("let s = \"unterminated /* x"),
             "let s = \"unterminated /* x"
         );
-        // 跨行块注释首行 → 整行保守 (fail-closed)
+        // First line of a cross-line block comment → whole line conservative (fail-closed)
         assert_eq!(
             strip_inline_block_comments("fn f() { /* tail comment"),
             "fn f() { /* tail comment"
         );
-        // 字符串内容原样保留 (字符串内命中是设计接受的误报)
+        // String contents kept verbatim (hits inside strings are design-accepted false positives)
         let s = strip_inline_block_comments("let a = \"keep\"; /* drop */ let b = \"kept\";");
         assert!(
             s.contains("\"keep\"") && s.contains("\"kept\""),
@@ -1297,16 +1339,17 @@ mod tests {
 
     #[test]
     fn test_bare_word_hit() {
-        // 裸词词界: "asynchronous"/"awaiting" 不再误命中
+        // Bare-word boundary: "asynchronous"/"awaiting" no longer falsely hit
         assert!(!bare_word_hit("this is asynchronous work", "async"));
         assert!(!bare_word_hit("awaiting result", "await"));
-        // 真实关键字形态照常命中 (含 .await 后缀形式)
+        // Real keyword forms still hit (including the .await suffix form)
         assert!(bare_word_hit("async fn f() {}", "async"));
         assert!(bare_word_hit("f().await", "await"));
         assert!(bare_word_hit("async move {}", "async"));
-        // 去空白口径: asyncfn 合并词被词界检查拒绝 (原文口径保证 async fn 命中)
+        // Squeezed convention: the asyncfn merged word is rejected by the word-boundary check
+        // (the raw convention guarantees async fn hits)
         assert!(!bare_word_hit("asyncfn", "async"));
-        // 非 bare 词 needle 走普通 contains
+        // Non-bare-word needles use plain contains
         assert!(bare_word_hit("x.unwrap(", ".unwrap("));
         assert!(!bare_word_hit("x.unwrap_or(1)", ".unwrap("));
     }

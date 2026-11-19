@@ -1,45 +1,54 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! EVID 移动端审计链独立验证内核（no_std）
+//! EVID mobile audit-chain independent verification kernel (no_std)
 //!
-//! 零信任判定内核：给定审计链数据（S1 导出文档 / WAL 行序列 / 锚点封条链），
-//! 从公式重算完成完整性判定，不信任任何外部结论。供三方共用：
-//! wasm 绑定（移动端单文件 HTML 验证器）、server 侧复核、哨兵侧对照。
+//! Zero-trust verdict kernel: given audit-chain data (export doc / WAL line
+//! series / anchor seal chain), it completes integrity verdicts by recomputing
+//! from the formulas and trusts no external conclusions. Shared by three
+//! consumers: the wasm binding (mobile single-file HTML verifier), server-side
+//! re-checks, and sentinel cross-checks.
 //!
-//! # 三面判定
+//! # Three verdict surfaces
 //!
-//! - **导出面**（[`verify::verify_export`]，四步/条）：prev 链接 → 内容哈希
-//!   （`fact_hash` 公式重算）→ stable 深比（`fact_to_stable_json` 重算与
-//!   `fact_json_stable` 原文对账 + 条目投影一致性）→ 链折叠；链尾对
-//!   `last_hash`。
-//! - **WAL 面**（[`verify::verify_wal_lines`]，三步/行）：prev 链接 →
-//!   `content_hash` 重算 → `chain_hash` 链折叠。
-//! - **锚点面**（[`seal::verify_seal_chain`]，四规则）：seq 连续 → 区间
-//!   无缝 → anchor_hash 链 → ed25519 验签（v2 载荷语义）。
+//! - **Export surface** ([`verify::verify_export`], four steps per entry):
+//!   prev link → content hash (`fact_hash` formula recomputation) → stable
+//!   deep-compare (`fact_to_stable_json` recomputation reconciled with the
+//!   `fact_json_stable` original + entry projection consistency) → chain
+//!   folding; the tail reconciles with `last_hash`.
+//! - **WAL surface** ([`verify::verify_wal_lines`], three steps per line):
+//!   prev link → `content_hash` recomputation → `chain_hash` chain folding.
+//! - **Anchor surface** ([`seal::verify_seal_chain`], four rules): contiguous
+//!   seq → seamless ranges → anchor_hash chain → ed25519 signature
+//!   verification (v2 payload semantics).
 //!
-//! # 公式纪律
+//! # Formula discipline
 //!
-//! `fact_hash = blake3(to_string(fact_to_stable_json(fact)))`；
-//! `chain_step = blake3(prev_hex ++ content_hex)`，链首 prev = `genesis`；
-//! `anchor_hash = blake3(prev_anchor ++ '|' ++ 载荷九字段)`，锚点链首
-//! prev = `anchor-genesis`。事实链公式全部经 [`evorule_audit_chain::hash`]
-//! SSOT 调用，本 crate 不私写事实链哈希路径。
+//! `fact_hash = blake3(to_string(fact_to_stable_json(fact)))`;
+//! `chain_step = blake3(prev_hex ++ content_hex)`, chain-head prev =
+//! `genesis`; `anchor_hash = blake3(prev_anchor ++ '|' ++ nine payload
+//! fields)`, anchor chain-head prev = `anchor-genesis`. All fact-chain
+//! formulas go through the [`evorule_audit_chain::hash`] SSOT; this crate
+//! never hand-writes a fact-chain hash path.
 //!
-//! # fail-closed 判形
+//! # fail-closed shapes
 //!
-//! - 导出版本仅认 `1.0`，锚点仅认 v2 载荷语义（`evorule-anchor/2`，
-//!   0.8.1 的 v1 锚点不兼容，明示诚实边界）；
-//! - 未知 Fact 变体 / 缺字段 / 类型不符 / 浮点数字段一律拒收；
-//! - 数字通道与 SSOT 序列化对偶：i64 全域 → `Integer`，u64 高位 →
-//!   `U64`，浮点拒收（u64 全域纪律）。
+//! - The export version must be `1.0`; anchors accept only v2 payload
+//!   semantics (`evorule-anchor/2`; v1 anchors from 0.8.1 are incompatible —
+//!   stated as an honest boundary);
+//! - Unknown Fact variants / missing fields / type mismatches / float fields
+//!   are all rejected;
+//! - The number channel is dual to the SSOT serialization: full i64 range →
+//!   `Integer`, u64 high bits → `U64`, floats rejected (full-u64 discipline).
 //!
-//! # 诚实边界
+//! # Honest boundary
 //!
-//! - 本内核判「链未被篡改」，不判「链首记的是真事」（那是签名锚点与
-//!   T3 门限签名的领域）；
-//! - JSON 数字无形态标签，`U64(5)` 解析 roundtrip 后归位 `Integer(5)`
-//!   （值域保真；两形态 stable 字节等价，不影响哈希判定）。
+//! - This kernel judges "the chain was not tampered with", not "the chain
+//!   head records the truth" (that is the domain of signed anchors and T3
+//!   threshold signatures);
+//! - JSON numbers carry no form tag: after a parse roundtrip `U64(5)` lands
+//!   on `Integer(5)` (value fidelity; both forms produce equivalent stable
+//!   bytes, so hash verdicts are unaffected).
 #![no_std]
 #![forbid(unsafe_code)]
 

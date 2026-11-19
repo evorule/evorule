@@ -1,32 +1,40 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 审计锚点签名工具（G-A1 真实性 / 防抵赖）—— CLI 侧最小自包含实现
+//! Audit anchor signing utilities (G-A1 authenticity / non-repudiation) — minimal self-contained CLI-side implementation
 //!
-//! # 背景
+//! # Background
 //!
-//! evorule-governance 的审计链用 BLAKE3 哈希保证"完整性/被动篡改"，但不提供"真实性/防抵赖"。
-//! G-A1 在该链之上引入 **ed25519（RFC 8032）确定性签名锚点**：用私钥对审计链尾 `last_hash`
-//! 签名，公钥随导出物分发即可供第三方离线验证"审计链确由私钥持有者生成"。
+//! The evorule-governance audit chain uses BLAKE3 hashes to guarantee
+//! "integrity / passive tamper evidence", but provides no "authenticity /
+//! non-repudiation". G-A1 introduces **ed25519 (RFC 8032) deterministic signing
+//! anchors** on top of that chain: the private key signs the audit chain tail
+//! `last_hash`, and the public key ships with the export so third parties can
+//! verify offline that "the audit chain was indeed produced by the private key
+//! holder".
 //!
-//! # 本模块定位
+//! # Positioning of this module
 //!
-//! 遵循 evorule-cli「不引入 evorule-governance」的架构约束（CLI 定位 tier0+tier1、musl 静态），
-//! 本模块**复制** governance `signing.rs` 的最小实现（与已复制的 `hash.rs` 同思路），
-//! 仅提供 CLI 需要的：密钥生成 + 验签 + hex 编解码。锚点载荷的重算在 `verify-anchors` 命令中。
+//! Following the evorule-cli architectural constraint "do not introduce
+//! evorule-governance" (the CLI targets tier0+tier1, musl static), this module
+//! **copies** the minimal implementation of governance `signing.rs` (same idea
+//! as the already-copied `hash.rs`), providing only what the CLI needs: key
+//! generation + signature verification + hex codecs. Anchor payload
+//! reconstruction lives in the `verify-anchors` command.
 //!
-//! # 密钥纪律
+//! # Key discipline
 //!
-//! 私钥不落盘于审计资产/规则库，由调用方注入 32 字节种子；`generate_keys` 仅供一次性运维使用。
+//! Private keys never land on disk in audit assets or rule repos; the caller
+//! injects a 32-byte seed. `generate_keys` is for one-time ops use only.
 
 use ed25519_dalek::{Signature, Signer, Verifier};
 
-/// 签名相关错误
+/// Signature-related errors
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignError {
-    /// 签名/验证输入非法（种子长度、验证密钥字节、签名长度、hex 解析）
+    /// Invalid signature/verification input (seed length, verifying key bytes, signature length, hex parsing)
     Invalid(String),
-    /// 生成随机种子失败（OS 熵源不可用）
+    /// Failed to generate a random seed (OS entropy source unavailable)
     Randomness(&'static str),
 }
 
@@ -41,9 +49,10 @@ impl core::fmt::Display for SignError {
 
 impl std::error::Error for SignError {}
 
-/// ed25519 审计签名器（持有私钥）
+/// ed25519 audit signer (holds the private key)
 ///
-/// 同一私钥 + 同一载荷 → 同一签名（RFC 8032 确定性 nonce，无 RNG），与 evorule 的确定性执行纪律兼容。
+/// Same key + same payload → same signature (RFC 8032 deterministic nonce, no RNG),
+/// compatible with evorule's deterministic-execution discipline.
 #[derive(Debug, Clone)]
 pub struct AuditSigner {
     signing: ed25519_dalek::SigningKey,
@@ -51,14 +60,14 @@ pub struct AuditSigner {
 }
 
 impl AuditSigner {
-    /// 从 32 字节私钥种子构造签名器
+    /// Construct a signer from a 32-byte private seed
     pub fn from_bytes(seed: [u8; 32]) -> Self {
         let signing = ed25519_dalek::SigningKey::from_bytes(&seed);
         let verifying = signing.verifying_key();
         Self { signing, verifying }
     }
 
-    /// 从 64 位 hex 私钥种子字符串构造签名器
+    /// Construct a signer from a 64-hex private seed string
     pub fn from_hex(seed_hex: &str) -> Result<Self, SignError> {
         let bytes = hex_decode(seed_hex)?;
         if bytes.len() != 32 {
@@ -67,7 +76,7 @@ impl AuditSigner {
                 bytes.len()
             )));
         }
-        // len 已校验 == 32，无 panic-prone 拷贝
+        // len is already verified == 32; no panic-prone copy
         let mut seed = [0u8; 32];
         for (dst, src) in seed.iter_mut().zip(bytes.iter()) {
             *dst = *src;
@@ -75,10 +84,11 @@ impl AuditSigner {
         Ok(Self::from_bytes(seed))
     }
 
-    /// 生成一对新密钥（一次性运维操作）
+    /// Generate a fresh keypair (one-time ops operation)
     ///
-    /// 返回 `(sk_seed_hex, pk_hex)`：`sk_seed_hex` 为 32 字节私钥种子（需私密保存），
-    /// `pk_hex` 为 32 字节压缩公钥（可公开分发供验证）。
+    /// Returns `(sk_seed_hex, pk_hex)`: `sk_seed_hex` is the 32-byte private seed
+    /// (keep it secret), `pk_hex` is the 32-byte compressed public key
+    /// (may be distributed publicly for verification).
     pub fn generate_keys() -> Result<(String, String), SignError> {
         let mut seed = [0u8; 32];
         getrandom::getrandom(&mut seed)
@@ -87,22 +97,23 @@ impl AuditSigner {
         Ok((hex_encode(&seed), hex_encode(&signer.verifying_bytes())))
     }
 
-    /// 32 字节压缩公钥（供验证方使用）
+    /// 32-byte compressed public key (for the verifying side)
     pub fn verifying_bytes(&self) -> [u8; 32] {
         self.verifying.to_bytes()
     }
 
-    /// 对载荷做确定性签名，返回 64 字节签名
+    /// Sign a payload deterministically, returning the 64-byte signature
     pub fn signature_bytes(&self, payload: &[u8]) -> [u8; 64] {
         let sig: Signature = self.signing.sign(payload);
         sig.to_bytes()
     }
 }
 
-/// 用公钥验证签名（供导出物离线校验使用）
+/// Verify a signature with a public key (used for offline export verification)
 ///
-/// `verifying_bytes`：32 字节压缩公钥；`payload`：被签名的载荷；`sig_bytes`：64 字节签名。
-/// 返回 `Ok(true)` 表示签名有效且完整；`Ok(false)` 表示签名不匹配；`Err` 表示输入非法。
+/// `verifying_bytes`: 32-byte compressed public key; `payload`: the signed
+/// payload; `sig_bytes`: 64-byte signature. `Ok(true)` means the signature is
+/// valid and complete; `Ok(false)` means it does not match; `Err` means invalid input.
 pub fn verify_signature(
     verifying_bytes: [u8; 32],
     payload: &[u8],
@@ -114,7 +125,7 @@ pub fn verify_signature(
     Ok(verifying.verify(payload, &sig).is_ok())
 }
 
-/// 十六进制编码
+/// Hex encode
 pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
@@ -123,7 +134,7 @@ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     s
 }
 
-/// 十六进制解码
+/// Hex decode
 pub(crate) fn hex_decode(hex: &str) -> Result<Vec<u8>, SignError> {
     if hex.len() % 2 != 0 {
         return Err(SignError::Invalid(format!("odd hex length: {}", hex.len())));
@@ -191,7 +202,7 @@ mod tests {
         let (sk, pk) = AuditSigner::generate_keys().unwrap();
         assert_eq!(sk.len(), 64);
         assert_eq!(pk.len(), 64);
-        // 公钥由私钥正确派生
+        // The public key derives correctly from the private key
         let signer = AuditSigner::from_hex(&sk).unwrap();
         assert_eq!(
             signer.verifying_bytes(),

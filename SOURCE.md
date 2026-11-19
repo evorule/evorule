@@ -4,37 +4,37 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# EvoRule — 源码提供入口
+# EvoRule — Source Code Offer Entry Point
 
-本项目以 **AGPL-3.0-or-later** 授权。根据 AGPL-3.0 第 13 条（§13），以网络服务形式交付本软件者，须向其用户提供对应的完整源码。本文件是 EvoRule 所有分发物（二进制包、安装包、npm 包、静态站点）随附的**源码提供入口**：任何拿到分发物的人，都能凭本文件定位并校验与该分发物对应的源码。
+This project is licensed under **AGPL-3.0-or-later**. Under Article 13 (§13) of the AGPL-3.0, anyone who delivers this software in the form of a network service must provide the corresponding complete source code to their users. This document is the **source code offer entry point** that accompanies every distribution of EvoRule (binary bundles, installers, npm packages, static sites): anyone who obtains a distribution can use this document to locate and verify the source code corresponding to that distribution.
 
-## 当前版本指纹
+## Current Version Fingerprint
 
-| 字段 | 值 |
+| Field | Value |
 |---|---|
-| 版本 | v0.12.1 |
-| 发布 tag | `v0.12.1` |
-| 源码归档（GitHub） | <https://github.com/evorule/evorule/archive/refs/tags/v0.12.1.tar.gz> |
-| 源码 tarball SHA256 | 见发布 Release 说明的 `sha256-checks.txt` |
+| Version | v0.12.1 |
+| Release tag | `v0.12.1` |
+| Source archive (GitHub) | <https://github.com/evorule/evorule/archive/refs/tags/v0.12.1.tar.gz> |
+| Source tarball SHA256 | See `sha256-checks.txt` in the release notes of the release |
 
-> 每次发版时更新本表；打包流程须以**本次发布对应的值**覆盖后随包分发，禁止携带未填写的占位值。
+> Update this table at every release; the packaging process must overwrite it with **the values corresponding to the current release** before distributing it with the package — shipping unfilled placeholder values is forbidden.
 
-## 获取与校验方式
+## How to Obtain and Verify
 
-1. **主仓**：<https://github.com/evorule/evorule>（权威源）
-2. **按 tag 取归档**：上表任一归档链接，或 `git clone` 后 `git checkout <tag>`
-3. **完整性校验**：下载归档后计算 SHA256，与发布 Release 说明中 `sha256-checks.txt` 记录值比对，一致即证明与发布产物同源
+1. **Main repository**: <https://github.com/evorule/evorule> (authoritative source)
+2. **Fetch an archive by tag**: any archive link in the table above, or `git clone` followed by `git checkout <tag>`
+3. **Integrity verification**: after downloading an archive, compute its SHA256 and compare it against the recorded value in `sha256-checks.txt` in the release notes; a match proves it corresponds to the released artifact
 
-## 分发物随附规范
+## Accompanying-File Specification for Distributions
 
-各仓分发物打包时须在包内根目录随附五件套：
+When packaging each repository's distribution, the five accompanying files must be included in the package root:
 
-| 文件 | 作用 |
+| File | Purpose |
 |---|---|
-| `LICENSE` | AGPL-3.0-or-later 正文 |
-| `NOTICE.md` | 版权声明、协议选择指引、第三方组件指向 |
-| `THIRD-PARTY-NOTICES.md` | 第三方组件归属义务总声明 |
-| `LICENSES/third-party/` | 第三方许可证正文逐字归档 |
-| `SOURCE.md` | 本文件——§13 源码提供入口（按次发布填写指纹表） |
+| `LICENSE` | The AGPL-3.0-or-later license text |
+| `NOTICE.md` | Copyright notice, license selection guide, third-party component pointers |
+| `THIRD-PARTY-NOTICES.md` | Consolidated third-party component attribution and obligations notice |
+| `LICENSES/third-party/` | Verbatim archive of third-party license texts |
+| `SOURCE.md` | This document — the §13 source code offer entry point (fill in the fingerprint table per release) |
 
-打包口径与核对工具见根仓 `scripts/check-dist-compliance.ps1`；第三方声明维护与复现 SOP 见 `THIRD-PARTY-NOTICES.md`。
+For the packaging specification and the verification tool, see the root repository's `scripts/check-dist-compliance.ps1`; for the maintenance and reproduction SOP of the third-party notice, see `THIRD-PARTY-NOTICES.md`.

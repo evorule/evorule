@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! QEMU mps2-an386 最小内核样例：对拍 fixture 规则包 + 同场景链尾哈希
+//! QEMU mps2-an386 minimal kernel example: parity fixture rule pack + the
+//! chain tail hash for the same scenario
 //!
-//! # 对拍协议（与 `examples/native_parity_tail` 配对）
-//! 同一 `.evopack` 规则包 + 同一指令序列（increment(x,5) → noop →
-//! increment(x,-2)）在 no_std 固件中执行，semihosting 输出逐 run 报告与
-//! 最终 `CHAIN_TAIL=<64 hex>`；与 native 参照输出逐字节一致即证链尾哈希
-//! 跨目标一致（判据链见 native 侧文档）。
+//! # Parity protocol (paired with `examples/native_parity_tail`)
+//! The same `.evopack` rule pack + the same instruction sequence
+//! (increment(x,5) → noop → increment(x,-2)) executes in no_std firmware;
+//! semihosting prints a per-run report and finally `CHAIN_TAIL=<64 hex>`;
+//! byte-identical output versus the native reference proves the chain tail
+//! hash is consistent across targets (see the native side's docs for the
+//! criterion chain).
 //!
-//! 运行（scripts/qemu_parity.ps1 编排）：
+//! Run (orchestrated by scripts/qemu_parity.ps1):
 //! ```text
 //! cargo build --release --target thumbv7em-none-eabihf \
 //!     -p evorule-mcu --features qemu --example qemu_parity
@@ -28,10 +31,12 @@ use evorule_mcu::{McuExecutor, McuWalStore, RulePack};
 use evorule_tcb::JsonValue;
 use panic_semihosting as _;
 
-/// 对拍 fixture（host 编译器 `compile-evopack` 产物，与 native 参照同一文件）
+/// Parity fixture (produced by the host compiler's `compile-evopack`; the
+/// same file as the native reference)
 const EVOPACK: &[u8] = include_bytes!("../tests/fixtures/parity_rules.evopack");
 
-/// 内核堆（TLSF 静态池，8192 字 = 32 KiB，与对拍场景原容量一致）
+/// Kernel heap (TLSF static pool, 8192 words = 32 KiB, matching the parity
+/// scenario's original capacity)
 #[global_allocator]
 static HEAP: TlsfGlobal<8192> = TlsfGlobal::new();
 
@@ -52,7 +57,7 @@ fn noop_instruction() -> JsonValue {
     JsonValue::object_from_pairs(&[("type", JsonValue::string("noop"))])
 }
 
-/// fail-visible 退出（错误消息经 semihosting 留痕）
+/// fail-visible exit (the error message is traced via semihosting)
 fn fail(msg: &str) -> ! {
     hprintln!("PARITY_FAIL: {}", msg);
     debug::exit(debug::EXIT_FAILURE);
@@ -63,8 +68,9 @@ fn fail(msg: &str) -> ! {
 
 #[entry]
 fn main() -> ! {
-    // SAFETY: HEAP 为静态独占分配器，初始化恰好在 main 入口执行一次
-    // （entry 单入口语义），且中断在 core 启动后、init 前不会触碰堆
+    // SAFETY: HEAP is the static exclusive allocator; initialization executes
+    // exactly once at the main entry (the entry single-entry semantics), and
+    // interrupts do not touch the heap after core startup and before init
     unsafe {
         HEAP.init();
     }
@@ -95,7 +101,7 @@ fn main() -> ! {
         }
     }
 
-    // 场景终态自检：x = 5 - 2 = 3
+    // Scenario final-state self-check: x = 5 - 2 = 3
     match ex.payload().get("x").and_then(|v| v.as_i64()) {
         Some(3) => {}
         _ => fail("payload x expected 3"),
