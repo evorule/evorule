@@ -233,10 +233,8 @@ fn json_string_field(json: &str, key: &str) -> String {
     after[..end].to_string()
 }
 
-/// Header prefix of the TCB_SPEC version declaration line. The two CJK
-/// characters are written as escapes so this test file stays free of CJK
-/// source lines (en-only ratchet: new files must carry zero CJK stock).
-const SPEC_HEADER_PREFIX: &str = "> **\u{7248}\u{672c}**";
+/// Header prefix of the TCB_SPEC version declaration line.
+const SPEC_HEADER_PREFIX: &str = "> **Version**";
 
 /// Extracts the spec version token (`vX.Y.Z`) from the TCB_SPEC header line.
 fn spec_header_version(tcb_spec: &str) -> String {
@@ -340,9 +338,9 @@ fn version_axis_parser_shapes() {
         "missing [workspace.package] version must panic, not fall through"
     );
 
-    let spec = "> **\u{7248}\u{672c}**: v0.3.3 (notes)\nbody\n";
+    let spec = "> **Version**: v0.3.3 (notes)\nbody\n";
     assert_eq!(spec_header_version(spec), "v0.3.3");
-    let spec = "> **\u{7248}\u{672c}**:v1.2.3\n";
+    let spec = "> **Version**:v1.2.3\n";
     assert_eq!(spec_header_version(spec), "v1.2.3");
 
     let json = "{\n  \"$schema\": \"https://example.org/schemas/rule_set/v1.0.json\",\n  \"version\": \"0.6.0\"\n}\n";

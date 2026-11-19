@@ -8,76 +8,76 @@
 
 # evorule-reactor
 
-> EvoRule 三层架构的 Tier 1 反应式执行器 —— 事实驱动的状态转换引擎。
+> Tier 1 reactive executor of the EvoRule three-layer architecture — a fact-driven state-transition engine.
 
-- **版本**:v0.6.0
-- **依赖**:evorule-tcb = "0.6.0"(io_request 单轮触发/消费;多轮编排由应用层负责)
-- **协议**:AGPL-3.0-or-later
-- **测试**:`cargo test` 全量 PASS / 0 failed（2026-09-14 v0.6.0 全量回归，CI 常驻）
-- **build.rs 编译时门禁**:15 模式(G8 控制流 `conditional`/`while_loop`/`sequence` + F11 `unwrap`/`expect`/`panic!`/`debug_assert!` + S5.2 业务术语 7 条 + T10 `unsafe`,文件级豁免 `ffi.rs`/`facts_log.rs`),非测试代码强制,PASSED
-- **G8 门控遵守**:反应器主循环(`reactor.rs`)的控制流分支是**策略数据**(Fact 变体的 match)而非**硬编码业务逻辑**;任何业务分支均由 `core_eval.json` 数据驱动,编译期通过 `build.rs` 递归扫描确认。
-- **`unsafe`**:`#![deny(unsafe_code)]`(`ffi.rs` 在 `ffi` feature 下局部 `#[allow(unsafe_code)]`,FFI 边界,已文档化)
-- **P0 修复(2026-07-25)**:`Box::leak` 内存泄漏已修复(`IoType::parse` 返回 `Option`);锁中毒改为 `e.into_inner()` 恢复(非 panic)
-- **v0.2.0 重构(2026-08-04)**:`IoType` 内部从 `&'static str` 改为 `Arc<str>`,支持 `IoType::new()` 注册任意 io_type(失去 `Copy`,5 个 `const` 改工厂函数);`IoHandler`/`IoDispatcher` 从 governance 下沉至本 crate(trait 改 `#[async_trait]` object-safe);`IoType::parse` 标记 `#[deprecated]`
-- **v0.3.1 TCB 升级**:依赖 evorule-tcb 升至 0.3.1,ReAct 循环由 `call_external`/`call_service`/`collect`/`merge` 驱动(迭代上限 10);I/O 结果按 `__io_results__.{io_type}` 类型隔离,消费后以 null 清除
-- **v0.6.0 收窄(2026-09-14,规则清理)**:依赖 evorule-tcb 升至 0.6.0;`collect`/`merge` 元指令退役,`io_loop_rules` 改单轮——ReAct 多轮编排归应用层,`io_request` 保留单轮触发/消费语义
-- **Kani 形式化验证**:11 个 `#[kani::proof]`(`verification/kani_proofs.rs`),其中 4 个入 CI PR 闸门(根仓 `.github/workflows/kani.yml`,v0.6.0 重跑 4/4 PASS);状态唯一权威见根 [`verification/STATUS.md`](../verification/STATUS.md)
+- **Version**: v0.6.0
+- **Dependency**: evorule-tcb = "0.6.0" (io_request single-round trigger/consume; multi-round orchestration belongs to the application layer)
+- **License**: AGPL-3.0-or-later
+- **Tests**: `cargo test` full suite PASS / 0 failed (2026-09-14 v0.6.0 full regression, resident in CI)
+- **build.rs compile-time gate**: 15 patterns (G8 control flow `conditional`/`while_loop`/`sequence` + F11 `unwrap`/`expect`/`panic!`/`debug_assert!` + S5.2 business terms, 7 entries + T10 `unsafe`, file-level exemptions `ffi.rs`/`facts_log.rs`), enforced on non-test code, PASSED
+- **G8 gate compliance**: the control-flow branches of the reactor main loop (`reactor.rs`) are **policy data** (a match over Fact variants), not **hardcoded business logic**; every business branch is driven by `core_eval.json` data, confirmed at compile time via the `build.rs` recursive scan.
+- **`unsafe`**: `#![deny(unsafe_code)]` (`ffi.rs` locally `#[allow(unsafe_code)]` under the `ffi` feature, FFI boundary, documented)
+- **P0 fix (2026-07-25)**: the `Box::leak` memory leak is fixed (`IoType::parse` returns `Option`); lock poisoning changed to `e.into_inner()` recovery (no panic)
+- **v0.2.0 refactor (2026-08-04)**: `IoType` internally changed from `&'static str` to `Arc<str>`, supporting `IoType::new()` to register arbitrary io_types (loses `Copy`, 5 `const`s became factory functions); `IoHandler`/`IoDispatcher` sank from governance into this crate (traits made object-safe via `#[async_trait]`); `IoType::parse` marked `#[deprecated]`
+- **v0.3.1 TCB upgrade**: dependency on evorule-tcb raised to 0.3.1; the ReAct loop driven by `call_external`/`call_service`/`collect`/`merge` (iteration cap 10); I/O results isolated per `__io_results__.{io_type}` type, cleared with null after consumption
+- **v0.6.0 narrowing (2026-09-14, rule cleanup)**: dependency on evorule-tcb raised to 0.6.0; the `collect`/`merge` meta instructions retired, `io_loop_rules` reduced to single-round — ReAct multi-round orchestration moved to the application layer, `io_request` retains single-round trigger/consume semantics
+- **Kani formal verification**: 11 `#[kani::proof]` harnesses (`verification/kani_proofs.rs`), 4 of them in the CI PR gate (root-repo `.github/workflows/kani.yml`; v0.6.0 re-run 4/4 PASS); the authoritative status is the root [`verification/STATUS.md`](../verification/STATUS.md)
 
-> 本 crate 属于 [EvoRule](https://github.com/evorule) 生态:[主仓](https://github.com/evorule/evorule) ｜ [在线控制台 Demo](https://evorule.github.io/evorule-console-cloud/) ｜ [evorule-server（应用层）](https://github.com/evorule/evorule-server)
+> This crate is part of the [EvoRule](https://github.com/evorule) ecosystem: [main repo](https://github.com/evorule/evorule) | [online console demo](https://evorule.github.io/evorule-console-cloud/) | [evorule-server (application layer)](https://github.com/evorule/evorule-server)
 
-## 设计原则
+## Design principles
 
-- **事实驱动**：所有交互通过 Fact 通道进行
-- **单一串行通道**：保证调度确定性
-- **稳定检测**：队列空 + 无待处理 I/O = 稳定
-- **无状态泄漏**：所有状态由反应器维护
-- **Append-Only 审计链**：所有 Fact 追加到 FactsLog，支持审计重放
-- **哈希链完整性**：每次 `append` 自动计算 BLAKE3 哈希链（`content_hash`/`prev_hash`/`chain_hash`），篡改可检测；纯内存模式同样维护（`last_hash` 始终存在，不依赖 persistence feature）
+- **Fact-driven**: all interaction goes through the Fact channel
+- **Single serial channel**: guarantees scheduling determinism
+- **Stable detection**: queue empty + no pending I/O = stable
+- **No state leakage**: all state is maintained by the reactor
+- **Append-only audit chain**: all Facts are appended to the FactsLog, supporting audit replay
+- **Hash-chain integrity**: every `append` automatically computes the BLAKE3 hash chain (`content_hash`/`prev_hash`/`chain_hash`), making tampering detectable; maintained in pure in-memory mode too (`last_hash` always exists, independent of the persistence feature)
 
-## 架构
+## Architecture
 
 ```text
-项目方/治理层 → FactSender → [command mpsc] → 反应器
+project owners / governance layer → FactSender → [command mpsc] → reactor
                                               ↓
-                                        调用 TCB 核心
+                                        calls the TCB core
                                               ↓
-                              产生新 Fact → event broadcast → 项目方/I/O 订阅者/审计器
+                              produces new Facts → event broadcast → project owners / I/O subscribers / auditors
                                               ↓
-                              所有 Fact → FactsLog（审计链 + 哈希链）
+                              all Facts → FactsLog (audit chain + hash chain)
 ```
 
-## 模块结构
+## Module structure
 
 ```text
 src/
-├── channel.rs          # 通道封装（command/event）
-├── error.rs            # 错误类型（ReactorError / FactsLogError 等）
-├── fact.rs             # Fact 枚举（7 种变体）+ FactId + IoType
-├── facts_log.rs        # Append-Only FactsLog（内存 + WAL 持久化 + 哈希链）
-├── ffi.rs              # C FFI 接口（feature = "ffi"）
-├── hash.rs             # BLAKE3 哈希链算法（单一真相源，tier2/CLI re-export）
-├── invariants.rs       # 结构不变量检查
-├── io_dispatcher.rs    # I/O 分发器（v0.2.0 从 governance 下沉；builder + register(IoType, handler)）
-├── io_handler.rs       # IoHandler trait + IoResult（v0.2.0 从 governance 下沉；#[async_trait] object-safe）
-├── lib.rs              # 模块声明 + 公共 API 导出
-├── phase.rs            # 反应器阶段（Executing/Idle/Stable 等）
-├── pure.rs             # 纯函数执行器（TCB 调用封装）
-├── reactor.rs          # 反应器主循环 + ReactorBuilder + ReactorHandle
-├── stable_detector.rs  # 稳定状态检测器
-├── state.rs            # 反应器状态快照
-└── wal.rs              # WAL 读写（JSONL 格式，含哈希字段）[feature = "persistence"]
+├── channel.rs          # channel wrappers (command/event)
+├── error.rs            # error types (ReactorError / FactsLogError etc.)
+├── fact.rs             # Fact enum (7 variants) + FactId + IoType
+├── facts_log.rs        # append-only FactsLog (in-memory + WAL persistence + hash chain)
+├── ffi.rs              # C FFI interface (feature = "ffi")
+├── hash.rs             # BLAKE3 hash-chain algorithm (single source of truth, tier2/CLI re-export)
+├── invariants.rs       # structural invariant checks
+├── io_dispatcher.rs    # I/O dispatcher (sank from governance in v0.2.0; builder + register(IoType, handler))
+├── io_handler.rs       # IoHandler trait + IoResult (sank from governance in v0.2.0; #[async_trait] object-safe)
+├── lib.rs              # module declarations + public API exports
+├── phase.rs            # reactor phases (Executing/Idle/Stable etc.)
+├── pure.rs             # pure-function executor (TCB call wrapper)
+├── reactor.rs          # reactor main loop + ReactorBuilder + ReactorHandle
+├── stable_detector.rs  # stable-state detector
+├── state.rs            # reactor state snapshot
+└── wal.rs              # WAL read/write (JSONL format, with hash fields) [feature = "persistence"]
 
 tests/
-├── integration_test.rs # 集成测试（28 用例：I/O 双路径 / 类型隔离 / 审计重放）
-└── complex_rule_test.rs # 复杂规则集成测试（2 用例：normal/vip 订单）
+├── integration_test.rs # integration tests (28 cases: I/O dual paths / type isolation / audit replay)
+└── complex_rule_test.rs # complex-rule integration tests (2 cases: normal/vip orders)
 
 verification/
-└── differential_test.rs # 差分验证（11 用例：reactor 运行时 vs execute_transition 纯函数）
+└── differential_test.rs # differential verification (11 cases: reactor runtime vs the execute_transition pure function)
 ```
 
-> **注意**：`wal.rs` 仅在启用 `persistence` feature 时编译（见 [lib.rs](src/lib.rs) `#[cfg(feature = "persistence")]`）。不启用该 feature 时,`FactsLog` 仍以纯内存模式运行并维护哈希链。
+> **Note**: `wal.rs` is only compiled when the `persistence` feature is enabled (see [lib.rs](src/lib.rs) `#[cfg(feature = "persistence")]`). Without that feature, `FactsLog` still runs in pure in-memory mode and maintains the hash chain.
 
-## 快速入门
+## Quick start
 
 ```rust
 use evorule_reactor::{Reactor, Fact, FactId};
@@ -100,102 +100,102 @@ tx.send(Fact::Command {
 
 while let Ok(fact) = rx.recv().await {
     if let Fact::Stable { version, .. } = fact {
-        println!("会话于版本 {} 稳定", version);
+        println!("session stable at version {}", version);
         break;
     }
 }
 ```
 
-## API 列表
+## API list
 
 ### Reactor
 
-| 方法                          | 说明                       |
+| Method | Description |
 | ----------------------------- | -------------------------- |
-| `Reactor::builder(core_eval)` | 创建反应器构建器           |
-| `builder.max_rounds(n)`       | 设置最大执行轮数           |
-| `builder.build()`             | 构建反应器实例             |
-| `reactor.spawn()`             | 启动反应器，返回通道和句柄 |
+| `Reactor::builder(core_eval)` | create a reactor builder |
+| `builder.max_rounds(n)`       | set the maximum number of execution rounds |
+| `builder.build()`             | build the reactor instance |
+| `reactor.spawn()`             | start the reactor, returning channels and a handle |
 
 ### ReactorHandle
 
-| 方法                                       | 说明                   |
+| Method | Description |
 | ------------------------------------------ | ---------------------- |
-| `handle.join()`                            | 等待反应器完成         |
-| `handle.abort()`                           | 中止反应器             |
-| `handle.is_finished()`                     | 查询反应器是否已结束   |
-| `handle.current_phase()`                   | 获取当前阶段           |
-| `handle.causal_depth()`                    | 获取因果深度           |
-| `handle.structural_invariant_violations()` | 获取结构不变量违规计数 |
-| `handle.pending_io_count()`                | 获取待处理 I/O 数量    |
-| `handle.current_step()`                    | 获取当前执行步数       |
-| `handle.snapshot()`                        | 获取反应器状态快照     |
-| `handle.interrupt()`                       | 中断执行               |
+| `handle.join()`                            | wait for the reactor to finish |
+| `handle.abort()`                           | abort the reactor |
+| `handle.is_finished()`                     | query whether the reactor has finished |
+| `handle.current_phase()`                   | get the current phase |
+| `handle.causal_depth()`                    | get the causal depth |
+| `handle.structural_invariant_violations()` | get the structural-invariant violation count |
+| `handle.pending_io_count()`                | get the pending I/O count |
+| `handle.current_step()`                    | get the current execution step count |
+| `handle.snapshot()`                        | get a reactor state snapshot |
+| `handle.interrupt()`                       | interrupt execution |
 
-### Fact 类型
+### Fact types
 
-| 类型                    | 说明                                          |
+| Type | Description |
 | ----------------------- | --------------------------------------------- |
-| `Fact::Command`         | 项目方命令（触发执行）                        |
-| `Fact::StateTransition` | 状态转换（反应器自动产生，携带 cause 因果链） |
-| `Fact::Stable`          | 稳定状态（队列空 + 无 pending I/O）           |
-| `Fact::Error`           | 错误（超时 / TCB 错误 / 队列溢出）            |
-| `Fact::IoRequest`       | I/O 请求（TCB 产生，治理层消费）              |
-| `Fact::IoResponse`      | I/O 响应（治理层产生，反应器消费）            |
-| `Fact::PayloadUpdate`   | 负载更新（治理层注入）                        |
+| `Fact::Command`         | project-owner command (triggers execution) |
+| `Fact::StateTransition` | state transition (produced by the reactor automatically, carries the cause chain) |
+| `Fact::Stable`          | stable state (queue empty + no pending I/O) |
+| `Fact::Error`           | error (timeout / TCB error / queue overflow) |
+| `Fact::IoRequest`       | I/O request (produced by the TCB, consumed by the governance layer) |
+| `Fact::IoResponse`      | I/O response (produced by the governance layer, consumed by the reactor) |
+| `Fact::PayloadUpdate`   | payload update (injected by the governance layer) |
 
-## 审计链与哈希链
+## Audit chain and hash chain
 
-### WAL 格式（含哈希链）
+### WAL format (with hash chain)
 
-每条 WAL 记录包含以下字段：
+Each WAL record contains the following fields:
 
 ```json
 {
   "version_before": 0,
   "fact": {"type": "Command", "id": 1, "instruction": {...}},
   "content_hash": "blake3(fact_to_stable_json(fact))",
-  "prev_hash": "前一条的 chain_hash（首条为 \"genesis\"）",
+  "prev_hash": "the previous record's chain_hash (\"genesis\" for the first record)",
   "chain_hash": "blake3(prev_hash + content_hash)"
 }
 ```
 
-### 哈希链算法
+### Hash-chain algorithm
 
-- **单一真相源**：`evorule_reactor::hash` 模块
-- **算法**：BLAKE3
+- **Single source of truth**: the `evorule_reactor::hash` module
+- **Algorithm**: BLAKE3
 - **content_hash** = `blake3(fact_to_stable_json(fact))`
 - **chain_hash** = `blake3(prev_hash + content_hash)`
-- **初始 prev_hash** = `"genesis"`
-- evorule-governance 和 evorule-cli 通过 re-export 使用同一算法，三方哈希值字节级一致
+- **Initial prev_hash** = `"genesis"`
+- evorule-governance and evorule-cli use the same algorithm via re-export; the three parties' hash values are byte-identical
 
 ### FactsLog
 
-| 方法                       | 说明                                 |
+| Method | Description |
 | -------------------------- | ------------------------------------ |
-| `FactsLog::new()`          | 创建纯内存 FactsLog                  |
-| `FactsLog::with_initial_payload(p)` | 创建带初始 payload 的纯内存 FactsLog |
-| `FactsLog::with_wal(path)` | 创建带 WAL 持久化的 FactsLog         |
-| `FactsLog::recover(path)`  | 从 WAL 恢复 FactsLog（重放 + 挂载 + 恢复哈希链尾）  |
-| `facts_log.append(fact)`   | 追加 Fact（自动计算哈希链 + 写 WAL） |
-| `facts_log.last_hash()`    | 获取审计链末尾哈希                   |
-| `facts_log.history()`      | 获取全部 Fact 历史                   |
-| `facts_log.history_with_versions()` | 获取 Fact 历史（携带版本号）   |
-| `facts_log.facts_by_path_prefix(prefix)` | 按路径前缀加速查询（A3 路径索引） |
-| `facts_log.version()`      | 获取当前版本号                       |
-| `facts_log.last_stable_version()` | 获取最后稳定版本号               |
-| `facts_log.read_from(v)`   | 从指定版本起重放（审计重放）         |
-| `facts_log.compact()`      | 压缩历史，返回压缩比例               |
+| `FactsLog::new()`          | create a pure in-memory FactsLog |
+| `FactsLog::with_initial_payload(p)` | create a pure in-memory FactsLog with an initial payload |
+| `FactsLog::with_wal(path)` | create a FactsLog with WAL persistence |
+| `FactsLog::recover(path)`  | recover a FactsLog from the WAL (replay + mount + restore the hash-chain tail) |
+| `facts_log.append(fact)`   | append a Fact (computes the hash chain + writes the WAL automatically) |
+| `facts_log.last_hash()`    | get the audit-chain tail hash |
+| `facts_log.history()`      | get the full Fact history |
+| `facts_log.history_with_versions()` | get the Fact history (with version numbers) |
+| `facts_log.facts_by_path_prefix(prefix)` | accelerated query by path prefix (A3 path index) |
+| `facts_log.version()`      | get the current version number |
+| `facts_log.last_stable_version()` | get the last stable version number |
+| `facts_log.read_from(v)`   | replay from the specified version onward (audit replay) |
+| `facts_log.compact()`      | compact the history, returning the compaction ratio |
 
-## C FFI 接口
+## C FFI interface
 
-启用 `ffi` feature 编译动态链接库：
+Build the dynamic-link library with the `ffi` feature:
 
 ```bash
 cargo build --features ffi --release
 ```
 
-### C API 示例
+### C API example
 
 ```c
 #include "include/evorule.h"
@@ -205,37 +205,37 @@ evorule_reactor_send_command(reactor, "{\"type\": \"increment\"}");
 evorule_reactor_free(reactor);
 ```
 
-## Feature Flags
+## Feature flags
 
-| Feature       | 说明                                    |
+| Feature | Description |
 | ------------- | --------------------------------------- |
-| `persistence` | WAL 持久化（FactsLog + 哈希链写入磁盘） |
-| `ffi`         | C FFI 接口（生成 cdylib）               |
-| `kani`        | Kani 形式化验证（保留标记；实际由 `cargo kani` 注入 `cfg(kani)` 门控） |
+| `persistence` | WAL persistence (FactsLog + hash chain written to disk) |
+| `ffi`         | C FFI interface (produces a cdylib) |
+| `kani`        | Kani formal verification (reserved marker; actually injected by `cargo kani` via the `cfg(kani)` gate) |
 
-## 版本策略
+## Versioning policy
 
-本项目遵循 [Semantic Versioning](https://semver.org/)：
+This project follows [Semantic Versioning](https://semver.org/):
 
-- **MAJOR**：API 不兼容变更
-- **MINOR**：向后兼容的功能新增
-- **PATCH**：向后兼容的 bug 修复
+- **MAJOR**: incompatible API changes
+- **MINOR**: backward-compatible feature additions
+- **PATCH**: backward-compatible bug fixes
 
-## v0.3.2 更新
+## v0.3.2 updates
 
-- **新增 `io_context` 模块**: CallerRole / IoCallContext / CallerRoleResolver（I/O 调用上下文与角色解析）
-- **build.rs 新增 L1b 变更治理门禁**: CHANGE_REQUEST.md 必须存在且审查状态为"已批准"/"紧急通过"；新增策略层反模式检测；三仓（evorule-tcb/reactor/governance）build.rs 保持同一份内联副本实现
-- **`EVORULE_SKIP_CR_GATE=1`** 环境变量可跳过 L1b 变更治理门禁（仅限本地开发）
-- > **现状注记（既定整改, 2026-09-15）**：上述 CR 构建校验属工程质量自查纪律（非防伪造审查机制），已从 build.rs 移出公开仓，`EVORULE_SKIP_CR_GATE` 随之删除；自查由维护者本地 git pre-commit hook 承接。策略层检测保留且无阀常开。历史条目按当时事实保留。
+- **New `io_context` module**: CallerRole / IoCallContext / CallerRoleResolver (I/O call context and role resolution)
+- **build.rs gained the L1b change-governance gate**: CHANGE_REQUEST.md must exist and its review status must be "approved"/"urgent pass"; added policy-layer anti-pattern detection; the three repos (evorule-tcb/reactor/governance) keep the same inline copy implementation in build.rs
+- **`EVORULE_SKIP_CR_GATE=1`**: this environment variable could skip the L1b change-governance gate (local development only)
+- > **Status note (established remediation, 2026-09-15)**: the CR build check above was an engineering-quality self-check discipline (not an anti-forgery review mechanism); it has been moved out of build.rs in the public repo, and `EVORULE_SKIP_CR_GATE` was removed with it; self-checking is handled by the maintainer's local git pre-commit hook. The policy-layer detection remains and is always on, with no bypass valve. Historical entries are kept as they were, per the facts at the time.
 
-## 设计文档参考
+## Design document references
 
-- 项目级文档总索引: [`DOCS_INDEX.md`](../DOCS_INDEX.md)（所有 L1 公开文档的唯一入口）
-- 项目级架构总览: [`README.md`](../README.md)（三层架构 + 快速开始）
-- 本模块规格: [`REACTOR_SPEC.md`](REACTOR_SPEC.md)
+- Project-level document index: [`DOCS_INDEX.md`](../DOCS_INDEX.md) (the single entry point for all L1 public documentation)
+- Project-level architecture overview: [`README.md`](../README.md) (three-layer architecture + quick start)
+- This module's specification: [`REACTOR_SPEC.md`](REACTOR_SPEC.md)
 
 ---
 
-## 许可证
+## License
 
-**代码**:`AGPL-3.0-or-later`(见 [`LICENSE`](LICENSE) 文件)。
+**Code**: `AGPL-3.0-or-later` (see the [`LICENSE`](LICENSE) file).

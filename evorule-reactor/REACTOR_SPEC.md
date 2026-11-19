@@ -6,155 +6,155 @@
   This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
 -->
 
-# Tier 1 (Reactor) — 形式化规范
+# Tier 1 (Reactor) — Formal Specification
 
-> **适用范围**: evorule-reactor
-> **协议**: AGPL-3.0-or-later
-> **状态**: 权威 (本文档是 `build.rs` 编译时门禁的依据)
-> **跨模块设计**: 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四(跨模块门控图)+ §五(SPEC 章节编号映射)
+> **Scope**: evorule-reactor
+> **License**: AGPL-3.0-or-later
+> **Status**: authoritative (this document is the basis of the `build.rs` compile-time gate)
+> **Cross-module design**: see [GATE_REFERENCE.md](../GATE_REFERENCE.md) §4 (cross-module gating diagram) + §5 (SPEC section number mapping)
 
 ---
 
-## 核心原则
+## Core principles
 
-> **反应器是机制, 业务是策略。** 如果业务需求变了, 这行 Rust 代码不变。
+> **The reactor is mechanism, business is policy.** If the business requirements change, this line of Rust code does not.
 
-这套规范的核心试金石是**"机制-策略分离原则"**:
+The touchstone of this specification is the **mechanism-policy separation principle**:
 
-> **如果业务需求变了, 这行代码需要改吗?**
+> **If the business requirements change, does this code need to change?**
 >
-> - **需要改** → 这是**策略** (业务逻辑), **必须**放在 JSON 数据中
-> - **不需要改** → 这是**机制** (执行框架), **允许**写在 Rust 中
+> - **Yes** → it is **policy** (business logic) and **must** live in JSON data
+> - **No** → it is **mechanism** (execution framework) and **may** be written in Rust
 
 ---
 
-## 一、允许在 Rust (反应器) 中做的事情 ("机制")
+## 1. What is allowed in Rust (reactor) ("mechanism")
 
-以下属于系统的"骨架"或"管道", 不包含业务意图, 允许编写 Rust 代码:
+The following belong to the system's "skeleton" or "pipelines", contain no business intent, and may be written in Rust:
 
-### 1.1 反应器生命周期控制 (`reactor.rs`, `stable_detector.rs`)
+### 1.1 Reactor lifecycle control (`reactor.rs`, `stable_detector.rs`)
 
-- 控制 `max_rounds` 循环、检测版本号是否变动 (循环控制是机制)
-- **注意**: 稳定检测的逻辑 (版本号比较) 是纯算法机制, 但**稳定阈值** (如 3 次) 是策略, 必须来自 JSON 配置, 不得硬编码
+- Controlling the `max_rounds` loop, detecting version changes (loop control is mechanism)
+- **Note**: the stable-detection logic (version comparison) is pure algorithmic mechanism, but the **stability threshold** (e.g. 3 times) is policy and must come from JSON configuration; it must not be hardcoded
 
-### 1.2 数据加载与结构转换 (`wal.rs`, `facts_log.rs`, `rule_validator.rs`, `rule_safety.rs`)
+### 1.2 Data loading and structural conversion (`wal.rs`, `facts_log.rs`, `rule_validator.rs`, `rule_safety.rs`)
 
-- 从文件系统读取 JSON 并反序列化
-- 将 JSON 规则树转换为内部指令结构 (纯粹的格式映射, 无校验逻辑)
-- 追加式日志的读写、版本号的单调递增 (日志存储是机制)
+- Reading JSON from the filesystem and deserializing it
+- Converting JSON rule trees into internal instruction structures (pure format mapping, no validation logic)
+- Read/write of the append-only log, monotonic version increment (log storage is mechanism)
 
-### 1.3 事实与状态管理 (`fact.rs`, `state.rs`, `channel.rs`, `phase.rs`)
+### 1.3 Fact and state management (`fact.rs`, `state.rs`, `channel.rs`, `phase.rs`)
 
-- Fact 的构造、传递、状态机管理
-- 通道发送/接收逻辑 (数据管道)
-- 阶段 (phase) 切换控制
+- Fact construction, delivery, state-machine management
+- Channel send/receive logic (data pipelines)
+- Phase-switch control
 
-### 1.4 不变性与验证 (`invariants.rs`, `semantic_invariants.rs`, `pure.rs`)
+### 1.4 Invariants and validation (`invariants.rs`, `semantic_invariants.rs`, `pure.rs`)
 
-- 不变量检查 (纯算法, 无业务判断)
-- 语义不变量验证
-- 纯函数标记
+- Invariant checks (pure algorithms, no business judgment)
+- Semantic invariant validation
+- Pure-function markers
 
-### 1.5 调试与可观测性 (`debug_control.rs`, `metrics.rs`, `time_machine.rs`)
+### 1.5 Debugging and observability (`debug_control.rs`, `metrics.rs`, `time_machine.rs`)
 
-- 调试控制开关
-- 指标收集 (机制, 非业务数据)
-- 时间旅行调试 (状态快照回放)
+- Debug control switches
+- Metrics collection (mechanism, not business data)
+- Time-travel debugging (state snapshot replay)
 
-### 1.6 I/O 超时策略 (`io_timeout_policy.rs`)
+### 1.6 I/O timeout policy (`io_timeout_policy.rs`)
 
-- 超时控制 (机制, 阈值来自 JSON)
+- Timeout control (mechanism; thresholds come from JSON)
 
-### 1.7 错误处理 (`error.rs`)
+### 1.7 Error handling (`error.rs`)
 
-- 错误类型定义与传播
+- Error-type definition and propagation
 
-### 1.8 FFI 接口 (`ffi.rs`)
+### 1.8 FFI interface (`ffi.rs`)
 
-- C FFI 暴露 (阶段9, 可选 feature)
+- C FFI exposure (phase 9, optional feature)
 
 ---
 
-## 二、绝对禁止在 Rust 反应器做的事情 ("策略")
+## 2. What is absolutely forbidden in the Rust reactor ("policy")
 
-这些是业务逻辑或业务数据, 一旦写在 Rust 中即构成"漂移", `build.rs` 会直接拦截编译:
+These are business logic or business data; once written in Rust they constitute "drift", and `build.rs` blocks the build outright:
 
-| 编号           | 禁止项                   | 示例                                                                 | 执行层                           |
+| ID | Banned item | Example | Enforcement layer |
 | :------------- | :----------------------- | :------------------------------------------------------------------- | :------------------------------- |
-| **G7/G8**      | 控制流指令名硬编码       | `"conditional"` / `"while_loop"` / `"sequence"` 出现在 Rust 字符串中 | L1 (build.rs)                    |
-| **G1** (= F11) | panic-prone 构造         | `debug_assert!` / `.unwrap(` / `.expect(`                            | L1 (build.rs)                    |
-| **§5.2**       | 业务术语字符串字面量     | `"math_rule"` / `"admin"` / `"summarize"` 等                         | L1 (build.rs)                    |
-| **F1**         | 硬编码业务指令类型       | `if instruction_type == "math_rule"`                                 | L1 (§5.2 覆盖)                   |
-| **F2**         | 硬编码数字阈值           | `if score > 80`                                                      | L3 (review)                      |
-| **F3**         | 动态 prompt 拼接         | `format!("请总结：{}", content)`                                     | L3 (review)                      |
-| **F4**         | 动态 SQL 拼接            | `format!("SELECT * FROM users WHERE id={}", id)`                     | L3 (review)                      |
-| **F5**         | 硬编码权限/角色判断      | `if user.role == "admin"`                                            | L1 (§5.2 覆盖)                   |
-| **F6**         | Rust 中过滤/排序规则列表 | `rules.iter().filter(\|r\| r.type == "active")`                      | L3 (review)                      |
-| **F7/F8**      | if/else 嵌套 > 2 层      | —                                                                    | L2 (clippy cognitive_complexity) |
-| **F9**         | 函数 > 50 行             | —                                                                    | L2 (clippy too_many_lines)       |
-| **F10**        | 跨 Handler 互调          | handler A 调 handler B 的方法                                        | L3 (review)                      |
+| **G7/G8**      | hardcoded control-flow instruction names | `"conditional"` / `"while_loop"` / `"sequence"` appearing in Rust strings | L1 (build.rs)                    |
+| **G1** (= F11) | panic-prone constructs | `debug_assert!` / `.unwrap(` / `.expect(`                            | L1 (build.rs)                    |
+| **§5.2**       | business-term string literals | `"math_rule"` / `"admin"` / `"summarize"` etc.                       | L1 (build.rs)                    |
+| **F1**         | hardcoded business instruction types | `if instruction_type == "math_rule"`                                 | L1 (covered by §5.2)             |
+| **F2**         | hardcoded numeric thresholds | `if score > 80`                                                      | L3 (review)                      |
+| **F3**         | dynamic prompt assembly | `format!("Summarize: {}", content)`                                  | L3 (review)                      |
+| **F4**         | dynamic SQL assembly | `format!("SELECT * FROM users WHERE id={}", id)`                     | L3 (review)                      |
+| **F5**         | hardcoded permission/role checks | `if user.role == "admin"`                                            | L1 (covered by §5.2)             |
+| **F6**         | filtering/sorting rule lists in Rust | `rules.iter().filter(\|r\| r.type == "active")`                      | L3 (review)                      |
+| **F7/F8**      | if/else nesting > 2 levels | —                                                                    | L2 (clippy cognitive_complexity) |
+| **F9**         | functions > 50 lines | —                                                                    | L2 (clippy too_many_lines)       |
+| **F10**        | cross-handler calls | handler A calling handler B's method                                 | L3 (review)                      |
 
 ---
 
-## 三、§5.2 业务术语表
+## 3. §5.2 business-term table
 
-以下术语**不得**作为字符串字面量出现在 evorule-reactor 的 Rust 源码中
-(豁免: `#[cfg(test)]` 测试模块 + `src/fact.rs` 中的 IoType 内置字符串值定义):
+The following terms must **not** appear as string literals in evorule-reactor Rust source
+(exemptions: `#[cfg(test)]` test modules + the built-in IoType string-value definitions in `src/fact.rs`):
 
-> **v0.2.0 注**:`IoType` 已从封闭枚举重构为 `Arc<str>` + 工厂函数,支持 `IoType::new("任意字符串")` 注册自定义 io_type。
-> 上表 `call_external` / `call_service` 仍为 fact.rs 内置工厂函数的字符串值(豁免);应用层自定义 io_type 的字符串字面量不受此表约束(属应用层策略,不在本 crate Rust 源码中)。
+> **v0.2.0 note**: `IoType` was refactored from a closed enum into `Arc<str>` + factory functions, supporting `IoType::new("any string")` to register custom io_types.
+> The `call_external` / `call_service` entries above remain the string values of the built-in fact.rs factory functions (exempt); string literals of application-defined io_types are not governed by this table (application-layer policy, not in this crate's Rust source).
 
-| 术语            | 类别     | 替代方案                                                    |
+| Term | Category | Alternative |
 | :-------------- | :------- | :---------------------------------------------------------- |
-| `math_rule`     | 业务规则 | 放 `core_eval.json`                                         |
-| `physics_rule`  | 业务规则 | 放 `core_eval.json`                                         |
-| `summarize`     | prompt   | 用模板变量                                                  |
-| `admin`         | 角色     | 放权限配置                                                  |
-| `teacher`       | 角色     | 放权限配置                                                  |
-| `call_external` | I/O 指令 | IoType 内置值（fact.rs 工厂函数 `IoType::call_external()`） |
-| `call_service`  | I/O 指令 | IoType 内置值（fact.rs 工厂函数 `IoType::call_service()`）  |
+| `math_rule`     | business rule | put it in `core_eval.json`                                 |
+| `physics_rule`  | business rule | put it in `core_eval.json`                                 |
+| `summarize`     | prompt   | use a template variable                                    |
+| `admin`         | role     | put it in the permission configuration                     |
+| `teacher`       | role     | put it in the permission configuration                     |
+| `call_external` | I/O instruction | built-in IoType value (fact.rs factory `IoType::call_external()`) |
+| `call_service`  | I/O instruction | built-in IoType value (fact.rs factory `IoType::call_service()`)  |
 
 ---
 
-## 四、编译时门禁 (build.rs)
+## 4. Compile-time gate (build.rs)
 
-**build.rs 扫描的 15 个模式**:
+**The 15 patterns scanned by build.rs**:
 
-| 规则                 | 模式                                                                                                        | 数量 |
+| Rule | Patterns | Count |
 | :------------------- | :---------------------------------------------------------------------------------------------------------- | :--- |
-| G7/G8 (控制流硬编码) | `"conditional"`, `"while_loop"`, `"sequence"`                                                               | 3    |
+| G7/G8 (control-flow hardcoding) | `"conditional"`, `"while_loop"`, `"sequence"`                                                               | 3    |
 | G1/F11 (panic-prone) | `debug_assert!`, `.unwrap(`, `.expect(`, `panic!(`                                                          | 4    |
-| §5.2 (业务术语)      | `"math_rule"`, `"physics_rule"`, `"summarize"`, `"admin"`, `"teacher"`, `"call_external"`, `"call_service"` | 7    |
-| G2/T10 (unsafe)      | `unsafe` (文件级豁免: `ffi.rs` / `facts_log.rs`)                                                            | 1    |
+| §5.2 (business terms) | `"math_rule"`, `"physics_rule"`, `"summarize"`, `"admin"`, `"teacher"`, `"call_external"`, `"call_service"` | 7    |
+| G2/T10 (unsafe)      | `unsafe` (file-level exemptions: `ffi.rs` / `facts_log.rs`)                                                 | 1    |
 
-**豁免**:
+**Exemptions**:
 
-- 任意命名的 `#[cfg(test)] mod <ident> { ... }` 测试模块 — 测试 fixture 可构造这些字符串（既定整改：按 `mod <ident>` 定位，非固定 `tests` 字面）
-- 注释 (`//`, `///`, `//!`, `/* */`) — 文档可自由提及
-- `src/fact.rs` (G8/§5.2 模式) — IoType 内置字符串值 / ControlFlowType 枚举映射的唯一真值来源
+- `#[cfg(test)] mod <ident> { ... }` test modules with any naming — test fixtures may construct these strings (established remediation: located by `mod <ident>`, not a fixed `tests` literal)
+- Comments (`//`, `///`, `//!`, `/* */`) — documentation may mention them freely
+- `src/fact.rs` (G8/§5.2 patterns) — the single source of truth for built-in IoType string values / ControlFlowType enum mapping
 
-**紧急跳过**: `EVORULE_SKIP_GATE=1 cargo build` (阀值仅 `1`/`true` 生效 fail-closed, 须有书面理由 + `EVORULE_SKIP_REASON` 登记, 永不永久禁用)
+**Emergency skip**: `EVORULE_SKIP_GATE=1 cargo build` (only the values `1`/`true` activate it, fail-closed; a written reason + `EVORULE_SKIP_REASON` registration required; never disabled permanently)
 
-**L1b 策略层检测 (v0.3.2 新增; 门禁语义整改)**: 除上述 L1a 字面量门禁外, `build.rs` 还执行策略层反模式检测(扫描 src/ **全文件**禁止策略层代码, 撤测试豁免整改; **无阀常开**, 不设旁路环境变量)。旧 CHANGE_REQUEST.md 构建校验属工程质量自查纪律, 从来不是防伪造审查机制, 已移出公开仓, `EVORULE_SKIP_CR_GATE` 随之删除; 自查由维护者本地 git pre-commit hook 承接 (不随仓库/发布公开)。四仓(evorule-tcb / evorule-reactor / evorule-governance / evorule-cli)build.rs 的共享函数保持同一份内联副本实现, 同步纪律由 `evorule-cli/tests/gate_sync_test.rs` 机器化锁定 (四仓同步整改: 按函数名提取函数体, 规范化后逐仓比对, 漂移即 `cargo test` 红)。
-
----
-
-## 五、跨模块引用
-
-- **G1-G8** (全局门): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四
-- **F1-F11** (模块门): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §二.2 + §五.2
-- **T1** (tier0 指令集有限性): 见 `../evorule-tcb/TCB_SPEC.md` §一
-- **D1-D10** (数据流约束): 见 [GATE_REFERENCE.md](../GATE_REFERENCE.md) §四
-
-evorule-governance 的 `GOVERNANCE_SPEC.md` 与本文档**结构相同** (G8 + F11 + §5.2),
-这是有意的双层一致 (避免 tier1/tier2 走偏); 模式清单差异仅在 reactor 多一个 T10 `unsafe`。
+**L1b policy-layer detection (added v0.3.2; gate-semantics remediation)**: beyond the L1a literal gate above, `build.rs` also performs policy-layer anti-pattern detection (scanning src/ **whole files** for policy-layer code, with the test exemption withdrawn; **always on, no valve**, no bypass environment variable). The old CHANGE_REQUEST.md build check was an engineering-quality self-check discipline, never an anti-forgery review mechanism, and was moved out of the public repo along with `EVORULE_SKIP_CR_GATE`; self-checking is handled by the maintainer's local git pre-commit hook (not published with the repo/releases). The shared functions of the four build.rs files (evorule-tcb / evorule-reactor / evorule-governance / evorule-cli) remain one identical inline copy implementation, with sync discipline machine-locked by `evorule-cli/tests/gate_sync_test.rs` (four-repo sync remediation: function bodies extracted by name, normalized then compared per repo; any drift turns `cargo test` red).
 
 ---
 
-## 总结口诀
+## 5. Cross-module references
 
-> **写 Rust 只写"怎么跑" (循环、路由、存日志), 不写"跑什么" (阈值、模板、权限表)。凡是要根据业务变的值, 统统放进 JSON。**
+- **G1-G8** (global gates): see [GATE_REFERENCE.md](../GATE_REFERENCE.md) §4
+- **F1-F11** (module gates): see [GATE_REFERENCE.md](../GATE_REFERENCE.md) §2.2 + §5.2
+- **T1** (tier0 instruction-set finiteness): see `../evorule-tcb/TCB_SPEC.md` §1
+- **D1-D10** (data-flow constraints): see [GATE_REFERENCE.md](../GATE_REFERENCE.md) §4
+
+evorule-governance's `GOVERNANCE_SPEC.md` is **structurally identical** to this document (G8 + F11 + §5.2);
+this is an intentional two-layer alignment (avoiding tier1/tier2 divergence); the pattern-list difference is only that the reactor adds one more, T10 `unsafe`.
 
 ---
 
-**这份规范是 evorule-reactor 代码的权威标准。如有新增需求, 必须先更新这份规范, 再修改代码。**
+## Summary mnemonic
+
+> **Rust code only says "how to run" (loops, routing, log storage), never "what to run" (thresholds, templates, permission tables). Any value that varies with the business goes into JSON.**
+
+---
+
+**This specification is the authoritative standard for evorule-reactor code. For any new requirement, update this specification first, then modify the code.**
