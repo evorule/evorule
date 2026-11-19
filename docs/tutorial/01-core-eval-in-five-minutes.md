@@ -32,8 +32,8 @@ evorule-tcb = "0.3"
 > zero external dependencies, `#![forbid(unsafe_code)]`, `#![no_std]`-compatible,
 > enough to execute a single `core_eval` rule.
 > A full reactor loop needs `evorule-reactor`; the audit chain needs `evorule-governance` —
-> see [Tutorial 02: Reactor loop example](./02-反应器循环示例.md).
-> To run JSON rule files use `evorule-cli` — see [Tutorial 03: Writing a business rule](./03-写一条业务规则.md).
+> see [Tutorial 02: Reactor loop example](./02-reactor-loop-example.md).
+> To run JSON rule files use `evorule-cli` — see [Tutorial 03: Writing a business rule](./03-write-a-business-rule.md).
 
 ## 3. Write the main program
 
@@ -165,12 +165,12 @@ payload after execution: {"x": 42, "y": "hello, evorule"}
 | `instruction` | The current instruction, a JSON object with a `type` field |
 | `TransitionResult::State` | Normal execution, returns the new payload |
 | `TransitionResult::Ignored` | Instruction ignored (no rule matched) |
-| `TransitionResult::IoRequired` | A rule triggered I/O; an external response is needed to continue (see [Tutorial 02: Reactor loop](./02-反应器循环示例.md)) |
+| `TransitionResult::IoRequired` | A rule triggered I/O; an external response is needed to continue (see [Tutorial 02: Reactor loop](./02-reactor-loop-example.md)) |
 | `TcbError` | Engine error (type mismatch, unknown operation, etc.) |
 
 ## Next steps
 
-- [Tutorial 02: Reactor loop example](./02-反应器循环示例.md) — single-round LLM/tool I/O trigger & consume (multi-turn orchestration is the application-layer runner's job)
-- [Tutorial 03: Writing a business rule](./03-写一条业务规则.md) — write business rules in JSON and run them with the `evorule` CLI
+- [Tutorial 02: Reactor loop example](./02-reactor-loop-example.md) — single-round LLM/tool I/O trigger & consume (multi-turn orchestration is the application-layer runner's job)
+- [Tutorial 03: Writing a business rule](./03-write-a-business-rule.md) — write business rules in JSON and run them with the `evorule` CLI
 - Meta-instruction reference — full docs for the 5 meta-instructions (`branch` / `set` / `push` / `io_request` / `enforce`) (coming soon)
 - Domain reference — full docs for 8 base domains + derived domains (coming soon)

@@ -76,13 +76,13 @@ $specialFileDocs = @{
     "build.rs" = @("GATE_REFERENCE.md")
     "core_eval.json" = @(
         "evorule-tcb/TCB_SPEC.md",
-        "docs/tutorial/02-反应器循环示例.md",
-        "docs/tutorial/03-写一条业务规则.md",
+        "docs/tutorial/02-reactor-loop-example.md",
+        "docs/tutorial/03-write-a-business-rule.md",
         "README.md"
     )
-    "src/transition.rs" = @("docs/tutorial/01-五分钟跑通-core-eval.md")
-    "src/domain.rs" = @("docs/tutorial/03-写一条业务规则.md")
-    "src/reactor.rs" = @("docs/tutorial/02-反应器循环示例.md")
+    "src/transition.rs" = @("docs/tutorial/01-core-eval-in-five-minutes.md")
+    "src/domain.rs" = @("docs/tutorial/03-write-a-business-rule.md")
+    "src/reactor.rs" = @("docs/tutorial/02-reactor-loop-example.md")
     "src/fact.rs" = @("evorule-governance/GOVERNANCE_SPEC.md")
     "src/facts_log.rs" = @("evorule-governance/GOVERNANCE_SPEC.md")
     "src/io_handler.rs" = @("evorule-governance/GOVERNANCE_SPEC.md")

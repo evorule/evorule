@@ -19,9 +19,9 @@
 | Document                                                                   | Purpose             | One-line description                                                                     |
 | :------------------------------------------------------------------------- | :------------------ | :--------------------------------------------------------------------------------------- |
 | [README.md](README.md)                                                     | Project overview    | What EvoRule is, quick start, architecture overview — **first read for new project owners** |
-| [Position charter: every gain comes with a loss](docs/explanation/00-有所得必有所失-EvoRule的取舍立场.md) | Position paper 01 | Why EvoRule dares to do less — the "every gain comes with a loss" trade-off position |
-| [Position: choosing non-intelligence in the age of intelligence](docs/explanation/01-智能时代选择不智能-什么是确定性智能.md) | Position paper 02 | "Deterministic intelligence" — intelligence owns the direction; EvoRule provides deterministic trustworthiness |
-| [Position: Gödel's incompleteness and approaching truth](docs/explanation/02-哥德尔不自证与逼近真相-EvoRule对正确的诚实立场.md) | Position paper 03 | Does not claim absolute correctness; instead maximally approaches factual truth under current technical conditions |
+| [Position charter: every gain comes with a loss](docs/explanation/00-no-gain-without-loss-the-evorule-tradeoff-stance.md) | Position paper 01 | Why EvoRule dares to do less — the "every gain comes with a loss" trade-off position |
+| [Position: choosing non-intelligence in the age of intelligence](docs/explanation/01-what-is-deterministic-intelligence.md) | Position paper 02 | "Deterministic intelligence" — intelligence owns the direction; EvoRule provides deterministic trustworthiness |
+| [Position: Gödel's incompleteness and approaching truth](docs/explanation/02-godel-incompleteness-and-the-honest-pursuit-of-truth.md) | Position paper 03 | Does not claim absolute correctness; instead maximally approaches factual truth under current technical conditions |
 
 ---
 

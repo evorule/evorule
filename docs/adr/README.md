@@ -27,7 +27,7 @@ Every ADR is an **immutable historical snapshot**. If a decision changes, write 
 
 ## Index
 
-- [ADR-0001: Single Source of Truth for Verification Status and Honest Disclosure](./ADR-0001-验证状态单一真相源与诚实披露机制.md) (2026-09-12, Accepted)
+- [ADR-0001: Single Source of Truth for Verification Status and Honest Disclosure](./ADR-0001-verification-status-single-source-of-truth.md) (2026-09-12, Accepted)
 
 ## When to write an ADR
 

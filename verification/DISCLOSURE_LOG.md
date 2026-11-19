@@ -97,7 +97,7 @@
 - 本日志建立于 2026-09-12；上述 12 项核对发现与 3 项处置为机制建立时的一次性补记，此后所有偏离按时间顺序追加于下方。
 - STATUS.md 初值快照为 v0.5.0（commit `5fac8bd`）；表中 ✅ 项的 v0.5.0 归档证据由整改阶段 2 重跑后落盘，届时同批更新证据列。
 - 机制文档（MECHANISM.md / STATUS.md / DISCLOSURE_LOG.md / verification/README.md 重写稿）以未提交状态起草，定稿后由仓库维护者提交。
-- 机制建立决策记录见 [docs/adr/ADR-0001-验证状态单一真相源与诚实披露机制.md](../docs/adr/ADR-0001-验证状态单一真相源与诚实披露机制.md)。
+- 机制建立决策记录见 [docs/adr/ADR-0001-verification-status-single-source-of-truth.md](../docs/adr/ADR-0001-verification-status-single-source-of-truth.md)。
 
 ## 追加区
 
@@ -229,7 +229,7 @@
 ### 2026-09-13：B 档 proof 攻坚立项与载体修订立项（ADR-0002）
 
 - **事实**：B 档 23 个超时 proof 攻坚立项（四梯队结构：可行性门 / 零侵入优化 / Kani 机制层 / 属性分流 / 治理登记，总预算 ≤60 次验证运行 × ≤600s，每阶段设停止准则）。载体修订立项（eq/clone 模型化）实施载体由 impl 级 `cfg(kani)` 双实现修订为 proof 层 `#[kani::stub(...)]`：value.rs 两处 impl 级覆写（Clone/PartialEq）回退（该立项代码尚未提交，无公开仓历史修正需求）。配套新增：B 档 harness 结构自检断言（Phase 1 硬前置）；cfg(kani) 偏差登记簿（K 系）"爆炸半径"列与补偿合规规则（爆炸半径全调用点映射 / 证据-实现绑定 / 补偿不得引用受该模型影响的 proof）；STATUS.md 属性表"模型偏差"列（Phase 1 随批落地）。
-- **依据**：[ADR-0002](../docs/adr/ADR-0002-B档proof模型载体与stub化验证策略.md)（M5.2 建模策略变更情形）：impl 级覆写在 kani 构建下影响全部调用点（含 harness 构造层 `object_from_pairs` 的 `v.clone()`——嵌套复合输入在深度 1 处被清空，proof 实际验证退化输入）；真实 trait impl 从 kani 构建产物中消失，使真实现侧证明补偿不可成立（循环引用）。三轮攻坚立项 rounds 1-12 探针记录（三层根因与乘积爆炸结论）。
+- **依据**：[ADR-0002](../docs/adr/ADR-0002-tier-b-proof-model-carrier-and-stub-verification-strategy.md)（M5.2 建模策略变更情形）：impl 级覆写在 kani 构建下影响全部调用点（含 harness 构造层 `object_from_pairs` 的 `v.clone()`——嵌套复合输入在深度 1 处被清空，proof 实际验证退化输入）；真实 trait impl 从 kani 构建产物中消失，使真实现侧证明补偿不可成立（循环引用）。三轮攻坚立项 rounds 1-12 探针记录（三层根因与乘积爆炸结论）。
 - **影响**：① A 档 14 个 proof 的归档证据（`bdfb8d4`）因被验证代码（value.rs）变更而 SHA 绑定失效——Batch 1 于 WSL 重跑 14 个补新 SHA 证据（P0-3/P0-6 证据列同批更新）；② reactor 4 个闸门 proof 在 stub 载体下零影响；③ B 档状态不变（❌），攻坚期间对外口径不变（M6）；④ kani.yml B 档 job 配置不变（不加大 timeout）。
 - **修正去向**：本条目即修正记录；载体修订立项记录见 [evorule-tcb/CHANGE_REQUEST.md](../../evorule-tcb/CHANGE_REQUEST.md)（原文保留，M7）；STATUS.md 维护区登记攻坚计划。
 - **归档记录（同日）**：Batch 1 核心提交 `1c6ad84`（value.rs 载体回退 + 编译面配套适配 + 探针迁出 + 四文档）后，于 WSL（Kani 0.67.0 + nightly-2025-11-21）重跑 A 档 14 个：14/14 PASS（单 proof 0.3~4.2s），M3.1 证据对 28 个文件落盘 `P0-3/P0-6.<harness>_PASS_1c6ad84_20260913_*`（evorule-tcb/verification/evidence/kani/）；旧 `bdfb8d4` 14 对证据按 M3.4 `git mv` 至 `_invalidated/`（批次 2，作废判定与替代证据指引见该目录 README）；STATUS.md P0-3/P0-6 证据列、快照注记与维护区登记同批更新。提交前以暂存树（= 提交内容）预演 kani.yml 双 job：TCB A 档 14/14 + reactor 4/4 PASS。

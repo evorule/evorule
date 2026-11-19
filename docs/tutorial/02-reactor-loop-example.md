@@ -6,7 +6,7 @@
 > **Goal**: run the evorule reactor loop (rule matching → meta-instruction execution → stability detection → termination) —
 > **single-round semantics** in the current design, rather than the single-step `execute_transition` (Tutorial 01).
 > **Audience**: library authors / anyone who wants to understand what the evorule reactor is.
-> **Prereq**: completed [Tutorial 01: Run core_eval in Five Minutes](./01-五分钟跑通-core-eval.md).
+> **Prereq**: completed [Tutorial 01: Run core_eval in Five Minutes](./01-core-eval-in-five-minutes.md).
 
 ## 1. Synchronous API vs Async Reactor
 
@@ -268,6 +268,6 @@ for i in 0..3 {
 
 ## Next steps
 
-- [Tutorial 03: Writing a business rule](./03-写一条业务规则.md) — write business rules in JSON and run them with the `evorule` CLI
+- [Tutorial 03: Writing a business rule](./03-write-a-business-rule.md) — write business rules in JSON and run them with the `evorule` CLI
 - Audit chain internals — how the BLAKE3 tamper-evident audit chain works (coming soon)
 - Service deployment — depends on the standalone evorule-server repo

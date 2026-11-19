@@ -25,15 +25,15 @@
 
 | Source file / area | Related documents | Trigger |
 |-----------------|---------|---------|
-| `src/transition.rs` | `evorule-tcb/TCB_SPEC.md` §1/§4, root `CHANGELOG.md`, `docs/tutorial/01-五分钟跑通-core-eval.md` | Meta-instruction semantics changes, `execute_transition` signature changes, ReAct loop logic changes |
+| `src/transition.rs` | `evorule-tcb/TCB_SPEC.md` §1/§4, root `CHANGELOG.md`, `docs/tutorial/01-core-eval-in-five-minutes.md` | Meta-instruction semantics changes, `execute_transition` signature changes, ReAct loop logic changes |
 | `src/executor.rs` | `evorule-tcb/TCB_SPEC.md` §1 T1/T3, root `CHANGELOG.md` | Meta-instruction execution logic changes, new meta-instructions, execution budget constant changes |
-| `src/domain.rs` | `evorule-tcb/TCB_SPEC.md` §1 T2, `docs/tutorial/03-写一条业务规则.md` | Domain type additions/removals/semantic changes, default boolean policy changes |
+| `src/domain.rs` | `evorule-tcb/TCB_SPEC.md` §1 T2, `docs/tutorial/03-write-a-business-rule.md` | Domain type additions/removals/semantic changes, default boolean policy changes |
 | `src/value.rs` | `evorule-tcb/TCB_SPEC.md`, `evorule-tcb/DETERMINISM_REPORT.md` | JsonValue structure changes, deterministic Ord implementation changes, String type changes |
 | `src/path.rs` | `evorule-tcb/TCB_SPEC.md` §4 D1/D1a | Path resolution semantics changes, escape rule changes, array index semantics changes |
 | `src/error.rs` | `evorule-tcb/TCB_SPEC.md` §4 | Error type additions/removals/semantic changes |
 | `src/lib.rs` | `evorule-tcb/README.md`, `evorule-tcb/TCB_SPEC.md` | Public API changes, module export changes, lint rule changes |
 | `build.rs` | `GATE_REFERENCE.md`, each crate's `*_SPEC.md` §5 | Gate rule additions/modifications/removals, forbidden pattern changes |
-| `core_eval.json` | `evorule-tcb/TCB_SPEC.md`, `docs/tutorial/02-反应器循环示例.md`, `docs/tutorial/03-写一条业务规则.md`, root `README.md` | Constitution rule set changes, meta-instruction mapping changes, reactor loop rule changes |
+| `core_eval.json` | `evorule-tcb/TCB_SPEC.md`, `docs/tutorial/02-reactor-loop-example.md`, `docs/tutorial/03-write-a-business-rule.md`, root `README.md` | Constitution rule set changes, meta-instruction mapping changes, reactor loop rule changes |
 | `tests/kani/` | `evorule-tcb/verification/kani-formal-verification-design.md`, root `CHANGELOG.md` | Kani proofs added/removed, verification result changes |
 | `tests/determinism_proptest.rs` | `evorule-tcb/DETERMINISM_REPORT.md` | Deterministic property tests added/removed, result changes |
 
@@ -41,7 +41,7 @@
 
 | Source file / area | Related documents | Trigger |
 |-----------------|---------|---------|
-| `src/reactor.rs` | `evorule-reactor/REACTOR_SPEC.md`, root `CHANGELOG.md`, `docs/tutorial/02-反应器循环示例.md` | Reactor main loop logic changes, phase switch changes, Stable detection changes, public API changes |
+| `src/reactor.rs` | `evorule-reactor/REACTOR_SPEC.md`, root `CHANGELOG.md`, `docs/tutorial/02-reactor-loop-example.md` | Reactor main loop logic changes, phase switch changes, Stable detection changes, public API changes |
 | `src/fact.rs` | `evorule-reactor/REACTOR_SPEC.md`, `evorule-reactor/README.md` | Fact type additions/removals, IoType semantic changes, FactId generation logic changes |
 | `src/facts_log.rs` | `evorule-reactor/REACTOR_SPEC.md`, `evorule-governance/GOVERNANCE_SPEC.md` | Audit chain format changes, hash chain algorithm changes, Append-Only semantics changes |
 | `src/wal.rs` | `evorule-reactor/REACTOR_SPEC.md` | WAL format changes, persistence logic changes, fsync policy changes |
@@ -75,7 +75,7 @@
 | Source file / area | Related documents | Trigger |
 |-----------------|---------|---------|
 | `src/main.rs` / `src/cli.rs` | `evorule-cli/CLI_SPEC.md`, `evorule-cli/README.md`, `evorule-cli/CHANGELOG.md` | CLI entry changes, subcommands added/removed, argument changes |
-| `src/commands/run.rs` | `evorule-cli/CLI_SPEC.md`, `evorule-cli/README.md`, `docs/tutorial/03-写一条业务规则.md` | run subcommand logic changes, argument changes |
+| `src/commands/run.rs` | `evorule-cli/CLI_SPEC.md`, `evorule-cli/README.md`, `docs/tutorial/03-write-a-business-rule.md` | run subcommand logic changes, argument changes |
 | `src/commands/validate.rs` | `evorule-cli/CLI_SPEC.md`, `evorule-cli/README.md` | validate subcommand logic changes |
 | `src/commands/replay.rs` | `evorule-cli/CLI_SPEC.md`, `evorule-cli/README.md` | replay subcommand logic changes |
 | `src/commands/verify_chain.rs` / `verify_anchors.rs` | `evorule-cli/CLI_SPEC.md`, `evorule-cli/README.md` | Verification subcommand logic changes |
@@ -106,9 +106,9 @@
 |------|---------|
 | `docs/introduction.md` | Project positioning changes, target audience changes, documentation navigation changes |
 | `docs/SUMMARY.md` | mdbook TOC structure changes, chapters added/removed |
-| `docs/tutorial/01-五分钟跑通-core-eval.md` | TCB core API changes, `core_eval` usage changes |
-| `docs/tutorial/02-反应器循环示例.md` | Reactor loop logic changes, Reactor API changes, I/O handling changes |
-| `docs/tutorial/03-写一条业务规则.md` | Rule format changes, domain type changes, meta-instruction changes, CLI usage changes |
+| `docs/tutorial/01-core-eval-in-five-minutes.md` | TCB core API changes, `core_eval` usage changes |
+| `docs/tutorial/02-reactor-loop-example.md` | Reactor loop logic changes, Reactor API changes, I/O handling changes |
+| `docs/tutorial/03-write-a-business-rule.md` | Rule format changes, domain type changes, meta-instruction changes, CLI usage changes |
 | `docs/explanation/` | Design-principle explanation changes, core concept definition changes |
 | `docs/adr/` | Architecture decision changes, new decision records |
 | `docs/PERFORMANCE_BASELINE_V0.3.1.md` | Performance baseline changes, benchmark result changes |

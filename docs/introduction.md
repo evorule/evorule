@@ -18,8 +18,8 @@ For details see each sub-crate's [CHANGELOG](https://github.com/evorule/evorule/
 
 | I am... | I want to... | Where to look |
 |---|---|---|
-| **Library author** | embed the rule engine in my Rust project with `use evorule_tcb::...` | [Tutorial 01: Run core_eval in Five Minutes](./tutorial/01-五分钟跑通-core-eval.md) + meta-instruction reference (coming soon) |
-| **Rule author** | write JSON rules and run business logic with the CLI / server | [Tutorial 03: Writing a business rule](./tutorial/03-写一条业务规则.md) + [how-to/](./how-to/) |
+| **Library author** | embed the rule engine in my Rust project with `use evorule_tcb::...` | [Tutorial 01: Run core_eval in Five Minutes](./tutorial/01-core-eval-in-five-minutes.md) + meta-instruction reference (coming soon) |
+| **Rule author** | write JSON rules and run business logic with the CLI / server | [Tutorial 03: Writing a business rule](./tutorial/03-write-a-business-rule.md) + [how-to/](./how-to/) |
 | **Ops / deployment** | run evorule-server, configure, replay, audit | [operations/](./operations/) + the evorule-server repository (independently published — deployment depends on it) |
 | **Contributor / researcher** | understand the design philosophy, run baselines, submit PRs | [explanation/](./explanation/) + [adr/](./adr/) + [PERFORMANCE_BASELINE_V0.3.1.md](./PERFORMANCE_BASELINE_V0.3.1.md) |
 
