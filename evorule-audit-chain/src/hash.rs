@@ -1,43 +1,47 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! 审计链哈希工具（BLAKE3）——no_std 单一真相源
+//! Audit-chain hash utilities (BLAKE3) — the no_std single source of truth
 //!
-//! 这是 evorule 审计链的核心完整性保证机制。
+//! This is the core integrity mechanism of the evorule audit chain.
 //!
-//! # 设计
-//! - 使用 `blake3` crate（1.x，no_std 模式）计算 256 位哈希
-//! - 序列化采用显式 JSON 格式：确保序列化格式的稳定性，不受 Debug 实现变更影响
-//! - 哈希以十六进制字符串形式返回
-//! - `serde_json` 以 alloc 模式消费（`Value`/`Map` 基于 BTreeMap 字母序）——
-//!   与原 std 侧实现逐字节等价，序列化输出不变
+//! # Design
+//! - Uses the `blake3` crate (1.x, no_std mode) to compute 256-bit hashes
+//! - Serialization uses an explicit JSON format: keeps the serialization format
+//!   stable and unaffected by Debug implementation changes
+//! - Hashes are returned as hexadecimal strings
+//! - `serde_json` is consumed in alloc mode (`Value`/`Map` based on BTreeMap
+//!   alphabetical order) — byte-equivalent to the original std-side
+//!   implementation; serialization output unchanged
 //!
-//! # 哈希链算法
-//! - `prev_hash` 初始为 `"genesis"`
-//! - 对每个 Fact，计算 `content_hash = blake3(fact_to_stable_json(fact))`
-//! - 链哈希：`chain_hash = blake3(prev_hash + content_hash)`
-//! - 更新 `prev_hash = chain_hash`，继续处理下一个 Fact
+//! # Hash chain algorithm
+//! - `prev_hash` starts as `"genesis"`
+//! - For each Fact, compute `content_hash = blake3(fact_to_stable_json(fact))`
+//! - Chain hash: `chain_hash = blake3(prev_hash + content_hash)`
+//! - Update `prev_hash = chain_hash` and continue with the next Fact
 //!
-//! # 单一真相源与消费方
-//! 本模块自 2026-10-18（SC3-a 方案乙）起为哈希算法唯一实现：
-//! - evorule-reactor/src/hash.rs re-export 本模块（std 壳）
-//! - evorule-governance/src/hash.rs、evorule-cli/src/hash.rs 经 reactor 链式透传
-//! - `test_cross_validate_with_tier2` 测试保证三方一致
-//! - `hash_snapshot.txt` 快照测试守护存量哈希不变
+//! # Single source of truth and consumers
+//! Since 2026-10-18 this module has been the sole implementation of the hash
+//! algorithms:
+//! - evorule-reactor/src/hash.rs re-exports this module (std shell)
+//! - evorule-governance/src/hash.rs and evorule-cli/src/hash.rs pass through
+//!   the reactor re-export chain
+//! - The `test_cross_validate_with_tier2` test guarantees three-way consistency
+//! - The `hash_snapshot.txt` snapshot test guards existing hashes against change
 
 use core::fmt;
 
 use evorule_tcb::JsonValue;
 
-// no_std + alloc prelude（SSOT 上提：std prelude 中 alloc 级条目显式导入）
+// no_std + alloc prelude (SSOT promotion: alloc-level entries of the std prelude imported explicitly)
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use crate::fact::Fact;
 
-/// 哈希计算错误类型
+/// Hash computation error type
 ///
-/// 包含错误消息，便于排查哈希计算过程中的异常。
+/// Carries an error message to ease diagnosing anomalies during hash computation.
 #[derive(Debug)]
 pub struct HashError {
     message: String,
@@ -53,23 +57,23 @@ impl HashError {
 
 impl fmt::Display for HashError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "哈希计算错误: {}", self.message)
+        write!(f, "hash computation error: {}", self.message)
     }
 }
 
 impl core::error::Error for HashError {}
 
-/// 将 `JsonValue` 转换为 `serde_json::Value`
+/// Convert `JsonValue` to `serde_json::Value`
 ///
-/// 内部函数，用于 Fact 序列化前的类型转换。
-/// 保证转换过程确定性，不受 JsonValue 内部实现影响。
+/// Internal function for the type conversion before Fact serialization.
+/// Guarantees a deterministic conversion, unaffected by JsonValue internals.
 fn tcb_to_serde(value: &JsonValue) -> serde_json::Value {
     match value {
         JsonValue::Null => serde_json::Value::Null,
         JsonValue::Bool(b) => serde_json::Value::Bool(*b),
         JsonValue::Integer(i) => serde_json::Value::Number(serde_json::Number::from(*i)),
-        // u64 全域通道：serde Number 原生无损承载（与 fact_to_stable_json 的
-        // FactId 序列化同口径），不经 i64 cast
+        // Full-u64 channel: serde Number carries it natively without loss (same
+        // scheme as FactId serialization in fact_to_stable_json), no i64 cast
         JsonValue::U64(v) => serde_json::Value::Number(serde_json::Number::from(*v)),
         JsonValue::String(s) => serde_json::Value::String(s.to_string()),
         JsonValue::Array(arr) => serde_json::Value::Array(arr.iter().map(tcb_to_serde).collect()),
@@ -83,10 +87,11 @@ fn tcb_to_serde(value: &JsonValue) -> serde_json::Value {
     }
 }
 
-/// 域归因条目 → 稳定 JSON（None 字段省略，键序由 BTreeMap 固定）
+/// Domain attribution entry → stable JSON (None fields omitted, key order fixed by BTreeMap)
 ///
-/// 与 WAL 持久化侧的同名私有函数保持同构：哈希链序列化与 WAL 持久化
-/// 必须产出一致形状，否则回放重算哈希将失配。
+/// Kept isomorphic with the same-named private function on the WAL persistence
+/// side: hash-chain serialization and WAL persistence must produce identical
+/// shapes, otherwise replay recomputation hashes will mismatch.
 fn trace_attr_to_json(attr: &crate::fact::TraceDomainAttribution) -> serde_json::Value {
     let mut attr_obj = serde_json::Map::new();
     attr_obj.insert(
@@ -108,20 +113,24 @@ fn trace_attr_to_json(attr: &crate::fact::TraceDomainAttribution) -> serde_json:
     serde_json::Value::Object(attr_obj)
 }
 
-/// 将 Fact 序列化为稳定的 JSON 格式
+/// Serialize a Fact into the stable JSON format
 ///
-/// 使用显式的 JSON 序列化而非依赖 Debug trait，确保：
-/// 1. 序列化格式不受 Rust 版本或 Debug 实现变更影响
-/// 2. 字段顺序固定且可预测（serde_json::Map 基于 BTreeMap，字母序）
-/// 3. 跨版本兼容性有保障
+/// Uses explicit JSON serialization instead of relying on the Debug trait,
+/// ensuring:
+/// 1. The serialization format is unaffected by Rust version or Debug
+///    implementation changes
+/// 2. Field order is fixed and predictable (serde_json::Map is BTreeMap-based,
+///    alphabetical)
+/// 3. Cross-version compatibility is guaranteed
 ///
-/// # 参数
-/// - `fact`: 要序列化的事实
+/// # Arguments
+/// - `fact`: the fact to serialize
 ///
-/// # 返回值
-/// - `Ok(serde_json::Value)`: 序列化后的 JSON 值
-/// - `Err(HashError)`: 序列化失败
-// 7 种 Fact 变体扁平 match + 嵌套, 拆函数需共享中间变量。详见 GATE_REFERENCE.md §六(豁免索引)
+/// # Returns
+/// - `Ok(serde_json::Value)`: the serialized JSON value
+/// - `Err(HashError)`: serialization failure
+// A flat match over 7 Fact variants + nesting; splitting the function would require
+// sharing intermediate variables. See GATE_REFERENCE.md §六 (exemption index).
 #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
 pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> {
     let mut obj = serde_json::Map::new();
@@ -215,7 +224,7 @@ pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> 
             cause,
             rule_hits,
         } => {
-            // 归因轨迹参与哈希链（审计链防篡改覆盖归因事实）
+            // Attribution traces participate in the hash chain (audit-chain tamper protection covers attribution facts)
             obj.insert(
                 "type".into(),
                 serde_json::Value::String("TransitionTrace".into()),
@@ -225,8 +234,9 @@ pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> 
             let hits: Vec<serde_json::Value> = rule_hits
                 .iter()
                 .map(|h| {
-                    // domain_attr 仅在 Some 时插入键（None 省略）：
-                    // 存量无归因事实的哈希不变，增量归因事实纳入哈希链防篡改。
+                    // domain_attr key inserted only when Some (omitted on None):
+                    // hashes of legacy unattributed facts stay unchanged; newly
+                    // attributed facts join the hash chain's tamper protection.
                     let mut hit_obj = serde_json::Map::new();
                     hit_obj.insert("index".into(), serde_json::json!(h.index));
                     hit_obj.insert(
@@ -249,7 +259,7 @@ pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> 
             reason,
             instruction,
         } => {
-            // 违规拦截事实参与哈希链（审计链防篡改覆盖拦截记录；回归验证）
+            // Violation interception facts participate in the hash chain (audit-chain tamper protection covers interception records; regression-verified)
             obj.insert("type".into(), serde_json::Value::String("Violation".into()));
             obj.insert("id".into(), serde_json::Value::Number(id.0.into()));
             obj.insert("cause".into(), serde_json::Value::Number(cause.0.into()));
@@ -265,49 +275,51 @@ pub fn fact_to_stable_json(fact: &Fact) -> Result<serde_json::Value, HashError> 
     Ok(serde_json::Value::Object(obj))
 }
 
-/// 计算内容的 BLAKE3 哈希
+/// Compute the BLAKE3 hash of content
 ///
-/// 将 `JsonValue` 序列化为确定性字符串后计算哈希。
-/// 使用 `tcb_to_serde` 进行显式 JSON 序列化，确保格式稳定性。
+/// Serializes `JsonValue` into a deterministic string and hashes it.
+/// Uses `tcb_to_serde` for explicit JSON serialization, ensuring format stability.
 ///
-/// # 参数
-/// - `value`: 要计算哈希的 JSON 值
+/// # Arguments
+/// - `value`: the JSON value to hash
 ///
-/// # 返回值
-/// - `Ok(String)`: 64 字符的十六进制哈希字符串
-/// - `Err(HashError)`: 序列化失败
-#[allow(dead_code)] // 供 evorule-governance re-export 使用
+/// # Returns
+/// - `Ok(String)`: the 64-character hexadecimal hash string
+/// - `Err(HashError)`: serialization failure
+#[allow(dead_code)] // consumed via the evorule-governance re-export
 pub fn content_hash(value: &JsonValue) -> Result<String, HashError> {
     #[cfg(kani)]
     {
-        // Kani 模式：blake3 的位操作循环会导致 CBMC memcmp 状态爆炸
-        // （4357+ 次循环展开未止）。用确定性简化哈希替代，保持幂等性。
-        // 注意：不用 format!（触发 core::unicode::skip_search 状态爆炸）。
+        // Kani mode: blake3's bit-manipulation loops blow up CBMC memcmp state
+        // (loop unrolling did not converge after 4357+ iterations). Replaced by
+        // a deterministic simplified hash, keeping idempotence.
+        // Note: no format! (triggers core::unicode::skip_search state explosion).
         Ok(String::from("c"))
     }
     #[cfg(not(kani))]
     {
         let serde_value = tcb_to_serde(value);
         let serialized = serde_json::to_string(&serde_value)
-            .map_err(|e| HashError::new(alloc::format!("内容哈希序列化失败: {}", e)))?;
+            .map_err(|e| HashError::new(alloc::format!("content hash serialization failed: {}", e)))?;
         let hash = blake3::hash(serialized.as_bytes()).to_hex().to_string();
 
         Ok(hash)
     }
 }
 
-/// 计算 Fact 的哈希（基于稳定的 JSON 序列化）
+/// Compute the hash of a Fact (based on stable JSON serialization)
 ///
-/// 使用显式 JSON 序列化格式而非 Debug trait，确保序列化格式的稳定性。
+/// Uses the explicit JSON serialization format instead of the Debug trait,
+/// ensuring serialization format stability.
 ///
-/// # 参数
-/// - `fact`: 要计算哈希的事实
+/// # Arguments
+/// - `fact`: the fact to hash
 ///
-/// # 返回值
-/// - `Ok(String)`: 64 字符的十六进制哈希字符串
-/// - `Err(HashError)`: 哈希计算失败
+/// # Returns
+/// - `Ok(String)`: the 64-character hexadecimal hash string
+/// - `Err(HashError)`: hash computation failure
 ///
-/// # 示例
+/// # Example
 /// ```
 /// use evorule_audit_chain::hash::fact_hash;
 /// use evorule_audit_chain::fact::{Fact, FactId};
@@ -323,10 +335,11 @@ pub fn content_hash(value: &JsonValue) -> Result<String, HashError> {
 pub fn fact_hash(fact: &Fact) -> Result<String, HashError> {
     #[cfg(kani)]
     {
-        // Kani 模式：blake3 的位操作循环会导致 CBMC memcmp 状态爆炸。
-        // 用确定性简化哈希替代：基于 id 的单字符映射（a-g），
-        // 保持幂等性（相同 id → 相同 hash）和区分性（不同 id → 不同 hash）。
-        // 不用 format!/to_string()/type_name（触发 Unicode 状态爆炸）。
+        // Kani mode: blake3's bit-manipulation loops blow up CBMC memcmp state.
+        // Replaced by a deterministic simplified hash: an id-based single-character
+        // mapping (a-g), keeping idempotence (same id → same hash) and
+        // distinguishability (different ids → different hashes).
+        // No format!/to_string()/type_name (triggers Unicode state explosion).
         let id = fact.id().0;
         let h = match id % 7 {
             0 => "a",
@@ -343,7 +356,7 @@ pub fn fact_hash(fact: &Fact) -> Result<String, HashError> {
     {
         let value = fact_to_stable_json(fact)?;
         let serialized = serde_json::to_string(&value)
-            .map_err(|e| HashError::new(alloc::format!("序列化失败: {}", e)))?;
+            .map_err(|e| HashError::new(alloc::format!("serialization failed: {}", e)))?;
 
         let hash = blake3::hash(serialized.as_bytes()).to_hex().to_string();
 
@@ -351,28 +364,28 @@ pub fn fact_hash(fact: &Fact) -> Result<String, HashError> {
     }
 }
 
-/// 计算哈希链的最终链哈希
+/// Compute the final chain hash of a hash chain
 ///
-/// 这是审计链的核心计算函数。
+/// This is the core computation of the audit chain.
 ///
-/// # 算法
-/// - `prev_hash` 初始为 `"genesis"`
-/// - 对每个 Fact，计算 `content_hash = fact_hash(fact)`
-/// - 链哈希：`chain_hash = blake3(prev_hash + content_hash)`
-/// - 更新 `prev_hash = chain_hash`，继续处理下一个 Fact
-/// - 返回最终的 `prev_hash`（即整条链的链哈希）
+/// # Algorithm
+/// - `prev_hash` starts as `"genesis"`
+/// - For each Fact, compute `content_hash = fact_hash(fact)`
+/// - Chain hash: `chain_hash = blake3(prev_hash + content_hash)`
+/// - Update `prev_hash = chain_hash` and continue with the next Fact
+/// - Return the final `prev_hash` (the chain hash of the whole chain)
 ///
-/// # 参数
-/// - `facts`: 事实列表（按因果顺序）
+/// # Arguments
+/// - `facts`: the fact list (in causal order)
 ///
-/// # 返回值
-/// - `Ok(String)`: 最终链哈希（64 字符十六进制）
-/// - `Err(HashError)`: 任一 Fact 哈希计算失败
+/// # Returns
+/// - `Ok(String)`: the final chain hash (64-character hex)
+/// - `Err(HashError)`: hash computation of any Fact failed
 ///
-/// # 注意
-/// 本函数**只计算**链哈希，**不验证**完整性。
-/// 验证逻辑由调用方比对存储的哈希与重算的哈希。
-/// 空列表返回 `"genesis"`。
+/// # Note
+/// This function **only computes** the chain hash; it does **not verify**
+/// integrity. Verification logic belongs to callers comparing stored hashes
+/// with recomputed ones. An empty list returns `"genesis"`.
 pub fn compute_chain_hash(facts: &[Fact]) -> Result<String, HashError> {
     if facts.is_empty() {
         return Ok(String::from("genesis"));
@@ -388,24 +401,25 @@ pub fn compute_chain_hash(facts: &[Fact]) -> Result<String, HashError> {
     Ok(prev_hash)
 }
 
-/// 计算单步链哈希：chain_hash = blake3(prev_hash + content_hash)
+/// Compute a single chain step: chain_hash = blake3(prev_hash + content_hash)
 ///
-/// Kani 模式下用确定性简化版本（字符串拼接）替代 blake3，
-/// 避免 CBMC 对 blake3 位操作循环的 memcmp 状态爆炸。
-/// 保持链步的结合性：`chain_step(chain_step(a, b), c)` 可归纳分解。
+/// Under Kani mode a deterministic simplified version (string concatenation)
+/// replaces blake3, avoiding CBMC memcmp state explosion on blake3's
+/// bit-manipulation loops. Preserves chain-step associativity:
+/// `chain_step(chain_step(a, b), c)` decomposes inductively.
 ///
-/// # 参数
-/// - `prev_hash`: 前序链哈希（初始为 `"genesis"`）
-/// - `content_hash`: 当前 Fact 的内容哈希
+/// # Arguments
+/// - `prev_hash`: the previous chain hash (starts as `"genesis"`)
+/// - `content_hash`: the content hash of the current Fact
 ///
-/// # 返回值
-/// 新的链哈希
+/// # Returns
+/// The new chain hash
 pub fn chain_step(prev_hash: &str, content_hash: &str) -> String {
     #[cfg(kani)]
     {
-        // Kani 模式：确定性简化，保持链步结构。
-        // 不用 format!（触发 core::unicode::skip_search 状态爆炸），
-        // 用 String::from + push_str（字节级操作，短字符串）。
+        // Kani mode: deterministic simplification, preserving chain-step structure.
+        // No format! (triggers core::unicode::skip_search state explosion);
+        // uses String::from + push_str (byte-level operations, short strings).
         let mut s = String::from(prev_hash);
         s.push_str(content_hash);
         s
@@ -423,7 +437,7 @@ mod tests {
     use super::*;
     use crate::fact::{Fact, FactId, IoType, TraceDomainAttribution, TraceHit};
     use evorule_tcb::JsonValue;
-    // no_std crate 测试构建链接 std：测试宏显式导入
+    // no_std crates link std for test builds: test macros imported explicitly
     use std::{println, vec};
 
     #[test]
@@ -449,15 +463,15 @@ mod tests {
         assert!(json_value.get("instruction").is_some());
     }
 
-    /// u64 无损回归（v0.9.0）：tcb_to_serde 对 `JsonValue::U64` 走
-    /// serde Number u64 无损通道（高位值不经 i64 cast）。
+    /// u64 lossless regression (v0.9.0): tcb_to_serde routes `JsonValue::U64`
+    /// through serde Number's lossless u64 channel (high-bit values without i64 casts).
     #[test]
     fn test_tcb_to_serde_u64_lossless() {
         let sentinel = u64::MAX - 1;
         let v = JsonValue::u64(sentinel);
         let serde_v = tcb_to_serde(&v);
         assert_eq!(serde_v.as_u64(), Some(sentinel));
-        // 嵌套面（对象内 U64 值）同口径
+        // Same scheme on the nested surface (U64 values inside objects)
         let obj = JsonValue::object_from_pairs(&[("version", JsonValue::u64(sentinel))]);
         let serde_obj = tcb_to_serde(&obj);
         assert_eq!(
@@ -468,8 +482,9 @@ mod tests {
 
     #[test]
     fn test_transition_trace_hash_without_attr_matches_legacy_shape() {
-        // 存量哈希兼容：domain_attr 为 None 时 stable JSON 命中条目与
-        // 旧实现逐键一致（无 domain_attr 键）→ 存量事实哈希不变
+        // Legacy hash compatibility: when domain_attr is None, the stable JSON
+        // hit entry is key-for-key identical to the old implementation (no
+        // domain_attr key) → legacy fact hashes unchanged
         let fact = Fact::TransitionTrace {
             id: FactId(9),
             cause: FactId(2),
@@ -487,14 +502,15 @@ mod tests {
         assert_eq!(
             hit,
             &serde_json::json!({"index": 0, "instr_type": "branch", "hit": false}),
-            "无归因条目必须与旧格式逐键一致（None 省略，存量哈希不变）"
+            "entries without attribution must match the legacy format key-for-key (None omitted, legacy hashes unchanged)"
         );
     }
 
     #[test]
     fn test_transition_trace_hash_with_attr_shape_and_distinct() {
-        // 归因落账进哈希链（防篡改覆盖归因事实）：Some 时键出现、
-        // None 省略字段不出现，且与无归因版本哈希不同
+        // Attribution booked into the hash chain (tamper protection covers
+        // attribution facts): the key appears when Some, omitted fields do not
+        // appear when None, and the hash differs from the unattributed version
         let fact_with = Fact::TransitionTrace {
             id: FactId(9),
             cause: FactId(2),
@@ -534,13 +550,13 @@ mod tests {
                 "missing_reason": "path_not_found",
                 "on_missing": "unsat"
             }),
-            "归因条目形状（None 字段省略）"
+            "attribution entry shape (None fields omitted)"
         );
         let hash_with = fact_hash(&fact_with).unwrap();
         let hash_without = fact_hash(&fact_without).unwrap();
         assert_ne!(
             hash_with, hash_without,
-            "归因事实必须纳入哈希链（有归因 vs 无归因哈希不同）"
+            "attributed facts must be covered by the hash chain (hash differs with vs without attribution)"
         );
     }
 
@@ -734,13 +750,14 @@ mod tests {
 
         let chain1 = compute_chain_hash(&[fact1.clone(), fact2.clone()]).unwrap();
         let chain2 = compute_chain_hash(&[fact2, fact1]).unwrap();
-        assert_ne!(chain1, chain2, "链哈希应对 Fact 顺序敏感");
+        assert_ne!(chain1, chain2, "chain hash must be order-sensitive over facts");
     }
 
-    /// 交叉验证测试：与 evorule-governance/src/hash.rs 的快照比对
+    /// Cross-validation test: compares against the evorule-governance/src/hash.rs snapshot
     ///
-    /// 本测试确保 re-export 链路（governance → reactor → 本 crate）的哈希算法
-    /// 产生相同的哈希值。如果消费方仍维护独立实现，此测试会检测到不一致。
+    /// Ensures the re-export chain (governance → reactor → this crate) produces
+    /// identical hash values. If a consumer still maintains an independent
+    /// implementation, this test detects the inconsistency.
     #[test]
     fn test_cross_validate_with_tier2() {
         let test_facts = [
@@ -781,10 +798,10 @@ mod tests {
             },
         ];
 
-        // 计算本 crate（SSOT）的哈希
+        // Compute this crate's (SSOT) hashes
         let ssot_hashes: Vec<String> = test_facts.iter().map(|f| fact_hash(f).unwrap()).collect();
 
-        // 读取 tier2 的快照文件（如果存在）
+        // Read the tier2 snapshot file (if it exists)
         let tier2_snapshot_path = "../../evorule-governance/src/hash_snapshot.txt".to_string();
         if std::path::Path::new(&tier2_snapshot_path).exists() {
             let tier2_snapshot = std::fs::read_to_string(&tier2_snapshot_path).unwrap();
@@ -792,9 +809,9 @@ mod tests {
 
             assert_eq!(
                 ssot_hashes, tier2_hashes,
-                "SSOT 与 tier2 的 fact_hash 不一致！\
-                 如果这是预期变更（如 Fact 结构修改），\
-                 请删除 evorule-governance/src/hash_snapshot.txt 重新生成。"
+                "SSOT and tier2 fact_hash mismatch! \
+                 If this is an expected change (e.g., a Fact struct modification), \
+                 delete evorule-governance/src/hash_snapshot.txt to regenerate."
             );
         }
     }
