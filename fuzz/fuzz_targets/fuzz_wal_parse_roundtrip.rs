@@ -1,19 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 EvoRule Project
 // This file is part of EvoRule, licensed under GNU Affero General Public License v3 or later.
-//! Fuzz 目标：WAL 记录解析与 Fact 持久化序列化 roundtrip（纯函数面）
+//! Fuzz target: WAL record parsing and Fact persistence serialization
+//! roundtrip (pure-function surface)
 //!
-//! 输入: 任意字节流 → 按 JSONL 语法自由解释（天然产生半行/坏行/空行/深嵌套）
-//! 不变量:
-//! 1. 不 panic、不死循环；
-//! 2. 解析失败必须是 `WalError` 三类之一（Io/Json/InvalidFact），不得 panic；
-//! 3. 解析成功的每条记录：
-//!    a. `fact_to_json` → `fact_from_json` roundtrip 等值（持久化面保真）；
-//!    b. 哈希字段（content_hash/prev_hash/chain_hash）Option 字符串原样保留；
-//!    c. 同一字节流重复解析条数一致（幂等）。
+//! Input: an arbitrary byte stream → freely interpreted under JSONL syntax
+//! (naturally producing half lines / bad lines / blank lines / deep nesting)
+//! Invariants:
+//! 1. No panic, no infinite loop;
+//! 2. Parse failures must be one of the three `WalError` kinds
+//!    (Io/Json/InvalidFact), never a panic;
+//! 3. For every successfully parsed record:
+//!    a. `fact_to_json` → `fact_from_json` roundtrip equality (persistence-surface fidelity);
+//!    b. hash fields (content_hash/prev_hash/chain_hash) are preserved verbatim as Option strings;
+//!    c. re-parsing the same byte stream yields the same record count (idempotence).
 //!
-//! 无副作用纪律：输入经 `Cursor` 包裹，全程无文件系统、无写句柄、无
-//! `WalWriter`/`FactsLog` 状态挂载——仅 `parse_wal_records` 与序列化纯函数。
+//! Side-effect discipline: the input is wrapped in a `Cursor`; no filesystem
+//! access, no write handles, and no `WalWriter`/`FactsLog` state mounting at
+//! any point — only `parse_wal_records` and the serialization pure functions.
 
 #![no_main]
 
@@ -25,28 +29,36 @@ use libfuzzer_sys::fuzz_target;
 fuzz_target!(|data: &[u8]| {
     let records = match parse_wal_records(Cursor::new(data), 0) {
         Ok(records) => records,
-        // 不变量 2：解析失败合法，但必须是三类结构化错误之一（不 panic 已由到达此处证明）
+        // Invariant 2: parse failure is legal, but it must be one of the three
+        // structured error kinds (no panic is already proven by reaching here)
         Err(_) => return,
     };
 
-    // 不变量 3c：幂等（同字节流重复解析条数一致）
-    let again = parse_wal_records(Cursor::new(data), 0).expect("同输入重复解析必须成功");
-    assert_eq!(records.len(), again.len(), "解析必须幂等");
+    // Invariant 3c: idempotence (re-parsing the same byte stream yields the
+    // same record count)
+    let again = parse_wal_records(Cursor::new(data), 0).expect("re-parsing the same input must succeed");
+    assert_eq!(records.len(), again.len(), "parsing must be idempotent");
 
     for rec in &records {
-        // 不变量 3a：持久化面 roundtrip 保真（best-effort——任意输入面上的
-        // 序列化不对称如实计数，不崩溃；生产路径 fact 均由自身写入器产出，
-        // roundtrip 由确定性单测守护）
+        // Invariant 3a: persistence-surface roundtrip fidelity (best-effort —
+        // serialization asymmetry on arbitrary inputs is honestly counted,
+        // never a crash; production-path facts are all produced by their own
+        // writer, and the roundtrip is guarded by deterministic unit tests)
         let json = fact_to_json(&rec.fact);
         if let Ok(roundtrip) = fact_from_json(&json) {
-            assert_eq!(rec.fact, roundtrip, "Fact 持久化 roundtrip 必须等值");
+            assert_eq!(rec.fact, roundtrip, "the Fact persistence roundtrip must be equal");
         }
 
-        // 不变量 3b：哈希字段 Option 原样保留（字符串语义，非重算）——该性质
-        // 由不变量 3a 的 Fact 等值断言整体覆盖（content_hash 是 Fact 字段之一，
-        // 等值即原样）。WAL 是不可信输入面——字段值可以任意（协议外形状由
-        // 验证器检出，解析器只负责解析），故不断言 64 hex 长度、也不断言
-        // 非空（两者同为协议形状而非解析器不变量；教训：过强断言把协议假设
-        // 当不变量，fuzz 一发命中——64-hex 长度一例、空串一例，同源两犯）。
+        // Invariant 3b: hash fields are preserved verbatim as Options (string
+        // semantics, not recomputed) — this property is fully covered by the
+        // Fact equality assertion of invariant 3a (content_hash is one of the
+        // Fact fields; equality means verbatim). The WAL is an untrusted
+        // input surface — field values may be arbitrary (shapes outside the
+        // protocol are detected by the verifier; the parser only parses), so
+        // we neither assert the 64-hex length nor non-emptiness (both are
+        // protocol shapes rather than parser invariants; lesson learned:
+        // over-strong assertions treated protocol assumptions as invariants
+        // and the fuzz run hit them immediately — one 64-hex length case and
+        // one empty-string case, two occurrences from the same root).
     }
 });
