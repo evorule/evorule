@@ -1111,14 +1111,8 @@ fn test_while_loop_set_add_body_deadloop_regression() {
         vec![deadloop_instr],
         1000,
     );
-    assert_eq!(
-        steps, 1000,
-        "deadloop scenario must exhaust the step limit (queue never drains)"
-    );
-    assert!(
-        !queue.is_empty(),
-        "deadloop shape: queue still non-empty after reaching the limit"
-    );
+    assert_eq!(steps, 1000, "deadloop scenario must exhaust the step limit (queue never drains)");
+    assert!(!queue.is_empty(), "deadloop shape: queue still non-empty after reaching the limit");
     assert_eq!(
         payload.get("counter"),
         Some(&iv(1)),
@@ -1137,14 +1131,8 @@ fn test_while_loop_set_add_body_deadloop_regression() {
         vec![good_instr],
         1000,
     );
-    assert!(
-        queue.is_empty(),
-        "increment body: queue drained (normal termination)"
-    );
-    assert!(
-        steps < 1000,
-        "increment body: steps should be far below the limit"
-    );
+    assert!(queue.is_empty(), "increment body: queue drained (normal termination)");
+    assert!(steps < 1000, "increment body: steps should be far below the limit");
     assert_eq!(
         payload.get("counter"),
         Some(&iv(3)),

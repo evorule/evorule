@@ -361,10 +361,7 @@ impl Auditor {
         let start = self.entries.len();
         if start >= history_len {
             self.last_audited_version = self.facts_log.version();
-            tracing::debug!(
-                version = self.last_audited_version,
-                "audit_new: no new facts"
-            );
+            tracing::debug!(version = self.last_audited_version, "audit_new: no new facts");
             return 0;
         }
 
@@ -377,8 +374,7 @@ impl Auditor {
         let index = &mut self.index;
         let mut idx_offset = 0usize;
         facts_log.for_each_fact_from(start, |_version_before, fact| {
-            // idx_offset mirrors the original enumerate semantics: counts every traversed fact
-            // (including ones skipped on hash failure), keeping entry_index aligned with the history index
+            // idx_offset mirrors the original enumerate semantics: counts every traversed fact, keeping entry_index aligned with history
             let entry_index = start + idx_offset;
             idx_offset += 1;
 
@@ -389,11 +385,9 @@ impl Auditor {
             let content_hash = match hash::fact_hash(fact) {
                 Ok(h) => h,
                 Err(e) => {
-                    // #10 fix: skipping would misalign entries vs history indices (risk of
-                    // causal_chain out-of-bounds) - instead push a placeholder entry to stay aligned,
-                    // leave content_hash empty and record an error (the placeholder joins the chain;
-                    // verify continues the chain with the empty string - corruption is surfaced
-                    // explicitly, never silently masked)
+                    // #10 fix: skipping would misalign entries vs history indices (causal_chain
+                    // out-of-bounds) - instead push a placeholder entry (it joins the chain;
+                    // verify continues with the empty string - corruption is surfaced, never masked)
                     tracing::error!(
                         fact_id = ?fact_id,
                         fact_type = %fact_type,
@@ -433,8 +427,7 @@ impl Auditor {
                 cause,
             });
 
-            // Two-WAL merge: no longer writes the auditor WAL
-            // The hash chain is written to the tier1 WAL automatically by FactsLog::append()
+            // Two-WAL merge: the hash chain is written to the tier1 WAL automatically by FactsLog::append()
         });
 
         self.last_audited_version = self.facts_log.version();
@@ -444,8 +437,7 @@ impl Auditor {
             "audit_new: done"
         );
 
-        // G-A2: anchor policy - once the number of new facts since the last anchor reaches the interval, seal one anchor
-        // (interval=0 disables automatic anchoring; only seal_anchor_now seals manually)
+        // G-A2 anchor policy: seal one anchor once fresh facts reach the interval (interval=0 disables auto anchoring)
         if let Some(builder) = self.anchor_builder.as_mut() {
             let covered = builder.next_fact_lo();
             let fresh = self.entries.len().saturating_sub(covered);
@@ -479,10 +471,7 @@ impl Auditor {
                     "audit_new: live audit verification failed; the audit chain may have been tampered with or corrupted"
                 );
             } else {
-                tracing::debug!(
-                    entries = self.entries.len(),
-                    "audit_new: live audit verification passed"
-                );
+                tracing::debug!(entries = self.entries.len(), "audit_new: live audit verification passed");
             }
         }
 
